@@ -20,7 +20,6 @@ import { registerRunGraphTools } from './tools/runGraph.js'
 import { registerRunInspectionTools } from './tools/runInspection.js'
 import { registerWorkflowScheduleTools } from './tools/workflowSchedules.js'
 import { registerCurrentWorkflowTools } from './tools/currentWorkflow.js'
-import { registerWorkflowHierarchyTools } from './tools/workflowHierarchy.js'
 import { registerFileRetentionTools } from './tools/fileRetention.js'
 import { authorizationPrincipal } from '../../modules/access/policy.js'
 import { OPERATOR_TOOL_GROUPS, OPERATOR_TOOLS, type OperatorToolGroup } from './catalog.js'
@@ -116,7 +115,6 @@ function registerOperatorDefinitions(server: McpServer, context: OperatorRequest
   registerFileRetentionTools(server, context)
   group('workspaces')
   registerCurrentWorkflowTools(server, context)
-  registerWorkflowHierarchyTools(server, context)
   group('workflows')
   registerWorkflowScheduleTools(server, context)
   group('agents')
