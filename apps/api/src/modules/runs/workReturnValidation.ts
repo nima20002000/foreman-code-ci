@@ -1,5 +1,6 @@
+import { workflowResultContext } from './resultContext.js'
 import type { HarnessExecution, HarnessExecutionContext } from '@foreman-code/contracts'
-import { WorkActivationInputSchema, WorkRequestSchema, parseWorkHandoffResult } from '@foreman-code/contracts/wave25'
+import { WorkActivationInputSchema, WorkRequestSchema, parseWorkHandoffResult, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import type { GraphTransactionSql } from '../run-graph/connection.js'
 import { repeatConflict, sameRepeatValue, type RepeatScope } from './repeatResolution.js'
 import { parseWorkResultForInput } from './workHandoffResult.js'
@@ -25,12 +26,12 @@ export async function readWorkResultContextLocked(context: { sql: GraphTransacti
   return { parentRequest: request ? { requestId: request.requestId, requesterNodeId: request.requesterNodeId } : null }
 }
 
-export async function parseWorkResultLocked(context: { sql: GraphTransactionSql; scope: RepeatScope },
+export async function parseWorkResultLocked(context: { sql: GraphTransactionSql; scope: RepeatScope; version: WorkflowVersionV3 },
   execution: HarnessExecution, activationId: string) {
-  const result = parseWorkHandoffResult(execution.result)
+  const result = parseWorkHandoffResult(execution.result, workflowResultContext(context.version, execution))
   if (result.routing.kind !== 'return') return result
   const executionContext = await readWorkResultContextLocked(context, activationId, execution.input)
-  return parseWorkResultForInput(execution.result!, execution.input, executionContext)
+  return parseWorkResultForInput(execution.result!, execution.input, executionContext, workflowResultContext(context.version, execution))
 }
 
 /** Recheck the resolved request against persisted activation ancestry. */

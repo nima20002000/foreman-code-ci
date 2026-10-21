@@ -1,3 +1,5 @@
+import { createMemoryBoardService } from './modules/memory-boards/production.js'
+import { memoryBoardAuthority } from './modules/collaboration/memoryBoardAuthority.js'
 import { requireRsyncTransferOwner } from './modules/byte-transfer/rsyncTransferOwner.js'
 import { MANAGED_MCP_NAMESPACE } from '@foreman-code/contracts/managed-mcp-channel'
 import { DeviceManagedMcp } from './modules/harnesses/deviceManagedMcp.js'
@@ -364,6 +366,7 @@ interface ProductionComposition {
   artifactResultSource: ReturnType<typeof createProductionWorkflowArtifactResultSource> | undefined
   artifactOutputsGate: ReturnType<typeof createWorkflowArtifactOutputsGate> | undefined
   localWorkflowArtifacts: LocalWorkflowArtifacts | undefined
+  memoryBoards: ReturnType<typeof createMemoryBoardService>
   workflowRuntime: ReturnType<typeof createWorkflowRepositoryServices>
   repository: PostgresInteractionRepository
   budgets: PostgresApprovalBudgetRepository
@@ -839,6 +842,7 @@ function configureProviderAccounts(composition: ProductionComposition) {
   composition.accountConfigurations = new ProviderAccountConfigurationService(providerAccounts)
   const workflowCapture = composition.workflowCapture = createWorkflowNativeCaptureChannel()
   composition.reviewCapture = createReviewNativeCaptureChannel()
+  composition.memoryBoards = createMemoryBoardService(database.pool, memoryBoardAuthority)
   composition.workflowRuntime = createWorkflowRepositoryServices(workflowCapture.verify, (sql, owner, capture) => {
     if (!composition.remoteWorkflow) throw new DomainError('REMOTE_WORKFLOW_UNAVAILABLE', 'The actual original native physical composition is unavailable.', 503)
     return composition.remoteWorkflow.assertPhysical(sql, owner, capture)
@@ -878,6 +882,7 @@ function configureWorkflowRepositories(composition: ProductionComposition) {
     workflowRuntime,
   } = composition
   const workflowServices: RepeatRepositoryServices = { ...workflowRuntime.services,
+    memoryBoards: composition.memoryBoards,
     async reconcileWorkflowArtifacts(owner, run, execution, signal) {
       signal.throwIfAborted()
       const snapshot = await runs.getRepeatSnapshot(run.id, owner)
@@ -2110,6 +2115,7 @@ function configureOperatorServices(composition: ProductionComposition) {
     }),
     operatorChat: chat,
     agentChat,
+    memoryBoards: composition.memoryBoards,
     workspaces: new WorkspaceManagementService(database.pool, commands, locations, foundationSettings, projectRoot),
     locations,
     workflows: new WorkflowManagementService(database.pool, commands, {

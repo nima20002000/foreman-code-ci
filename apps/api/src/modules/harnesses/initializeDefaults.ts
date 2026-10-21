@@ -39,10 +39,11 @@ export async function initializeNativeDefaults(input: {
     required.add(harness)
   }
   const priorAgents = asRecord(prior.get('agent-defaults-v1'))
-  for (const role of ['orchestrator', 'coder', 'operator'] as const) {
+  for (const role of ['master', 'orchestrator', 'coder', 'operator'] as const) {
+    if (role === 'master' && !priorAgents.master) continue
     const configuration = asRecord(asRecord(priorAgents[role]).harness)
     if (configuration.harness === 'opencode') continue
-    if (missingModel(configuration)) required.add((configuration.harness ?? DEFAULT_AGENT_DEFAULTS[role].harness.harness) as AgentHarness)
+    if (missingModel(configuration)) required.add((configuration.harness ?? (DEFAULT_AGENT_DEFAULTS[role] ?? DEFAULT_AGENT_DEFAULTS.orchestrator).harness.harness) as AgentHarness)
   }
   const pending = [...required]
   const available = new Map<AgentHarness, HarnessOptions>()
@@ -116,10 +117,11 @@ export async function initializeNativeDefaults(input: {
     const rawAgents = rows.get('agent-defaults-v1')?.record
     const agents = { ...DEFAULT_AGENT_DEFAULTS, ...asRecord(rawAgents) }
     let changed = false
-    for (const role of ['orchestrator', 'coder', 'operator'] as const) {
+    for (const role of ['master', 'orchestrator', 'coder', 'operator'] as const) {
+      if (role === 'master' && !asRecord(rawAgents).master) continue
       const saved = asRecord(asRecord(rawAgents)[role]), configuration = asRecord(saved.harness)
       if (rawAgents !== undefined && !missingModel(configuration)) continue
-      const template = agents[role]
+      const template = agents[role] ?? DEFAULT_AGENT_DEFAULTS.orchestrator
       const harness = (configuration.harness ?? template.harness.harness) as AgentHarness
       const model = defaults[harness]
       if (!model || !available.has(harness) || unavailable.has(harness)) continue

@@ -1,3 +1,4 @@
+import { workflowResultContext } from './resultContext.js'
 import { setTimeout as delay } from 'node:timers/promises'
 import { parseWorkHandoffResult, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../errors.js'
@@ -53,7 +54,7 @@ export function workHandoffNodeAction(input: {
         execution = terminal.execution
         continue
       }
-      const result = parseWorkHandoffResult(terminal.execution.result)
+      const result = parseWorkHandoffResult(terminal.execution.result, workflowResultContext(input.version, terminal.execution))
       if (result.routing.kind === 'return') {
         const returned = await input.store.returnWork(terminal.execution.id)
         return returned.destinations ?? []

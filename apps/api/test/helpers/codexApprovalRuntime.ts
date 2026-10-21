@@ -36,6 +36,7 @@ import type { RepeatRepositoryServices } from '../../src/modules/runs/repeatRepo
 export async function codexApprovalRuntime(handler: 'user' | 'orchestrator' = 'user',
   options: ApprovalProviderOptions & {
     fixture?: ReturnType<typeof makeCurrentWorkflowFixture>
+    reviewerRole?: 'orchestrator' | 'master'
     approvalPolicy?: 'never'
     skills?: ResolvedSkill[]
     database?: Awaited<ReturnType<typeof agent3Database>>
@@ -51,7 +52,7 @@ export async function codexApprovalRuntime(handler: 'user' | 'orchestrator' = 'u
     const entry = f.version.definition.nodes.find((node) => node.id === f.version.entryNodeId)!
     const approval = handler === 'user' ? { handler } : { handler, designatedOrchestratorAgentId: entry.agentId }
     f.configurations = f.configurations.map(c => AgentConfigurationVersionSchema.parse({ ...c,
-      productRole: handler === 'orchestrator' && c.agentId === entry.agentId ? 'orchestrator' : 'coder',
+      productRole: approvalRole(c),
       harness: {
         ...DEFAULT_HARNESS_DEFAULTS.codex, model: 'test-model', reasoningEffort: 'low',
         sandbox: options.sandbox ?? 'read-only', serviceTier: 'standard',
@@ -63,6 +64,12 @@ export async function codexApprovalRuntime(handler: 'user' | 'orchestrator' = 'u
         },
       },
     }))
+    function approvalRole(configuration: (typeof f.configurations)[number]) {
+      if (handler === 'orchestrator' && configuration.agentId === entry.agentId) {
+        return options.reviewerRole ?? 'orchestrator'
+      }
+      return options.reviewerRole === 'master' ? configuration.productRole : 'coder'
+    }
     f.version.approval = approval
     f.version.definition.approval = approval
     if (handler === 'orchestrator') for (const node of f.version.definition.nodes) {
@@ -91,7 +98,10 @@ export async function codexApprovalRuntime(handler: 'user' | 'orchestrator' = 'u
       const managers = new ExecutionScopedNativeSessionManagerResolver((context) => {
         let provider = providers.get(context.executionId)
         if (!provider) {
-          provider = new CodexApprovalProvider(context.executionId, context.agentId === entry.agentId, options)
+          const configuration = f.configurations.find(candidate => candidate.agentId === context.agentId)!
+          const completesWorkflowTurn = context.agentId === entry.agentId
+            || options.reviewerRole === 'master' && configuration.productRole === 'orchestrator'
+          provider = new CodexApprovalProvider(context.executionId, completesWorkflowTurn, options)
           for (const previous of providers.values()) {
             for (const [id, thread] of previous.threads) provider.threads.set(id, thread)
           }

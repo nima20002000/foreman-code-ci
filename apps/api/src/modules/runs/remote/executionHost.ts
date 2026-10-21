@@ -490,7 +490,8 @@ export class RemoteExecutionHost {
     return resident
   }
   private async authorizeReview(resident: Resident, review: RemoteReviewerRequest) {
-    if (!this.ports.authorizeReview || resident.request.configuration.productRole !== 'orchestrator'
+    if (!this.ports.authorizeReview
+      || (resident.request.configuration.productRole !== 'master' && resident.request.configuration.productRole !== 'orchestrator')
       || !isDeepStrictEqual(resident.session, review.session)
       || resident.request.configuration.agentId !== review.reviewerAgentId) throw new Error('Reviewer session binding mismatch')
     await this.ports.authorizeReview(resident.intent, resident.placement, review)

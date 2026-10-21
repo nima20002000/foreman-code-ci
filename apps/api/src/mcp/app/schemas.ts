@@ -3,6 +3,7 @@ import {
   AppInteractionGetOutputSchema,
   AppInteractionListOutputSchema,
   AppInteractionRespondOutputSchema,
+  AgentProductRoleSchema,
   GraphqlAgentToolSchema,
   RespondToInteractionRequestSchema,
   IdSchema,
@@ -17,7 +18,7 @@ export const AppContextSchema = z.object({
     agentId: IdSchema,
     expiresAt: z.iso.datetime(),
   }).strict(),
-  role: z.enum(['orchestrator', 'coder']),
+  role: AgentProductRoleSchema,
   /** Foreman Code MCP tools enabled for this Agent's configuration and workflow node. */
   tools: z.array(GraphqlAgentToolSchema),
   scope: z.object({
