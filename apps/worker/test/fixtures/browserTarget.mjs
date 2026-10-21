@@ -1,11 +1,5 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { configureBrowserSandbox } from './browserSandbox.mjs';
-
-export async function prepareNativeBrowserBuild(repository) {
-  await configureBrowserSandbox();
-  return nativeWorkerTarget(repository);
-}
 
 export async function browserHostTarget() {
   const release = await readFile('/etc/os-release', 'utf8');

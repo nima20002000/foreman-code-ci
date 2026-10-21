@@ -1,4 +1,4 @@
-import { prepareNativeBrowserBuild } from './fixtures/browserTarget.mjs';
+import { nativeWorkerTarget } from './fixtures/browserTarget.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -17,7 +17,7 @@ test('packaged conversations use the existing authenticated carrier and do not a
     const directory = await mkdtemp(join(persistentFixtureRoot, 'worker-conversations-'));
     t.after(() => rm(directory, { recursive: true, force: true }));
     artifact = join(directory, 'release');
-    const { file: targetFile } = await prepareNativeBrowserBuild(repository);
+    const { file: targetFile } = await nativeWorkerTarget(repository);
     execFileSync(process.execPath, ['scripts/build-worker-artifact.mjs',
       targetFile, artifact],
     { cwd: repository, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });

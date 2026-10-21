@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { packBrowserRuntime, assembleBrowserRuntime } from '../../../scripts/browser-runtime-install.mjs';
 import { stageBrowserRuntime, activateBrowserRuntime, rollbackBrowserRuntime, readInstalledBrowserRuntime,
-  checkBrowserRuntimeReadiness, validateBrowserRuntimeManifest } from '../src/browserRuntimeInstall.mjs';
+  checkBrowserRuntimeReadiness, validateBrowserRuntimeManifest, copyBuiltBrowserRuntime } from '../src/browserRuntimeInstall.mjs';
 import { installVersion, readInstalledRelease } from '../src/installation.mjs';
 import { superviseWorkerUpdate } from '../src/updateSupervisor.mjs';
 import { runReleaseCutover, waitForProductionBrowserDrain, stageProductionBrowserRuntime,
@@ -112,6 +112,23 @@ test('a verified browser unit accepts a compatible Node patch without accepting 
   for (const incompatible of [{ ...target, arch: 'arm64' }, { ...target, libc: 'glibc-2.35' }, { ...target, node: 'v20.0.0' }]) {
     assert.throws(() => validateBrowserRuntimeManifest(packed.manifest, incompatible), /target mismatch/);
   }
+});
+
+test('consumes runner artifacts by source and native target and rejects corrupt transferred chunks', async t => {
+  const directory = await fixture(t), packed = await artifact(directory, 'built');
+  const commit = 'a'.repeat(40);
+  await writeFile(join(packed.output, 'index.json'), JSON.stringify({ format: 1, sourceCommit: commit,
+    artifacts: [{ directory: '.', target, descriptorSha256: packed.descriptorSha256 }] }));
+  const output = join(directory, 'consumed');
+  const copied = await copyBuiltBrowserRuntime({ directory: packed.output, output, target: { ...target, node: 'v22.23.3' }, commit });
+  assert.equal(copied.descriptorSha256, packed.descriptorSha256);
+  assert.equal((await stage(join(directory, 'installed'), { output, ...copied })).runtimeVersion, '1.0.0');
+  await assert.rejects(copyBuiltBrowserRuntime({ directory: packed.output, output: join(directory, 'wrong-source'),
+    target, commit: 'b'.repeat(40) }), /source mismatch/);
+  await assert.rejects(copyBuiltBrowserRuntime({ directory: packed.output, output: join(directory, 'wrong-target'),
+    target: { ...target, osRelease: '24.04' }, commit }), /matching target runner/);
+  await writeFile(join(packed.output, packed.descriptor.chunks[0].path), 'corrupt');
+  await assert.rejects(copyBuiltBrowserRuntime({ directory: packed.output, output: join(directory, 'corrupt'), target, commit }), /checksum mismatch/);
 });
 
 test('staging stays inactive, activation drains before selection, and rollback restores profiles before selecting older Chromium', async t => {

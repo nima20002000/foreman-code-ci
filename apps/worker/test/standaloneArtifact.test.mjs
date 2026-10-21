@@ -1,4 +1,4 @@
-import { prepareNativeBrowserBuild } from './fixtures/browserTarget.mjs';
+import { nativeWorkerTarget } from './fixtures/browserTarget.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -12,7 +12,7 @@ test('the built standalone artifact meets manifest bounds and loads its installe
   t.after(() => rm(directory, { recursive: true, force: true }));
   const root = new URL('../../../', import.meta.url).pathname;
   const output = join(directory, 'release');
-  const { file: targetFile } = await prepareNativeBrowserBuild(root);
+  const { file: targetFile } = await nativeWorkerTarget(root);
   execFileSync(process.execPath, ['scripts/build-worker-artifact.mjs',
     targetFile, output],
   { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });

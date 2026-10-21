@@ -1,4 +1,4 @@
-import { prepareNativeBrowserBuild } from './fixtures/browserTarget.mjs';
+import { nativeWorkerTarget } from './fixtures/browserTarget.mjs';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -20,7 +20,7 @@ const containers = await mkdtemp(join(persistentFixtureRoot, 'qhc-'));
 const runtimeParent = join(homedir(), '.cache', 'foreman-tmp');
 await mkdir(runtimeParent, { recursive: true, mode: 0o700 });
 const runtime = await mkdtemp(join(runtimeParent, 'q-'));
-const native = await prepareNativeBrowserBuild(repository);
+const native = await nativeWorkerTarget(repository);
 const storage = ['--root', join(containers, 'storage'), '--runroot', runtime];
 const podman = (args, timeout = 60_000) => spawnSync('podman', [...storage, ...args], {
   encoding: 'utf8', timeout,

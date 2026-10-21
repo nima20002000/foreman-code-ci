@@ -1,4 +1,4 @@
-import { prepareNativeBrowserBuild } from './fixtures/browserTarget.mjs';
+import { nativeWorkerTarget } from './fixtures/browserTarget.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -19,7 +19,7 @@ async function fixture(t) {
   const directory = join(parent, 'artifacts-link');
   await symlink('artifacts', directory);
   const root = join(directory, 'repository');
-  const { file: targetFile } = await prepareNativeBrowserBuild(repository);
+  const { file: targetFile } = await nativeWorkerTarget(repository);
   const environment = {
     ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
   };

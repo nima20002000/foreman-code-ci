@@ -1,4 +1,4 @@
-import { browserHostTarget, matchesBrowserTarget, prepareNativeBrowserBuild } from './fixtures/browserTarget.mjs';
+import { browserHostTarget, matchesBrowserTarget, nativeWorkerTarget } from './fixtures/browserTarget.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -10,7 +10,7 @@ import { persistentFixtureRoot } from './fixtureStorage.mjs';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
 
-const native = await prepareNativeBrowserBuild(repository);
+const native = await nativeWorkerTarget(repository);
 const host = await browserHostTarget();
 const candidates = [
   { runtime: native.target.node.slice(1), target: native.file },

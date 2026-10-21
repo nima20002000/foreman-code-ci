@@ -1,4 +1,4 @@
-import { prepareNativeBrowserBuild } from './fixtures/browserTarget.mjs';
+import { nativeWorkerTarget } from './fixtures/browserTarget.mjs';
 import test, { before, after } from 'node:test';
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
@@ -20,7 +20,7 @@ before(async () => {
   const repository = fileURLToPath(new URL('../../../', import.meta.url));
   artifactDirectory = await mkdtemp(join(persistentFixtureRoot, 'managed-worker-artifact-'));
   artifact = join(artifactDirectory, 'release');
-  const { file: targetFile } = await prepareNativeBrowserBuild(repository);
+  const { file: targetFile } = await nativeWorkerTarget(repository);
   execFileSync(process.execPath, ['scripts/build-worker-artifact.mjs',
     targetFile, artifact],
   { cwd: repository, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
