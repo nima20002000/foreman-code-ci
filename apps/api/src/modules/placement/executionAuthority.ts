@@ -21,6 +21,7 @@ import type { AgentPlacementProducer } from './agentProducer.js'
 import { DomainError, databaseReadFailure } from '../errors.js'
 import { assertRemoteReviewAssignment, canCloseRetainedRemoteReviewer, remoteReviewerPolicy } from './remoteReviewerAuthority.js'
 import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-execution'
+import { readWorkflowControlDispositionLocked } from '../collaboration/workflowControlDisposition.js'
 
 const denied = (): never => { throw new DomainError('REMOTE_AUTHORITY_DENIED', 'Exact original execution authority is unavailable or revoked.', 403) }
 /** Read-only admission fence. This NEVER issues an entry capability, command,
@@ -158,8 +159,14 @@ export function createExecutionAuthorityExtension(pool: pg.Pool,
       }
       const policy = input.action === 'retain-reviewer' || input.action === 'review'
         ? await remoteReviewerPolicy(sql, input.intent) : undefined
-      const reviewer = policy && (policy.execution.state !== 'completed'
+      const disposition = policy && await readWorkflowControlDispositionLocked(sql,
+        input.intent.runId, input.intent.executionId)
+      const reviewer = policy && disposition?.kind === 'ordinary' && (policy.execution.state !== 'completed'
         || policy.execution.result?.outcome === 'succeeded') ? policy : undefined
+      if (reviewer) beforeGraphCommit(sql, async () => {
+        const current = await readWorkflowControlDispositionLocked(sql, input.intent.runId, input.intent.executionId)
+        if (current.kind !== 'ordinary') denied()
+      })
       return { payload: ExecutionAuthorityResultSchema.parse({ version: 1, action: input.action,
         operationId: input.intent.operationId, attemptId: input.intent.attemptId, bindingHash: input.intent.bindingHash,
         owner: input.intent.owner, ...authority,

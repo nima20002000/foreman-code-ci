@@ -34,7 +34,8 @@ export async function resolveWorkflowChatTarget(sql: GraphSqlClient, principal: 
   raw: unknown): Promise<WorkflowExecutionChatResolution> {
   const input = WorkflowExecutionChatSelectionSchema.parse(raw), before = selectionCursor(input)
   if (input.runId) {
-    requireAuthorization(principal, 'agent_chat:read', input)
+    requireAuthorization(principal, 'agent_chat:read', { workspaceId: input.workspaceId,
+      workflowId: input.workflowId, ...(input.runId ? { runId: input.runId } : {}) })
     const run = (await sql.query<WorkflowChatRunRow>(`select id,workspace_id,workflow_id,workflow_version_id,execution_state,
       stop_requested_at is not null as stopped from runs where id=$1 and workspace_id=$2 and workflow_id=$3`,
     [input.runId, input.workspaceId, input.workflowId])).rows[0]
@@ -44,7 +45,7 @@ export async function resolveWorkflowChatTarget(sql: GraphSqlClient, principal: 
     }
     return resolveRunNode(sql, input, run, before)
   }
-  const unrestricted = isAuthorized(principal, 'agent_chat:read', input)
+  const unrestricted = isAuthorized(principal, 'agent_chat:read', { workspaceId: input.workspaceId, workflowId: input.workflowId })
   const authorizedRunIds = unrestricted ? null : [...new Set(principal.grants.flatMap(grant => grant.scope.runIds ?? []))]
     .filter(runId => isAuthorized(principal, 'agent_chat:read', { ...input, runId }))
   if (authorizedRunIds && !authorizedRunIds.length) {
@@ -73,7 +74,8 @@ export async function resolveWorkflowChatTarget(sql: GraphSqlClient, principal: 
 
 async function outsideRun(sql: GraphSqlClient, principal: Principal,
   input: WorkflowExecutionChatSelection): Promise<WorkflowExecutionChatResolution> {
-  requireAuthorization(principal, 'agent_chat:read', input)
+  requireAuthorization(principal, 'agent_chat:read', { workspaceId: input.workspaceId,
+      workflowId: input.workflowId, ...(input.runId ? { runId: input.runId } : {}) })
   const workflow = (await sql.query<{ current_version_id: string | null }>(
     'select current_version_id from workflows where id=$1 and workspace_id=$2', [input.workflowId, input.workspaceId])).rows[0]
   const id = input.workflowVersionId ?? workflow?.current_version_id

@@ -130,7 +130,7 @@ export async function captureCoordinatorConsultationNativeLocked(sql:GraphTransa
 /** Stop only this reply. A queued successor is reserved before the interrupt and
  * remains distinct from the graph continuation, even if children finish now. */
 export async function stopCoordinatorConsultationLocked(context: WorkflowChatLockedTarget, input: {
-  nextCommandId?: string; now: string
+  nextCommandId?: string | undefined; now: string
 }): Promise<CoordinatorConsultationBinding> {
   if (context.target.kind !== 'workflow_coordinator') throw new DomainError('COORDINATOR_UNAVAILABLE', 'Select a coordinator reply.', 409)
   const active = await readCoordinatorConsultationLocked(context.sql, context.run.id, context.target.waitingActivationId)

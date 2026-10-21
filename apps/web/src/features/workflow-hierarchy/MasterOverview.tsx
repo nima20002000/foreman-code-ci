@@ -16,9 +16,9 @@ type Actions = { onChat(nodeId: string, execution?: ExecutionRef): void; onRepor
   onCard?(cardId: string, report: HierarchyReport): void
   onChooseMaster?(): void; onCurrentWorkflow?(): void; onTeam?(nodeId?: string): void }
 
-function Branch({ scope, parent, members, actions, visible }: { scope: WorkflowHierarchyReadInput; parent: AgentIdentity;
-  members: { agent: AgentIdentity; children: AgentIdentity[] }[]; actions: Actions; visible: boolean }) {
-  const reports = useHierarchyReports(scope, parent.workflowNodeId, visible && !!scope.runId)
+function Branch({ scope, parent, members, actions }: { scope: WorkflowHierarchyReadInput; parent: AgentIdentity;
+  members: { agent: AgentIdentity; children: AgentIdentity[] }[]; actions: Actions }) {
+  const reports = useHierarchyReports(scope, parent.workflowNodeId, !!scope.runId)
   const denied = useProtectedAccessError(reports)
   const [expanded, setExpanded] = useState<string[]>([])
   const [selectedReport, setSelectedReport] = useState<HierarchyReport>()
@@ -54,31 +54,30 @@ function Branch({ scope, parent, members, actions, visible }: { scope: WorkflowH
               ? current.filter(id => id !== agent.workflowNodeId) : [...current, agent.workflowNodeId])}>
               {open ? 'Hide branch' : `View branch · ${children.length}`}</Button> : null}
           </div>
-          {open ? <Branch scope={scope} parent={agent} members={children.map(child => ({ agent: child, children: [] }))}
-            actions={actions} visible={visible} /> : null}
+          {open ? <Branch scope={scope} parent={agent} members={children.map(child => ({ agent: child, children: [] }))} actions={actions} /> : null}
         </li>
       })}
     </ul>
     {reports.hasNextPage ? <Button size="sm" disabled={reports.isFetchingNextPage} onClick={() => void reports.fetchNextPage()}>Load more teams</Button> : null}
-    <ReportDetail report={visible && selectedReport?.execution.runId === scope.runId ? selectedReport : undefined}
+    <ReportDetail report={selectedReport?.execution.runId === scope.runId ? selectedReport : undefined}
       close={() => setSelectedReport(undefined)} showExecution={actions.onReport} showCard={actions.onCard} />
     {historyAgent && scope.runId ? <HierarchyReportHistory key={`${scope.runId}:${historyAgent.workflowNodeId}`}
-      scope={scope} agent={historyAgent} visible={visible} initialReport={latest.get(historyAgent.workflowNodeId)} close={() => setHistoryAgent(undefined)}
+      scope={scope} agent={historyAgent} initialReport={latest.get(historyAgent.workflowNodeId)} close={() => setHistoryAgent(undefined)}
       showExecution={actions.onReport} showCard={actions.onCard} /> : null}
   </section>
 }
 
-export function MasterOverview({ workspaceId, workflowId, runId, teamNodeId, visible = true, ...actions }: {
-  workspaceId: string; workflowId: string; runId?: string | undefined; teamNodeId?: string; visible?: boolean
+export function MasterOverview({ workspaceId, workflowId, runId, teamNodeId, ...actions }: {
+  workspaceId: string; workflowId: string; runId?: string | undefined; teamNodeId?: string
 } & Actions) {
   const scope: WorkflowHierarchyReadInput = { workspaceId, workflowId, ...(runId ? { runId } : {}) }
-  const hierarchy = useHierarchy(scope, { enabled: visible }), cache = useQueryClient()
+  const hierarchy = useHierarchy(scope), cache = useQueryClient()
   const denied = useProtectedAccessError(hierarchy)
   const [connected, setConnected] = useState(true)
   const [subscription, retrySubscription] = useState(0)
   const masterId = hierarchy.data?.hierarchy?.masterNodeId
   useEffect(() => {
-    if (!visible || !runId || !masterId || denied) return
+    if (!runId || !masterId || denied) return
     const refresh = () => {
       void cache.invalidateQueries({ queryKey: hierarchyKey({ workspaceId, workflowId, runId }), exact: true })
       void refreshHierarchyReports(cache, { workspaceId, workflowId, runId })
@@ -86,7 +85,7 @@ export function MasterOverview({ workspaceId, workflowId, runId, teamNodeId, vis
     return subscribeHierarchy({ workspaceId, workflowId, runId }, {
       changed: refresh, unavailable: refresh, connection: setConnected,
     })
-  }, [workspaceId, workflowId, runId, masterId, cache, denied, subscription, visible])
+  }, [workspaceId, workflowId, runId, masterId, cache, denied, subscription])
   if (denied) return <Alert tone="warning" title="Overview is no longer available with your access.">
     <Button onClick={() => void hierarchy.refetch()}>Retry</Button></Alert>
   if (hierarchy.isLoading) return <p role="status">Loading Overview…</p>
@@ -122,6 +121,6 @@ export function MasterOverview({ workspaceId, workflowId, runId, teamNodeId, vis
       <Button size="sm" onClick={() => actions.onTeam?.()}>All teams</Button></section> : null}
     {!teamNodeId || team ? <Branch key={JSON.stringify([runId, team?.workflowNodeId ?? master.workflowNodeId])} scope={scope} parent={team ?? master}
       members={childrenOf(team?.workflowNodeId ?? master.workflowNodeId).map(agent =>
-        ({ agent, children: childrenOf(agent.workflowNodeId) }))} actions={actions} visible={visible} /> : null}
+        ({ agent, children: childrenOf(agent.workflowNodeId) }))} actions={actions} /> : null}
   </section>
 }

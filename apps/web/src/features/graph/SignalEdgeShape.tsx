@@ -42,9 +42,7 @@ export function SignalEdgeShape({ id, curve, kind = 'execution', signal, pulses,
     {reportingParent ? <foreignObject x={curve.mid.x - 80} y={curve.mid.y - 64} width={160} height={32}
       className="hierarchy-edge-label-object">
       <div className="hierarchy-edge-label nodrag nopan" onClick={event => event.stopPropagation()}>
-        <span>Orchestrates</span><InfoHint label={`Reporting to ${reportingParent}`}>
-          {`Tasks go down; reports return to ${reportingParent}.`}
-        </InfoHint>
+        <span>Orchestrates</span><InfoHint label={`Reporting to ${reportingParent}`}>Tasks go down; reports return to {reportingParent}.</InfoHint>
       </div>
     </foreignObject> : null}
   </g>

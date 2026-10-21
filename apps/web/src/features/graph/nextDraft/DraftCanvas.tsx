@@ -246,10 +246,11 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
   }
   // Chat windows live in local interaction state, one list per Board view (this draft here, each Run in its own canvas).
   const chatScope = `draft:${draftKey}`
+  const selectSidePanel = board?.selectSidePanel
   const openChat = useCallback((nodeId: string) => {
-    if (board?.selectSidePanel) board.selectSidePanel({ kind: 'agent', nodeId, tab: 'chat' })
+    if (selectSidePanel) selectSidePanel({ kind: 'agent', nodeId, tab: 'chat' })
     else useChatWindowsStore.getState().openWindow(chatScope, nodeId)
-  }, [board?.selectSidePanel, chatScope])
+  }, [selectSidePanel, chatScope])
   // Other code asks for a node's chat through the single open-panel state; chat itself opens as a window.
   useEffect(() => { if (open?.panel === 'chat') { openChat(open.nodeId); setOpen(undefined) } }, [open, openChat, setOpen])
   const chatWindow = (nodeId: string) => {

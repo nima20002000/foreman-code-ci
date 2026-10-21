@@ -17,11 +17,11 @@ import { IMMUTABLE_WORKFLOW_VERSION_COLUMNS, readImmutableWorkflowVersion, readP
 import { updateWorkflowHierarchy } from './update.js'
 import { readHierarchyCoordinationLocked } from '../runs/hierarchyCoordinationRead.js'
 
-type Scope = { workspaceId: string; workflowId: string; runId?: string }
+type Scope = { workspaceId: string; workflowId: string; runId?: string | undefined }
 function authorize(principal: ManagementPrincipal, scope: Scope) {
   requireAuthorization(principal, 'workflows:read', { workspaceId: scope.workspaceId, workflowId: scope.workflowId })
   requireAuthorization(principal, 'graph:read', { workspaceId: scope.workspaceId, workflowId: scope.workflowId })
-  if (scope.runId) requireAuthorization(principal, 'runs:read', scope)
+  if (scope.runId) requireAuthorization(principal, 'runs:read', { ...scope, runId: scope.runId })
 }
 const CursorSchema = z.object({ workspaceId: z.string(), workflowId: z.string(), runId: z.string(),
   parentNodeId: z.string().nullable(), workflowNodeId: z.string().nullable(),

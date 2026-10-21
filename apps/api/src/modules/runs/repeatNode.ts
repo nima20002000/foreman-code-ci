@@ -17,7 +17,8 @@ import {
 export type RepeatAdmission = { kind: 'waiting' } | { kind: 'resolved'; resolution: RepeatResolution }
   | { kind: 'admitted'; execution: HarnessExecution; reused: boolean }
 export type RepeatAcceptance = { kind: 'accepted' | 'resolved'; resolution: RepeatResolution }
-  | { kind: 'retry' | 'continued'; execution: HarnessExecution }
+  | { kind: 'retry'; execution: HarnessExecution }
+  | { kind: 'continued'; execution: HarnessExecution }
 export interface RepeatNodeStore {
   admit(ref: RepeatNodeRef, candidate: () => HarnessExecution): Promise<RepeatAdmission>
   acceptTerminal(executionId: string, candidate: (attempt: number) => HarnessExecution): Promise<RepeatAcceptance>

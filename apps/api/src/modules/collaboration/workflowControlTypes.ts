@@ -34,7 +34,7 @@ export interface WorkflowChatLockedTarget {
   agent: AgentIdentity
   state: EngineChatReadback['state']
   execution?: HarnessExecution
-  work?: LogicalWorkRef
+  work?: LogicalWorkRef | undefined
   native?: WorkflowChatNativeTarget
   waiting?: {
     delegationGroupId: string

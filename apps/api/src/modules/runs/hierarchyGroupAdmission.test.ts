@@ -70,7 +70,7 @@ describe('hierarchy delegation preparation', () => {
     const f = fixture()
     const query = vi.fn<GraphTransactionSql['query']>()
       .mockResolvedValue({ rows: [{ total: '4' }], rowCount: 1, command: 'SELECT', oid: 0, fields: [] })
-    const sql: GraphTransactionSql = { transaction: true, query }
+    const sql: GraphTransactionSql = { transaction: true, query: query as GraphTransactionSql['query'] }
     expect(await hasWorkflowExecutionCapacityLocked(sql, f.saved.run.id, f.version, null, 4)).toBe(true)
     expect(await hasWorkflowExecutionCapacityLocked(sql, f.saved.run.id, f.version, null, 5)).toBe(false)
   })

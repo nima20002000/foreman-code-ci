@@ -15,7 +15,7 @@ type AppFixture = Awaited<ReturnType<typeof currentOperatorIntegration>>
 type SavedWorkflow = ReturnType<typeof CurrentWorkflowSaveResultSchema.parse>['value']
 async function createHierarchy(f: AppFixture, includeHierarchy = true) {
   const workspaceId = f.f.scope.workspaceId
-  const agents = []
+  const agents: Array<ReturnType<typeof AgentMutationResultSchema.parse>['value']> = []
   for (const productRole of [includeHierarchy ? 'master' : 'orchestrator', 'orchestrator', 'orchestrator', 'coder'] as const) {
     const response = await f.app.inject({ method: 'POST', url: `/api/management/workspaces/${workspaceId}/agents`,
       headers: graphHeaders(f.writer.token), payload: { workspaceId, commandId: randomUUID(), agentId: `agent-${randomUUID()}`,
@@ -75,7 +75,7 @@ function stageInput(saved: SavedWorkflow, graph: WorkflowDefinitionV3,
 }
 async function editCommand(f: AppFixture, base: string, input: unknown, via: 'http' | 'mcp') {
   if (via === 'http') {
-    const reply = await f.app.inject({ method: 'POST', url: `${base}/definition/edits`, headers: graphHeaders(f.writer.token), payload: input })
+    const reply = await f.app.inject({ method: 'POST', url: `${base}/definition/edits`, headers: graphHeaders(f.writer.token), payload: JSON.stringify(input) })
     expect(reply.statusCode, reply.body).toBe(200)
     return CurrentEditReadResultSchema.parse(reply.json())
   }
@@ -116,7 +116,7 @@ describe.skipIf(!postgresEnabled)('Master hierarchy authenticated HTTP/MCP parit
         member.workflowNodeId === 'node-3' ? { ...member, parentNodeId: 'node-2' } : member) }
       const input = { workspaceId: t.workspaceId, workflowId: t.workflowId,
         expectedRevision: t.saved.value.revision, hierarchy }
-      const update = await f.app.inject({ method: 'PUT', url: `${t.base}/hierarchy`, headers: graphHeaders(f.writer.token), payload: input })
+      const update = await f.app.inject({ method: 'PUT', url: `${t.base}/hierarchy`, headers: graphHeaders(f.writer.token), payload: JSON.stringify(input) })
       expect(update.statusCode, update.body).toBe(200)
       const changed = WorkflowHierarchyUpdateResultSchema.parse(update.json())
       expect(changed.value.currentVersionId).not.toBe(t.saved.value.currentVersionId)

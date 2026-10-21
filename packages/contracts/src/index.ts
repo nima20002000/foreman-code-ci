@@ -1689,3 +1689,4 @@ export * from './workflowHierarchy.js';
 export * from './coordinationResult.js';
 export { collaborationContractFixtures } from './collaborationFixtures.js';
 export * from './workflowExecutionChat.js';
+export { canonicalJson } from './canonicalJson.js';

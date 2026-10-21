@@ -6,15 +6,15 @@ import { useHierarchyReportHistory } from './queries'
 import { ReportContents } from './ReportDetail'
 
 /** Mounted only after an explicit history action. No transcript is fetched here. */
-export function HierarchyReportHistory({ scope, agent, initialReport, close, showExecution, showCard, visible = true }: {
+export function HierarchyReportHistory({ scope, agent, initialReport, close, showExecution, showCard }: {
   scope: WorkflowHierarchyReadInput; agent: AgentIdentity; initialReport?: HierarchyReport; close(): void
-  showExecution(report: HierarchyReport): void; showCard?(cardId: string, report: HierarchyReport): void; visible?: boolean
+  showExecution(report: HierarchyReport): void; showCard?(cardId: string, report: HierarchyReport): void
 }) {
-  const history = useHierarchyReportHistory(scope, agent.workflowNodeId, { enabled: visible })
+  const history = useHierarchyReportHistory(scope, agent.workflowNodeId)
   const denied = useProtectedAccessError(history)
   const [selected, setSelected] = useState(initialReport)
   const reports = history.data?.pages.flatMap(page => page.items) ?? []
-  return <Dialog open={visible} onOpenChange={open => { if (!open) close() }} title={`${agent.displayName} · Report history`} closeLabel="Close report history">
+  return <Dialog open onOpenChange={open => { if (!open) close() }} title={`${agent.displayName} · Report history`} closeLabel="Close report history">
     {denied ? <Alert tone="warning" title="Report history is no longer available with your access." /> : <>
       <p>Selected Run · {scope.runId}. Each report keeps its original business request, execution and attempt.</p>
       {history.isLoading ? <p role="status">Loading report history…</p> : null}

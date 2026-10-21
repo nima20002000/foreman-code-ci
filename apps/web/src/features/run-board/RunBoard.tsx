@@ -55,11 +55,10 @@ function RunBoardContents({ selection, snapshot, inspection, activitySnapshot }:
   activitySnapshot: ReturnType<typeof useSelectedRunSnapshot>['activitySnapshot']
 }) {
   const board = useWorkflowBoard()
-  const visible = board?.canvasVisible !== false && !board?.memoryOpen
-  const hierarchy = useHierarchy({ workspaceId: snapshot.workspaceId, workflowId: snapshot.workflowId, runId: snapshot.runId },
-    { enabled: visible })
+  const hierarchy = useHierarchy({ workspaceId: snapshot.workspaceId, workflowId: snapshot.workflowId, runId: snapshot.runId })
   const denied = useProtectedAccessError(hierarchy)
   const saved = !denied && hierarchy.data?.workflowVersionId === snapshot.workflowVersionId ? hierarchy.data : undefined
+  const visible = board?.canvasVisible !== false && !board?.memoryOpen
   const panel = board?.sidePanel
   const inspect = visible && !!inspection.nodeId && (!board || panel?.kind === 'agent' && panel.tab === 'details')
   const details = inspect ? <RunNodeInspector key={`inspector:${selection.generation.id}:${inspection.nodeId}`}

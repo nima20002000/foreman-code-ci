@@ -990,7 +990,7 @@ export class ApprovalExecutionCoordinator {
       const start = { kind: 'workflow-consultation' as const, consultation: active.binding, request,
         correlationId: `consultation:${active.binding.consultationId}`,
         ...(active.nativeTurnId ? { nativeTurnId: active.nativeTurnId } : {}),
-        environment: consultation.credential.environment, instructionsDelivered: true }
+        environment: consultation.credential.environment, instructionsDelivered: true as const }
       if (current.session) {
         if (!active.nativeTarget) await current.manager.rebindApplicationAccess!(current.session, start, current.controller.signal)
       } else {
@@ -2475,7 +2475,7 @@ export class ApprovalExecutionCoordinator {
         return { manager: resolved.manager, session, signal: owned.controller.signal }
       }
       const environment = await this.prepareEnvironment(resolutionContext, resolved, {
-        signal, purpose: context.purpose, restartOwner: options.restartOwner,
+        signal, ...(context.purpose === 'reviewer' ? { purpose: context.purpose } : {}), restartOwner: options.restartOwner,
       })
       await this.validateContinuation?.(execution.id, signal)
       options.restartOwner?.assertOwned()
