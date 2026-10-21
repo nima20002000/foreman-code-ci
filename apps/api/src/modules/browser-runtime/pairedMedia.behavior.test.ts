@@ -51,9 +51,12 @@ it('keeps sibling views connected when frame bursts arrive during a delayed inst
     await entered.promise
     for (let sequence = 2; sequence <= 8; sequence++) send(frame('first', sequence))
     send(frame('sibling', 1))
-    const receivedBurst = once(remote, 'pong')
+    const receivedBurst = Promise.race([
+      once(remote, 'pong').then(() => 'received'),
+      once(remote, 'close').then(() => 'disconnected'),
+    ])
     remote.ping()
-    await receivedBurst
+    expect(await receivedBurst).toBe('received')
     blocked = false
     gate.resolve()
     await vi.waitFor(async () => expect((await sibling.read(0)).frame?.sequence).toBe(1))
