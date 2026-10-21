@@ -112,12 +112,17 @@ it('bounds cached browser configurations and reloads an evicted active owner', a
   const second = await savedBrowser()
   const details = await first.authority.details(first.subject)
   const authority = new BrowserAuthority(db.pool, () => 'computer', () => createBrowserProfileRepository(db.pool),
-    async () => true, { maxCachedBytes: Buffer.byteLength(canonicalJson(details)) + 128 })
+    async () => true, { maxCachedBytes: Buffer.byteLength(canonicalJson(details))
+      + Buffer.byteLength(canonicalJson(first.subject)) + 256 })
   await authority.details(first.subject)
-  await authority.details(second.subject)
   const queries = vi.spyOn(db.pool, 'query')
+  await authority.details(first.subject)
+  expect(queries).toHaveBeenCalledTimes(1)
+  queries.mockRestore()
+  await authority.details(second.subject)
+  const reloaded = vi.spyOn(db.pool, 'query')
   expect(await authority.details(first.subject)).toMatchObject({ active: true, subject: first.subject })
-  expect(queries.mock.calls.length).toBeGreaterThan(1)
+  expect(reloaded.mock.calls.length).toBeGreaterThan(1)
 })
 
 it('evicts a released browser owner only after its host confirms cleanup', async () => {
