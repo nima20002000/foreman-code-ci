@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { inspect } from 'node:util'
 import { ChatControlReceiptSchema, ChatDeliveryReceiptSchema } from '@foreman-code/contracts'
 import { WorkActivationInputSchema } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
@@ -17,7 +18,8 @@ describe.skipIf(!postgresEnabled)('workflow control recovery and parent settleme
     const f = await currentOperatorIntegration({ executionChat: true, workflowHierarchy: true,
       fixture: hierarchyRuntimeFixture(), approvalNodeIds: [], collaborationPorts: {},
       managerFactory: context => provider.connection(context) })
-    const drive = f.engine.start(f.f.run.id).catch(error => error)
+    let driveFailure: unknown
+    const drive = f.engine.start(f.f.run.id).catch(error => { driveFailure = error; return error })
     try {
       await provider.entered('builder')
       const target = await workflowChatTarget(f, 'builder')
@@ -27,7 +29,11 @@ describe.skipIf(!postgresEnabled)('workflow control recovery and parent settleme
       }))
       // The native offer is recorded as unknown until the observer proves physical closure.
       expect(stopped.state).toBe('unknown')
-      await expect.poll(async () => (await f.runs.get(f.f.run.id))?.executionState, { timeout: 15_000 }).toBe('completed')
+      await expect.poll(async () => {
+        expect(driveFailure, inspect(driveFailure, { depth: 8 })).toBeUndefined()
+        return { run: (await f.runs.get(f.f.run.id))?.executionState,
+          execution: (await f.runs.getExecution(target.execution.executionId))?.state }
+      }, { timeout: 15_000 }).toEqual({ run: 'completed', execution: 'completed' })
       expect(await drive).not.toBeInstanceOf(Error)
       expect(await f.runs.get(f.f.run.id)).toMatchObject({ outcome: 'succeeded' })
       expect(await f.runs.getExecution(target.execution.executionId)).toMatchObject({ state: 'completed', result: { outcome } })
