@@ -8,6 +8,7 @@ import {
 import type { GraphTransactionSql } from '../run-graph/connection.js'
 import type { Actor, BoardChange, BoardRow, Counts, MutationReceipt, CommandRead } from './types.js'
 import { missing, nodeKey, normalizeTitle, scopeKey, workKey } from './identity.js'
+import { saveDigestTargets } from './digestCards.js'
 
 interface StoredBoard { id: string; scope: unknown; revision: string; sequence: string; counts: Counts; next_note_rank: string }
 function boardRow(row: StoredBoard): BoardRow {
@@ -106,6 +107,7 @@ export async function saveCard(tx: GraphTransactionSql, row: BoardRow, before: M
     values($1,$2,$3,$4,$5,$6,$7,$8) on conflict(id) do update set normalized_title=excluded.normalized_title,
     status=excluded.status,completion_kind=excluded.completion_kind,updated_at=excluded.updated_at,record=excluded.record,blocker_source=excluded.blocker_source`,
   [card.id,card.boardId,normalizeTitle(card.title),card.status,card.completionKind,card.updatedAt,card,blockerSource])
+  await saveDigestTargets(tx,card)
   countCard(row.counts,before,-1); countCard(row.counts,card,1)
   const changes: NonNullable<BoardChange['changes']> = {}
   for (const key of ['title','body','status','completionKind','reason'] as const) {

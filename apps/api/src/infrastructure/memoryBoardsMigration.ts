@@ -18,6 +18,12 @@ create index memory_cards_recent on memory_cards(board_id,status,updated_at desc
 create index memory_cards_outcome_recent on memory_cards(board_id,status,completion_kind,updated_at desc,id desc);
 create index memory_cards_prefix on memory_cards(board_id,status,normalized_title collate "C",id);
 create index memory_cards_outcome_prefix on memory_cards(board_id,status,completion_kind,normalized_title collate "C",id);
+create index memory_cards_open_recent on memory_cards(board_id,updated_at desc,id desc) where status<>'done';
+create table memory_card_targets (
+  board_id text not null references memory_boards(id), card_id text not null references memory_cards(id),
+  target_key text not null, updated_at text not null, primary key(card_id,target_key)
+);
+create index memory_card_targets_recent on memory_card_targets(board_id,target_key,updated_at desc,card_id desc);
 create table memory_notes (
   id text primary key, board_id text not null references memory_boards(id),
   archived boolean not null, rank bigint not null, record jsonb not null

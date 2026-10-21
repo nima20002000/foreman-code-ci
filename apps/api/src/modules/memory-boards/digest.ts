@@ -1,10 +1,11 @@
 import type { AgentSubject, BoardDigest, LogicalWorkRef, MemoryBoardScope } from '@foreman-code/contracts'
-import { MemoryCardSchema, MemoryNoteSchema } from '@foreman-code/contracts'
+import { MemoryNoteSchema } from '@foreman-code/contracts'
 import type { GraphTransactionSql } from '../run-graph/connection.js'
 import type { MemoryBoardAuthority } from './types.js'
 import { findScopeBoard } from './repository.js'
 import { same } from './identity.js'
 import { DomainError } from '../errors.js'
+import { readDigestCards, type DigestCard } from './digestCards.js'
 
 export function clipUtf8(value: string, budget: number): string {
   if (Buffer.byteLength(value) <= budget) return value
@@ -26,9 +27,7 @@ export async function readDigest(tx: GraphTransactionSql, authority: MemoryBoard
     { kind:'workspace',workspaceId:agent.workspaceId },
     { kind:'workflow',workspaceId:agent.workspaceId,workflowId:agent.workflowId },
   ]
-  const nodeIds = agent.productRole === 'orchestrator'
-    ? [...new Set([agent.workflowNodeId,...access.branchNodeIds])] : [agent.workflowNodeId]
-  const cards: { id:string; revision:number; title:string; status:string; reason:string|null; score:number; updatedAt:string }[] = []
+  const cards: DigestCard[] = []
   const notes: { id:string; revision:number; text:string }[] = []
   let total = 0
   for (const scope of scopes) {
@@ -36,21 +35,7 @@ export async function readDigest(tx: GraphTransactionSql, authority: MemoryBoard
     const row = await findScopeBoard(tx,scope)
     if (!row) continue
     total += row.counts.todo + row.counts.doing + row.counts.blocked
-    const exactAgent = agent.productRole==='coder' ? " and record->'assignee'->>'agentId'=$4" : ''
-    const exactLinkedAgent = agent.productRole==='coder' ? " and node->>'agentId'=$4" : ''
-    const relevant = `((record->'assignee'->>'workflowId'=$2 and record->'assignee'->>'workflowNodeId'=any($3::text[])${exactAgent})
-      or exists(select 1 from jsonb_array_elements(record->'linkedNodes') node
-        where node->>'workflowId'=$2 and node->>'workflowNodeId'=any($3::text[])${exactLinkedAgent}))`
-    const broad = scope.kind === 'workflow' && agent.productRole === 'master'
-    const result = await tx.query<{ record:unknown;score:number }>(`select record,
-      case when ${relevant} then 0 when status='blocked' then 1 else 2 end as score
-      from memory_cards where board_id=$1 and status<>'done' ${broad ? '' : `and ${relevant}`}
-      order by score,updated_at desc,id desc limit 20`,[row.board.id,agent.workflowId,nodeIds,...(agent.productRole==='coder' ? [agent.agentId] : [])])
-    for (const entry of result.rows) {
-      const card = MemoryCardSchema.parse(entry.record)
-      cards.push({ id:card.id,revision:card.revision,title:card.title,status:card.status,reason:card.reason,
-        score:entry.score,updatedAt:card.updatedAt })
-    }
+    cards.push(...await readDigestCards(tx,row.board,access))
     const noteRows = await tx.query<{record:unknown}>('select record from memory_notes where board_id=$1 and archived=false order by rank,id limit 20',[row.board.id])
     for (const entry of noteRows.rows) { const note = MemoryNoteSchema.parse(entry.record); notes.push({id:note.id,revision:note.revision,text:note.text}) }
   }
