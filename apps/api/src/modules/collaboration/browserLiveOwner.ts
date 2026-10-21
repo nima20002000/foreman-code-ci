@@ -28,8 +28,22 @@ export async function browserOwnerIsActive(sql: SqlQuery, pins: BrowserSubjectDe
       agent.workflowNodeId, agent.configurationVersionId, execution.attempt, execution.activationId ?? null])
     return result.rowCount === 1
   }
+  const owner = await readConversationBrowserOwner(sql, subject)
+  return !!owner && owner.active && owner.workflowVersionId === pins.workflowVersionId
+    && (!owner.workerBound || owner.computerId === pins.computerId)
+}
+
+/** One live read supplies the accepted version as well as the conversation's ownership state. */
+export async function readConversationBrowserOwner(sql: SqlQuery,
+  subject: Extract<BrowserSubjectDetails['subject'], { kind: 'conversation' }>) {
   const { agent } = subject
-  const result = await sql.query(`select 1 from operator_conversations c
+  const result = await sql.query<{ version_id: string; computer_id: string | null; worker_bound: boolean; active: boolean }>(`
+    select coalesce(accepted.version_id,origin.workflow_version_id,w.current_version_id) as version_id,
+      coalesce(c.worker_conversation_binding#>>'{profile,target,hostRef,deviceId}',
+        c.worker_conversation_binding#>>'{profile,target,hostRef,mainId}') as computer_id,
+      c.worker_conversation_binding is not null as worker_bound,
+      c.deleted_at is null and not coalesce((c.record->>'archived')::boolean,false) as active
+    from operator_conversations c
     join workflows w on w.id=c.workflow_id and w.workspace_id=c.workspace_id
     left join runs origin on origin.id=c.origin_run_id
     left join lateral (
@@ -38,15 +52,12 @@ export async function browserOwnerIsActive(sql: SqlQuery, pins: BrowserSubjectDe
         and (t.request_id=c.active_request_id or t.native_turn_id is not null)
       order by (t.request_id=c.active_request_id) desc nulls last,t.turn_sequence desc limit 1
     ) accepted on true
-    where c.id=$1 and c.kind='agent' and c.deleted_at is null
-      and not coalesce((c.record->>'archived')::boolean,false)
+    where c.id=$1 and c.kind='agent'
       and c.workspace_id=$2 and c.workflow_id=$3 and c.workflow_node_id=$4 and c.agent_id=$5
-      and c.agent_configuration_version_id=$6
-      and coalesce(accepted.version_id,origin.workflow_version_id,w.current_version_id)=$7
-      and (c.worker_conversation_binding is null or coalesce(
-        c.worker_conversation_binding#>>'{profile,target,hostRef,deviceId}',
-        c.worker_conversation_binding#>>'{profile,target,hostRef,mainId}')=$8)`,
+      and c.agent_configuration_version_id=$6`,
   [subject.conversationId, agent.workspaceId, agent.workflowId, agent.workflowNodeId, agent.agentId,
-    agent.configurationVersionId, pins.workflowVersionId, pins.computerId])
-  return result.rowCount === 1
+    agent.configurationVersionId])
+  const row = result.rows[0]
+  return row ? { workflowVersionId: row.version_id, computerId: row.computer_id,
+    workerBound: row.worker_bound, active: row.active } : undefined
 }

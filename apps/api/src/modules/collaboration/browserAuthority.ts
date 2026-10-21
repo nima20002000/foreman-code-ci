@@ -1,4 +1,4 @@
-import { browserOwnerIsActive } from './browserLiveOwner.js'
+import { browserOwnerIsActive, readConversationBrowserOwner } from './browserLiveOwner.js'
 import type pg from 'pg'
 import { AgentConfigurationVersionSchema, AgentSubjectSchema, canonicalJson, effectiveGraphqlTools,
   type AgentSubject, type AgentConfigurationVersion, type NodeBrowserSettings } from '@foreman-code/contracts'
@@ -24,47 +24,98 @@ export interface BrowserSubjectDetails {
   tools: string[]
 }
 
+const maxCachedBytes = 16 * 1024 * 1024
+const maxCachedSubjects = 256
+interface CachedPins { subjectKey: string; pending: Promise<BrowserSubjectDetails>; bytes: number }
+
 export class BrowserAuthority implements BrowserSubjectAuthority, BrowserSessionAuthority<ManagementPrincipal> {
-  private readonly pins = new Map<string, Promise<BrowserSubjectDetails>>()
+  private readonly pins = new Map<string, CachedPins>()
+  private cachedBytes = 0
+  private readonly cacheByteLimit: number
   constructor(private readonly pool: pg.Pool, private readonly mainId: () => string,
     private readonly profiles: () => BrowserProfileRepository,
-    private readonly runtimeReady: (computerId: string) => Promise<boolean>) {}
+    private readonly runtimeReady: (computerId: string) => Promise<boolean>,
+    options: { maxCachedBytes?: number } = {}) {
+    const limit = options.maxCachedBytes ?? maxCachedBytes
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > maxCachedBytes) throw new RangeError('Invalid browser cache size.')
+    this.cacheByteLimit = limit
+  }
 
-  async conversation(conversationId: string) {
+  async conversation(conversationId: string, acceptedWorkflowVersionId?: string) {
     const row = await new PostgresAgentChatRepository(this.pool).get(conversationId)
     if (!row) throw new DomainError('BROWSER_SUBJECT_UNAVAILABLE', 'The browser conversation is unavailable.', 404)
     const stored = (await this.pool.query<{ record: unknown }>('select record from agent_configuration_versions where id=$1',
       [row.agent_configuration_version_id])).rows[0]
     const configuration = AgentConfigurationVersionSchema.parse(stored?.record)
-    const prepared = row.active_request_id
+    const prepared = acceptedWorkflowVersionId ? undefined : row.active_request_id
       ? await new PostgresAgentChatRepository(this.pool).turnPreparedInput(row.id, row.active_request_id)
       : (await this.pool.query<{ prepared: { input: { conversationContext?: { workflowVersionId: string } } } }>(
         `select payload->'preparedInput' as prepared from operator_conversation_turns where conversation_id=$1
         and native_turn_id is not null order by turn_sequence desc limit 1`, [row.id])).rows[0]?.prepared
-    const context = await conversationFeatureContext(this.pool, row, configuration, prepared?.input.conversationContext?.workflowVersionId)
+    const context = await conversationFeatureContext(this.pool, row, configuration,
+      acceptedWorkflowVersionId ?? prepared?.input.conversationContext?.workflowVersionId)
     return { row, configuration, context }
   }
 
-  private acceptedPins(raw: AgentSubject): Promise<BrowserSubjectDetails> {
-    const subject = AgentSubjectSchema.parse(raw)
-    const key = canonicalJson(subject)
-    let pending = this.pins.get(key)
-    if (!pending) {
-      pending = this.readPins(subject).catch(error => {
-        this.pins.delete(key)
-        throw error
-      })
-      this.pins.set(key, pending)
+  private evict(key: string): void {
+    const entry = this.pins.get(key)
+    if (!entry) return
+    this.cachedBytes -= entry.bytes
+    this.pins.delete(key)
+  }
+
+  forget(raw: AgentSubject): void {
+    const subjectKey = canonicalJson(AgentSubjectSchema.parse(raw))
+    for (const [key, entry] of this.pins) if (entry.subjectKey === subjectKey) this.evict(key)
+  }
+
+  private trim(): void {
+    while (this.cachedBytes > this.cacheByteLimit || this.pins.size > maxCachedSubjects) {
+      this.evict(this.pins.keys().next().value!)
     }
+  }
+
+  private acceptedPins(raw: AgentSubject, workflowVersionId?: string): Promise<BrowserSubjectDetails> {
+    const subject = AgentSubjectSchema.parse(raw)
+    const subjectKey = canonicalJson(subject)
+    const key = subject.kind === 'conversation' ? canonicalJson([subject, workflowVersionId]) : subjectKey
+    const cached = this.pins.get(key)
+    if (cached) {
+      this.pins.delete(key)
+      this.pins.set(key, cached)
+      return cached.pending
+    }
+    if (subject.kind === 'conversation') this.forget(subject)
+    const pending: Promise<BrowserSubjectDetails> = this.readPins(subject, workflowVersionId).then(value => {
+      const entry = this.pins.get(key)
+      if (entry?.pending === pending) {
+        entry.bytes = Buffer.byteLength(key) + Buffer.byteLength(canonicalJson(value))
+        this.cachedBytes += entry.bytes
+        this.trim()
+      }
+      return value
+    }).catch(error => {
+      if (this.pins.get(key)?.pending === pending) this.evict(key)
+      throw error
+    })
+    this.pins.set(key, { subjectKey, pending, bytes: 0 })
+    this.trim()
     return pending
   }
 
   async details(raw: AgentSubject): Promise<BrowserSubjectDetails> {
-    const pins = await this.acceptedPins(raw)
-    return { ...pins, active: await browserOwnerIsActive(this.pool, pins) }
+    const subject = AgentSubjectSchema.parse(raw)
+    const owner = subject.kind === 'conversation' ? await readConversationBrowserOwner(this.pool, subject) : undefined
+    if (subject.kind === 'conversation' && !owner) throw new DomainError('BROWSER_SUBJECT_UNAVAILABLE',
+      'The browser conversation is unavailable.', 404)
+    const pins = await this.acceptedPins(subject, owner?.workflowVersionId)
+    const active = owner ? owner.active && (!owner.workerBound || owner.computerId === pins.computerId)
+      : await browserOwnerIsActive(this.pool, pins)
+    if (!active) this.forget(subject)
+    return { ...pins, active }
   }
 
-  private async readPins(raw: AgentSubject): Promise<BrowserSubjectDetails> {
+  private async readPins(raw: AgentSubject, acceptedWorkflowVersionId?: string): Promise<BrowserSubjectDetails> {
     const subject = AgentSubjectSchema.parse(raw)
     let configuration: AgentConfigurationVersion
     let browser: NodeBrowserSettings | undefined
@@ -73,7 +124,7 @@ export class BrowserAuthority implements BrowserSubjectAuthority, BrowserSession
     let active: boolean
     let tools: string[]
     if (subject.kind === 'conversation') {
-      const { row, configuration: saved, context } = await this.conversation(subject.conversationId)
+      const { row, configuration: saved, context } = await this.conversation(subject.conversationId, acceptedWorkflowVersionId)
       configuration = saved
       if (canonicalJson(context.subject) !== canonicalJson(subject)) throw new DomainError('BROWSER_SUBJECT_CHANGED',
         'The conversation browser belongs to another saved configuration.', 409)
@@ -134,11 +185,11 @@ export class BrowserAuthority implements BrowserSubjectAuthority, BrowserSession
       readOnly: details.readOnly, availability }
   }
   async assertCurrent(subject: AgentSubject, computerId?: string) {
-    const pins = await this.acceptedPins(subject)
-    if (computerId && pins.computerId !== computerId) throw new DomainError('BROWSER_COMPUTER_SCOPE',
+    const details = await this.details(subject)
+    if (computerId && details.computerId !== computerId) throw new DomainError('BROWSER_COMPUTER_SCOPE',
       'This subject belongs to another execution computer.', 403)
-    if (!pins.browser.enabled || !await browserOwnerIsActive(this.pool, pins)) {
-      this.pins.delete(canonicalJson(subject))
+    if (!details.browser.enabled || !details.active) {
+      this.forget(subject)
       throw new DomainError('BROWSER_SUBJECT_SETTLED', 'This saved Agent no longer owns an enabled browser.', 409)
     }
   }

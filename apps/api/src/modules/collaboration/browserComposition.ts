@@ -112,7 +112,9 @@ export function createProductionBrowser(options: BrowserCompositionOptions) {
         throw new DomainError('BROWSER_SUBJECT_CHANGED', 'The browser release does not match its retained subject.', 409)
       }
       await pairing.assertInstallation(saved.session.computerId, saved.installationId)
-      return saved.session.computerId === identity() ? runtime.getHost().broker.release(input) : remote.release(input)
+      const result = await (saved.session.computerId === identity() ? runtime.getHost().broker.release(input) : remote.release(input))
+      if (result.state !== 'pending') authority.forget(input.subject)
+      return result
     },
   }
   return { profiles, authority, pairing, sessions, handlers, codecs, lifecycle, runtime, locations,
