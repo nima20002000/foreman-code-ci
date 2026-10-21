@@ -15,7 +15,7 @@ import {
 
 installBoardTestLifecycle()
 
-describe('ENG05-D meaningful edit versus layout and uncertain Stop-and-save', () => {
+describe('Meaningful edit versus layout and uncertain Stop-and-save', () => {
   it('retains the exact staged form after a lost advance reply and publishes only after authenticated cleanup settlement', async () => {
     const fixture = await inspectionBoardFixture('eng05d-lost-edit-reply')
     fixture.mock.controls.start = true // Explicitly opt this task-owned MSW fixture into simulated lifecycle controls.
@@ -52,7 +52,7 @@ describe('ENG05-D meaningful edit versus layout and uncertain Stop-and-save', ()
       nodes: graph.nodes.map((node) => ({ ...node, initialPrompt: 'ENG05-D retained meaningful instructions' })),
     })))
     expect(nextDraftDirty(useGraphDraftStore.getState().nextDrafts[key]!)).toBe(true)
-    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await user.click(screen.getByRole('button', { name: 'Save workflow' }))
     await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Stop runs and save' }))
     await waitFor(() => expect(advances).toHaveLength(1))
     await waitFor(() => expect(fixture.mock.record(scope.workflowId).intent?.state).toBe('waiting'))

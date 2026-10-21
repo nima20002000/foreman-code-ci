@@ -1,5 +1,6 @@
 import { useHoverControls } from '../../../shared/ui/useHoverControls'
 import type { JobWorkflowAdmissionReference } from '@foreman-code/contracts/job-workflow'
+import { isHierarchyReportingRoute } from '@foreman-code/contracts'
 import { createContext, useCallback, useContext, memo, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { Background, ReactFlow, ReactFlowProvider, useNodesInitialized, useReactFlow, type Edge, type EdgeProps, type Node, type NodeChange, type NodeProps } from '@xyflow/react'
@@ -19,6 +20,7 @@ import { intervalLabel } from '../../graph/nextDraft/intervalLabel'
 import { agentNodeFacts, edgeBend, relationshipLines, useFloatingCurve } from '../../graph/signalEdge'
 import type { EdgePulse } from '../../graph/SignalEdgeShape'
 import { useWorkflowBoard } from '../context'
+import { WorkflowAgentPanel } from '../WorkflowAgentPanel'
 import { readPinnedAgentVersion } from '../runDetailsClient'
 import { useSelectedRunQueryState, useSelectedRunRecord } from '../runFacts'
 import { useRunHandoffsQuery } from '../runHandoffsQuery'
@@ -53,6 +55,7 @@ type RunNode = Node<ReturnType<typeof pinnedTopology>['nodes'][number] & {
 }, 'pinnedRunNode'>
 /** Run identity is pinned; its circle uses the workflow's editable presentation. */
 const PinnedRunNode = memo(function PinnedRunNode({ id, data, selected, width, height }: NodeProps<RunNode>) {
+  const board = useWorkflowBoard()
   const ui = useContext(RunAgentPanels), anchor = useRef<HTMLButtonElement>(null)
   const chatOpen = useChatWindowsStore((state) => Boolean(ui && state.open[ui.chatScope]?.includes(id)))
   const panel = ui?.open?.nodeId === id ? ui.open.panel : undefined
@@ -67,8 +70,8 @@ const PinnedRunNode = memo(function PinnedRunNode({ id, data, selected, width, h
     {data.kind === 'agent' && data.resizable ? <CircularNodeResizer id={id} name={data.label}
       width={width ?? GRAPH_NODE_DEFAULT_SIZE} height={height ?? GRAPH_NODE_DEFAULT_SIZE} onStart={ui?.beginResize} onResize={ui?.resize} onFinish={ui?.finishResize} /> : null}
   </AgentNodeView>
-    {panel && ui?.panels && data.kind==='job'?<Dialog open className="job-dialog" title={data.label} description={`Selected Run · ${data.recorded}`} onOpenChange={value=>{if(!value)ui.setOpen(undefined)}}>{ui.panels(id,{kind:'job',jobDefinitionId:data.jobDefinitionId,jobDefinitionRevision:data.jobDefinitionRevision,jobDefinitionVersionId:data.jobDefinitionVersionId,name:data.label,workflowExecution:data.workflowExecution}).info}</Dialog>:null}
-    {panel && panel !== 'chat' && ui?.panels && data.kind==='agent' ? <AgentPopover open anchor={anchor} title={data.label} subtitle={`Selected Run · ${data.recorded}`}
+    {panel && ui?.panels && data.kind==='job' && !board?.selectSidePanel?<Dialog open className="job-dialog" title={data.label} description={`Selected Run · ${data.recorded}`} onOpenChange={value=>{if(!value)ui.setOpen(undefined)}}>{ui.panels(id,{kind:'job',jobDefinitionId:data.jobDefinitionId,jobDefinitionRevision:data.jobDefinitionRevision,jobDefinitionVersionId:data.jobDefinitionVersionId,name:data.label,workflowExecution:data.workflowExecution}).info}</Dialog>:null}
+    {panel && panel !== 'chat' && ui?.panels && data.kind==='agent' && !board?.selectSidePanel ? <AgentPopover open anchor={anchor} title={data.label} subtitle={`Selected Run · ${data.recorded}`}
       harness={data.facts.harness} icon={data.facts.icon} panel={panel}
       onClose={() => ui.setOpen(undefined)}
       {...ui.panels(id,{agentId:data.agentId,name:data.label,role:data.facts.roleLabel,runLabel:data.status})} /> : null}
@@ -79,7 +82,7 @@ type LineMotion = { pulses: Map<string, EdgePulse[]> }
 const Choreography = createContext<LineMotion>({ pulses: new Map() })
 
 type RunEdge = Edge<{ kind: WorkflowRelationship['kind']; bend: number;
-  handoffs: boolean; limit?: number; used?: number }>
+  handoffs: boolean; limit?: number; used?: number; reportingParent?: string }>
 const PinnedRunEdge = memo(function PinnedRunEdge({ id, source, target, data, selected }: EdgeProps<RunEdge>) {
   const { pulses } = useContext(Choreography)
   const curve = useFloatingCurve(source, target, data?.bend ?? 0)
@@ -90,7 +93,7 @@ const PinnedRunEdge = memo(function PinnedRunEdge({ id, source, target, data, se
   const usage = data?.used === undefined ? 'Usage unavailable' : data.limit === undefined
     ? `${data.used} used · no connection cap` : `${data.used} of ${data.limit} used`
   return <g onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
-    <SignalEdgeShape id={id} curve={curve} kind={data?.kind} pulses={pulses.get(id)} />
+    <SignalEdgeShape id={id} curve={curve} kind={data?.kind} pulses={pulses.get(id)} reportingParent={data?.reportingParent} />
     {data?.handoffs && showUsage ? <rect className="board-edge-hover-bridge"
       x={curve.mid.x - 90} y={curve.mid.y} width={180} height={54} /> : null}
     {data?.handoffs ? <foreignObject className="pinned-work-limit-object" data-visible={showUsage}
@@ -115,17 +118,33 @@ const fitViewOptions = { padding: 0.25, minZoom: 0.3, maxZoom: 1 }
 const proOptions = { hideAttribution: true }
 const unknownFacts: Facts = { harnessLabel: 'Pinned settings unavailable', icon: 'bot', roleLabel: 'Agent', meta: [] }
 
+function useRunAgentPanels(scope: RepeatGraphScopeV3, board: NonNullable<ReturnType<typeof useWorkflowBoard>>) {
+  const [localOpen, setLocalOpen] = useState<OpenAgentPanel>()
+  const docked = board.sidePanel?.kind === 'agent' ? board.sidePanel : undefined
+  const open = board.selectSidePanel ? docked && { nodeId: docked.nodeId, panel: docked.tab === 'details' ? 'info' as const : docked.tab } : localOpen
+  const setOpen = (next?: OpenAgentPanel) => {
+    if (board.selectSidePanel) board.selectSidePanel(next
+      ? { kind: 'agent', nodeId: next.nodeId, tab: next.panel === 'info' ? 'details' : next.panel } : { kind: 'none' })
+    else setLocalOpen(next)
+  }
+  // Each Run keeps its own floating chat windows; they never mix with the draft's.
+  const chatScope = `run:${scope.workflowId}:${scope.runId}`
+  const selectSidePanel = board.selectSidePanel
+  const openChat = useCallback((nodeId: string) => {
+    if (selectSidePanel) selectSidePanel({ kind: 'agent', nodeId, tab: 'chat' })
+    else useChatWindowsStore.getState().openWindow(chatScope, nodeId)
+  }, [selectSidePanel, chatScope])
+  return { open, setOpen, chatScope, openChat }
+}
+
 /** The editor stays mounted beside this canvas. Only geometry is shared with
  * the draft; node identities and Run facts remain pinned by the /version service. */
-export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
+export function SelectedRunCanvas({ scope, panels: suppliedPanels, layout, geometry }: {
   scope: RepeatGraphScopeV3; panels?: AgentPanelRenderer
   layout?: readonly Pick<WorkflowNodeV3, 'id' | 'position' | 'width' | 'height'>[]; geometry?: (changes: GraphGeometryChange[]) => void
 }) {
-  const [open, setOpen] = useState<OpenAgentPanel>()
-  // Each Run keeps its own floating chat windows; they never mix with the draft's.
-  const chatScope = `run:${scope.workflowId}:${scope.runId}`
-  const openChat = useCallback((nodeId: string) => useChatWindowsStore.getState().openWindow(chatScope, nodeId), [chatScope])
   const board = useWorkflowBoard()!
+  const { open, setOpen, chatScope, openChat } = useRunAgentPanels(scope, board)
   const query = useRunVersionQuery(scope)
   const denied = useProtectedAccessError(query)
   // Observe (never fetch) the canonical Run read: its confirmed denial hides the pinned topology too.
@@ -140,6 +159,7 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
     dataUpdatedAt: canonical?.dataUpdatedAt ?? 0,
   })
   const version = query.isError || denied || canonicalDenied ? undefined : query.data?.version
+  const panels = useMemo(() => withPinnedReportingParent(suppliedPanels, version), [suppliedPanels, version])
   const handoffsQuery = useRunHandoffsQuery(scope, Boolean(version?.definition.handoffs))
   const handoffsDenied = useProtectedAccessError(handoffsQuery)
   const handoffs = !handoffsDenied && !handoffsQuery.isError ? handoffsQuery.data : undefined
@@ -275,21 +295,7 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
   const ciServerNode = useMemo(() => canvasNodes.length ? ciServerFlowNode(canvasNodes, ciSummary,
     () => useInspectionPresentation.getState().setOpen(ciDialogKey, true)) : undefined, [ciSummary, canvasNodes, ciDialogKey])
   const flowNodes = useMemo(() => ciServerNode ? [...canvasNodes, ciServerNode] : canvasNodes, [canvasNodes, ciServerNode])
-  const edges = useMemo<RunEdge[]>(() => {
-    const counts = new Map<string, number>()
-    return lines.lines.map((edge) => {
-      const pair = JSON.stringify([edge.source, edge.target].sort()), count = counts.get(pair) ?? 0
-      counts.set(pair, count + 1)
-      return { id: edge.id, source: edge.source, target: edge.target, type: 'pinnedRunEdge',
-        sourceHandle: 'right', targetHandle: 'left',
-        selected: edge.members.some((member) => member.id === board.inspection.runRelationshipId),
-        ariaLabel: `${edge.kind} relationship ${edge.id} from ${edge.source} to ${edge.target}`,
-        data: { kind: edge.kind, bend: edgeBend(count, edge.source < edge.target),
-          handoffs: Boolean(version?.definition.handoffs && edge.kind === 'execution'),
-          limit: edge.maxWorkHandoffsPerRun,
-          used: handoffs?.connections.find((item) => item.relationshipId === edge.id)?.used } }
-    })
-  }, [lines, board.inspection.runRelationshipId, version?.definition.handoffs, handoffs?.connections])
+  const edges = usePinnedRunEdges(lines, board.inspection.runRelationshipId, version, handoffs)
   // A light per Agent while its CI request or result travels; no lasting line to the server.
   const flowEdges = useMemo<(RunEdge | CiTransferFlowEdge)[]>(() => ciServerNode && transfers.size ? [...edges,
     ...[...transfers].filter(([nodeId]) => presentedNodes.some((node) => node.id === nodeId)).map(([nodeId, pulses]) => ({
@@ -319,15 +325,63 @@ export function SelectedRunCanvas({ scope, panels, layout, geometry }: {
         <Background color="var(--border)" gap={24} size={1} />
       </ReactFlow></Choreography.Provider></RunAgentPanels.Provider></ReactFlowProvider>
     </div> : null}
-    {panels ? <AgentChatWindowLayer scope={chatScope} content={(nodeId) => {
+    {panels && !board.selectSidePanel ? <AgentChatWindowLayer scope={chatScope} content={(nodeId) => {
       const node = presentedNodes.find((item) => item.id === nodeId)
       if (!node || node.data.kind !== 'agent') return undefined
       const { chat, chatHasHeader } = panels(nodeId, { agentId: node.data.agentId, name: node.data.label, role: node.data.facts.roleLabel, runLabel: node.data.status })
       return chat ? { name: node.data.label, harness: node.data.facts.harness, chat, chatHasHeader } : undefined
     }} /> : null}
+    {panels ? <RunRailAgentPanel panels={panels} chatScope={chatScope} nodes={presentedNodes} /> : null}
     <CiServerDialog open={ciDialogOpen} onOpenChange={setCiDialogOpen} scope={scope} workflow={{ workspaceId: scope.workspaceId, workflowId: scope.workflowId }} jobs={ciRunJobs ?? []} names={names}
       truncated={!ciDenied && (ciList.data?.truncated ?? false)} error={Boolean(ciDenied || ciList.isError)} loading={ciList.isPending} />
   </section>
+}
+
+function withPinnedReportingParent(panels: AgentPanelRenderer | undefined,
+  version: NonNullable<ReturnType<typeof useRunVersionQuery>['data']>['version'] | undefined): AgentPanelRenderer | undefined {
+  if (!panels) return undefined
+  return (nodeId, pinned) => {
+    if (!pinned || pinned.kind === 'job') return panels(nodeId, pinned)
+    const hierarchy = version?.definition.hierarchy
+    const parentId = hierarchy?.parents.find(member => member.workflowNodeId === nodeId)?.parentNodeId
+    const parent = version?.definition.nodes.find(node => node.id === parentId)
+    const reportingParent = parent ? parent.name ?? parent.label ?? parent.id
+      : hierarchy?.masterNodeId === nodeId ? 'None (Master)' : hierarchy ? 'Unassigned' : undefined
+    return panels(nodeId, { ...pinned, reportingParent })
+  }
+}
+
+function usePinnedRunEdges(lines: ReturnType<typeof relationshipLines<WorkflowRelationship>>, selectedId: string | undefined,
+  version: NonNullable<ReturnType<typeof useRunVersionQuery>['data']>['version'] | undefined,
+  handoffs: ReturnType<typeof useRunHandoffsQuery>['data']) {
+  return useMemo<RunEdge[]>(() => {
+    const counts = new Map<string, number>()
+    return lines.lines.map(edge => {
+      const pair = JSON.stringify([edge.source, edge.target].sort()), count = counts.get(pair) ?? 0
+      counts.set(pair, count + 1)
+      const reporting = isHierarchyReportingRoute(version?.definition.hierarchy, edge)
+      const parent = version?.definition.nodes.find(node => node.id === edge.source)
+      return { id: edge.id, source: edge.source, target: edge.target, type: 'pinnedRunEdge',
+        sourceHandle: 'right', targetHandle: 'left',
+        selected: edge.members.some(member => member.id === selectedId),
+        ariaLabel: `${reporting ? 'Orchestrates' : edge.kind} relationship ${edge.id} from ${edge.source} to ${edge.target}`,
+        data: { kind: edge.kind, bend: edgeBend(count, edge.source < edge.target),
+          reportingParent: reporting ? parent?.name ?? parent?.label ?? edge.source : undefined,
+          handoffs: Boolean(version?.definition.handoffs && edge.kind === 'execution'),
+          limit: edge.maxWorkHandoffsPerRun, used: handoffs?.connections.find(item => item.relationshipId === edge.id)?.used } }
+    })
+  }, [lines, selectedId, version, handoffs?.connections])
+}
+
+function RunRailAgentPanel({ panels, chatScope, nodes }: { panels: AgentPanelRenderer; chatScope: string; nodes: RunNode[] }) {
+  return <WorkflowAgentPanel panels={panels} chatScope={chatScope}
+    nodes={nodes.map(node => ({ id: node.id, name: node.data.label }))} findNode={nodeId => {
+      const node = nodes.find(item => item.id === nodeId)
+      return node?.data.kind === 'agent' ? { agentId: node.data.agentId, name: node.data.label,
+        role: node.data.facts.roleLabel, runLabel: node.data.status } : node?.data.kind === 'job'
+          ? { kind: 'job', jobDefinitionId: node.data.jobDefinitionId, jobDefinitionRevision: node.data.jobDefinitionRevision,
+            jobDefinitionVersionId: node.data.jobDefinitionVersionId, name: node.data.label, workflowExecution: node.data.workflowExecution } : false
+    }} />
 }
 
 function SelectedRunSubagents({ scope, nodes: flowNodes }: { scope: RepeatGraphScopeV3; nodes: RunNode[] }) {
