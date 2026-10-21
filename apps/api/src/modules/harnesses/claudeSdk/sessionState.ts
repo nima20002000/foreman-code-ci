@@ -141,8 +141,7 @@ export function sessionContext(start: NativeSessionStart) {
   return start.kind === 'operator'
     ? { kind: start.kind, configuration: start.configuration,
       cwd: start.workingDirectory, environment: start.environment }
-    : { kind: start.kind ?? 'workflow', request: start.request, environment: start.environment,
-      ...(start.kind === 'workflow-consultation' ? { consultation: start.consultation } : {}) }
+    : { kind: 'workflow', request: start.request, environment: start.environment }
 }
 
 export function makeRuntime(ctx: ClaudeManagerContext, start: NativeSessionStart): Runtime {
