@@ -1,7 +1,7 @@
 import type pg from 'pg'
-import { withTransaction } from '../../infrastructure/transaction.js'
+import { withTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
 import { DomainError } from '../errors.js'
-type Queryable = Pick<pg.PoolClient, 'query'>
+type Queryable = SqlQuery
 export async function withConversationPageRead<T>(pool: pg.Pool, work: (query: Queryable) => Promise<T>): Promise<T> {
   return withTransaction(pool, work, { isolation: 'repeatable read', readOnly: true })
 }
