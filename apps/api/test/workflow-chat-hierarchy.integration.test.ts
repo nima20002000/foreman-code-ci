@@ -56,6 +56,13 @@ it('asks the waiting master through authenticated Group MCP without changing its
     expect(replay.isError, JSON.stringify(replay)).not.toBe(true)
     expect(WorkflowChatPostResponseSchema.parse(decodeMcpToolResult(replay)).receipts[0]?.id).toBe(posted.receipts[0]!.id)
     expect(provider.consultations).toHaveLength(1)
+    await expect.poll(async () => {
+      const page = await f.client.callTool({ name: 'workflow_chat_read', arguments: scope })
+      expect(page.isError, JSON.stringify(page)).not.toBe(true)
+      return decodeMcpToolResult(page)
+    }, { timeout: 15_000 }).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({
+      replyToPostId: posted.post.id, body: 'The delegated work is still in progress.',
+    })]) })
     provider.release('builder')
     expect(await drive).not.toBeInstanceOf(Error)
   } finally {

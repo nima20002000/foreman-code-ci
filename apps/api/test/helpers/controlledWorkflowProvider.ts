@@ -100,7 +100,15 @@ export class ControlledWorkflowProvider {
         const result: ExecutionResult = outcome === 'canceled' ? { outcome } : {
           outcome, output: consultation ? { text: 'The delegated work is still in progress.' } : produce(request),
         }
-        const terminal: NativeHarnessEvent = { sequence: 1, occurredAt: new Date().toISOString(), type: 'turn.completed',
+        if (consultation) {
+          const message: NativeHarnessEvent = { sequence: events.length, occurredAt: new Date().toISOString(),
+            type: 'item.completed', payload: { threadId: session.nativeSessionId, turnId: providerId,
+              clientCorrelationId: correlationId, item: { id: `reply-${providerId}`, type: 'agentMessage',
+                text: 'The delegated work is still in progress.' } } }
+          events.push(message)
+          yield message
+        }
+        const terminal: NativeHarnessEvent = { sequence: events.length, occurredAt: new Date().toISOString(), type: 'turn.completed',
           payload: { threadId: session.nativeSessionId, turnId: providerId, clientCorrelationId: correlationId,
             turn: { id: providerId, status: outcome === 'canceled' ? 'interrupted' : 'completed' } } }
         ownHistory.set(correlationId, { events: [...events, terminal], pendingInteractions: [], correlationId,
