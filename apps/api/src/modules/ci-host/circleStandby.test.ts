@@ -27,22 +27,27 @@ function fixture(cache = new CircleCreditCache()) {
   return { orgs, remaining, standby, roles, selector, setTime: (value: string) => { now = Date.parse(value) } }
 }
 
-it('replaces exhausted primaries one for one in normalized owner order, including the 20,000 reserve', async () => {
+it('replaces provider-refused primaries one for one in normalized owner order, regardless of estimates', async () => {
   const f = fixture()
   expect(await f.roles()).toEqual(['active', 'active', 'active', 'standby', 'standby', 'standby'])
   f.remaining.set('alpha', 20_001)
   expect(await f.roles()).toEqual(['active', 'active', 'active', 'standby', 'standby', 'standby'])
   f.remaining.set('alpha', 20_000)
+  expect(await f.roles()).toEqual(['active', 'active', 'active', 'standby', 'standby', 'standby'])
+  await f.standby.recordCreditRefusal('alpha')
   expect(await f.roles()).toEqual(['exhausted', 'active', 'active', 'active', 'standby', 'standby'])
   f.remaining.set('beta', 1)
+  await f.standby.recordCreditRefusal('beta')
   expect(await f.roles()).toEqual(['exhausted', 'exhausted', 'active', 'active', 'active', 'standby'])
   f.remaining.set('gamma', 0)
+  await f.standby.recordCreditRefusal('gamma')
   expect(await f.roles()).toEqual(['exhausted', 'exhausted', 'exhausted', 'active', 'active', 'active'])
 })
 
 it('requires mirror availability, authentication and a known healthy reading for a first standby activation', async () => {
   const f = fixture()
   f.remaining.set('alpha', 0)
+  await f.standby.recordCreditRefusal('alpha')
   f.orgs[3]!.mirrorNames = new Set()
   f.orgs[4]!.ready = false
   f.remaining.set('zeta', null)
@@ -62,6 +67,7 @@ it('does not activate overflow for unknown primary usage or a failed primary cre
 it('retains exhaustion and an activated replacement through stale reads and service recreation', async () => {
   const f = fixture()
   f.remaining.set('alpha', 20_000)
+  await f.standby.recordCreditRefusal('alpha')
   await f.roles()
   f.remaining.set('alpha', null)
   f.remaining.set('delta', null)
@@ -70,14 +76,18 @@ it('retains exhaustion and an activated replacement through stale reads and serv
   expect(result.get(circleOrgKey('delta', 'reserve'))).toMatchObject({ schedulingRole: 'active', credits: null,
     creditsUnavailable: 'Usage unavailable.' })
   f.remaining.set('alpha', 25_000)
+  expect(await f.standby.eligible('alpha')).toBe(false)
+  f.setTime('2026-10-17T12:05:00Z')
   expect(await f.roles()).toEqual(['active', 'active', 'active', 'standby', 'standby', 'standby'])
 })
 
 it('retires an exhausted replacement and resets all assignments at UTC month start', async () => {
   const f = fixture()
   f.remaining.set('alpha', 0)
+  await f.standby.recordCreditRefusal('alpha')
   await f.roles()
   f.remaining.set('delta', 20_000)
+  await f.standby.recordCreditRefusal('delta', 'reserve')
   expect(await f.roles()).toEqual(['exhausted', 'active', 'active', 'exhausted', 'active', 'standby'])
   f.setTime('2026-11-01T00:00:00Z')
   for (const org of f.orgs) f.remaining.set(org.owner, null)
@@ -102,6 +112,7 @@ it('persists one globally bounded replacement across concurrent workspace select
     const path = join(root, 'usage.json')
     const f = fixture(new CircleCreditCache(path))
     f.remaining.set('alpha', 0)
+    await f.standby.recordCreditRefusal('alpha')
     for (const org of f.orgs.slice(0, 3)) org.mirrorNames = new Set(['mirror-a', 'mirror-b'])
     f.orgs[3]!.mirrorNames = new Set(['mirror-a'])
     f.orgs[4]!.mirrorNames = new Set(['mirror-b'])
@@ -127,10 +138,13 @@ it('persists one globally bounded replacement across concurrent workspace select
 it('uses unknown usage only to retain an existing replacement, not to create another assignment', async () => {
   const f = fixture()
   f.remaining.set('alpha', 0)
+  await f.standby.recordCreditRefusal('alpha')
   expect((await f.roles())[3]).toBe('active')
   f.remaining.set('alpha', 400_000)
+  f.setTime('2026-10-17T12:05:00Z')
   expect((await f.roles())[3]).toBe('standby')
   f.remaining.set('alpha', 0)
+  await f.standby.recordCreditRefusal('alpha')
   f.remaining.set('delta', null)
   expect(await f.roles()).toEqual(['exhausted', 'active', 'active', 'standby', 'active', 'standby'])
 })

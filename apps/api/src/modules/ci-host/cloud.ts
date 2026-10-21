@@ -635,7 +635,7 @@ export class CloudCi {
         if (await this.provider.find(run)) run = await this.save({ ...run, state: 'running', workflowStarted: true })
       } catch (error) {
         if (error instanceof DomainError && error.code === 'CI_CLOUD_PIPELINE_FAILED') {
-          run = await this.failPipeline(run, { message: error.message, configError: error.details?.configError === true })
+          run = await this.failProviderPipeline(run, error)
         } else if (error instanceof DomainError
           && ['CI_CLOUD_RUN_NOT_FOUND', 'CI_CLOUD_RUN_UNREADABLE'].includes(error.code)) {
           run = await this.reconcileLookupFailure(run, error)
@@ -719,6 +719,14 @@ export class CloudCi {
   private configErrorPath(run: CloudRun) {
     const key = createHash('sha256').update(canonicalJson({ mirror: run.mirror, commit: run.commit })).digest('hex')
     return join(this.root, 'config-errors', `${key}.json`)
+  }
+
+  private async failProviderPipeline(run: CloudRun, error: DomainError): Promise<CloudRun> {
+    if (error.details?.creditRefused === true && this.standby) {
+      const owner = this.provider.account?.owner ?? run.mirror.split('/')[0]!
+      await this.standby.recordCreditRefusal(owner, this.provider.circleAccountId)
+    }
+    return this.failPipeline(run, { message: error.message, configError: error.details?.configError === true })
   }
 
   private async failPipeline(run: CloudRun, failure: { message: string; configError?: boolean }): Promise<CloudRun> {
@@ -1320,7 +1328,7 @@ export class CloudCi {
       })
     } catch (error) {
       if (error instanceof DomainError && error.code === 'CI_CLOUD_PIPELINE_FAILED') {
-        return this.failPipeline(run, { message: error.message, configError: error.details?.configError === true })
+        return this.failProviderPipeline(run, error)
       }
       if (error instanceof DomainError && error.code === 'CI_CLOUD_RATE_LIMITED') {
         this.pausePolling(runId)
