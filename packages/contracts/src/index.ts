@@ -1,9 +1,15 @@
+import { AgentProductRoleSchema as WorkflowAgentProductRoleSchema, type WorkflowAgentProductRole } from './agentIdentity.js';
+import { ResultProtocolSchema } from './coordinationResult.js';
+import { MessageSchema } from './messages.js';
+export * from './messages.js';
+import { RecordedAgentHarnessSchema } from './harnessIdentity.js';
+export * from './harnessIdentity.js';
+import { OptionalTimestampFields } from './schemaPrimitives.js';
 import { optionalCommandId } from './management/commands.js'
 import { FailureClassSchema } from './failure.js'
 import { SourceCapacityErrorDetailsSchema } from './sourceCapacity.js'
 export { SourceCapacityErrorDetailsSchema, type SourceCapacityErrorDetails } from './sourceCapacity.js'
 import { ExecutionQueueReasonSchema } from './executionQueue.js';
-import { TextTruncationSchema } from './activityText.js';
 import { NativeToolsSchema } from './nativeTools.js';
 export * from './nativeTools.js';
 import { PromptSettingSnapshotSchema } from './prompts.js';
@@ -15,7 +21,7 @@ import { NativeInteractionSupportSchema } from './nativeInteractionSupport.js';
 import { NativeInteractionInputSchema } from './interactionInput.js';
 export * from './interactionInput.js';
 export * from './nativeInteractionSupport.js';
-import { ActivityNativeIdentitySchema, ActivitySnapshotV1Schema } from './activity.js';
+import { ActivitySnapshotV1Schema } from './activity.js';
 import { CLAUDE_FULL_ACCESS_REQUIRED, ClaudeEffortSchema, ClaudeFullAccessConfigurationSchema, ClaudeHarnessConfigurationSchema, NativeMessageSubmissionSchema } from './claude.js';
 import { changeCodexSandbox } from './harnessEditing.js';
 export * from './claude.js';
@@ -27,7 +33,7 @@ import { McpCredentialArrangementSchema } from './mcpDetection.js';
 export { McpCredentialArrangementSchema } from './mcpDetection.js';
 export type { McpCredentialArrangement } from './mcpDetection.js';
 export { PairedMcpEndpointSchema, type PairedMcpEndpoint } from './mcpDetection.js';
-import { FileWithRevisionSchema, MessageAttachmentFields, MessageAttachmentRefsSchema } from "./files.js";
+import { MessageAttachmentFields } from "./files.js";
 import { IdSchema, TimestampSchema, GraphIdSchema, RunInputSchema } from "./schemaPrimitives.js";
 export { IdSchema, TimestampSchema } from "./schemaPrimitives.js";
 export type { Id, Timestamp } from "./schemaPrimitives.js";
@@ -46,7 +52,7 @@ export type {
 import type { ApprovalHandler } from "./wave25/workflowShape.js";
 import type { RunLiveActivity } from "./runLiveActivity.js";
 import { RunStopCauseSchema } from "./runStopCause.js";
-import { GraphqlToolDefaultsSchema } from "./graphqlMcpTools.js";
+import { GraphqlToolDefaultsSchema, graphqlToolsOutsideRole } from "./graphqlMcpTools.js";
 export * from "./runStopCause.js";
 export * from "./runState.js";
 export * from "./runLiveActivity.js";
@@ -69,10 +75,7 @@ export const RunExecutionLocationSchema = ExecutionLocationSchema.extend({
 }).strict();
 export type RunExecutionLocation = z.infer<typeof RunExecutionLocationSchema>;
 
-const OptionalTimestampFields = {
-  createdAt: TimestampSchema.optional(),
-  updatedAt: TimestampSchema.optional(),
-} as const;
+
 
 import { WorkspaceCiMirrorSchema, WorkspaceRepositorySchema } from './workspaceRepository.js';
 export { WorkspaceCiMirrorSchema, WorkspaceRepositorySchema, type WorkspaceCiMirror, type WorkspaceRepository } from './workspaceRepository.js';
@@ -107,8 +110,8 @@ export type AgentExecutionState = z.infer<typeof AgentExecutionStateSchema>;
 const AgentRoleSchema = z.string().trim().min(1);
 
 /** Product authority role. Free-form Agent.role remains display metadata only. */
-const AgentProductRoleSchema = z.enum(["orchestrator", "coder", "operator"]);
-export type AgentProductRole = z.infer<typeof AgentProductRoleSchema>;
+const ConfiguredAgentProductRoleSchema = z.enum(["master", "orchestrator", "coder", "operator"]);
+export type AgentProductRole = z.infer<typeof ConfiguredAgentProductRoleSchema>;
 
 const HarnessStatusSchema = z.enum(["ready", "running", "disconnected", "unavailable"]);
 export type HarnessStatus = z.infer<typeof HarnessStatusSchema>;
@@ -124,9 +127,7 @@ export const HarnessSummarySchema = z
   .strict();
 
 export const AgentHarnessSchema = z.enum(["codex", "claude"]);
-/** Persisted facts retain the provider that originally produced them. */
-export const RecordedAgentHarnessSchema = z.enum(["codex", "opencode", "claude"]);
-export type RecordedAgentHarness = z.infer<typeof RecordedAgentHarnessSchema>;
+
 export const RETIRED_OPENCODE_MESSAGE = "OpenCode is retired and cannot execute. Select Codex or Claude for new work.";
 export type AgentHarness = z.infer<typeof AgentHarnessSchema>;
 export const AgentEffortSchema = z.enum(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
@@ -331,17 +332,22 @@ export function validateHarnessWorkflowCompatibility(
 
 const AgentTemplateSchema = z.object({
   nativeTools: NativeToolsSchema.optional(),
+  graphqlTools: GraphqlToolDefaultsSchema.optional(),
   harnessProfileSelection: z.lazy(() => HarnessProfileSelectionSchema).optional(),
-  role: AgentProductRoleSchema,
+  role: ConfiguredAgentProductRoleSchema,
   boardAddable: z.boolean(),
   harness: HarnessConfigurationSchema,
 }).strict().superRefine((value, context) => {
   if (value.role === "operator" && value.boardAddable) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["boardAddable"], message: "Operator is application-level and cannot be added to a workflow board" });
   }
+  if (value.graphqlTools && (value.role === 'operator' || graphqlToolsOutsideRole(value.role, value.graphqlTools).length)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['graphqlTools'], message: 'Workflow tool defaults must be allowed for the selected Agent role.' });
+  }
 });
 
 export const AgentDefaultsSchema = z.object({
+  master: AgentTemplateSchema.safeExtend({ role: z.literal("master"), boardAddable: z.literal(true) }).optional(),
   orchestrator: AgentTemplateSchema.safeExtend({ role: z.literal("orchestrator"), boardAddable: z.literal(true) }),
   coder: AgentTemplateSchema.safeExtend({ role: z.literal("coder"), boardAddable: z.literal(true) }),
   operator: AgentTemplateSchema.safeExtend({
@@ -351,6 +357,11 @@ export const AgentDefaultsSchema = z.object({
   }),
 }).strict();
 export type AgentDefaults = z.infer<typeof AgentDefaultsSchema>;
+
+/** Old saved defaults stay untouched; a new Master deliberately starts from coordinator settings. */
+export function agentTemplateForRole(defaults: AgentDefaults, role: WorkflowAgentProductRole) {
+  return role === 'master' ? defaults.master ?? { ...defaults.orchestrator, role: 'master' as const } : defaults[role];
+}
 
 export const WorkflowDefaultsSchema = z.object({ approvalHandler: ApprovalHandlerSchema }).strict();
 export type WorkflowDefaults = z.infer<typeof WorkflowDefaultsSchema>;
@@ -701,7 +712,7 @@ export const AgentSchema = z
     description: z.string().optional(),
     role: AgentRoleSchema.optional(),
     /** Server-owned product role; never derived from role or model output. */
-    productRole: z.enum(["orchestrator", "coder"]).optional(),
+    productRole: WorkflowAgentProductRoleSchema.optional(),
     status: AgentStatusSchema.optional(),
     executionState: AgentExecutionStateSchema.optional(),
     /** Links this logical Agent projection to its current run summary, if any. */
@@ -716,7 +727,7 @@ export const AgentSchema = z
     configurationVersionId: IdSchema.optional(),
     prompt: AgentPromptSchema.optional(),
     assignedSkills: z.array(AssignedSkillSchema).optional(),
-    /** Default Foreman Code MCP tools; absent means every tool the product role allows. */
+    /** Default Foreman Code MCP tools; absence retains the pre-collaboration role tools. */
     graphqlTools: GraphqlToolDefaultsSchema.optional(),
     ...OptionalTimestampFields,
   })
@@ -734,7 +745,7 @@ export const AgentConfigurationVersionSchema = z
     id: IdSchema,
     workspaceId: IdSchema,
     agentId: IdSchema,
-    productRole: z.enum(["orchestrator", "coder"]).optional(),
+    productRole: WorkflowAgentProductRoleSchema.optional(),
     version: z.number().int().positive(),
     prompt: AgentPromptSchema,
     assignedSkills: z.array(AssignedSkillSchema),
@@ -807,36 +818,7 @@ export const ConversationSchema = z
   });
 export type Conversation = z.infer<typeof ConversationSchema>;
 
-const MessageRoleSchema = z.enum(["user", "assistant", "system", "tool"]);
 
-export const MessageSchema = z
-  .object({
-    id: IdSchema,
-    conversationId: IdSchema,
-    requestId: IdSchema.optional(),
-    /** Read projection of this message's immutable accepted turn configuration. */
-    acceptedModel: z.object({ harness: RecordedAgentHarnessSchema, model: z.string().trim().min(1) }).strict().optional(),
-    activityChannel: z.enum(["assistant", "user", "reasoning"]).optional(),
-    activityNative: ActivityNativeIdentitySchema.optional(),
-    revision: z.string().regex(/^(0|[1-9][0-9]*)$/).optional(),
-    sequence: z.string().regex(/^(0|[1-9][0-9]*)$/).optional(),
-    /** Exact admitted send source; displayed publications are never new send inputs. */
-    originalInput: z.object({ requestId: IdSchema, content: z.string(), attachments: MessageAttachmentRefsSchema }).strict().nullable().optional(),
-    nativeMessageId: IdSchema.optional(),
-    /** OpenCode text-part identity is nativeMessageId; this is its assistant message. */
-    nativeParentMessageId: IdSchema.optional(),
-    nativeMessageComplete: z.boolean().optional(),
-    truncation: TextTruncationSchema.optional(),
-    afterActivitySequence: z.string().regex(/^[0-9]+$/).optional(),
-    role: MessageRoleSchema,
-    content: z.string(),
-    /** Pinned input and published-output metadata. The ten-file limit applies to sends, not readback.
-     * Lifecycle state is resolved at read time, not frozen on send. */
-    attachments: z.array(FileWithRevisionSchema).optional(),
-    ...OptionalTimestampFields,
-  })
-  .strict();
-export type Message = z.infer<typeof MessageSchema>;
 
 export const RunExecutionStateSchema = z.enum([
   "queued",
@@ -961,6 +943,7 @@ export const WorkflowRunRecordSchema = z
     workflowId: GraphIdSchema,
     workflowVersionId: GraphIdSchema,
     executionSemanticsVersion: ExecutionSemanticsVersionSchema,
+    resultProtocol: ResultProtocolSchema.optional(),
     /** Accepted workspace location snapshot. Public redacted reads may omit this. */
     executionLocation: RunExecutionLocationSchema.optional(),
     /** Operator authority rechecked before queued and later node execution. */
@@ -1042,6 +1025,7 @@ export const ActivityKindSchema = z.enum([
   "work_limit_notice_unknown",
   "work_needs_direction",
   "work_direction_wait",
+  "workflow_chat_receipt",
 ]);
 
 /** Ordered native/backend activity. payload remains source-specific but JSON-safe. */
@@ -1078,6 +1062,7 @@ export const HarnessExecutionContextSchema = z.object({
     requestId: GraphIdSchema,
     requesterNodeId: GraphIdSchema,
   }).strict().nullable(),
+  outstandingRequestIds: z.array(GraphIdSchema).max(1000).optional(),
 }).strict();
 export type HarnessExecutionContext = z.infer<typeof HarnessExecutionContextSchema>;
 
@@ -1085,6 +1070,7 @@ export type HarnessExecutionContext = z.infer<typeof HarnessExecutionContextSche
 export const HarnessExecutionRequestSchema = z
   .object({
     executionId: IdSchema,
+    resultProtocol: ResultProtocolSchema.optional(),
     runId: IdSchema,
     workspaceId: IdSchema,
     workflowNodeId: IdSchema,
@@ -1692,3 +1678,14 @@ export * from './worktreeSettings.js';
 export * from './workspaceGit.js';
 export * from './readObservation.js'
 export * from './operationalFailures.js'
+
+export * from './agentIdentity.js';
+export * from './memoryBoards.js';
+export * from './chatDelivery.js';
+export * from './workflowChat.js';
+export * from './browserProfiles.js';
+export * from './browserSessions.js';
+export * from './workflowHierarchy.js';
+export * from './coordinationResult.js';
+export { collaborationContractFixtures } from './collaborationFixtures.js';
+export * from './workflowExecutionChat.js';
