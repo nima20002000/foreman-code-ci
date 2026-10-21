@@ -14,7 +14,6 @@ const outcome = (stdout: string, exitCode = 0) => ({ exitCode, exitSignal: null,
 /** Hand-authored Codex 0.154.0 protocol scenarios. Injected below the actual production adapter;
  * no provider binary, login, model call, ambient credential or private service object is used. */
 export class ActivityProductionReplay {
-  readonly appTokens = new Map<string, string>()
   readonly threads = new Map<string, Thread>()
   readonly channels = new Map<string, Channel>()
   readonly starts: Array<{ sessionId: string; nativeTurnId: string; correlationId: string; promptDigest: string }> = []
@@ -51,8 +50,6 @@ export class ActivityProductionReplay {
           const thread: Thread = { id: `${this.threadIdPrefix}-${++this.counter}`, turns: original ? structuredClone(original.turns) : [],
             settings: this.settings(params), ephemeral: params.ephemeral === true }
           this.threads.set(thread.id, thread); bind(thread)
-          const token = _environment?.FOREMAN_CODE_MCP_TOKEN ?? _environment?.GRAPHQL_MCP_TOKEN
-          if (token) this.appTokens.set(thread.id, token)
           return threadResponse(thread, params)
         }
         if (method === 'thread/resume') {
