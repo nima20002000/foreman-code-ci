@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import {
   CircleAccountIdSchema, CircleAccountRoleSchema, CircleSchedulingRoleSchema,
-  DEFAULT_CIRCLE_ACCOUNT_ID, circleCreditsShape, circleSchedulingShape,
+  DEFAULT_CIRCLE_ACCOUNT_ID, circleCreditsShape,
 } from '../circleCredits.js'
 import { optionalCommandId } from './commands.js'
 
@@ -36,7 +36,6 @@ export const CircleOrganizationReadSchema = z.object({
   circleAccountId: CircleAccountIdSchema,
   ready: z.boolean(),
   running: z.number().int().nonnegative(),
-  ...circleSchedulingShape,
   schedulingRole: CircleSchedulingRoleSchema,
   schedulingReason: z.string().max(300),
   ...circleCreditsShape,

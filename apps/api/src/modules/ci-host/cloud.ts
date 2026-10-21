@@ -189,17 +189,13 @@ export class CloudCi {
     return this.standby.reading(this.provider.account.owner, this.provider.circleAccountId, mirrorName)
   }
 
-  private async requireNewStart(mirrorName: string, request?: { runId: string; retryUnsent?: true }) {
+  private async requireNewStart(mirrorName: string) {
     if (this.provider.recoveryOnly || this.provider.account?.registered === false) {
       throw new DomainError('CI_CLOUD_UNAVAILABLE', 'This CircleCI executor only finishes previously assigned jobs.', 409)
     }
     const reading = await this.schedulingReading(mirrorName)
-    if (reading && reading.schedulingRole !== 'active' && !reading.creditProbeAvailable && !request?.retryUnsent) {
+    if (reading && reading.schedulingRole !== 'active') {
       throw new DomainError('CI_CLOUD_UNAVAILABLE', reading.schedulingReason, 409)
-    }
-    if (reading && request && !await this.standby!.admitStart(this.provider.account!.owner,
-      this.provider.circleAccountId ?? 'default', mirrorName, request.runId, request)) {
-      throw new DomainError('CI_CLOUD_UNAVAILABLE', 'CircleCI recovery probe is already pending or cooling down.', 409)
     }
   }
 
@@ -421,16 +417,10 @@ export class CloudCi {
     return run
   }
 
-  private async save(run: CloudRun) {
+  private save(run: CloudRun) {
     const transport = this.provider.transport ?? run.transport
-    const saved = await saveCloudRun(this.path(run.runId, 'meta.json'), { ...run, ...(transport ? { transport } : {}),
+    return saveCloudRun(this.path(run.runId, 'meta.json'), { ...run, ...(transport ? { transport } : {}),
       ...(this.provider.id === 'circleci' ? { circleAccountId: this.provider.circleAccountId ?? 'default' } : {}) })
-    if (this.provider.id === 'circleci' && this.standby && !['starting', 'running'].includes(saved.state)
-      && !cancellationPending(saved) && !unresolvedCloudAttemptIds(saved).length && !saved.dispatch?.uncertain) {
-      await this.standby.finishCreditProbe(this.provider.account?.owner ?? saved.mirror.split('/')[0]!,
-        this.provider.circleAccountId ?? 'default', saved.runId)
-    }
-    return saved
   }
 
   private view(run: CloudRun, logBytes: number): CiHostRun {
@@ -645,7 +635,7 @@ export class CloudCi {
         if (await this.provider.find(run)) run = await this.save({ ...run, state: 'running', workflowStarted: true })
       } catch (error) {
         if (error instanceof DomainError && error.code === 'CI_CLOUD_PIPELINE_FAILED') {
-          run = await this.failProviderPipeline(run, error)
+          run = await this.failPipeline(run, { message: error.message, configError: error.details?.configError === true })
         } else if (error instanceof DomainError
           && ['CI_CLOUD_RUN_NOT_FOUND', 'CI_CLOUD_RUN_UNREADABLE'].includes(error.code)) {
           run = await this.reconcileLookupFailure(run, error)
@@ -701,14 +691,8 @@ export class CloudCi {
     try {
       pending = await this.save({ ...pending, dispatch: { ...pending.dispatch!, uncertain: true, notSent: false } })
       // Check policy after the final journal write, immediately before contacting the provider.
-      const firstDispatch = !run.providerRunId && ((run.dispatch?.attempts ?? 0) === 0 || run.dispatch?.notSent)
-        && !run.dispatch?.uncertain
-      if (firstDispatch || this.provider.id === 'circleci' && this.standby) {
-        const retryUnsent = (run.dispatch?.attempts ?? 0) > 0
-          && run.dispatch?.notSent === true && run.dispatch.uncertain === false
-        await this.requireNewStart(input.mirror.slice(input.mirror.indexOf('/') + 1), {
-          runId: pending.runId, ...(retryUnsent ? { retryUnsent: true as const } : {}),
-        })
+      if (!run.providerRunId && ((run.dispatch?.attempts ?? 0) === 0 || run.dispatch?.notSent) && !run.dispatch?.uncertain) {
+        await this.requireNewStart(input.mirror.slice(input.mirror.indexOf('/') + 1))
       }
     } catch (error) {
       pending = await this.save({ ...pending, dispatch: { ...pending.dispatch!, uncertain: false, notSent: true } })
@@ -735,14 +719,6 @@ export class CloudCi {
   private configErrorPath(run: CloudRun) {
     const key = createHash('sha256').update(canonicalJson({ mirror: run.mirror, commit: run.commit })).digest('hex')
     return join(this.root, 'config-errors', `${key}.json`)
-  }
-
-  private async failProviderPipeline(run: CloudRun, error: DomainError): Promise<CloudRun> {
-    if (error.details?.creditRefused === true && this.standby) {
-      const owner = this.provider.account?.owner ?? run.mirror.split('/')[0]!
-      await this.standby.recordCreditRefusal(owner, this.provider.circleAccountId, run.runId)
-    }
-    return this.failPipeline(run, { message: error.message, configError: error.details?.configError === true })
   }
 
   private async failPipeline(run: CloudRun, failure: { message: string; configError?: boolean }): Promise<CloudRun> {
@@ -1344,7 +1320,7 @@ export class CloudCi {
       })
     } catch (error) {
       if (error instanceof DomainError && error.code === 'CI_CLOUD_PIPELINE_FAILED') {
-        return this.failProviderPipeline(run, error)
+        return this.failPipeline(run, { message: error.message, configError: error.details?.configError === true })
       }
       if (error instanceof DomainError && error.code === 'CI_CLOUD_RATE_LIMITED') {
         this.pausePolling(runId)
@@ -1685,10 +1661,6 @@ export class CloudCi {
       await this.provider.find(run)
     }
     const status = await this.provider.status(run)
-    if (status.executionStarted && this.provider.id === 'circleci' && this.standby) {
-      await this.standby.recordCreditAcceptance(this.provider.account?.owner ?? run.mirror.split('/')[0]!,
-        this.provider.circleAccountId ?? 'default', runId)
-    }
     this.polled.set(runId, this.ports.now().getTime())
     if (!status.done && status.queued) return this.waitInProviderQueue(run, reassign)
     if (run.providerQueuedAt) {
