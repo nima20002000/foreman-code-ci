@@ -284,7 +284,6 @@ const AgentRenameOperationSchema = z.object({
 }).strict();
 const AgentConfigureOperationSchema = z.object({
   type: z.literal("agent.configure"), agentId: IdSchema,
-  productRole: AgentProductRoleSchema.optional(),
   expectedAgentRevision: ExpectedRevisionSchema, configuration: ManagementHarnessConfigurationSchema,
   harnessProfileSelection: AgentSchema.shape.harnessProfileSelection,
   prompt: AgentSchema.shape.prompt,
@@ -565,6 +564,11 @@ export const REPEAT_OPERATOR_TOOL_NAMES = [
 export type RepeatOperatorToolName = typeof REPEAT_OPERATOR_TOOL_NAMES[number];
 
 export const OperatorToolNameSchema = z.enum([
+  'memory_board_get', 'memory_board_changes_read', 'memory_card_create', 'memory_card_update',
+  'memory_note_create', 'memory_note_update', 'memory_note_archive',
+  'harness_instances_list', 'harness_instance_save', 'harness_instance_check', 'workspace_root_configuration_adopt',
+  'reference_files_list', 'reference_file_read', 'reference_file_add', 'reference_file_remove',
+  'file_retention_get', 'file_retention_preview', 'file_retention_save', 'run_summaries_list', 'run_board_snapshot_get',
   'bug_report', 'bug_reports_list', 'bug_report_get', 'bug_report_update', 'bug_reports_close',
   "ci_run", "ci_get", "ci_computers_list", "ci_cancel", "ci_logs_read", "ci_list",
   ...Object.keys(GRAPHQL_OPERATOR_TOOLS) as (keyof typeof GRAPHQL_OPERATOR_TOOLS)[],
@@ -585,7 +589,9 @@ export const OperatorToolNameSchema = z.enum([
   "operator_chat_create", "operator_chat_list", "operator_chat_get", "operator_chat_history_get", "operator_chat_activity_get",
   "operator_chat_send", "operator_chat_cancel", "operator_chat_respond", "operator_handoff_history_get",
   "operator_chat_delete", "operator_chat_restore",
-  "agent_chat_read", "agent_chat_send", "agent_chat_interrupt", "agent_chat_cancel_queued", "agent_chat_cancel_all_queued", "agent_chat_respond",
+  "agent_chat_ensure_conversation", "conversation_file_upload", "conversation_file_finalize",
+  "conversation_file_cancel", "conversation_files_list", "conversation_file_read",
+  "agent_chat_read", "agent_chat_send", "agent_chat_interrupt", "agent_chat_cancel_queued", "agent_chat_respond",
   "workspace_defaults_get",
   'general_settings_get', 'general_settings_update', 'circle_credit_allowance_get', 'circle_credit_allowance_update',
   'circle_accounts_list', 'circle_account_add', 'circle_account_remove',
@@ -599,6 +605,7 @@ export const OperatorToolNameSchema = z.enum([
   "workspace_defaults_update",
   "harness_mcp_servers_list", "harness_mcp_change_request", "harness_mcp_managed_request", "harness_mcp_change_get", "harness_mcp_change_reconcile", "codex_plugin_change", "codex_plugin_reconcile",
   "codex_plugins_list", "codex_plugin_get",
+  "codex_plugin_operations_list", "harness_mcp_plans_list", "harness_mcp_change_decide",
   "claude_plugins_list", "claude_plugin_change", "claude_plugin_marketplace_add",
   "harness_configuration_check",
   "execution_readiness_get",
