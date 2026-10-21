@@ -40,6 +40,7 @@ export function createWorkerBrowserRuntime(options) {
     readSelectedRelease = readInstalledRelease, readInstalled = readInstalledBrowserRuntime,
     loadModule = importHost, runtimeRoot = join(root, 'browser-runtime') } = options;
   let host = null, nativeModule = null, installed = null;
+  let offlineLifecycle = null;
   let phase = 'unavailable', admissionStopped = false, closed = false, lastFailure = null;
   let tail = Promise.resolve();
   const profileStateRoot = join(stateDirectory, 'browser', 'profile-data');
@@ -150,9 +151,19 @@ export function createWorkerBrowserRuntime(options) {
       host.resumeAdmission(); admissionStopped = false; phase = 'ready';
       return status();
     }),
-    drain: () => serialize(async () => {
-      if (!host) throw unavailable('No active browser host can checkpoint its profile data.');
+    drain: input => serialize(async () => {
       await assertHostOwnership();
+      if (!host) {
+        if (closed || !input?.next) throw unavailable('No verified browser runtime can checkpoint its profile data.');
+        stopAdmission();
+        // Activation verifies the staged unit before handing it to this callback.
+        offlineLifecycle = await offlineBrowserRuntimeLifecycle({
+          nativeHostModule: input.next.nativeHostModule, profileStateRoot,
+        });
+        const checkpoint = await offlineLifecycle.drain();
+        await assertHostOwnership();
+        return checkpoint;
+      }
       const wasStopped = admissionStopped;
       stopAdmission();
       try { return await host.drainForRuntimeUpdate(); }
@@ -165,6 +176,7 @@ export function createWorkerBrowserRuntime(options) {
     restoreProfiles: checkpointId => serialize(async () => {
       await assertHostOwnership();
       if (host) throw unavailable('Stop the new browser host before restoring its compatible profile checkpoint.');
+      if (offlineLifecycle) return offlineLifecycle.restoreProfiles(checkpointId);
       if (!nativeModule) throw unavailable('No verified browser host is available to restore its profile checkpoint.');
       return nativeModule.restoreBrowserRuntimeProfiles({ profileStateRoot, checkpointId });
     }),
