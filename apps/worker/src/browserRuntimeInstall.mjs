@@ -16,7 +16,7 @@ const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 
 function invariant(condition, message) { if (!condition) throw new Error(`BROWSER_RUNTIME_INVALID: ${message}`); }
 function safePath(path) {
-  return typeof path === 'string' && path.length <= 1024 && /^[a-zA-Z0-9_@.+/-]+$/.test(path)
+  return typeof path === 'string' && path.length <= 1024 && /^[a-zA-Z0-9_@.+/[\]-]+$/.test(path)
     && path.split('/').every(part => part && part !== '.' && part !== '..');
 }
 function sameTarget(actual, expected) {

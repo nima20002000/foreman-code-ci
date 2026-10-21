@@ -20,7 +20,7 @@ const digest = /^[a-f0-9]{64}$/;
 const controls = new Set(['runtime/browser/manifest.json', 'runtime/browser/runtime-lock.json', 'runtime/browser/LICENSES.txt',
   'scripts/browser-runtime-install.mjs', 'apps/worker/src/browserRuntimeInstall.mjs', 'scripts/worker-artifact-files.mjs',
   'scripts/worker-snapshot-policy.mjs', 'runtime/browser/licenses/MIT.txt', 'runtime/browser/credits.py', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/contracts/package.json']);
-const safePath = path => typeof path === 'string' && /^[a-zA-Z0-9_@.+/-]+$/.test(path)
+const safePath = path => typeof path === 'string' && /^[a-zA-Z0-9_@.+/[\]-]+$/.test(path)
   && path.split('/').every(part => part && part !== '.' && part !== '..');
 const invariant = (condition, message) => { if (!condition) throw new Error(`Browser runtime assembly: ${message}`); };
 
