@@ -3,7 +3,7 @@ import type pg from 'pg'
 import { describe, it } from 'vitest'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { PostgresFileConversationAuthorization } from '../src/modules/files/authorization.js'
-import { FileUploadRequestSchema } from '@foreman-code/contracts/files'
+import { FileUploadRequestSchema } from '../src/modules/files/requests.js'
 import { fileDownloadHeaders } from '../src/routes/files.js'
 import { fileFixtures, fileMetadata } from './helpers/fileFixtures.js'
 
