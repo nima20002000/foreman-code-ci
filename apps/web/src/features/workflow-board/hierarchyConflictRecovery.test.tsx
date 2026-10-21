@@ -236,7 +236,7 @@ it.each(['write', 'read', 'latest-response'] as const)('keeps the original edito
   const errorText = failure === 'latest-response' ? 'Latest saved workflow could not be read.'
     : failure === 'read' ? 'Recovery read denied' : /Durable edit storage is unavailable/
   await waitFor(() => expect(screen.queryAllByText(errorText),
-    screen.queryAllByRole('alert').map(element => element.textContent).join('\n')).not.toHaveLength(0))
+    screen.getByRole('region', { name: 'Workflow authoring' }).textContent ?? '').not.toHaveLength(0))
   restore?.mockRestore(); f.controls.failLatestRead = false
   expect(draft(f).instanceId).toBe(original.instanceId)
   expect(draft(f).graph).toEqual(original.graph)
@@ -261,7 +261,8 @@ it('blocks Inspect latest while Stage is uncertain and reconciles the original i
   expect(readConflictRecoveries(f.key)).toEqual([])
   await waitFor(() => expect(authoring().getByRole('button', { name: 'Reconcile Save' })).toBeEnabled())
   await userEvent.click(authoring().getByRole('button', { name: 'Reconcile Save' }))
-  await waitFor(() => expect(readEditOutbox(f.key)).toBeUndefined())
+  await waitFor(() => expect(readEditOutbox(f.key),
+    JSON.stringify({ requests: f.requests.length, authoring: screen.getByRole('region', { name: 'Workflow authoring' }).textContent })).toBeUndefined())
   expect(f.requests.length).toBeGreaterThan(1)
   for (const input of f.requests) expect(input).toEqual(original)
   expect(f.saved().version.definition.name).toBe('Exact pending name')

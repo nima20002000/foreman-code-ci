@@ -141,7 +141,8 @@ describe('disabled collaboration shell through navigation and rendered controls'
       }, [name, visit])
       return <p>{name} body</p>
     }
-    mount('/workspaces/workspace/workflows/workflow/runs/run-a/graph/version-a/3?boardPanel=agent&boardNodeId=master-node&boardExecutionId=held-execution', {
+    const path = '/workspaces/workspace/workflows/workflow/runs/run-a/graph/version-a/3'
+    const router = mount(`${path}?boardPanel=agent&boardNodeId=master-node&boardExecutionId=held-execution`, {
       executionChat: value => { selected(value); return <Body name="Execution" /> },
       groupChat: () => <Body name="Group" />, memoryBoard: () => <Body name="Memory" />,
     })
@@ -151,6 +152,7 @@ describe('disabled collaboration shell through navigation and rendered controls'
     expect(events).toEqual(['open Execution'])
     await userEvent.click(screen.getByRole('button', { name: 'Memory board' }))
     await screen.findByText('Memory body')
+    expect(router.state.location.pathname).toBe(path)
     expect(screen.queryByText('Execution body')).not.toBeInTheDocument()
     expect(events).toEqual(['open Execution', 'close Execution', 'open Memory'])
     await userEvent.click(screen.getByRole('button', { name: 'Close Memory board' }))
