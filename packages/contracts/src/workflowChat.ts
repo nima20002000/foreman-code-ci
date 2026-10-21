@@ -96,6 +96,8 @@ export const EngineChatReadbackSchema = z.object({
   state: z.enum(['queued','starting','active','waiting_children','settling','idle']),
   capabilities: z.object({ steer: z.enum(['native_expected_turn','unavailable']),
     queue: z.boolean(), interruptAndSend: z.boolean() }).strict(),
+  /** Current native owner observation, independent of retained transcript messages. */
+  nativeTurnId: z.string().min(1).optional(),
   messages: z.array(EngineChatMessageSchema).max(100), receipts: z.array(ChatDeliveryReceiptSchema),
   nextCursor: z.string().nullable(), hasMore: z.boolean(),
   revision: z.number().int().nonnegative(),

@@ -139,7 +139,7 @@ export class AgentChatEvents {
 
 export type ConversationFeatureBinder = (input: { conversationId: string; principalId: string;
   context: ConversationFeatureContext; manager: NativeHarnessSessionManager; session: NativeSessionReference;
-  correlationId: string; signal: AbortSignal }) => Promise<void>
+  correlationId: string; signal: AbortSignal }) => Promise<void | { restart: true }>
 
 interface Runtime {
   manager: NativeHarnessSessionManager
@@ -1657,7 +1657,7 @@ export class AgentChatService {
     }
     const featureContextKey = commandInputHash({ subject: featureContext.subject,
       workflowVersionId: featureContext.workflowVersionId, workingDirectory: featureContext.workingDirectory })
-    const existing = this.runtimes.get(row.id)
+    let existing = this.runtimes.get(row.id)
     if (controlPrincipalId) existing?.manager.setSessionControlPrincipal?.(controlPrincipalId)
     if (existing?.session) {
       if (existing.session.nativeSessionId !== row.native_session_id) {
@@ -1668,11 +1668,15 @@ export class AgentChatService {
           ? await this.repository.turnPrincipalId(row.id, row.active_request_id) : undefined)
         if (!this.featureContextBinder || !principalId) throw new DomainError('CHAT_SUBJECT_BINDING_UNAVAILABLE',
           'The resident native session cannot bind the accepted scoped tools.', 503)
-        await this.featureContextBinder({ conversationId: row.id, principalId, context: featureContext,
+        const rebound = await this.featureContextBinder({ conversationId: row.id, principalId, context: featureContext,
           manager: existing.manager, session: existing.session, correlationId, signal })
-        existing.featureContextKey = featureContextKey
+        if (rebound?.restart) {
+          await this.release(row.id, configuration.harnessProfileSelection?.target.hostRef.kind === 'device'
+            ? { workerClosure: 'release' } : undefined)
+          existing = undefined
+        } else existing.featureContextKey = featureContextKey
       }
-      return existing
+      if (existing) return existing
     }
     await mkdir(this.runtimeDirectory(row.id), { recursive: true })
     this.assertOpen()

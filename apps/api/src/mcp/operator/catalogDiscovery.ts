@@ -1,4 +1,3 @@
-import { browserOperatorTools } from '../../modules/collaboration/browserTools.js'
 import { CANONICAL_RUN_GRAPH_MCP_TOOLS, CURRENT_WORKFLOW_TOOLS, RUN_INSPECTION_TOOLS } from '@foreman-code/contracts/wave25'
 import { WORKFLOW_HIERARCHY_TOOLS } from '@foreman-code/contracts'
 import { toolAvailable, toolRequirements, type OperatorToolDefinition } from './definition.js'
@@ -22,7 +21,6 @@ import { workflowHierarchyToolAvailable } from './tools/workflowHierarchy.js'
 export function catalogToolAvailable(context: OperatorRequestContext, name: string,
   registry: readonly OperatorToolDefinition[], resource: AuthorizedResource = {}): boolean {
   const tool = registry.find(candidate => candidate.name === name)
-    ?? browserOperatorTools(context).find(candidate => candidate.name === name)
   if (tool) return toolAvailable(context, tool, resource)
   if (name === 'workspace_root_configuration_adopt') return workspaceRootAdoptionAvailable(context, registry, resource)
   const host = HOST_HARNESS_TOOLS.find(candidate => candidate === name)
@@ -105,7 +103,7 @@ function extensionRequirements(): CapabilityRequirement[] {
 /** Project requirements in registered catalog order; missing metadata is a configuration error. */
 export function catalogToolRequirements(context: OperatorRequestContext, registry: readonly OperatorToolDefinition[],
   names: readonly string[], resource: AuthorizedResource): CapabilityRequirement[] {
-  const ordinary = [...registry, ...browserOperatorTools(context)].map(tool => ({ name: tool.name,
+  const ordinary = registry.map(tool => ({ name: tool.name,
     actions: toolRequirements(tool).map(item => item.action),
     detail: tool.permissionDetail ?? 'Requirements are scoped independently. Services revalidate every concrete operation.',
   }))

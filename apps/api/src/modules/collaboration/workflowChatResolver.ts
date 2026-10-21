@@ -32,10 +32,10 @@ function nextCursor(input: WorkflowExecutionChatSelection, before: string) {
 /** Resolve only actual Run facts. An absent Run is an explicit outside-run choice;
  * a historical or ambiguous execution never silently becomes another target. */
 export async function resolveWorkflowChatTarget(sql: GraphSqlClient, principal: Principal,
-  raw: unknown, action: 'agent_chat:read' | 'workflows:read' = 'agent_chat:read'): Promise<WorkflowExecutionChatResolution> {
+  raw: unknown): Promise<WorkflowExecutionChatResolution> {
   const input = WorkflowExecutionChatSelectionSchema.parse(raw), before = selectionCursor(input)
   if (input.runId) {
-    requireAuthorization(principal, action, { workspaceId: input.workspaceId,
+    requireAuthorization(principal, 'agent_chat:read', { workspaceId: input.workspaceId,
       workflowId: input.workflowId, ...(input.runId ? { runId: input.runId } : {}) })
     const run = (await sql.query<WorkflowChatRunRow>(`select id,workspace_id,workflow_id,workflow_version_id,execution_state,
       stop_requested_at is not null as stopped from runs where id=$1 and workspace_id=$2 and workflow_id=$3`,
@@ -46,9 +46,9 @@ export async function resolveWorkflowChatTarget(sql: GraphSqlClient, principal: 
     }
     return resolveRunNode(sql, input, run, before)
   }
-  const unrestricted = isAuthorized(principal, action, { workspaceId: input.workspaceId, workflowId: input.workflowId })
+  const unrestricted = isAuthorized(principal, 'agent_chat:read', { workspaceId: input.workspaceId, workflowId: input.workflowId })
   const authorizedRunIds = unrestricted ? null : [...new Set(principal.grants.flatMap(grant => grant.scope.runIds ?? []))]
-    .filter(runId => isAuthorized(principal, action, { ...input, runId }))
+    .filter(runId => isAuthorized(principal, 'agent_chat:read', { ...input, runId }))
   if (authorizedRunIds && !authorizedRunIds.length) {
     throw new DomainError('ACCESS_DENIED', 'The caller cannot read Agent chat in this workflow.', 403)
   }
@@ -57,7 +57,7 @@ export async function resolveWorkflowChatTarget(sql: GraphSqlClient, principal: 
       and execution_state in ('queued','running','waiting') and ($3::text is null or workflow_version_id=$3)
       and ($4::text is null or id<$4) and ($6::text[] is null or id=any($6)) order by id desc limit $5`,
   [input.workspaceId, input.workflowId, input.workflowVersionId ?? null, before ?? null, input.limit + 1, authorizedRunIds])).rows
-  if (!runs.length && !input.cursor) return unrestricted ? outsideRun(sql, principal, input, action)
+  if (!runs.length && !input.cursor) return unrestricted ? outsideRun(sql, principal, input)
     : { kind: 'unavailable', reason: 'NO_EXECUTION' }
   if (runs.length === 1 && !input.cursor) {
     const resolved = await resolveRunNode(sql, { ...input, runId: runs[0]!.id, cursor: undefined }, runs[0]!)
@@ -74,8 +74,8 @@ export async function resolveWorkflowChatTarget(sql: GraphSqlClient, principal: 
 }
 
 async function outsideRun(sql: GraphSqlClient, principal: Principal,
-  input: WorkflowExecutionChatSelection, action: 'agent_chat:read' | 'workflows:read'): Promise<WorkflowExecutionChatResolution> {
-  requireAuthorization(principal, action, { workspaceId: input.workspaceId,
+  input: WorkflowExecutionChatSelection): Promise<WorkflowExecutionChatResolution> {
+  requireAuthorization(principal, 'agent_chat:read', { workspaceId: input.workspaceId,
       workflowId: input.workflowId, ...(input.runId ? { runId: input.runId } : {}) })
   const workflow = (await sql.query<{ current_version_id: string | null }>(
     'select current_version_id from workflows where id=$1 and workspace_id=$2', [input.workflowId, input.workspaceId])).rows[0]

@@ -13,9 +13,9 @@ export function useWorkflowSidePanel(workspaceId: string, workflowId: string, ru
   const pathname = location.pathname
   const scope = JSON.stringify([workspaceId, workflowId])
   const opener = useRef<HTMLElement | null>(null)
-  const { boardPanel, boardNodeId, boardExecutionId, boardWaitingActivationId, boardAgentTab, browserSessionId, browserTabId } = search
-  const panel = useMemo(() => boardSidePanelFromSearch({ boardPanel, boardNodeId, boardExecutionId, boardWaitingActivationId, boardAgentTab, browserSessionId, browserTabId }),
-    [boardPanel, boardNodeId, boardExecutionId, boardWaitingActivationId, boardAgentTab, browserSessionId, browserTabId])
+  const { boardPanel, boardNodeId, boardExecutionId, boardWaitingActivationId, boardAgentTab } = search
+  const panel = useMemo(() => boardSidePanelFromSearch({ boardPanel, boardNodeId, boardExecutionId, boardWaitingActivationId, boardAgentTab }),
+    [boardPanel, boardNodeId, boardExecutionId, boardWaitingActivationId, boardAgentTab])
   const browserKey = JSON.stringify([workspaceId, workflowId, run?.runId ?? search.selectedRunId ?? search.runId,
     boardNodeId, boardExecutionId])
   const visible = panel.kind === 'browser' && search.boardMemory !== true
@@ -67,9 +67,7 @@ export function useWorkflowSidePanel(workspaceId: string, workflowId: string, ru
           if (next.kind === 'agent' || next.nodeId !== undefined) {
             selected.boardNodeId = next.nodeId
             selected.boardExecutionId = next.executionId
-            selected.boardWaitingActivationId = next.waitingActivationId
-            selected.browserSessionId = next.kind === 'browser' ? next.sessionId : undefined
-            selected.browserTabId = next.kind === 'browser' ? next.tabId : undefined
+            selected.boardWaitingActivationId = next.kind === 'agent' ? next.waitingActivationId : undefined
           }
           if (next.kind === 'agent') selected.boardAgentTab = next.tab
         }

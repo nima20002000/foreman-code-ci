@@ -1,4 +1,3 @@
-import { browserAgentTools, browserOperatorTools } from '../../modules/collaboration/browserTools.js'
 import { workflowChatTools } from '../operator/tools/workflowChat.js'
 import { registerToolDefinition } from '../operator/definition.js'
 import { invokeOperatorTool } from '../operator/invoke.js'
@@ -174,13 +173,6 @@ export async function createGraphqlMcpServer(context: GraphqlMcpContext, request
       if (context.operator?.workflowChat) {
         for (const tool of workflowChatTools(context.operator.workflowChat)) {
           if (tool.name !== 'workflow_chat_read' && tool.name !== 'workflow_chat_post') continue
-          registerToolDefinition(collector, { principal: context.principal, services: context.operator }, tool,
-            { invoke: invokeOperatorTool })
-        }
-      }
-      if (context.operator?.browser) {
-        for (const tool of browserOperatorTools({ principal: context.principal, services: context.operator })) {
-          if (!browserAgentTools.some(name => name === tool.name)) continue
           registerToolDefinition(collector, { principal: context.principal, services: context.operator }, tool,
             { invoke: invokeOperatorTool })
         }

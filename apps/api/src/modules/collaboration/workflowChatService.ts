@@ -1,4 +1,6 @@
 import { readWorkflowNativeChat } from '../interactions/workflowChatNativeRead.js'
+import { readWorkflowChatChanges } from './workflowChatChanges.js'
+import { WorkflowChatNotifications } from './workflowChatNotifications.js'
 import { PostgresChatDeliveryRepository } from '../workflow-chat/deliveryRepository.js'
 import type { DeliveryQualification } from '../workflow-chat/model.js'
 import { qualifyWorkflowChatSendLocked } from './workflowChatAdmission.js'
@@ -23,8 +25,10 @@ import type { WorkflowChatLockedTarget, WorkflowChatTarget, WorkflowExecutionCha
 /** HTTP, Group chat and MCP use this one durable Run-owned admission boundary. */
 export class WorkflowExecutionChatService implements ExecutionChatPort {
   private readonly groupDeliveries: PostgresChatDeliveryRepository
+  private readonly notifications: WorkflowChatNotifications
   constructor(private readonly pool: pg.Pool, private readonly dependencies: WorkflowExecutionChatDependencies) {
     this.groupDeliveries = new PostgresChatDeliveryRepository(pool)
+    this.notifications = new WorkflowChatNotifications(pool)
   }
   private now() { return this.dependencies.now?.() ?? new Date().toISOString() }
   private commandId() { return this.dependencies.id?.() ?? randomUUID() }
@@ -35,6 +39,15 @@ export class WorkflowExecutionChatService implements ExecutionChatPort {
   }
   read(principal: Principal, request: { target: DeliveryTarget; cursor?: string | undefined; limit?: number | undefined }) {
     return readWorkflowExecutionChat(this.pool, this.dependencies.owner, principal, request)
+  }
+  changes(principal: Principal, target: WorkflowChatTarget, afterRevision?: string) {
+    return readWorkflowChatChanges(this.pool, this.dependencies.owner, principal, target, afterRevision)
+  }
+  subscribe(target: WorkflowChatTarget, changed: () => void, failed: (error: Error) => void) {
+    return this.notifications.subscribe({ target, changed, failed })
+  }
+  assertReadable(principal: Principal, target: WorkflowChatTarget) {
+    return withWorkflowChatRead(this.pool, principal, target, 'agent_chat:read', sql => readWorkflowChatIdentity(sql, target))
   }
   async message(principal: Principal, target: WorkflowChatTarget, messageId: string) {
     return withWorkflowChatRead(this.pool, principal, target, 'agent_chat:read', async sql => {
@@ -58,7 +71,8 @@ export class WorkflowExecutionChatService implements ExecutionChatPort {
         agentIdentity: context.agent, configurationVersionId: context.agent.configurationVersionId,
         ...(context.native ? { nativeSessionId: context.native.nativeSessionId,
           ownerRequestId: context.native.ownerRequestId,
-          ...(context.native.nativeTurnId ? { nativeTurnId: context.native.nativeTurnId } : {}) } : {}),
+          ...(context.native.nativeTurnId ? { nativeTurnId: context.native.nativeTurnId } : {}),
+          ...(context.native.inputMessageId ? { inputMessageId: context.native.inputMessageId } : {}) } : {}),
       } }
     })
   }
@@ -76,6 +90,15 @@ export class WorkflowExecutionChatService implements ExecutionChatPort {
       if (stored) return { receipt: ChatDeliveryReceiptSchema.parse(stored.receipt), replayed: true }
       if (prepared) {
         await this.groupDeliveries.adoptPreparedLocked(context.sql, principal.id, request, async command => {
+          if (command.receipt.appliedIntent !== 'next_turn') {
+            const retained = command.ownerBinding
+            const native = context.native
+            if (!native || retained.nativeSessionId !== native.nativeSessionId
+              || retained.ownerRequestId !== native.ownerRequestId || retained.nativeTurnId !== native.nativeTurnId
+              || retained.inputMessageId !== native.inputMessageId) {
+              throw new DomainError('CHAT_TARGET_CHANGED', 'The native target changed after the Group message was accepted.', 409)
+            }
+          }
           const qualified = await qualifyWorkflowChatSendLocked(context, request,
             { id, principalId: principal.id }, this.dependencies.owner)
           if (qualified.appliedIntent !== command.receipt.appliedIntent) throw new DomainError(

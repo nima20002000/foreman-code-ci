@@ -31,9 +31,6 @@ export function productionChatAccess(pool: pg.Pool): SharedChatAccess {
       if (live.audience !== 'worker') return { principal: live }
       const conversation = await readConversationCredential(sql, live.id)
       if (conversation) {
-        const tool = action === 'agent_chat:read' ? 'workflow_chat_read' : 'workflow_chat_post'
-        if (action === 'agent_chat:cancel' || !conversation.tools.includes(tool)) throw new DomainError('ACCESS_DENIED',
-          'This Agent cannot use the requested Group chat operation.', 403)
         if (!scope || scope.workspaceId !== conversation.subject.agent.workspaceId
           || scope.workflowId !== conversation.subject.agent.workflowId) throw new DomainError(
           'ACCESS_DENIED', 'This credential belongs to another conversation workflow.', 403)
@@ -80,8 +77,15 @@ export function createProductionWorkflowChat(input: {
       if (query.runId) {
         const selected = await execution.resolve(principal, { workspaceId, workflowId: query.workflowId,
           workflowNodeId: query.workflowNodeId, runId: query.runId })
-        if (selected.kind === 'selected') return selected.target
-        throw new DomainError('CHAT_TARGET_SELECTION_REQUIRED', 'Choose the exact Run chat target before sending.', 409)
+        if (selected.kind !== 'selected') throw new DomainError(
+          'CHAT_TARGET_SELECTION_REQUIRED', 'Choose the exact Run chat target before sending.', 409)
+        if (selected.agent.agentId !== query.agentId) throw new DomainError(
+          'CHAT_TARGET_CHANGED', 'The selected Agent does not match this Run node.', 409)
+        if (selected.state === 'idle' && selected.target.kind === 'workflow_execution') return {
+          kind: 'historical_execution', selection: { workspaceId, workflowId: query.workflowId,
+            workflowNodeId: query.workflowNodeId, runId: query.runId, executionId: selected.target.execution.executionId },
+        }
+        return selected.target
       }
       const read = await agent.read(principal, workspaceId, query)
       if (!read.deliveryTarget) throw new DomainError('CHAT_TARGET_UNAVAILABLE', 'Read the selected Agent before sending.', 409)
