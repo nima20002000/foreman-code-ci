@@ -1,10 +1,12 @@
 import { InfoHint } from '../../shared/ui/InfoHint'
 import {
-  GRAPHQL_AGENT_TOOLS, graphqlRoleTools, effectiveGraphqlTools,
+  COLLABORATION_AGENT_TOOLS, GRAPHQL_AGENT_TOOLS, GraphqlAgentToolSchema, graphqlRoleTools, effectiveGraphqlTools,
   type GraphqlAgentTool, type GraphqlToolOverride, type WorkflowAgentProductRole,
 } from '@foreman-code/contracts'
 
 import { Checkbox, SegmentedControl } from '../../shared/ui/nocturne'
+import { useWorkflowBoard } from '../workflow-board/context'
+import { useCollaborationUISlots } from '../../shared/ui/collaborationSlots'
 
 type NodeChoice = 'default' | 'on' | 'off'
 
@@ -14,19 +16,27 @@ function normalizeToolOverride(override: GraphqlToolOverride | undefined): Graph
 }
 
 /** The Agent's default Foreman Code MCP tools, and this workflow node's change to them. */
-export function GraphqlToolsFields({ role, defaults, override, onChange }: {
+export function GraphqlToolsFields({ role, defaults, override, onChange, executionReadOnly = false }: {
   /** Workflow Agent roles only; Operator tools are never enabled per Agent. */
   role: WorkflowAgentProductRole
   defaults: readonly GraphqlAgentTool[] | undefined
   override: GraphqlToolOverride | undefined
+  executionReadOnly?: boolean
   /** Missing defaults retain the legacy enabled set until explicitly edited. */
   onChange(defaults: GraphqlAgentTool[] | undefined, override: GraphqlToolOverride | undefined): void
 }) {
-  const tools = graphqlRoleTools(role)
-  const agentDefault = effectiveGraphqlTools(role, defaults)
+  const sharedFields = useCollaborationUISlots()
+  const fields = useWorkflowBoard()?.collaborationFields ?? sharedFields
+  const implemented = fields?.nodeBrowser ? Object.keys(COLLABORATION_AGENT_TOOLS).filter(name => name.startsWith('browser_')) as GraphqlAgentTool[] : []
+  const tools = graphqlRoleTools(role, implemented)
+  const agentDefault = effectiveGraphqlTools(role, defaults, undefined, false, implemented)
   const choice = (tool: GraphqlAgentTool): NodeChoice => override?.add.includes(tool) ? 'on' : override?.remove.includes(tool) ? 'off' : 'default'
   const setDefault = (tool: GraphqlAgentTool, enabled: boolean) => {
-    const next = tools.filter((item) => item === tool ? enabled : agentDefault.includes(item))
+    // Editing one visible legacy tool must retain configured collaboration tools
+    // even while their feature-owned field/handler is not mounted.
+    const selected = new Set(defaults ?? agentDefault)
+    if (enabled) selected.add(tool); else selected.delete(tool)
+    const next = GraphqlAgentToolSchema.options.filter(item => selected.has(item))
     // A node change that now matches the default is no longer a change.
     const add = (override?.add ?? []).filter((item) => !next.includes(item))
     const remove = (override?.remove ?? []).filter((item) => next.includes(item))
@@ -42,6 +52,7 @@ export function GraphqlToolsFields({ role, defaults, override, onChange }: {
   }
   return <fieldset className="agent-graphql-tools" aria-label="Foreman Code MCP tools">
     <legend>Foreman Code MCP tools<InfoHint label="Foreman Code MCP tools">Bug reporting is always available. For other tools, the Agent default applies in every workflow. This workflow can turn a tool on or off for this node only.</InfoHint></legend>
+    {fields?.memoryAccess?.({ role, defaults, override, executionReadOnly, onChange })}
     <div className="agent-graphql-tools-list">
       {tools.map((tool) => {
         const definition = GRAPHQL_AGENT_TOOLS[tool]
