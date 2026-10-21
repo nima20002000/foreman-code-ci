@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto'
-import type { Readable } from 'node:stream'
+import { Readable } from 'node:stream'
 import {
-  DEFAULT_FILE_RETENTION_SECONDS, FileRetentionDurationSchema, FileWithRevisionSchema,
+  AgentFileReadInputSchema, ConversationFileUploadInputSchema, MAX_FILE_BYTES, parseAgentFileReadResult,
+  FileUploadRequestSchema, DEFAULT_FILE_RETENTION_SECONDS, FileRetentionDurationSchema, FileWithRevisionSchema,
   MessageAttachmentRefSchema, fileStateAt, temporaryFileExpiresAt,
   type FileScope,
 } from '@foreman-code/contracts/files'
@@ -13,8 +14,9 @@ import { DomainError } from '../errors.js'
 import type { FileAccess, FileConversation, FileConversationAuthorization } from './authorization.js'
 import type { AllocationSession, FileAllocation, FileAllocationRepository, FileRepository, StoredFile,
   FileMutationContext, FileMutationSource, FileQuery } from './repository.js'
-import { fileListInput, fileScopeIdentity, FileUploadRequestSchema } from './requests.js'
+import { fileListInput, fileScopeIdentity } from './requests.js'
 import type { FileByteStorage } from './storage.js'
+import { decodeReferenceBytes, readReferenceRange } from './references/bytes.js'
 
 export interface FileScopeAuthorization<Target> {
   resolve(principal: ManagementPrincipal, target: Target, access: FileAccess, query?: FileQuery): Promise<FileScope>
@@ -259,4 +261,43 @@ export class TemporaryFileService extends FileStorageService<FileConversation> {
     clock: () => Date = () => new Date()) {
     super(repository, bytes, authorization, retentionForOwner, clock)
   }
+
+  async uploadInline(principal: ManagementPrincipal, raw: unknown, reauthorize: () => Promise<ManagementPrincipal>) {
+    const { conversation, upload, contentBase64 } = ConversationFileUploadInputSchema.parse(raw)
+    await this.authorization.resolve(principal, conversation, 'write')
+    let bytes: Buffer
+    try { bytes = decodeReferenceBytes(contentBase64, upload.byteSize, MAX_FILE_BYTES) }
+    catch { throw new DomainError('FILE_CONTENT_INVALID', 'The content must be canonical base64 matching byteSize.', 422) }
+    await this.allocate(principal, conversation, upload, 'mcp')
+    return this.upload(principal, conversation, upload.requestId, Readable.from([bytes]),
+      { source: 'mcp', signal: AbortSignal.timeout(120_000), reauthorize })
+  }
+
+  async read(principal: ManagementPrincipal, target: FileConversation, raw: unknown) {
+    const input = AgentFileReadInputSchema.parse(raw)
+    const ref = { fileId: input.fileId, revisionId: input.revisionId }
+    const stored = await this.readMetadata(principal, target, ref)
+    const unavailable = (state: string) => parseAgentFileReadResult(input,
+      { status: 'unavailable', ref, reason: state })
+    const state = fileStateAt(stored.value.file, this.now())
+    if (state !== 'ready') return unavailable(state)
+    if (input.offset > stored.value.revision.byteSize) {
+      throw new DomainError('FILE_RANGE_INVALID', 'The offset is outside this immutable revision.', 416)
+    }
+    let stream: Readable
+    try { stream = await this.bytes.download(stored.storageKey, stored.value.revision, input) }
+    catch (error) {
+      if (error instanceof DomainError && error.code === 'FILE_BYTES_UNAVAILABLE') return unavailable('not_found')
+      throw error
+    }
+    const bytes = await readReferenceRange(stream, 0, input.length, stored.value.revision.byteSize - input.offset)
+    const current = await this.readMetadata(principal, target, ref)
+    const readAt = this.now()
+    const currentState = fileStateAt(current.value.file, readAt)
+    if (currentState !== 'ready') return unavailable(currentState)
+    return parseAgentFileReadResult(input, { status: 'ready', ...current.value, readAt,
+      offset: input.offset, byteLength: bytes.length, contentBase64: bytes.toString('base64'),
+      eof: input.offset + bytes.length === current.value.revision.byteSize })
+  }
+
 }
