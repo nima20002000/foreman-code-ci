@@ -1027,7 +1027,7 @@ export const migrations = [
   workflowChatIndexMigration,
   hierarchyFeedbackMigration,
   hierarchyAdmissionMigration,
-  workflowChatMigration,
+  { ...workflowChatMigration, version: 2026102120 },
 ] as const
 
 export function assertMigrationVersions(entries: readonly { version: number }[]): void {
