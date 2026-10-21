@@ -32,6 +32,15 @@ async function mountBoard(suffix: string) {
   const chat = createAgentChatMock(agentChatFixtureFor(providerFixture('codex'), contexts[0]!))
   chat.setState(agentChatFixtureFor(providerFixture('codex'), contexts[1]!))
   server.use(...chat.handlers.slice(1), ...fixture.mock.handlers)
+  const root = `/api/workspaces/${saved.workspaceId}/workflows/${saved.workflowId}`
+  server.use(http.get(`${root}/execution-chat/target`, ({ request }) => {
+    const nodeId = new URL(request.url).searchParams.get('workflowNodeId')
+    const context = contexts.find(item => item.workflowNodeId === nodeId)
+    return context ? HttpResponse.json({ kind: 'outside_run', agent: context,
+      workflowVersionId: fixture.after.id, reason: 'NO_LIVE_RUN' }) : HttpResponse.json({ error: {
+        code: 'CHAT_NODE_UNAVAILABLE', message: 'The selected Agent is unavailable.' }, }, { status: 404 })
+  }), http.get(`${root}/chat`, () => HttpResponse.json({ items: [], nextCursor: null, hasMore: false, revision: 0 })),
+  http.get(`${root}/chat/deliveries`, () => HttpResponse.json({ items: [], nextCursor: null, hasMore: false, revision: 0 })))
   server.use(http.get('/api/local-human', () => HttpResponse.json(LocalHumanAccessSchema.parse({ principal: {
     id: 'board-containers-tester', name: 'Board container tester', expiresAt: '2099-01-01T00:00:00.000Z', grants: [{
       scope: { workspaceIds: [saved.workspaceId] },
@@ -64,7 +73,7 @@ describe('Board conversation components share one rail', () => {
     expect(secondDraft).toHaveValue('')
     await user.type(secondDraft, 'Retain the second Agent draft')
     await user.click(within(rail()).getByRole('button', { name: /^Group chat$/ }))
-    expect(await screen.findByText('Group chat is not available yet.')).toBeVisible()
+    expect(await screen.findByRole('region', { name: 'Group chat' })).toBeVisible()
     expect(screen.queryByRole('textbox', { name: 'Message' })).not.toBeInTheDocument()
     await user.click(within(rail()).getByRole('button', { name: /^Agent$/ }))
     expect(await within(rail()).findByRole('textbox', { name: 'Message' })).toHaveValue('Retain the second Agent draft')

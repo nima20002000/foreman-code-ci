@@ -167,6 +167,10 @@ export async function createGraphqlMcpServer(context: GraphqlMcpContext, request
       await registerAppTools(collector, { principal: context.principal, interactions: context.interactions!,
         ...(context.bugReports ? { bugReports: context.bugReports } : {}),
         ...(context.signal ? { signal: context.signal } : {}) })
+      if (context.operator?.workflowChat) {
+        const catalog = await requestOperatorTools(context, registration)
+        for (const tool of catalog.tools) if (tool.name === 'workflow_chat_read' || tool.name === 'workflow_chat_post') tool.register(collector)
+      }
       if (context.references) registerExecutionReferenceTools(collector, context.principal, context.references)
       if (context.operator) registerCiTools(collector, { principal: context.principal, services: context.operator,
         ...(context.signal ? { signal: context.signal } : {}) })
