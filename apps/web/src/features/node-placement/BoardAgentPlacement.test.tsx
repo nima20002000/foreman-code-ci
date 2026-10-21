@@ -30,7 +30,7 @@ it('Board Apply changes the exact node draft while keeping saved placement and o
   expect(nativeNode(before.graph.nodes[0])?.placement).toBeUndefined()
   expect(before.agentForms?.['node-0']?.placement).toEqual(placement)
   expect(screen.getByText(/Editing computer choice/)).toBeInTheDocument()
-  await userEvent.click(screen.getByRole('button', { name: 'Apply to draft' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Save agent settings' }))
   const applied = useGraphDraftStore.getState().nextDrafts[key]!
   expect(nativeNode(applied.graph.nodes[0])?.placement).toEqual(placement)
   expect(screen.getByText('Applied to draft')).toBeInTheDocument()
@@ -66,7 +66,7 @@ it('keeps computer selection on the clicked node when two nodes share one Agent'
   await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Computer' }), '0')
   expect(useGraphDraftStore.getState().nextDrafts[key]?.agentForms?.[sibling.id]?.placement).toEqual(placement)
   expect(useGraphDraftStore.getState().nextDrafts[key]?.agentForms?.[original.id]).toBeUndefined()
-  await userEvent.click(screen.getByRole('button', { name: 'Apply to draft' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Save agent settings' }))
   const applied = useGraphDraftStore.getState().nextDrafts[key]!
   expect(nativeNode(applied.graph.nodes.find(node => node.id === sibling.id))?.placement).toEqual(placement)
   expect(nativeNode(applied.graph.nodes.find(node => node.id === original.id))?.placement).toBeUndefined()
@@ -90,7 +90,7 @@ it('applies inherited Main by removing only the selected node placement from the
   await screen.findByRole('option', { name: 'Laptop' })
   await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Computer' }), 'inherited')
   expect(nativeNode(useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes[0]).placement).toEqual(placement)
-  await userEvent.click(screen.getByRole('button', { name: 'Apply to draft' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Save agent settings' }))
   const applied = useGraphDraftStore.getState().nextDrafts[key]!
   expect(applied.graph.nodes[0]).not.toHaveProperty('placement')
   expect(nativeNode(applied.graph.nodes[1]).placement).toEqual(placement)
@@ -130,7 +130,7 @@ it('inherits a workflow worktree and applies a branch-only override to the selec
     expect(screen.getByRole('textbox', { name: 'Agent branch prefix' })).toHaveValue('')
     await user.type(screen.getByRole('textbox', { name: 'Agent branch prefix' }), 'foreman/reviewer')
     expect(nativeNode(useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes[0]).worktree).toBeUndefined()
-    await user.click(screen.getByRole('button', { name: 'Apply to draft' }))
+    await user.click(screen.getByRole('button', { name: 'Save agent settings' }))
     const applied = useGraphDraftStore.getState().nextDrafts[key]!
     expect(nativeNode(applied.graph.nodes[0]).worktree).toEqual({ branchPrefix: 'foreman/reviewer' })
     expect(applied.graph.nodes[0]).not.toHaveProperty('placement')
@@ -167,7 +167,7 @@ it('Use workflow default clears both placement and prefix while retaining other 
     await userEvent.click(screen.getByRole('button', { name: 'Use workflow default' }))
     expect(screen.getByRole('textbox', { name: 'Agent branch prefix' })).toHaveValue('')
     expect(nativeNode(useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes[0]).placement).toEqual(placement)
-    await userEvent.click(screen.getByRole('button', { name: 'Apply to draft' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save agent settings' }))
     const applied = useGraphDraftStore.getState().nextDrafts[key]!
     expect(applied.graph.nodes[0]).not.toHaveProperty('placement')
     expect(applied.graph.nodes[0]).not.toHaveProperty('worktree')
@@ -227,10 +227,10 @@ it.each([403, 404, 503])('retains and clears a saved placement after choices dis
     const computer = screen.getByRole('combobox', { name: 'Computer' })
     expect(computer).toHaveValue('retained')
     expect(screen.getByText(placement.projectRoot)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Apply to draft' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save agent settings' })).toBeDisabled()
     await userEvent.selectOptions(computer, 'inherited')
     expect(nativeNode(useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes[0]).placement).toEqual(placement)
-    await userEvent.click(screen.getByRole('button', { name: 'Apply to draft' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save agent settings' }))
     const applied = useGraphDraftStore.getState().nextDrafts[key]!
     expect(applied.graph.nodes[0]).not.toHaveProperty('placement')
     expect(nativeNode(applied.graph.nodes[1]).placement).toEqual(placement)
