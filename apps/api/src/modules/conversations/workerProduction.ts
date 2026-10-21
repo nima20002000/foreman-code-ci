@@ -60,7 +60,7 @@ interface OwnerRow {
   id: string; kind: 'operator' | 'agent'; workspace_id: string | null; workflow_id: string | null
   workflow_node_id: string | null; agent_id: string | null; owner_principal_id: string | null
   operator_configuration_version_id: string | null; agent_configuration_version_id: string | null
-  active_request_id: string | null; active_native_turn_id: string | null; native_session_id: string | null; deleted_at: unknown
+  active_request_id: string | null; native_session_id: string | null; deleted_at: unknown
   harness: NativeSessionReference['harness']; provider_version: string | null
   record: { status?: string; directoryBinding?: unknown; systemPrompt?: PromptSettingSnapshot;
     workerGeneration?: string; workerSessionGeneration?: string;
@@ -107,14 +107,14 @@ async function authorizeWorkerConversationRequest(pool: pg.Pool, live: OwnerRow,
     requestCallers: WeakMap<WorkerConversationRpcRequest, string>
     changingAccess: boolean | string | null
     originalBinding: WorkerConversationBinding
-  }, agents: Pick<PostgresAgentChatRepository, 'turnPrincipalId' | 'turn' | 'turnContent'>) {
+  }, agents: Pick<PostgresAgentChatRepository, 'turnPrincipalId'>) {
   let currentCaller = context.requestCallers.get(request)
   if (!currentCaller) {
     const messageOperation = request.method === 'conversation.start-turn'
       || request.method === 'conversation.initial-turn' || request.method === 'conversation.open'
-    if ((request.method === 'conversation.retire-turn' || request.method === 'conversation.steer') && live.kind === 'agent') {
+    if (request.method === 'conversation.retire-turn' && live.kind === 'agent') {
       const prefix = agentChatCorrelation(live.id, '')
-      if (!request.correlationId.startsWith(prefix)) unavailable('The addressed turn belongs to another conversation.')
+      if (!request.correlationId.startsWith(prefix)) unavailable('The retired turn belongs to another conversation.')
       currentCaller = await agents.turnPrincipalId(live.id, request.correlationId.slice(prefix.length))
     } else {
       currentCaller = messageOperation ? live.payload?.ownerPrincipalId ?? live.owner_principal_id ?? undefined
@@ -146,24 +146,11 @@ async function authorizeWorkerConversationRequest(pool: pg.Pool, live: OwnerRow,
     if (request.method === 'conversation.respond') action = `${prefix}:respond`
     requireAuthorization(principal, action, scope)
   }
-  if (request.method === 'conversation.start-turn' || request.method === 'conversation.initial-turn') {
+  if (request.method === 'conversation.start-turn' || request.method === 'conversation.initial-turn'
+    || request.method === 'conversation.steer') {
     const correlation = live.kind === 'operator' ? nativeCorrelation(live.id, live.active_request_id ?? '')
       : agentChatCorrelation(live.id, live.active_request_id ?? '')
     if (!live.active_request_id || request.correlationId !== correlation) unavailable('The admitted chat message changed.')
-  }
-  if (request.method === 'conversation.steer') {
-    const prefix = agentChatCorrelation(live.id, '')
-    if (live.kind !== 'agent' || !live.active_request_id || !request.correlationId.startsWith(prefix)) {
-      unavailable('The admitted steering message is unavailable.')
-    }
-    const requestId = request.correlationId.slice(prefix.length)
-    const admitted = await agents.turn(live.id, requestId)
-    if (admitted?.intent !== 'steer' || admitted.delivery !== 'submitting'
-      || admitted.targetNativeTurnId !== request.expectedTurnId
-      || live.active_native_turn_id !== request.expectedTurnId
-      || await agents.turnContent(live.id, requestId) !== request.prompt) {
-      unavailable('The admitted steering message or its active turn changed.')
-    }
   }
   if ('session' in request && live.native_session_id && live.native_session_id !== request.session.nativeSessionId) {
     unavailable('The addressed native session changed.')

@@ -1,4 +1,3 @@
-import type { MemoryBoardPort } from '../collaboration/ports.js'
 import {
   HarnessExecutionSchema, HarnessNativeEventSchema, RunActivitySchema,
   type ExecutionResult, type HarnessExecution, type HarnessNativeEvent, type RunActivity, type WorkflowRunSummary,
@@ -41,7 +40,6 @@ export function runRepositorySemantics(record: unknown): RepositoryExecutionSema
  * Run creation is intentionally absent: authenticated Start owns that atomic
  * command/authority/publication transaction, not an uncredentialed create(). */
 export class PostgresRunRepository {
-  readonly memoryBoards: MemoryBoardPort | undefined
   private readonly factory: RepeatRepositoryFactory
   private readonly nativeProof: WorkflowNativeProofServices
   constructor(private readonly pool: pg.Pool, private readonly workflows: PostgresWorkflowRepository,
@@ -49,7 +47,6 @@ export class PostgresRunRepository {
     private readonly nativeCommitted?: (evidence: RepeatNativeEvidence) => Promise<void>) {
     if (!runtime || !(runtime.native instanceof WorkflowNativeProofServices)) throw new DomainError(
       'NATIVE_CAPTURE_COMPOSITION_REQUIRED', 'Compose the real native capture/proof service before starting the product.', 500)
-    this.memoryBoards = runtime.services.memoryBoards
     this.nativeProof = runtime.native
     this.factory = new RepeatRepositoryFactory(locations, runtime.runtimeRoot, {
       ...runtime.services, openPublicationLocked: openRepeatCanonicalPublicationLocked,
@@ -127,9 +124,6 @@ export class PostgresRunRepository {
   async exactRepeatSession(id: string, owner: RunOwnership) { return (await this.repeat(owner)).exactSession(id) }
   async assertRepeatNativeBoundary(id: string, owner: RunOwnership, evidence: RepeatNativeBoundaryEvidence) {
     return (await this.repeat(owner)).assertNativeBoundary(id, evidence.kind === 'first_launch' ? evidence : captureRepeatNativeEvidence(evidence))
-  }
-  async validateMemoryResult(id: string, result: ExecutionResult, owner: RunOwnership): Promise<void> {
-    return (await this.repeat(owner)).validateMemoryResult(id, result)
   }
   async reserveWorkResultRepair(id: string, providerId: string, owner: RunOwnership, evidence: RepeatNativeEvidence) {
     return (await this.repeat(owner)).reserveWorkResultRepair(id, providerId, captureRepeatNativeEvidence(evidence))
@@ -249,7 +243,7 @@ export class PostgresRunRepository {
     for await (const page of this.executionPages(runId, owner)) {
       for (const execution of page) await store.settleNegativeExecution(execution.id, canceled)
     }
-    return settleWorkflowRun(owner, !canceled, this.memoryBoards)
+    return settleWorkflowRun(owner, !canceled)
   }
   async listRepeatExecutions(runId: string, afterId = '', limit = 100, owner?: RunOwnership) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000 || typeof afterId !== 'string') throw new DomainError('REPEAT_READ_BOUND_INVALID', 'Use an execution-ID cursor and a limit from 1 to 1000.', 409)

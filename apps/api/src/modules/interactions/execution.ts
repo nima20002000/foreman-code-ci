@@ -1,4 +1,3 @@
-import { MemoryResultRejected } from '../collaboration/memoryResultError.js'
 import { isDatabaseTimeout, retryDatabaseTimeout } from '../../infrastructure/databaseTimeout.js'
 import { withAbortSignal } from '../../infrastructure/abortSignal.js'
 import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
@@ -2953,7 +2952,6 @@ export class ApprovalExecutionCoordinator {
     const nativeSchema = input.deliverable ? nativeOutputSchema(input.deliverable) : undefined
     const observed = await manager.withLane(observation.session!, observation.workflowCorrelation, observation.signal, async (nativeManager, lane) => {
       let idleDelayMs = 100
-      let pendingBoardError: MemoryResultRejected | undefined
       for (;;) {
         let publishedEvents = false
         lane.guard.signal.throwIfAborted()
@@ -2990,29 +2988,12 @@ export class ApprovalExecutionCoordinator {
         if (exactTerminal) {
           const handoffPrompt = input.workHandoffContract
             ? workResultRepairPrompt(observed.terminalTurn!.result, input.workHandoffContract, observation.execution.input,
-              input.request?.executionContext, input.deliverable?.coordination)
+              input.request?.executionContext)
             : undefined
           // The deliverable is judged once the handoff envelope itself is valid.
           const verdict = input.deliverable && !handoffPrompt
             ? await observation.bookkeeping(() => deliverableVerdict(observed.terminalTurn!.result, input.deliverable!)) : undefined
-          let boardError: MemoryResultRejected | undefined = pendingBoardError
-          pendingBoardError = undefined
-          if (!handoffPrompt && !verdict && !boardError && observation.execution.resultProtocol) {
-            try {
-              await observation.bookkeeping(() => this.runs.validateMemoryResult(
-                observation.execution.id, observed.terminalTurn!.result, input.owner))
-            } catch (error) {
-              if (!(error instanceof MemoryResultRejected)) throw error
-              boardError = error
-            }
-          }
-          const boardPrompt = boardError ? [
-            'Your board result could not be applied.', `${boardError.code}: ${boardError.message}`,
-            ...(boardError.details ? [`Current state: ${JSON.stringify(boardError.details)}`] : []),
-            'Return the complete corrected result. Preserve the deliverable and already committed tool changes.',
-            'Correct only the remaining board changes. Do not repeat the task or external work.',
-          ].join('\n') : undefined
-          const repairPrompt = handoffPrompt ?? (verdict ? deliverableRepairPrompt(verdict, input.deliverable!.outputSchema) : boardPrompt)
+          const repairPrompt = handoffPrompt ?? (verdict ? deliverableRepairPrompt(verdict, input.deliverable!.outputSchema) : undefined)
           if (repairPrompt && observation.workResultRepairs < 2) {
             assertOriginalWorkflowTerminal(observation.execution, observation.session!, observed, observation.workflowCorrelation)
             const reserved = await observation.bookkeeping(() => this.runs.reserveWorkResultRepair(
@@ -3065,7 +3046,6 @@ export class ApprovalExecutionCoordinator {
               continue
             }
           }
-          if (boardError) throw new HarnessExecutionError('MEMORY_RESULT_INVALID', boardError.message, false)
           if (nativeManager.settleTurn) {
             const settled = await nativeManager.settleTurn(observation.session!, observation.workflowCorrelation, lane.guard.signal)
             assertOriginalWorkflowTerminal(observation.execution, observation.session!, settled, observation.workflowCorrelation)
@@ -3079,16 +3059,10 @@ export class ApprovalExecutionCoordinator {
           const completed = HarnessExecutionSchema.parse({ ...observation.execution, state: 'completed',
             result: observation.safeValue(observed.terminalTurn!.result), finishedAt: capturedWorkflowNativeTime(captured) })
           // Terminal publication ends workflow credential authority before native disposal finishes.
-          observation.signal.throwIfAborted()
-          try {
-            await timeRuntimeOperation('engine', 'execution.accept_terminal',
-              () => observation.bookkeeping(() => this.runs.updateExecution(completed, input.owner, captured)))
-          } catch (error) {
-            if (!(error instanceof MemoryResultRejected) || observation.workResultRepairs >= 2) throw error
-            pendingBoardError = error
-            continue
-          }
           await observation.stopRenewal?.()
+          observation.signal.throwIfAborted()
+          await timeRuntimeOperation('engine', 'execution.accept_terminal',
+            () => observation.bookkeeping(() => this.runs.updateExecution(completed, input.owner, captured)))
           // Read the first-terminal normalizer's immutable result, not a local
           // copy of unvalidated provider output. The original remains private.
           observation.execution = (await observation.bookkeeping(() => repeat.readExecution(observation.execution.id))).execution
