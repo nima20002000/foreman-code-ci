@@ -32,8 +32,8 @@ it('continues the same native conversation after removing its previously bound G
   const native = conversation.nativeSession!.nativeSessionId
   const token = f.replay.appTokens.get(native)!
   expect(token).toBeTruthy()
-  const groupUrl = `/api/workspaces/${workspaceId}/workflows/${workflowId}/chat`
-  expect((await f.http('GET', groupUrl, undefined, token)).statusCode).toBe(200)
+  const allowed = await f.call('workflow_chat_read', { workspaceId, workflowId }, token)
+  expect(allowed.isError, JSON.stringify(allowed)).not.toBe(true)
   const credentials = () => f.db.pool.query('select principal_id from agent_conversation_credentials where conversation_id=$1', [conversation.id])
   const issued = (await credentials()).rows
   const saved = CurrentWorkflowReadResultSchema.parse(decodeMcpToolResult(
@@ -48,7 +48,12 @@ it('continues the same native conversation after removing its previously bound G
   const second = await send('after-group-removal', conversation.id)
   expect(second.conversation).toMatchObject({ id: conversation.id, nativeSession: { nativeSessionId: native } })
   expect(f.replay.starts.filter(start => start.sessionId === native)).toHaveLength(2)
-  expect([401, 403]).toContain((await f.http('GET', groupUrl, undefined, token)).statusCode)
+  const denied = await fetch(`${f.origin}/mcp`, { method: 'POST', headers: {
+    authorization: `Bearer ${token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream',
+  }, body: JSON.stringify({ jsonrpc: '2.0', id: 'removed-credential', method: 'initialize', params: {
+    protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'removed-group-access', version: '1' },
+  } }) })
+  expect(denied.status).toBe(401)
   expect((await credentials()).rows).toEqual(issued)
   expect(second.turns.find(turn => turn.requestId === 'with-group-access')).toMatchObject({ delivery: 'completed' })
 }, 60_000)
