@@ -80,7 +80,7 @@ export async function selectWork(tx: GraphTransactionSql, authority: MemoryBoard
   let chosen = selections
   if (chosen === undefined && creating && context.subject?.kind === 'execution') {
     const current = await authority.currentWork(tx,context.subject)
-    if (current?.isBusinessWork) chosen = [{ kind: 'current', work: current.work }]
+    if (current) chosen = [{ kind: 'current', work: current.work }]
   }
   // Assignment and display links never arm automatic completion. The UI can
   // explicitly choose Next activation; an omitted selection stays unbound.
@@ -91,7 +91,6 @@ export async function selectWork(tx: GraphTransactionSql, authority: MemoryBoard
     keys.add(key)
     if (selection.kind === 'current') {
       const resolved = await authority.work(tx,selection.work)
-      if (!resolved.isBusinessWork) invalid('Interval checks cannot be selected as task obligations.')
       if (!same(resolved.work,selection.work) || !scopeContains(scope,resolved.node)) invalid('The selected work is outside this board.')
       await authority.node(tx,resolved.node,scope)
       if (!existing.some(binding => same(binding.work,selection.work))) existing.push({

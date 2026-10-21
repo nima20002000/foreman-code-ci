@@ -1,4 +1,3 @@
-import type { MemoryWorkPageInfo, MemoryWorkSummary } from '@foreman-code/contracts'
 import type {
   AgentIdentity, AgentNodeRef, AgentSubject, ExecutionRef, LogicalWorkRef, MemoryBoard,
   MemoryBoardMutation, MemoryBoardScope, MemoryCard, MemoryCardWorkBinding,
@@ -36,7 +35,6 @@ export interface BoardSnapshot {
 }
 export interface CardDetail {
   card: MemoryCard; bindings: MemoryCardWorkBinding[]; claims: MemoryCardWorkClaim[]
-  bindingPage: MemoryWorkPageInfo; claimPage: MemoryWorkPageInfo; workSummary: MemoryWorkSummary
   history: Page<BoardChange>
 }
 export type CommandRead = { commandId: string; state: 'known'; receipt: MutationReceipt }
@@ -45,12 +43,12 @@ export type CommandRead = { commandId: string; state: 'known'; receipt: Mutation
 export interface ChangesPage extends Page<BoardChange> { watermark: number; resetRequired: boolean }
 export interface ReadRequest {
   scope?: MemoryBoardScope | undefined; boardId?: string | undefined
-  view?: 'board' | 'cards' | 'card' | 'notes' | 'command' | 'bindings' | 'claims' | undefined
+  view?: 'board' | 'cards' | 'card' | 'notes' | 'command' | undefined
   status?: MemoryCard['status'] | undefined; completionKind?: 'completed' | 'dropped' | undefined; query?: string | undefined
   cardId?: string | undefined; commandId?: string | undefined; archived?: boolean | undefined; cursor?: string | undefined; limit?: number | undefined
 }
 export interface ChangesRequest { boardId: string; afterSequence?: number | undefined; cursor?: string | undefined; limit?: number | undefined }
-export type ReadResult = BoardSnapshot | Page<MemoryCard> | Page<MemoryNote> | Page<MemoryCardWorkBinding> | Page<MemoryCardWorkClaim> | CardDetail | CommandRead
+export type ReadResult = BoardSnapshot | Page<MemoryCard> | Page<MemoryNote> | CardDetail | CommandRead
 export interface SubjectAccess {
   principalId: string; subject: AgentSubject; tools: readonly string[]; readOnly: boolean
   /** Saved, server-resolved branch membership for digest selection; never model input. */
@@ -59,8 +57,6 @@ export interface SubjectAccess {
 export interface ResolvedWork {
   node: AgentNodeRef; work: LogicalWorkRef; state: MemoryCardWorkBinding['state']
   currentExecutionId: string | null; reason: string | null; parentRequestId?: string
-  /** Interval checks have execution identity but do not create business obligations. */
-  isBusinessWork: boolean
 }
 /** D supplies existing live principal/configuration and saved workflow resolvers.
  * These functions use only the supplied SQL transaction: no native/network I/O.
