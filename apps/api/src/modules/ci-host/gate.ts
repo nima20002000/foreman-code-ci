@@ -179,9 +179,19 @@ export async function planCiGate(input: CiRunInput, integration: CiIntegrationIn
         !requiresUserSystemd(file) || item.computer.userSystemd?.supported)
         .sort((left, right) => finishWith(left, file) - finishWith(right, file))[0]!
       const remaining = host.files.filter(value => value !== file)
-      host.files = []
-      load.set(host, { lanes: Array.from({ length: host.shards }, () => 0), serial: 0, work: 0 })
-      for (const remainingFile of remaining) addFile(host, remainingFile)
+      let remainingLoad = { lanes: Array.from({ length: host.shards }, () => 0), serial: 0, work: 0 }
+      for (const remainingFile of remaining) {
+        remainingLoad = { ...addIntegrationFile(remainingLoad, remainingFile, duration(remainingFile)),
+          work: remainingLoad.work + duration(remainingFile) }
+      }
+      const hostEnd = remaining.length ? host.checkMs + measuredTime(host, remainingLoad.work,
+        SETUP_MS + remainingLoad.serial + Math.max(...remainingLoad.lanes), 'conservative') : host.checkMs
+      const criticalPath = Math.max(...fleet.map(item => finish(item, 'conservative')))
+      const movedCriticalPath = Math.max(hostEnd, finishWith(target, file),
+        ...fleet.filter(item => item !== host && item !== target).map(item => finish(item, 'conservative')))
+      if (movedCriticalPath >= criticalPath) break
+      host.files = remaining
+      load.set(host, remainingLoad)
       addFile(target, file)
     }
   }
