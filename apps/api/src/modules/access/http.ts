@@ -70,10 +70,19 @@ function actionFor(request: FastifyRequest) {
     if (url.endsWith('/responses')) return 'operator_chat:respond' as const
     return 'operator_chat:write' as const
   }
+  if (/^\/api\/workspaces\/[^/]+\/workflows\/[^/]+\/chat(?:\/|$)/.test(url)) {
+    if (['GET', 'HEAD'].includes(request.method)) return 'agent_chat:read' as const
+    return url.endsWith('/cancel') ? 'agent_chat:cancel' as const : 'agent_chat:write' as const
+  }
   if (/^\/api\/workspaces\/[^/]+\/agent-chat(?:\/|$)/.test(url)) {
     if (['GET', 'HEAD'].includes(request.method)) return 'agent_chat:read' as const
     if (url.endsWith('/interrupt') || url.endsWith('/cancel')) return 'agent_chat:cancel' as const
     if (url.endsWith('/responses')) return 'agent_chat:respond' as const
+    return 'agent_chat:write' as const
+  }
+  if (/^\/api\/workspaces\/[^/]+\/workflows\/[^/]+\/execution-chat(?:\/|$)/.test(url)) {
+    if (url.endsWith('/target') || url.endsWith('/read')) return 'agent_chat:read' as const
+    if (url.endsWith('/stop') || url.endsWith('/queue/cancel')) return 'agent_chat:cancel' as const
     return 'agent_chat:write' as const
   }
   if (url.includes('/agents')) return request.method === 'GET' ? 'agents:read' as const : 'graph:edit' as const
@@ -137,6 +146,7 @@ export function registerOperatorHttpSecurity(app: FastifyInstance, access: Postg
     // Account and chat services resolve persisted resources before checking their full scopes.
     const providerAccounts = path === '/api/provider-accounts' || path.startsWith('/api/provider-accounts/')
     const agentChat = /^\/api\/workspaces\/[^/]+\/agent-chat(?:\/|$)/.test(path)
+      || /^\/api\/workspaces\/[^/]+\/workflows\/[^/]+\/execution-chat(?:\/|$)/.test(path)
     const selfReadback = path === '/api/local-human' || path === '/api/runtime/identity' || path === '/api/runtime/build-identity/v1'
     const params = request.params as Record<string, string | undefined>
     const resource = {
