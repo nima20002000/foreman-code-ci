@@ -79,11 +79,11 @@ describe('meaningful Save through the real Board transport', () => {
       delete graph.executionPolicy
       return { ...current, graph }
     }))
-    await user.click(saveBar().getByRole('button', { name: 'Save changes' }))
+    await user.click(saveBar().getByRole('button', { name: 'Save workflow' }))
     await screen.findByText('Can’t save — fix 2 settings')
     const fixes = screen.getAllByRole('button', { name: 'Fix setting' })
     await user.click(fixes[0]!)
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Reviewing orchestrator' })).toHaveFocus())
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Reviewing coordinator' })).toHaveFocus())
     await user.click(fixes[1]!)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Set limits' })).toHaveFocus())
     expect(nextDraftDirty(draft(f))).toBe(true)
@@ -95,7 +95,7 @@ describe('meaningful Save through the real Board transport', () => {
     const f = await meaningfulSaveFixture(), user = userEvent.setup()
     f.controls.rejectPublish = true
     const { wire } = await mount(f), before = await readSaved(f), submitted = change(f, kind)
-    await user.click(saveBar().getByRole('button', { name: 'Save changes' }))
+    await user.click(saveBar().getByRole('button', { name: 'Save workflow' }))
     await waitFor(() => expect(f.requests.publications).toBe(1))
     // The same fixture accepts standalone Agent POST/PATCH. At the old head
     // those requests commit before the rejected workflow PUT and this fails.
@@ -128,7 +128,7 @@ describe('meaningful Save through the real Board transport', () => {
     f.controls.holdSaveReply = new Promise<void>((resolve) => { release = resolve })
     const { wire } = await mount(f), before = await readSaved(f), submitted = change(f)
     try {
-      await user.click(saveBar().getByRole('button', { name: 'Save changes' }))
+      await user.click(saveBar().getByRole('button', { name: 'Save workflow' }))
       await waitFor(() => expect(f.read().intent?.state).toBe('saved'))
       // The server committed, but its response is still held. No receipt has
       // reached the Board and the exact local submission must remain dirty.
@@ -151,7 +151,7 @@ describe('meaningful Save through the real Board transport', () => {
   it('a lost saved reply is reconciled by receipt readback without another publication or Start', async () => {
     const f = await meaningfulSaveFixture(), user = userEvent.setup(); f.controls.loseSaveReply = true
     const { cache, wire } = await mount(f), submitted = change(f)
-    await user.click(saveBar().getByRole('button', { name: 'Save changes' }))
+    await user.click(saveBar().getByRole('button', { name: 'Save workflow' }))
     await screen.findByText('Save not confirmed.')
     expect(f.read().intent?.state).toBe('saved')
     expectRetained(f, submitted)
@@ -173,7 +173,7 @@ describe('meaningful Save through the real Board transport', () => {
     expect(f.mock.details().runs.filter((item) => item.workflowId === f.workflowId)).toEqual([])
     expect(f.mock.details().runs.filter((item) => item.workflowId !== f.workflowId)).toHaveLength(1)
     for (const workflow of f.mock.workflows.values()) expect(workflow.nodes.some((node) => nativeNode(node).agentId === before.agents[0]!.agent.id)).toBe(true)
-    await user.click(saveBar().getByRole('button', { name: 'Save changes' }))
+    await user.click(saveBar().getByRole('button', { name: 'Save workflow' }))
     const dialog = await saveDialog()
     expect(dialog).toHaveTextContent('1 affected Run requires Stop or cleanup across 1 workflow')
     expect(dialog).toHaveTextContent('another workflow')
@@ -208,7 +208,7 @@ describe('meaningful Save through the real Board transport', () => {
   it('missing Stop permission for the other workflow is a clear blocker, with the edit retained', async () => {
     const f = await meaningfulSaveFixture(true), user = userEvent.setup(); f.mock.controls.deniedStop = true
     const { wire } = await mount(f), before = await readSaved(f), submitted = change(f, 'update-agent', false)
-    await user.click(saveBar().getByRole('button', { name: 'Save changes' }))
+    await user.click(saveBar().getByRole('button', { name: 'Save workflow' }))
     await screen.findByText('You don’t have permission to stop every affected run.')
     expect(saveBar().getByRole('button', { name: 'Stop affected Runs and save' })).toBeDisabled()
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
@@ -220,7 +220,7 @@ describe('meaningful Save through the real Board transport', () => {
   it.each(['permission-revoked', 'affected-set-changed'] as const)('rechecks %s after the confirmation is displayed', async (cut) => {
     const f = await meaningfulSaveFixture(true), user = userEvent.setup(); await mount(f)
     const before = await readSaved(f), submitted = change(f, 'update-agent', false)
-    await user.click(saveBar().getByRole('button', { name: 'Save changes' }))
+    await user.click(saveBar().getByRole('button', { name: 'Save workflow' }))
     const dialog = await saveDialog(), request = readEditOutbox(f.key)!.request
     if (cut === 'permission-revoked') f.mock.controls.deniedStop = true
     else f.mock.controls.affectedSetChanged = true

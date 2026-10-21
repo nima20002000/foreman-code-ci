@@ -1,3 +1,4 @@
+import { NativeSourceMessageSchema } from './messages.js';
 import { NativeInteractionResponseAvailabilitySchema } from './interaction-activity.js';
 import { NativeMessageSubmissionSchema } from './claude.js';
 import { z } from "zod";
@@ -188,7 +189,7 @@ export const AgentChatSourceTranscriptSchema = z.object({
   state: HarnessExecutionSchema.shape.state,
   /** Latest public native message revision; "0" when no messages have been recorded. */
   revision: NativeSequenceSchema,
-  messages: z.array(MessageSchema.omit({ conversationId: true })).max(100),
+  messages: z.array(NativeSourceMessageSchema).max(100),
   hasEarlierMessages: z.boolean(),
 }).strict();
 export type AgentChatSourceTranscript = z.infer<typeof AgentChatSourceTranscriptSchema>;
@@ -204,7 +205,7 @@ const AgentChatExecutionItemSchema = z.object({
   revision: NativeSequenceSchema,
   occurredAt: TimestampSchema.optional(),
   entry: z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("message"), message: MessageSchema.omit({ conversationId: true }) }).strict(),
+    z.object({ kind: z.literal("message"), message: NativeSourceMessageSchema }).strict(),
     z.object({ kind: z.literal("activity"),
       activity: OperatorActivitySchema.pick({ id: true, kind: true, title: true, status: true, input: true, output: true, truncated: true }) }).strict(),
   ]),

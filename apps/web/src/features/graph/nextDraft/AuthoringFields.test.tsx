@@ -22,7 +22,7 @@ describe('Agent 6 accessible authoring forms (not browser performance evidence)'
     render(<Form />)
     await user.tab()
     expect(screen.getByRole('button', { name: 'About Starts the workflow' })).toHaveFocus()
-    expect(screen.getByRole('tooltip')).toHaveTextContent('Only an orchestrator can start a workflow that has one.')
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Only an Orchestrator can start a workflow that has one.')
     await user.tab()
     expect(screen.getByLabelText('Starts the workflow', { selector: 'select' })).toHaveFocus()
     expect(screen.getByRole('switch', { name: /Starts the workflow/ })).toBeChecked()
@@ -92,10 +92,10 @@ describe('Agent 6 accessible authoring forms (not browser performance evidence)'
     const graph: WorkflowDefinitionV3 = { ...context.draft.graph,
       approval: { handler: 'orchestrator', designatedOrchestratorAgentId: 'agent-0' } }
     render(<ApprovalFields graph={graph} context={context} change={vi.fn()} report={vi.fn()} />)
-    expect(screen.getByRole('combobox', { name: 'Reviewing orchestrator' })).toHaveValue('agent-0')
-    const explanation = 'The starting orchestrator reviews requests from agents it has an approval connection to.'
+    expect(screen.getByRole('combobox', { name: 'Reviewing coordinator' })).toHaveValue('agent-0')
+    const explanation = 'The starting Master or Orchestrator reviews requests from agents it has an approval connection to.'
     expect(screen.queryByText(explanation)).not.toBeInTheDocument()
-    const hint = screen.getByRole('button', { name: 'About Reviewing orchestrator' })
+    const hint = screen.getByRole('button', { name: 'About Reviewing coordinator' })
     await user.hover(hint)
     expect(screen.getByRole('tooltip')).toHaveTextContent(explanation)
     expect(hint).toHaveAccessibleDescription(explanation)

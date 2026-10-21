@@ -105,6 +105,7 @@ export class PostgresFoundationSettingsRepository {
     return this.read(KEYS.agents, AgentDefaultsSchema, DEFAULT_AGENT_DEFAULTS, client).then((snapshot) => ({
       ...snapshot,
       value: {
+        ...(snapshot.value.master ? { master: { ...snapshot.value.master, harness: withAdvancedDefaults(snapshot.value.master.harness) } } : {}),
         orchestrator: { ...snapshot.value.orchestrator, harness: withAdvancedDefaults(snapshot.value.orchestrator.harness) },
         coder: { ...snapshot.value.coder, harness: withAdvancedDefaults(snapshot.value.coder.harness) },
         operator: { ...snapshot.value.operator, harness: withAdvancedDefaults(snapshot.value.operator.harness) },
