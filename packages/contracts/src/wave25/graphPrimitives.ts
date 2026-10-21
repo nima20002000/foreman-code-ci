@@ -189,7 +189,7 @@ export const PublicGraphTopologySchema = z.object({
   entryNodeId: GraphIdSchema,
   nodes: z.array(z.union([z.object({
     kind:z.literal('agent').optional(),workflowNodeId: GraphIdSchema, agentId: GraphIdSchema, agentConfigurationVersionId: GraphIdSchema,
-    productRole: z.enum(['orchestrator', 'coder', 'unknown']),
+    productRole: z.enum(['master', 'orchestrator', 'coder', 'unknown']),
     position: z.object({ x: z.number().finite(), y: z.number().finite() }).strict().optional(),
     width: z.number().finite().positive().optional(), height: z.number().finite().positive().optional(),
   }).strict(),z.object({kind:z.literal('job'),workflowNodeId:GraphIdSchema,jobDefinitionId:GraphIdSchema,jobDefinitionVersionId:GraphIdSchema,

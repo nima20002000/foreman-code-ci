@@ -1,11 +1,12 @@
 import type { HarnessConfiguration } from '@foreman-code/contracts'
 import type { HarnessSettingsSection, SettingsAgentRole } from '@foreman-code/contracts/management'
 
-export const agentRoleOrder: readonly SettingsAgentRole[] = ['operator', 'orchestrator', 'coder']
+export const agentRoleOrder: readonly SettingsAgentRole[] = ['operator', 'master', 'orchestrator', 'coder']
 export const rolePresentation: Record<SettingsAgentRole, { title: string }> = {
   operator: { title: 'Operator' },
+  master: { title: 'Master' },
   orchestrator: { title: 'Orchestrator' },
-  coder: { title: 'Coder' },
+  coder: { title: 'Worker' },
 }
 export const harnessSections: readonly { id: HarnessSettingsSection; label: string }[] = [
   { id: 'model', label: 'Model & speed' },
