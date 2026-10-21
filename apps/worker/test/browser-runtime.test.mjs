@@ -321,6 +321,27 @@ test('Worker status is passive and a missing unit reports runtime_missing withou
   assert.equal(fixture.failures.length, 1);
 });
 
+test('the running Worker owner reports the retained browser failure and repairs from its selected release', async t => {
+  const directory = await fixture(t), root = join(directory, 'app'), stateDirectory = join(directory, 'state');
+  await mkdir(root, { mode: 0o700 }); await mkdir(stateDirectory, { mode: 0o700 });
+  const carrier = await workerCarrier(directory, await artifact(directory, 'runtime'));
+  const facts = { ...target, rootPersistent: true, homePersistent: true };
+  const installed = await installVersion({ root, stateDirectory, ...carrier, facts, expected,
+    browserRuntimeReadiness: async () => { throw new Error('Sandbox prerequisite unavailable'); } });
+  const f = bootstrapFixture();
+  const owner = createWorkerBrowserRuntime({ ...f.options, root, stateDirectory, facts,
+    readSelectedRelease: readInstalledRelease, readInstalled: readInstalledBrowserRuntime,
+    browserRuntimeReadiness: ready, loadModule: async () => ({ ...f.module, createBrowserHost: async () => f.host }) });
+  t.after(() => owner.close());
+  const failed = await owner.start();
+  assert.equal(failed.phase, 'failed');
+  assert.match(failed.message, /Sandbox prerequisite unavailable/);
+  assert.equal(failed.retryable, true);
+  assert.equal((await owner.retry()).ready, true);
+  assert.equal((await readInstalledRelease({ root, facts, expected })).directory, installed.directory);
+  assert.equal(owner.getHost(), f.host);
+});
+
 test('Worker refuses a mismatched selected release and a selection that changes while its module loads', async () => {
   const mismatched = bootstrapFixture({ readSelectedRelease: async () => ({ manifest: {
     browserRuntime: { manifestSha256: 'f'.repeat(64) } } }) });
