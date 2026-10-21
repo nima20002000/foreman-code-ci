@@ -212,6 +212,7 @@ function missingPort<T extends object>(name: string): T {
 interface Caller { principal: ManagementPrincipal; subject?: AgentSubject; readOnly: boolean; enabled: boolean; wrongScope?: boolean }
 export async function endpointFixture(options: {
   repository?: BrowserProfileRepository
+  codecs?: BrowserCanonicalCodecs
   computers?: Array<{ id: string; online: boolean }>
 } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'browser-endpoints-')), pool = new pg.Pool()
@@ -281,6 +282,7 @@ export async function endpointFixture(options: {
     computers: async () => options.computers ?? [{ id: 'main', online: true }],
   } })
   const codecs = fixtureCodecs(), handlers = createBrowserOperationHandlers(profiles, sessions)
+  if (options.codecs) for (const name of Object.keys(codecs) as BrowserOperationName[]) Object.assign(codecs[name], options.codecs[name])
   const definitions = [...createBrowserProfileTools(handlers, codecs), ...createBrowserSessionTools(handlers, codecs)]
   const commands = new PostgresCommandCoordinator(pool), denied = vi.spyOn(commands, 'recordDenied').mockResolvedValue(undefined)
   const services: OperatorServices = { commands, workspaces: missingPort('workspaces'), locations: missingPort('locations'),
