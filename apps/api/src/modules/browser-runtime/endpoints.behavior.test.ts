@@ -18,7 +18,7 @@ async function fixture() { const value = await endpointFixture(); fixtures.push(
 async function call<Name extends BrowserOperationName>(f: Fixture, client: McpClient, name: Name, input: BrowserOperationInputs[Name]) {
   return client.callTool({ name, arguments: f.reference(name, input) })
 }
-async function value<Name extends BrowserOperationName>(f: Fixture, client: McpClient, name: Name, input: BrowserOperationInputs[Name]) {
+async function value<Name extends BrowserOperationName>(f: Fixture, client: McpClient, name: Name, input: BrowserOperationInputs[Name]): Promise<unknown> {
   const result = await call(f, client, name, input)
   expect(result.isError).not.toBe(true)
   return decodeMcpToolResult(result)

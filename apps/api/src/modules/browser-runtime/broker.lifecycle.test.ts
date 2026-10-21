@@ -39,7 +39,7 @@ function nativeFixture() {
     reconnectProfile: vi.fn(async profileId => profiles.has(profileId) ? { generation: profiles.get(profileId)! } : null),
     restoreTab: vi.fn(async (profileId, generation, targetId) => {
       const tab = tabs.get(targetId)
-      return tab?.profileId === profileId && tab.generation === generation ? tab : null
+      return tab && tab.profileId === profileId && tab.generation === generation ? tab : null
     }),
     createTab: vi.fn(async (profileId, generation) => {
       const tab = { targetId: `native-target-${++nextTarget}`, title: 'Fixture page', url: 'about:blank', profileId, generation }

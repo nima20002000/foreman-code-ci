@@ -12,7 +12,7 @@ import { toNodeHandler } from '@modelcontextprotocol/node'
 import { ManagementActionSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import { registerOperatorHttpSecurity, requirePrincipal } from '../access/http.js'
 import { PostgresAccessService, bearerToken } from '../access/postgres.js'
-import { requireAuthorization } from '../access/policy.js'
+import { hasAction, isAuthorized, requireAuthorization } from '../access/policy.js'
 import { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
 import { BrowserProfileService } from '../browser-profiles/service.js'
@@ -24,8 +24,6 @@ import { registerBrowserProfileRoutes } from '../../routes/browserProfiles.js'
 import { registerBrowserSessionRoutes } from '../../routes/browserSessions.js'
 import { createBrowserProfileTools } from '../../mcp/operator/tools/browserProfiles.js'
 import { createBrowserSessionTools, createBrowserAgentHandlers } from '../../mcp/operator/tools/browserSessions.js'
-import { registerToolDefinition, toolAvailable } from '../../mcp/operator/definition.js'
-import { invokeOperatorTool } from '../../mcp/operator/invoke.js'
 import { toolResult, toolFailure } from '../../mcp/shared/results.js'
 import type { OperatorServices, OperatorRequestContext } from '../../mcp/operator/types.js'
 import { BrowserBroker } from './broker.js'
@@ -179,7 +177,9 @@ function fixtureCodec<Name extends BrowserOperationName>() {
   }
 }
 
-function fixtureCodecs() {
+type FixtureCodecs = { [Name in BrowserOperationName]: ReturnType<typeof fixtureCodec<Name>> }
+
+function fixtureCodecs(): FixtureCodecs {
   const action = fixtureCodec<'browser_action'>()
   return {
     browser_profiles_list: fixtureCodec<'browser_profiles_list'>(), browser_profile_get: fixtureCodec<'browser_profile_get'>(),
@@ -291,7 +291,7 @@ export async function endpointFixture(options: {
     return found.principal
   })
   const app = Fastify({ logger: false })
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler<Error & { statusCode?: number; code?: string }>((error, _request, reply) => {
     if (error instanceof DomainError) return reply.code(error.status).send({ error: { code: error.code, message: error.message } })
     return reply.code(error.statusCode ?? 500).send({ error: { code: error.code ?? 'FIXTURE_FAILURE', message: error.message } })
   })
@@ -309,8 +309,24 @@ export async function endpointFixture(options: {
           try { return toolResult(await handler.invoke(principal, input)) } catch (error) { return toolFailure(error) }
         })
       }
-    } else for (const definition of definitions) if (toolAvailable(context, definition)) {
-      registerToolDefinition(server, context, definition, { invoke: invokeOperatorTool, tools: definitions })
+    } else for (const definition of definitions) {
+      const available = definition.discoverable?.(context) ?? definition.requires.every(([action, scope]) =>
+        scope === 'global' ? isAuthorized(principal, action, {}) : hasAction(principal, action))
+      if (!available) continue
+      server.registerTool(definition.name, {
+        inputSchema: definition.inputSchema,
+        description: definition.description,
+        annotations: definition.annotations,
+      }, async input => {
+        try {
+          return toolResult(await definition.run(context, input))
+        } catch (error) {
+          if (error instanceof DomainError && error.status === 403) {
+            await commands.recordDenied(principal.id, 'mcp', definition.name, `mcp:${definition.name}`)
+          }
+          return toolFailure(error)
+        }
+      })
     }
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined })
     await server.connect(transport); reply.hijack()
@@ -327,7 +343,7 @@ export async function endpointFixture(options: {
     return client
   }
   const reference = <Name extends BrowserOperationName>(name: Name, input: BrowserOperationInputs[Name]) =>
-    (codecs[name] as ReturnType<typeof fixtureCodec<Name>>).bind(input)
+    codecs[name].bind(input)
   return { app, owner, profiles, broker, driver, subjectAuthority, files, sessions, codecs, denied, unexpectedSql, connect, reference,
     addCaller(id: string, options: { subject?: AgentSubject; readOnly?: boolean; enabled?: boolean; wrongScope?: boolean } = {}) {
       const principal: ManagementPrincipal = { ...owner, id, audience: options.subject ? 'worker' : 'operator', grants: [{

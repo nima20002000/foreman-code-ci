@@ -24,7 +24,8 @@ function view(codec: BrowserMediaCodec) {
 }
 
 it('assembles bounded contiguous chunks once and discards an incomplete older frame', async () => {
-  const { image: _image, ...metadata } = frame('session', 'tab', 1)
+  const { image, ...metadata } = frame('session', 'tab', 1)
+  expect(image).toBeInstanceOf(Blob)
   let value: BrowserMediaRead = { kind: 'frame', frame: { ...metadata, byteLength: 4, mimeType: 'image/png' }, offset: 0, bytes: new Uint8Array([1, 2]) }
   const codec: BrowserMediaCodec = { hello: () => '{}', decode: () => value }
   const { observer, connection, socket } = view(codec)

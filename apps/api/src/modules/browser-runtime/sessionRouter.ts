@@ -46,13 +46,14 @@ export interface BrowserSessionRouterOptions<Principal> {
 /** Main's concrete selected-computer routing; D provides its existing authority and paired transport only. */
 export function createBrowserSessionRouter<Principal>(options: BrowserSessionRouterOptions<Principal>): BrowserSessionPort<Principal> {
   const call = async <Name extends Method>(computerId: string, name: Name, principal: Principal,
-    args: Tail<Parameters<BrowserSessionPort<Principal>[Name]>>, installationId?: string) => {
+    args: Tail<Parameters<BrowserSessionPort<Principal>[Name]>>, installationId?: string): Promise<Awaited<ReturnType<BrowserSessionPort<Principal>[Name]>>> => {
     const binding = await options.pairing.current(computerId)
     await options.pairing.assertCurrent(binding)
     if (installationId && binding.installationId !== installationId) throw new DomainError('BROWSER_PAIRING_CHANGED', 'This session belongs to the previous computer installation.', 409)
-    const invoke = options.local[name] as (...values: Parameters<BrowserSessionPort<Principal>[Name]>) => ReturnType<BrowserSessionPort<Principal>[Name]>
+    const invoke = options.local[name] as (principal: Principal,
+      ...values: Tail<Parameters<BrowserSessionPort<Principal>[Name]>>) => ReturnType<BrowserSessionPort<Principal>[Name]>
     const result = computerId === options.localComputerId
-      ? await invoke.apply(options.local, [principal, ...args] as Parameters<BrowserSessionPort<Principal>[Name]>)
+      ? await invoke.call(options.local, principal, ...args)
       : await options.transport.invoke(binding, name, principal, args)
     await options.pairing.assertCurrent(binding)
     if (result && typeof result === 'object') {
@@ -73,7 +74,7 @@ export function createBrowserSessionRouter<Principal>(options: BrowserSessionRou
     return found
   }
   const sessionCall = async <Name extends Method>(name: Name, principal: Principal, sessionId: string, mutate: boolean,
-    args: Tail<Parameters<BrowserSessionPort<Principal>[Name]>>) => {
+    args: Tail<Parameters<BrowserSessionPort<Principal>[Name]>>): Promise<Awaited<ReturnType<BrowserSessionPort<Principal>[Name]>>> => {
     const found = await locate(principal, sessionId, mutate)
     return call(found.session.computerId, name, principal, args, found.installationId)
   }

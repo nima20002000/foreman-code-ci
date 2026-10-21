@@ -54,7 +54,6 @@ export async function runtimeRecoveryFixture() {
     facts: () => ({ dialog: null, uploadChooser: null }), onTabClosed: () => () => undefined, onPopup: () => () => undefined,
   }
   const reportFailure = vi.fn()
-  let files: BrowserFileStore, media: BrowserMediaService
   const broker = new BrowserBroker({ computerId: 'worker', driver, journal,
     closeSessionResources: sessionId => createBrowserSessionCleanup(media, files, reportFailure)(sessionId), authority: {
     resolve: async candidate => ({ subject: candidate, browser: { enabled: true, profileId: 'profile' },
@@ -69,8 +68,8 @@ export async function runtimeRecoveryFixture() {
     },
     actor: async principal => principal.role,
   }
-  files = new BrowserFileStore(join(directory, 'files'), async owner => { broker.read(owner.sessionId) })
-  media = new BrowserMediaService(broker, reportFailure)
+  const files = new BrowserFileStore(join(directory, 'files'), async owner => { broker.read(owner.sessionId) })
+  const media = new BrowserMediaService(broker, reportFailure)
   const sessions = new BrowserSessionService(broker, media, files, authority)
   const prepare = async () => {
     const result = await broker.prepare({ subject, browser: { enabled: true, profileId: 'profile' },

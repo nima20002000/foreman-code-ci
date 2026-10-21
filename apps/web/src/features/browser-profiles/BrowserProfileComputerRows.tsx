@@ -1,7 +1,7 @@
 import { Button } from '../../shared/ui/nocturne'
 import type { BrowserComputerLabel, BrowserProfile, BrowserProfileReplica, BrowserProfileCatalog } from './types'
 
-export function replicaTransferLabel(replica: BrowserProfileReplica | undefined): string {
+function replicaTransferLabel(replica: BrowserProfileReplica | undefined): string {
   if (!replica) return 'Not added here'
   if (replica.localOverride) return 'Local sign-in · excluded from source updates'
   const labels: Record<BrowserProfileReplica['transfer'], string> = {

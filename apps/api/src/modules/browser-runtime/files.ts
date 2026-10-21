@@ -16,6 +16,15 @@ interface OwnedBrowserFile { metadata: BrowserFileMetadata; sessionId: string; t
 export interface BrowserFileOwner { sessionId: string; tabId: string; browserGeneration: number }
 
 /** Session-owned byte staging. Raw paths never enter readback; the native adapter receives them privately. */
+function unsafeFilenameCharacter(character: string): boolean {
+  return character.charCodeAt(0) < 32 || character === '\\' || character === '/'
+}
+
+function downloadName(filename: string): string {
+  return Array.from(basename(filename)).map(character => unsafeFilenameCharacter(character) ? '_' : character)
+    .join('').slice(0, 255) || 'download'
+}
+
 export class BrowserFileStore {
   private readonly tails = new Map<string, Promise<unknown>>()
   private readonly sessionActivity = new Map<string, Set<Promise<unknown>>>()
@@ -66,7 +75,7 @@ export class BrowserFileStore {
   private async owned(fileId: string, sessionId: string): Promise<OwnedBrowserFile> {
     let value: OwnedBrowserFile
     try { value = JSON.parse(await readFile(join(this.directory(fileId), 'metadata.json'), 'utf8')) as OwnedBrowserFile } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new DomainError('NOT_FOUND', 'Browser file not found.', 404)
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new DomainError('NOT_FOUND', 'Browser file not found.', 404, undefined, { cause: error })
       throw error
     }
     if (value.sessionId !== sessionId) throw new DomainError('BROWSER_FILE_SCOPE', 'This file belongs to a different browser session.', 403)
@@ -80,7 +89,7 @@ export class BrowserFileStore {
   private async beginOpen(input: BrowserFileOwner & { name: string; mimeType: string; byteLength: number; commandId: string }): Promise<BrowserFileMetadata> {
     await this.assertOwner(input, true)
     if (!Number.isSafeInteger(input.byteLength) || input.byteLength < 0 || !input.name.trim()
-      || input.name.length > 255 || basename(input.name) !== input.name || /[\x00-\x1f\\/]/.test(input.name)) {
+      || input.name.length > 255 || basename(input.name) !== input.name || Array.from(input.name).some(unsafeFilenameCharacter)) {
       throw new DomainError('BROWSER_FILE_INVALID', 'Choose a file with a valid name and length.', 400)
     }
     const id = browserInputHash({ sessionId: input.sessionId, commandId: input.commandId })
@@ -230,7 +239,7 @@ export class BrowserFileStore {
         if (!(error instanceof DomainError) || error.code !== 'NOT_FOUND') throw error
       }
       if (previous && ['ready', 'canceled', 'failed'].includes(previous.metadata.state)) return previous.metadata
-      const metadata: BrowserFileMetadata = { id, name: basename(filename).replace(/[\x00-\x1f\\/]/g, '_').slice(0, 255) || 'download',
+      const metadata: BrowserFileMetadata = { id, name: downloadName(filename),
         mimeType: 'application/octet-stream', byteLength: Math.max(0, byteLength), receivedBytes: Math.max(0, receivedBytes),
         state: failed ? 'failed' : 'uploading', sha256: null, purpose: 'download' }
       await this.save({ ...owner, metadata, chunks: {} }); return metadata
@@ -245,7 +254,7 @@ export class BrowserFileStore {
   }
 
   private async adoptOpenDownload(owner: BrowserFileOwner, nativeId: string, privatePath: string, filename: string, byteLength: number): Promise<BrowserFileMetadata> {
-    const id = browserInputHash({ sessionId: owner.sessionId, nativeId }), name = basename(filename).replace(/[\x00-\x1f\\/]/g, '_').slice(0, 255) || 'download'
+    const id = browserInputHash({ sessionId: owner.sessionId, nativeId }), name = downloadName(filename)
     return this.serialize(id, async () => {
       try {
         const previous = (await this.owned(id, owner.sessionId)).metadata

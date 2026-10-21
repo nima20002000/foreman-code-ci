@@ -186,7 +186,7 @@ export class BrowserSnapshotStorage {
         else {
           try { await lstat(join(directory, `${prior.manifest.snapshot.sha256}.bin`)) } catch (error) {
             if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-            throw new DomainError('SNAPSHOT_RETIRED', 'The completed snapshot payload was retired. Start a new explicit sync.', 409)
+            throw new DomainError('SNAPSHOT_RETIRED', 'The completed snapshot payload was retired. Start a new explicit sync.', 409, undefined, { cause: error })
           }
         }
         return { snapshot: prior.manifest.snapshot, manifest: prior.manifest }

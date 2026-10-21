@@ -714,7 +714,9 @@ export class BrowserBroker implements BrowserLifecyclePort {
       await this.persist(live)
     }
     live.record.session.state = 'closed'; live.record.session.selectedTabId = null
-    live.record.control.controllingViewerId = null; live.record.control.reason = null; live.gate.close()
+    live.record.control.controllingViewerId = null
+    live.record.control.reason = 'Browser session closed.'
+    live.gate.close()
     await this.persist(live)
     return { sessionId, state: 'closed', reason: null }
   }

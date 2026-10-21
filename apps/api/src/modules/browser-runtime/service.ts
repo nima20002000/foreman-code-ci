@@ -17,10 +17,12 @@ export interface BrowserSessionAuthority<Principal> {
 export type BrowserFileAction =
   | ({ intent: 'file'; phase: 'begin'; commandId: string; name: string; mimeType: string; byteLength: number } & BrowserFileOwner)
   | { intent: 'file'; phase: 'write'; sessionId: string; fileId: string; offset: number; bytes: Uint8Array }
-  | { intent: 'file'; phase: 'finish' | 'cancel' | 'remove' | 'metadata'; sessionId: string; fileId: string; commandId?: string }
+  | { [Phase in 'finish' | 'cancel' | 'remove' | 'metadata']: {
+    intent: 'file'; phase: Phase; sessionId: string; fileId: string; commandId?: string
+  } }['finish' | 'cancel' | 'remove' | 'metadata']
   | { intent: 'file'; phase: 'read'; sessionId: string; fileId: string; offset: number; length: number }
   | ({ intent: 'file'; phase: 'attach' } & Parameters<BrowserBroker['attachFile']>[0])
-export type BrowserSessionListInput = { subject?: AgentSubject; setupForProfileId?: string; computerId?: string; cursor?: string; limit?: number }
+export type BrowserSessionListInput = { subject?: AgentSubject; setupForProfileId?: string; computerId?: string; cursor?: string | undefined; limit?: number }
 
 /** The same authenticated service is consumed by HTTP, Operator MCP and exact scoped agent adapters. */
 export class BrowserSessionService<Principal> {

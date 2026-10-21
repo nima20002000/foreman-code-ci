@@ -1,4 +1,4 @@
-import { defineOperatorTool } from '../definition.js'
+import type { BrowserOperatorToolDefinition } from '../../../modules/browser-runtime/operatorDefinition.js'
 import { hasAction } from '../../../modules/access/policy.js'
 import { bindBrowserOperation, browserSessionOperationNames, type BrowserCanonicalCodecs, type BrowserOperationHandlers, type BrowserOperationName } from '../../../modules/browser-runtime/operations.js'
 
@@ -24,15 +24,15 @@ const descriptions: Record<typeof browserSessionOperationNames[number], string> 
 }
 
 export function createBrowserSessionTools(handlers: BrowserOperationHandlers, codecs: BrowserCanonicalCodecs) {
-  return browserSessionOperationNames.map(name => {
+  return browserSessionOperationNames.map((name): BrowserOperatorToolDefinition => {
     const read = readNames.has(name)
-    return defineOperatorTool({ name, description: descriptions[name], inputSchema: codecs[name].inputSchema,
+    return { name, description: descriptions[name], inputSchema: codecs[name].inputSchema,
       ...(codecs[name].outputSchema ? { outputSchema: codecs[name].outputSchema } : {}),
       requires: [[read ? 'workflows:read' : 'workflows:update', 'resource']],
       discoverable: context => hasAction(context.principal, read ? 'workflows:read' : 'workflows:update')
         || hasAction(context.principal, read ? 'settings:read' : 'settings:update'),
       annotations: { readOnlyHint: read, destructiveHint: name === 'browser_session_close' || name === 'browser_tab_close', idempotentHint: name !== 'browser_input', openWorldHint: true },
-      run: (context, input) => bindBrowserOperation(name, handlers, codecs).mcp(context.principal, input) })
+      run: (context, input) => bindBrowserOperation(name, handlers, codecs).mcp(context.principal, input) }
   })
 }
 

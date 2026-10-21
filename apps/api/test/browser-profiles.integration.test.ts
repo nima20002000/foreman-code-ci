@@ -58,8 +58,8 @@ it('paginates every authorized computer and persists MCP profile edits while den
   f.addCaller('reader', { readOnly: true })
   const reader = await f.connect('reader')
   const update = { intent: 'metadata' as const, profileId: profile.id, patch: { name: 'Renamed' } }
-  const denied = await reader.callTool({ name: 'browser_profile_update', arguments: f.reference('browser_profile_update', update) })
-  expect(denied).toMatchObject({ isError: true })
+  await expect(reader.callTool({ name: 'browser_profile_update', arguments: f.reference('browser_profile_update', update) }))
+    .rejects.toMatchObject({ message: 'Tool browser_profile_update not found' })
   expect((await f.profiles.get(f.owner, profile.id)).profile).toEqual(profile)
   const saved = await client.callTool({ name: 'browser_profile_update', arguments: f.reference('browser_profile_update', update) })
   expect(saved.isError).not.toBe(true)

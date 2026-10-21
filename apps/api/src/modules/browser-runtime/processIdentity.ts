@@ -42,7 +42,7 @@ export async function readBrowserProcessIdentity(directory: string): Promise<Bro
     return value
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
-    throw new DomainError('BROWSER_PROCESS_OWNERSHIP', 'Browser process ownership could not be verified.', 503)
+    throw new DomainError('BROWSER_PROCESS_OWNERSHIP', 'Browser process ownership could not be verified.', 503, undefined, { cause: error })
   }
 }
 

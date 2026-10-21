@@ -28,7 +28,8 @@ async function send(socket: WebSocket, codec: BrowserHostMediaCodec, value: Brow
   }
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => { socket.terminate(); reject(new Error('Host media send timed out')) }, 5000)
-    socket.send(encoded, { binary: typeof encoded !== 'string' }, error => { clearTimeout(timer); error ? reject(error) : resolve() })
+    socket.send(encoded, { binary: typeof encoded !== 'string' }, error => { clearTimeout(timer); if (error) reject(error)
+      else resolve() })
   })
 }
 function incoming(data: RawData, binary: boolean, codec: BrowserHostMediaCodec): BrowserHostMediaMessage {
@@ -80,7 +81,7 @@ export class BrowserPairedMediaHub<Principal> {
       if (this.peers.get(binding.computerId) === peer) this.peers.delete(binding.computerId)
       for (const view of peer.subscriptions.values()) {
         view.error = new DomainError('BROWSER_COMPUTER_OFFLINE', 'The browser computer disconnected.', 503)
-        view.latest = null; view.partial = undefined; view.failed(view.error); view.changed()
+        view.latest = null; delete view.partial; view.failed(view.error); view.changed()
       }
       peer.subscriptions.clear()
     })
@@ -99,7 +100,7 @@ export class BrowserPairedMediaHub<Principal> {
     }
     if (message.kind === 'error') {
       view.error = new DomainError('BROWSER_VIEW_CLOSED', 'The owned host view is unavailable.', 409)
-      view.latest = null; view.partial = undefined; view.failed(view.error); view.changed(); return
+      view.latest = null; delete view.partial; view.failed(view.error); view.changed(); return
     }
     if (message.kind === 'control') {
       if (message.control.sessionId !== view.sessionId) throw new DomainError('BROWSER_VIEW_SCOPE', 'The host returned another session control.', 403)
@@ -125,7 +126,7 @@ export class BrowserPairedMediaHub<Principal> {
     if (partial.received === partial.data.byteLength) {
       view.latest = { data: partial.data, mimeType: frame.mimeType, width: frame.width, height: frame.height,
         viewportOffsetTop: frame.viewportOffsetTop, capturedAt: frame.capturedAt, sequence: frame.sequence }
-      view.partial = undefined; view.changed()
+      delete view.partial; view.changed()
     }
   }
 
@@ -158,7 +159,7 @@ export class BrowserPairedMediaHub<Principal> {
           return { view: value.view, control: value.control, frame: value.latest && value.latest.sequence > after ? value.latest : null }
         },
         close: async disconnected => {
-          peer.subscriptions.delete(id); value.latest = null; value.partial = undefined
+          peer.subscriptions.delete(id); value.latest = null; delete value.partial
           if (peer.socket.readyState === WebSocket.OPEN) await send(peer.socket, this.codec, { kind: 'close', id, disconnected })
         },
       }

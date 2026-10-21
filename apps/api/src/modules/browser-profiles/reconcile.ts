@@ -26,7 +26,9 @@ export async function reconcileBrowserProfileIntent(service: BrowserProfileServi
   const finish = (state: ProfileHostIntent['state'], reason: string | null) => service.repository.transaction([`profile:${intent.profileId}`], async tx => {
     const current = (await tx.intent(intent.id))!
     if (current.claimId !== claimId || current.state === 'completed') return current
-    const next: ProfileHostIntent = { ...current, state, reason, claimId: undefined, claimUntil: undefined }
+    const next: ProfileHostIntent = { ...current, state, reason }
+    delete next.claimId
+    delete next.claimUntil
     const latest = await tx.replicaFacts(intent.profileId, intent.computerId)
     await tx.putIntent(next)
     if (state === 'completed' && latest.currentIntent?.id === intent.id) {

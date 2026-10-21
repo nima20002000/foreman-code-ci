@@ -41,7 +41,6 @@ export async function createBrowserHost(options: BrowserHostOptions) {
   await mkdir(root, { recursive: true, mode: 0o700 })
   const archive = new BrowserSnapshotArchive(join(root, 'incoming-snapshots'))
   const applyJobs = new Map<string, string>()
-  let broker: BrowserBroker, driver: ManagedBrowserNativeDriver, files: BrowserFileStore, media: BrowserMediaService
   const downloadOwners = new Map<string, { sessionId: string; tabId: string; browserGeneration: number }>()
   const binding = async () => {
     await options.assertHostOwnership()
@@ -64,7 +63,7 @@ export async function createBrowserHost(options: BrowserHostOptions) {
     closeProfile: profileId => driver.closeProfile(profileId), exportState: (profileId, origins) => driver.exportState(profileId, origins),
     importState: (profileId, directory, generation, state) => driver.importState(profileId, directory, generation, state),
   })
-  driver = new ManagedBrowserNativeDriver({ runtime: options.runtime, profileDirectory: profileId => storage.directory(profileId),
+  const driver = new ManagedBrowserNativeDriver({ runtime: options.runtime, profileDirectory: profileId => storage.directory(profileId),
     allocateGeneration: profileId => storage.allocateProcessGeneration(profileId), onOrigin: (profileId, origin) => storage.noteOrigin(profileId, origin),
     onDisconnected: (profileId, generation) => { void broker.disconnected(profileId, generation).catch(options.reportFailure) },
     downloadDirectory: profileId => join(root, 'native-downloads', browserInputHash(profileId)),
@@ -81,9 +80,9 @@ export async function createBrowserHost(options: BrowserHostOptions) {
       }
     } })
   const journal = createBrowserRuntimeJournal(join(root, 'journal'))
-  broker = new BrowserBroker({ computerId: options.computerId, driver, journal, authority: options.subjectAuthority,
+  const broker = new BrowserBroker({ computerId: options.computerId, driver, journal, authority: options.subjectAuthority,
     closeSessionResources: sessionId => createBrowserSessionCleanup(media, files, options.reportFailure)(sessionId) })
-  files = new BrowserFileStore(join(root, 'session-files'), async (owner, mutate) => {
+  const files = new BrowserFileStore(join(root, 'session-files'), async (owner, mutate) => {
     await options.assertHostOwnership()
     const read = broker.read(owner.sessionId)
     if (mutate && (read.session.state === 'closed' || read.session.browserGeneration !== owner.browserGeneration
@@ -91,7 +90,7 @@ export async function createBrowserHost(options: BrowserHostOptions) {
       throw new DomainError('BROWSER_FILE_SCOPE', 'The upload no longer has its exact owned tab.', 403)
     }
   })
-  media = new BrowserMediaService(broker, options.reportFailure)
+  const media = new BrowserMediaService(broker, options.reportFailure)
   const ensureComputer = async (computerId: string, installationId?: string) => {
     const current = await binding()
     if (computerId !== options.computerId || installationId && current.installationId !== installationId) throw new DomainError('BROWSER_COMPUTER_SCOPE', 'This operation belongs to another installed computer.', 403)

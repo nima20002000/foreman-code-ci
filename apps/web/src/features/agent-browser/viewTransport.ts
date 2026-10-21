@@ -39,7 +39,9 @@ function frameAssembler(sessionId: string, emit: (frame: PageFrame) => void) {
       const complete = new Uint8Array(partial.bytes.byteLength); complete.set(partial.bytes)
       const image = new Blob([complete], { type: header.mimeType })
       delivered = header.sequence; partial = undefined
-      const { mimeType: _mimeType, byteLength: _byteLength, ...metadata } = header
+      const metadata: Omit<PageFrame, 'image'> = { sessionId: header.sessionId, tabId: header.tabId,
+        browserGeneration: header.browserGeneration, sequence: header.sequence, width: header.width, height: header.height,
+        capturedAt: header.capturedAt, ...(header.viewportOffsetTop === undefined ? {} : { viewportOffsetTop: header.viewportOffsetTop }) }
       emit({ ...metadata, image })
     }
   }

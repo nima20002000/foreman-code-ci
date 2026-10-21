@@ -84,7 +84,7 @@ export function profileWorkFixture() {
       return { snapshot, manifest: { snapshot, sourceComputerId: input.computerId, createdAt: '2026-01-01T00:00:00.000Z',
         byteLength: 10, origins: ['https://fixture.test'], unsupportedState: [] } }
     }),
-    checkOrigin: vi.fn(async input => ({ origin: input.origin, state: 'unknown', checkedAt: null, evidence: 'none', reason: null })),
+    checkOrigin: vi.fn<BrowserProfileHost['checkOrigin']>(async input => ({ origin: input.origin, state: 'unknown', checkedAt: null, evidence: 'none', reason: null })),
   }
   const service = new BrowserProfileService({ repository, host, id: randomUUID, authority: {
     authorize: async () => undefined,

@@ -77,11 +77,12 @@ class ProfileTransaction implements BrowserProfileTransaction {
   async catalogRows(after: readonly [string, string] | undefined, computerIds: readonly string[], limit: number): Promise<BrowserCatalogRow[]> {
     const rows = (await this.sql.query<{ profile: unknown; replica: unknown | null; computer_id: string; present: boolean | null;
       presence_revision: string | null; current_intent: ProfileHostIntent | null }>(`select p.record as profile,r.record as replica,
-      coalesce(r.computer_id,'') as computer_id,f.present,f.presence_revision,f.current_intent
-      from browser_profiles p left join browser_profile_replicas r on r.profile_id=p.id and r.computer_id=any($1::text[])
-      left join browser_profile_presence f on f.profile_id=r.profile_id and f.computer_id=r.computer_id
-      where not p.deleted and ($2::text is null or (p.id,coalesce(r.computer_id,''))>($2,$3))
-      order by p.id,coalesce(r.computer_id,'') limit $4`, [computerIds, after?.[0] ?? null, after?.[1] ?? null, limit])).rows
+      c.computer_id,f.present,f.presence_revision,f.current_intent
+      from browser_profiles p cross join unnest($1::text[]) as c(computer_id)
+      left join browser_profile_replicas r on r.profile_id=p.id and r.computer_id=c.computer_id
+      left join browser_profile_presence f on f.profile_id=p.id and f.computer_id=c.computer_id
+      where not p.deleted and ($2::text is null or (p.id,c.computer_id)>($2,$3))
+      order by p.id,c.computer_id limit $4`, [computerIds, after?.[0] ?? null, after?.[1] ?? null, limit])).rows
     return rows.map(row => ({ profile: BrowserProfileSchema.parse(row.profile), replica: row.replica ? BrowserProfileReplicaSchema.parse(row.replica) : null,
       computerId: row.computer_id, facts: { present: row.present === true, presenceRevision: Number(row.presence_revision ?? 0), currentIntent: row.current_intent } }))
   }

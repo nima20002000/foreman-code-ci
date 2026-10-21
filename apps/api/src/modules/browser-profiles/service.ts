@@ -46,7 +46,7 @@ export class BrowserProfileService {
     this.now = options.now ?? (() => new Date().toISOString()); this.id = options.id ?? randomUUID
   }
 
-  async command<T>(principal: ManagementPrincipal, operation: string, input: BrowserCommandOptions & object,
+  async command<T, Input extends BrowserCommandOptions>(principal: ManagementPrincipal, operation: string, input: Input,
     computers: readonly string[], locks: readonly string[], perform: (tx: BrowserProfileTransaction) => Promise<T>): Promise<BrowserCommandReceipt<T>> {
     const commandId = input.commandId ?? this.id()
     const key = `${principal.id}:${operation}:${commandId}`

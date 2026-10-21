@@ -49,7 +49,8 @@ function boundedSend(socket: WebSocket, value: string | Uint8Array): Promise<voi
   }
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => { socket.terminate(); reject(new Error('Browser viewer send timed out')) }, 5000)
-    socket.send(value, { binary: typeof value !== 'string' }, error => { clearTimeout(timeout); error ? reject(error) : resolve() })
+    socket.send(value, { binary: typeof value !== 'string' }, error => { clearTimeout(timeout); if (error) reject(error)
+      else resolve() })
   })
 }
 

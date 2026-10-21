@@ -123,7 +123,7 @@ export class BrowserMediaService {
       } finally {
         if (disconnected) await this.broker.disconnectViewer(viewer.descriptor.sessionId, viewer.viewerId)
       }
-    })().finally(() => { if (viewer.closing === task) viewer.closing = undefined })
+    })().finally(() => { if (viewer.closing === task) delete viewer.closing })
     viewer.closing = task; return task
   }
 

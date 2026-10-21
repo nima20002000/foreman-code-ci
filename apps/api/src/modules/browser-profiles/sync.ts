@@ -55,7 +55,15 @@ export async function admitBrowserProfileSync(service: BrowserProfileService, pr
           if (!exclusion) await tx.putIntent({ id: `${job.id}:target:${id}:${computer.id}`, profileId: id,
             computerId: computer.id, operation: 'sync', revision, installationId: installations.get(computer.id)!, state: 'queued', reason: null })
         }
-        if (profile.distribution === 'shared') await tx.putProfile({ profile: { ...profile, revision }, deleted: false })
+        const source = job.profiles.at(-1)!
+        const hasDestination = job.targets.some(target => target.profileId === id && target.exclusion === null)
+        if (source.state === 'queued' && !hasDestination) {
+          source.state = 'excluded'
+          source.reason = 'No eligible destination computers.'
+        }
+        if (profile.distribution === 'shared' && hasDestination) {
+          await tx.putProfile({ profile: { ...profile, revision }, deleted: false })
+        }
       }
       if (job.targets.every(target => target.state === 'excluded')) job.state = 'completed'
       await tx.putJob(job)
@@ -259,7 +267,7 @@ export class BrowserProfileSyncCoordinator {
       return Boolean(profile && !profile.deleted && replica && sameBrowserSnapshot(replica.desiredSnapshot, transfer.snapshot)
         && (await tx.replicaFacts(profileId, computerId)).currentIntent?.id === intent.id)
     }
-    const record = async (state: typeof target.state, reason: string | null, applied = false) => this.change(jobId, async (job, tx) => {
+    const record = async (state: BrowserProfileSyncJob['targets'][number]['state'], reason: string | null, applied = false) => this.change(jobId, async (job, tx) => {
       const row = job.targets.find(value => value.profileId === profileId && value.computerId === computerId)!
       row.updatedAt = this.service.now()
       if (!await isCurrent(tx)) {

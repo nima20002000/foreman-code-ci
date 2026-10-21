@@ -72,7 +72,7 @@ export async function startBrowserRuntimeControl(root: string, host: RuntimeDrai
     socket.on('data', chunk => {
       if (done) return
       if (bytes.length + chunk.length > 16_384) { done = true; socket.destroy(); return }
-      bytes = Buffer.concat([bytes, chunk])
+      bytes = Buffer.concat([bytes, Buffer.from(chunk)])
       const newline = bytes.indexOf(10)
       if (newline < 0) return
       done = true

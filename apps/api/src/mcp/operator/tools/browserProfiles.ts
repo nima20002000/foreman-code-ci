@@ -1,4 +1,4 @@
-import { defineOperatorTool } from '../definition.js'
+import type { BrowserOperatorToolDefinition } from '../../../modules/browser-runtime/operatorDefinition.js'
 import { bindBrowserOperation, browserProfileOperationNames, type BrowserCanonicalCodecs, type BrowserOperationHandlers } from '../../../modules/browser-runtime/operations.js'
 
 const descriptions = {
@@ -12,12 +12,12 @@ const descriptions = {
 } as const
 
 export function createBrowserProfileTools(handlers: BrowserOperationHandlers, codecs: BrowserCanonicalCodecs) {
-  return browserProfileOperationNames.map(name => {
+  return browserProfileOperationNames.map((name): BrowserOperatorToolDefinition => {
     const read = name === 'browser_profiles_list' || name === 'browser_profile_get' || name === 'browser_profile_sync_get'
-    return defineOperatorTool({ name, description: descriptions[name], inputSchema: codecs[name].inputSchema,
+    return { name, description: descriptions[name], inputSchema: codecs[name].inputSchema,
       ...(codecs[name].outputSchema ? { outputSchema: codecs[name].outputSchema } : {}),
       requires: [[read ? 'settings:read' : 'settings:update', 'global']],
       annotations: { readOnlyHint: read, destructiveHint: name === 'browser_profile_remove', idempotentHint: true, openWorldHint: true },
-      run: (context, input) => bindBrowserOperation(name, handlers, codecs).mcp(context.principal, input) })
+      run: (context, input) => bindBrowserOperation(name, handlers, codecs).mcp(context.principal, input) }
   })
 }
