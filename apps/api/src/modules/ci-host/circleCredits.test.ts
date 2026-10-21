@@ -50,6 +50,15 @@ function circle(options: { states?: string[]; csv?: string; csvByOrg?: Record<st
 }
 const settled = () => new Promise(resolve => setTimeout(resolve, 50))
 
+it('reports compute usage separately from storage, network and total credits', async () => {
+  const f = circle({ csv: 'PROJECT_NAME,TOTAL_CREDITS,COMPUTE_CREDITS,STORAGE_CREDITS,NETWORK_CREDITS\r\n'
+    + '"site, public",884997,552142,332855,0\r\n' })
+  await f.usage.reading('acme')
+  await f.usage.close()
+  expect((await f.usage.reading('acme')).credits).toEqual({ total: 400_000, used: 552_142, remaining: 0,
+    asOf: '2026-10-17T12:00:00.000Z' })
+})
+
 it('estimates credits left from the month usage export and reads CircleCI only once per interval', async () => {
   const f = circle()
   expect((await f.usage.reading('acme')).credits).toBeNull()
