@@ -619,9 +619,14 @@ describe('Live Run status on the Board', () => {
           page: { before: null, nextCursor: null, hasMore: false } } } : {}) })
       }),
     )
-    const { cache } = await mount(href(scope))
-    const agentNode = (node: typeof first) => within(pinnedCanvas()).getByRole('button', { name: `Inspect Run node ${nameOf(node)}` })
-      .closest<HTMLElement>('.n-agent')!
+    const { cache, router } = await mount(href(scope))
+    const canvas = await screen.findByRole('region', { name: 'Selected Run pinned topology' })
+    const agentNode = (node: typeof first) => {
+      const button = within(canvas).getByLabelText(`Inspect Run node ${nameOf(node)}`, { selector: 'button' })
+      expect(button).toHaveRole('button')
+      expect(button).toBeVisible()
+      return button.closest<HTMLElement>('.n-agent')!
+    }
     const nodeState = (node: typeof first) => agentNode(node).getAttribute('data-state')
     const advance = async (next: () => void) => act(async () => {
       next()
@@ -638,7 +643,7 @@ describe('Live Run status on the Board', () => {
     // The turn passes; the second Agent runs CI on a cloud computer. CI lives on the CI server, not in a strip on top.
     ciState = 'running'
     await advance(() => cut('2', 'running', [execution(first, 'completed'), execution(added, 'running')]))
-    const ciServerButton = await within(pinnedCanvas()).findByRole('button', { name: /^CI server, 1 running/ })
+    const ciServerButton = await within(canvas).findByRole('button', { name: /^CI server, 1 running/ })
     expect(screen.queryByRole('list', { name: 'CI jobs' })).not.toBeInTheDocument()
     fireEvent.click(ciServerButton)
     const ciDialog = await screen.findByRole('dialog', { name: 'CI server' })
@@ -655,6 +660,8 @@ describe('Live Run status on the Board', () => {
     // CI finished and the second Agent's node now explains the pending decision.
     ciState = 'passed'; decision = true
     await advance(() => cut('3', 'waiting', [execution(first, 'completed'), execution(added, 'completed')]))
+    expect(router.state.location.search).toMatchObject({ workflowId: scope.workflowId, runId: scope.runId,
+      workflowVersionId: scope.workflowVersionId, executionSemanticsVersion: 3 })
     await waitFor(() => expect(within(agentNode(added)).getByText('Waiting for your decision')).toBeVisible())
     expect(nodeState(added)).toBe('waiting')
     expect(screen.queryByRole('region', { name: 'Run status' })).not.toBeInTheDocument()
