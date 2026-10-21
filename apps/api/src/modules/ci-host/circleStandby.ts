@@ -16,11 +16,11 @@ export interface CircleSchedulingReading extends CircleCreditsReading {
   schedulingReason: string
 }
 export const circleOrgKey = circleCreditKey
-export const CIRCLE_EXHAUSTED_CREDITS = 20_000
+const CREDIT_REFUSAL_RETRY_MS = 5 * 60_000
 
 function reason(role: CircleSchedulingRole): string {
-  if (role === 'exhausted') return 'Estimated credits left reached the 20,000 reserve for this UTC month.'
-  if (role === 'standby') return 'Standby capacity waits for a primary organization to reach its credit reserve.'
+  if (role === 'exhausted') return 'CircleCI refused a job because credits were unavailable; retrying after five minutes.'
+  if (role === 'standby') return 'Standby capacity waits for CircleCI to refuse a primary organization for credits.'
   return 'Active for new CI jobs.'
 }
 
@@ -88,6 +88,19 @@ export class CircleStandby {
     return observed?.month === circleMonthStart(this.now()) ? observed.roles : undefined
   }
 
+  async recordCreditRefusal(owner: string, circleAccountId = 'default'): Promise<void> {
+    const now = this.now()
+    await this.cache.transaction(state => {
+      const saved = state[circleOrgKey(owner, circleAccountId)] ??= { attempts: [] }
+      if (saved.policy?.month !== circleMonthStart(now)) {
+        saved.policy = { month: circleMonthStart(now), exhausted: false, activated: false }
+      }
+      saved.policy.creditRefusedUntil = now + CREDIT_REFUSAL_RETRY_MS
+      saved.policy.exhausted = true
+    })
+    this.observed.clear()
+  }
+
   private async evaluate(mirrorName?: string): Promise<Map<string, CircleSchedulingReading>> {
     const orgs = await this.organizations()
     const readings = await Promise.all(orgs.map(org => this.credits.reading(org.owner, org.circleAccountId)))
@@ -101,7 +114,8 @@ export class CircleStandby {
         const previousMonth = observed.credits && circleMonthStart(Date.parse(observed.credits.asOf)) !== month
         const reading: CircleCreditsReading = previousMonth
           ? { credits: null, creditsUnavailable: 'Usage from the previous UTC month has expired.' } : observed
-        if (reading.credits) saved.policy.exhausted = reading.credits.remaining <= CIRCLE_EXHAUSTED_CREDITS
+        // Old cached exhaustion was inferred from usage; only a provider refusal can block starts.
+        saved.policy.exhausted = (saved.policy.creditRefusedUntil ?? 0) > this.now()
         return { org, key, reading, policy: saved.policy }
       })
       const selected = selectReplacements(statuses)
