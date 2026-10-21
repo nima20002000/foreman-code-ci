@@ -76,11 +76,6 @@ function actionFor(request: FastifyRequest) {
     if (url.endsWith('/responses')) return 'agent_chat:respond' as const
     return 'agent_chat:write' as const
   }
-  if (/^\/api\/workspaces\/[^/]+\/workflows\/[^/]+\/execution-chat(?:\/|$)/.test(url)) {
-    if (url.endsWith('/target') || url.endsWith('/read')) return 'agent_chat:read' as const
-    if (url.endsWith('/stop') || url.endsWith('/queue/cancel')) return 'agent_chat:cancel' as const
-    return 'agent_chat:write' as const
-  }
   if (url.includes('/agents')) return request.method === 'GET' ? 'agents:read' as const : 'graph:edit' as const
   if (url.includes('/runs/') && url.endsWith('/cancel')) return 'runs:stop' as const
   if (url.includes('/runs')) return request.method === 'GET' ? 'runs:read' as const : 'runs:start' as const
@@ -141,8 +136,8 @@ export function registerOperatorHttpSecurity(app: FastifyInstance, access: Postg
     request.operatorAuthentication = headerToken ? 'bearer' : 'local-human'
     // Account and chat services resolve persisted resources before checking their full scopes.
     const providerAccounts = path === '/api/provider-accounts' || path.startsWith('/api/provider-accounts/')
+    const memoryBoards = path === '/api/memory-boards' || path.startsWith('/api/memory-boards/')
     const agentChat = /^\/api\/workspaces\/[^/]+\/agent-chat(?:\/|$)/.test(path)
-      || /^\/api\/workspaces\/[^/]+\/workflows\/[^/]+\/execution-chat(?:\/|$)/.test(path)
     const selfReadback = path === '/api/local-human' || path === '/api/runtime/identity' || path === '/api/runtime/build-identity/v1'
     const params = request.params as Record<string, string | undefined>
     const resource = {
@@ -153,10 +148,10 @@ export function registerOperatorHttpSecurity(app: FastifyInstance, access: Postg
     request.reauthorizeOperator = async () => {
       const current = await authenticate()
       // Re-check against the same route resource; scoped grants never match an empty resource.
-      if (!agentChat && !selfReadback && !providerAccounts) requireAuthorization(current, actionFor(request), resource)
+      if (!agentChat && !selfReadback && !providerAccounts && !memoryBoards) requireAuthorization(current, actionFor(request), resource)
       return current
     }
-    if (!agentChat && !selfReadback && !providerAccounts && !request.url.startsWith('/api/management/')) {
+    if (!agentChat && !selfReadback && !providerAccounts && !memoryBoards && !request.url.startsWith('/api/management/')) {
       requireAuthorization(principal, actionFor(request), resource)
       if (request.method === 'GET' && /^\/api\/workspaces\/[^/]+\/runs\/[^/]+(?:\?.*)?$/.test(request.url)) {
         requireAuthorization(principal, 'workspace_locations:read', resource)

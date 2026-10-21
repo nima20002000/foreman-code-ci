@@ -15,6 +15,7 @@ import {
 } from '@foreman-code/contracts/files'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { ApiConfig } from '../src/config.js'
+import { withTransaction } from '../src/infrastructure/transaction.js'
 import { fileStorageMigration } from '../src/infrastructure/fileStorageMigration.js'
 import { fileReferenceMigration } from '../src/infrastructure/fileReferenceMigration.js'
 import { registerOperatorHttpSecurity } from '../src/modules/access/http.js'
@@ -30,7 +31,7 @@ import { WorkflowManagementService } from '../src/modules/workflows/management.j
 import { registerGraphqlMcp } from '../src/mcp/unified/transport.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { FILE_REFERENCE_TOOL_NAMES } from '../src/mcp/operator/tools/fileReferences.js'
-import { FileReferenceReadResultSchema } from '../src/modules/files/references/requests.js'
+import { FileReferenceReadResultSchema } from '@foreman-code/contracts/files'
 import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
@@ -54,11 +55,10 @@ describe.skipIf(!postgresEnabled)('FIL-36 permanent reference HTTP + Operator MC
     database = await agent3Database()
     for (const migration of [fileStorageMigration, fileReferenceMigration]) {
       if ((await database.pool.query('select 1 from application_migrations where version=$1', [migration.version])).rowCount) continue
-      const client = await database.pool.connect()
-      try {
-        await client.query('begin'); await client.query(migration.sql)
-        await client.query('insert into application_migrations(version) values($1)', [migration.version]); await client.query('commit')
-      } catch (error) { await client.query('rollback'); throw error } finally { client.release() }
+      await withTransaction(database.pool, async client => {
+        await client.query(migration.sql)
+        await client.query('insert into application_migrations(version) values($1)', [migration.version])
+      })
     }
     root = await mkdtemp(join(homedir(), '.fil36-integration-'))
     access = new PostgresAccessService(database.pool)
