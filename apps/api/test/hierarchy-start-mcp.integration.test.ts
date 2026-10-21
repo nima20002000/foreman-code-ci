@@ -45,6 +45,7 @@ describe.skipIf(!postgresEnabled)('single-computer hierarchy Start through authe
       })).value
       const start = { workspaceId, workflowId, workflowVersionId: saved.currentVersionId,
         expectedWorkflowRevision: saved.revision, expectedAgentConfigurationVersionIds: saved.version.agentConfigurationVersionIds,
+        expectedLocationRevision: f.f.run.executionLocation!.locationRevision,
         executionSemanticsVersion: 3, commandId: randomUUID(), input: { task: 'Deliver the implementation and report.' } }
       const reader = await f.access.issue({ name: 'Hierarchy reader', audience: 'operator',
         grants: [{ actions: ['runs:read', 'workflows:read'], scope: { workspaceIds: [workspaceId] } }] })
