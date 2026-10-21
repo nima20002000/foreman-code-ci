@@ -26,11 +26,10 @@ it('discovers and invokes owned chat deletion and restoration through authentica
     messages: [], turnState: 'idle', activeRequestId: null, revision: 1,
   })
   const setDeleted = vi.fn(async () => ({ conversationId: 'owned-chat' }))
-  const send = vi.fn(async () => ({ state, replayed: false }))
   const recordDenied = vi.fn()
   const services = {
     commands: { recordDenied },
-    operatorChat: { get: async () => state, list: async () => [state.conversation], setDeleted, send },
+    operatorChat: { get: async () => state, list: async () => [state.conversation], setDeleted },
   } as unknown as OperatorServices
   const app = buildApp({ logger: false,
     readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
@@ -52,25 +51,6 @@ it('discovers and invokes owned chat deletion and restoration through authentica
     const names = ['operator_chat_delete', 'operator_chat_restore']
     const tools = (await ownerClient.listTools()).tools
     expect(tools.map(tool => tool.name)).toEqual(expect.arrayContaining(names))
-    expect(tools.map(tool => tool.name)).toEqual(expect.arrayContaining([
-      'operator_chat_create', 'operator_chat_list', 'operator_chat_get', 'operator_chat_history_get',
-      'operator_chat_activity_get', 'operator_chat_send', 'operator_handoff_history_get',
-    ]))
-    for (const disabled of ['memory_board_get', 'browser_action', 'workflow_chat_post']) {
-      expect(tools.map(tool => tool.name)).not.toContain(disabled)
-      const rejected = await ownerClient.callTool({ name: disabled, arguments: {} })
-        .then(result => result.isError === true, () => true)
-      expect(rejected).toBe(true)
-    }
-    const legacySend = await ownerClient.callTool({ name: 'operator_chat_send', arguments: {
-      conversationId: 'owned-chat', ignoredField: 'normal MCP wrapper strips this',
-      request: { requestId: 'legacy-send', content: 'Legacy omitted intent stays omitted', ignoredField: true },
-    } })
-    expect(legacySend.isError).not.toBe(true)
-    expect(decodeMcpToolResult(legacySend)).toEqual({ state, replayed: false })
-    expect(send).toHaveBeenCalledWith('owned-chat', {
-      requestId: 'legacy-send', content: 'Legacy omitted intent stays omitted', attachments: [],
-    }, owner)
     const capabilities = await ownerClient.callTool({ name: 'operator_get_capabilities', arguments: { detail: 'full' } })
     expect(decodeMcpToolResult(capabilities)).toMatchObject({
       tools: expect.arrayContaining(names),

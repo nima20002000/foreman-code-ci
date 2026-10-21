@@ -19,14 +19,14 @@ function card(name: string) { return screen.getByRole('button', { name: `Edit ${
 it('shows each role as a summary card and drafts changes for the Operator', async () => {
   server.use(http.get('/api/management/settings/agents', () => HttpResponse.json({ revision: 3, versionId: null, value: DEFAULT_AGENT_DEFAULTS })))
   mount()
-  await screen.findByRole('button', { name: 'Edit Worker defaults' })
-  for (const role of ['Operator', 'Master', 'Orchestrator', 'Worker']) expect(within(card(role)).getByText('Model')).toBeVisible()
-  expect(within(card('Worker')).getByText('Foreman Code; apps off')).toBeVisible()
+  await screen.findByRole('button', { name: 'Edit Coder defaults' })
+  for (const role of ['Operator', 'Orchestrator', 'Coder']) expect(within(card(role)).getByText('Model')).toBeVisible()
+  expect(within(card('Coder')).getByText('Foreman Code; apps off')).toBeVisible()
   expect(within(card('Orchestrator')).getByText('Foreman Code; apps off')).toBeVisible()
   expect(within(card('Operator')).getByText('Host MCP servers; apps inherit host settings')).toBeVisible()
   expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
-  await userEvent.click(screen.getByRole('button', { name: 'Edit Worker defaults' }))
-  expect(useOperatorChatStore.getState().request).toMatchObject({ content: 'Change the Worker defaults: ', send: false })
+  await userEvent.click(screen.getByRole('button', { name: 'Edit Coder defaults' }))
+  expect(useOperatorChatStore.getState().request).toMatchObject({ content: 'Change the Coder defaults: ', send: false })
 })
 
 it('saves Operator chat visibility directly with the read revision', async () => {

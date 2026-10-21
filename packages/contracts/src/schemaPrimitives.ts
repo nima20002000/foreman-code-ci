@@ -12,8 +12,3 @@ export const GraphIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199
 
 export const RunInputSchema = z.record(z.string(), z.json())
 export type RunInput = z.infer<typeof RunInputSchema>
-
-export const OptionalTimestampFields = {
-  createdAt: TimestampSchema.optional(),
-  updatedAt: TimestampSchema.optional(),
-} as const;

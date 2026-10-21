@@ -89,7 +89,7 @@ export function defaultAgentForHarness(
     id,
     name,
     role: 'Agent',
-    ...(productRole ? { productRole, role: productRole === 'master' ? 'Master' : productRole === 'orchestrator' ? 'Orchestrator' : 'Worker' } : {}),
+    ...(productRole ? { productRole, role: productRole === 'orchestrator' ? 'Orchestrator' : 'Coder' } : {}),
     harness,
     model: exact.model,
     effort: legacyEffort,
