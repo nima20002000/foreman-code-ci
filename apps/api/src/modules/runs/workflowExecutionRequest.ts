@@ -3,11 +3,13 @@ import {
   type AgentConfigurationVersion,
   type HarnessExecution,
   type HarnessExecutionContext,
+  type ResultProtocol,
 } from '@foreman-code/contracts'
 import { WorkActivationInputSchema, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import { currentInitialPrompt } from './currentRouting.js'
 import { trustedWorkNoticePrompt } from './workHandoffNotice.js'
 import { repeatTickIndex } from './repeatResolution.js'
+import { workflowCoordinationPrompt } from './workflowCoordinationPrompt.js'
 
 function every(seconds: number | undefined): string {
   if (!seconds) return 'on an interval'
@@ -37,15 +39,17 @@ export function workflowExecutionRequest(input: {
   configuration: AgentConfigurationVersion
   workspaceId: string
   executionContext?: HarnessExecutionContext | undefined
+  resultProtocol?: ResultProtocol | undefined
+  collaborationPrompt?: string | undefined
 }) {
-  const { execution, version, configuration, workspaceId, executionContext } = input
+  const { execution, version, configuration, workspaceId, executionContext, resultProtocol } = input
   const node = version.definition.nodes.find(item => item.id === execution.workflowNodeId)
   if (!node || node.kind === 'job') throw new Error('Native execution requires an Agent workflow node.')
   const tickIndex = repeatTickIndex(execution.input)
   const initialPrompt = tickIndex !== undefined
     ? intervalCheckPrompt(tickIndex, node.interval, Boolean(execution.sessionContinuation),
       execution.sessionContinuation ? undefined : node.initialPrompt)
-    : currentInitialPrompt(node,
+    : resultProtocol ? node.initialPrompt : currentInitialPrompt(node,
       version.definition.repeat?.blocks.some(block => block.exitNodeId === node.id) ?? false,
       version.definition.handoffs !== undefined)
   const workInput = version.definition.handoffs && tickIndex === undefined
@@ -56,7 +60,7 @@ export function workflowExecutionRequest(input: {
     return JSON.stringify(item && item.kind !== 'job' ? item.name ?? item.label ?? nodeId : nodeId)
   }
   // Without saved choices, finish follows every outgoing execution edge; a return never does.
-  const downstream = node.choice ? [] : version.definition.edges
+  const downstream = node.choice || resultProtocol && version.definition.hierarchy ? [] : version.definition.edges
     .filter(edge => edge.kind === 'execution' && edge.source === node.id).map(edge => nameOf(edge.target))
   const returnPrompt = workInput?.work.kind === 'work_request' ? [
     ...(downstream.length ? [
@@ -68,7 +72,15 @@ export function workflowExecutionRequest(input: {
     JSON.stringify({ kind: 'return', requestId: workInput.work.request.requestId }),
     'requestId may be omitted when replying to the single open request you received. If supplied, copy it verbatim.',
   ].join('\n') : undefined
-  const prompts = [initialPrompt, noticePrompt, returnPrompt].filter(Boolean)
+  const coordination = resultProtocol ? workflowCoordinationPrompt({ resultProtocol, definition: version.definition,
+    workflowNodeId: node.id, interval: tickIndex !== undefined }) : undefined
+  const direction = workInput?.work.kind === 'hierarchy_direction' ? [
+    'This is the existing Run’s held Master continuation after Waiting for direction.',
+    `Previous result: ${workInput.work.direction.sourceExecutionId}, digest ${workInput.work.direction.sourceResultDigest}.`,
+    `Previous summary: ${workInput.work.direction.summary}`,
+    'Use the explicit direction delivered to this exact execution. Preserve the latest deliverable and account for its unresolved findings.',
+  ].join('\n') : undefined
+  const prompts = [initialPrompt, coordination, input.collaborationPrompt, noticePrompt, returnPrompt, direction].filter(Boolean)
   return HarnessExecutionRequestSchema.parse({
     executionId: execution.id,
     runId: execution.runId,
@@ -81,5 +93,6 @@ export function workflowExecutionRequest(input: {
     configuration,
     input: execution.input,
     ...(executionContext ? { executionContext } : {}),
+    ...(resultProtocol ? { resultProtocol } : {}),
   })
 }
