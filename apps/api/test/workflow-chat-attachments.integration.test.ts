@@ -3,7 +3,6 @@ import { Readable } from 'node:stream'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { MAX_FILE_BYTES } from '@foreman-code/contracts/files'
-import { readLiveManagementPrincipal } from '../src/modules/access/liveManagementPrincipal.js'
 import { PostgresAgentChatRepository } from '../src/modules/conversations/agentChatRepository.js'
 import { PostgresFileConversationAuthorization } from '../src/modules/files/authorization.js'
 import { PostgresFileRepository } from '../src/modules/files/postgres.js'
@@ -65,11 +64,13 @@ describe.skipIf(!postgresEnabled)('workflow chat attachment delivery', () => {
       }
       const admitted = await upload(), unadmitted = await upload()
       await workflowChatCall(f, 'agent_chat_send', { commandId: 'attached-note', target,
-        intent: purpose === 'workflow' ? 'steer' : 'next_turn', content: 'Read the attached notes.', attachments: [admitted] })
+        intent: purpose === 'workflow' ? 'interrupt_and_send' : 'next_turn', content: 'Read the attached notes.', attachments: [admitted] })
       if (purpose === 'consultation') await consultationEntered.promise
-      const binding = (await f.db.pool.query<{ principal_id: string }>(`select principal_id from worker_credential_bindings
-        where execution_id=$1 and purpose=$2 and revoked_at is null`, [source.id, purpose])).rows[0]!
-      const principal = await readLiveManagementPrincipal(f.db.pool, binding.principal_id)
+      const subjectId = async () => (await f.db.pool.query<{ subject_id: string }>(`select
+        coalesce(consultation_id,delivered_execution->>'executionId') as subject_id from run_chat_commands
+        where run_id=$1 and command_id='attached-note'`, [f.f.run.id])).rows[0]?.subject_id
+      await expect.poll(async () => provider.credentials.has(await subjectId()), { timeout: 15_000 }).toBe(true)
+      const principal = await f.access.authenticate(provider.credentials.get(await subjectId())!)
       const reader = new AgentReferenceService({ files, bytes, authorization: new PostgresAgentReferenceAuthorization(f.db.pool),
         reads: new PostgresReferenceReadRepository(f.db.pool) }).forExecution(principal)
       expect(await reader.read({ ...unadmitted, offset: 0, length: 64 })).toMatchObject({ status: 'unavailable', reason: 'not_found' })

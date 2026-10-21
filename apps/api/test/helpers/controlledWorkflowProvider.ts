@@ -11,11 +11,12 @@ type Output = NonNullable<ExecutionResult['output']>
 export class ControlledWorkflowProvider {
   private readonly provider: CheckpointTestProvider
   private readonly gates = new Map<string, {
-    entered: ReturnType<typeof deferred>; released: ReturnType<typeof deferred>; outcome: 'succeeded' | 'canceled'
+    entered: ReturnType<typeof deferred>; released: ReturnType<typeof deferred>; outcome: 'succeeded' | 'canceled'; executionId?: string
   }>()
   readonly steers: string[] = []
   readonly cancellations: string[] = []
   readonly consultations: string[] = []
+  readonly credentials = new Map<string, string>()
   active = 0
   maximumActive = 0
 
@@ -48,6 +49,15 @@ export class ControlledWorkflowProvider {
     const remember = (start: NativeSessionStart) => {
       if (!hasWorkflowRequest(start)) throw new Error('Expected workflow or consultation input')
       request = start.request
+      const subjectId = start.kind === 'workflow-consultation' ? start.consultation.consultationId : request.executionId
+      const token = start.environment?.variables.GRAPHQL_MCP_TOKEN
+      if (token) this.credentials.set(subjectId, token)
+      if (start.kind !== 'workflow-consultation') {
+        const gate = this.gates.get(request.workflowNodeId)
+        if (gate?.executionId && gate.executionId !== request.executionId) this.gates.set(request.workflowNodeId,
+          { entered: deferred(), released: deferred(), outcome: 'succeeded', executionId: request.executionId })
+        else if (gate) gate.executionId = request.executionId
+      }
     }
     manager.createSession = async (start, signal) => {
       remember(start)
