@@ -1,4 +1,4 @@
-import type { ResultProtocol } from '@foreman-code/contracts'
+import type { RemoteOwnerControl } from '@foreman-code/contracts/remote-execution'
 import { workflowPreparationExtension } from './preparationExtension.js'
 import type { ProviderAccountResolver, ResolvedProviderAccount } from '../../provider-accounts/service.js'
 import { assertWorkerProviderAccountBinding } from '../../provider-accounts/workerOperations.js'
@@ -113,7 +113,7 @@ export function captureInstalledWorkflowNativeOwner(registry:NativeProcessRegist
 export async function settleInstalledWorkflowNativeOwner(input:{journal:RemoteOperationJournal;registry:NativeProcessRegistry;
   intent:DispatchIntent;history:NativeHistory;captured:InstalledWorkflowNativeOwner;
   manager:NativeHarnessSessionManager;session:NativeSessionReference;artifactOutputs?:WorkflowArtifactOutputsV1;
-  publications?:ReadonlyMap<string,AgentFilePublishResult['value']>;resultProtocol?:ResultProtocol;
+  publications?:ReadonlyMap<string,AgentFilePublishResult['value']>;
   retainReviewer?: { agentId: string; expiresAt: string }}):Promise<RemoteTerminalEvidence|null> {
   const status=await input.journal.status(input.intent.operationId)
   if(status.status!=='known'||!isDeepStrictEqual(status.receipt.intent,input.intent)||!status.receipt.native
@@ -136,7 +136,7 @@ export async function settleInstalledWorkflowNativeOwner(input:{journal:RemoteOp
   await input.manager.close(input.session)
   await input.registry.closeRegistration(input.registry.scope(input.captured.owner),input.captured.launch.launchId)
   if(!await input.registry.closeOwner(input.captured.owner))return null
-  const artifacts = result ? installedWorkflowArtifactSettlement(result, input.artifactOutputs, input.publications, input.resultProtocol) : {}
+  const artifacts = result ? installedWorkflowArtifactSettlement(result, input.artifactOutputs, input.publications) : {}
   return RemoteTerminalEvidenceSchema.parse({kind:result?result.outcome==='succeeded'?'completed':result.outcome==='failed'?'failed':'cancelled':'cancelled',
     closureEvidenceDigest:digest({intent:input.intent,native:status.receipt.native,launch:input.captured.launch,physicalOwnerClosed:true}),
     ...(result?{result,resultDigest:digest(result)}:{}),
@@ -144,9 +144,9 @@ export async function settleInstalledWorkflowNativeOwner(input:{journal:RemoteOp
 }
 
 function installedWorkflowArtifactSettlement(result: NonNullable<RemoteTerminalEvidence['result']>,
-  declaration?: WorkflowArtifactOutputsV1, publications?: ReadonlyMap<string, AgentFilePublishResult['value']>, resultProtocol?: ResultProtocol
+  declaration?: WorkflowArtifactOutputsV1, publications?: ReadonlyMap<string, AgentFilePublishResult['value']>
 ): Pick<RemoteTerminalEvidence, 'artifactDigests' | 'artifactValidationError'> {
-  const output = remoteWorkflowPhysicalOutput(result, declaration, undefined, resultProtocol)
+  const output = remoteWorkflowPhysicalOutput(result, declaration)
   if (output.kind === 'invalid-artifacts') return { artifactValidationError: output.failure, artifactDigests: [] }
   if (output.kind !== 'published-artifacts') return { artifactDigests: [] }
   const digests: { outputKey: string; sha256: string }[] = []
@@ -291,6 +291,12 @@ export async function createInstalledWorkflowHost(input:InstalledWorkflowHostOpt
   if(input.bootId!==bootIdentity()||Date.parse(pairing.expiresAt)<=Date.now())unavailable('installed_identity_unavailable')
   const state=await openPrivateRoot(input.stateDirectory);await state.close()
   return new InstalledWorkflowHostRuntime(input, pairing).configured()
+}
+
+function workflowRequestAction(frame: RemoteExecutionRpcRequest): 'read' | 'control' | 'stop' {
+  if (frame.method !== 'control') return 'read'
+  if (frame.command.action.kind === 'stop') return 'stop'
+  return frame.command.workflowControl ? 'control' : 'read'
 }
 
 class InstalledWorkflowHostRuntime {
@@ -457,10 +463,14 @@ class InstalledWorkflowHostRuntime {
   }
 
   private readonly constructOwned = async(context:DeviceExtensionContext,intent:DispatchIntent,placement:AcceptedNodePlacement,
-    action: 'read' | 'stop', signal: AbortSignal, renewal?: RemoteOwnerReconciliation)=>{
+    action: 'read' | 'stop' | 'control', signal: AbortSignal, renewal?: RemoteOwnerReconciliation,
+    workflowControl?: RemoteOwnerControl)=>{
     signal.throwIfAborted()
     this.current(context.binding)
-    const request=this.forBinding(context.binding),authorize=workerExecutionAuthorizer(request)
+    const request = this.forBinding(context.binding)
+    const authorizeOriginal = workerExecutionAuthorizer(request)
+    const authorize: ReturnType<typeof workerExecutionAuthorizer> = (intent, placement, action, signal) =>
+      authorizeOriginal(intent, placement, action, signal, workflowControl)
     let owned=this.operations.get(intent.executionId)
     if(owned) {
       const renewing = renewal && renewal.operationId === intent.operationId
@@ -712,11 +722,11 @@ class InstalledWorkflowHostRuntime {
     return new RemoteExecutionHost({journal:log,connection:DeviceConnectionIdentitySchema.parse({mainId:context.binding.mainId,deviceId:context.binding.deviceId,
       workerInstallationId:context.binding.workerInstallationId,keyRevision:context.binding.keyRevision,authorizationRevision:context.binding.authorizationRevision,
       bootId:context.binding.bootId,connectionGeneration:context.binding.connectionGeneration}),incarnationId:randomUUID(),managers,
-      authorize:async(intent,placement,action,signal)=>{const resident=this.operations.get(intent.executionId)
+      authorize:async(intent,placement,action,signal,workflowControl)=>{const resident=this.operations.get(intent.executionId)
         if (!resident || !isDeepStrictEqual({ ...resident.intent, owner: intent.owner }, intent)) {
           unavailable('original_operation_binding_changed')
         }
-        await workerExecutionAuthorizer(this.forBinding(resident.context.binding))(intent,placement,action,signal)
+        await workerExecutionAuthorizer(this.forBinding(resident.context.binding))(intent,placement,action,signal,workflowControl)
         if(action==='start')this.operation(intent).capture=await this.operation(intent).reader.capture(signal)},
       verifyOwnerRenewal: async (transition, receipt) => {
         const resident = this.operation(receipt.intent)
@@ -835,7 +845,6 @@ class InstalledWorkflowHostRuntime {
         resident.retainedHistory=structuredClone(history)
         const state=await log.status(intent.operationId)
         const declaration = resident.placement.payload.kind === 'agent' ? resident.placement.payload.artifactOutputs : undefined
-        const resultProtocol = resident.placement.payload.kind === 'agent' ? resident.placement.payload.resultProtocol : undefined
         const reviewer = state.status === 'known' && !state.receipt.stopFence
           && (resident.capture.facts.configuration.productRole === 'master' || resident.capture.facts.configuration.productRole === 'orchestrator')
           && history.terminalTurn?.result.outcome === 'succeeded'
@@ -844,7 +853,6 @@ class InstalledWorkflowHostRuntime {
           &&history.terminalTurn.providerId===state.receipt.native?.turnId))resident.launchDisabled=true
         const terminal=await settleInstalledWorkflowNativeOwner({journal:log,registry: this.registry,intent,history,captured:resident.native,
           manager:owner.manager,session:owner.session,publications:resident.publications,
-          ...(resultProtocol ? { resultProtocol } : {}),
           ...(declaration ? { artifactOutputs: declaration } : {}),
           ...(reviewer ? { retainReviewer: reviewer } : {})})
         if(terminal) {
@@ -853,7 +861,7 @@ class InstalledWorkflowHostRuntime {
           if(observation.lifecycle!=='closed'||observation.closureEvidence!=='cgroup_v2_empty')unavailable('original_physical_closure_missing')
           if (terminal.result) {
             await this.recovery.rememberOutput(intent.operationId, remoteWorkflowPhysicalOutput(
-              terminal.result, declaration, terminal.artifactValidationError, resultProtocol,
+              terminal.result, declaration, terminal.artifactValidationError,
             ))
           }
           resident.physicalClosure=observation
@@ -867,7 +875,8 @@ class InstalledWorkflowHostRuntime {
   }
 
   private readonly construct = async (context:DeviceExtensionContext,intent:DispatchIntent,placement:AcceptedNodePlacement,
-    action:'read'|'stop', renewal?: RemoteOwnerReconciliation): Promise<RemoteExecutionHost> => {
+    action:'read'|'stop'|'control', renewal?: RemoteOwnerReconciliation,
+    workflowControl?: RemoteOwnerControl): Promise<RemoteExecutionHost> => {
     context.signal.throwIfAborted()
     this.current(context.binding)
     const pending = this.construction.get(intent.executionId)
@@ -881,12 +890,12 @@ class InstalledWorkflowHostRuntime {
         unavailable('original_operation_generation_changed')
       await Promise.allSettled([pending.task])
       this.current(context.binding)
-      return this.construct(context,intent,placement,action,renewal)
+      return this.construct(context,intent,placement,action,renewal,workflowControl)
     }
     const controller = new AbortController()
     const signal = AbortSignal.any([this.signal, context.signal, controller.signal])
     const task = this.withOperationLock(intent.executionId,
-      () => this.constructOwned(context,intent,placement,action,signal,renewal))
+      () => this.constructOwned(context,intent,placement,action,signal,renewal,workflowControl))
     this.construction.set(intent.executionId, {
       binding: structuredClone(context.binding),
       intent: structuredClone(intent),
@@ -905,7 +914,8 @@ class InstalledWorkflowHostRuntime {
     if (!isDeepStrictEqual(pending.intent, frame.intent) || !isDeepStrictEqual(pending.placement, frame.placement)
       || !isDeepStrictEqual(pending.binding, context.binding)) unavailable('original_operation_generation_changed')
     const authorize = workerExecutionAuthorizer(this.forBinding(context.binding))
-    await authorize(frame.intent, frame.placement, 'stop', context.signal)
+    await authorize(frame.intent, frame.placement, 'stop', context.signal,
+      frame.command.workflowControl ? frame.command : undefined)
     this.current(context.binding)
     const log = await this.journal()
     await log.accept(frame.intent, connectionIdentity(context.binding), randomUUID())
@@ -946,7 +956,8 @@ class InstalledWorkflowHostRuntime {
         journal: await this.journal(), recovery: this.recovery, registry: this.registry, physical: this.physical,
         signal: context.signal, lifetimeSignal: this.signal, assertCurrent: () => this.current(context.binding),
         authorize: async action => {
-          await workerExecutionAuthorizer(this.forBinding(context.binding))(frame.intent, frame.placement, action)
+          await workerExecutionAuthorizer(this.forBinding(context.binding))(frame.intent, frame.placement, action, context.signal,
+              frame.method === 'control' && frame.command.workflowControl ? frame.command : undefined)
         } })
     })
   }
@@ -1232,8 +1243,9 @@ class InstalledWorkflowHostRuntime {
           if (resident.preparationRecovery || !acknowledged && (bindingChanged || stoppingEntry)) {
             if (!isDeepStrictEqual(resident.intent, frame.intent) || !isDeepStrictEqual(resident.placement, frame.placement)
               || resident.context.binding.bootId !== context.binding.bootId) unavailable('original_operation_binding_changed')
-            const action = frame.method === 'control' && frame.command.action.kind === 'stop' ? 'stop' : 'read'
-            await workerExecutionAuthorizer(this.forBinding(context.binding))(frame.intent, frame.placement, action)
+            const action = workflowRequestAction(frame)
+            await workerExecutionAuthorizer(this.forBinding(context.binding))(frame.intent, frame.placement, action, context.signal,
+              frame.method === 'control' && frame.command.workflowControl ? frame.command : undefined)
             this.current(context.binding)
             if (stopping) {
               if (frame.command.operationId !== frame.intent.operationId) unavailable('original_control_operation_changed')
@@ -1253,9 +1265,10 @@ class InstalledWorkflowHostRuntime {
         if (this.journalOpening && await(await this.journalOpening).isRetired(frame.intent.operationId)) {
           return this.retiredReply(frame, context, await this.journalOpening)
         }
-        const action = frame.method === 'control' && frame.command.action.kind === 'stop' ? 'stop' : 'read'
+        const action = workflowRequestAction(frame)
         const host=await this.construct(context,frame.intent,frame.placement,action,
-          frame.method === 'renew-owner' ? frame.transition : undefined)
+          frame.method === 'renew-owner' ? frame.transition : undefined,
+          frame.method === 'control' && frame.command.workflowControl ? frame.command : undefined)
         context.signal.throwIfAborted()
         const log = await this.journal()
         if (await log.isRetired(frame.intent.operationId)) return this.retiredReply(frame, context, log)
@@ -1357,8 +1370,7 @@ class InstalledWorkflowHostRuntime {
               ...(history?{history}:{}),...(resident.physicalClosure?{closure:{ownerClosed:true,launch:resident.physicalClosure}}:{}),
               ...(receipt.terminal?.result ? { output: remoteWorkflowPhysicalOutput(receipt.terminal.result,
                 resident.placement.payload.kind === 'agent' ? resident.placement.payload.artifactOutputs : undefined,
-                receipt.terminal.artifactValidationError,
-                resident.placement.payload.kind === 'agent' ? resident.placement.payload.resultProtocol : undefined) } : {})})
+                receipt.terminal.artifactValidationError) } : {})})
             const assertOwnerCurrent = async () => {
               this.current(context.binding)
               await workerExecutionAuthorizer(this.forBinding(context.binding))(resident.intent,resident.placement,receipt.stopFence?'stop':'read')
