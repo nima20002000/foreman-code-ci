@@ -1,12 +1,13 @@
-import { workflowResultContext } from './resultContext.js'
 import { DurableInteractionSchema, HarnessExecutionSchema, WorkDirectionRequestSchema,
   type ApprovalResponseOption } from '@foreman-code/contracts'
-import { parseWorkHandoffResult, WorkflowVersionV3Schema, type AcceptedWorkflowRunV3 } from '@foreman-code/contracts/wave25'
+import { parseWorkHandoffResult, type AcceptedWorkflowRunV3 } from '@foreman-code/contracts/wave25'
 import type { RunGraphPublication } from '../run-graph/publication.js'
 import { graphSourceDigest } from '../run-graph/publication.js'
 import { approvalAttentionFacts } from '../interactions/wave25/attention.js'
 import { interactionFact } from '../interactions/wave25/publication.js'
 import { DomainError } from '../errors.js'
+import { readAcceptedRepeatRunLocked } from './repeatStartRead.js'
+import { parseWorkflowWorkResult } from './workflowCoordinationResult.js'
 
 export const workDirectionInteractionId = (runId: string) => `work-direction-${runId}`
 
@@ -18,8 +19,6 @@ const option = (optionId: string, label: string, semantic: ApprovalResponseOptio
 /** Publish both newly reached waits and waits retained before this interaction existed. */
 export async function ensureWorkDirectionInteraction(publication: RunGraphPublication, run: AcceptedWorkflowRunV3): Promise<void> {
   const sql = publication.sql
-  const version = run.resultProtocol ? WorkflowVersionV3Schema.parse((await sql.query<{ record: unknown }>(
-    'select record from workflow_versions where id=$1', [run.workflowVersionId])).rows[0]?.record) : undefined
   const id = workDirectionInteractionId(run.id)
   if ((await sql.query('select 1 from durable_interactions where id=$1', [id])).rowCount) return
   const rows = (await sql.query<{ unresolved_id: string; reason: string; record: unknown }>(`
@@ -29,6 +28,7 @@ export async function ensureWorkDirectionInteraction(publication: RunGraphPublic
   if (!rows.length || rows.length > 1000) throw new DomainError(
     'WORK_DIRECTION_WAIT_CONFLICT', 'The Run has no readable direction wait.', 409)
   const executions = rows.map((row) => HarnessExecutionSchema.parse(row.record))
+  const snapshot = run.resultProtocol ? await readAcceptedRepeatRunLocked(sql, run.id) : undefined
   const requester = executions[0]!
   const config = (await sql.query<{ harness: string }>(
     "select record#>>'{harness,harness}' as harness from agent_configuration_versions where id=$1",
@@ -37,7 +37,8 @@ export async function ensureWorkDirectionInteraction(publication: RunGraphPublic
     message: 'The agents finished with unresolved work. Accept the remaining findings, continue with direction, or stop.',
     unresolved: rows.map((row, index) => {
       const execution = executions[index]!
-      const result = parseWorkHandoffResult(execution.result, version ? workflowResultContext(version, execution) : undefined)
+      const result = snapshot ? parseWorkflowWorkResult(execution.result!, snapshot.version,
+        execution.workflowNodeId, run.resultProtocol) : parseWorkHandoffResult(execution.result)
       return { unresolvedId: row.unresolved_id, executionId: execution.id, reason: row.reason,
         latestDeliverable: result.data.latestDeliverable, remainingFindings: result.data.remainingFindings }
     }),
