@@ -565,7 +565,6 @@ export const REPEAT_OPERATOR_TOOL_NAMES = [
 export type RepeatOperatorToolName = typeof REPEAT_OPERATOR_TOOL_NAMES[number];
 
 export const OperatorToolNameSchema = z.enum([
-  'browser_profiles_list', 'browser_profile_get', 'browser_profile_create', 'browser_profile_update', 'browser_profile_remove', 'browser_profiles_sync', 'browser_profile_sync_get', 'browser_session_open', 'browser_sessions_list', 'browser_session_get', 'browser_session_close', 'browser_tabs_list', 'browser_tab_create', 'browser_tab_select', 'browser_tab_close', 'browser_state_read', 'browser_screenshot', 'browser_action', 'browser_view_open', 'browser_view_read', 'browser_view_close', 'browser_control_acquire', 'browser_control_release', 'browser_input',
   'harness_instances_list', 'harness_instance_save', 'harness_instance_check', 'workspace_root_configuration_adopt',
   'reference_files_list', 'reference_file_read', 'reference_file_add', 'reference_file_remove',
   'file_retention_get', 'file_retention_preview', 'file_retention_save', 'run_summaries_list', 'run_board_snapshot_get',

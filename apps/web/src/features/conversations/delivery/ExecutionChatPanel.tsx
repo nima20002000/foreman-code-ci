@@ -27,6 +27,7 @@ export type ExecutionChatPanelProps = {
   nativeTurnId?: string; unavailableReason?: string; attachments?: ConversationAttachments; attachmentControl?: ReactNode
   sessionMode?: SessionMode; appliedSessionMode?: SessionMode
   onOpenContinuation?(receipt: ChatDeliveryReceipt): void; onOpenGroup?(postId: string): void
+  onFollowUp?(): void
   onRecover?(recovery: DirectRecovery): void
 }
 
@@ -94,6 +95,8 @@ function ExecutionChatContent(props: ExecutionChatPanelProps) {
   return <section className="agent-conversation" aria-label="Selected execution chat">
     <header><h2>{props.name}</h2><p>{deliveryTargetLabel(target)}</p>
       {target.kind === 'workflow_coordinator' ? <p>Stops this reply; delegated work continues.</p> : null}</header>
+    {state?.state === 'idle' && target.kind === 'workflow_execution' && props.onFollowUp
+      ? <Button onClick={props.onFollowUp}>Follow up in Agent chat</Button> : null}
     {delivery.query.isPending ? <LoadingState label="Loading selected execution…" rows={2} /> : null}
     {delivery.query.isError ? <p role="alert">Could not refresh this execution. <Button onClick={delivery.refresh}>Retry</Button></p> : null}
     <ConversationViewport storageKey={draftKey} revision={JSON.stringify([visible?.revision, visible?.messages])}>{onBrowse => <>
