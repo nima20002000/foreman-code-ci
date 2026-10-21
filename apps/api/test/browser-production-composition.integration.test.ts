@@ -74,3 +74,27 @@ it('mounts the browser viewer channel and rejects stale installation handshakes'
     expect(code).toBe(1008)
   } finally { socket.terminate() }
 })
+
+it('queues a profile for an offline paired computer without requiring another database connection', async () => {
+  const owner = await access.issue({ name: 'Offline profile owner', audience: 'operator',
+    grants: [{ actions: ['settings:read', 'settings:update'], scope: {} }] })
+  const main = await production.app.inject({ url: '/api/devices/main', headers: { authorization: `Bearer ${owner.token}` } })
+  const deviceId = randomUUID(), installationId = randomUUID(), mainId = main.json().mainId
+  await database.pool.query(`insert into device_registrations(id,main_id,worker_installation_id,public_key,record)
+    values($1,$2,$3,$4,$5::jsonb)`, [deviceId, mainId, installationId, 'fixture-public-key', JSON.stringify({
+    mainId, deviceId, workerInstallationId: installationId, publicKeyFingerprint: 'b'.repeat(64), keyRevision: 1,
+    authorizationRevision: 1, status: 'paired', scopes: ['connect', 'heartbeat', 'metrics:report'],
+  })])
+  const client = new Client({ name: 'Offline browser client', version: '1' })
+  try {
+    await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), { authProvider: { token: async () => owner.token } }))
+    const created = await client.callTool({ name: 'browser_profile_create', arguments: {
+      name: 'Offline profile', computerId: deviceId, commandId: randomUUID(),
+    } })
+    expect(created.isError, JSON.stringify(created)).not.toBe(true)
+    const receipt = BrowserOperationResponseSchemas.browser_profile_create.parse(decodeMcpToolResult(created))
+    const profile = BrowserProfileSchema.parse(receipt.value)
+    const read = decodeMcpToolResult(await client.callTool({ name: 'browser_profile_get', arguments: { profileId: profile.id } }))
+    expect(read).toMatchObject({ profile, operations: [{ installationId, computerId: deviceId, operation: 'create', state: 'queued' }] })
+  } finally { await client.close() }
+})
