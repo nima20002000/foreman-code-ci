@@ -53,7 +53,7 @@ async function requireNativeTarget(target) {
   'build on the exact committed supported target; cross-building is not qualified');
 }
 
-async function download(url, destination, expected, fetchArtifact) {
+export async function downloadBrowserRuntimeArtifact(url, destination, expected, fetchArtifact = globalThis.fetch) {
   invariant(new URL(url).protocol === 'https:' && (!expected || digest.test(expected)), 'invalid artifact URL or digest');
   const response = await fetchArtifact(url, { redirect: 'follow' });
   invariant(response.ok && response.body, `artifact unavailable (${response.status})`);
@@ -335,7 +335,7 @@ export async function assembleBrowserRuntime({ repository, commit, target, forem
   temporary = await mkdtemp(join(dirname(resolve(output)), '.browser-build-'));
   const unit = join(temporary, 'unit'); await mkdir(unit, { mode: 0o700 });
     const pythonArchive = join(temporary, 'python.tar.gz');
-    await download(inputs.python.url, pythonArchive, inputs.python.sha256, fetchArtifact);
+    await downloadBrowserRuntimeArtifact(inputs.python.url, pythonArchive, inputs.python.sha256, fetchArtifact);
     await extractPinnedPython({ archive: pythonArchive, unit, run });
     onProgress?.('python-extracted');
     const python = join(unit, 'python/bin/python3');
@@ -350,7 +350,7 @@ export async function assembleBrowserRuntime({ repository, commit, target, forem
     await normalizeBrowserPythonEntrypoints({ python, unit, run });
     onProgress?.('python-dependencies-installed');
     const chromiumArchive = join(temporary, 'chromium.zip');
-    const chromium = await download(inputs.chromium.url, chromiumArchive, resolvedLock?.chromium.sha256, fetchArtifact);
+    const chromium = await downloadBrowserRuntimeArtifact(inputs.chromium.url, chromiumArchive, resolvedLock?.chromium.sha256, fetchArtifact);
     lock.chromium = { ...inputs.chromium, ...chromium };
     await extractChromium(python, chromiumArchive, join(unit, 'chromium'), run);
     onProgress?.('chromium-extracted');

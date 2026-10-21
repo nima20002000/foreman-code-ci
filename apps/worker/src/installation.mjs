@@ -250,9 +250,9 @@ async function installRelease({ root, artifact, approvedManifestSha256, facts, e
     if (!/^versions\/\d+\.\d+\.\d+-[a-f0-9]{64}$/.test(current)) throw new WorkerError('installation_invalid');
     if (hash(await readFile(join(root, current, 'manifest.json'))) === approvedManifestSha256) {
       await verifyRelease(join(root, current), approvedManifestSha256);
-      const { lifecycle: _lifecycle, ...browser } = await prepareBrowser(join(root, current));
+      const { browserRuntime, browserActivation, browserRuntimeStatus } = await prepareBrowser(join(root, current));
       return { version: manifest.version, manifestSha256: approvedManifestSha256,
-        directory: join(root, current), ...browser };
+        directory: join(root, current), browserRuntime, browserActivation, browserRuntimeStatus };
     }
     const previous = JSON.parse(await readFile(join(root, current, 'manifest.json'), 'utf8'));
     if (!stageOnly && manifest.version === previous.version && manifest.commit !== previous.commit) {
