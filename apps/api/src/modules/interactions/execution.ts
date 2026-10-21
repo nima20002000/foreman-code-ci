@@ -1023,9 +1023,9 @@ export class ApprovalExecutionCoordinator {
       }
       check()
       current.activeSessionMode = command.request.sessionMode ?? 'regular'
-      const stopRenewal = this.maintainConsultationCredential(current)
       const snapshot = await this.runs.getRepeatSnapshot(source.runId, owner)
       const capacity = this.executionCapacity(source.runId, snapshot.version.definition.executionPolicy!.maxParallelism)
+      const stopRenewal = this.maintainConsultationCredential(current)
       const sessionMode = current.activeSessionMode, credential = consultation.credential
       const task = capacity.run(current.controller.signal, () => observeWorkflowConsultation({ binding: active.binding, commandId: command.id, agentId: source.agentId,
         session: current.session!, manager: current.manager, transaction, signal: current.controller.signal,
