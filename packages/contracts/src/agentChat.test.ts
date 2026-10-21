@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { AgentChatStateSchema, SendAgentChatMessageRequestSchema, agentChatFixtures } from "./agentChat.js";
 import { ReadSelectedRunChatResponseSchema } from './selectedRunChat.js';
+import { CHAT_MAX_MESSAGE_JSON_BYTES } from './chatInput.js';
 
 describe("agent chat contract", () => {
   it.each(['starting', 'running', 'completed'] as const)('accepts an empty %s source transcript at revision zero', state => {
@@ -43,10 +44,13 @@ describe("agent chat contract", () => {
   });
 });
 
-it('accepts pasted logs up to one MiB of characters and rejects larger messages', () => {
+it('accepts pasted logs within the encoded request budget and rejects character, UTF-8 and JSON overflow', () => {
   const request = { requestId: 'pasted-log', expectedConversationId: null,
     context: { workflowId: 'workflow', workflowNodeId: 'node', agentId: 'agent' } };
-  const content = 'x'.repeat(1_048_576);
+  const content = 'x'.repeat(CHAT_MAX_MESSAGE_JSON_BYTES - 1024);
   expect(SendAgentChatMessageRequestSchema.parse({ ...request, content }).content).toBe(content);
-  expect(SendAgentChatMessageRequestSchema.safeParse({ ...request, content: content + 'x' }).success).toBe(false);
+  for (const oversized of ['x'.repeat(1_000_001), '界'.repeat(350_000), '\u0001'.repeat(200_000),
+    'x'.repeat(CHAT_MAX_MESSAGE_JSON_BYTES - 2)]) {
+    expect(SendAgentChatMessageRequestSchema.safeParse({ ...request, content: oversized }).success).toBe(false);
+  }
 });

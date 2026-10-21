@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { LocalHumanAccessSchema } from '@foreman-code/contracts/management'
 import type { AgentChatContext } from '@foreman-code/contracts/agent-chat'
@@ -20,7 +20,7 @@ afterEach(() => {
   useChatWindowsStore.setState({ open: {}, frames: {}, focus: {} })
 })
 
-/** The mounted Board route with MSW: an Agent node's chat action opens floating chat windows. */
+/** The mounted Board route keeps one selected chat body and each Agent's local draft. */
 async function mountDraftBoard(suffix: string) {
   installChatSource()
   const fixture = await inspectionBoardFixture(suffix), saved = fixture.runs.before.scope
@@ -36,20 +36,22 @@ async function mountDraftBoard(suffix: string) {
       actions: ['workspaces:read', 'workflows:read', 'agents:read', 'graph:read', 'interactions:read', 'runs:read', ...agentChatTestActions],
     }],
   } }))))
-  await mountMeasuredBoard(`/workspaces/${saved.workspaceId}?workflowId=${saved.workflowId}`)
+  const mounted = await mountMeasuredBoard(`/workspaces/${saved.workspaceId}?workflowId=${saved.workflowId}`)
   const names = { first: first!.name!, second: second!.name! }
   // fireEvent: user-event's mousedown has no window view, which React Flow's node drag handler requires.
   const node = (name: string) => screen.findByRole('button', { name: new RegExp(`^${name},`) })
   // The node's chat action is the only way a chat opens; selecting the node does not.
   const chatAction = (name: string) => screen.findByRole('button', { name: `Open ${name} chat` })
-  const windowNamed = (name: string) => screen.findByRole('dialog', { name: `${name} chat` })
-  return { names, node, chatAction, windowNamed, chat, contexts }
+  const panelNamed = async (name: string) => {
+    const panel = await screen.findByRole('complementary', { name: 'Workflow side panel' })
+    await within(panel).findByRole('heading', { name })
+    return panel
+  }
+  return { names, node, chatAction, panelNamed, chat, contexts, mounted, fixture }
 }
-const px = (element: HTMLElement, property: 'left' | 'top' | 'width' | 'height') => parseFloat(element.style[property])
-
-describe('floating Agent chat windows on the Board', () => {
-  it.each(['window', 'board'] as const)('loads the composer without stealing focus from the %s', async (focusTarget) => {
-    const { names, node, chatAction, windowNamed, chat, contexts } = await mountDraftBoard(`chatwin-loading-${focusTarget}`)
+describe('Agent chats in the shared Board rail', () => {
+  it.each(['rail', 'board'] as const)('loads the composer without stealing focus from the %s', async (focusTarget) => {
+    const { names, node, chatAction, panelNamed, chat, contexts } = await mountDraftBoard(`chat-loading-${focusTarget}`)
     let release!: () => void
     const pending = new Promise<void>((resolve) => { release = resolve })
     server.use(http.get('/api/workspaces/:workspaceId/agent-chat', async () => {
@@ -58,135 +60,128 @@ describe('floating Agent chat windows on the Board', () => {
     }))
     const selectedNode = await node(names.first)
     fireEvent.click(await chatAction(names.first))
-    const chatWindow = await windowNamed(names.first)
-    await waitFor(() => expect(chatWindow).toHaveFocus())
+    const panel = await panelNamed(names.first)
+    await waitFor(() => expect(panel).toHaveFocus())
     if (focusTarget === 'board') await act(async () => selectedNode.focus())
-
     await act(async () => release())
-
-    const input = await within(chatWindow).findByRole('textbox', { name: 'Message' })
+    const input = await within(panel).findByRole('textbox', { name: 'Message' })
     expect(input).toBeEnabled()
-    await waitFor(() => expect(focusTarget === 'window' ? input : selectedNode).toHaveFocus())
+    await waitFor(() => expect(focusTarget === 'rail' ? input : selectedNode).toHaveFocus())
   }, 30_000)
 
-  it('opens that Agent chat from its chat action and keeps several windows open', async () => {
-    const { names, chatAction, windowNamed } = await mountDraftBoard('chatwin-open')
-    fireEvent.click(await chatAction(names.first))
-    const first = await windowNamed(names.first)
-    expect(await within(first).findByRole('textbox', { name: 'Message' })).toBeEnabled()
-    fireEvent.click(await chatAction(names.second))
-    const second = await windowNamed(names.second)
-    expect(within(second).getByTestId('agent-conversation')).not.toBe(within(first).getByTestId('agent-conversation'))
-    expect(screen.getAllByRole('dialog', { name: /chat$/ })).toHaveLength(2)
-    // Using the chat action of an open Agent again focuses and raises its window instead of opening another.
-    fireEvent.click(await chatAction(names.first))
-    expect(screen.getAllByRole('dialog', { name: /chat$/ })).toHaveLength(2)
-    await waitFor(() => expect(first.contains(document.activeElement)).toBe(true))
-    expect(Number(first.style.zIndex)).toBeGreaterThan(Number(second.style.zIndex))
+  it('switches the selected Agent while retaining both drafts and mounting only one transcript', async () => {
+    const { names, chatAction, panelNamed, mounted, contexts } = await mountDraftBoard('chat-selection')
+    await userEvent.click(await chatAction(names.first))
+    const panel = await panelNamed(names.first)
+    const firstInput = await within(panel).findByRole('textbox', { name: 'Message' })
+    fireEvent.change(firstInput, { target: { value: 'First unsent message' } })
+    await userEvent.click(await chatAction(names.second))
+    expect(await panelNamed(names.second)).toBe(panel)
+    const secondInput = await within(panel).findByRole('textbox', { name: 'Message' })
+    expect(secondInput).not.toBe(firstInput)
+    expect(secondInput).toHaveValue('')
+    fireEvent.change(secondInput, { target: { value: 'Second unsent message' } })
+    expect(screen.getAllByTestId('agent-conversation')).toHaveLength(1)
+    expect(screen.queryByRole('dialog', { name: /chat$/ })).not.toBeInTheDocument()
+    await userEvent.click(await chatAction(names.first))
+    expect(await within(await panelNamed(names.first)).findByRole('textbox', { name: 'Message' }))
+      .toHaveValue('First unsent message')
+    expect(mounted.router.state.location.search).toMatchObject({ boardPanel: 'agent',
+      boardAgentTab: 'chat', boardNodeId: contexts[0]!.workflowNodeId })
+    await userEvent.click(await chatAction(names.second))
+    expect(await within(await panelNamed(names.second)).findByRole('textbox', { name: 'Message' }))
+      .toHaveValue('Second unsent message')
+    expect(screen.getAllByTestId('agent-conversation')).toHaveLength(1)
   }, 30_000)
 
-  it('stays open when the Board background is clicked and closes only through its own X', async () => {
-    const { names, chatAction, windowNamed } = await mountDraftBoard('chatwin-close')
-    fireEvent.click(await chatAction(names.first))
-    fireEvent.click(await chatAction(names.second))
-    const first = await windowNamed(names.first), second = await windowNamed(names.second)
+  it('stays open on Board clicks and closes through the selected Agent close button without losing other drafts', async () => {
+    const { names, chatAction, panelNamed } = await mountDraftBoard('chat-close')
+    await userEvent.click(await chatAction(names.first))
+    const panel = await panelNamed(names.first)
+    fireEvent.change(await within(panel).findByRole('textbox', { name: 'Message' }), { target: { value: 'Keep first' } })
+    await userEvent.click(await chatAction(names.second))
+    await panelNamed(names.second)
     fireEvent.click(document.querySelector<HTMLElement>('.react-flow__pane')!)
     fireEvent.mouseDown(document.body)
-    expect(first).toBeVisible(); expect(second).toBeVisible()
-    await userEvent.click(within(first).getByRole('button', { name: `Close ${names.first}` }))
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: `${names.first} chat` })).not.toBeInTheDocument())
-    expect(screen.getByRole('dialog', { name: `${names.second} chat` })).toBe(second)
+    expect(panel).toBeVisible()
+    expect(screen.getAllByTestId('agent-conversation')).toHaveLength(1)
+    await userEvent.click(within(panel).getByRole('button', { name: `Close ${names.second}` }))
+    await waitFor(() => expect(panel).not.toBeVisible())
+    expect(screen.queryByTestId('agent-conversation')).not.toBeInTheDocument()
+    await userEvent.click(await chatAction(names.first))
+    expect(await within(await panelNamed(names.first)).findByRole('textbox', { name: 'Message' })).toHaveValue('Keep first')
   }, 30_000)
 
-  it('moves by its header and resizes by its handle, and a reselected window keeps its place', async () => {
-    const { names, chatAction, windowNamed } = await mountDraftBoard('chatwin-frame')
-    fireEvent.click(await chatAction(names.first))
-    const chat = await windowNamed(names.first)
-    const left = px(chat, 'left'), top = px(chat, 'top'), width = px(chat, 'width'), height = px(chat, 'height')
-    const title = within(chat).getByRole('heading', { name: names.first })
-    fireEvent.pointerDown(title, { pointerId: 1, button: 0, clientX: 300, clientY: 200 })
-    fireEvent.pointerMove(title, { pointerId: 1, clientX: 260, clientY: 230 })
-    fireEvent.pointerUp(title, { pointerId: 1, clientX: 260, clientY: 230 })
-    expect(px(chat, 'left')).toBe(left - 40); expect(px(chat, 'top')).toBe(top + 30)
-    expect(px(chat, 'width')).toBe(width)
-    // The left edge grows the window leftward; the bottom-right corner grows it down.
-    const edge = within(chat).getByTestId('agent-chat-resize-w')
-    fireEvent.pointerDown(edge, { pointerId: 2, button: 0, clientX: 500, clientY: 500 })
-    fireEvent.pointerMove(edge, { pointerId: 2, clientX: 470, clientY: 500 })
-    fireEvent.pointerUp(edge, { pointerId: 2, clientX: 470, clientY: 500 })
-    expect(px(chat, 'width')).toBe(width + 30); expect(px(chat, 'left')).toBe(left - 70)
-    const corner = within(chat).getByTestId('agent-chat-resize-se')
-    fireEvent.pointerDown(corner, { pointerId: 3, button: 0, clientX: 500, clientY: 500 })
-    fireEvent.pointerMove(corner, { pointerId: 3, clientX: 500, clientY: 520 })
-    fireEvent.pointerUp(corner, { pointerId: 3, clientX: 500, clientY: 520 })
-    expect(px(chat, 'height')).toBe(height + 20); expect(px(chat, 'width')).toBe(width + 30)
-    await userEvent.click(within(chat).getByRole('button', { name: `Close ${names.first}` }))
-    await waitFor(() => expect(chat).not.toBeInTheDocument())
-    fireEvent.click(await chatAction(names.first))
-    const reopened = await windowNamed(names.first)
-    expect([px(reopened, 'left'), px(reopened, 'top'), px(reopened, 'width'), px(reopened, 'height')])
-      .toEqual([left - 70, top + 30, width + 30, height + 20])
+  it('retains the resized rail width across Agent changes and closing and reopening', async () => {
+    const { names, chatAction, panelNamed } = await mountDraftBoard('chat-width')
+    await userEvent.click(await chatAction(names.first))
+    const panel = await panelNamed(names.first)
+    fireEvent.change(within(panel).getByRole('slider', { name: 'Panel width' }), { target: { value: '510' } })
+    expect(panel.style.getPropertyValue('--workflow-rail-width')).toBe('510px')
+    expect(within(panel).getByRole('slider', { name: 'Panel width' })).toHaveAttribute('aria-valuetext', '510 px')
+    await userEvent.click(await chatAction(names.second))
+    await panelNamed(names.second)
+    expect(panel.style.getPropertyValue('--workflow-rail-width')).toBe('510px')
+    await userEvent.click(within(panel).getByRole('button', { name: 'Back to Board' }))
+    await waitFor(() => expect(panel).not.toBeVisible())
+    await userEvent.click(await chatAction(names.first))
+    expect(await panelNamed(names.first)).toBe(panel)
+    expect(panel.style.getPropertyValue('--workflow-rail-width')).toBe('510px')
   }, 30_000)
 
-  it('raises a window when it is clicked and closes the focused one with Escape', async () => {
-    const { names, chatAction, windowNamed } = await mountDraftBoard('chatwin-raise')
-    fireEvent.click(await chatAction(names.first))
-    fireEvent.click(await chatAction(names.second))
-    const first = await windowNamed(names.first), second = await windowNamed(names.second)
-    expect(Number(second.style.zIndex)).toBeGreaterThan(Number(first.style.zIndex))
-    fireEvent.pointerDown(within(first).getByRole('heading', { name: names.first }), { pointerId: 1, button: 0, clientX: 1, clientY: 1 })
-    expect(Number(first.style.zIndex)).toBeGreaterThan(Number(second.style.zIndex))
-    within(first).getByRole('textbox', { name: 'Message' }).focus()
+  it('closes the selected chat with Escape and restores its opener', async () => {
+    const { names, chatAction, panelNamed } = await mountDraftBoard('chat-escape')
+    const trigger = await chatAction(names.first)
+    await userEvent.click(trigger)
+    const panel = await panelNamed(names.first)
+    const input = await within(panel).findByRole('textbox', { name: 'Message' })
+    fireEvent.change(input, { target: { value: 'Keep after Escape' } })
+    await act(async () => input.focus())
     await userEvent.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: `${names.first} chat` })).not.toBeInTheDocument())
-    expect(screen.getByRole('dialog', { name: `${names.second} chat` })).toBeVisible()
+    await waitFor(() => expect(panel).not.toBeVisible())
+    await waitFor(() => expect(trigger).toHaveFocus())
+    await userEvent.click(trigger)
+    expect(await within(await panelNamed(names.first)).findByRole('textbox', { name: 'Message' })).toHaveValue('Keep after Escape')
   }, 30_000)
 
-  it('brings a window to front when keyboard focus enters its composer', async () => {
-    const { names, chatAction, windowNamed } = await mountDraftBoard('chatwin-keyboard-focus')
-    fireEvent.click(await chatAction(names.first))
-    const first = await windowNamed(names.first)
-    const firstInput = await within(first).findByRole('textbox', { name: 'Message' })
-    fireEvent.click(await chatAction(names.second))
-    const second = await windowNamed(names.second)
-    const secondInput = await within(second).findByRole('textbox', { name: 'Message' })
+  it('keeps keyboard focus and selection on the only mounted composer', async () => {
+    const { names, chatAction, panelNamed, contexts, mounted } = await mountDraftBoard('chat-keyboard')
+    await userEvent.click(await chatAction(names.first))
+    const panel = await panelNamed(names.first)
+    const firstInput = await within(panel).findByRole('textbox', { name: 'Message' })
+    await userEvent.click(await chatAction(names.second))
+    const secondInput = await within(await panelNamed(names.second)).findByRole('textbox', { name: 'Message' })
+    expect(firstInput).not.toBeInTheDocument()
     await act(async () => secondInput.focus())
-    expect(Number(second.style.zIndex)).toBeGreaterThan(Number(first.style.zIndex))
-
-    await act(async () => firstInput.focus())
-
-    expect(firstInput).toHaveFocus()
-    expect(Number(first.style.zIndex)).toBeGreaterThan(Number(second.style.zIndex))
-    expect(screen.getAllByRole('dialog', { name: /chat$/ })).toHaveLength(2)
+    expect(secondInput).toHaveFocus()
+    expect(mounted.router.state.location.search.boardNodeId).toBe(contexts[1]!.workflowNodeId)
+    expect(screen.getAllByRole('textbox', { name: 'Message' })).toEqual([secondInput])
+    expect(screen.queryByRole('dialog', { name: /chat$/ })).not.toBeInTheDocument()
   }, 30_000)
 
   it('does not open a chat when an Agent node is selected or clicked', async () => {
-    const { names, node } = await mountDraftBoard('chatwin-select-only')
+    const { names, node } = await mountDraftBoard('chat-select-only')
     const first = await node(names.first)
     fireEvent.click(first)
     await waitFor(() => expect(first).toHaveAttribute('aria-pressed', 'true'))
     fireEvent.click(await node(names.second))
     fireEvent.click(document.querySelector<HTMLElement>('.react-flow__pane')!)
-    expect(screen.queryByRole('dialog', { name: /chat$/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('complementary', { name: 'Workflow side panel' })).not.toBeInTheDocument()
     expect(screen.queryByTestId('agent-conversation')).not.toBeInTheDocument()
   }, 30_000)
 
-  it('opens a new window beside the selected Agent instead of covering it, then keeps the person\'s position', async () => {
-    const { names, chatAction, windowNamed } = await mountDraftBoard('chatwin-placement')
-    // The test Board is 1000x720; put the Agent where the window would normally open (right side).
-    const rect = (left: number, top: number, width: number, height: number) =>
-      ({ x: left, y: top, left, top, right: left + width, bottom: top + height, width, height, toJSON: () => ({}) })
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      return this.matches('.react-flow__node') ? rect(640, 160, 200, 200) : rect(0, 0, 1000, 720)
-    })
-    fireEvent.click(await chatAction(names.first))
-    const chat = await windowNamed(names.first)
-    const frame = { left: px(chat, 'left'), top: px(chat, 'top'), width: px(chat, 'width'), height: px(chat, 'height') }
-    const separated = frame.left + frame.width <= 640 || frame.left >= 840 || frame.top + frame.height <= 160 || frame.top >= 360
-    expect(separated).toBe(true)
-    await userEvent.click(within(chat).getByRole('button', { name: `Close ${names.first}` }))
-    fireEvent.click(await chatAction(names.first))
-    const reopened = await windowNamed(names.first)
-    expect([px(reopened, 'left'), px(reopened, 'top')]).toEqual([frame.left, frame.top])
+  it('opens a linked rail selection without moving the authored graph or adding floating frames', async () => {
+    const { names, contexts, mounted, fixture, panelNamed } = await mountDraftBoard('chat-linked')
+    const before = structuredClone(fixture.mock.drafts)
+    const context = contexts[0]!
+    await act(async () => { await mounted.router.navigate({ to: '/workspaces/$workspaceId',
+      params: { workspaceId: context.workspaceId }, search: { workflowId: context.workflowId,
+        boardPanel: 'agent', boardNodeId: context.workflowNodeId, boardAgentTab: 'chat' } }) })
+    const panel = await panelNamed(names.first)
+    expect(await within(panel).findByRole('textbox', { name: 'Message' })).toBeEnabled()
+    expect(screen.getAllByRole('complementary', { name: 'Workflow side panel' })).toEqual([panel])
+    expect(screen.queryByRole('dialog', { name: /chat$/ })).not.toBeInTheDocument()
+    expect(fixture.mock.drafts).toEqual(before)
+    expect(fixture.mock.calls.filter(call => call.method !== 'GET')).toEqual([])
   }, 30_000)
 })
