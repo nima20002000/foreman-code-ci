@@ -20,7 +20,6 @@ import { inTransaction } from '../../infrastructure/transaction.js'
 import { PostgresFoundationSettingsRepository } from '../settings/foundation.js'
 
 import { DomainError } from '../errors.js'
-import { harnessProfileSelectionConflict } from '../harnesses/instanceSettings/selectionConflict.js'
 import type { ProviderAccountConfigurationService } from '../harnesses/providerAccountConfiguration.js'
 import { resolveWorkspaceSkills } from '../skills/catalog.js'
 import { composeInstructionText, instructionsTooLarge } from '../skills/instructions.js'
@@ -150,8 +149,7 @@ export class PostgresOperatorRepository {
         harness = await this.accountConfigurations.resolve(harness, selection, { sql: client })
       }
       if (selection && harnessProfileSelection === undefined && !isDeepStrictEqual(previousConfiguration?.harness, harness)) {
-        throw harnessProfileSelectionConflict(
-          'The harness configuration changed while retaining the previous profile selection.')
+        throw new DomainError('HARNESS_PROFILE_SELECTION_CONFLICT', 'Changing the selected profile configuration requires an explicitly validated profile selection.', 409)
       }
       const skills = await operatorSkillContent(client, assignedSkills, previousConfiguration?.assignedSkills ?? [])
       const versionRow = await client.query<{ version: number }>('select coalesce(max(version), 0) + 1 as version from operator_configuration_versions where operator_id = $1', [OPERATOR_ID])
