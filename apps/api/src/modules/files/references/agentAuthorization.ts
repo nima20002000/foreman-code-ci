@@ -18,17 +18,18 @@ export class PostgresAgentReferenceAuthorization implements AgentReferenceAuthor
 
   private async execution(principal: ManagementPrincipal, query: FileQuery): Promise<AgentReferenceContext> {
     if (principal.audience !== 'worker' || !principal.agentId) return referenceIdentityDenied()
-    // Match execution admission's Run-before-execution lock order, including successful-read transactions.
-    await query.query(`select r.id from runs r join worker_credential_bindings b on b.run_id=r.id
-      where b.principal_id=$1 for share of r`, [principal.id])
-    const result = await query.query<ReferenceExecutionIdentity>(`select b.workspace_id,b.workflow_id,b.agent_id,b.run_id,b.execution_id,b.consultation_id
+    // Materialize the Run lock first in the same statement, including autocommit list/read calls.
+    const result = await query.query<ReferenceExecutionIdentity>(`with locked_run as materialized (
+        select r.id,r.workspace_id,r.workflow_id from runs r join worker_credential_bindings b on b.run_id=r.id
+        where b.principal_id=$1 for share of r
+      ) select b.workspace_id,b.workflow_id,b.agent_id,b.run_id,b.execution_id,b.consultation_id
       from worker_credential_bindings b
       join management_principals p on p.id=b.principal_id and p.audience='worker' and p.agent_id=b.agent_id
       join harness_executions e on e.id=b.execution_id and e.run_id=b.run_id and e.agent_id=b.agent_id
-      join runs r on r.id=e.run_id and r.workspace_id=b.workspace_id and r.workflow_id=b.workflow_id
+      join locked_run r on r.id=e.run_id and r.workspace_id=b.workspace_id and r.workflow_id=b.workflow_id
       where b.principal_id=$1 and b.agent_id=$2 and b.revoked_at is null
         and p.revoked_at is null and p.expires_at>clock_timestamp()
-      for share of b,p,e,r`, [principal.id, principal.agentId])
+      for share of b,p,e`, [principal.id, principal.agentId])
     if (result.rows.length !== 1) return referenceIdentityDenied()
     // Preserve the existing current engine's purpose, Run, execution, session/generation and revocation checks.
     // In complete(), these checks run on the same transaction that commits the provenance fact.
