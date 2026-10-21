@@ -15,6 +15,7 @@ import { DomainError } from '../../errors.js'
 import { NativeConversationControlCommands } from '../nativeControlCommands.js'
 import { componentLogger } from '../../diagnostics/logger.js'
 import { isDefiniteCompactionRejection } from '../../harnesses/errors.js'
+import type { AcceptedChatSettings } from '../nativeChatInput.js'
 
 export type { SessionControlBinding }
 
@@ -359,9 +360,38 @@ export class SessionControlStore {
     return result.rows[0] ? SessionControlStateSchema.parse(result.rows[0].record).desired : undefined
   }
 
+  /** Reads admitted preferences through the caller's owner transaction without changing defaults. */
+  async acceptedSettings(binding: Pick<SessionControlBinding, 'conversationId' | 'principalId' | 'defaultSubject' | 'profileKey'>,
+    selectedMode?: SessionControlState['desiredMode'], sql: Pick<pg.Pool, 'query'> = this.pool): Promise<AcceptedChatSettings> {
+    const record = (await sql.query<{ record: unknown }>(
+      'select record from conversation_session_controls where conversation_id=$1', [binding.conversationId])).rows[0]
+    const state = record ? SessionControlStateSchema.parse(record.record) : undefined
+    if (state && compactionBlocksSend(state.compaction)) throw new DomainError('SESSION_BUSY', 'Recover the accepted compaction before sending another message.', 409)
+    if (state?.profileKey === binding.profileKey) return { sessionMode: selectedMode ?? state.desiredMode,
+      sessionPreferences: structuredClone(state.desired), profileKey: state.profileKey }
+    const defaults = (await sql.query<{ record: unknown }>(`select record from conversation_session_defaults
+      where principal_id=$1 and role=$2 and subject=$3 and profile_key=$4`,
+    [binding.principalId, this.role, binding.defaultSubject, binding.profileKey])).rows[0]
+    return { sessionMode: selectedMode ?? 'regular', sessionPreferences: SessionPreferencesSchema.parse(defaults?.record ?? {}),
+      profileKey: binding.profileKey }
+  }
+
+  settingsForAccepted(conversationId: string, target: { requestId: string; nativeSessionId: string | null }
+    | (() => { requestId: string; nativeSessionId: string | null }),
+    accepted: AcceptedChatSettings) {
+    return { sessionMode: accepted.sessionMode, sessionPreferences: structuredClone(accepted.sessionPreferences),
+      onSettingsApplied: async () => {
+        const owner = typeof target === 'function' ? target() : target
+        try { await this.recordAppliedSettings(conversationId, owner, accepted.profileKey,
+          { appliedMode: accepted.sessionMode, applied: accepted.sessionPreferences }) }
+        catch (error) { componentLogger('db').warn({ err: error, conversationId, requestId: owner.requestId },
+          'Could not record applied accepted session settings') }
+      } }
+  }
+
   private async recordAppliedSettings(conversationId: string,
     target: { requestId: string; nativeSessionId: string | null }, profileKey: string,
-    applied: Pick<SessionControlState, 'appliedMode'>) {
+    applied: Pick<SessionControlState, 'appliedMode' | 'applied'>) {
     // Merge only the acknowledgment while the same session and request still own the conversation.
     await this.pool.query(`with target as materialized (
       select id from operator_conversations where id=$1 and active_request_id=$2
@@ -370,13 +400,14 @@ export class SessionControlStore {
       set record=controls.record || $5::jsonb || jsonb_build_object(
         'revision', (controls.record->>'revision')::bigint+1,
         'applicability', case when controls.record->>'desiredMode'=$5::jsonb->>'appliedMode'
-          and controls.record->'desired'=controls.record->'applied'
+          and controls.record->'desired'=$5::jsonb->'applied'
           then 'applied' else controls.record->>'applicability' end)
       from target where controls.conversation_id=target.id and controls.record->>'profileKey'=$4`,
     [conversationId, target.requestId, target.nativeSessionId, profileKey, JSON.stringify(applied)])
   }
 
-  async turnSettings(conversationId: string, target: { requestId: string; nativeSessionId: string | null },
+  async turnSettings(conversationId: string, target: { requestId: string; nativeSessionId: string | null }
+    | (() => { requestId: string; nativeSessionId: string | null }),
     selectedMode?: SessionControlState['desiredMode']) {
     await this.assertSendAllowed(conversationId)
     const result = await this.pool.query<{ record: unknown }>(
@@ -384,13 +415,14 @@ export class SessionControlStore {
     if (!result.rows[0]) return selectedMode ? { sessionMode: selectedMode } : {}
     const state = SessionControlStateSchema.parse(result.rows[0].record)
     const sessionMode = selectedMode ?? state.desiredMode
-    const applied = { appliedMode: sessionMode }
+    const applied = { appliedMode: sessionMode, applied: state.desired }
     return { sessionMode, sessionPreferences: state.desired, onSettingsApplied: async () => {
+      const owner = typeof target === 'function' ? target() : target
       try {
-        await this.recordAppliedSettings(conversationId, target, state.profileKey, applied)
+        await this.recordAppliedSettings(conversationId, owner, state.profileKey, applied)
       } catch (error) {
         // Bookkeeping failure cannot turn native acceptance into a failed message.
-        componentLogger('db').warn({ err: error, conversationId, requestId: target.requestId },
+        componentLogger('db').warn({ err: error, conversationId, requestId: owner.requestId },
           'Could not record applied session settings')
       }
     } }

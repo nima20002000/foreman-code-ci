@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NATIVE_INTERACTION_FIXTURES, type OperatorConversationState } from '@foreman-code/contracts'
 import { OperatorChat } from './OperatorChat'
+import { installCanonicalOperatorFixture } from './canonicalOperator.test-support'
 import { useOperatorChatStore } from './operatorChatStore'
 
 const api = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), create: vi.fn(), clearDraft: vi.fn() }))
@@ -30,6 +31,7 @@ const summary = { conversationId: 'c1', title: state.conversation.title, turnSta
 const listKey = ['operator-chat', 'summaries']
 const detailKey = ['operator-chat', 'conversation', 'c1']
 let client: QueryClient
+beforeEach(installCanonicalOperatorFixture)
 beforeEach(() => {
   vi.clearAllMocks()
   client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } })
