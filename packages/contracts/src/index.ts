@@ -52,7 +52,7 @@ export type {
 import type { ApprovalHandler } from "./wave25/workflowShape.js";
 import type { RunLiveActivity } from "./runLiveActivity.js";
 import { RunStopCauseSchema } from "./runStopCause.js";
-import { GraphqlToolDefaultsSchema } from "./graphqlMcpTools.js";
+import { GraphqlToolDefaultsSchema, graphqlToolsOutsideRole } from "./graphqlMcpTools.js";
 export * from "./runStopCause.js";
 export * from "./runState.js";
 export * from "./runLiveActivity.js";
@@ -332,6 +332,7 @@ export function validateHarnessWorkflowCompatibility(
 
 const AgentTemplateSchema = z.object({
   nativeTools: NativeToolsSchema.optional(),
+  graphqlTools: GraphqlToolDefaultsSchema.optional(),
   harnessProfileSelection: z.lazy(() => HarnessProfileSelectionSchema).optional(),
   role: ConfiguredAgentProductRoleSchema,
   boardAddable: z.boolean(),
@@ -339,6 +340,9 @@ const AgentTemplateSchema = z.object({
 }).strict().superRefine((value, context) => {
   if (value.role === "operator" && value.boardAddable) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["boardAddable"], message: "Operator is application-level and cannot be added to a workflow board" });
+  }
+  if (value.graphqlTools && (value.role === 'operator' || graphqlToolsOutsideRole(value.role, value.graphqlTools).length)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['graphqlTools'], message: 'Workflow tool defaults must be allowed for the selected Agent role.' });
   }
 });
 
@@ -1021,6 +1025,7 @@ export const ActivityKindSchema = z.enum([
   "work_limit_notice_unknown",
   "work_needs_direction",
   "work_direction_wait",
+  "workflow_chat_receipt",
 ]);
 
 /** Ordered native/backend activity. payload remains source-specific but JSON-safe. */
@@ -1057,6 +1062,7 @@ export const HarnessExecutionContextSchema = z.object({
     requestId: GraphIdSchema,
     requesterNodeId: GraphIdSchema,
   }).strict().nullable(),
+  outstandingRequestIds: z.array(GraphIdSchema).max(1000).optional(),
 }).strict();
 export type HarnessExecutionContext = z.infer<typeof HarnessExecutionContextSchema>;
 
@@ -1682,3 +1688,4 @@ export * from './browserSessions.js';
 export * from './workflowHierarchy.js';
 export * from './coordinationResult.js';
 export { collaborationContractFixtures } from './collaborationFixtures.js';
+export * from './workflowExecutionChat.js';

@@ -93,7 +93,7 @@ export async function lockActiveWorkerPrincipal(
   targetRunId?: string,
   lock: 'share' | 'update' = 'share',
 ): Promise<ManagementPrincipal> {
-  const binding = await client.query<{ execution_id: string; purpose: 'workflow' | 'reviewer' }>(
+  const binding = await client.query<{ execution_id: string; purpose: 'workflow' | 'reviewer' | 'consultation' }>(
     'select execution_id,purpose from worker_credential_bindings where principal_id=$1', [snapshot.id],
   )
   const acceptedBinding = binding.rows[0]
