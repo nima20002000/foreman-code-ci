@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, createConnection } from 'node:net';
-import { mkdir, mkdtemp, lstat, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, lstat, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { checkBrowserRuntimeReadiness } from '../src/browserRuntimeInstall.mjs';
@@ -92,4 +92,22 @@ finally { await new Promise(resolve => server.close(resolve)); }
     await assert.rejects(lstat(observed.physical), { code: 'ENOENT' });
     assert.equal(process.env.TMPDIR, deep);
   }
+});
+
+test('readiness keeps its private runtime inside a shared cache parent without changing parent permissions', async t => {
+  const { directory } = await deepEnvironment(t);
+  const cache = join(directory, 'shared-cache'), unit = join(cache, 'unit');
+  await mkdir(unit, { recursive: true, mode: 0o700 });
+  await chmod(cache, 0o755);
+  const executable = join(unit, 'probe.mjs');
+  await writeFile(join(unit, 'manifest.json'), '{}');
+  await writeFile(executable, `#!${process.execPath}
+import { stat } from 'node:fs/promises';
+if ((await stat(process.env.HOME)).mode & 0o077) throw new Error('Probe home is not private');
+if ((await stat(process.env.TMPDIR)).mode & 0o077) throw new Error('Browser runtime is not private');
+console.log(JSON.stringify({ ready: true }));
+`, { mode: 0o700 });
+  assert.deepEqual(await checkBrowserRuntimeReadiness({ rootDirectory: unit,
+    pythonExecutable: executable, chromiumExecutable: 'chromium' }), { ready: true });
+  assert.equal((await lstat(cache)).mode & 0o777, 0o755);
 });

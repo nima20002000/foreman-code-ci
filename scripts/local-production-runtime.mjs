@@ -178,7 +178,11 @@ async function saveDeployment(stateFile, state, phase) {
 
 export async function recoverReleaseCutover({ stateFile, steps }) {
   const state = await readDeployment(stateFile)
-  if (!state || ['ready', 'recovered'].includes(state.phase)) return
+  if (!state) return
+  if (['ready', 'recovered'].includes(state.phase)) {
+    if (steps.browserRuntime) await steps.browserRuntime.cancelDrain(state.browserTransactionId)
+    return
+  }
   if (state.apiMayHaveStopped === false) {
     if (steps.browserRuntime) await steps.browserRuntime.cancelDrain(state.browserTransactionId)
     await saveDeployment(stateFile, state, 'recovered')
