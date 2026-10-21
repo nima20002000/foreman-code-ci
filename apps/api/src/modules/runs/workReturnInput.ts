@@ -1,3 +1,4 @@
+import { workflowResultContext } from './resultContext.js'
 import {
   AcceptedCurrentNodeResultSchema, WorkActivationInputSchema, WorkReturnSchema, canonicalGraphJson, parseWorkHandoffResult,
   type WorkActivationInput, type WorkReturn,
@@ -19,8 +20,8 @@ export async function readWorkReturnFeedbackLocked(context: WorkReturnContext, r
   const grouped = frozen ? frozen.returns !== undefined : !legacyQueued
   const frozenReturnIds = frozen?.returns?.map(item => item.returned.returnId)
   const rows = (await sql.query<{ record: unknown; result_json: string; result_digest: string;
-    requester_activation_id: string }>(
-    `select t.record,x.result_json,x.result_digest,q.requester_activation_id from run_work_returns t
+    requester_activation_id: string; node_id: string }>(
+    `select t.record,x.result_json,x.result_digest,q.requester_activation_id,q.destination_node_id as node_id from run_work_returns t
       join run_work_requests q on q.run_id=t.run_id and q.request_id=t.request_id
       join run_work_results x on x.run_id=t.run_id and x.execution_id=t.source_execution_id
       where q.run_id=$1 and q.requester_node_id=$2 and (
@@ -38,7 +39,8 @@ export async function readWorkReturnFeedbackLocked(context: WorkReturnContext, r
   for (const row of rows) {
     const value = WorkReturnSchema.parse(row.record)
     const acceptedSourceResult = AcceptedCurrentNodeResultSchema.parse(JSON.parse(row.result_json))
-    const response = parseWorkHandoffResult(acceptedSourceResult)
+    const response = parseWorkHandoffResult(acceptedSourceResult, workflowResultContext(context.version,
+      { workflowNodeId: row.node_id, resultProtocol: context.hooks.run.resultProtocol }))
     if (!sameRepeatValue(value.scope, scope) || value.requesterActivationId !== row.requester_activation_id
       || row.result_digest !== value.acceptedResultDigest
       || repeatDigest(acceptedSourceResult, 64 * 1024) !== row.result_digest

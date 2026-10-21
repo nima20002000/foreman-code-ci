@@ -1,18 +1,10 @@
-import { RUN_HISTORY_TOOLS, runHistoryCapabilityLimit, runHistoryToolAvailable } from './runHistory.js'
-import { FILE_REFERENCE_TOOL_NAMES, fileReferenceToolAvailable } from './fileReferences.js'
-import { FILE_RETENTION_TOOL_NAMES, fileRetentionToolAvailable } from './fileRetention.js'
+import { runHistoryCapabilityLimit } from './runHistory.js'
 import { OperatorCompactCapabilitiesSchema } from '@foreman-code/contracts/operator-mcp'
 import { OperatorCapabilityInputSchema } from '@foreman-code/contracts/management'
-import { CURRENT_WORKFLOW_TOOLS, CANONICAL_RUN_GRAPH_MCP_TOOLS, RUN_INSPECTION_TOOLS } from '@foreman-code/contracts/wave25'
-import { currentWorkflowAvailable, currentWorkflowRequirements, type CurrentWorkflowOperation } from '../../../modules/workflows/currentWorkflowPolicy.js'
-import { runInspectionToolAvailable, runInspectionRequirements } from './runInspection.js'
-import { runGraphToolAvailable } from './runGraph.js'
+import { catalogToolAvailable, catalogToolRequirements } from '../catalogDiscovery.js'
 import { ScheduleOperatorCapabilitiesSchema, workflowScheduleCapabilities } from './workflowSchedules.js'
 import { jobCapabilities, JOB_QUEUE_CAPABILITY_DETAIL } from './jobs.js'
-import { ciCapabilities } from '../../shared/ciTools.js'
-import { jobRuntimeCapabilities } from './jobRuntimeProfiles.js'
-import { hasAction, isAuthorized } from '../../../modules/access/policy.js'
-import { defineOperatorTool, toolAvailable, toolRequirements, type OperatorToolDefinition } from '../definition.js'
+import { defineOperatorTool, type OperatorToolDefinition } from '../definition.js'
 import type { OperatorRequestContext } from '../types.js'
 import { placementCapabilityLimit } from '../../../modules/placement/transports.js'
 import { readOperationalFailures } from '../../../modules/diagnostics/logger.js'
@@ -121,27 +113,13 @@ export const capabilityTools = [defineOperatorTool({
   outputSchema: ScheduleOperatorCapabilitiesSchema.or(OperatorCompactCapabilitiesSchema),
   annotations: {readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:false},
   run: async (context, input, { extra, catalog, tools: registry }) => {
-    const capabilities = operatorCapabilities(context, input, registry)
+    if (!catalog) throw new Error('Operator discovery requires the registered catalog.')
+    const registered = await catalog(extra)
+    const capabilities = operatorCapabilities(context, input, registry, registered.map(tool => tool.name))
     if (input.detail === 'full') return capabilities
     const { requirements: _requirements, ...compact } = capabilities
     void _requirements
-    const tools = await catalog?.(extra)
-    const selectedResource = input.workspaceId || input.workflowId || input.runId
-    const names = tools?.map((tool) => tool.name) ?? capabilities.tools
-    const scopedNames = new Set<string>(capabilities.tools)
-    if (selectedResource) {
-      for (const name of Object.values(RUN_HISTORY_TOOLS)) {
-        if (runHistoryToolAvailable(context, name, capabilities.requestedResource)) scopedNames.add(name)
-      }
-      for (const name of FILE_REFERENCE_TOOL_NAMES) {
-        if (fileReferenceToolAvailable(context, name, capabilities.requestedResource)) scopedNames.add(name)
-      }
-      for (const name of FILE_RETENTION_TOOL_NAMES) {
-        if (fileRetentionToolAvailable(context, name)) scopedNames.add(name)
-      }
-    }
     return { ...compact, detail: 'compact' as const,
-      tools: selectedResource ? names.filter((name) => scopedNames.has(name)) : names,
       detailsTool: 'operator_tool_schema_get' as const, fullDetailArguments: { detail: 'full' as const },
       runtimeLimits: capabilities.runtimeLimits.map((entry) => ({ ...entry,
         detail: compactRuntimeDetails[entry.feature] ?? entry.detail,
@@ -150,22 +128,15 @@ export const capabilityTools = [defineOperatorTool({
   },
 })]
 
-/** registry is the whole Operator tool registry (catalog.ts), passed in by the calling tool. */
+/** Names come from the authenticated tools/list catalog, including direct registrars. */
 export function operatorCapabilities(context: OperatorRequestContext, input: {
   workspaceId?: string | undefined; workflowId?: string | undefined; runId?: string | undefined;
-}, registry: readonly OperatorToolDefinition[]) {
+}, registry: readonly OperatorToolDefinition[], registeredNames: readonly string[]) {
     const resource={...(input.workspaceId?{workspaceId:input.workspaceId}:{}),...(input.workflowId?{workflowId:input.workflowId}:{}),...(input.runId?{runId:input.runId}:{})}
-    const ordinary=registry.filter((tool)=>toolAvailable(context,tool,resource))
-    const current = (Object.keys(CURRENT_WORKFLOW_TOOLS) as CurrentWorkflowOperation[]).filter((operation) =>
-      !!context.services.workflows?.current && currentWorkflowAvailable(context.principal, operation, resource))
-    const graph = context.services.runGraph && (Object.keys(resource).length
-      ? isAuthorized(context.principal, 'runs:read', resource) : hasAction(context.principal, 'runs:read'))
-      ? Object.values(CANONICAL_RUN_GRAPH_MCP_TOOLS).filter((name) => runGraphToolAvailable(context, name)) : []
-    const inspection = Object.values(RUN_INSPECTION_TOOLS).filter((name) => runInspectionToolAvailable(context, name, resource))
+    const tools = registeredNames.filter(name => catalogToolAvailable(context, name, registry, resource))
+    const requirements = catalogToolRequirements(context, registry, tools, resource)
     const schedules = workflowScheduleCapabilities(context, resource)
     const jobs = jobCapabilities(context, resource)
-    const ci = ciCapabilities(context, resource)
-    const jobRuntime = jobRuntimeCapabilities(context, resource)
     const scheduleRuntime = context.services.runs?.scheduleAvailability?.()
     const runtimeLimits = OPERATOR_RUNTIME_LIMITS.map((limit) =>
       limit.feature === 'schedule_delivery' && scheduleRuntime?.configured
@@ -174,20 +145,14 @@ export function operatorCapabilities(context: OperatorRequestContext, input: {
             + (scheduleRuntime.runtimeAdmission ? 'Timed Run admission is available.'
               : 'Timed Run admission is paused until native runtime readiness returns.') }
         : limit)
-    const tools = [...ordinary.map((tool) => tool.name), ...current.map((operation) => CURRENT_WORKFLOW_TOOLS[operation]), ...graph, ...inspection, ...schedules.map((entry) => entry.name), ...jobs.map((entry) => entry.name), ...ci.map((entry) => entry.name), ...jobRuntime.map((entry) => entry.name)]
     return {endpoint:'/mcp',audience:'operator',protocol:'2026-07-28',tools,
       operationalFailures: readOperationalFailures(),
       principal:{id:context.principal.id,name:context.principal.name,expiresAt:context.principal.expiresAt},
       grants:context.principal.grants,requestedResource:resource,
-      requirements:[...ordinary.map((tool)=>({name:tool.name,actions:toolRequirements(tool).map((item)=>item.action),
-        detail:tool.permissionDetail ?? 'Requirements are scoped independently. Staged/shared Agent writes, skill contents, and enabling triggers can require additional permissions; services revalidate every concrete operation.'})),
-        ...current.map((operation) => ({ name: CURRENT_WORKFLOW_TOOLS[operation],
-          actions: currentWorkflowRequirements[operation].map((item) => item.action),
-          detail: 'Current V3 only. Concrete services recheck all scope, pin and settlement requirements; Stop also needs each affected Run grant.' })),
-        ...graph.map((name) => ({ name, actions: ['runs:read' as const], detail: 'Exact current Run/workflow/version scope. Metadata reads do not grant execution authority.' })),
-        ...inspection.map((name) => ({ name, actions: runInspectionRequirements(name),
-          detail: 'Private bounded V3 Run inspection. runs:read is checked on the exact persisted Run; run_version_get additionally requires workflows:read on its workflow. Read-only grants are sufficient; no execution authority is conferred.' })), ...schedules, ...jobs, ...ci, ...jobRuntime],
-      runtimeLimits:[...runtimeLimits, runHistoryCapabilityLimit(context),
+      requirements,
+      runtimeLimits:[...runtimeLimits, { ...runHistoryCapabilityLimit(context),
+        ...(context.services.runs?.history ? { detail: 'Run summaries and immutable Board snapshots are discoverable with their structured requirements. Live runs:read and the persisted hierarchy are rechecked; Run-only grants see only their Runs. Older Runs may have no Board capture.' } : {}),
+      },
         placementCapabilityLimit(Boolean(context.services.runPlacements && context.services.placementChoices)),
         ...(jobs.length ? [{ feature: 'ci_jobs', state: 'limited' as const,
         detail: JOB_QUEUE_CAPABILITY_DETAIL + ' Only listed operations are available to this caller. '
@@ -201,7 +166,7 @@ export function operatorCapabilities(context: OperatorRequestContext, input: {
             : 'This persistence-only composition has no dispatcher or timed Run admission. ')
           + 'Clear/paging/discovery compositions await shared-contract follow-up.' }] : []), ...(context.services.fileReferences ? [{
         feature: 'permanent_reference_files', state: 'limited' as const,
-        detail: 'Permanent references support reference_files_list, reference_file_read, reference_file_add and reference_file_remove through tools/list. Read requires the scope-specific workspaces:read or workflows:read grant; add/remove additionally require the matching update grant. Worker access is not granted. These backend extension names are not in this frozen capability tools enum; use tools/list for caller-filtered schemas. Agent access resolution is separate.',
+        detail: 'Permanent references support reference_files_list, reference_file_read, reference_file_add and reference_file_remove through tools/list. Read requires the scope-specific workspaces:read or workflows:read grant; add/remove additionally require the matching update grant. Worker access is not granted. Discovery includes caller-filtered schemas and structured permission requirements. Agent access resolution is separate.',
       }] : [])],
       workerToolsMcp:{implemented:context.services.workerToolsMcpImplemented===true,endpoint:'/mcp'}}
 }
@@ -224,9 +189,9 @@ const compactRuntimeDetails: Record<string, string> = {
   approval_reassignment: 'Only the accepted handler can respond to a running approval.',
   trusted_device_connections: 'Pairing authorizes connection changes. Read with global settings:read; configure or revoke directly with global settings:update and current device/consent revisions.',
   operator_self_authorization: 'Operator cannot approve its own gates or manage its delegated credential.',
-  native_mcp_provisioning: 'Operator applies native MCP changes directly with harnesses:update and harnesses:read; uncertain writes require reconciliation.',
+  native_mcp_provisioning: 'Operator applies native MCP changes directly with harnesses:update and harnesses:read. Rediscover existing plans with harness_mcp_plans_list; apply or reject their IDs with harness_mcp_change_decide. Uncertain writes require reconciliation.',
   claude_configuration: 'Pinned app MCP only; Full access required. Saving is not qualification; host-bound checking is required.',
-  codex_plugins: 'Read Codex plugins; install/remove with codex_plugin_change and harnesses:update plus harnesses:read. Reconcile uncertain writes.',
+  codex_plugins: 'Read Codex plugins; install/remove with codex_plugin_change and harnesses:update plus harnesses:read. Recover original commandId and requestedBy with codex_plugin_operations_list under the same recovery grants, then use codex_plugin_reconcile.',
   skills: 'Workspace Markdown skills pin immutable versions; 512 KiB instructions limit. No packages/scripts/URLs or tool grants.',
   ci_jobs: 'Approved source/root and host CI qualification required. Revoked-Worker cleanup requires local-human approval.',
   permanent_reference_files: 'Scope read grants required; add/remove also need matching update grants. Operator-only.',
