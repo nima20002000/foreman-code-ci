@@ -148,12 +148,12 @@ it.each(['Agent settings Save', 'Agent settings Save and run', 'added Agent Save
       const name = within(dialog).getByRole('textbox', { name: 'Name' })
       await user.clear(name)
       await user.type(name, 'Saved Worker')
-      await user.click(within(dialog).getByRole('button', { name: 'Apply agent settings to draft' }))
+      await user.click(within(dialog).getByRole('button', { name: 'Save agent settings' }))
       await user.click(within(dialog).getByRole('button', { name: 'Close fixture settings' }))
     }
     const accessReadsBeforeStart = accessReads
     await user.click(screen.getByRole('button', {
-      name: path === 'Agent settings Save and run' ? 'Save and run' : 'Save workflow',
+      name: path === 'Agent settings Save and run' ? 'Save and run' : 'Save changes',
     }))
     await waitFor(() => expect(journal.intent?.state).toBe('saved'))
     try {
