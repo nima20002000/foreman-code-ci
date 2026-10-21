@@ -11,15 +11,14 @@ const registration = (status: DeviceRegistration['status']): DeviceRegistration 
 })
 
 describe('device setup guidance', () => {
-  it('orders local installation before pairing and explains direct Operator configuration', () => {
+  it('orders install before pairing and keeps pairing separate from command approval', () => {
     render(<DeviceSetupGuide />)
     const steps = screen.getAllByRole('listitem').map(item => item.textContent ?? '')
     expect(steps[0]).toMatch(/Install the companion on the remote computer first/)
-    expect(steps[1]).toMatch(/Pairing authorizes.*Operator.*device_connection_configure/)
-    expect(steps[1]).toMatch(/settings:update/)
+    expect(steps[1]).toMatch(/Pairing never counts as that approval/)
     expect(screen.queryByText(/Pairing lets the computer connect/)).not.toBeInTheDocument()
     fireEvent.mouseEnter(screen.getByRole('button', { name: 'About Pairing' }))
-    expect(screen.getByRole('tooltip')).toHaveTextContent('Pairing authorizes connection changes; connection readiness is checked separately.')
+    expect(screen.getByRole('tooltip')).toHaveTextContent('It does not allow remote commands.')
     expect(screen.getByText(/SSH and rsync must already be installed/)).toBeInTheDocument()
     expect(screen.getByText(/this page does not install it or change network settings/)).toBeInTheDocument()
   })
@@ -31,7 +30,7 @@ describe('device setup guidance', () => {
 
   it.each([
     ['pending', 'needs-pairing', /Pairing needed\..*Pair this computer/],
-    ['paired', 'unverified', /Connection status unverified\..*Ask the Operator to read and configure its connection, then check readiness/],
+    ['paired', 'unverified', /Connection status unverified\..*Ask the Operator to read its current remote-command approval/],
     ['revoked', 'blocked', /Blocked\..*registration is revoked/],
   ] as const)('shows a distinct message for a %s computer without inferring approval or readiness', (status, state, message) => {
     render(<ConnectionSetupStatus registration={registration(status)} />)

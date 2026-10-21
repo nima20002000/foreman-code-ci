@@ -13,7 +13,7 @@ it('keeps selection local until Apply and includes only this node placement in i
   render(<QueryClientProvider client={new QueryClient()}><AgentSettingsForm embedded agent={{ id: 'shared-agent', name: 'Worker', harnessConfiguration: DEFAULT_HARNESS_DEFAULTS.codex }}
     creationDefaults={DEFAULT_HARNESS_DEFAULTS} nodePlacement={placement} placementOptions={[{ label: 'Laptop', placement }, { label: 'PC', placement: pc }]}
     onClose={() => undefined} onSave={save} /></QueryClientProvider>)
-  const apply = screen.getByRole('button', { name: 'Apply agent settings to draft' })
+  const apply = screen.getByRole('button', { name: 'Save agent settings' })
   expect(apply).toBeDisabled()
   await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Computer' }), '1')
   expect(save).not.toHaveBeenCalled()
