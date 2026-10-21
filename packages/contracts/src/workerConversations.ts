@@ -182,8 +182,7 @@ export const WorkerConversationHistorySchema = z.object({
 const binding = { binding: WorkerConversationBindingSchema, admissionId: z.uuid().optional() }
 const native = { ...binding, session: z.lazy(() => NativeSessionReferenceSchema) }
 const prompt = {
-  // Attachment text/images are prepared on Worker after this request is validated.
-  prompt: z.string().max(1_000_000), correlationId: id,
+  prompt: z.string().min(1).max(1_000_000), correlationId: id,
   sessionMode: SessionModeSchema.optional(), preferences: SessionPreferencesSchema.optional(),
 }
 const applicationAccess = z.object({ kind: z.literal('operator-chat-mcp'), token: z.string().min(1).max(16384) }).strict()
@@ -297,7 +296,7 @@ export const WorkerConversationRpcRequestSchema = z.discriminatedUnion('method',
   z.object({ method: z.literal('conversation.compact-reconcile'), ...native, state: CompactionStateSchema }).strict(),
   z.object({ method: z.literal('conversation.compact-read'), ...native, state: CompactionStateSchema,
     configuration: WorkerConversationConfigurationSchema, correlationId: id }).strict(),
-  z.object({ method: z.literal('conversation.steer'), ...native, prompt: prompt.prompt.min(1),
+  z.object({ method: z.literal('conversation.steer'), ...native, prompt: prompt.prompt,
     correlationId: id, expectedTurnId: id }).strict(),
   z.object({ method: z.literal('conversation.reconcile-steers'), ...native,
     inputs: z.array(z.object({ clientCorrelationId: id, expectedTurnId: id }).strict()).max(1000) }).strict(),

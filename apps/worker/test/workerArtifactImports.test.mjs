@@ -1,3 +1,4 @@
+import { nativeWorkerTarget } from './fixtures/browserTarget.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -30,6 +31,7 @@ async function fixture(t) {
     await mkdir(dirname(join(root, path)), { recursive: true });
     await writeFile(join(root, path), source);
   };
+  const { file: targetFile } = await nativeWorkerTarget(root);
   const build = () => {
     const git = args => execFileSync('git', args, { cwd: root, env: environment, encoding: 'utf8' });
     git(['add', '.']);
@@ -37,7 +39,7 @@ async function fixture(t) {
       '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '--quiet', '-m', 'Worker imports']);
     const commit = git(['rev-parse', 'HEAD']).trim();
     return spawnSync(process.execPath, [join(root, 'scripts/build-worker-artifact.mjs'),
-      'apps/worker/artifacts/ubuntu-26.04-x64-target.json', join(directory, 'release')], {
+      targetFile, join(directory, 'release')], {
       cwd: root, encoding: 'utf8', timeout: 120_000,
       env: { ...environment, FOREMAN_CODE_WORKER_BUILD_COMMIT: commit, GRAPHQL_WORKER_BUILD_COMMIT: commit },
     });
