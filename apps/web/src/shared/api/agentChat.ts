@@ -3,7 +3,7 @@ import {
   AgentChatContextSchema, AgentChatExecutionActivityPageSchema, AgentChatHistoryPageSchema, AgentChatQuerySchema, AgentChatStateSchema,
   AgentChatStateResponseSchema, CancelQueuedAgentChatTurnRequestSchema, EnsureAgentChatConversationRequestSchema, InterruptAgentChatRequestSchema,
   RespondAgentChatInteractionRequestSchema, SendAgentChatMessageRequestSchema, SendAgentChatMessageResponseSchema,
-  AgentChatResetResponseSchema,
+  AgentChatResetResponseSchema, ReadAgentChatRequestSchema, ReadAgentChatResponseSchema,
   type AgentChatContext, type SendAgentChatMessageRequest,
 } from '@foreman-code/contracts/agent-chat'
 import { OperatorActivityCursorSchema } from '@foreman-code/contracts'
@@ -16,11 +16,19 @@ export const agentChatConversationPath = (workspaceId: string, conversationId: s
 
 /** All chat HTTP goes through the browser's authenticated, MSW-interceptable client. */
 export const agentChatApi = {
-  read(context: AgentChatContext, options?: RequestOptions) {
+  read(context: AgentChatContext, options?: RequestOptions, deliveryInputs?: z.infer<typeof ReadAgentChatRequestSchema>['deliveryInputs']) {
     const { workspaceId, ...query } = AgentChatContextSchema.parse(context)
     const params = new URLSearchParams()
     for (const [key, value] of Object.entries(AgentChatQuerySchema.parse(query))) if (value !== undefined) params.set(key, value)
-    return apiClient.request(`${agentChatRoot(workspaceId)}?${params}`, AgentChatStateSchema, options)
+    if (deliveryInputs) {
+      const names = { cursor: 'deliveryInputCursor', limit: 'deliveryInputLimit', receiptId: 'deliveryInputReceiptId', bodyCursor: 'deliveryInputBodyCursor' } as const
+      for (const key of Object.keys(names) as Array<keyof typeof names>) {
+        const value = deliveryInputs[key]
+        if (value !== undefined) params.set(names[key], String(value))
+      }
+      if (!params.has('deliveryInputLimit') && !deliveryInputs.receiptId) params.set('deliveryInputLimit', '25')
+    }
+    return apiClient.request(`${agentChatRoot(workspaceId)}?${params}`, ReadAgentChatResponseSchema, options)
   },
   executionActivity(context: AgentChatContext, page: { cursor?: string; executionId?: string; before?: string; itemId?: string },
     options?: RequestOptions) {
