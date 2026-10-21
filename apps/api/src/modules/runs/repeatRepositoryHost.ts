@@ -40,7 +40,7 @@ export interface RepeatRepositoryServices {
   collaboration?: WorkflowCollaborationHooks
   prepareCollaborationExecution?(owner: RunOwnership, run: AcceptedWorkflowRunV3,
     version: WorkflowVersionV3, execution: HarnessExecution): Promise<void>
-  readCollaborationPrompt?(owner: RunOwnership, execution: HarnessExecution): Promise<string | undefined>
+  readCollaborationPrompt?(owner: RunOwnership, execution: HarnessExecution, version: WorkflowVersionV3): Promise<string | undefined>
   releaseCollaborationExecution?(owner: RunOwnership, execution: HarnessExecution, version: WorkflowVersionV3): Promise<void>
   reconcileWorkflowArtifacts?(owner: RunOwnership, run: AcceptedWorkflowRunV3,
     execution: HarnessExecution, signal: AbortSignal): Promise<void>
@@ -166,7 +166,10 @@ export class RepeatRepositoryFactory {
   }
   readCollaborationPrompt(owner: RunOwnership, execution: HarnessExecution): Promise<string | undefined> {
     owner.assertOwned()
-    return this.services.readCollaborationPrompt?.(owner, execution) ?? Promise.resolve(undefined)
+    if (!this.services.readCollaborationPrompt) return Promise.resolve(undefined)
+    const current = this.stores.get(owner)
+    if (!current) return repeatConflict('REPEAT_NATIVE_HOST_REQUIRED')
+    return this.services.readCollaborationPrompt(owner, execution, current.version)
   }
 
   /** Same actual Run owner and locked hooks for the concrete Job store. */

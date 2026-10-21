@@ -933,7 +933,7 @@ function configureWorkflowRepositories(composition: ProductionComposition) {
   const workflowServices: RepeatRepositoryServices = { ...workflowRuntime.services,
     collaboration: collaboration.hooks,
     prepareCollaborationExecution: (owner, run, version, execution) => collaboration.prepare(owner, run, version, execution),
-    readCollaborationPrompt: (owner, execution) => collaboration.readPrompt(owner, execution),
+    readCollaborationPrompt: (owner, execution, version) => collaboration.readPrompt(owner, execution, version),
     releaseCollaborationExecution: (owner, execution, version) => collaboration.release(owner, execution, 'terminal', version),
     async reconcileWorkflowArtifacts(owner, run, execution, signal) {
       signal.throwIfAborted()

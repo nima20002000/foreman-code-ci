@@ -31,9 +31,9 @@ export class WorkflowCollaborationIntegration {
     owner.assertOwned()
     await this.browser.prepare(owner, run, version, execution, () => this.computerId(owner, execution))
   }
-  async readPrompt(owner: RunOwnership, execution: HarnessExecution): Promise<string | undefined> {
+  async readPrompt(owner: RunOwnership, execution: HarnessExecution, version: WorkflowVersionV3): Promise<string | undefined> {
     const memory = await this.memory.readPrompt(owner, execution)
-    const browser = await this.browser.readPrompt(owner, execution)
+    const browser = await this.browser.readPrompt(owner, execution, version)
     return [memory, browser].filter(Boolean).join('\n\n') || undefined
   }
   async effectRepairPrompt(owner: RunOwnership, failure: WorkflowResultEffectFailure): Promise<string> {

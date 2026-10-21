@@ -56,6 +56,15 @@ it('saves Browser tool defaults and a pinned managed skill while preserving an e
   expect((await repository.getSavedVersion(version.id))?.nodeSkillSnapshots?.[node.id]).toEqual(version.nodeSkillSnapshots?.[node.id])
 })
 
+it('pins the managed browser skill independently of workspace skill assignments', async () => {
+  const f = await savedBrowser()
+  const version = await new PostgresWorkflowRepository(db.pool).getSavedVersion(f.version.id)
+  expect(version?.nodeSkillSnapshots?.[f.execution.workflowNodeId]).toEqual(expect.arrayContaining([
+    expect.objectContaining({ skillId: 'foreman-browser-use', instructions: expect.any(String),
+      contentHash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/) }),
+  ]))
+})
+
 it('checks a prepared browser owner with one live read and rejects it immediately after Stop', async () => {
   const f = await savedBrowser()
   await f.authority.details(f.subject)

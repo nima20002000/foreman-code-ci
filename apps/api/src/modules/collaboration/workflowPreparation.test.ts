@@ -17,7 +17,7 @@ describe('workflow collaboration public preparation boundaries', () => {
       runId: saved.run.id, state: 'queued', input: {}, createdAt: saved.createdAt })
     const integration = new WorkflowCollaborationIntegration(undefined, async () => { throw new Error('Disabled browser discovered a host') })
     await integration.prepare(owner, saved.run as AcceptedWorkflowRunV3, saved.version, execution)
-    expect(await integration.readPrompt(owner, execution)).toBeUndefined()
+    expect(await integration.readPrompt(owner, execution, saved.version)).toBeUndefined()
     await integration.release(owner, execution, 'stop', saved.version)
   })
 

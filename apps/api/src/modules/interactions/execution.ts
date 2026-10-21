@@ -1360,7 +1360,7 @@ export class ApprovalExecutionCoordinator {
     let queuedInput: WorkflowQueuedInput | undefined
     try {
       const currentOwner = owner ?? retained!.owner
-      collaborationPrompt = await this.collaboration?.readPrompt(currentOwner, execution)
+      collaborationPrompt = await this.collaboration?.readPrompt(currentOwner, execution, version)
       queuedInput = await (await this.runs.repeat(currentOwner)).claimWorkflowInput(execution.id)
     }
     finally { await retained?.release() }

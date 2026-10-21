@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { useState } from 'react'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, expect, it } from 'vitest'
-import { memoryBoardTools, type GraphqlAgentTool } from '@foreman-code/contracts'
+import { afterEach, expect, it, vi } from 'vitest'
+import { memoryBoardTools, newAgentGraphqlTools, type GraphqlAgentTool } from '@foreman-code/contracts'
 import { WorkflowBoardContext } from '../workflow-board/context'
 import { GraphqlToolsFields } from './GraphqlToolsFields'
 import { NodeWorkflowFields } from './nextDraft/AuthoringFields'
@@ -33,6 +33,7 @@ function FieldsFixture() {
       onChange={value => setTools(value ?? [])} />
     <NodeWorkflowFields graph={graph} node={node} context={context} change={setGraph} />
     <output aria-label="Selected tools">{tools.join(', ')}</output>
+    <output aria-label="Browser tools">{JSON.stringify(node.kind !== 'job' ? node.graphqlTools : null)}</output>
     <output aria-label="Browser draft">{JSON.stringify(node.kind !== 'job' ? node.browser : null)}</output>
   </WorkflowBoardContext.Provider>
 }
@@ -43,6 +44,8 @@ it('mounts feature-owned controls on the ordinary tool and node draft values wit
   await userEvent.click(screen.getByRole('button', { name: 'Use memory Read' }))
   expect(screen.getByLabelText('Selected tools')).toHaveTextContent('context_get, memory_board_get, memory_board_changes_read')
   await userEvent.click(screen.getByRole('button', { name: 'Use chosen browser' }))
+  expect(screen.getByLabelText('Browser tools')).toHaveTextContent('browser_state_read')
+  expect(screen.getByLabelText('Browser tools')).toHaveTextContent('browser_action')
   expect(screen.getByLabelText('Browser draft')).toHaveTextContent('{"enabled":true,"profileId":"chosen-profile"}')
 })
 
@@ -51,4 +54,16 @@ it('mounts the same injected Memory access field in standalone Agent settings ou
     <GraphqlToolsFields role="orchestrator" defaults={undefined} override={undefined} onChange={() => undefined} />
   </CollaborationUIProvider>)
   expect(screen.getByText('Standalone orchestrator Memory access')).toBeVisible()
+})
+
+it('keeps an explicit browser tool Off choice even when Agent defaults omit browser tools', async () => {
+  const changed = vi.fn()
+  render(<CollaborationUIProvider value={{ nodeBrowser: () => null }}>
+    <GraphqlToolsFields role="coder" defaults={newAgentGraphqlTools('coder')}
+      override={{ add: ['browser_action'], remove: [] }} onChange={changed} />
+  </CollaborationUIProvider>)
+  const choice = within(screen.getByRole('group', { name: 'Act on page: this workflow' })).getByRole('radio', { name: 'Off' })
+  expect(choice).toBeEnabled()
+  await userEvent.click(choice)
+  expect(changed).toHaveBeenCalledWith(newAgentGraphqlTools('coder'), { add: [], remove: ['browser_action'] })
 })

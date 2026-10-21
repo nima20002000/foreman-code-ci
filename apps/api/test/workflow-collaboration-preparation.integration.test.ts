@@ -98,14 +98,14 @@ describe.skipIf(!postgresEnabled)('workflow collaboration preparation and atomic
       expect(b.prepare.mock.calls[0]![0].subject).toEqual(subject)
       expect(a.readDigest.mock.calls[0]![0].work).toEqual({ kind: 'activation', runId: f.run.id,
         workflowVersionId: f.version.id, activationId: subject.kind === 'execution' ? subject.execution.activationId : undefined })
-      const prompt = await integration.readPrompt(f.owner, f.execution)
+      const prompt = await integration.readPrompt(f.owner, f.execution, f.version)
       expect(prompt).toContain('revision 7')
       expect(prompt).toContain('owned-browser')
       expect(prompt).toContain('browser_session_get')
       await f.restart()
       const recovered = (await f.store.readExecution(f.execution.id)).execution
       await integration.prepare(f.owner, f.run, f.version, recovered)
-      expect(await integration.readPrompt(f.owner, recovered)).toBe(prompt)
+      expect(await integration.readPrompt(f.owner, recovered, f.version)).toBe(prompt)
       expect(recovered.input).toEqual(originalInput)
       expect(a.readDigest).toHaveBeenCalledTimes(1)
       expect(b.prepare).toHaveBeenCalledTimes(1)
@@ -117,7 +117,7 @@ describe.skipIf(!postgresEnabled)('workflow collaboration preparation and atomic
     const integration = new WorkflowCollaborationIntegration({ memoryBoards: a.memoryBoards }, async () => 'computer')
     try {
       await integration.prepare(f.owner, f.run, f.version, f.execution)
-      const prompt = await integration.readPrompt(f.owner, f.execution)
+      const prompt = await integration.readPrompt(f.owner, f.execution, f.version)
       const budgets = new PostgresApprovalBudgetRepository(db.pool)
       await budgets.ensure(f.execution.id, f.run.id, 60_000)
       const services = createWorkflowRepositoryServices(createWorkflowNativeCaptureChannel().verify).services
@@ -133,7 +133,7 @@ describe.skipIf(!postgresEnabled)('workflow collaboration preparation and atomic
       expect(retried.kind).toBe('retry')
       if (retried.kind !== 'retry') throw new Error('Expected the admitted retry of the same work')
       await integration.prepare(f.owner, f.run, f.version, retried.execution)
-      expect(await integration.readPrompt(f.owner, retried.execution)).toBe(prompt)
+      expect(await integration.readPrompt(f.owner, retried.execution, f.version)).toBe(prompt)
       expect(retried.execution.input).toEqual(f.execution.input)
       expect(a.readDigest).toHaveBeenCalledTimes(1)
     } finally { await f.close() }
@@ -148,7 +148,7 @@ describe.skipIf(!postgresEnabled)('workflow collaboration preparation and atomic
       await integration.prepare(f.owner, f.run, f.version, f.execution)
       expect(a.readDigest).not.toHaveBeenCalled()
       expect(b.prepare).not.toHaveBeenCalled()
-      expect(await integration.readPrompt(f.owner, f.execution)).toBeUndefined()
+      expect(await integration.readPrompt(f.owner, f.execution, f.version)).toBeUndefined()
     } finally { await f.close() }
   }, 120000)
 
