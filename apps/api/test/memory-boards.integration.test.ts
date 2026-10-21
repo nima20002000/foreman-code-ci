@@ -25,6 +25,57 @@ describe.skipIf(!postgresEnabled)('Memory boards public persistence and engine p
   afterAll(async()=>{await database?.close()})
   beforeEach(async()=>{f=memoryFixture(database.pool,principal);boardId=(await f.snapshot()).board.id})
 
+  it('shares one database listener across boards and service instances until the last subscriber closes', async () => {
+    const workspace = await f.service.read(principal, { scope: { kind: 'workspace', workspaceId: f.workspaceId } }) as BoardSnapshot
+    const checkedOut = () => database.pool.totalCount - database.pool.idleCount
+    const baseline = checkedOut()
+    const notices = { first: 0, second: 0, workspace: 0, disconnected: 0 }
+    const disconnected = () => { notices.disconnected += 1 }
+    const stops = await Promise.all([
+      f.service.listen(boardId, () => { notices.first += 1 }, disconnected),
+      f.restart().listen(boardId, () => { notices.second += 1 }, disconnected),
+      f.service.listen(workspace.board.id, () => { notices.workspace += 1 }, disconnected),
+    ])
+    try {
+      expect(checkedOut() - baseline).toBe(1)
+      await f.create(boardId, 'Shared notification')
+      await expect.poll(() => notices).toEqual({ first: 1, second: 1, workspace: 0, disconnected: 0 })
+      await f.service.mutate(principal, { kind: 'note_create', boardId: workspace.board.id, text: 'Workspace note' })
+      await expect.poll(() => notices).toEqual({ first: 1, second: 1, workspace: 1, disconnected: 0 })
+      stops[0]!()
+      await f.create(boardId, 'Remaining subscriber')
+      await expect.poll(() => notices).toEqual({ first: 1, second: 2, workspace: 1, disconnected: 0 })
+      expect(checkedOut() - baseline).toBe(1)
+    } finally {
+      for (const stop of stops) stop()
+    }
+    await expect.poll(checkedOut).toBe(baseline)
+    const stop = await f.restart().listen(boardId, () => { notices.second += 1 }, disconnected)
+    try {
+      expect(checkedOut() - baseline).toBe(1)
+      await f.create(boardId, 'Reopened subscription')
+      await expect.poll(() => notices).toEqual({ first: 1, second: 3, workspace: 1, disconnected: 0 })
+    } finally { stop() }
+    await expect.poll(checkedOut).toBe(baseline)
+  })
+
+  it.each(['blocked', 'failed', 'canceled'] as const)('commits %s settlement with a bounded card reason and full binding evidence', async phase => {
+    const task = await f.prepareWork()
+    f.setSubject(task.subject)
+    const saved = await f.service.mutate(f.worker, { kind: 'card_create', boardId,
+      card: { title: 'Long failure', body: '', status: 'todo', completionKind: null, reason: null, assignee: null, linkedNodes: [] } })
+    const prefix = 'x'.repeat(999)
+    const reason = `${prefix}💥${'Failure detail. '.repeat(100)}`
+    const fact = f.fact(task, phase, { reason })
+    const receipt = await f.publish(fact)
+    const detail = await f.card(boardId, saved.card!.id)
+    expect(detail.card).toMatchObject({ status: 'blocked', reason: prefix })
+    expect(detail.bindings).toMatchObject([{ state: phase, reason }])
+    expect(await f.committedFact(fact.sourceEventKey)).toEqual(fact)
+    expect(await f.publish(fact)).toEqual({ ...receipt, replayed: true })
+    expect((await f.card(boardId, saved.card!.id)).card).toEqual(detail.card)
+  })
+
   it('deduplicates normalized parallel creation including Done without changing bindings, revisions or events',async()=>{
     const [first,second]=await Promise.all([f.create(boardId,' Ｔask\tOne '),f.create(boardId,'task one')])
     expect(first.card?.id).toBe(second.card?.id)
