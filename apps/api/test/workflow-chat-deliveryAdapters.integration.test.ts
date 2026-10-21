@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { ChatControlReceiptSchema, ChatDeliveryReceiptSchema, CreateOperatorConversationResponseSchema,
   DeliveryTargetSchema, EngineChatReadbackSchema, GetOperatorConversationResponseSchema, SendOperatorMessageResponseSchema } from '@foreman-code/contracts'
 import { AgentChatSendResponseSchema, ReadAgentChatResponseSchema, type ReadAgentChatRequestSchema } from '@foreman-code/contracts/agent-chat'
-import { deliveryAdaptersFixture } from './deliveryAdapters.test-support.js'
+import { deliveryAdaptersFixture } from '../src/modules/workflow-chat/deliveryAdapters.test-support.js'
 
 type Fixture = Awaited<ReturnType<typeof deliveryAdaptersFixture>>
 type Call = Awaited<ReturnType<Client['callTool']>>

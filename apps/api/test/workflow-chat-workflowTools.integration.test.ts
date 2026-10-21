@@ -4,7 +4,7 @@ import { afterEach, expect, it } from 'vitest'
 import { z } from 'zod'
 import { ChatDeliveryReceiptSchema, WorkflowChatPostResponseSchema, WorkflowChatPostSchema } from '@foreman-code/contracts'
 import { ReadAgentChatResponseSchema } from '@foreman-code/contracts/agent-chat'
-import { deliveryAdaptersFixture } from './deliveryAdapters.test-support.js'
+import { deliveryAdaptersFixture } from '../src/modules/workflow-chat/deliveryAdapters.test-support.js'
 
 type Fixture = Awaited<ReturnType<typeof deliveryAdaptersFixture>>
 type Result = Awaited<ReturnType<Client['callTool']>>

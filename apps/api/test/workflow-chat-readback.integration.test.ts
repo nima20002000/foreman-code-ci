@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { channelFixture, caller, scope, target } from './channel.test-support.js'
-import type { RetainedDeliveryInput } from './retainedInputs.js'
+import { channelFixture, caller, scope, target } from '../src/modules/workflow-chat/channel.test-support.js'
+import type { RetainedDeliveryInput } from '../src/modules/workflow-chat/retainedInputs.js'
 
 describe('bounded channel/readback and global command identity through public services', () => {
   let f: Awaited<ReturnType<typeof channelFixture>>

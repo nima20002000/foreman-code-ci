@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { WorkflowChatPostRequest } from '@foreman-code/contracts'
-import { ChatDeliveryRouter } from './delivery.js'
-import { WorkflowChatService } from './service.js'
-import { channelFixture, caller, scope, target } from './channel.test-support.js'
+import { ChatDeliveryRouter } from '../src/modules/workflow-chat/delivery.js'
+import { WorkflowChatService } from '../src/modules/workflow-chat/service.js'
+import { channelFixture, caller, scope, target } from '../src/modules/workflow-chat/channel.test-support.js'
 
 describe('durable Group admission through channel and delivery services', () => {
   let f: Awaited<ReturnType<typeof channelFixture>>

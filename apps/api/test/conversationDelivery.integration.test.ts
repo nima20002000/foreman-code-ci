@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatDeliveryReceipt, DeliveryTarget, SessionControlRequest } from '@foreman-code/contracts'
-import { conversationDeliveryFixture } from './conversationDelivery.test-support.js'
+import { conversationDeliveryFixture } from '../src/modules/conversations/conversationDelivery.test-support.js'
 
 describe('common conversation delivery through authenticated public services', () => {
   let f: Awaited<ReturnType<typeof conversationDeliveryFixture>>

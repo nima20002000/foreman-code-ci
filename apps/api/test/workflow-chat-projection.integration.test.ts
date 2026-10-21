@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { AgentIdentity, BoardLifecycleFact, WorkflowChatPostRequest } from '@foreman-code/contracts'
-import { withTransaction } from '../../infrastructure/transaction.js'
-import { WorkflowChatProjector, type CommittedWorkflowChatFact, type CommittedReplySource } from './projection.js'
-import { channelFixture, caller, scope, target } from './channel.test-support.js'
+import { withTransaction } from '../src/infrastructure/transaction.js'
+import { WorkflowChatProjector, type CommittedWorkflowChatFact, type CommittedReplySource } from '../src/modules/workflow-chat/projection.js'
+import { channelFixture, caller, scope, target } from '../src/modules/workflow-chat/channel.test-support.js'
 
 describe('committed Group projection through durable public seams', () => {
   let f: Awaited<ReturnType<typeof channelFixture>>
