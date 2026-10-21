@@ -27,10 +27,9 @@ import { registerRunPlacementRoutes, registerNodePlacementChoicesRoutes } from '
 import { registerManagementRoutes } from './routes/management.js'
 import { registerMcpDetectionRoute } from './routes/mcpDetection.js'
 import { registerProductRoutes, type ProductServices } from './routes/product.js'
+import { registerMemoryBoardRoutes } from './routes/memoryBoards.js'
 import { registerAgentChatRoutes } from './routes/agentChat.js'
 import { registerWorkflowScheduleRoutes } from './routes/workflowSchedules.js'
-import { registerWorkflowHierarchyRoutes } from './routes/workflowHierarchy.js'
-import { registerWorkflowExecutionChatRoutes } from './routes/workflowExecutionChat.js'
 import { registerProviderAccountRoutes } from './routes/providerAccounts.js'
 
 export interface ReadinessDependencies {
@@ -201,13 +200,12 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   })
 
   if (options.operator) registerOperatorHttpSecurity(app, options.operator.access, options.localHuman, options.browserOrigin)
+  if (options.operator?.services.memoryBoards) registerMemoryBoardRoutes(app, options.operator.services.memoryBoards)
   if (options.operator) registerManagementRoutes(app, options.operator.services)
   if (options.operator?.services.providerAccounts) registerProviderAccountRoutes(app, options.operator.services.providerAccounts)
   if (options.operator?.services.runPlacements) registerRunPlacementRoutes(app, options.operator.services.runPlacements)
   if (options.operator?.services.placementChoices) registerNodePlacementChoicesRoutes(app, options.operator.services.placementChoices)
   if (options.operator?.services.workflows?.schedules) registerWorkflowScheduleRoutes(app, options.operator.services.workflows.schedules)
-  if (options.operator?.services.workflowHierarchy) registerWorkflowHierarchyRoutes(app, options.operator.services.workflowHierarchy)
-  if (options.operator?.services.executionChat) registerWorkflowExecutionChatRoutes(app, options.operator.services.executionChat)
   if (options.operator?.services.runGraph) registerRunGraphRoutes(app, options.operator.services.runGraph,
     (principalId, code, route) => options.operator!.services.commands.recordDenied(principalId, 'http', code, route))
   if (options.operator && options.mcpDetection) {

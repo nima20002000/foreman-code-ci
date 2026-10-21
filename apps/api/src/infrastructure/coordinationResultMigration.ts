@@ -1,89 +1,9 @@
-/** Keep old native bytes/decisions unchanged. Marked observations retain their
- * first-terminal normalization before physical closure, so a real F1 conflict
- * can still spend the existing same-session repair budget. */
-export const coordinationResultMigration = { version: 2026102105, sql: String.raw`
-create function preserve_workflow_result_protocol() returns trigger language plpgsql as $$
-begin
-  if new.record ? 'resultProtocol' and new.record->>'resultProtocol' is distinct from 'f1-f4-v1'
-    then raise exception 'WORKFLOW_RESULT_PROTOCOL_INVALID'; end if;
-  if tg_op='UPDATE' and new.record->'resultProtocol' is distinct from old.record->'resultProtocol'
-    then raise exception 'WORKFLOW_RESULT_PROTOCOL_IMMUTABLE'; end if;
-  return new;
-end $$;
-create trigger workflow_result_protocol_immutable before insert or update on runs
-  for each row execute function preserve_workflow_result_protocol();
-
-create table workflow_coordination_terminals (
-  execution_id text primary key references harness_executions(id) on delete cascade,
-  run_id text not null references runs(id) on delete cascade,
-  native_proof_id text not null references workflow_native_proofs(proof_id) on delete cascade deferrable initially deferred,
-  settled_native_proof_id text references workflow_native_proofs(proof_id) deferrable initially deferred,
-  record jsonb not null,
-  record_json text not null check(octet_length(record_json)<=262144),
-  record_digest text not null check(record_digest='sha256:' || encode(sha256(convert_to(record_json,'UTF8')),'hex')),
-  check(record=record_json::jsonb),
-  check(record#>>'{execution,executionId}'=execution_id and record#>>'{scope,runId}'=run_id
-    and record->>'nativeProofId'=native_proof_id)
-);
-create index workflow_coordination_terminals_run on workflow_coordination_terminals(run_id,execution_id);
-create function protect_workflow_coordination_terminal() returns trigger language plpgsql as $$
-begin
-  if tg_op='UPDATE' and new is not distinct from old then return new; end if;
-  if tg_op='UPDATE' and old.settled_native_proof_id is null and new.settled_native_proof_id is not null
-    and to_jsonb(new)-'settled_native_proof_id' is not distinct from to_jsonb(old)-'settled_native_proof_id'
-    then return new; end if;
-  raise exception 'COORDINATION_TERMINAL_IMMUTABLE';
-end $$;
-create trigger workflow_coordination_terminal_immutable before update on workflow_coordination_terminals
-  for each row execute function protect_workflow_coordination_terminal();
-create constraint trigger workflow_coordination_terminal_retention after delete on workflow_coordination_terminals
-  deferrable initially deferred for each row execute function assert_work_evidence_retention();
-create trigger workflow_coordination_terminal_no_truncate before truncate on workflow_coordination_terminals
-  for each statement execute function reject_work_evidence_truncate();
-create function assert_workflow_coordination_terminal() returns trigger language plpgsql as $$
-declare item workflow_coordination_terminals%rowtype; execution harness_executions%rowtype;
-  proof workflow_native_proofs%rowtype; pinned run_repeat_executions%rowtype; target_execution_id text;
-begin
-  if tg_table_name='workflow_coordination_terminals' then target_execution_id := new.execution_id;
-  else target_execution_id := new.id; end if;
-  for item in select * from workflow_coordination_terminals
-    where execution_id=target_execution_id loop
-    select * into strict execution from harness_executions where id=item.execution_id and run_id=item.run_id;
-    select * into strict proof from workflow_native_proofs where proof_id=item.native_proof_id
-      and run_id=item.run_id and execution_id=item.execution_id;
-    select * into strict pinned from run_repeat_executions where execution_id=item.execution_id and run_id=item.run_id;
-    if not exists(select 1 from runs where id=item.run_id and record->>'resultProtocol'='f1-f4-v1'
-        and workflow_version_id=item.record#>>'{scope,workflowVersionId}')
-      or item.record->'scope' is distinct from proof.record->'scope'
-      or item.record->'execution' is distinct from pinned.identity-'occurrence'
-      or proof.record->'execution' is distinct from item.record->'execution'
-      or proof.record#>>'{original,type}' is distinct from 'history'
-      or proof.record#>>'{original,history,terminalTurn,correlationId}' is distinct from item.record->>'nativeCorrelationId'
-      or proof.record#>>'{original,history,terminalTurn,providerId}' is distinct from item.record->>'nativeProviderId'
-      or execution.record->>'state' is distinct from 'completed'
-      or execution.record->'result' is distinct from item.record->'result'
-      or not exists(select 1 from run_graph_sources s where s.run_id=item.run_id and s.source_kind='execution'
-        and s.source_id=item.record->>'sourceId' and s.source_revision=1
-        and s.source_digest=item.record->>'sourceDigest') then raise exception 'COORDINATION_TERMINAL_CONFLICT'; end if;
-    if item.settled_native_proof_id is not null and not exists(select 1 from workflow_native_proofs settled
-      where settled.proof_id=item.settled_native_proof_id and settled.run_id=item.run_id and settled.execution_id=item.execution_id
-        and settled.record#>>'{original,type}'='history'
-        and settled.record#>>'{original,history,terminalTurn,correlationId}'=item.record->>'nativeCorrelationId'
-        and settled.record#>>'{original,history,terminalTurn,providerId}'=item.record->>'nativeProviderId'
-        and settled.record#>'{original,history,terminalTurn,result}'=proof.record#>'{original,history,terminalTurn,result}')
-      then raise exception 'COORDINATION_TERMINAL_SETTLEMENT_CONFLICT'; end if;
-  end loop;
-  return null;
-end $$;
-create constraint trigger workflow_coordination_terminal_evidence after insert or update on workflow_coordination_terminals
-  deferrable initially deferred for each row execute function assert_workflow_coordination_terminal();
-create constraint trigger workflow_coordination_native_evidence after update on harness_executions
-  deferrable initially deferred for each row execute function assert_workflow_coordination_terminal();
-
+/** Extend storage validation for the pinned protocol without changing saved result bytes. */
+export const coordinationResultMigration = { version: 2026102103, sql: String.raw`
 create or replace function assert_repeat_decision() returns trigger language plpgsql as $$
 declare occ run_repeat_occurrences%rowtype; execution run_repeat_executions%rowtype;
   pinned jsonb; block jsonb; exit_node jsonb; accepted jsonb; envelope jsonb; outcome text;
-  reason text; target jsonb; declaration jsonb; member text; coordinated boolean;
+  reason text; target jsonb; declaration jsonb; member text; protocol text; board_result jsonb; artifacts jsonb;
 begin
   if not exists(select 1 from run_repeat_decisions where decision_id=new.decision_id) then return null; end if;
   select * into strict occ from run_repeat_occurrences where occurrence_id=new.occurrence_id;
@@ -98,32 +18,64 @@ begin
   if jsonb_typeof(envelope)='object' and envelope-'text'='{}'::jsonb and jsonb_typeof(envelope->'text')='string' then
     envelope := (envelope->>'text')::jsonb;
   elsif jsonb_typeof(envelope)='string' then envelope := (envelope #>> '{}')::jsonb; end if;
-  coordinated := coalesce(exit_node->>'kind','agent')<>'job' and exists(select 1 from runs
-    where id=occ.run_id and record->>'resultProtocol'='f1-f4-v1');
-  if coordinated then
-    if jsonb_typeof(envelope) is distinct from 'object'
-      or envelope-(case when exit_node ? 'artifactOutputs'
-        then array['routing','data','summary','board','artifactOutputs'] else array['routing','data','summary','board'] end)<>'{}'::jsonb
+  select record->>'resultProtocol' into protocol from runs where id=occ.run_id;
+  if protocol='f1-f4-v1' and exit_node->>'kind' is distinct from 'job' then
+    if (select record->>'resultProtocol' from harness_executions where id=new.exit_execution_id)
+        is distinct from protocol
       or jsonb_typeof(envelope->'summary') is distinct from 'string'
-      or length(btrim(envelope->>'summary')) not between 1 and 600
-      or jsonb_typeof(envelope->'board') is distinct from 'object'
-      or envelope#>>'{board,kind}' is null
-      or envelope#>>'{board,kind}' not in ('none','changes') then raise exception 'COORDINATION_RESULT_INVALID'; end if;
-    if envelope#>>'{board,kind}'='none' then
-      if (envelope->'board')-array['kind','reason','appliedCommandIds']<>'{}'::jsonb
-        or envelope#>>'{board,reason}' not in ('no_changes','no_access','already_recorded')
-        or envelope#>>'{board,reason}' is null
-        or (envelope#>'{board,appliedCommandIds}' is not null and
-          (jsonb_typeof(envelope#>'{board,appliedCommandIds}') is distinct from 'array'
-           or jsonb_array_length(envelope#>'{board,appliedCommandIds}')>32)) then raise exception 'COORDINATION_BOARD_INVALID'; end if;
-    elsif (envelope->'board')-array['kind','operations']<>'{}'::jsonb
-      or jsonb_typeof(envelope#>'{board,operations}') is distinct from 'array'
-      or jsonb_array_length(envelope#>'{board,operations}') not between 1 and 32 then raise exception 'COORDINATION_BOARD_INVALID'; end if;
-    if exit_node ? 'artifactOutputs' and jsonb_typeof(envelope->'artifactOutputs') is distinct from 'object'
-      then raise exception 'COORDINATION_ARTIFACTS_REQUIRED'; end if;
-  elsif jsonb_typeof(envelope) is distinct from 'object' or envelope-array['routing','data']<>'{}'::jsonb
-    then raise exception 'REPEAT_EXIT_ENVELOPE_INVALID'; end if;
-  if jsonb_typeof(envelope) is distinct from 'object'
+      or length(btrim(envelope->>'summary')) not between 1 and 600 then
+      raise exception 'COORDINATION_RESULT_INVALID';
+    end if;
+    board_result := envelope->'board';
+    if jsonb_typeof(board_result) is distinct from 'object'
+      or (board_result->>'kind' in ('none','changes')) is not true then
+      raise exception 'COORDINATION_BOARD_RESULT_INVALID';
+    end if;
+    if board_result->>'kind'='none' then
+      if board_result-array['kind','reason','appliedCommandIds']<>'{}'::jsonb
+        or (board_result->>'reason' in ('no_changes','no_access','already_recorded')) is not true then
+        raise exception 'COORDINATION_BOARD_RESULT_INVALID';
+      end if;
+      if board_result ? 'appliedCommandIds' then
+        if jsonb_typeof(board_result->'appliedCommandIds') is distinct from 'array'
+          or jsonb_array_length(board_result->'appliedCommandIds')>32
+          or exists(select 1 from jsonb_array_elements(board_result->'appliedCommandIds') id
+            where jsonb_typeof(id) is distinct from 'string' or length(btrim(id #>> '{}'))=0) then
+          raise exception 'COORDINATION_BOARD_RESULT_INVALID';
+        end if;
+      end if;
+    else
+      if board_result-array['kind','operations']<>'{}'::jsonb
+        or jsonb_typeof(board_result->'operations') is distinct from 'array'
+        or jsonb_array_length(board_result->'operations') not between 1 and 32 then
+        raise exception 'COORDINATION_BOARD_RESULT_INVALID';
+      end if;
+    end if;
+    -- Parsing view only; the original result, digest and carry remain immutable.
+    envelope := envelope-array['summary','board'];
+  end if;
+  if exit_node ? 'artifactOutputs' then
+    artifacts := envelope->'artifactOutputs';
+    if jsonb_typeof(accepted->'output') is distinct from 'object'
+      or (accepted->'output')-'text'<>'{}'::jsonb
+      or jsonb_typeof(accepted#>'{output,text}') is distinct from 'string'
+      or jsonb_typeof(artifacts) is distinct from 'object'
+      or artifacts-array['version','outputs']<>'{}'::jsonb
+      or artifacts->'version' is distinct from '1'::jsonb
+      or jsonb_typeof(artifacts->'outputs') is distinct from 'array'
+      or jsonb_array_length(artifacts->'outputs') is distinct from jsonb_array_length(exit_node#>'{artifactOutputs,outputKeys}')
+      or exists(select 1 from jsonb_array_elements(artifacts->'outputs') item
+        where jsonb_typeof(item) is distinct from 'object' or item-array['outputKey','commandId']<>'{}'::jsonb
+          or jsonb_typeof(item->'outputKey') is distinct from 'string'
+          or jsonb_typeof(item->'commandId') is distinct from 'string' or length(btrim(item->>'commandId'))=0
+          or not ((exit_node#>'{artifactOutputs,outputKeys}') ? btrim(item->>'outputKey')))
+      or (select count(distinct btrim(item->>'outputKey')) from jsonb_array_elements(artifacts->'outputs') item)
+        is distinct from jsonb_array_length(artifacts->'outputs')::bigint then
+      raise exception 'WORKFLOW_ARTIFACT_OUTPUT_KEYS_MISMATCH';
+    end if;
+    envelope := envelope-'artifactOutputs';
+  end if;
+  if jsonb_typeof(envelope) is distinct from 'object' or envelope-array['routing','data']<>'{}'::jsonb
     or jsonb_typeof(envelope->'routing') is distinct from 'object' or (envelope->'routing')-'outcome'<>'{}'::jsonb
     or jsonb_typeof(envelope #> '{routing,outcome}') is distinct from 'string'
     or jsonb_typeof(envelope->'data') is distinct from 'object'
@@ -177,4 +129,4 @@ begin
     and r.source_occurrence_id=occ.occurrence_id) then raise exception 'REPEAT_FINAL_EXPORT_MISSING'; end if;
   return null;
 end $$;
-` } as const
+` }
