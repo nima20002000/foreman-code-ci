@@ -1,14 +1,6 @@
 import { z } from 'zod';
 import { IdSchema, TimestampSchema } from './schemaPrimitives.js';
 
-/** Navigation only; the manager resolves the selected computer's current registered identity. */
-export const BrowserProfilesSettingsSearchSchema = z.object({
-  mainId: IdSchema.optional(), computer: z.enum(['main', 'device']).optional(), deviceId: IdSchema.optional(),
-}).strict().refine(value => value.computer === 'device' ? !!value.deviceId : !value.deviceId, {
-  path: ['deviceId'], message: 'Choose the exact device for a device filter.',
-});
-export type BrowserProfilesSettingsSearch = z.infer<typeof BrowserProfilesSettingsSearchSchema>;
-
 export const BrowserProfileOriginSchema = z.string().url().refine((origin) => {
   try {
     const parsed = new URL(origin);
