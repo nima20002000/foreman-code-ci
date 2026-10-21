@@ -110,6 +110,7 @@ function registerOperatorDefinitions(server: McpServer, context: OperatorRequest
   group('settings')
   group('providerAccounts')
   group('agentChat')
+  group('workflowChat')
   group('sessionControls')
   group('workspaceDefaults')
   registerFileRetentionTools(server, context)

@@ -37,6 +37,7 @@ const BoardSurfaceSelectionFields = {
   boardPanel: z.enum(['group_chat', 'agent', 'browser', 'operator']).optional(),
   boardAgentTab: z.enum(['chat', 'settings', 'details']).optional(),
   boardNodeId: GraphIdSchema.optional(), boardExecutionId: GraphIdSchema.optional(),
+  groupRunId: GraphIdSchema.optional(), groupPostId: GraphIdSchema.optional(), groupReceiptId: GraphIdSchema.optional(),
   boardMemory: z.union([z.literal(true), z.literal('true').transform(() => true as const)]).optional(),
 }
 export function runInspectionKey(selection: WorkspaceBoardExecutionSelection): string | undefined {
@@ -159,6 +160,6 @@ export function staysOnWorkflowBoard(current: { pathname: string; search: unknow
 function authoringSelection(search: WorkspaceBoardSearch): WorkspaceBoardSearch {
   const value = { ...search }
   for (const key of ['activityKind', 'activityAgentId', 'boardView', 'boardPanel', 'boardAgentTab',
-    'boardNodeId', 'boardExecutionId', 'boardMemory'] as const) delete value[key]
+    'boardNodeId', 'boardExecutionId', 'boardMemory', 'groupRunId', 'groupPostId', 'groupReceiptId'] as const) delete value[key]
   return value
 }
