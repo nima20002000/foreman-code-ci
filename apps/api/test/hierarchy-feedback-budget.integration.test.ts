@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { inspect } from 'node:util'
 import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
 import { WorkActivationInputSchema } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
@@ -41,10 +42,13 @@ describe.skipIf(!postgresEnabled)('hierarchy expanded feedback reservation', () 
     })
     const f = await currentOperatorIntegration({ fixture, approvalNodeIds: [], collaborationPorts: {},
       managerFactory: context => provider.connection(context) })
-    const drive = f.engine.start(f.f.run.id).catch(error => error)
+    let failure: unknown
+    const drive = f.engine.start(f.f.run.id).catch(error => { failure = error; return error })
     try {
-      await expect.poll(async () => (await f.db.pool.query('select code from run_hierarchy_refusals where run_id=$1',
-        [f.f.run.id])).rows, { timeout: 15_000 }).toEqual([{ code: 'HIERARCHY_INPUT_TOO_LARGE' }])
+      await expect.poll(async () => {
+        expect(failure, inspect(failure, { depth: 8 })).toBeUndefined()
+        return (await f.db.pool.query('select code from run_hierarchy_refusals where run_id=$1', [f.f.run.id])).rows
+      }, { timeout: 15_000 }).toEqual([{ code: 'HIERARCHY_INPUT_TOO_LARGE' }])
       expect((await f.runs.listRepeatExecutions(f.f.run.id)).some(row => workers.includes(row.execution.workflowNodeId))).toBe(false)
       expect((await f.db.pool.query('select destination_node_id from run_work_requests where run_id=$1',
         [f.f.run.id])).rows).toEqual([{ destination_node_id: 'build' }])

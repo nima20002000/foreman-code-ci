@@ -1,4 +1,4 @@
-import { canonicalGraphJson, type HierarchyWorkGroup, type WorkActivationInput,
+import { canonicalGraphJson, WORK_RETURN_MAX_BYTES, type HierarchyWorkGroup, type WorkActivationInput,
   type WorkRequest } from '@foreman-code/contracts/wave25'
 
 const INPUT_BYTES = 4 * 1024 * 1024
@@ -23,8 +23,9 @@ export function hasHierarchyParentInputCapacity(group: HierarchyWorkGroup,
         resultDigest: `sha256:${'0'.repeat(64)}`, outcome: 'needs_changes',
         continuationActivationId: activation.activationId, summary, remainingFindingsCount: 1000 }
       const failure = { ...member, executionId: maximumId, outcome: 'canceled', code: '\u0001'.repeat(80), summary }
-      // One comma per member is a conservative bound across both existing arrays.
-      size += Math.max(bytes(returned), bytes(failure)) + 1
+      // The validated WorkReturn bounds its entire deliverable/findings payload.
+      // Feedback also carries a summary and identifiers; one comma covers array separation.
+      size += Math.max(bytes(returned) + WORK_RETURN_MAX_BYTES, bytes(failure)) + 1
     }
     return size <= INPUT_BYTES
   } catch {

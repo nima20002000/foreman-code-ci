@@ -159,7 +159,9 @@ export function productionClaudeFixture(surface: 'workflow' | 'operator' | 'agen
   const queries: { frames: ClaudeBoundedQueue<unknown>; messages: AsyncIterator<ClaudeSdkUserMessage> }[] = []
   const initialFrames = new ClaudeBoundedQueue<unknown>(64)
   const ready = rejectableDeferred<AsyncIterator<ClaudeSdkUserMessage>>()
-  const setMcpServers = vi.fn(async () => ({ added: ['graphql'], removed: [], errors: {} }))
+  const setMcpServers = vi.fn<(servers: Readonly<Record<string, unknown>>) =>
+    Promise<{ added: string[]; removed: string[]; errors: Record<string, never> }>>(
+    async () => ({ added: ['graphql'], removed: [], errors: {} }))
   const sdkQuery = vi.fn<ClaudeSdkClient['query']>(options => {
     const frames = queries.length ? new ClaudeBoundedQueue<unknown>(64) : initialFrames
     const incoming = options.prompt[Symbol.asyncIterator]()

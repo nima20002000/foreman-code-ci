@@ -14,9 +14,9 @@ import { assertClaudeCredentialEndpoint } from './mcpInspection.js'
 export async function prepareClaudeWorkflowCredentials(options: {
   input: ExecutionCredentialPrepareInput
   configuration: ClaudeHarnessConfiguration
-  claude: ReturnType<typeof productionClaudeManager>
+  claude: Pick<ReturnType<typeof productionClaudeManager>, 'manager' | 'inspectionStart'>
   inspector: NativeMcpInspector
-  detection: McpDetectionService
+  detection: Pick<McpDetectionService, 'preflight'>
   credentials: Pick<Wave25WorkerCredentialService, 'issueForConsultation' | 'issueForReviewer' | 'issueForExecution'
     | 'revokeSupersededForExecution' | 'revoke'>
   runnerId: string

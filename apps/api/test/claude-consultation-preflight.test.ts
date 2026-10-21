@@ -34,7 +34,7 @@ describe('production Claude consultation credential preparation', () => {
     const credentials = { issueForExecution: vi.fn(async () => issue('source-token')),
       issueForReviewer: vi.fn(async () => issue('source-token')),
       issueForConsultation: vi.fn(async () => issue('consultation-token')),
-      revokeSupersededForExecution: vi.fn(async () => {}), revoke: vi.fn(async () => {}) }
+      revokeSupersededForExecution: vi.fn(async () => 0), revoke: vi.fn(async () => {}) }
     const inspector = f.factories.inspector(f.manager)
     const detection = new McpDetectionService(inspector, endpoint.url)
     const prepare = (consulting: boolean) => prepareClaudeWorkflowCredentials({

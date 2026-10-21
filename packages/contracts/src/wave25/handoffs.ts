@@ -62,6 +62,8 @@ export const WorkRequestSchema = z.object({
 }).strict().refine((value) => value.requesterNodeId !== value.destinationNodeId, 'HANDOFF_SELF_REQUEST')
 export type WorkRequest = z.infer<typeof WorkRequestSchema>
 
+export const WORK_RETURN_MAX_BYTES = 64 * 1024
+
 export const WorkReturnSchema = z.object({
   scope: WorkHandoffScopeSchema, returnId: GraphIdSchema, requestId: GraphIdSchema,
   sourceActivationId: GraphIdSchema, sourceExecutionId: GraphIdSchema, requesterActivationId: GraphIdSchema,
@@ -73,7 +75,7 @@ export const WorkReturnSchema = z.object({
     context.addIssue({ code: 'custom', path: ['continuationActivationId'], message: 'HANDOFF_RETURN_CONTINUATION_CONFLICT' })
   }
   if (value.latestDeliverable === null) context.addIssue({ code: 'custom', path: ['latestDeliverable'], message: 'HANDOFF_DELIVERABLE_REQUIRED' })
-  try { canonicalGraphJson(value, 64 * 1024) } catch { context.addIssue({ code: 'custom', message: 'HANDOFF_RETURN_TOO_LARGE' }) }
+  try { canonicalGraphJson(value, WORK_RETURN_MAX_BYTES) } catch { context.addIssue({ code: 'custom', message: 'HANDOFF_RETURN_TOO_LARGE' }) }
 })
 export type WorkReturn = z.infer<typeof WorkReturnSchema>
 
