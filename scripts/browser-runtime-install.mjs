@@ -384,6 +384,8 @@ export async function assembleBrowserRuntime({ repository, commit, target, forem
     const result = await packBrowserRuntime({ unit, output, manifest, outputOwned: true, onProgress });
     onProgress?.('runtime-packed');
     await writeFile(join(output, 'resolved-lock.json'), lockBytes, { flag: 'wx', mode: 0o600 });
+    await writeFile(join(output, 'index.json'), `${JSON.stringify({ format: 1, sourceCommit: commit,
+      artifacts: [{ directory: '.', target, descriptorSha256: result.descriptorSha256 }] })}\n`, { flag: 'wx', mode: 0o600 });
     return result;
   } catch (error) { await rm(output, { recursive: true, force: true }); throw error; }
   finally { if (temporary) await rm(temporary, { recursive: true, force: true }); }

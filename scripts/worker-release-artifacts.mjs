@@ -110,9 +110,9 @@ async function verifyArtifact(directory, target, version, commit) {
     }
   }
   if (manifest.browserRuntime) {
-    const { readBrowserRuntimeArtifact } = await import('../apps/worker/src/browserRuntimeInstall.mjs')
+    const { readBrowserRuntimeArtifact, matchesBrowserRuntimeTarget } = await import('../apps/worker/src/browserRuntimeInstall.mjs')
     const runtime = await readBrowserRuntimeArtifact(join(directory, 'artifacts/browser-runtime'), manifest.browserRuntime.descriptorSha256)
-    if (runtime.manifestSha256 !== manifest.browserRuntime.manifestSha256 || !isDeepStrictEqual(runtime.target, target)) {
+    if (runtime.manifestSha256 !== manifest.browserRuntime.manifestSha256 || !matchesBrowserRuntimeTarget(runtime.target, target)) {
       throw new Error('Browser runtime differs from the Worker target or locked descriptor')
     }
   }

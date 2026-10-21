@@ -19,8 +19,9 @@ function safePath(path) {
   return typeof path === 'string' && path.length <= 1024 && /^[a-zA-Z0-9_@.+/[\]-]+$/.test(path)
     && path.split('/').every(part => part && part !== '.' && part !== '..');
 }
-function sameTarget(actual, expected) {
-  return ['os', 'osRelease', 'arch', 'libc', 'node'].every(key => actual?.[key] === expected?.[key]);
+export function matchesBrowserRuntimeTarget(actual, expected) {
+  return ['os', 'osRelease', 'arch', 'libc'].every(key => actual?.[key] === expected?.[key])
+    && /^v22\./.test(actual?.node ?? '') && /^v22\./.test(expected?.node ?? '');
 }
 
 export function validateBrowserRuntimeManifest(manifest, target) {
@@ -29,7 +30,7 @@ export function validateBrowserRuntimeManifest(manifest, target) {
   invariant(/^[a-f0-9]{40}$/.test(manifest.sourceCommit) && manifest.profileFormat === 1, 'unsupported profile format');
   invariant(manifest.target?.os === 'ubuntu' && manifest.target.arch === 'x64'
     && /^glibc-\d+\.\d+$/.test(manifest.target.libc), 'unsupported Foreman target');
-  if (target) invariant(sameTarget(manifest.target, target), 'target mismatch');
+  if (target) invariant(matchesBrowserRuntimeTarget(manifest.target, target), 'target mismatch');
   invariant(digest.test(manifest.resolvedLockSha256) && Array.isArray(manifest.files)
     && manifest.files.length > 0 && manifest.files.length <= 100000, 'missing locked file inventory');
   const paths = new Set();
@@ -141,6 +142,35 @@ export async function readBrowserRuntimeArtifact(artifact, expectedSha256) {
   }
   invariant(total === descriptor.compressedBytes && total <= maxExpanded, 'invalid archive size');
   return descriptor;
+}
+
+/** Consume a runner-built unit without launching target executables on the release assembler. */
+export async function copyBuiltBrowserRuntime({ directory, output, target, commit }) {
+  invariant(directory, 'Build browser units on a matching target runner and supply its artifact index.');
+  const index = JSON.parse(await readRegularFile(join(directory, 'index.json'), 1024 * 1024));
+  invariant(index.format === 1 && index.sourceCommit === commit && Array.isArray(index.artifacts), 'build index source mismatch');
+  const candidates = index.artifacts.filter(entry => matchesBrowserRuntimeTarget(entry.target, target));
+  invariant(candidates.length === 1, 'No unique browser unit from a matching target runner.');
+  const entry = candidates[0];
+  invariant(entry.directory === '.' || safePath(entry.directory), 'unsafe build artifact directory');
+  const artifact = join(directory, entry.directory);
+  const descriptor = await readBrowserRuntimeArtifact(artifact, entry.descriptorSha256);
+  invariant(descriptor.sourceCommit === commit && matchesBrowserRuntimeTarget(descriptor.target, target), 'build artifact target or source mismatch');
+  await mkdir(output, { mode: 0o700 });
+  const archiveHash = createHash('sha256');
+  try {
+    for (const chunk of descriptor.chunks) {
+      const bytes = await readRegularFile(join(artifact, chunk.path), BROWSER_RUNTIME_CHUNK_BYTES);
+      invariant(bytes.length === chunk.size && hash(bytes) === chunk.sha256, 'build chunk checksum mismatch');
+      archiveHash.update(bytes);
+      await writeFile(join(output, chunk.path), bytes, { flag: 'wx', mode: 0o600 });
+    }
+    invariant(archiveHash.digest('hex') === descriptor.archiveSha256, 'build archive checksum mismatch');
+    const bytes = await readRegularFile(join(artifact, 'browser-runtime.json'), 1024 * 1024);
+    invariant(hash(bytes) === entry.descriptorSha256, 'build descriptor changed during copy');
+    await writeFile(join(output, 'browser-runtime.json'), bytes, { flag: 'wx', mode: 0o600 });
+    return { descriptor, descriptorSha256: entry.descriptorSha256 };
+  } catch (error) { await rm(output, { recursive: true, force: true }); throw error; }
 }
 
 async function collectArchive(artifact, descriptor, destination, signal) {
