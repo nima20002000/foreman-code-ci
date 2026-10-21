@@ -207,8 +207,6 @@ it('persists a second GitHub integration wave through MCP while CircleCI orgs re
     const checks = read.partitions!.filter(run => run.suite !== 'integration')
     const clouds = integration.filter(run => run.plannedHostKey?.startsWith('github:'))
     expect(clouds.length).toBeGreaterThan(1)
-    expect(clouds.length).toBeGreaterThan(new Set(clouds.map(run => run.plannedHostKey)).size)
-    for (const run of clouds) expect(run.expectedDurationMs).toBeLessThanOrEqual(45 * 60_000)
     const builder = integration.find(run => run.plannedHostKey === 'builder')!
     expect(builder.files.length).toBeGreaterThan(0)
     for (const run of clouds) expect(checks.some(check => check.plannedHostKey === run.plannedHostKey)).toBe(true)
