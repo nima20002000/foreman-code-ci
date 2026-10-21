@@ -1,10 +1,8 @@
-import { z } from 'zod'
 import {
   HarnessMcpListInputSchema, HarnessMcpListResultSchema, HarnessMcpPlanInputSchema, HarnessMcpPlanResultSchema,
   HarnessMcpManagedInputSchema, HarnessMcpPlanGetInputSchema, HarnessMcpPlanSchema, HarnessMcpReconcileInputSchema,
   CodexPluginListInputSchema, CodexPluginListResultSchema, CodexPluginGetInputSchema, CodexPluginDetailResultSchema,
   CodexPluginChangeInputSchema, CodexPluginChangeResultSchema, CodexPluginReconcileInputSchema,
-  CodexPluginOperationsResultSchema, HarnessMcpPlansResultSchema, HarnessMcpDecisionInputSchema,
 } from '@foreman-code/contracts/management'
 import { defineOperatorTool } from '../definition.js'
 
@@ -28,15 +26,6 @@ export const harnessMcpTools = [
     inputSchema: CodexPluginGetInputSchema, outputSchema: CodexPluginDetailResultSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (context, input, { extra }) => context.services.harnessSettings!.plugins!.get(context.principal, input.pluginId, { signal: extra.mcpReq.signal, refresh: input.refresh }),
-  }),
-  defineOperatorTool({
-    name: 'codex_plugin_operations_list',
-    requires: [['harnesses:read', 'global'], ['harnesses:update', 'global']],
-    enabled: s => !!s.harnessSettings?.plugins,
-    description: 'Recover unresolved Codex plugin operations with their retained commandId, requestedBy, original input and result. Uses the same recovery access as the settings UI: harnesses:read and harnesses:update. Pass the original commandId and requestedBy to codex_plugin_reconcile; never repeat an uncertain install or removal.',
-    inputSchema: z.object({}), outputSchema: CodexPluginOperationsResultSchema,
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    run: context => context.services.harnessSettings!.plugins!.operations(context.principal),
   }),
   defineOperatorTool({
     name: 'harness_mcp_servers_list',
@@ -66,29 +55,10 @@ export const harnessMcpTools = [
     run: (context, input) => context.services.harnessSettings!.mcp.applyManaged(context.principal, input, 'mcp'),
   }),
   defineOperatorTool({
-    name: 'harness_mcp_plans_list',
-    requires: [['harnesses:read', 'global']],
-    enabled: s => !!s.harnessSettings,
-    description: 'List retained native MCP change plans for a harness, including pending and uncertain changes. Uses the same ownership filtering as the settings UI. Read a plan with harness_mcp_change_get; approve or reject an existing pending plan ID with harness_mcp_change_decide. New changes still apply directly with harness_mcp_change_request or harness_mcp_managed_request.',
-    inputSchema: HarnessMcpListInputSchema.pick({ harness: true }), outputSchema: HarnessMcpPlansResultSchema,
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    run: (context, input) => context.services.harnessSettings!.mcp.plans(context.principal, input.harness),
-  }),
-  defineOperatorTool({
-    name: 'harness_mcp_change_decide',
-    requires: [['harnesses:update', 'global'], ['harnesses:read', 'global']],
-    enabled: s => !!s.harnessSettings,
-    description: 'Decide an existing pending native MCP plan by planId: approve true applies it; approve false rejects it without a native write. Retains the shared service validation and audit; retries never replay settled or uncertain writes. Discover original IDs with harness_mcp_plans_list. This is recovery for existing plans; new changes apply directly without an approval step.',
-    inputSchema: HarnessMcpDecisionInputSchema, outputSchema: HarnessMcpPlanSchema,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    run: (context, input) => context.services.harnessSettings!.mcp.decide(
-      context.principal, input.planId, input.approve, 'mcp'),
-  }),
-  defineOperatorTool({
     name: 'harness_mcp_change_get',
     requires: [['harnesses:read', 'global']],
     enabled: s => !!s.harnessSettings,
-    description: 'Read an accessible MCP change by planId. Rediscover retained IDs with harness_mcp_plans_list. Pending means it was not applied yet; use harness_mcp_change_decide to apply or reject that existing plan. For an uncertain write use harness_mcp_change_reconcile. Never resubmit an uncertain native write.',
+    description: 'Read your own MCP change. Pending means it was not applied yet (busy or expired); retry the original command. For an uncertain write use harness_mcp_change_reconcile. Never resubmit an uncertain native write.',
     inputSchema: HarnessMcpPlanGetInputSchema, outputSchema: HarnessMcpPlanSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (context, input) => context.services.harnessSettings!.mcp.get(context.principal, input.planId),
@@ -115,7 +85,7 @@ export const harnessMcpTools = [
     name: 'codex_plugin_reconcile',
     requires: [['harnesses:update', 'global'], ['harnesses:read', 'global']],
     enabled: s => !!s.harnessSettings?.plugins,
-    description: 'Settle an uncertain Codex plugin change by reading the native plugin state. Rediscover the original commandId and requestedBy with codex_plugin_operations_list. Never repeats the install or removal.',
+    description: 'Settle an uncertain Codex plugin change by reading the native plugin state. Never repeats the install or removal.',
     inputSchema: CodexPluginReconcileInputSchema, outputSchema: CodexPluginChangeResultSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (context, input) => context.services.harnessSettings!.plugins!.reconcile(context.principal, input, 'mcp'),

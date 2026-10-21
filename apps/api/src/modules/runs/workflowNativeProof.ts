@@ -299,31 +299,6 @@ export class WorkflowNativeProofServices {
     } catch (error) { poisonGraphTransaction(sql); throw error }
   }
 
-  /** Physical settlement may follow terminal publication. Retain its new proof
-   * without rewriting the immutable result or applying its board effects again. */
-  async retainSettledTerminalLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
-    evidence: RepeatNativeEvidence, owner: RunOwnership): Promise<void> {
-    const capture = this.captures.read(evidence)
-    const current = await this.current(sql, run, capture.execution.id, owner)
-    const execution = current.stored.execution
-    if (execution.state !== 'completed' || capture.source.type !== 'history' || !capture.lane) return fail()
-    const history = capture.source.history
-    const command = history.correlationId ?? ''
-    await assertWorkflowCorrelation(sql, execution.id, command)
-    assertOriginalWorkflowTerminal(execution, capture.session, history, command)
-    const original = (await sql.query<{ record: WorkflowNativeProofRecord }>(`select record from workflow_native_proofs
-      where run_id=$1 and execution_id=$2 and record->>'observedAt'=$3
-        and record#>>'{original,type}'='history'
-        and record#>>'{original,history,correlationId}'=$4`,
-    [run.id, execution.id, execution.finishedAt, command])).rows
-    if (!original.some(({ record }) => record.original.type === 'history'
-      && sameRepeatValue(record.session, capture.session)
-      && sameRepeatValue(record.original.history.terminalTurn, history.terminalTurn))) {
-      return fail('NATIVE_TERMINAL_EVIDENCE_MISMATCH')
-    }
-    await this.persistCapturedOriginalLocked(sql, run, evidence, owner, capture, current)
-  }
-
   private async persistCapturedOriginalLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
     evidence: RepeatNativeEvidence, owner: RunOwnership, capture: WorkflowNativeCapture,
     current: { stored: StoredRepeatExecution; scope: RepeatScope },
