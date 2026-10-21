@@ -1,3 +1,4 @@
+import type { createProductionBrowser } from '../../modules/collaboration/browserComposition.js'
 import type { DeviceManagementService } from '../../modules/devices/management.js'
 import type { FileReferenceService } from '../../modules/files/references/service.js'
 import type { RunGraphReadApi } from '../../modules/run-graph/readService.js'
@@ -23,6 +24,8 @@ import type { FoundationSettingsManagementService } from '../../modules/settings
 import type { OperatorInteractionService } from '../../modules/interactions/operator.js'
 
 export interface OperatorServices {
+  browser?: ReturnType<typeof createProductionBrowser>
+
   executionChat?: import('../../modules/collaboration/workflowChatService.js').WorkflowExecutionChatService
   workflowHierarchy?: import('../../modules/workflow-hierarchy/service.js').WorkflowHierarchyService
   circleAccounts?: import('../../modules/settings/circleAccounts.js').CircleAccountsManagementService
