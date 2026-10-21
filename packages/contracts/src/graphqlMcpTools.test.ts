@@ -18,12 +18,12 @@ describe('Foreman Code MCP tools per Agent', () => {
     expect(effectiveGraphqlTools('coder', [], { add: ['interaction_respond'], remove: [] })).toEqual(['bug_report'])
     expect(effectiveGraphqlTools('orchestrator', [], { add: ['interaction_respond'], remove: [] }))
       .toEqual(['bug_report', 'interaction_respond'])
-    expect(graphqlToolRoles('interaction_respond')).toEqual(['operator', 'master', 'orchestrator'])
+    expect(graphqlToolRoles('interaction_respond')).toEqual(['operator', 'orchestrator'])
   })
   it('keeps workflow output settings within Agent roles and honors explicit defaults and node removals', () => {
     const outputs = Object.values(WORKER_NATIVE_OUTPUT_TOOL_NAMES)
     for (const tool of outputs) {
-      expect(graphqlToolRoles(tool)).toEqual(['master', 'orchestrator', 'coder'])
+      expect(graphqlToolRoles(tool)).toEqual(['orchestrator', 'coder'])
       expect(GraphqlToolOverrideSchema.parse({ add: [tool], remove: [] }).add).toEqual([tool])
       expect(effectiveGraphqlTools('coder', ['context_get'], { add: [tool], remove: [] }))
         .toEqual(['bug_report', 'context_get', tool])
@@ -34,7 +34,7 @@ describe('Foreman Code MCP tools per Agent', () => {
   it('keeps reference reads within Agent roles and honors their defaults and node removals', () => {
     const references = ['files.references_list', 'files.reference_read'] as const
     for (const tool of references) {
-      expect(graphqlToolRoles(tool)).toEqual(['master', 'orchestrator', 'coder'])
+      expect(graphqlToolRoles(tool)).toEqual(['orchestrator', 'coder'])
       expect(effectiveGraphqlTools('coder', [], { add: [tool], remove: [] })).toEqual(['bug_report', tool])
     }
     expect(effectiveGraphqlTools('coder', [...references], { add: [], remove: [...references] })).toEqual(['bug_report'])
@@ -53,7 +53,7 @@ describe('Foreman Code MCP tools per Agent', () => {
     for (const role of ['coder', 'orchestrator'] as const) {
       expect(effectiveGraphqlTools(role, [], { add: [], remove: ['bug_report'] })).toEqual(['bug_report'])
     }
-    expect(graphqlToolRoles('bug_report')).toEqual(['operator', 'master', 'orchestrator', 'coder'])
+    expect(graphqlToolRoles('bug_report')).toEqual(['operator', 'orchestrator', 'coder'])
   })
 
   it('accepts only known Agent tools, without overlap', () => {
