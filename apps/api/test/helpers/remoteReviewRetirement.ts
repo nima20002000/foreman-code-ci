@@ -15,7 +15,9 @@ export function retirementReplyBarrier(pauseReconnect: () => void) {
     observe(data: RawData, direction: 'to-worker' | 'to-main') {
       const frame = JSON.parse(data.toString()) as DeviceApplicationFrame
       if (!('id' in frame)) return false
-      const held = direction === 'to-main' && frame.id === heldId
+      // The response header must reach Main so its offset-zero ACK lets the
+      // Worker send the body. Holding only that body leaves Main awaiting it.
+      const held = direction === 'to-main' && frame.id === heldId && frame.type === 'application-chunk'
       const key = `${direction}:${frame.id}`
       if (frame.type === 'application-open' && frame.namespace === 'execution-v1') {
         messages.set(key, { size: frame.jsonBytes, chunks: [], received: 0 })
