@@ -66,13 +66,13 @@ export function createWorkflowChatOwner(deps: WorkflowChatNativeOwnerDependencie
   return {
     transaction,
     readNative: (target, input) => readWorkflowNativeChat(deps.sql, target, input),
-    observe: async target => {
+    capabilities: async target => {
       const capture = deps.captureForRead(target)
       const capabilities: EngineChatReadback['capabilities'] = { queue: true,
         steer: capture?.native.steer ? 'native_expected_turn' : 'unavailable',
         interruptAndSend: capture?.native.interruptAndSend ?? false }
       capture?.assertCurrent()
-      return { capabilities, ...(capture?.native.nativeTurnId ? { nativeTurnId: capture.native.nativeTurnId } : {}) }
+      return capabilities
     },
     validateAdmission: deps.validateAdmission,
     dispatch: (target, id) => deps.withOwner(target, async (owner, source) => {

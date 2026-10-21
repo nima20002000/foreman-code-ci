@@ -4,7 +4,7 @@ import { assertSession, installationHeaders, reloadChangedInstallation, sessionG
 /** Transport only. D supplies canonical C0 serialization/parsing; no wire shape lives here. */
 export interface BrowserWireCodec<Arguments extends readonly unknown[], Result> {
   encode(...args: Arguments): { json?: unknown; bytes?: Uint8Array; query?: URLSearchParams; headers?: HeadersInit }
-  decode(response: Response): Promise<Result>
+  decode(response: Response, args: Arguments): Promise<Result>
 }
 
 export type BrowserMethodCodec<Method> = Method extends (...args: infer Arguments) => Promise<infer Result>
@@ -37,7 +37,7 @@ export function createBrowserHttp(options: BrowserHttpOptions) {
       if (failure.code) reloadChangedInstallation(failure.code)
       throw Object.assign(new Error(failure.message), failure, { status: response.status })
     }
-    const result = await codec.decode(response)
+    const result = await codec.decode(response, args)
     assertSession(generation); requestSignal.throwIfAborted()
     return result
   }

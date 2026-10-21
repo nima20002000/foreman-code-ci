@@ -1,3 +1,5 @@
+import { COLLABORATION_AGENT_TOOLS, HarnessConfigurationSchema } from '@foreman-code/contracts'
+import { browserAgentTools } from '../collaboration/browserTools.js'
 import { readConversationCredential } from '../access/conversationCredentials.js'
 import {
   IdSchema,
@@ -145,12 +147,12 @@ export class PostgresAppInteractionService implements AppInteractionService {
     workerScope(principal)
     // The Run pins the exact configuration version and workflow version; both are immutable for this credential.
     const result = await this.pool.query<{ role: string | null; defaults: unknown; override: unknown;
-      harness: unknown; artifact_outputs: unknown; purpose: string; local_outputs: boolean; interval: unknown }>(
+      harness: unknown; artifact_outputs: unknown; purpose: string; local_outputs: boolean; interval: unknown; browser: { enabled?: boolean } | null }>(
       `select c.record->>'productRole' as role, c.record->'graphqlTools' as defaults,
          c.record->'harness' as harness,b.purpose,
          ((p.run_id is null and r.record#>>'{executionLocation,runnerId}'='runner-local')
            or p.record#>>'{hostRef,kind}'='main') as local_outputs,
-         n->'graphqlTools' as override,n->'artifactOutputs' as artifact_outputs,n->'interval' as interval
+         n->'graphqlTools' as override,n->'artifactOutputs' as artifact_outputs,n->'interval' as interval,n->'browser' as browser
        from worker_credential_bindings b
        join runs r on r.id=b.run_id
        join agent_configuration_versions c on c.id=(r.record->'agentConfigurationVersionIds'->>b.agent_id)
@@ -175,7 +177,11 @@ export class PostgresAppInteractionService implements AppInteractionService {
     const override = row.override == null ? undefined : GraphqlToolOverrideSchema.parse(row.override)
     const subject = row.purpose === 'consultation'
       ? await readConsultationCredentialSubject(this.pool, principal.id) : undefined
-    const tools = effectiveGraphqlTools(role, defaults, override, row.interval != null, ['workflow_chat_read', 'workflow_chat_post']).filter(tool => {
+    const implemented = ['workflow_chat_read', 'workflow_chat_post', ...(row.browser?.enabled ? browserAgentTools : [])] as const
+    const harness = HarnessConfigurationSchema.parse(row.harness)
+    const readOnly = harness.harness === 'opencode' || harness.sandbox === 'read-only'
+    const tools = effectiveGraphqlTools(role, defaults, override, row.interval != null, implemented).filter(tool => {
+      if (tool.startsWith('browser_') && readOnly && !COLLABORATION_AGENT_TOOLS[tool as keyof typeof COLLABORATION_AGENT_TOOLS].readOnly) return false
       if (subject && tool === 'interaction_respond') return false
       const operation = WorkerNativeOutputOperationSchema.options.find(operation =>
         WORKER_NATIVE_OUTPUT_TOOL_NAMES[operation] === tool)

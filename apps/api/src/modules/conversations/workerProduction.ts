@@ -131,8 +131,7 @@ async function authorizeWorkerConversationRequest(pool: pg.Pool, live: OwnerRow,
   }
   if (context.changingAccess && request.method === 'conversation.open'
     && (!live.active_request_id || request.mode !== 'attach'
-      || request.operationId !== (live.kind === 'agent' ? agentChatCorrelation(live.id, live.active_request_id)
-        : nativeCorrelation(live.id, live.active_request_id))
+      || request.operationId !== nativeCorrelation(live.id, live.active_request_id)
       || !isDeepStrictEqual(request.previousBinding, context.originalBinding))) {
     unavailable('The native access change differs from the admitted Operator message.')
   }
