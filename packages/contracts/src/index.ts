@@ -1,4 +1,3 @@
-import { ChatDeliveryIntentSchema, ChatDeliveryReceiptSchema } from './chatDelivery.js';
 import { AgentProductRoleSchema as WorkflowAgentProductRoleSchema, type WorkflowAgentProductRole } from './agentIdentity.js';
 import { ResultProtocolSchema } from './coordinationResult.js';
 import { MessageSchema } from './messages.js';
@@ -1474,8 +1473,6 @@ export const ListOperatorConversationsResponseSchema = z.object({ conversations:
 export const GetOperatorConversationResponseSchema = OperatorConversationStateSchema;
 export const SendOperatorMessageRequestSchema = z.object({
   requestId: IdSchema,
-  intent: ChatDeliveryIntentSchema.optional(),
-  expectedNativeTurnId: IdSchema.optional(),
   ...MessageAttachmentFields,
   content: z.string().trim().describe('Message text, up to 768 KiB as UTF-8 JSON including request metadata. Receipt-only recovery retains previously accepted input.'),
   sessionMode: z.enum(['regular', 'plan']).optional(),
@@ -1493,10 +1490,7 @@ export const SendOperatorMessageRequestSchema = z.object({
 }).superRefine((value, context) => {
   if (value.recovery !== 'receipt') refineChatMessageSize(value, context)
 });
-export const SendOperatorMessageResponseSchema = z.union([
-  z.object({ state: OperatorConversationStateSchema, replayed: z.boolean() }).strict(),
-  z.object({ state: OperatorConversationStateSchema.optional(), receipt: ChatDeliveryReceiptSchema, replayed: z.boolean() }).strict(),
-]);
+export const SendOperatorMessageResponseSchema = z.object({ state: OperatorConversationStateSchema, replayed: z.boolean() }).strict();
 export const CancelOperatorTurnRequestSchema = z.object({ requestId: IdSchema, commandId: z.string().min(8).max(200).optional() }).strict();
 export const RespondOperatorInteractionRequestSchema = z.object({
   commandId: z.string().min(8).max(200).optional(),
