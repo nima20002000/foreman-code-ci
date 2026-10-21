@@ -87,6 +87,7 @@ export interface BrowserRuntimeSessionRecord {
   leases: Array<{ lease: BrowserTabLease; targetId: string }>
   /** Private replay and owner lifecycle identity; no secrets, input text, or frames. */
   prepareCommandId: string; closing: boolean
+  viewerDisconnected?: boolean
 }
 
 export interface BrowserActor {

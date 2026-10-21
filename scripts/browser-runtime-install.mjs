@@ -139,7 +139,7 @@ function validateWheelClosure(lock, inputs) {
 async function installLockedWheels({ lock, inputs, python, wheelhouse, unit, licenseTexts, fetchArtifact, run }) {
   validateWheelClosure(lock, inputs);
   await mkdir(wheelhouse, { mode: 0o700 });
-  for (const wheel of lock.packages) await download(wheel.url, join(wheelhouse, wheel.filename), wheel.sha256, fetchArtifact);
+  for (const wheel of lock.packages) await downloadBrowserRuntimeArtifact(wheel.url, join(wheelhouse, wheel.filename), wheel.sha256, fetchArtifact);
   const requirements = join(wheelhouse, 'requirements.lock');
   await writeFile(requirements, lock.packages.map(item => `${item.name}==${item.version} --hash=sha256:${item.sha256}`).sort().join('\n') + '\n', { mode: 0o600 });
   await run(python, ['-I', '-B', '-m', 'pip', '--isolated', 'install', '--no-index', '--no-compile', '--require-hashes',

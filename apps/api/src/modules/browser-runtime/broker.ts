@@ -76,6 +76,7 @@ export class BrowserBroker implements BrowserLifecyclePort {
       live.gate.fence()
       if (record.session.state !== 'closed') {
         record.session.state = 'recovering'; record.control.state = 'paused'; record.control.epoch++
+        record.viewerDisconnected = true
         record.control.reason = 'The browser host reconnected. Check the current page before returning control.'
       } else live.gate.close()
       this.sessions.set(record.session.id, live)
@@ -424,11 +425,12 @@ export class BrowserBroker implements BrowserLifecyclePort {
     return this.command(`${input.sessionId}:acquire:${input.commandId}`, input, markEffect => this.controlOperation(input.sessionId, async () => {
       const control = live.record.control
       if (live.record.closing || live.record.session.state === 'closed') throw new DomainError('BROWSER_CLOSED', 'The browser session is closing.', 409)
-      if (control.controllingViewerId && control.controllingViewerId !== input.viewerId) {
+      if (control.controllingViewerId && control.controllingViewerId !== input.viewerId && !live.record.viewerDisconnected) {
         throw new DomainError('BROWSER_CONTROL_BUSY', 'Another viewer controls this browser.', 409)
       }
       if (control.state === 'user') return structuredClone(control)
       markEffect(); live.gate.fence()
+      live.record.viewerDisconnected = false
       control.epoch++; control.state = 'quiescing'; control.controllingViewerId = input.viewerId; control.reason = null
       const transitionEpoch = control.epoch
       await this.persist(live)
@@ -545,7 +547,7 @@ export class BrowserBroker implements BrowserLifecyclePort {
     const live = this.requireSession(sessionId)
     if (live.record.control.controllingViewerId !== viewerId) return
     live.gate.fence(); live.record.control.epoch++; live.record.control.state = 'paused'
-    live.record.control.controllingViewerId = null
+    live.record.viewerDisconnected = true
     live.record.control.reason = 'The controlling viewer disconnected. Browser actions are paused.'
     live.record.session.state = 'paused'; live.lastInput.clear(); await this.persist(live)
     const epoch = live.record.control.epoch
