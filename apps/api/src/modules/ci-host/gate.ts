@@ -58,17 +58,28 @@ export async function readCiComputerStatus(endpoint: HostCiEndpoint, computer: H
 async function gateComputers(endpoint: HostCiEndpoint, reservedCloudSlots: number,
   usedByComputer: ReadonlyMap<string, number>): Promise<GateComputer[]> {
   const computers = withoutReservedCloudSlots(await endpoint.computers(), reservedCloudSlots)
-  const available = await Promise.all(computers.map(async computer => {
-    const status = await readCiComputerStatus(endpoint, computer)
-    if (!status?.ready) return null
-    const shards = buildComputerIntegrationShards(status, computer.buildAllowancePercent)
-    const occupied = Math.max(status.slotsUsed ?? 0, usedByComputer.get(computer.key) ?? 0)
-    // Gate dispatch reserves the whole builder, so even a partially occupied builder cannot start a gate part.
-    const freeSlots = computer.hostRef.kind !== 'cloud' && occupied > 0
-      ? 0 : Math.max(0, (status.slotsTotal ?? 1) - occupied)
-    const available: GateComputer = { computer, shards, freeSlots, checkMs: 0, files: [] }
-    return available
-  }))
+  const available: (GateComputer | null)[] = []
+  const unreadableClouds: string[] = []
+  for (let offset = 0; offset < computers.length; offset += 8) {
+    const batch = await Promise.all(computers.slice(offset, offset + 8).map(async computer => {
+      const status = await readCiComputerStatus(endpoint, computer)
+      if (!status && computer.hostRef.kind === 'cloud') unreadableClouds.push(computer.key)
+      if (!status?.ready) return null
+      const shards = buildComputerIntegrationShards(status, computer.buildAllowancePercent)
+      const occupied = Math.max(status.slotsUsed ?? 0, usedByComputer.get(computer.key) ?? 0)
+      // Gate dispatch reserves the whole builder, so even a partially occupied builder cannot start a gate part.
+      const freeSlots = computer.hostRef.kind !== 'cloud' && occupied > 0
+        ? 0 : Math.max(0, (status.slotsTotal ?? 1) - occupied)
+      const available: GateComputer = { computer, shards, freeSlots, checkMs: 0, files: [] }
+      return available
+    }))
+    available.push(...batch)
+  }
+  if (unreadableClouds.length) {
+    throw new DomainError('CI_GATE_CAPACITY_REQUIRED',
+      'Cloud CI status is temporarily unavailable. Retry gate planning after the fleet can be read.',
+      409, { retryable: true, unavailableComputers: unreadableClouds.sort() })
+  }
   return available.filter((value): value is GateComputer => value !== null)
 }
 
@@ -109,7 +120,7 @@ export async function planCiGate(input: CiRunInput, integration: CiIntegrationIn
   const files = [...new Set(integration.files)].sort((left, right) => duration(right) - duration(left) || left.localeCompare(right))
   // Longest-first list scheduling over hosts and clouds with incremental shard loads: each file goes where it finishes
   // earliest (hosts win ties), so clouds only take integration that shortens the gate's critical path.
-  const load = new Map(integrationFleet.map(item => [item,
+  const load = new Map(fleet.map(item => [item,
     { lanes: Array.from({ length: item.shards }, () => 0), serial: 0, work: 0 }]))
   const factor = (item: GateComputer) => {
     const speed = speeds.get(executorSpeedKey(item.computer))
@@ -157,6 +168,18 @@ export async function planCiGate(input: CiRunInput, integration: CiIntegrationIn
   }
   // A recent slowdown bounds host work even if the typical estimate is optimistic.
   const integrationClouds = integrationFleet.filter(item => item.computer.hostRef.kind === 'cloud')
+  const [onlyHost, secondHost] = hosts.filter(item => item.files.length)
+  // A single-host fallback is useful only when it finishes before a checked cloud could take integration.
+  if (onlyHost && !secondHost && !integrationClouds.length) {
+    const hostEnd = finish(onlyHost, 'conservative')
+    const cloudCouldHelp = onlyHost.files.some(file => clouds.some(cloud =>
+      (!requiresUserSystemd(file) || cloud.computer.userSystemd?.supported) && finishWith(cloud, file) < hostEnd))
+    if (cloudCouldHelp) {
+      throw new DomainError('CI_GATE_CAPACITY_REQUIRED',
+        'Cloud slots are all assigned checks; more integration capacity is needed to avoid a slow single-computer gate. '
+        + 'Check cloud scheduling roles and credit availability.', 409, { retryable: true })
+    }
+  }
   for (const host of hosts) {
     while (host.files.length && finish(host, 'conservative') > Math.max(...clouds.map(item => finish(item)))) {
       const file = [...host.files].reverse().find(file => integrationClouds.some(item =>

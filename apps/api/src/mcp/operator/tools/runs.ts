@@ -88,7 +88,7 @@ export const runTools = [
     name: 'run_start',
     requires: [['runs:start', 'workflow'], ['workspace_locations:read', 'workspace']],
     enabled: s => !!s.runs,
-    description: 'Request one Run of the explicit saved version. New Runs pin resultProtocol f1-f4-v1: every successful Agent result includes summary and board alongside its saved data, routing and artifact fields. Historical Runs keep their saved protocol. Accepted Run authority survives starter-token expiry; '
+    description: 'Request one Run of the explicit saved version. Accepted Run authority survives starter-token expiry; '
       + 'Source admission reclaims eligible closed copies from completed Runs when byte capacity is full. '
       + 'Active writer pressure retries with backoff; run_get exposes persisted capacity diagnostics. '
       + 'owner revocation, current scopes, Stop and completion still apply. Every new workflow uses semantics 3, with or without '
