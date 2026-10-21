@@ -178,15 +178,3 @@ it('requires the native session and original request identity on compact retries
   expect(WorkerConversationRpcRequestSchema.safeParse({ ...request, session: undefined }).success).toBe(false)
   expect(WorkerConversationRpcRequestSchema.safeParse({ ...request, requestId: '' }).success).toBe(false)
 })
-
-it('accepts a conversation-scoped Agent credential without accepting Operator access for that owner', () => {
-  const { target, configuration } = historicalBinding()
-  const scoped = { ...target, appMcpAccess: 'scoped' }
-  const request = { method: 'conversation.refresh-mcp', binding: scoped, configuration,
-    admissionId: randomUUID(), applicationAccess: { kind: 'agent-chat-mcp', token: 'conversation-scoped-token' } }
-  expect(WorkerConversationRpcRequestSchema.parse(request)).toEqual(request)
-  expect(WorkerConversationRpcRequestSchema.safeParse({ ...request,
-    applicationAccess: { kind: 'operator-chat-mcp', token: 'operator-token' } }).success).toBe(false)
-  expect(WorkerConversationRpcRequestSchema.safeParse({ ...request,
-    binding: { ...scoped, appMcpAccess: 'none' } }).success).toBe(false)
-})

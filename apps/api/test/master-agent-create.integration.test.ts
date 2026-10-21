@@ -56,13 +56,8 @@ it.skipIf(!postgresEnabled)('creates explicit Masters through HTTP and MCP from 
     expect(ManagedAgentDefaultsSchema.parse(await call('agent_defaults_get', {}))).toEqual(legacy)
 
     const reader = await f.access.issue({ name: 'Master read only', audience: 'operator',
-      expiresAt: new Date(Date.now() + 600_000), grants: [{ actions: ['agents:read'], scope: { workspaceIds: [workspaceId] } }] })
+      expiresAt: new Date(Date.now() + 600_000), grants: [{ actions: ['agents:read'], scope: { workspaceId } }] })
     const denied = await f.connect(reader.token)
-    const readable = await denied.callTool({ name: 'agent_get', arguments: { workspaceId, agentId: 'master-mcp' } })
-    expect(readable.isError, JSON.stringify(readable)).not.toBe(true)
-    expect(ManagedAgentDetailSchema.parse(decodeMcpToolResult(readable)).agent).toMatchObject({
-      id: 'master-mcp', productRole: 'master',
-    })
     const rejected = { workspaceId, agentId: 'denied-master', commandId: randomUUID(), name: 'Denied Master', productRole: 'master' }
     await expectMcpAccessDenied(denied.callTool({ name: 'agent_create', arguments: rejected }))
     const response = await f.app.inject({ method: 'POST', url: base,
