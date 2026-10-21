@@ -1,7 +1,7 @@
 import type { CiHostReply, CiHostRequest, CiHostRun, CiHostStatus } from '@foreman-code/contracts'
-import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { DeviceApplicationAdmissionError } from '../devices/deviceApplicationError.js'
 import type { HostCiComputer, HostCiEndpoint } from './serviceTypes.js'
+import { ciComputerStatusKey } from './computerStatus.js'
 
 const FRESHNESS_MS = 5000
 /** How long dispatch keeps using the last successful read while a slower refresh of it is still running. */
@@ -38,7 +38,7 @@ export class CiPlanningSnapshot implements HostCiEndpoint {
 
   observeComputers(computers: HostCiComputer[]) {
     this.fleet = { at: Date.now(), computers }
-    const keys = new Set(computers.map(computer => canonicalJson(computer)))
+    const keys = new Set(computers.map(ciComputerStatusKey))
     for (const key of this.statuses.keys()) {
       if (!keys.has(key)) this.statuses.delete(key)
     }
@@ -49,14 +49,14 @@ export class CiPlanningSnapshot implements HostCiEndpoint {
 
   observeStatus(computer: HostCiComputer, reply: CiHostReply) {
     if (reply.operation === 'status') {
-      this.statuses.set(canonicalJson(computer), { at: Date.now(), status: reply })
-      this.lastKnown.set(canonicalJson(computer), { at: Date.now(), status: reply })
+      this.statuses.set(ciComputerStatusKey(computer), { at: Date.now(), status: reply })
+      this.lastKnown.set(ciComputerStatusKey(computer), { at: Date.now(), status: reply })
     } else if (reply.run.state === 'lost') {
       // A lost run says the computer itself may be gone; a failed test says nothing about its readiness.
       this.invalidate(computer)
     } else if (TERMINAL.has(reply.run.state)) {
       // A finished run frees its slot now; a held status must not keep it busy until the next read.
-      const key = canonicalJson(computer)
+      const key = ciComputerStatusKey(computer)
       for (const held of [this.statuses.get(key), this.lastKnown.get(key)]) {
         if (held?.status) held.status = releaseRun(held.status, reply.run)
       }
@@ -64,24 +64,24 @@ export class CiPlanningSnapshot implements HostCiEndpoint {
   }
 
   invalidate(computer: HostCiComputer) {
-    this.statuses.delete(canonicalJson(computer))
-    this.lastKnown.delete(canonicalJson(computer))
+    this.statuses.delete(ciComputerStatusKey(computer))
+    this.lastKnown.delete(ciComputerStatusKey(computer))
   }
 
   /** The newest status read for planning, fresh or not. Dispatch still validates readiness itself. */
   lastStatus(computer: HostCiComputer): CiHostStatus | undefined {
-    return this.lastKnown.get(canonicalJson(computer))?.status
+    return this.lastKnown.get(ciComputerStatusKey(computer))?.status
   }
 
   /** Dispatch's view: the fresh status, or the last successful one while its refresh is still running. A failed
    * read clears it, so a computer that stops answering is not dispatched to for longer than REFRESHING_MS. */
   dispatchStatus(computer: HostCiComputer): CiHostStatus | undefined {
-    const last = this.lastKnown.get(canonicalJson(computer))
+    const last = this.lastKnown.get(ciComputerStatusKey(computer))
     return this.status(computer) ?? (last && Date.now() - last.at < REFRESHING_MS ? last.status : undefined)
   }
 
   status(computer: HostCiComputer): CiHostStatus | undefined {
-    const snapshot = this.statuses.get(canonicalJson(computer))
+    const snapshot = this.statuses.get(ciComputerStatusKey(computer))
     return snapshot && Date.now() - snapshot.at < FRESHNESS_MS ? snapshot.status : undefined
   }
 
@@ -96,7 +96,7 @@ export class CiPlanningSnapshot implements HostCiEndpoint {
 
   async request(computer: HostCiComputer, request: CiHostRequest): Promise<CiHostReply> {
     if (request.operation !== 'status') return this.endpoint.request(computer, request)
-    const key = canonicalJson(computer)
+    const key = ciComputerStatusKey(computer)
     let snapshot = this.statuses.get(key)
     if (snapshot?.status && Date.now() - snapshot.at < FRESHNESS_MS) return snapshot.status
     if (snapshot?.pending) return snapshot.pending

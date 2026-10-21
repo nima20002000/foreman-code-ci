@@ -71,7 +71,7 @@ export function operatorToolCatalog(services: OperatorServices): readonly BoundT
 
 export function operatorRequestTools(context: OperatorRequestContext, catalog?: OperatorCatalog) {
   const request: CatalogContext = { ...context, principal: authorizationPrincipal(context.principal), catalog }
-  return operatorToolCatalog(context.services).filter(tool => catalogToolAvailable(request, tool.name)).map(tool => ({
+  return operatorToolCatalog(context.services).filter(tool => catalogToolAvailable(request, tool.name, OPERATOR_TOOLS)).map(tool => ({
     name: tool.name,
     description: tool.description,
     register: (server: McpServer) => tool.register(server, request),
