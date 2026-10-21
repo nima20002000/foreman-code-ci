@@ -1,4 +1,4 @@
-import type { ExecutionResult, HarnessExecutionContext } from '@foreman-code/contracts'
+import type { ExecutionResult, HarnessExecutionContext, CoordinationResultContext } from '@foreman-code/contracts'
 import { WorkActivationInputSchema, parseWorkHandoffResult } from '@foreman-code/contracts/wave25'
 import { ZodError } from 'zod'
 
@@ -12,8 +12,8 @@ export function receivedWorkRequestIds(input: unknown, context?: HarnessExecutio
 }
 
 /** Resolve received work without rewriting the original native result. */
-export function parseWorkResultForInput(result: ExecutionResult, input?: unknown, context?: HarnessExecutionContext) {
-  const parsed = parseWorkHandoffResult(result)
+export function parseWorkResultForInput(result: ExecutionResult, input?: unknown, context?: HarnessExecutionContext, coordination?: CoordinationResultContext) {
+  const parsed = parseWorkHandoffResult(result, coordination)
   if (parsed.routing.kind !== 'return' || input === undefined) return parsed
   const requestIds = receivedWorkRequestIds(input, context)
   const requestId = parsed.routing.requestId ?? (requestIds.length === 1 ? requestIds[0] : undefined)

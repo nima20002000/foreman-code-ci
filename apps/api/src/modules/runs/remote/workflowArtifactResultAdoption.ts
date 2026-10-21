@@ -1,3 +1,4 @@
+import { workflowResultContext } from '../resultContext.js'
 import { parseWorkHandoffArtifactResult } from '@foreman-code/contracts/wave25'
 import { isDeepStrictEqual } from 'node:util'
 import { HarnessExecutionSchema, type HarnessExecution } from '@foreman-code/contracts'
@@ -83,11 +84,11 @@ export class WorkflowArtifactResultAdoption {
     let mappings: WorkflowArtifactResultV1['outputs']
     try {
       if (version.definition.handoffs) {
-        mappings = parseWorkHandoffArtifactResult(terminal.result, node.artifactOutputs).artifactOutputs.outputs
+        mappings = parseWorkHandoffArtifactResult(terminal.result, node.artifactOutputs, workflowResultContext(version, execution)).artifactOutputs.outputs
       } else if (node.choice) {
-        mappings = parseWorkflowArtifactResult(terminal.result, node.artifactOutputs, node.choice).artifactOutputs.outputs
+        mappings = parseWorkflowArtifactResult(terminal.result, node.artifactOutputs, node.choice, workflowResultContext(version, execution)).artifactOutputs.outputs
       } else {
-        mappings = parseWorkflowArtifactResult(terminal.result, node.artifactOutputs).artifactOutputs.outputs
+        mappings = parseWorkflowArtifactResult(terminal.result, node.artifactOutputs, node.choice, workflowResultContext(version, execution)).artifactOutputs.outputs
       }
     } catch {
       // Parser details can contain model text. Surface a stable domain error.

@@ -27,6 +27,7 @@ import { registerRunPlacementRoutes, registerNodePlacementChoicesRoutes } from '
 import { registerManagementRoutes } from './routes/management.js'
 import { registerMcpDetectionRoute } from './routes/mcpDetection.js'
 import { registerProductRoutes, type ProductServices } from './routes/product.js'
+import { registerMemoryBoardRoutes } from './routes/memoryBoards.js'
 import { registerAgentChatRoutes } from './routes/agentChat.js'
 import { registerWorkflowScheduleRoutes } from './routes/workflowSchedules.js'
 import { registerProviderAccountRoutes } from './routes/providerAccounts.js'
@@ -199,6 +200,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   })
 
   if (options.operator) registerOperatorHttpSecurity(app, options.operator.access, options.localHuman, options.browserOrigin)
+  if (options.operator?.services.memoryBoards) registerMemoryBoardRoutes(app, options.operator.services.memoryBoards)
   if (options.operator) registerManagementRoutes(app, options.operator.services)
   if (options.operator?.services.providerAccounts) registerProviderAccountRoutes(app, options.operator.services.providerAccounts)
   if (options.operator?.services.runPlacements) registerRunPlacementRoutes(app, options.operator.services.runPlacements)

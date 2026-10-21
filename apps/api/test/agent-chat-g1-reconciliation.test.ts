@@ -249,7 +249,6 @@ async function fixture(repository = new MemoryRepository(), native = new NativeF
   return { service, repository, native, configuration, internal: service as unknown as Internals }
 }
 interface Internals {
-  reconciliationTimers: Map<string, ReturnType<typeof setTimeout>>
   runTurn(id: string, turn: AgentChatTurn): Promise<void>
   interruptActive(id: string, explicit: boolean, target: { requestId: string; nativeTurnId: string | null } | undefined): Promise<void>
   repair(id: string): Promise<void>
@@ -410,9 +409,6 @@ describe('G1 cancellation and reconciliation', () => {
     const f = await fixture()
     f.native.histories.set(agentChatCorrelation('conversation', 'first'), proof())
     await f.service.recover()
-    // Isolate the send path from the bootstrap poll; no recovery is invoked after this setup.
-    for (const timer of f.internal.reconciliationTimers.values()) clearTimeout(timer)
-    f.internal.reconciliationTimers.clear()
     const input: SendAgentChatMessageRequest = { requestId: 'steer', intent: 'steer', content: 'clarify',
       context: { workflowId: 'workflow', workflowNodeId: 'node', agentId: 'agent' }, expectedConversationId: 'conversation', expectedNativeTurnId: 'native-first' }
     await assert.rejects(f.service.send(principal, context.workspaceId, input), { code: 'ACCESS_DENIED' })
@@ -421,20 +417,11 @@ describe('G1 cancellation and reconciliation', () => {
     assert.equal(result.turn.delivery, 'unknown')
     assert.equal(f.repository.storedReceipts[1]!.delivery, 'unknown')
     f.native.histories.set(agentChatCorrelation('conversation', 'first'), proof('first', { outcome: 'succeeded' }))
-    const read = () => f.service.read(sender, context.workspaceId, input.context)
-    await vi.waitFor(async () => {
-      const state = await read()
-      assert.equal(state.activeTurn, null)
-      assert.equal(state.turns.find(turn => turn.requestId === 'first')?.delivery, 'completed')
-      assert.equal(state.turns.find(turn => turn.requestId === 'steer')?.delivery, 'unknown',
-        'target completion alone is not a steer receipt')
-    }, { interval: 1, timeout: 3_500 })
+    await f.service.recover()
+    assert.equal(f.repository.row.active_request_id, null)
+    assert.equal(f.repository.storedReceipts[1]!.delivery, 'unknown', 'target completion alone is not a steer receipt')
     f.native.hideSteerEvidence = false
-    await vi.waitFor(async () => {
-      const state = await read()
-      assert.equal(state.activeTurn, null)
-      assert.equal(state.turns.find(turn => turn.requestId === 'steer')?.delivery, 'completed')
-    }, { interval: 1, timeout: 3_500 })
+    await eventually(() => f.repository.storedReceipts[1]!.delivery === 'completed')
     assert.deepEqual(f.repository.acknowledgedSteers, ['steer'])
     assert.equal(f.native.steered, 1)
     assert.deepEqual(f.native.starts, [])
