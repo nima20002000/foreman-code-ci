@@ -311,7 +311,9 @@ finally:
   const home = await mkdtemp(join(dirname(descriptor.rootDirectory), '.browser-readiness-'));
   try {
     const { stdout } = await execute(descriptor.pythonExecutable, ['-I', '-B', '-c', script,
-      JSON.stringify({ ...manifest, chromiumExecutable: descriptor.chromiumExecutable })],
+      JSON.stringify({ pythonVersion: manifest.pythonVersion, browserUseVersion: manifest.browserUseVersion,
+        browserHarnessVersion: manifest.browserHarnessVersion, chromiumVersion: manifest.chromiumVersion,
+        chromiumExecutable: descriptor.chromiumExecutable })],
     { timeout: 60000, maxBuffer: 65536, signal, cwd: workspace,
       env: { PATH: `${join(descriptor.rootDirectory, 'python', 'bin')}:/usr/bin:/bin`, LANG: 'C.UTF-8',
         HOME: home, BH_AGENT_WORKSPACE: workspace,
