@@ -1105,7 +1105,8 @@ export class OperatorChatService {
           if (operation.identity.channel !== 'assistant') return
           const message = committed.message(operation)
           this.events.publish(id, 'delta', { requestId: input.requestId,
-            ...(message ? { message } : { activityChange: activityTextEnvelope(redactText.value(operation), runtime.manager.harness) }),
+            ...(message ? { message } : {}),
+            activityChange: activityTextEnvelope(redactText.value(operation), runtime.manager.harness),
             ...(committed.revision() ? { scopeRevision: committed.revision() } : {}) })
         },
         reconcile: () => this.events.publish(id, 'state', { requestId: input.requestId, snapshotRequired: true }),

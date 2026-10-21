@@ -1879,7 +1879,8 @@ export class AgentChatService {
           if (operation.identity.channel !== 'assistant') return
           const message = committed.message(operation)
           this.events.publish(id, 'delta', { requestId: turn.requestId,
-            ...(message ? { message } : { activityChange: activityTextEnvelope(redact.value(operation), runtime!.manager.harness) }),
+            ...(message ? { message } : {}),
+            activityChange: activityTextEnvelope(redact.value(operation), runtime!.manager.harness),
             ...(committed.revision() ? { scopeRevision: committed.revision() } : {}) })
         },
         reconcile: () => this.events.publish(id, 'state', { requestId: turn.requestId, snapshotRequired: true }),

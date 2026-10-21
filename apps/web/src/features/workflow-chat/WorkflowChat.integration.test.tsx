@@ -94,6 +94,18 @@ beforeEach(() => {
 afterEach(() => { cleanup(); clients.splice(0).forEach(client => client.clear()); vi.unstubAllGlobals() })
 
 describe('Group chat public surface', () => {
+  it('posts a plain message through the mounted panel using only the workflow request fields', async () => {
+    const state = channel()
+    mount()
+    typeAtEnd(screen.getByRole('combobox', { name: 'Message this workflow' }), 'Report progress')
+    fireEvent.click(screen.getByRole('button', { name: 'Post' }))
+    await waitFor(() => expect(state.commands).toHaveLength(1))
+    expect(state.commands[0]).toEqual({ ...scope, commandId: expect.any(String), body: 'Report progress',
+      mentions: [], deliveries: [], cardIds: [] })
+    expect(await screen.findByText('Report progress')).toBeVisible()
+    expect(screen.getByRole('combobox', { name: 'Message this workflow' })).toHaveValue('')
+  })
+
   it('performs no hidden reads and closes its single channel stream on hide and unmount', async () => {
     const state = channel(), view = mount({ visible: false })
     expect(state.reads).toBe(0); expect(GroupWire.instances).toHaveLength(0)
