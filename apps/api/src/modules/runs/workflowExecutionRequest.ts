@@ -5,7 +5,7 @@ import {
   type HarnessExecutionContext,
 } from '@foreman-code/contracts'
 import { WorkActivationInputSchema, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
-import { currentInitialPrompt, coordinationResultInstructions } from './currentRouting.js'
+import { currentInitialPrompt } from './currentRouting.js'
 import { trustedWorkNoticePrompt } from './workHandoffNotice.js'
 import { repeatTickIndex } from './repeatResolution.js'
 
@@ -47,7 +47,7 @@ export function workflowExecutionRequest(input: {
       execution.sessionContinuation ? undefined : node.initialPrompt)
     : currentInitialPrompt(node,
       version.definition.repeat?.blocks.some(block => block.exitNodeId === node.id) ?? false,
-      version.definition.handoffs !== undefined, execution.resultProtocol)
+      version.definition.handoffs !== undefined)
   const workInput = version.definition.handoffs && tickIndex === undefined
     ? WorkActivationInputSchema.parse(execution.input) : undefined
   const noticePrompt = workInput ? trustedWorkNoticePrompt(workInput) : undefined
@@ -68,13 +68,9 @@ export function workflowExecutionRequest(input: {
     JSON.stringify({ kind: 'return', requestId: workInput.work.request.requestId }),
     'requestId may be omitted when replying to the single open request you received. If supplied, copy it verbatim.',
   ].join('\n') : undefined
-  const intervalContract = tickIndex !== undefined && execution.resultProtocol
-    ? 'On successful completion return exactly one JSON object with data, summary, and board.\n' + coordinationResultInstructions()
-    : undefined
-  const prompts = [initialPrompt, intervalContract, noticePrompt, returnPrompt, execution.memoryBoardDigest?.text].filter(Boolean)
+  const prompts = [initialPrompt, noticePrompt, returnPrompt].filter(Boolean)
   return HarnessExecutionRequestSchema.parse({
     executionId: execution.id,
-    ...(execution.resultProtocol ? { resultProtocol: execution.resultProtocol } : {}),
     runId: execution.runId,
     workspaceId,
     workflowNodeId: execution.workflowNodeId,

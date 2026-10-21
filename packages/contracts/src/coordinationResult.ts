@@ -7,7 +7,7 @@ import type { WorkflowDefinitionV3 } from './wave25/workflowShape.js';
 import { WorkflowArtifactResultV1Schema } from './workflowArtifactDeclarations.js';
 import { DelegateRoutingSchema, WorkHandoffRoutingSchema, WorkHandoffDataSchema, WorkflowDelegationContextSchema } from './workflowHierarchy.js';
 
-/** Pinned by production admission; historical Runs retain an absent marker. */
+/** This marker is understood by contracts only until the complete producer/parser cutover. */
 export const COORDINATION_RESULT_PROTOCOL = 'f1-f4-v1' as const;
 export const ResultProtocolSchema = z.literal(COORDINATION_RESULT_PROTOCOL);
 export type ResultProtocol = z.infer<typeof ResultProtocolSchema>;
@@ -131,12 +131,3 @@ function validateCoordinationRouting(result: z.infer<typeof HandoffCoordinationR
 }
 
 
-
-/** A parsing view for routing/artifact consumers. Stored result bytes are never rewritten. */
-export function coordinationBusinessOutput(output: unknown, context: CoordinationResultContext) {
-  const parsed = parseCoordinationResult(output, context);
-  return { data: parsed.data,
-    ...('routing' in parsed ? { routing: parsed.routing } : {}),
-    ...('artifactOutputs' in parsed && parsed.artifactOutputs ? { artifactOutputs: parsed.artifactOutputs } : {}),
-  };
-}

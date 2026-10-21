@@ -1,4 +1,3 @@
-import { workflowResultContext } from '../resultContext.js'
 import { parseWorkHandoffArtifactResult } from '@foreman-code/contracts/wave25'
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual as same } from 'node:util'
@@ -92,10 +91,10 @@ export class PostgresWorkflowPhysicalArtifacts implements WorkflowPhysicalArtifa
       const declaration = (() => {
         try {
           if (version.definition.handoffs) {
-            return parseWorkHandoffArtifactResult(output.result, node.artifactOutputs, workflowResultContext(version, { workflowNodeId: node.id, resultProtocol: run.resultProtocol })).artifactOutputs
+            return parseWorkHandoffArtifactResult(output.result, node.artifactOutputs).artifactOutputs
           }
-          if (node.choice) return parseWorkflowArtifactResult(output.result, node.artifactOutputs, node.choice, workflowResultContext(version, { workflowNodeId: node.id, resultProtocol: run.resultProtocol })).artifactOutputs
-          return parseWorkflowArtifactResult(output.result, node.artifactOutputs, node.choice, workflowResultContext(version, { workflowNodeId: node.id, resultProtocol: run.resultProtocol })).artifactOutputs
+          if (node.choice) return parseWorkflowArtifactResult(output.result, node.artifactOutputs, node.choice).artifactOutputs
+          return parseWorkflowArtifactResult(output.result, node.artifactOutputs).artifactOutputs
         } catch { return unavailable() }
       })()
       if (!same(declaration, output.artifactOutputs)) return unavailable()
