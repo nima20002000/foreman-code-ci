@@ -104,11 +104,18 @@ export class CircleStandby {
   }
 
   /** The persisted cache lock coordinates all starts and readers for the organization. */
-  async admitStart(owner: string, circleAccountId: string, mirrorName: string, runId: string): Promise<boolean> {
+  async admitStart(owner: string, circleAccountId: string, mirrorName: string, runId: string,
+    options: { retryUnsent?: true } = {}): Promise<boolean> {
     const reading = await this.reading(owner, circleAccountId, mirrorName)
-    if (reading.schedulingRole !== 'active' && !reading.creditProbeAvailable) return false
+    const available = reading.schedulingRole === 'active' || reading.creditProbeAvailable === true
+    const retryUnsent = options.retryUnsent && (await this.organizations()).some(org =>
+      circleOrgKey(org.owner, org.circleAccountId) === circleOrgKey(owner, circleAccountId)
+      && org.ready && org.mirrorNames.has(mirrorName))
+    if (!available && !retryUnsent) return false
     const admitted = await this.cache.transaction(state => {
       const policy = state[circleOrgKey(owner, circleAccountId)]?.policy
+      if (retryUnsent && policy?.creditProbeRunId === runId) return true
+      if (!available) return false
       if (policy?.creditRefusedUntil === undefined) return reading.schedulingRole === 'active'
       if (this.now() < policy.creditRefusedUntil || policy.creditProbeRunId) return false
       policy.creditProbeRunId = runId

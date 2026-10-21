@@ -189,16 +189,16 @@ export class CloudCi {
     return this.standby.reading(this.provider.account.owner, this.provider.circleAccountId, mirrorName)
   }
 
-  private async requireNewStart(mirrorName: string, runId?: string) {
+  private async requireNewStart(mirrorName: string, request?: { runId: string; retryUnsent?: true }) {
     if (this.provider.recoveryOnly || this.provider.account?.registered === false) {
       throw new DomainError('CI_CLOUD_UNAVAILABLE', 'This CircleCI executor only finishes previously assigned jobs.', 409)
     }
     const reading = await this.schedulingReading(mirrorName)
-    if (reading && reading.schedulingRole !== 'active' && !reading.creditProbeAvailable) {
+    if (reading && reading.schedulingRole !== 'active' && !reading.creditProbeAvailable && !request?.retryUnsent) {
       throw new DomainError('CI_CLOUD_UNAVAILABLE', reading.schedulingReason, 409)
     }
-    if (reading && runId && !await this.standby!.admitStart(this.provider.account!.owner,
-      this.provider.circleAccountId ?? 'default', mirrorName, runId)) {
+    if (reading && request && !await this.standby!.admitStart(this.provider.account!.owner,
+      this.provider.circleAccountId ?? 'default', mirrorName, request.runId, request)) {
       throw new DomainError('CI_CLOUD_UNAVAILABLE', 'CircleCI recovery probe is already pending or cooling down.', 409)
     }
   }
@@ -704,7 +704,11 @@ export class CloudCi {
       const firstDispatch = !run.providerRunId && ((run.dispatch?.attempts ?? 0) === 0 || run.dispatch?.notSent)
         && !run.dispatch?.uncertain
       if (firstDispatch || this.provider.id === 'circleci' && this.standby) {
-        await this.requireNewStart(input.mirror.slice(input.mirror.indexOf('/') + 1), pending.runId)
+        const retryUnsent = (run.dispatch?.attempts ?? 0) > 0
+          && run.dispatch?.notSent === true && run.dispatch.uncertain === false
+        await this.requireNewStart(input.mirror.slice(input.mirror.indexOf('/') + 1), {
+          runId: pending.runId, ...(retryUnsent ? { retryUnsent: true as const } : {}),
+        })
       }
     } catch (error) {
       pending = await this.save({ ...pending, dispatch: { ...pending.dispatch!, uncertain: false, notSent: true } })
