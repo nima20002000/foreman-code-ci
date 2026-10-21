@@ -1,4 +1,5 @@
 import { expect, it, vi } from 'vitest'
+import { BrowserControlSchema } from '@foreman-code/contracts/browser-sessions'
 import { DomainError } from '../errors.js'
 import { BrowserBroker } from './broker.js'
 import type { AgentSubject, BrowserActor, BrowserNativeDriver, BrowserPreparedBinding,
@@ -99,6 +100,18 @@ function ready(result: BrowserPrepareResult) {
   if (result.kind !== 'ready') throw new Error(`Expected an owned browser, received ${result.reason}`)
   return result
 }
+
+it('retains a valid explained control state after setup closure and journal recovery', async () => {
+  const f = fixture()
+  const session = await f.broker.openSetup('profile', 'setup')
+  expect(await f.broker.closeSetup(session.id)).toMatchObject({ state: 'closed' })
+  const control = BrowserControlSchema.parse(f.broker.read(session.id).control)
+  expect(control).toMatchObject({ state: 'paused', controllingViewerId: null, reason: expect.any(String) })
+  const recovered = new BrowserBroker({ computerId: 'main', driver: f.driver, journal: f.journal, authority: f.authority })
+  await recovered.recover()
+  expect(recovered.read(session.id)).toMatchObject({ session: { state: 'closed' }, control })
+  expect(await recovered.closeSetup(session.id)).toMatchObject({ state: 'already_closed' })
+})
 
 function agent(session: BrowserSession, epoch = 0): BrowserActor {
   return { kind: 'agent', epoch, browserGeneration: session.browserGeneration }

@@ -209,7 +209,10 @@ function missingPort<T extends object>(name: string): T {
 }
 
 interface Caller { principal: ManagementPrincipal; subject?: AgentSubject; readOnly: boolean; enabled: boolean; wrongScope?: boolean }
-export async function endpointFixture() {
+export async function endpointFixture(options: {
+  repository?: BrowserProfileRepository
+  computers?: Array<{ id: string; online: boolean }>
+} = {}) {
   const root = await mkdtemp(join(tmpdir(), 'browser-endpoints-')), pool = new pg.Pool()
   const unexpectedSql = vi.spyOn(pool, 'connect').mockRejectedValue(new Error('Unexpected SQL in the typed peer fixture'))
   const owner: ManagementPrincipal = { id: 'owner', name: 'Owner', audience: 'operator', expiresAt: '2099-01-01T00:00:00.000Z',
@@ -272,9 +275,9 @@ export async function endpointFixture() {
     prune: async () => undefined, checkOrigin: async input => ({ origin: input.origin, state: 'signed_in',
       checkedAt: '2026-10-21T00:00:00.000Z', evidence: 'site_probe', reason: null }),
   }
-  const profiles = new BrowserProfileService({ repository: memoryProfiles(), host, authority: {
+  const profiles = new BrowserProfileService({ repository: options.repository ?? memoryProfiles(), host, authority: {
     authorize: async (principal, action) => { caller(principal); requireAuthorization(principal, action, {}) },
-    computers: async () => [{ id: 'main', online: true }],
+    computers: async () => options.computers ?? [{ id: 'main', online: true }],
   } })
   const codecs = fixtureCodecs(), handlers = createBrowserOperationHandlers(profiles, sessions)
   const definitions = [...createBrowserProfileTools(handlers, codecs), ...createBrowserSessionTools(handlers, codecs)]
