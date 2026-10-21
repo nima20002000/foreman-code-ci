@@ -103,6 +103,7 @@ export async function remoteReviewProduction(options: {
   installationRefreshIntervalMs?: number; parallelSetup?: boolean; includeNodeRuntimePayload?: boolean
   installedMainService?: boolean
   sourceAccessMode?: 'read-only' | 'exclusive-write'
+  artifactOutputKeys?: string[]
   reportPhase?: (phase: string, elapsedMs: number) => void
 } = {}) {
   const rootAccessMode = options.sourceAccessMode === 'exclusive-write' ? 'read-write' : 'read-only'
@@ -215,6 +216,9 @@ export async function remoteReviewProduction(options: {
       homes: [logEnvironment.HOME!, workerEnvironment.HOME!] })
     const shape = options.workflow === 'interval' ? 'sequential' : options.workflow ?? 'approval'
     const seed = makeCurrentWorkflowFixture(randomUUID(), shape)
+    if (options.artifactOutputKeys) seed.version.definition.nodes[0]!.artifactOutputs = {
+      version: 1, outputKeys: options.artifactOutputKeys,
+    }
     if (options.workflow === 'interval') {
       seed.version.definition.handoffs = { contractVersion: 1 }
       seed.version.definition.nodes[0]!.interval = { everySeconds: 10 }
@@ -826,6 +830,7 @@ export async function remoteReviewProduction(options: {
       pauseWorkerConnection: transport.pauseConnections,
       resumeWorkerConnection: transport.resumeConnections,
       dropNextPhysicalReadout: transport.dropNextPhysicalReadout,
+      dropNextSettlement: transport.dropNextSettlement,
       loseNextCompactionResponse: transport.loseNextCompactionResponse,
       conversationRequests: transport.conversationRequests,
       async restoreOriginalResponseGrant() {
