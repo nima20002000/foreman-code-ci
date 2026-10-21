@@ -1,6 +1,6 @@
-import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { HttpResponse } from 'msw'
-import { setupServer } from 'msw/node'
+import { server } from '../../mocks/server'
 import { BrowserProfileReplicaSchema, BrowserProfileSyncJobSchema } from '@foreman-code/contracts/browser-profiles'
 import { createBrowserProfilesClient, type BrowserProfileCodecs } from '../browser-profiles/client'
 import { browserMswHandlers } from './testing'
@@ -9,10 +9,6 @@ import { beginSessionChange, finishSessionChange } from '../../shared/api/sessio
 import { deferred } from './testFixtures'
 import type { BrowserProfileCatalog } from '../browser-profiles/types'
 
-const server = setupServer()
-beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
-afterEach(() => server.resetHandlers())
-afterAll(() => server.close())
 
 it('saves policy through the canonical profile route without sync and preserves command identity through a lost sync response', async () => {
   const requests: { method: string; path: string; body: unknown }[] = []

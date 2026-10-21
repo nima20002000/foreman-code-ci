@@ -5,15 +5,15 @@ import { tmpdir } from 'node:os'
 import { join, isAbsolute } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { BrowserSnapshotKeyStore, type BrowserPairingAuthority, type BrowserInstallationBinding } from '../browser-profiles/keys.js'
-import type { BrowserSnapshotTransfer } from '../browser-profiles/types.js'
-import type { BrowserRuntimeInstallation } from './browserUseAdapter.js'
-import type { BrowserHostOptions, BrowserHostKeyRequests, createBrowserHost } from './hostFactory.js'
-import type { AgentSubject, BrowserActor, BrowserSession, BrowserPreparedBinding, BrowserHostAction, BrowserPrepareResult } from './types.js'
+import { BrowserSnapshotKeyStore, type BrowserPairingAuthority, type BrowserInstallationBinding } from '../src/modules/browser-profiles/keys.js'
+import type { BrowserSnapshotTransfer } from '../src/modules/browser-profiles/types.js'
+import type { BrowserRuntimeInstallation } from '../src/modules/browser-runtime/browserUseAdapter.js'
+import type { BrowserHostOptions, BrowserHostKeyRequests, createBrowserHost } from '../src/modules/browser-runtime/hostFactory.js'
+import type { AgentSubject, BrowserActor, BrowserSession, BrowserPreparedBinding, BrowserHostAction, BrowserPrepareResult } from '../src/modules/browser-runtime/types.js'
 
 type Host = Awaited<ReturnType<typeof createBrowserHost>>
 type InstalledRuntime = BrowserRuntimeInstallation & { manifestSha256: string; nativeHostModule: string }
-type InstalledHostModule = Pick<typeof import('./hostFactory.js'), 'createBrowserHost'>
+type InstalledHostModule = Pick<typeof import('../src/modules/browser-runtime/hostFactory.js'), 'createBrowserHost'>
 type HostFixture = { host: Host; computerId: string; options: BrowserHostOptions;
   prepare(subject: AgentSubject, profileId: string): Promise<BrowserSession>; reopen(): Promise<void>; close(): Promise<void> }
 
@@ -158,7 +158,7 @@ async function closeSetup(f: HostFixture, session: BrowserSession) {
   expect(await f.host.broker.closeSetup(session.id)).toMatchObject({ state: 'closed' })
 }
 
-describe.sequential('installed managed browser against a deterministic local website', () => {
+describe('installed managed browser against a deterministic local website', () => {
   beforeAll(async () => {
     const runtimeRoot = process.env.FOREMAN_BROWSER_RUNTIME_ROOT, expected = process.env.FOREMAN_BROWSER_RUNTIME_MANIFEST_SHA256
     if (!runtimeRoot || !isAbsolute(runtimeRoot) || !expected || !/^[a-f0-9]{64}$/.test(expected)) {
@@ -166,7 +166,7 @@ describe.sequential('installed managed browser against a deterministic local web
     }
     // The public installer reader verifies the selected unit, every runtime file and its completed readiness receipt.
     const installer: { readInstalledBrowserRuntime(input: { runtimeRoot: string }): Promise<InstalledRuntime> } =
-      await import(new URL('../../../../worker/src/browserRuntimeInstall.mjs', import.meta.url).href)
+      await import(new URL('../../worker/src/browserRuntimeInstall.mjs', import.meta.url).href)
     runtime = await installer.readInstalledBrowserRuntime({ runtimeRoot })
     expect(runtime.manifestSha256).toBe(expected)
     native = await import(pathToFileURL(runtime.nativeHostModule).href)
