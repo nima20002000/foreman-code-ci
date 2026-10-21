@@ -144,6 +144,7 @@ export function registerOperatorHttpSecurity(app: FastifyInstance, access: Postg
     request.operatorPrincipal = principal
     request.operatorAuthentication = headerToken ? 'bearer' : 'local-human'
     // Account and chat services resolve persisted resources before checking their full scopes.
+    const browser = path.startsWith('/api/browser/')
     const providerAccounts = path === '/api/provider-accounts' || path.startsWith('/api/provider-accounts/')
     const agentChat = /^\/api\/workspaces\/[^/]+\/agent-chat(?:\/|$)/.test(path)
       || /^\/api\/workspaces\/[^/]+\/workflows\/[^/]+\/execution-chat(?:\/|$)/.test(path)
@@ -157,10 +158,10 @@ export function registerOperatorHttpSecurity(app: FastifyInstance, access: Postg
     request.reauthorizeOperator = async () => {
       const current = await authenticate()
       // Re-check against the same route resource; scoped grants never match an empty resource.
-      if (!agentChat && !selfReadback && !providerAccounts) requireAuthorization(current, actionFor(request), resource)
+      if (!agentChat && !selfReadback && !providerAccounts && !browser) requireAuthorization(current, actionFor(request), resource)
       return current
     }
-    if (!agentChat && !selfReadback && !providerAccounts && !request.url.startsWith('/api/management/')) {
+    if (!agentChat && !selfReadback && !providerAccounts && !browser && !request.url.startsWith('/api/management/')) {
       requireAuthorization(principal, actionFor(request), resource)
       if (request.method === 'GET' && /^\/api\/workspaces\/[^/]+\/runs\/[^/]+(?:\?.*)?$/.test(request.url)) {
         requireAuthorization(principal, 'workspace_locations:read', resource)

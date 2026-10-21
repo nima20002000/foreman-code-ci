@@ -1,3 +1,4 @@
+import { browserOperatorTools } from '../../modules/collaboration/browserTools.js'
 import { MCP_DISPLAY_NAME, PRODUCT_SLUG } from '@foreman-code/contracts/product'
 import { registerWorkspaceRootAdoptionTool } from '../../modules/workspace-roots/transports.js'
 import { registerHostHarnessOverrideTools } from '../../modules/harnesses/instanceSettings/management.js'
@@ -84,6 +85,8 @@ export function registerOperatorTools(server: McpServer, context: OperatorReques
 }
 
 function registerOperatorDefinitions(server: McpServer, context: OperatorRequestContext, catalog?: OperatorCatalog): void {
+  for (const tool of browserOperatorTools(context)) registerToolDefinition(server, context, tool,
+    { invoke: invokeOperatorTool, catalog, tools: OPERATOR_TOOLS })
   const group = (name: OperatorToolGroup) => registerOperatorToolGroup(server, context, OPERATOR_TOOL_GROUPS[name], catalog)
   group('bugReports')
   group('resourceTelemetry')

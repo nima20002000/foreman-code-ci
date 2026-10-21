@@ -6,8 +6,6 @@ import { useIsMutating, useMutation, useMutationState, useQuery, useQueryClient,
 import type { ManagementAction } from '@foreman-code/contracts/management'
 import type { AgentChatContext, AgentChatIntent, AgentChatState } from '@foreman-code/contracts/agent-chat'
 import { ReadAgentChatResponseSchema } from '@foreman-code/contracts/agent-chat'
-import type { SelectedRunChatExecution } from '@foreman-code/contracts/selected-run-chat'
-import { selectedRunChatApi } from './selectedRunChatClient'
 import { agentChatApi } from '../../../shared/api/agentChat'
 import { ApiError } from '../../../shared/api/client'
 import { createStreamReadback } from '../../../shared/api/streamReadback'
@@ -76,8 +74,7 @@ const subscribeNetwork = (notify: () => void) => {
   return () => { window.removeEventListener('online', notify); window.removeEventListener('offline', notify) }
 }
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine
-export const agentChatStateKey = (context: AgentChatContext, generation = sessionGeneration(), executionId?: string) =>
-  ['agent-chat', generation, executionId ? JSON.stringify([agentChatContextKey(context), executionId]) : agentChatContextKey(context), 'state'] as const
+export const agentChatStateKey = (context: AgentChatContext, generation = sessionGeneration()) => ['agent-chat', generation, agentChatContextKey(context), 'state'] as const
 
 /** Access can be revoked during response readback after the command was accepted. */
 export function commandMayHaveBeenAccepted(error: unknown): boolean {
@@ -85,9 +82,7 @@ export function commandMayHaveBeenAccepted(error: unknown): boolean {
   return error.status === 0 || error.status >= 500 || error.code === 'INVALID_RESPONSE' || isApiAccessError(error)
 }
 
-export function useAgentChat(inputContext: AgentChatContext,
-  options: { denial?: ApiError | undefined; selection?: SelectedRunChatExecution | undefined } = {}) {
-  const { denial: externalDenial, selection } = options
+export function useAgentChat(inputContext: AgentChatContext, externalDenial?: ApiError) {
   const { workspaceId, workflowId, workflowNodeId, agentId, runId } = inputContext
   const context = useMemo<AgentChatContext>(() => ({
     workspaceId, workflowId, workflowNodeId, agentId, ...(runId === undefined ? {} : { runId }),
@@ -95,14 +90,9 @@ export function useAgentChat(inputContext: AgentChatContext,
   const client = useQueryClient(), generation = sessionGeneration()
   const readGeneration = useRef(0)
   const commandDenial = useRef<ApiError | undefined>(undefined)
-  const executionId = selection?.executionId
-  const key = useMemo(() => agentChatStateKey(context, generation, executionId), [context, generation, executionId])
-  const draftKey = key[2]
-  const matches = useCallback((incoming: AgentChatState) => {
-    const sourceId = incoming.conversation?.origin.kind === 'run_execution'
-      ? incoming.conversation.origin.executionId : incoming.sourceTranscript?.executionId
-    return stateBelongsToContext(incoming, context) && (!executionId || sourceId === executionId)
-  }, [context, executionId])
+  const draftKey = agentChatContextKey(context)
+  const matches = useCallback((incoming: AgentChatState) => stateBelongsToContext(incoming, context), [context])
+  const key = useMemo(() => agentChatStateKey(context, generation), [context, generation])
   useEffect(() => {
     if (!externalDenial) return
     readGeneration.current++
@@ -142,8 +132,7 @@ export function useAgentChat(inputContext: AgentChatContext,
     queryFn: async ({ signal }) => {
       const read = ++readGeneration.current
       const denialAtStart = commandDenial.current
-      const state = selection ? await selectedRunChatApi.state(selection, { signal })
-        : await agentChatApi.read(context, { signal })
+      const state = await agentChatApi.read(context, { signal })
       signal.throwIfAborted()
       if (read !== readGeneration.current) throw new DOMException('Newer chat readback required', 'AbortError')
       assertSession(generation)
@@ -200,7 +189,7 @@ export function useAgentChat(inputContext: AgentChatContext,
   useAgentChatStream({ client, key, workspaceId: context.workspaceId, conversationId: state?.conversation?.id,
     enabled: canRead && !denial, accept, matches, readGeneration, setConnection })
 
-  const mutation = useAgentChatMutation({ commandKey, generation, context, matches, accept, draftKey, selection,
+  const mutation = useAgentChatMutation({ commandKey, generation, context, matches, accept, draftKey,
     setLocalError, refresh, commandDenial, readGeneration, client, key })
   const runCommand = (build: () => Command): boolean => {
     const release = acquire(client, JSON.stringify(commandKey))
@@ -279,7 +268,7 @@ export function useAgentChat(inputContext: AgentChatContext,
       await history.fetchNextPage()
     },
   }, access, canRead, denial, online, pending, connection, commands, latestCommand, latestReceipt, currentReceipt, confirmedReceipt, localError, blocked,
-    send, stop, cancelQueued, respond, refresh, revoke, confirmDelivery, draftKey, selection, queryKey: key }
+    send, stop, cancelQueued, respond, refresh, revoke, confirmDelivery, draftKey }
 }
 
 function useAgentChatStream({ client, key, workspaceId, conversationId, enabled, accept, matches,
@@ -344,7 +333,6 @@ type AgentChatMutationOptions = {
   commandKey: readonly ['agent-chat', number, string, 'command']
   generation: number
   context: AgentChatContext
-  selection?: SelectedRunChatExecution | undefined
   matches: (state: AgentChatState) => boolean
   accept: (state: AgentChatState, source?: 'read' | 'receipt') => void
   draftKey: string
@@ -356,7 +344,7 @@ type AgentChatMutationOptions = {
   key: ReturnType<typeof agentChatStateKey>
 }
 
-function useAgentChatMutation({ commandKey, generation, context, matches, accept, draftKey, selection,
+function useAgentChatMutation({ commandKey, generation, context, matches, accept, draftKey,
   setLocalError, refresh, commandDenial, readGeneration, client, key }: AgentChatMutationOptions) {
   const mutation = useMutation<Result, Error, Command>({ mutationKey: commandKey, retry: false, gcTime: Infinity,
     // Never park a write offline and send it later to a potentially changed native turn.
@@ -368,8 +356,7 @@ function useAgentChatMutation({ commandKey, generation, context, matches, accept
       let result
       switch (command.kind) {
         case 'send':
-          result = selection ? await selectedRunChatApi.send(selection, command.input)
-            : await agentChatApi.send(workspaceId, command.input)
+          result = await agentChatApi.send(workspaceId, command.input)
           break
         case 'stop':
           result = await agentChatApi.interrupt(workspaceId, command.conversationId, {
