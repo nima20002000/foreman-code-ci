@@ -15,7 +15,8 @@ const CiRunInputObjectSchema = z.object({
     + 'affected scope, an explicit commit and exactly one test file. Uses normal CI grants, setup and execution; '
     + 'never falls back to a different computer.'),
   gate: z.boolean().optional().describe('Operator/orchestrator only. With suite=integration and scope=full, '
-    + 'queue typecheck, lint, unit and duration-balanced integration as one gate. Gates run one at a time.'),
+    + 'queue typecheck, lint, unit and duration-balanced integration as one gate. Gates run one at a time. '
+    + 'A failed part cancels the gate’s remaining queued and running parts.'),
   priority: CiPrioritySchema.optional().describe('Defaults to normal. Callers authorized for ci can request high priority. '
     + 'Commits changing only CI infrastructure are automatically high priority.'),
   suite: CiSuiteSchema.describe('Repositories with the CI suite hook queue unit, lint, typecheck and build parts; '
