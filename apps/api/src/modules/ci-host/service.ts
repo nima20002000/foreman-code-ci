@@ -24,7 +24,6 @@ import { planCiParts, runsOnCircleCi, unitPartOf } from './parts.js'
 import { planIntegrationParts } from './integrationParts.js'
 import { readCiSlots } from './planningCapacity.js'
 import { CiPlanningSnapshot, isBackgroundYield } from './planningSnapshot.js'
-import { CiComputerStatuses } from './computerStatus.js'
 import { HostCiReads, retryRead } from './readQueries.js'
 import { CI_QUEUE_ORDER, ciQueueReason, compareCiQueue } from './priority.js'
 import { prepareCiSupersession, validateCiSupersession, supersedeCiRuns } from './supersession.js'
@@ -138,15 +137,7 @@ export class HostCiService {
     this.circleCredits = options.circleCredits
     this.circleStandby = options.circleStandby
     this.reservedCloudSlots = options.reservedCloudSlots ?? 0
-    const statusKey = (computer: HostCiComputer) => endpoint.statusKey?.(computer) ?? canonicalJson(computer)
-    const statuses = new CiComputerStatuses(this.pool,
-      computer => computer.hostRef.kind === 'cloud' ? endpoint.statusKey?.(computer) : undefined,
-      async (run, computer, status) => {
-        await this.reconcileHostStart(run, computer, status)
-        await recordCiExecutorStatus(this.pool, run, computer, status)
-      })
     this.endpoint = {
-      statusKey,
       computers: async () => {
         const computers = await waitForCiDispatch(() => endpoint.computers())
         this.planningEndpoint.observeComputers(computers)
@@ -169,14 +160,25 @@ export class HostCiService {
             throw error
           }
         }
+        const assigned = (await this.pool.query<{ record: unknown; host_key: string }>(
+          `select record,host_key from ci_runs where state in ('starting','running')`)).rows
+          .filter(row => row.host_key === computer.key)
+        let status: CiHostStatus | null = null
         try {
-          const reply = await statuses.read(computer, () => waitForCiDispatch(send))
-          this.planningEndpoint.observeStatus(computer, reply)
+          const reply = await waitForCiDispatch(send)
+          if (reply.operation === 'status') status = reply
           return reply
         } catch (error) {
           // Yielding to foreground work says nothing about the computer; its last-known readiness stays bounded by age.
           if (!isBackgroundYield(error)) this.planningEndpoint.invalidate(computer)
           throw error
+        } finally {
+          for (const row of assigned) {
+            const run = CiRunRecordSchema.parse(row.record)
+            await this.reconcileHostStart(run, computer, status)
+            await recordCiExecutorStatus(this.pool, run, computer, status)
+          }
+          if (status) this.planningEndpoint.observeStatus(computer, status)
         }
       },
     }
@@ -818,7 +820,9 @@ export class HostCiService {
       const active = (await this.pool.query<{ id: string; host_key: string; record: unknown }>(
         `select id,host_key,record from ci_runs where state in ('starting','running') and host_key is not null
           order by created_at,id`)).rows
-      const readComputer = async (computer: HostCiComputer) => {
+      // Ask every computer at once: one slow or offline host must not serialize the whole listing.
+      // Build participation is live; planning can still reuse bounded readiness snapshots.
+      const result = await Promise.all((await this.endpoint.computers()).map(async computer => {
         const assigned = active.filter(run => run.host_key === computer.key)
         // A starting ticket needs a live status: it can acknowledge a start whose reply was lost.
         const starting = assigned.some(run => CiRunRecordSchema.parse(run.record).state === 'starting')
@@ -844,14 +848,7 @@ export class HostCiService {
             ...(status.userSystemd ? { userSystemd: status.userSystemd } : {}),
             slotsUsed: Math.max(running.length, status.slotsUsed ?? 0), slotsTotal: status.slotsTotal ?? 1,
             running } : null
-      }
-      const fleet = await this.endpoint.computers()
-      // Bound status requests and ticket readback before they acquire shared-pool connections.
-      const concurrency = Math.min(8, Math.max(1, Math.floor((this.pool.options?.max ?? 10) / 2)))
-      const result: Awaited<ReturnType<typeof readComputer>>[] = []
-      for (let offset = 0; offset < fleet.length; offset += concurrency) {
-        result.push(...await Promise.all(fleet.slice(offset, offset + concurrency).map(readComputer)))
-      }
+      }))
       const readings = new Map<string, Promise<CircleCreditsReading>>()
       const computers = result.flatMap(computer => {
         if (!computer) return []
@@ -896,18 +893,9 @@ export class HostCiService {
       }
       roles = snapshots.get(key)
     } else roles = await this.circleStandby.roles(mirrorName)
-    const probes = new Set<string>()
-    return computers.filter(computer => {
-      const host = computer.hostRef
-      if (host.provider !== 'circleci') return true
-      if (!host.account) return false
-      const key = circleOrgKey(host.account, host.circleAccountId)
-      const reading = roles?.get(key)
-      if (reading?.schedulingRole === 'active') return true
-      if (!reading?.creditProbeAvailable || probes.has(key)) return false
-      probes.add(key)
-      return true
-    })
+    return computers.filter(computer => computer.hostRef.provider !== 'circleci'
+      || computer.hostRef.account && roles?.get(circleOrgKey(computer.hostRef.account,
+        computer.hostRef.circleAccountId))?.schedulingRole === 'active')
   }
 
   private planningForMirror(mirrorName?: string): HostCiEndpoint & Pick<CiPlanningSnapshot, 'lastStatus'> {
@@ -1388,12 +1376,10 @@ export class HostCiService {
 
   private refreshComputerStatuses(computers: HostCiComputer[]) {
     for (const computer of computers) {
-      const key = computer.hostRef.kind === 'cloud'
-        ? this.endpoint.statusKey?.(computer) ?? computer.key : computer.key
-      if (this.planningEndpoint.status(computer) || this.observingComputers.has(key)) continue
-      const retry = this.computerStatusRetries.get(key)
+      if (this.planningEndpoint.status(computer) || this.observingComputers.has(computer.key)) continue
+      const retry = this.computerStatusRetries.get(computer.key)
         ?? new RetryBackoff({ initialMs: 5000, maxMs: 300_000 })
-      this.computerStatusRetries.set(key, retry)
+      this.computerStatusRetries.set(computer.key, retry)
       if (!retry.ready()) continue
       // Readiness belongs to dispatch; collecting running tickets uses the shared pool.
       const observation = withCiDatabasePriority(() => readCiComputerStatus(this.endpoint, computer)).then(status => {
@@ -1403,8 +1389,8 @@ export class HostCiService {
         } else {
           retry.fail()
         }
-      }).finally(() => { this.observingComputers.delete(key) })
-      this.observingComputers.set(key, observation)
+      }).finally(() => { this.observingComputers.delete(computer.key) })
+      this.observingComputers.set(computer.key, observation)
     }
   }
 
