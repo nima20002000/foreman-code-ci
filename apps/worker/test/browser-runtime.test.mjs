@@ -159,6 +159,26 @@ test('same-release repair activates a missing browser selection and remains idem
   assert.equal((await readInstalledBrowserRuntime({ runtimeRoot: join(root, 'browser-runtime') })).manifestSha256, current.manifestSha256);
 });
 
+test('installs the core Worker when browser readiness fails and retries from the selected release', async t => {
+  const directory = await fixture(t), root = join(directory, 'app'), stateDirectory = join(directory, 'state');
+  await mkdir(root, { mode: 0o700 }); await mkdir(stateDirectory, { mode: 0o700 });
+  const carrier = await workerCarrier(directory, await artifact(directory, 'runtime'));
+  const options = { root, stateDirectory, ...carrier, facts: { ...target, rootPersistent: true, homePersistent: true }, expected,
+    browserRuntimeReadiness: async () => { throw new Error('Sandbox support is unavailable'); } };
+  const installed = await installVersion(options);
+  assert.equal((await readInstalledRelease(options)).manifest.version, '1.0.0');
+  assert.equal(installed.browserRuntimeStatus.state, 'failed');
+  assert.match(installed.browserRuntimeStatus.reason, /Sandbox support is unavailable/);
+  assert.equal(installed.browserRuntimeStatus.retryable, true);
+  const status = JSON.parse(await readFile(join(root, 'browser-runtime/status.json'), 'utf8'));
+  assert.deepEqual(status, installed.browserRuntimeStatus);
+  const repaired = await installVersion({ ...options, artifact: installed.directory, browserRuntimeReadiness: ready });
+  assert.equal(repaired.directory, installed.directory);
+  assert.equal(repaired.browserRuntimeStatus.state, 'ready');
+  assert.equal((await readInstalledBrowserRuntime({ runtimeRoot: join(root, 'browser-runtime') })).runtimeVersion, '1.0.0');
+  assert.equal(JSON.parse(await readFile(join(root, 'browser-runtime/status.json'), 'utf8')).state, 'ready');
+});
+
 test('supervisor stops a failed new host and restores browser profiles before restarting the previous Worker', async () => {
   const events = [], record = { format: 1, manifestSha256: 'new-worker', status: {
     state: 'restarting', currentVersion: '1.0.0', targetVersion: '1.1.0', manifestSha256: 'old-worker' }, restart: {
