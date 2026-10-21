@@ -89,13 +89,14 @@ export async function readWorkflowExecutionChat(pool: pg.Pool, owner: WorkflowCh
   }))
   const native = cursor.nativeDone ? { messages: [], nextCursor: null, hasMore: false, revision: 0 }
     : await owner.readNative(target, { ...(cursor.native ? { cursor: cursor.native } : {}), limit: request.limit, bindings: stored.bindings })
-  const capabilities = await owner.capabilities(target)
+  const observation = await owner.observe(target)
   const hasMore = native.hasMore || stored.page.hasMore
   const next: PageCursor = { target: cursor.target, native: native.nextCursor, nativeDone: !native.hasMore,
     beforeReceipt: stored.page.before, receiptsDone: !stored.page.hasMore }
   const result = EngineChatReadbackSchema.parse({ target, state: stored.identity.state,
     capabilities: stored.identity.state === 'idle' || stored.identity.state === 'settling'
-      ? { steer: 'unavailable', queue: false, interruptAndSend: false } : capabilities,
+      ? { steer: 'unavailable', queue: false, interruptAndSend: false } : observation.capabilities,
+    ...(stored.identity.state === 'active' && observation.nativeTurnId ? { nativeTurnId: observation.nativeTurnId } : {}),
     messages: native.messages, receipts: stored.page.receipts, hasMore,
     nextCursor: hasMore ? Buffer.from(JSON.stringify(next)).toString('base64url') : null,
     revision: Math.max(stored.page.revision, native.revision) })

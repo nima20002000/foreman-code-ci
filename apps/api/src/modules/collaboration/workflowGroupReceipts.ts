@@ -5,8 +5,8 @@ import { DomainError } from '../errors.js'
 
 /** Run receipt updates join the same transaction as the channel journal. */
 export async function synchronizeGroupDelivery(sql: GraphTransactionSql, receipt: ChatDeliveryReceipt) {
-  const stored = (await sql.query<{ receipt: unknown; owner_admission: string }>(
-    'select receipt,owner_admission from chat_delivery_commands where id=$1 for update', [receipt.id])).rows[0]
+  const stored = (await sql.query<{ receipt: unknown; owner_admission: string; owner_binding: { agentIdentity?: unknown } }>(
+    'select receipt,owner_admission,owner_binding from chat_delivery_commands where id=$1 for update', [receipt.id])).rows[0]
   if (!stored) return
   const previous = ChatDeliveryReceiptSchema.parse(stored.receipt)
   const identity = (value: ChatDeliveryReceipt) => [value.commandId, value.target, value.postId,
@@ -16,11 +16,15 @@ export async function synchronizeGroupDelivery(sql: GraphTransactionSql, receipt
   }
   const next = { ...receipt, ...(previous.replyPostId ? { replyPostId: previous.replyPostId } : {}) }
   if (canonicalJson(previous) === canonicalJson(next)) return
-  await sql.query(`update chat_delivery_commands set receipt=$2::jsonb,revision=revision+1,updated_at=now() where id=$1`,
-    [receipt.id, canonicalJson(next)])
+  const updated = (await sql.query<{ revision: string }>(`update chat_delivery_commands
+    set receipt=$2::jsonb,revision=revision+1,updated_at=now() where id=$1 returning revision::text`,
+  [receipt.id, canonicalJson(next)])).rows[0]!
   if (next.state === 'completed' && next.postId && next.nativeTurnId) await enqueueReply(sql, next)
   await sql.query(`update workflow_chat_channels set revision=revision+1 where id=(
     select channel_id from chat_delivery_commands where id=$1)`, [receipt.id])
+  if (next.postId) await enqueueGroupChatFact(sql, { kind: 'receipt_changed',
+    sourceEventKey: `group-receipt:${receipt.id}:${updated.revision}`, createdAt: next.updatedAt,
+    agent: AgentIdentitySchema.parse(stored.owner_binding.agentIdentity), receiptId: receipt.id })
 }
 
 
