@@ -67,12 +67,12 @@ const empty: GraphEditReadResultV3 = { intent: null, current: [], canStop: false
 const now = '2026-09-24T00:00:00Z'
 let startWorkspace: ManagedWorkspace
 const edit = () => useGraphDraftStore.getState().nextDrafts[key]!
-const saveButton = () => screen.getByRole('button', { name: /^Save workflow$/ })
+const saveButton = () => screen.getByRole('button', { name: /^Save changes$/ })
 const recoveryName = /^(?:Stop affected Runs and save|Reconcile Save)$/
 async function retainedSaveReady() {
   await waitFor(() => {
     // A pending journal is reconciled; ordinary Save is not offered and cannot create a new command.
-    expect(screen.queryByRole('button', { name: /^Save workflow$/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Save changes$/ })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: recoveryName })).toBeEnabled()
     expect(screen.getByRole('button', { name: /^Discard changes$/ })).toBeEnabled()
   })
@@ -208,7 +208,7 @@ describe('NIM-2644 mounted frontend recovery through the real edit-intent hook',
       return within(await screen.findByLabelText('node-0 settings'))
     }
     const actions = () => within(screen.getByLabelText('Draft actions'))
-    const save = () => actions().getByRole('button', { name: 'Save workflow' })
+    const save = () => actions().getByRole('button', { name: 'Save changes' })
     const stage = vi.spyOn(nextDraftApi, 'editStage').mockRejectedValue(new ApiError({
       code: 'WORKTREE_BINDING_REQUIRED', message: 'Select an approved root for this Agent branch prefix.',
     }, 409))
@@ -220,7 +220,7 @@ describe('NIM-2644 mounted frontend recovery through the real edit-intent hook',
     const branchPrefix = await settings.findByLabelText('Agent branch prefix')
     expect(branchPrefix).toHaveRole('textbox')
     fireEvent.change(branchPrefix, { target: { value: 'foreman/journey-worker' } })
-    const apply = settings.getByLabelText('Apply agent settings to draft')
+    const apply = settings.getByLabelText('Save agent settings')
     expect(apply).toHaveRole('button')
     fireEvent.click(apply)
     await waitFor(() => expect(save()).toBeEnabled())
@@ -545,7 +545,7 @@ describe('NIM-2644 mounted frontend recovery through the real edit-intent hook',
     if (dropped) await retainedSaveReady()
     else await waitFor(() => {
       expect(readEditOutbox(key)).toBeUndefined()
-      const button = screen.queryByRole('button', { name: /^Save workflow$/ })
+      const button = screen.queryByRole('button', { name: /^Save changes$/ })
       if (newer) expect(button).toBeEnabled(); else expect(button).not.toBeInTheDocument()
     })
     if (dropped) {

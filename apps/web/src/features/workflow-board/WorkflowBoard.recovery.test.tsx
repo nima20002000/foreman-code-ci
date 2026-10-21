@@ -113,7 +113,7 @@ function edit(f: Fixture) {
     nodes: graph.nodes.map((node) => ({ ...node, initialPrompt: 'Instructions staged while recovery is unresolved' })),
   })))
 }
-const saveButton = () => within(screen.getByRole('region', { name: 'Workflow authoring' })).getByRole('button', { name: /^Save workflow$/ })
+const saveButton = () => within(screen.getByRole('region', { name: 'Workflow authoring' })).getByRole('button', { name: /^Save changes$/ })
 const editCalls = (f: Fixture, actionName: string) => f.mock.calls.filter((call) => call.method === 'POST'
   && call.path.endsWith('/definition/edits') && (call.body as { action?: string }).action === actionName)
 
