@@ -24,7 +24,8 @@
     "version": "153.0.8010.12",
     "revision": "1243",
     "source": "https://github.com/microsoft/playwright/blob/v1.63.0/packages/playwright-core/browsers.json",
-    "url": "https://cdn.playwright.dev/builds/cft/153.0.8010.12/linux64/chrome-linux64.zip"
+    "url": "https://cdn.playwright.dev/builds/cft/153.0.8010.12/linux64/chrome-linux64.zip",
+    "sha256": "8aac35011c18f6e2d10696154af89a5728ac2ddd6dc6fad24ffdf243c3fcfd5a"
   },
   "resolver": "The pip embedded in the checksum-pinned standalone Python. Release assembly records its exact version, every selected wheel URL/version/SHA-256, the real Chromium archive SHA-256 and source inputs. Reproduction consumes that resolved lock without resolving dependency ranges.",
   "publicationGate": "No runtime descriptor is emitted until complete locked offline installation, license collection, native-host bundling, executable readiness and archive hashing succeed.",

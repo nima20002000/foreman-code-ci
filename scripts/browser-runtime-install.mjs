@@ -54,7 +54,8 @@ async function requireNativeTarget(target) {
 }
 
 export async function downloadBrowserRuntimeArtifact(url, destination, expected, fetchArtifact = globalThis.fetch) {
-  invariant(new URL(url).protocol === 'https:' && (!expected || digest.test(expected)), 'invalid artifact URL or digest');
+  invariant(digest.test(expected ?? ''), 'expected artifact digest required');
+  invariant(new URL(url).protocol === 'https:', 'invalid artifact URL');
   const response = await fetchArtifact(url, { redirect: 'follow' });
   invariant(response.ok && response.body, `artifact unavailable (${response.status})`);
   const handle = await open(destination, 'wx', 0o600), hash = createHash('sha256');
@@ -66,7 +67,7 @@ export async function downloadBrowserRuntimeArtifact(url, destination, expected,
       hash.update(bytes); await handle.writeFile(bytes);
     }
     const sha256 = hash.digest('hex');
-    invariant(!expected || sha256 === expected, 'upstream artifact checksum mismatch');
+    invariant(sha256 === expected, 'upstream artifact checksum mismatch');
     await handle.sync(); return { url, sha256, size };
   } finally { await handle.close(); }
 }
@@ -102,7 +103,8 @@ async function resolvePythonLock({ python, inputs, target, temporary, previous, 
   if (previous) {
     invariant(previous.format === 1 && previous.kind === 'foreman-browser-resolved-lock'
       && JSON.stringify(previous.target) === JSON.stringify(target) && previous.python.sha256 === inputs.python.sha256
-      && previous.chromium.version === inputs.chromium.version && digest.test(previous.chromium.sha256), 'incompatible resolved lock');
+      && previous.chromium.version === inputs.chromium.version && previous.chromium.sha256 === inputs.chromium.sha256,
+    'incompatible resolved lock');
     return previous;
   }
   const report = join(temporary, 'pip-report.json');
@@ -350,7 +352,8 @@ export async function assembleBrowserRuntime({ repository, commit, target, forem
     await normalizeBrowserPythonEntrypoints({ python, unit, run });
     onProgress?.('python-dependencies-installed');
     const chromiumArchive = join(temporary, 'chromium.zip');
-    const chromium = await downloadBrowserRuntimeArtifact(inputs.chromium.url, chromiumArchive, resolvedLock?.chromium.sha256, fetchArtifact);
+    const chromium = await downloadBrowserRuntimeArtifact(inputs.chromium.url, chromiumArchive,
+      resolvedLock?.chromium.sha256 ?? inputs.chromium.sha256, fetchArtifact);
     lock.chromium = { ...inputs.chromium, ...chromium };
     await extractChromium(python, chromiumArchive, join(unit, 'chromium'), run);
     onProgress?.('chromium-extracted');
