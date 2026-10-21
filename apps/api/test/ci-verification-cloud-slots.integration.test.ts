@@ -104,7 +104,7 @@ function executor(options: { status?: (computer: HostCiComputer) => Promise<CiHo
     if (request.operation === 'cancel') return { operation: 'cancel', run: { ...run, state: 'canceled' } }
     return { operation: 'read', run, text: '', nextOffset: 0 }
   }
-  const finish = (runId: string, options: { executorCleanupPending?: boolean } = {}) => {
+  const finish = (runId: string, options: Pick<CiHostRun, 'executorCleanupPending' | 'collection'> = {}) => {
     const run = runs.get(runId)!
     runs.set(runId, { ...run, ...options, state: 'passed', exitCode: 0, finishedAt: new Date().toISOString() })
   }
@@ -144,6 +144,60 @@ async function operatorApp(ci: HostCiService, commands: PostgresCommandCoordinat
 
 const verification = (commit: string, priority: 'high' | 'normal' = 'high') => ({ suite: 'lint', scope: 'affected',
   files: ['apps/web/src/site.tsx'], priority, noSupersede: true, commit, commandId: randomUUID() })
+
+it('starts cloud integration on a new ticket after the slot finishes its gate check', async () => {
+  const clouds = cloudSlots(8)
+  const fleet = executor()
+  const commands = new PostgresCommandCoordinator(database.pool)
+  const files = Array.from({ length: 96 }, (_, index) => `apps/api/test/feature-${index}.integration.test.ts`)
+  const ci = new HostCiService(database.pool, commands, new RunCiAuthority(database.pool), { ...commits,
+    integrationInventory: async () => ({ files, durations: Object.fromEntries(files.map(file => [file, 120_000])) }),
+  }, { computers: async () => [builders[0]!, ...clouds], request: fleet.request })
+  const f = await operatorApp(ci, commands)
+  try {
+    const gate = CiRunOutputSchema.parse(await f.value('ci_run', { suite: 'integration', scope: 'full', gate: true,
+      commit: 'a'.repeat(40), commandId: randomUUID() }))
+    await ci.dispatch()
+    await ci.drain()
+    const read = async () => CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: gate.ticketId }))
+    const initial = await read()
+    const checks = initial.partitions!.filter(run => run.suite !== 'integration')
+    const planned = initial.partitions!.filter(run => run.suite === 'integration'
+      && run.plannedHostKey?.startsWith('cloud-'))
+    expect(planned.length).toBeGreaterThan(1)
+    expect(initial.partitions!.filter(run => run.suite === 'integration').flatMap(run => run.files).sort())
+      .toEqual([...files].sort())
+    const firstCloud = fleet.started.filter(run => run.key.startsWith('cloud-'))
+    expect(firstCloud).toHaveLength(8)
+    for (const started of firstCloud) expect(checks.some(run => run.id === started.runId)).toBe(true)
+    expect(initial.partitions!.filter(run => run.suite === 'integration' && run.state === 'running')
+      .every(run => run.computer!.hostRef.kind === 'main')).toBe(true)
+    const finished = new Set<string>()
+    for (let wave = 0; wave < checks.length; wave++) {
+      const current = await read()
+      for (const run of current.partitions!.filter(run => run.suite !== 'integration' && run.state === 'running')) {
+        fleet.finish(run.id, { collection: 'unsupported' })
+        finished.add(run.id)
+      }
+      await ci.dispatch()
+      await ci.drain()
+      const running = (await read()).partitions!.filter(run => run.suite === 'integration'
+        && run.state === 'running' && run.computer?.hostRef.kind === 'cloud')
+      if (running.length !== planned.length) continue
+      for (const run of running) {
+        const slot = `cloud-${run.computer!.hostRef.slot}`
+        const first = firstCloud.find(started => started.key === slot)!
+        expect(finished.has(first.runId)).toBe(true)
+        expect(run.id).not.toBe(first.runId)
+      }
+      const active = (await database.pool.query<{ host_key: string; count: number }>(`select host_key,count(*)::int as count
+        from ci_runs where state in ('starting','running') group by host_key`)).rows
+      expect(active.filter(row => row.host_key.startsWith('cloud-') && row.count > 1)).toEqual([])
+      return
+    }
+    throw new Error('The completed check slots did not start every integration part')
+  } finally { await f.close() }
+})
 
 it('keeps reserved cloud slots out of a gate plan and starts a fix verification on one within a dispatch pass', async () => {
   const clouds = cloudSlots(6)
