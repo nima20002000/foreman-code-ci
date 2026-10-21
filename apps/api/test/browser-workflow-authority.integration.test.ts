@@ -1,3 +1,4 @@
+import { conversationDeliveryFixture } from '../src/modules/conversations/conversationDelivery.test-support.js'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import { effectiveGraphqlTools, type AgentSubject, type AgentConfigurationVersion, type NodeBrowserSettings, type ResolvedSkill } from '@foreman-code/contracts'
 import type { NodeSkillOverride } from '@foreman-code/contracts/wave25'
@@ -88,4 +89,18 @@ it('authorizes an execution browser with its Run-scoped Operator grant and denie
     actions: ['workflows:read', 'workflows:update'], scope: { runIds: ['different-run'] },
   }] })
   await expect(f.authority.subject(denied.principal, f.subject, false)).rejects.toMatchObject({ status: 403 })
+})
+
+it('resolves a saved conversation browser selection before its first native turn', async () => {
+  const f = await conversationDeliveryFixture()
+  try {
+    const state = await f.agent.ensureConversation(f.owner, { workspaceId: f.scope.workspaceId, ...f.query })
+    if (!state.conversation) throw new Error('Expected the saved conversation')
+    const authority = new BrowserAuthority(f.database.pool, () => 'computer',
+      () => createBrowserProfileRepository(f.database.pool), async () => true)
+    const selected = await authority.conversation(state.conversation.id)
+    await expect(authority.details(selected.context.subject)).resolves.toMatchObject({
+      active: true, browser: { enabled: false }, subject: { kind: 'conversation', conversationId: state.conversation.id },
+    })
+  } finally { await f.close() }
 })

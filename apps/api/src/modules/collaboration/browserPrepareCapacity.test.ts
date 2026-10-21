@@ -29,7 +29,8 @@ it('finishes every remote preparation when all ordinary request slots are occupi
   // Saved-node/database facts and the paired carrier are external ports in this transport test.
   const details = vi.spyOn(authority, 'details').mockImplementation(async subject => ({ subject, configuration,
     browser: { enabled: true, profileId: 'profile' }, workflowVersionId: fixture.version.id, computerId: binding.deviceId, active: true, readOnly: false, tools: [] }))
-  const capacity = Promise.withResolvers<void>()
+  let admitAll!: () => void
+  const capacity = new Promise<void>(resolve => { admitAll = resolve })
   let admitted = 0
   let statusReads = 0
   const controller = new AbortController()
@@ -42,8 +43,8 @@ it('finishes every remote preparation when all ordinary request slots are occupi
         return { payload: { computerId: binding.deviceId, ready: true, phase: 'ready', reason: null } }
       }
       if (input.operation !== 'prepare') throw new Error('Unexpected browser operation')
-      if (++admitted === DEVICE_APPLICATION_IN_FLIGHT) capacity.resolve()
-      await capacity.promise
+      if (++admitted === DEVICE_APPLICATION_IN_FLIGHT) admitAll()
+      await capacity
       await remote.handle({ operation: 'subject', subject: input.input.subject }, { binding, signal: controller.signal })
       return { payload: { kind: 'unavailable', reason: 'resource_pressure', retryable: true } }
     } finally { release() }
