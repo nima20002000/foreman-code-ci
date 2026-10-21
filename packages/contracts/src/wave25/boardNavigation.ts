@@ -1,4 +1,3 @@
-import { MemoryBoardSearchSchema } from '../memoryBoardViews.js'
 import { z } from 'zod'
 import { UrlSearchSelectionSchema } from '../index.js'
 import { GraphIdSchema } from './graphPrimitives.js'
@@ -60,7 +59,6 @@ export function readRunInspectionKey(key?: string): WorkspaceBoardExecutionSelec
 /** Presentation only. A URL requests a Run; it never authorizes or proves its pins. */
 export const WorkspaceBoardSearchSchema = UrlSearchSelectionSchema.extend({
   ...BoardSurfaceSelectionFields,
-  ...MemoryBoardSearchSchema.shape,
   ...WorkspaceBoardInspectionSchema.shape,
   activityKind: RunActivityPublicKindSchema.optional(), activityAgentId: GraphIdSchema.optional(),
   runId: GraphIdSchema.optional(),
