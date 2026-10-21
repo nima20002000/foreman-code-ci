@@ -46,7 +46,7 @@ afterAll(async () => {
 it.each(['operator', 'agent'] as const)(
   'claims a large %s ticket within the dispatch SQL deadline despite unrelated execution history', async caller => {
     const files = Array.from({ length: 901 }, (_, index) =>
-      `apps/api/test/features/${randomUUID()}/feature-${index}.integration.test.ts`)
+      `apps/api/test/feature-${index}-${randomUUID()}.integration.test.ts`)
     const ticket = CiRunRecordSchema.parse({ id: randomUUID(), workspaceId: graph.scope.workspaceId,
       groupId: randomUUID(), suite: 'integration', scope: 'affected', files,
       commit: 'a'.repeat(40), repository: 'example/project', ciMirror: 'example/project-ci', partition: null,
