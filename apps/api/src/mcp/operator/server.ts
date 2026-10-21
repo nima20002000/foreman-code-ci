@@ -20,6 +20,7 @@ import { registerRunGraphTools } from './tools/runGraph.js'
 import { registerRunInspectionTools } from './tools/runInspection.js'
 import { registerWorkflowScheduleTools } from './tools/workflowSchedules.js'
 import { registerCurrentWorkflowTools } from './tools/currentWorkflow.js'
+import { registerWorkflowHierarchyTools } from './tools/workflowHierarchy.js'
 import { registerFileRetentionTools } from './tools/fileRetention.js'
 import { authorizationPrincipal } from '../../modules/access/policy.js'
 import { OPERATOR_TOOL_GROUPS, OPERATOR_TOOLS, type OperatorToolGroup } from './catalog.js'
@@ -71,7 +72,7 @@ export function operatorToolCatalog(services: OperatorServices): readonly BoundT
 
 export function operatorRequestTools(context: OperatorRequestContext, catalog?: OperatorCatalog) {
   const request: CatalogContext = { ...context, principal: authorizationPrincipal(context.principal), catalog }
-  return operatorToolCatalog(context.services).filter(tool => catalogToolAvailable(request, tool.name, OPERATOR_TOOLS)).map(tool => ({
+  return operatorToolCatalog(context.services).filter(tool => catalogToolAvailable(request, tool.name)).map(tool => ({
     name: tool.name,
     description: tool.description,
     register: (server: McpServer) => tool.register(server, request),
@@ -84,7 +85,6 @@ export function registerOperatorTools(server: McpServer, context: OperatorReques
 
 function registerOperatorDefinitions(server: McpServer, context: OperatorRequestContext, catalog?: OperatorCatalog): void {
   const group = (name: OperatorToolGroup) => registerOperatorToolGroup(server, context, OPERATOR_TOOL_GROUPS[name], catalog)
-  group('memoryBoards')
   group('bugReports')
   group('resourceTelemetry')
   group('harnessRegistry')
@@ -116,6 +116,7 @@ function registerOperatorDefinitions(server: McpServer, context: OperatorRequest
   registerFileRetentionTools(server, context)
   group('workspaces')
   registerCurrentWorkflowTools(server, context)
+  registerWorkflowHierarchyTools(server, context)
   group('workflows')
   registerWorkflowScheduleTools(server, context)
   group('agents')

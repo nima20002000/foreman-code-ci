@@ -29,10 +29,7 @@ export async function claimCiDispatch(pool: SqlQuery, run: CiRunRecord, computer
     dispatchedAt: new Date().toISOString(),
     ...(computer.hostRef.kind !== 'cloud' ? { dispatchHostKey: computer.key } : {}) })
   const saved = await pool.query(`update ci_runs set state=$2, host_key=$3, record=$4::jsonb
-    where id=$1 and state='queued' and host_key is null and record=$5::jsonb
-      and (record->>'gate' is distinct from 'true' or not exists (
-        select 1 from ci_runs failed where failed.workspace_id=ci_runs.workspace_id
-          and failed.group_id=ci_runs.group_id and failed.state='failed' and failed.record->>'gate'='true'))`,
+    where id=$1 and state='queued' and host_key is null and record=$5::jsonb`,
   [run.id, next.state, computer.key, serializeCiJson(next), JSON.stringify(run)])
   return saved.rowCount ? next : null
 }
