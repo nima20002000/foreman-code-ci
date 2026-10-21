@@ -258,9 +258,7 @@ export class HarnessMcpSettingsService {
         const lock = await client.query<{ locked: boolean }>("select pg_try_advisory_lock(hashtext('graphql:harness-mcp-settings')) as locked")
         locked = lock.rows[0]?.locked === true
         if (!locked) throw new DomainError('MCP_SETTINGS_BUSY', 'Another MCP change is being applied.', 409)
-        const row = await client.query<Row>(
-          'select * from harness_mcp_change_plans where id=$1 and ($2::boolean or requested_by=$3)',
-          [id, await this.isRoot(principal), principal.id])
+        const row = await client.query<Row>('select * from harness_mcp_change_plans where id=$1', [id])
         if (!row.rows[0]) throw new DomainError('MCP_PLAN_NOT_FOUND', 'This MCP change is unavailable.', 404)
         selected = projection(row.rows[0])
         if (selected.hostRef?.kind === 'device') throw new DomainError('MCP_DEVICE_REQUEST', 'Device changes apply directly; use Reconcile for uncertain writes.', 409)
