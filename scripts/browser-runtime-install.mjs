@@ -203,9 +203,14 @@ export async function copyNativeLicenses(inputs, repository, unit) {
   for (const input of inputs.filter(path => path.includes('node_modules/'))) {
     let directory = dirname(resolve(repository, input)), manifest;
     for (;;) {
-      try { manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8')); break; }
+      try {
+        manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
+        if (typeof manifest.name === 'string' && typeof manifest.version === 'string') break;
+      }
       catch (error) { if (error.code !== 'ENOENT') throw error; }
-      invariant(dirname(directory) !== directory, 'native dependency package metadata missing'); directory = dirname(directory);
+      invariant(basename(directory) !== 'node_modules' && dirname(directory) !== directory,
+        `native dependency package metadata missing: ${input}`);
+      directory = dirname(directory);
     }
     if (seen.has(directory)) continue;
     seen.add(directory);
