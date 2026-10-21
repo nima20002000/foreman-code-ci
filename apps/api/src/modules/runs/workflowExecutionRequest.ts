@@ -1,3 +1,4 @@
+import { hierarchyWorkPrompt } from './hierarchyWorkPrompt.js'
 import {
   HarnessExecutionRequestSchema,
   type AgentConfigurationVersion,
@@ -57,7 +58,7 @@ export function workflowExecutionPromptContext(input: WorkflowExecutionRequestIn
   const initialPrompt = tickIndex !== undefined
     ? intervalCheckPrompt(tickIndex, node.interval, Boolean(execution.sessionContinuation),
       execution.sessionContinuation ? undefined : node.initialPrompt)
-    : resultProtocol ? node.initialPrompt : currentInitialPrompt(node,
+    : resultProtocol || version.definition.hierarchy ? node.initialPrompt : currentInitialPrompt(node,
       version.definition.repeat?.blocks.some(block => block.exitNodeId === node.id) ?? false,
       version.definition.handoffs !== undefined)
   const workInput = version.definition.handoffs && tickIndex === undefined
@@ -68,7 +69,7 @@ export function workflowExecutionPromptContext(input: WorkflowExecutionRequestIn
     return JSON.stringify(item && item.kind !== 'job' ? item.name ?? item.label ?? nodeId : nodeId)
   }
   // Without saved choices, finish follows every outgoing execution edge; a return never does.
-  const downstream = node.choice || resultProtocol && version.definition.hierarchy ? [] : version.definition.edges
+  const downstream = node.choice || version.definition.hierarchy ? [] : version.definition.edges
     .filter(edge => edge.kind === 'execution' && edge.source === node.id).map(edge => nameOf(edge.target))
   const returnPrompt = workInput?.work.kind === 'work_request' ? [
     ...(downstream.length ? [
@@ -88,7 +89,9 @@ export function workflowExecutionPromptContext(input: WorkflowExecutionRequestIn
     `Previous summary: ${workInput.work.direction.summary}`,
     'Use the explicit direction delivered to this exact execution. Preserve the latest deliverable and account for its unresolved findings.',
   ].join('\n') : undefined
-  const prompts = [initialPrompt, coordination, input.collaborationPrompt, noticePrompt, returnPrompt, direction].filter(Boolean)
+  const hierarchy = !resultProtocol && version.definition.hierarchy && tickIndex === undefined
+    ? hierarchyWorkPrompt(version.definition, node.id) : undefined
+  const prompts = [initialPrompt, coordination, hierarchy, input.collaborationPrompt, noticePrompt, returnPrompt, direction].filter(Boolean)
   return HarnessExecutionRequestSchema.omit({ workingDirectory: true, runtimeDirectory: true }).parse({
     executionId: execution.id,
     runId: execution.runId,

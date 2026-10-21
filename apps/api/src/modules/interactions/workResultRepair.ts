@@ -1,13 +1,16 @@
+import type { WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import type { CoordinationResultContext, ExecutionResult, HarnessExecutionContext } from '@foreman-code/contracts'
 import { ZodError } from 'zod'
 import { parseWorkResultForInput, receivedWorkRequestIds } from '../runs/workHandoffResult.js'
-import { parseWorkflowCoordinationResult } from '../runs/workflowCoordinationResult.js'
+import { parseWorkflowCoordinationResult, parseWorkflowWorkResult } from '../runs/workflowCoordinationResult.js'
 
 export function workResultRepairPrompt(result: ExecutionResult, contract: string, input?: unknown,
-  context?: HarnessExecutionContext, coordination?: CoordinationResultContext): string | undefined {
+  context?: HarnessExecutionContext, coordination?: CoordinationResultContext,
+  hierarchy?: { version: WorkflowVersionV3; workflowNodeId: string }): string | undefined {
   if (result.outcome !== 'succeeded') return undefined
   try {
     if (coordination) parseWorkflowCoordinationResult(result, coordination, input, context)
+    else if (hierarchy) parseWorkflowWorkResult(result, hierarchy.version, hierarchy.workflowNodeId, undefined, input, context)
     else parseWorkResultForInput(result, input, context)
     return undefined
   } catch (error) {

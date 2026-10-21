@@ -1,3 +1,4 @@
+import { hierarchyWorkPrompt } from './hierarchyWorkPrompt.js'
 import { isDatabasePoolTimeout } from '../../infrastructure/databaseReadRetry.js'
 import { isDatabaseTimeout, retryDatabaseTimeout, retryDatabaseOperation } from '../../infrastructure/databaseTimeout.js'
 import { beginRuntimeTiming, timeRuntimeOperation } from '../../infrastructure/runtimeTiming.js'
@@ -328,14 +329,17 @@ export function repeatNativeObserver(context: RepeatNativeObserverContext):
       const coordinationResult = run.resultProtocol ? { resultProtocol: run.resultProtocol,
         definition: context.version.definition, workflowNodeId: node.id,
         interval: repeatTickIndex(execution.input) !== undefined } : undefined
+      const hierarchyResult = !run.resultProtocol && context.version.definition.hierarchy && repeatTickIndex(execution.input) === undefined
+        ? { version: context.version, workflowNodeId: node.id } : undefined
       const workHandoffContract = coordinationResult ? workflowCoordinationPrompt(coordinationResult)
+        : hierarchyResult ? hierarchyWorkPrompt(context.version.definition, node.id)
         : context.version.definition.handoffs && repeatTickIndex(execution.input) === undefined
         ? currentInitialPrompt({ ...node, initialPrompt: undefined }, false, true) : undefined
       const deliverable = workflowDeliverableContract(context.version, execution,
         (kind, values) => context.workflows.referencesCreatedByExecution(kind, values, run.workspaceId, execution.id), run.resultProtocol)
       for (;;) {
         const observation = await native.observeExact({ ...common, execution, request, store: boundary, signal, onStarted: release,
-          workHandoffContract, coordinationResult, deliverable })
+          workHandoffContract, coordinationResult, hierarchyResult, deliverable })
         execution = observation.execution
         if (observation.state === 'completed') {
           return
@@ -550,6 +554,7 @@ export async function executeRepeatRuntime(input: {
   driver: RepeatExecutionDriver; lifecycle: RepeatRuntimeLifecycle
   checkpointer: import('@langchain/langgraph-checkpoint').BaseCheckpointSaver
   configuredParallelism?: number
+  limiter?: ExecutionLimiter
 }): Promise<void> {
   const { buildRepeatGraph } = await import('./repeatGraph.js')
   const failed = new AbortController(), signal = AbortSignal.any([input.signal, failed.signal])
@@ -584,7 +589,7 @@ export async function executeRepeatRuntime(input: {
       })
     }
   // Graph Agent work and Jobs share the Run's parallelism limit.
-  const limiter = new ExecutionLimiter(
+  const limiter = input.limiter ?? new ExecutionLimiter(
     input.version.definition.executionPolicy!.maxParallelism, 1000)
   const work = input.version.definition.handoffs ? buildWorkHandoffGraph({
     runId: input.runId, version: input.version, checkpointer: input.checkpointer, signal, track,

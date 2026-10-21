@@ -3,7 +3,7 @@ import { parseCoordinationResult, type CoordinationResult, type CoordinationResu
 import { canonicalGraphJson, parseWorkHandoffArtifactResult, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import { parseWorkflowArtifactResult, type WorkflowArtifactResultV1 } from '@foreman-code/contracts/workflow-artifact-result'
 import { parseWorkResultForInput, receivedWorkRequestIds, resolveWorkResultForInput } from './workHandoffResult.js'
-import type { HierarchyWorkResult } from './hierarchyResults.js'
+import { parseHierarchyWorkResult, type HierarchyWorkResult } from './hierarchyResults.js'
 
 /** The immutable Run marker is the only selector. Parsing never replaces the
  * original native result or strips the bytes used for accepted evidence. */
@@ -17,7 +17,7 @@ export function parseWorkflowCoordinationResult(result: ExecutionResult, context
     ...(executionContext?.outstandingRequestIds ? { outstandingRequestIds: executionContext.outstandingRequestIds } : {}) })
   if (context.interval || !context.definition.handoffs) return parsed
   if (!('routing' in parsed) || !('kind' in parsed.routing)) throw new Error('HANDOFF_RESULT_ROUTING_REQUIRED')
-  const handoff = resolveWorkResultForInput(parsed as HierarchyWorkResult, input, executionContext)
+  const handoff = resolveWorkResultForInput(parsed as Extract<CoordinationResult, { routing: { kind: string } }>, input, executionContext)
   if (context.definition.hierarchy && handoff.routing.kind === 'finish'
     && input !== undefined && receivedWorkRequestIds(input, executionContext).length) throw new Error('HIERARCHY_RETURN_REQUIRED')
   return handoff
@@ -25,6 +25,11 @@ export function parseWorkflowCoordinationResult(result: ExecutionResult, context
 
 export function parseWorkflowWorkResult(result: ExecutionResult, version: WorkflowVersionV3,
   workflowNodeId: string, resultProtocol?: ResultProtocol, input?: unknown, executionContext?: HarnessExecutionContext) {
+  if (!resultProtocol && version.definition.hierarchy) {
+    const parsed = parseHierarchyWorkResult(result, version, workflowNodeId, undefined, executionContext?.outstandingRequestIds)
+    if (parsed.routing.kind === 'finish' && input !== undefined && receivedWorkRequestIds(input, executionContext).length) throw new Error('HIERARCHY_RETURN_REQUIRED')
+    return resolveWorkResultForInput(parsed, input, executionContext)
+  }
   if (!resultProtocol) return parseWorkResultForInput(result, input, executionContext)
   const parsed = parseWorkflowCoordinationResult(result, { resultProtocol, definition: version.definition,
     workflowNodeId }, input, executionContext)
@@ -42,6 +47,11 @@ export function workflowArtifactResult(result: ExecutionResult, version: Workflo
     if (result.outcome !== 'succeeded') throw new Error('COORDINATION_RESULT_NOT_SUCCESSFUL')
     const parsed = parseCoordinationResult(result.output, { resultProtocol, definition: version.definition, workflowNodeId })
     if (!('artifactOutputs' in parsed) || !parsed.artifactOutputs) throw new Error('WORKFLOW_ARTIFACT_OUTPUTS_REQUIRED')
+    return parsed.artifactOutputs
+  }
+  if (version.definition.hierarchy) {
+    const parsed = parseHierarchyWorkResult(result, version, workflowNodeId, resultProtocol)
+    if (!parsed.artifactOutputs) throw new Error('WORKFLOW_ARTIFACT_OUTPUTS_REQUIRED')
     return parsed.artifactOutputs
   }
   if (version.definition.handoffs) return parseWorkHandoffArtifactResult(result, node.artifactOutputs).artifactOutputs

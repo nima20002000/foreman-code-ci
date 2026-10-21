@@ -52,12 +52,14 @@ describe('hierarchy delegation preparation', () => {
     expect(() => hierarchyRequestedWork(f.version, f.parent.id, f.result))
       .toThrowError(expect.objectContaining({ code: 'HIERARCHY_REQUEST_ROUTE_FORBIDDEN' }))
   })
-  it('requires the immutable protocol marker instead of enabling it from hierarchy metadata', () => {
+  it('parses hierarchy routing with either protocol while preserving the original result', () => {
     const f = fixture()
-    expect(() => parseHierarchyWorkResult({ outcome: 'succeeded', output: f.result }, f.version, f.parent.id, undefined))
-      .toThrowError(expect.objectContaining({ code: 'HIERARCHY_RESULT_PROTOCOL_UNAVAILABLE' }))
+    const original = structuredClone(f.result)
+    expect(parseHierarchyWorkResult({ outcome: 'succeeded', output: f.result }, f.version, f.parent.id, undefined))
+      .toEqual(f.result)
     expect(parseHierarchyWorkResult({ outcome: 'succeeded', output: f.result }, f.version,
       f.parent.id, COORDINATION_RESULT_PROTOCOL)).toEqual(f.result)
+    expect(f.result).toEqual(original)
   })
   it('keeps valid root findings for direction admission while rejecting outstanding children', () => {
     const f = fixture()

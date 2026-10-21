@@ -354,7 +354,7 @@ export class RepeatRunRepository {
         assertActive: () => this.active(context),
       }, stored.workActivationId)
       assertWorkActivationReplay(stored, input)
-      if (context.hooks.run.resultProtocol) {
+      if (context.hooks.run.resultProtocol || context.version.definition.hierarchy) {
         return (await readWorkResultContextLocked(context, stored.workActivationId, stored.input,
           context.hooks.run.resultProtocol))!
       }

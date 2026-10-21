@@ -24,13 +24,13 @@ describe.skipIf(!postgresEnabled)('bounded workflow native chat reads', () => {
         const before = await visited()
         const recent = await readWorkflowNativeChat(sql, target, { limit: 2, bindings: [] })
         const firstCost = await visited() - before
+        // Database tuple visits measure work, independent of the shared runner's timing and cache warmth.
+        expect(firstCost).toBeLessThan(256)
         expect(recent.messages.map(message => message.content)).toEqual(['Reply 7999', 'Reply 8000'])
         expect(recent.hasMore).toBe(true)
         const next = await readWorkflowNativeChat(sql, target, { limit: 2, bindings: [], cursor: recent.nextCursor! })
         const totalCost = await visited() - before
         expect(next.messages.map(message => message.content)).toEqual(['Reply 7997', 'Reply 7998'])
-        // Database tuple visits measure work, independent of the shared runner's timing and cache warmth.
-        expect(firstCost).toBeLessThan(256)
         expect(totalCost).toBeLessThan(512)
       })
     } finally { await f.close() }

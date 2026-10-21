@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { inspect } from 'node:util'
 import { ChatControlReceiptSchema, ChatDeliveryReceiptSchema } from '@foreman-code/contracts'
 import { WorkActivationInputSchema } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
@@ -17,7 +18,8 @@ describe.skipIf(!postgresEnabled)('workflow control recovery and parent settleme
     const f = await currentOperatorIntegration({ executionChat: true, workflowHierarchy: true,
       fixture: hierarchyRuntimeFixture(), approvalNodeIds: [], collaborationPorts: {},
       managerFactory: context => provider.connection(context) })
-    const drive = f.engine.start(f.f.run.id).catch(error => error)
+    let driveFailure: unknown
+    const drive = f.engine.start(f.f.run.id).catch(error => { driveFailure = error; return error })
     try {
       await provider.entered('builder')
       const target = await workflowChatTarget(f, 'builder')
@@ -25,8 +27,13 @@ describe.skipIf(!postgresEnabled)('workflow control recovery and parent settleme
       const stopped = ChatControlReceiptSchema.parse(await workflowChatCall(f, 'agent_chat_interrupt', {
         commandId: 'stop-child', target, scope: 'active_turn',
       }))
-      expect(stopped.state).toBe('settling')
-      await expect.poll(async () => (await f.runs.get(f.f.run.id))?.executionState, { timeout: 15_000 }).toBe('completed')
+      // The native offer is recorded as unknown until the observer proves physical closure.
+      expect(stopped.state).toBe('unknown')
+      await expect.poll(async () => {
+        expect(driveFailure, inspect(driveFailure, { depth: 8 })).toBeUndefined()
+        return { run: (await f.runs.get(f.f.run.id))?.executionState,
+          execution: (await f.runs.getExecution(target.execution.executionId))?.state }
+      }, { timeout: 15_000 }).toEqual({ run: 'completed', execution: 'completed' })
       expect(await drive).not.toBeInstanceOf(Error)
       expect(await f.runs.get(f.f.run.id)).toMatchObject({ outcome: 'succeeded' })
       expect(await f.runs.getExecution(target.execution.executionId)).toMatchObject({ state: 'completed', result: { outcome } })
@@ -38,6 +45,9 @@ describe.skipIf(!postgresEnabled)('workflow control recovery and parent settleme
       expect((await f.db.pool.query('select state from run_hierarchy_groups where run_id=$1', [f.f.run.id])).rows)
         .toEqual([{ state: 'continued' }, { state: 'continued' }])
       expect(provider.cancellations).toEqual(['builder'])
+      expect(await workflowChatCall(f, 'agent_chat_interrupt', {
+        commandId: 'stop-child', target, scope: 'active_turn',
+      })).toMatchObject({ commandId: stopped.commandId, state: 'completed' })
     } finally { provider.releaseAll(); await f.stop(); await drive; await f.close() }
   }, 60_000)
 

@@ -29,6 +29,7 @@ import type { OperatorProfileObservation } from '../operatorProfileObservation.j
 import type { ProviderAccountResolver } from '../../provider-accounts/service.js'
 import { assertRuntimeProviderAccountProfile, resolveRuntimeProviderAccount } from '../providerAccountRuntime.js'
 import { requireClaudeApiKey } from './productionCredentials.js'
+import { assertConsultationRebind } from '../consultationSession.js'
 
 /** Private lifetime signal is never serialized into accepted configuration or provenance. */
 export type ClaudeProfileOwner = (ClaudeDomainBinding | OperatorProfileObservation | {
@@ -96,6 +97,34 @@ function bindOperatorCredentialRefresh(manager: ClaudeNativeSessionManager) {
   }
 }
 
+function bindConsultationAccess(manager: ClaudeNativeSessionManager,
+  domain: ReturnType<typeof createPostgresClaudeInteractionBridge>,
+  getStart: () => NativeSessionStart | undefined, setStart: (start: NativeSessionStart) => void): void {
+  const rebind = manager.rebindApplicationAccess?.bind(manager)
+  manager.rebindApplicationAccess = async (session, start, effectSignal) => {
+    if (!rebind) throw new DomainError('NATIVE_CREDENTIAL_REBIND_UNAVAILABLE',
+      'This native manager cannot change its application subject.', 409)
+    const sessionStart = getStart()
+    if (!sessionStart) throw new DomainError('CLAUDE_SESSION_CONTEXT_REQUIRED',
+      'The rebind requires its admitted native session context.', 409)
+    assertConsultationRebind(sessionStart, start, session)
+    const domainBinding = domain.authority.binding
+    const previous = domainBinding.kind === 'workflow' ? domainBinding.consultation : undefined
+    await domain.authority.rebindConsultation(start.kind === 'workflow-consultation' ? start.consultation : undefined)
+    try { await rebind(session, start, effectSignal) }
+    catch (error) {
+      // Restore the previous domain only; failed native credential delivery remains a hard error.
+      if (domainBinding.kind === 'workflow') {
+        if (previous) domainBinding.consultation = previous
+        else delete domainBinding.consultation
+      }
+      throw error
+    }
+    setStart(start)
+  }
+
+}
+
 export function productionClaudeManager(input: ProductionClaudeInput) {
   input = ownedClaudeInput(input)
   let actual: ClaudeNativeSessionManager | undefined
@@ -139,7 +168,9 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
     // placement has its own authenticated host factory and cannot borrow it.
     if (accepted.override.target.hostRef.kind !== 'main') throw new DomainError('HARNESS_HOST_MISMATCH',
       'A registered-device profile must execute through its authenticated host.', 409)
-    const domain = createPostgresClaudeInteractionBridge({ database: input.pool, binding: input.binding,
+    const domainBinding = input.binding.kind === 'workflow'
+      ? { ...input.binding, ...(input.consultation ? { consultation: structuredClone(input.consultation) } : {}) } : input.binding
+    const domain = createPostgresClaudeInteractionBridge({ database: input.pool, binding: domainBinding,
       configuration: compiled.configuration, manager: { nativeCallbackContext: (sessionId, toolUseId) => actual?.nativeCallbackContext(sessionId, toolUseId) } })
     policyBridge = domain.bridge
     let callbackAuthority = await domain.callbackAdmissionIfActive()
@@ -185,6 +216,8 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
         return attached
       }
       const turn = manager.startTurn.bind(manager)
+      if (input.binding.kind === 'workflow') bindConsultationAccess(manager, domain,
+        () => sessionStart, start => { sessionStart = structuredClone(start) })
       manager.startTurn = async function* (session, message, effectSignal) {
         let attached: NativeSessionReference
         try {

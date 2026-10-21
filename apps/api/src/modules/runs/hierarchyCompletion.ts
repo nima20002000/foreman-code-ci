@@ -9,6 +9,7 @@ interface ActivationResult {
   activation_id: string; state: string; workflow_node_id: string; execution: unknown | null; accepted: boolean | null
   result_json: string | null; result_digest: string | null; direction_source: boolean; failure_result: unknown | null
   member_failure: boolean; refusal_result: unknown | null; returned: unknown | null; owed_request_id: string | null
+  member_failure_result: unknown | null
 }
 
 /** The hierarchy's final barrier belongs to the existing Run owner. A child's
@@ -23,6 +24,8 @@ export async function hierarchyCompletionLocked(context: HierarchyGroupContext):
         and d.source_activation_id=a.activation_id and d.source_execution_id=e.id) as direction_source,
       exists(select 1 from run_hierarchy_group_members m where m.run_id=a.run_id
         and m.failure_execution_id=e.id) as member_failure,
+      (select m.failure_result from run_hierarchy_group_members m where m.run_id=a.run_id
+        and m.failure_execution_id=e.id) as member_failure_result,
       f.result as refusal_result,t.record as returned,work_parent_request($1,a.activation_id) as owed_request_id
     from run_work_activations a
     left join lateral(select * from harness_executions current where current.run_id=a.run_id
@@ -38,7 +41,8 @@ export async function hierarchyCompletionLocked(context: HierarchyGroupContext):
     if (!row.execution) return repeatConflict('WORK_ACTIVATIONS_UNRESOLVED')
     const execution = HarnessExecutionSchema.parse(row.execution)
     if (execution.state !== 'completed') return repeatConflict('WORK_ACTIVATIONS_UNRESOLVED')
-    const negative = row.refusal_result ?? row.failure_result
+    // A validated logical control failure remains negative even if the original native result raced to success.
+    const negative = row.member_failure_result ?? row.refusal_result ?? row.failure_result
       ?? (execution.result?.outcome !== 'succeeded' ? execution.result : undefined)
     if (negative) {
       const failure = ExecutionResultSchema.parse(negative)

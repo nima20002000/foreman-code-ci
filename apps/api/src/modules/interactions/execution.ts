@@ -1,5 +1,7 @@
+import type { WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import { isDatabaseTimeout, retryDatabaseTimeout } from '../../infrastructure/databaseTimeout.js'
 import { withAbortSignal } from '../../infrastructure/abortSignal.js'
+import { ExecutionLimiter } from '../runs/limiter.js'
 import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
 import { runtimeTimingPoint, timeRuntimeOperation, withRuntimeTimingContext } from '../../infrastructure/runtimeTiming.js'
 import { inspectNativeResponse } from '../harnesses/responseAvailability.js'
@@ -177,6 +179,7 @@ interface ApprovalObservationInput {
   signal: AbortSignal
   workHandoffContract?: string | undefined
   coordinationResult?: CoordinationResultContext | undefined
+  hierarchyResult?: { version: WorkflowVersionV3; workflowNodeId: string } | undefined
   /** Enforced deliverable contract for every workflow Agent execution. */
   deliverable?: DeliverableContract | undefined
   onStarted?: (() => void) | undefined
@@ -248,10 +251,22 @@ export class ApprovalExecutionCoordinator {
   private readonly cancellations = new Map<string, Promise<void>>()
   private readonly reviewerRecoveries = new Map<string, Promise<boolean>>()
   private readonly sharedRunOwners = new Map<string, RunOwnership>()
+  private readonly runCapacity = new Map<string, { maximum: number; limiter: ExecutionLimiter }>()
   private readonly consultationStarts = new Map<string, Promise<void>>()
   private workflowControls: ReturnType<typeof createWorkflowChatOwner> | undefined
   private closing = false
   private restartClosure: Promise<void> | undefined
+
+  executionCapacity(runId: string, maximum: number): ExecutionLimiter {
+    const existing = this.runCapacity.get(runId)
+    if (existing) {
+      if (existing.maximum !== maximum) throw new DomainError('RUN_PIN_CONFLICT', 'Run parallelism changed.', 409)
+      return existing.limiter
+    }
+    const limiter = new ExecutionLimiter(maximum, 1000)
+    this.runCapacity.set(runId, { maximum, limiter })
+    return limiter
+  }
 
   residentRunIds(): string[] {
     return [...new Set([...this.pendingCleanupRuns, ...[...this.ownedSessions.values()].map((owned) => owned.execution.runId)])]
@@ -1009,10 +1024,13 @@ export class ApprovalExecutionCoordinator {
       check()
       current.activeSessionMode = command.request.sessionMode ?? 'regular'
       const stopRenewal = this.maintainConsultationCredential(current)
-      const task = observeWorkflowConsultation({ binding: active.binding, commandId: command.id, agentId: source.agentId,
+      const snapshot = await this.runs.getRepeatSnapshot(source.runId, owner)
+      const capacity = this.executionCapacity(source.runId, snapshot.version.definition.executionPolicy!.maxParallelism)
+      const sessionMode = current.activeSessionMode, credential = consultation.credential
+      const task = capacity.run(current.controller.signal, () => observeWorkflowConsultation({ binding: active.binding, commandId: command.id, agentId: source.agentId,
         session: current.session!, manager: current.manager, transaction, signal: current.controller.signal,
-        prompt: admittedWorkflowChatPrompt(command), sessionMode: current.activeSessionMode,
-        captured: active.nativeTarget, secrets: Object.values(consultation.credential.environment.variables), assertCurrent: check,
+        prompt: admittedWorkflowChatPrompt(command), sessionMode,
+        captured: active.nativeTarget, secrets: Object.values(credential.environment.variables), assertCurrent: check,
         acknowledge: async (lease, providerId) => {
           await this.interactions.coordination.bindLaneTurn(lease.fence, lease.correlationId)
           await this.interactions.coordination.acknowledgeLaneTurn(lease.fence, lease.correlationId, providerId)
@@ -1027,7 +1045,7 @@ export class ApprovalExecutionCoordinator {
           else if (raw.closeForResume) await raw.closeForResume(current.session!)
           else await raw.close(current.session!, lease.guard.signal)
         },
-      }).then(async next => {
+      })).then(async next => {
         this.releaseConsultationEntry(current)
         if (next) await this.dispatchPromotedConsultation(owner, source, target, next.commandId)
       }).catch(async error => {
@@ -1207,6 +1225,35 @@ export class ApprovalExecutionCoordinator {
     for (const row of rows) {
       owner.assertOwned()
       await this.workflowControls.dispatch(row.target, row.command_id)
+    }
+  }
+
+  /** The engine's existing reconciliation pass repairs admission/dispatch gaps.
+   * Dispatch itself reconciles unknown offers and never submits them twice. */
+  async reconcileWorkflowControls(onError: (error: unknown) => void): Promise<void> {
+    const owners = new Map(this.sharedRunOwners)
+    for (const owned of this.ownedSessions.values()) {
+      if (owned.runOwner && !owners.has(owned.execution.runId)) owners.set(owned.execution.runId, owned.runOwner)
+    }
+    for (const owner of owners.values()) await this.recoverExecutionControls(owner).catch(onError)
+  }
+
+  private async recoverExecutionControls(owner: RunOwnership): Promise<void> {
+    if (!this.workflowControls) return
+    let after = '0'
+    for (;;) {
+      owner.assertOwned()
+      const rows = (await owner.oneShotConnection().query<{ id: string; target: WorkflowChatTarget; sequence: string }>(
+        `select id,target,sequence::text from run_chat_commands where run_id=$1 and sequence>$2::bigint
+          and target->>'kind'='workflow_execution' and operation in ('stop','interrupt','steer')
+          and state in ('recorded','settling','submitting','unknown','accepted')
+          order by run_chat_commands.sequence limit 100`, [owner.runId, after])).rows
+      for (const row of rows) {
+        owner.assertOwned()
+        await this.workflowControls.dispatch(row.target, row.id)
+      }
+      if (rows.length < 100) return
+      after = rows.at(-1)!.sequence
     }
   }
 
@@ -2279,6 +2326,7 @@ export class ApprovalExecutionCoordinator {
       failures.push(...await this.cleanupSession(owned, false))
     }
     if (failures.length) throw new AggregateError(failures, 'Completed Run session cleanup was incomplete.')
+    this.runCapacity.delete(runId)
   }
 
   /** Read-only exact callback qualification. A cold read never allocates or attaches a manager. */
@@ -2787,6 +2835,7 @@ export class ApprovalExecutionCoordinator {
         // by setting cleanupPending before the repository evaluates its slot.
       }
     }
+    await this.recoverExecutionControls(owner)
     return false
   }
 
@@ -3542,7 +3591,7 @@ export class ApprovalExecutionCoordinator {
         if (exactTerminal) {
           const handoffPrompt = input.workHandoffContract
             ? workResultRepairPrompt(observed.terminalTurn!.result, input.workHandoffContract, observation.execution.input,
-              input.request?.executionContext, input.coordinationResult)
+              input.request?.executionContext, input.coordinationResult, input.hierarchyResult)
             : undefined
           // The deliverable is judged once the handoff envelope itself is valid.
           const verdict = input.deliverable && !handoffPrompt

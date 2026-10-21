@@ -59,7 +59,7 @@ export function workHandoffNodeAction(input: {
       }
       if (terminal.kind === 'waiting_direction') return [terminal.activationId]
       if (terminal.kind === 'refused') return []
-      if (terminal.resultProtocol && input.version.definition.hierarchy) {
+      if (input.version.definition.hierarchy) {
         const result = parseHierarchyWorkResult(terminal.execution.result, input.version,
           terminal.execution.workflowNodeId, terminal.resultProtocol)
         if (result.routing.kind === 'return') {
