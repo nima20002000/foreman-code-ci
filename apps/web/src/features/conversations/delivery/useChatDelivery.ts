@@ -95,7 +95,7 @@ export function useChatDelivery(target: DeliveryTarget | undefined, enabled: boo
   const state = denial === key ? undefined : query.data
   // Frozen engine messages are history, not proof of the currently active native turn.
   const presentation: DeliveryPresentation = state ? 'delivery' in state ? state.delivery
-    : { state: state.state, capabilities: state.capabilities, nativeTurnId: options.nativeTurnId }
+    : { state: state.state, capabilities: state.capabilities, nativeTurnId: state.nativeTurnId ?? options.nativeTurnId }
     : { ...emptyPresentation, ...(query.isError ? { unavailableReason: query.error.message } : {}) }
   const control = useChatControl(selected, enabled && denial !== key, presentation.nativeTurnId, () => { void refresh() }, deny)
   const submit = (input: Omit<z.input<typeof ChatSendRequestSchema>, 'target' | 'commandId'>): boolean => {

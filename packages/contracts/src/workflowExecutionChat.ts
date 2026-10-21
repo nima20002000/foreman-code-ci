@@ -49,3 +49,11 @@ export const WorkflowExecutionChatMessageRequestSchema = z.object({
   target: WorkflowExecutionChatTargetSchema,
   messageId: z.string().min(1).max(8192),
 }).strict();
+
+export const WorkflowExecutionChatChangeSchema = z.object({
+  target: WorkflowExecutionChatTargetSchema,
+  cursor: z.string().min(1),
+  revision: z.number().int().nonnegative(),
+  snapshotRequired: z.literal(true),
+}).strict();
+export type WorkflowExecutionChatChange = z.infer<typeof WorkflowExecutionChatChangeSchema>;

@@ -2,6 +2,7 @@ import { omitProperties } from '../../shared/omitProperties.js'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import type { ChatQueueCancelRequest, ChatStopRequest, DeliveryTarget, SendOperatorMessageRequest } from '@foreman-code/contracts'
 import type { AgentChatQuery, SendAgentChatMessageRequest } from '@foreman-code/contracts/agent-chat'
+import type { SelectedRunChatExecution } from '@foreman-code/contracts/selected-run-chat'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { AgentChatService } from '../conversations/agentChat.js'
 import type { OperatorChatService } from '../conversations/operatorChat.js'
@@ -10,9 +11,10 @@ import type { ChatDeliveryRouter } from './delivery.js'
 import type { DeliveryInputRead } from './retainedInputs.js'
 import { componentLogger } from '../diagnostics/logger.js'
 
+type LegacyAgentTarget = DeliveryTarget | { kind: 'historical_execution'; selection: SelectedRunChatExecution }
 export interface LegacyTargetResolver {
   /** D's existing selected-node resolver supplies exact active/queued/consultation targets without creating a conversation. */
-  resolve(principal: ManagementPrincipal, workspaceId: string, query: AgentChatQuery): Promise<DeliveryTarget>
+  resolve(principal: ManagementPrincipal, workspaceId: string, query: AgentChatQuery): Promise<LegacyAgentTarget>
 }
 const changed = () => new DomainError('CHAT_TARGET_CHANGED', 'The selected chat target changed; read it again before sending.', 409)
 
@@ -39,6 +41,9 @@ export class LegacyChatDeliveryBridge {
       if (legacy) return legacy
     }
     const target = prior?.request.target ?? await this.agentTarget(principal, workspaceId, input.context)
+    if (target.kind === 'historical_execution') {
+      return this.agent.sendSelectedRun(principal, { selection: target.selection, message: omitProperties(input, ['context']) })
+    }
     if (target.kind === 'operator_conversation' || target.agent.workspaceId !== workspaceId
       || target.agent.workflowId !== input.context.workflowId || target.agent.workflowNodeId !== input.context.workflowNodeId
       || target.agent.agentId !== input.context.agentId) throw changed()
@@ -102,16 +107,25 @@ export class LegacyChatDeliveryBridge {
 
   async readAgentInputs(principal: ManagementPrincipal, workspaceId: string,
     input: { query?: AgentChatQuery | undefined; conversationId?: string | undefined; target?: DeliveryTarget | undefined }, deliveryInputs: DeliveryInputRead) {
-    const target = input.target ?? (input.conversationId
+    let target = input.target ?? (input.conversationId
       ? await this.conversationTarget(principal, workspaceId, input.conversationId)
       : input.query ? await this.agentTarget(principal, workspaceId, input.query) : undefined)
+    if (target?.kind === 'historical_execution') {
+      const selected = await this.agent.readSelectedRun(principal, { selection: target.selection })
+      if (selected.kind !== 'selected' || !selected.key) throw new DomainError('CHAT_TARGET_UNAVAILABLE',
+        'No follow-up conversation exists for this execution.', 409)
+      target = { kind: 'agent_conversation', conversationId: selected.key.conversationId, agent: {
+        workspaceId, workflowId: selected.key.workflowId, workflowNodeId: selected.key.workflowNodeId,
+        agentId: selected.key.agentId,
+      } }
+    }
     if (!target || target.kind === 'operator_conversation' || target.agent.workspaceId !== workspaceId) throw changed()
     const result = await this.router.read(principal, { target, deliveryInputs })
     if (!('deliveryInputs' in result)) throw new Error('Retained input readback is unavailable.')
     return result.deliveryInputs
   }
 
-  private async agentTarget(principal: ManagementPrincipal, workspaceId: string, query: AgentChatQuery): Promise<DeliveryTarget> {
+  private async agentTarget(principal: ManagementPrincipal, workspaceId: string, query: AgentChatQuery): Promise<LegacyAgentTarget> {
     if (this.targets) return this.targets.resolve(principal, workspaceId, query)
     if (query.runId) throw new DomainError('CHAT_TARGET_RESOLVER_UNAVAILABLE', 'Exact Run targeting requires the shared selected-node resolver.', 503)
     const state = await this.agent.read(principal, workspaceId, query)
