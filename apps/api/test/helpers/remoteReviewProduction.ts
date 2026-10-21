@@ -1,5 +1,4 @@
 import { readUntil } from './observableCondition.js'
-import { callProductionMcpTool } from './productionMcpCall.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { spawn, execFile, type ChildProcess } from 'node:child_process'
 import { createHash, randomUUID, sign, X509Certificate } from 'node:crypto'
@@ -413,7 +412,7 @@ export async function remoteReviewProduction(options: {
         clients.set(token, connected)
       }
       const client = await connected
-      return callProductionMcpTool(client, { name, arguments: args })
+      return client.callTool({ name, arguments: args })
     }
     async function value(name: string, args: Record<string, unknown>) {
       const seenBefore = failuresSeen

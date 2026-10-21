@@ -29,6 +29,7 @@ import { HostCiReads, retryRead } from './readQueries.js'
 import { CI_QUEUE_ORDER, ciQueueReason, compareCiQueue } from './priority.js'
 import { prepareCiSupersession, validateCiSupersession, supersedeCiRuns } from './supersession.js'
 import { gatePartStealer, gateQueueBlock, planCiGate, readCiComputerStatus } from './gate.js'
+import { CLOUD_GATE_JOB_BUDGET_MS, expectedCloudGateDurationMs } from './cloudJobLimits.js'
 import { buildComputerGatePart, splitUnavailableGateParts } from './gateFallback.js'
 import { buildComputerIntegrationShards, gateDispatchShards } from './capacity.js'
 import { saveQueuedCiRun, ciMessages, withCiTicketLock, structuralCiStartRejection, type CiTicketSql } from './dispatch.js'
@@ -1517,6 +1518,8 @@ export class HostCiService {
       .finally(() => { this.cleaningTickets = undefined })
     const knownComputers = await this.endpoint.computers()
     const { parsed, durations, coverage } = await readQueuedCiRuns(this.pool)
+    const speeds = parsed.some(run => run.gate)
+      ? await readExecutorSpeeds(this.pool, this.planningEndpoint) : new Map()
     void withoutCiDatabasePriority(async () => this.prewarm.schedule(knownComputers, parsed))
     this.dispatchRejections.retain(parsed)
     this.refreshComputerStatuses(knownComputers)
@@ -1567,7 +1570,7 @@ export class HostCiService {
         || !gateShards.has(run.plannedHostKey) && !this.observingComputers.has(run.plannedHostKey)
         || stealsGatePart(run, computer)
     }
-    queued = await this.splitGateParts(queued, { computers, knownComputers, shards: gateShards, durations,
+    queued = await this.splitGateParts(queued, { computers, knownComputers, shards: gateShards, durations, speeds,
       gate, freeSlots, canTake: canTakeGatePart, idle: computer => (used.get(computer.key) ?? 0) === 0 }, snapshots)
     // Reserve slots before awaiting a start so concurrent dispatches cannot spend the same capacity.
     await inBatches(queued, 8, async run => {
@@ -1632,6 +1635,11 @@ export class HostCiService {
           ? 'This workspace has no CI mirror' : rejected ?? notReady
         if (reason) {
           reasons.push(`${computer.label}: ${reason}`)
+          continue
+        }
+        if (run.gate && computer.hostRef.kind === 'cloud'
+          && expectedCloudGateDurationMs(run, computer, speeds) > CLOUD_GATE_JOB_BUDGET_MS) {
+          reasons.push(`${computer.label}: expected runtime exceeds the cloud job budget`)
           continue
         }
         if (run.gate && reservedCloud.has(computer.key)) {
