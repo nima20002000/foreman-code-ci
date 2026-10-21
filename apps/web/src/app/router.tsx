@@ -5,14 +5,14 @@ import {
   createRouter,
   redirect,
 } from '@tanstack/react-router'
-import { ApprovalInboxSearchSchema, UrlSearchSelectionSchema } from '@foreman-code/contracts'
+import { ApprovalInboxSearchSchema, UrlSearchSelectionSchema, BrowserProfilesSettingsSearchSchema } from '@foreman-code/contracts'
 import { RunsSelectorSearchSchema } from '../features/runs-selector'
 import { RootShell } from './RootShell'
 import { AgentSettingsSearchSchema, BugsSettingsSearchSchema, SkillSettingsSearchSchema } from '@foreman-code/contracts/management'
 import { BugsSettingsRouteEntry, GeneralSettingsRouteEntry, NewSkillRouteEntry, SkillDetailRouteEntry, SkillsSettingsRouteEntry, SystemPromptSettingsRouteEntry, WorkspaceDefaultsSettingsRouteEntry } from '../routes/SettingsExperienceRoutes'
 
 import { ProviderAccountsSettingsSearchSchema } from '../features/provider-accounts/providerAccountsNavigation'
-import { ComputersSettingsRouteEntry, ComputerDetailsSettingsRouteEntry } from '../routes/SettingsExperienceRoutes'
+import { ComputersSettingsRouteEntry, ComputerDetailsSettingsRouteEntry, BrowserProfilesSettingsRouteEntry } from '../routes/SettingsExperienceRoutes'
 
 import { WorkspaceRouteEntry } from '../routes/WorkspaceRouteEntry'
 import {
@@ -30,6 +30,7 @@ import {
   ProjectFilesRouteEntry,
   WorkflowsRouteEntry,
   WorkspacesRouteEntry,
+  WorkspaceMemoryRouteEntry,
 } from '../routes/WorkspaceSectionRoutes'
 
 const rootRoute = createRootRoute({ component: RootShell })
@@ -92,6 +93,10 @@ const computersSettingsRoute = createRoute({
   path: '/settings/computers',
   component: ComputersSettingsRouteEntry,
 })
+const browserProfilesSettingsRoute = createRoute({
+  getParentRoute: () => rootRoute, path: '/settings/browser-profiles',
+  validateSearch: BrowserProfilesSettingsSearchSchema, component: BrowserProfilesSettingsRouteEntry,
+})
 const computerDetailsSettingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings/computers/$deviceId',
@@ -125,6 +130,7 @@ const tasksRoute = comingSoonRoute('/workspaces/$workspaceId/tasks', 'tasks', 'T
 const runsRoute = comingSoonRoute('/workspaces/$workspaceId/runs', 'runs', 'Runs')
 const terminalRoute = comingSoonRoute('/workspaces/$workspaceId/terminal', 'terminal', 'Terminal')
 const filesRoute = createRoute({ getParentRoute: () => rootRoute, path: '/workspaces/$workspaceId/files', component: ProjectFilesRouteEntry })
+const memoryRoute = createRoute({ getParentRoute: () => rootRoute, path: '/workspaces/$workspaceId/memory', component: WorkspaceMemoryRouteEntry })
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/workspaces/$workspaceId/settings',
@@ -232,6 +238,7 @@ export const routeTree = rootRoute.addChildren([
   runsRoute,
   terminalRoute,
   filesRoute,
+  memoryRoute,
   settingsRoute,
   workspaceLocationSettingsRoute,
   globalTerminalRoute,
@@ -242,6 +249,7 @@ export const routeTree = rootRoute.addChildren([
   systemPromptSettingsRoute,
   harnessSettingsRoute,
   computersSettingsRoute,
+  browserProfilesSettingsRoute,
   computerDetailsSettingsRoute,
   agentSettingsRoute,
   skillsSettingsRoute,

@@ -1,3 +1,7 @@
+import { browserAgentTools, browserOperatorTools } from '../../modules/collaboration/browserTools.js'
+import { workflowChatTools } from '../operator/tools/workflowChat.js'
+import { registerToolDefinition } from '../operator/definition.js'
+import { invokeOperatorTool } from '../operator/invoke.js'
 import { MCP_DISPLAY_NAME, PRODUCT_SLUG } from '@foreman-code/contracts/product'
 import { McpServer } from '@modelcontextprotocol/server'
 import { paginateToolLists } from '../toolListPagination.js'
@@ -13,8 +17,6 @@ import type { AppInteractionService } from '../../modules/interactions/app.js'
 import type { BugReportService } from '../../modules/bug-reports/service.js'
 import type { PostgresCommandCoordinator } from '../../modules/commands/postgres.js'
 import { createMemoryBoardTools } from '../operator/tools/memoryBoards.js'
-import { registerToolDefinition } from '../operator/definition.js'
-import { invokeOperatorTool } from '../operator/invoke.js'
 import { OPERATOR_TOOLS } from '../operator/catalog.js'
 import { registerAppTools } from '../app/server.js'
 import { registerCiTools } from '../shared/ciTools.js'
@@ -171,6 +173,20 @@ export async function createGraphqlMcpServer(context: GraphqlMcpContext, request
       await registerAppTools(collector, { principal: context.principal, interactions: context.interactions!,
         ...(context.bugReports ? { bugReports: context.bugReports } : {}),
         ...(context.signal ? { signal: context.signal } : {}) })
+      if (context.operator?.workflowChat) {
+        for (const tool of workflowChatTools(context.operator.workflowChat)) {
+          if (tool.name !== 'workflow_chat_read' && tool.name !== 'workflow_chat_post') continue
+          registerToolDefinition(collector, { principal: context.principal, services: context.operator }, tool,
+            { invoke: invokeOperatorTool })
+        }
+      }
+      if (context.operator?.browser) {
+        for (const tool of browserOperatorTools({ principal: context.principal, services: context.operator })) {
+          if (!browserAgentTools.some(name => name === tool.name)) continue
+          registerToolDefinition(collector, { principal: context.principal, services: context.operator }, tool,
+            { invoke: invokeOperatorTool })
+        }
+      }
       if (context.operator?.memoryBoards) {
         for (const tool of createMemoryBoardTools(context.operator.memoryBoards)) {
           registerToolDefinition(collector, { principal: context.principal, services: context.operator }, tool,

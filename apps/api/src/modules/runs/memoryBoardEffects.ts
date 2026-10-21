@@ -92,20 +92,9 @@ export async function applyMemoryNativeLocked(tx: GraphTransactionSql, service: 
   }
   if (change.previous.state === 'completed' || change.next.state !== 'completed') return
   const outcome = change.next.result!.outcome
-  if (outcome === 'succeeded' && run.resultProtocol) {
-    const saved = await memoryExecution(tx, change.next.id)
-    const result = parseCoordinationResult(change.next.result!.output, {
-      resultProtocol: run.resultProtocol, definition: saved.version.definition,
-      workflowNodeId: saved.node.id, interval: repeatTickIndex(change.next.input) !== undefined,
-    })
-    try {
-      await service.applyResultLocked(tx, { subject: saved.subject, execution: saved.subject.execution,
-        work: saved.work, sourceEventKey: source, result: result.board })
-    } catch (error) {
-      if (error instanceof DomainError && error.status < 500) throw new MemoryResultRejected(error)
-      throw error
-    }
-  } else if (repeatTickIndex(change.next.input) === undefined) {
+  // Coordinated results and their awaiting-acceptance fact commit through the collaboration hook.
+  if (outcome === 'succeeded' && run.resultProtocol) return
+  if (repeatTickIndex(change.next.input) === undefined) {
     const phase = outcome === 'succeeded' ? 'awaiting_acceptance' : outcome
     await lifecycle(tx, service, change.next.id, source, phase, {
       reason: outcome === 'succeeded' ? null : change.next.result!.error?.message ?? 'The execution was canceled.',

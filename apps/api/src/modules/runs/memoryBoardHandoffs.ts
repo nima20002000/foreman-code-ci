@@ -1,16 +1,31 @@
-import { workflowResultContext } from './resultContext.js'
 import { memoryFindingReason } from './memoryFindings.js'
 import type { BoardLifecycleFact } from '@foreman-code/contracts'
-import { parseWorkHandoffResult, WorkReturnSchema } from '@foreman-code/contracts/wave25'
+import { WorkReturnSchema, type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 import { memoryExecution } from '../collaboration/memoryExecution.js'
 import type { MemoryBoardPort } from '../collaboration/ports.js'
 import type { GraphTransactionSql } from '../run-graph/connection.js'
 import { selectedWorkHandoffRoutes } from './workHandoffRouting.js'
+import { parseWorkflowWorkResult } from './workflowCoordinationResult.js'
+import { repeatConflict } from './repeatResolution.js'
 
 type Settlement = Pick<BoardLifecycleFact, 'reason' | 'outstandingRequestIds'> & {
   phase: 'accepted' | 'blocked' | 'waiting_children'
 }
 const waiting: Settlement = { phase: 'waiting_children', reason: null, outstandingRequestIds: [] }
+
+function memoryWorkRoutes(definition: WorkflowDefinitionV3, nodeId: string,
+  result: ReturnType<typeof parseWorkflowWorkResult>): string[] {
+  if (!definition.hierarchy) return selectedWorkHandoffRoutes(definition, nodeId, result)
+  const routing = result.routing
+  if (routing.kind === 'return' || routing.kind === 'finish') return []
+  const outcomes = routing.kind === 'delegate' ? routing.requests.map(request => request.outcome) : [routing.outcome]
+  const node = definition.nodes.find(candidate => candidate.id === nodeId)
+  return outcomes.map(outcome => {
+    const target = node?.choice?.outcomes.find(candidate => candidate.outcome === outcome)?.target
+    if (target?.kind !== 'edge') return repeatConflict('WORK_REQUEST_OUTCOME_UNDECLARED')
+    return target.relationshipId
+  })
+}
 
 export function memoryWorkSettlement(tx: GraphTransactionSql, executionId: string): Promise<Settlement> {
   return settlement(tx, executionId, new Set())
@@ -25,7 +40,7 @@ async function settlement(tx: GraphTransactionSql, executionId: string, visited:
     return { phase: 'blocked', reason: result.error?.message ?? 'Required work was canceled.', outstandingRequestIds: [] }
   }
   if (!saved.accepted || result?.outcome !== 'succeeded') return waiting
-  const output = parseWorkHandoffResult(result, workflowResultContext(saved.version, saved.execution))
+  const output = parseWorkflowWorkResult(result, saved.version, saved.node.id, saved.execution.resultProtocol)
   if (output.data.remainingFindings.length) {
     return { phase: 'blocked', reason: memoryFindingReason(output.data.remainingFindings), outstandingRequestIds: [] }
   }
@@ -34,7 +49,7 @@ async function settlement(tx: GraphTransactionSql, executionId: string, visited:
       [saved.execution.runId, executionId])
     if (!returned.rowCount) return waiting
   }
-  const routes = selectedWorkHandoffRoutes(saved.version.definition, saved.node.id, output)
+  const routes = memoryWorkRoutes(saved.version.definition, saved.node.id, output)
   const requests = (await tx.query<{ request_id: string; relationship_id: string;
     returned: unknown; execution_id: string | null }>(`select q.request_id,q.relationship_id,t.record as returned,x.execution_id
     from run_work_requests q left join run_work_returns t on t.run_id=q.run_id and t.request_id=q.request_id

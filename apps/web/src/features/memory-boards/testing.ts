@@ -1,6 +1,6 @@
 import {
   MemoryBoardSchema, MemoryCardSchema, MemoryNoteSchema, type MemoryBoardMutation,
-  type MemoryCard, type MemoryNote,
+  type MemoryCard, type MemoryNote, type MemoryBoardScope,
 } from '@foreman-code/contracts'
 import { ApiError } from '../../shared/api/client'
 import type {
@@ -30,8 +30,9 @@ function page<T>(items: T[], revision: number, options?: PageOptions): MemoryPag
 }
 /** Typed in-memory peer, used only to drive rendered client behavior. Domain
  * rules and real persistence are verified by the API owner's public tests. */
-export function createMemoryTestPort(initial: { cards?: MemoryCard[]; notes?: MemoryNote[] } = {}) {
-  const board = MemoryBoardSchema.parse({ id: memoryTestIds.board, scope: { kind: 'workspace', workspaceId: memoryTestIds.workspace }, revision: 1 })
+export function createMemoryTestPort(initial: { cards?: MemoryCard[]; notes?: MemoryNote[]; scope?: MemoryBoardScope } = {}) {
+  const board = MemoryBoardSchema.parse({ id: memoryTestIds.board,
+    scope: initial.scope ?? { kind: 'workspace', workspaceId: memoryTestIds.workspace }, revision: 1 })
   const cards = new Map((initial.cards ?? []).map((item) => [item.id, item]))
   const notes = new Map((initial.notes ?? []).map((item) => [item.id, item]))
   const commands = new Map<string, MemoryCommandRead>()
