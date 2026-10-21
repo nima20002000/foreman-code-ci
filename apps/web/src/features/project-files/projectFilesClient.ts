@@ -1,7 +1,8 @@
 import { installationHeaders, reloadChangedInstallation } from '../../shared/api/sessionBoundary'
+import { z } from 'zod'
 import { ApiErrorResponseSchema } from '@foreman-code/contracts'
 import {
-  FileReferenceMutationResultSchema, FilePageSchema, FileRowSchema,
+  FilePageSchema, FileRowSchema, FileWithRevisionSchema,
   WorkspaceProjectFilesListInputSchema, WorkspaceProjectFilesListSchema, WorkspaceReferenceFileScopeSchema,
   type FilePage, type FileRow, type FileWithRevision,
 } from '@foreman-code/contracts/files'
@@ -13,6 +14,8 @@ import { readExactBytes, readUploadBytes, sha256Hex } from './projectFilesBytes'
 export interface ProjectFileUploadInput { workspaceId: string; requestId: string; file: File }
 export interface ProjectFileRemoveInput { workspaceId: string; row: FileRow; commandId: string }
 
+// FIL-36 documents this transport envelope; all domain metadata comes from frozen shared schemas.
+const CommandResultSchema = z.object({ value: FileWithRevisionSchema, replayed: z.boolean() }).strict()
 const invalidResponse = () => new ApiError({ code: 'INVALID_RESPONSE', message: 'The file response does not match this workspace or revision.' })
 
 function root(workspaceId: string): string {
@@ -108,7 +111,7 @@ export const projectFilesClient = {
         || (previous && !sameRevision(previous, row))) throw invalidResponse()
       return row
     }
-    const allocated = await apiClient.request(`${uploadRoot}/uploads`, FileReferenceMutationResultSchema, {
+    const allocated = await apiClient.request(`${uploadRoot}/uploads`, CommandResultSchema, {
       method: 'POST', signal: operation.signal,
       body: { requestId: input.requestId, filename: inspected.filename, mediaType: inspected.mediaType, byteSize: bytes.byteLength, sha256 },
     })
@@ -119,11 +122,11 @@ export const projectFilesClient = {
     const response = await rawRequest(path, operation, bytes)
     const uploaded: unknown = await response.json().catch(() => /* ignore: a body that is not JSON fails the schema below */ undefined)
     guard(operation)
-    const parsed = FileReferenceMutationResultSchema.safeParse(uploaded)
+    const parsed = CommandResultSchema.safeParse(uploaded)
     if (!parsed.success) throw invalidResponse()
     const staged = check(parsed.data.value, false, allocation)
     if (staged.file.state === 'ready') return staged
-    const finalized = await apiClient.request(`${path}/finalize`, FileReferenceMutationResultSchema, {
+    const finalized = await apiClient.request(`${path}/finalize`, CommandResultSchema, {
       method: 'POST', signal: operation.signal, body: {},
     })
     guard(operation)
@@ -132,7 +135,7 @@ export const projectFilesClient = {
 
   async remove(input: ProjectFileRemoveInput): Promise<FileWithRevision> {
     const operation = boundary()
-    const result = await apiClient.request(pinnedPath(input.workspaceId, input.row), FileReferenceMutationResultSchema, {
+    const result = await apiClient.request(pinnedPath(input.workspaceId, input.row), CommandResultSchema, {
       method: 'DELETE', body: { commandId: input.commandId }, signal: operation.signal,
     })
     guard(operation)

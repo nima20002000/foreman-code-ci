@@ -71,7 +71,7 @@ export function operatorToolCatalog(services: OperatorServices): readonly BoundT
 
 export function operatorRequestTools(context: OperatorRequestContext, catalog?: OperatorCatalog) {
   const request: CatalogContext = { ...context, principal: authorizationPrincipal(context.principal), catalog }
-  return operatorToolCatalog(context.services).filter(tool => catalogToolAvailable(request, tool.name, OPERATOR_TOOLS)).map(tool => ({
+  return operatorToolCatalog(context.services).filter(tool => catalogToolAvailable(request, tool.name)).map(tool => ({
     name: tool.name,
     description: tool.description,
     register: (server: McpServer) => tool.register(server, request),
@@ -84,7 +84,6 @@ export function registerOperatorTools(server: McpServer, context: OperatorReques
 
 function registerOperatorDefinitions(server: McpServer, context: OperatorRequestContext, catalog?: OperatorCatalog): void {
   const group = (name: OperatorToolGroup) => registerOperatorToolGroup(server, context, OPERATOR_TOOL_GROUPS[name], catalog)
-  group('memoryBoards')
   group('bugReports')
   group('resourceTelemetry')
   group('harnessRegistry')

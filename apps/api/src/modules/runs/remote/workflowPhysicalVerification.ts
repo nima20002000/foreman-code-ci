@@ -35,8 +35,7 @@ import { assertRepeatCanonicalReceiptLocked,requireRepeatCanonicalReceiptBeforeC
 import type { WorkflowPhysicalArtifactsPort } from './workflowPhysicalArtifacts.js'
 import { readWorkflowNativeEntryLocked,workflowNativeReservation,type WorkflowNativeReservation,type WorkflowNativeEntryRecord } from '../workflowNativeEntry.js'
 import { canonicalRepeatEffectReceipt } from '../../run-graph/repeatPublication.js'
-import { workflowNativeSourceId, readWorkflowTerminalSource } from '../workflowNativeSource.js'
-import { assertOriginalWorkflowTerminal } from '../../interactions/workflowTerminalSource.js'
+import { workflowNativeSourceId } from '../workflowNativeSource.js'
 
 export interface RemoteWorkflowMainLifetime {
   execution: HarnessExecution
@@ -492,18 +491,6 @@ async function sharedRemoteBindingRows(sql: GraphTransactionSql, owner: RunOwner
   return rows
 }
 
-/** Closed output uses its committed terminal as readback authority after credentials end. */
-async function isCommittedTerminalReplay(sql: GraphTransactionSql, execution: HarnessExecution,
-  source: WorkflowOriginalNativeSource, session: NativeSessionReference): Promise<boolean> {
-  if (execution.state !== 'completed' || source.type !== 'history' || !source.history.terminalTurn
-    || source.history.pendingInteraction || source.history.pendingInteractions.length) return false
-  const proof = await readWorkflowTerminalSource(sql, execution)
-  if (!proof || proof.original.type !== 'history' || !same(proof.session, session)
-    || !same(proof.original.history.terminalTurn, source.history.terminalTurn)) return false
-  assertOriginalWorkflowTerminal(execution, session, source.history, source.history.terminalTurn.correlationId)
-  return true
-}
-
 async function readRemoteBindingRows(sql: GraphTransactionSql, capture: Bound, retained: boolean,
   input: RemoteWorkflowPhysicalVerificationInput): Promise<RemoteBindingRows> {
   const { readout, lifetime } = capture, receipt = readout.receipt, intent = receipt.intent
@@ -545,11 +532,7 @@ async function readRemoteBindingRows(sql: GraphTransactionSql, capture: Bound, r
     ? await readRetainedRemoteReviewer(sql, execution.data) : undefined
   const reviewerAuthorized = reviewer?.generation === lifetime.closureGeneration && same(reviewer?.session, readout.session)
   const committedPublication = retained && [...capture.publications].some(didGraphTransactionCommit)
-  const completedReplay = !committedPublication && !executionRow?.authorized && !reviewerAuthorized
-    && execution.success && !lifetime.review && receipt.outputValidationComplete
-    && (receipt.terminal?.kind === 'completed' || receipt.terminal?.kind === 'failed')
-    && await isCommittedTerminalReplay(sql, execution.data, capture.source, readout.session)
-  if (!committedPublication && !completedReplay && !receipt.stopFence && !executionRow?.authorized && !reviewerAuthorized) {
+  if (!committedPublication && !receipt.stopFence && !executionRow?.authorized && !reviewerAuthorized) {
     return unavailable('execution_authorization')
   }
   if (!execution.success || execution.data.id !== lifetime.execution.id
