@@ -1,3 +1,4 @@
+import { workflowResultContext } from '../resultContext.js'
 import { readPublicProjectionLocked } from '../../run-graph/compactSnapshot.js'
 import { isDeepStrictEqual as same } from 'node:util'
 import type { Readable } from 'node:stream'
@@ -42,9 +43,9 @@ function mappings(version: WorkflowVersionV3, execution: HarnessExecution) {
   const node = version.definition.nodes.find(item => item.id === execution.workflowNodeId)
   if (!node || node.kind === 'job' || !node.artifactOutputs || !execution.result) return conflict()
   try {
-    if (version.definition.handoffs) return parseWorkHandoffArtifactResult(execution.result, node.artifactOutputs).artifactOutputs.outputs
-    if (node.choice) return parseWorkflowArtifactResult(execution.result, node.artifactOutputs, node.choice).artifactOutputs.outputs
-    return parseWorkflowArtifactResult(execution.result, node.artifactOutputs).artifactOutputs.outputs
+    if (version.definition.handoffs) return parseWorkHandoffArtifactResult(execution.result, node.artifactOutputs, workflowResultContext(version, execution)).artifactOutputs.outputs
+    if (node.choice) return parseWorkflowArtifactResult(execution.result, node.artifactOutputs, node.choice, workflowResultContext(version, execution)).artifactOutputs.outputs
+    return parseWorkflowArtifactResult(execution.result, node.artifactOutputs, node.choice, workflowResultContext(version, execution)).artifactOutputs.outputs
   } catch { return conflict() }
 }
 

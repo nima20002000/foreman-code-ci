@@ -60,6 +60,9 @@ import { workJoinDispatchMigration } from './workJoinDispatchMigration.js'
 import { workJoinDispositionMigration } from './workJoinDispositionMigration.js'
 import { workParentRequestMigration } from './workParentRequestMigration.js'
 import { workReturnGroupMigration } from './workReturnGroupMigration.js'
+import { coordinationResultMigration } from './coordinationResultMigration.js'
+import { memoryWorkIndexesMigration } from './memoryWorkIndexesMigration.js'
+import { memoryBoardsMigration } from './memoryBoardsMigration.js'
 import { workReturnNodeGroupingMigration } from './workReturnNodeGroupingMigration.js'
 import { workReturnRequestMigration } from './workReturnRequestMigration.js'
 import { compactCommandActivityMigration } from './compactCommandActivityMigration.js'
@@ -1006,6 +1009,9 @@ export const migrations = [
   ciRetainedExecutorsMigration,
   workReturnGroupMigration,
   workReturnNodeGroupingMigration,
+  { version: 2026102101, ...memoryBoardsMigration },
+  memoryWorkIndexesMigration,
+  coordinationResultMigration,
 ] as const
 
 export function assertMigrationVersions(entries: readonly { version: number }[]): void {
