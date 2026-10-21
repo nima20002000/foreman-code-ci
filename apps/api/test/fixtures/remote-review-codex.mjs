@@ -208,27 +208,6 @@ async function started(turn, prompt) {
       await new Promise(resolve => setTimeout(resolve, 20))
     }
     const answersFile = join(root, 'workflow-answers.json')
-    const artifactFile = join(root, 'workflow-artifact.json')
-    if (existsSync(artifactFile)) {
-      const artifact = JSON.parse(readFileSync(artifactFile, 'utf8'))
-      const call = async (name, input) => {
-        const response = await tool(turn, name, input)
-        if (!response.success) throw new Error(`Native artifact operation failed: ${JSON.stringify(response)}`)
-        return JSON.parse(response.contentItems[0].text)
-      }
-      const description = { filename: 'report.md', mediaType: 'text/markdown' }
-      const created = await call('files_native_output_create', { ...description, commandId: randomUUID() })
-      await call('files_native_output_append', { artifactId: created.artifactId, commandId: randomUUID(),
-        offset: 0, contentBase64: Buffer.from(artifact.content).toString('base64') })
-      await call('files_native_output_seal', { artifactId: created.artifactId, commandId: randomUUID() })
-      const commandId = randomUUID()
-      await call('files_native_output_publish', { ...description, artifactId: created.artifactId, commandId })
-      complete(turn, JSON.stringify({ data: 'Report published', summary: 'Report published.',
-        board: { kind: 'none', reason: 'no_access' },
-        artifactOutputs: { version: 1, outputs: [{ outputKey: artifact.outputKey, commandId }] } }))
-      log({ workflowCompleted: { pid: process.pid, sessionId: thread.id, turnId: turn.id } })
-      return
-    }
     const answers = existsSync(answersFile) ? JSON.parse(readFileSync(answersFile, 'utf8')) : undefined
     let output = thread.instructions.includes('fixture-work-handoff')
       ? JSON.stringify({ routing: { kind: 'finish' }, data: { latestDeliverable: 'fixture complete', remainingFindings: [] } })
