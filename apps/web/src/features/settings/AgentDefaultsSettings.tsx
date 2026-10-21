@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { nativeToolsSummary, type AgentDefaults } from '@foreman-code/contracts'
+import { agentTemplateForRole, nativeToolsSummary, type AgentDefaults } from '@foreman-code/contracts'
 import type { SettingsAgentRole } from '@foreman-code/contracts/management'
 import { ErrorState, LoadingState, Switch } from '../../shared/ui/nocturne'
 import { useAgentDefaultsQuery, useUpdateAgentDefaultsMutation } from '../../shared/api/query'
@@ -33,8 +33,10 @@ export function AgentDefaultsSettings({ selectedRole, onOpen }: {
   return <SettingsOverview title="Agents">
     {agentRoleOrder.map((role) => {
       const info = rolePresentation[role]
-      const summary = [...harnessSummary(value[role].harness),
-        { label: 'Native tools', value: nativeToolsSummary(value[role].nativeTools) }, ...(role === 'operator' ? [
+      const template = role === 'operator' ? value.operator : agentTemplateForRole(value, role)
+      const summary = [...harnessSummary(template.harness),
+        { label: 'Native tools', value: nativeToolsSummary(template.nativeTools) }, ...(role === 'master' && !value.master
+          ? [{ label: 'Defaults', value: 'Uses Orchestrator settings until configured' }] : []), ...(role === 'operator' ? [
         { label: 'Skills', value: String(value.operator.assignedSkills?.length ?? 0) },
         ...(value.operator.harness.harness === 'codex' ? [{ label: 'Thinking', value: value.operator.showThinking ? 'Shown' : 'Hidden' }] : []),
       ] : [])]

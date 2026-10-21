@@ -1,4 +1,6 @@
+import { NativeSourceMessageSchema } from './messages.js';
 import { NativeInteractionResponseAvailabilitySchema } from './interaction-activity.js';
+import { ChatMessageContentSchema, refineChatMessageSize } from './chatInput.js';
 import { NativeMessageSubmissionSchema } from './claude.js';
 import { z } from "zod";
 import { ActivitySnapshotV1Schema } from "./activity.js";
@@ -188,7 +190,7 @@ export const AgentChatSourceTranscriptSchema = z.object({
   state: HarnessExecutionSchema.shape.state,
   /** Latest public native message revision; "0" when no messages have been recorded. */
   revision: NativeSequenceSchema,
-  messages: z.array(MessageSchema.omit({ conversationId: true })).max(100),
+  messages: z.array(NativeSourceMessageSchema).max(100),
   hasEarlierMessages: z.boolean(),
 }).strict();
 export type AgentChatSourceTranscript = z.infer<typeof AgentChatSourceTranscriptSchema>;
@@ -204,7 +206,7 @@ const AgentChatExecutionItemSchema = z.object({
   revision: NativeSequenceSchema,
   occurredAt: TimestampSchema.optional(),
   entry: z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("message"), message: MessageSchema.omit({ conversationId: true }) }).strict(),
+    z.object({ kind: z.literal("message"), message: NativeSourceMessageSchema }).strict(),
     z.object({ kind: z.literal("activity"),
       activity: OperatorActivitySchema.pick({ id: true, kind: true, title: true, status: true, input: true, output: true, truncated: true }) }).strict(),
   ]),
@@ -311,7 +313,7 @@ export const SendAgentChatMessageRequestSchema = z.object({
   requestId: IdSchema,
   ...MessageAttachmentFields,
   context: AgentChatQuerySchema,
-  content: z.string().trim().max(AGENT_CHAT_MAX_MESSAGE_CHARACTERS).describe('Message text, up to 1,048,576 characters. Bare /new starts a separate Agent conversation and returns a reset response without a model turn.'),
+  content: ChatMessageContentSchema.describe('Message text, up to 768 KiB as UTF-8 JSON including request metadata. Saved context and configuration also count toward the Worker 1 MiB limit. Bare /new starts a separate Agent conversation without a model turn.'),
   sessionMode: z.enum(['regular', 'plan']).optional()
     .describe('Selects the mode for a new turn. Steering may only retain the active applied mode; mode changes and /plan tasks require next_turn or interrupt_and_send.'),
   intent: AgentChatIntentSchema.default("next_turn")
@@ -324,9 +326,19 @@ export const SendAgentChatMessageRequestSchema = z.object({
   path: ["content"], message: "Message requires text or an attachment.",
 }).refine((value) => value.intent !== "steer" || value.attachments.length === 0, {
   path: ["attachments"], message: "Attachment steering is not supported. Send attachments in a new turn.",
-});
+}).superRefine(refineChatMessageSize);
 export type SendAgentChatMessageRequest = Omit<z.infer<typeof SendAgentChatMessageRequestSchema>, "attachments">
   & { attachments?: z.input<typeof MessageAttachmentFields.attachments> };
+/** Transport parsing retains the historical character limit so stored receipts remain recoverable.
+ * Fresh admissions still validate SendAgentChatMessageRequestSchema after the receipt lookup. */
+export const AgentChatMessageCommandSchema = z.object({ ...SendAgentChatMessageRequestSchema.shape,
+  content: z.string().trim().max(AGENT_CHAT_MAX_MESSAGE_CHARACTERS)
+    .describe('New messages must fit within 768 KiB of UTF-8 JSON. Identical retries may recover older, larger receipts.'),
+}).strict().refine(value => value.content.length > 0 || value.attachments.length > 0, {
+  path: ['content'], message: 'Message requires text or an attachment.',
+}).refine(value => value.intent !== 'steer' || value.attachments.length === 0, {
+  path: ['attachments'], message: 'Attachment steering is not supported. Send attachments in a new turn.',
+});
 /** Legacy urgent receipts did not retain the original target. This is readback, not target verification. */
 const AgentChatReplayWarningSchema = z.object({
   code: z.literal("AGENT_CHAT_LEGACY_TARGET_UNVERIFIABLE"),

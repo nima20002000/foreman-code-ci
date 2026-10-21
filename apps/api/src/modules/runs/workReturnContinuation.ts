@@ -1,3 +1,4 @@
+import { workflowResultContext } from './resultContext.js'
 import { ExecutionResultSchema, HarnessExecutionSchema } from '@foreman-code/contracts'
 import {
   AcceptedCurrentNodeResultSchema, WorkActivationIdentitySchema, WorkRequestSchema,
@@ -67,9 +68,11 @@ export async function workRequestSettlementsLocked(context: WorkReturnContext, r
   const failures: Array<{ request: WorkRequest; result: ReturnType<typeof ExecutionResultSchema.parse> }> = []
   let pending = false
   for (const row of rows) {
+    const request = WorkRequestSchema.parse(row.request)
     if (row.result_json) {
       const result = AcceptedCurrentNodeResultSchema.parse(JSON.parse(row.result_json))
-      if (parseWorkHandoffResult(result).routing.kind === 'finish') continue
+      if (parseWorkHandoffResult(result, workflowResultContext(context.version,
+        { workflowNodeId: request.destinationNodeId, resultProtocol: context.hooks.run.resultProtocol })).routing.kind === 'finish') continue
     }
     const execution = row.execution ? HarnessExecutionSchema.parse(row.execution) : undefined
     const failure = row.failure_result ?? execution?.result
@@ -77,7 +80,7 @@ export async function workRequestSettlementsLocked(context: WorkReturnContext, r
       const result = ExecutionResultSchema.parse(failure)
       if ((result.outcome === 'failed' || result.outcome === 'canceled')
         && !await context.hooks.allowTechnicalRetryLocked(context.sql, execution)) {
-        failures.push({ request: WorkRequestSchema.parse(row.request), result })
+        failures.push({ request, result })
         continue
       }
     }

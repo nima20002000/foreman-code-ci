@@ -52,7 +52,7 @@ const tabKey = protectedKey('ui', 'graph-edit-intent:tab')
 const now = '2026-09-24T00:00:00Z'
 const clients: QueryClient[] = []
 const edit = () => useGraphDraftStore.getState().nextDrafts[key]!
-const saveButton = () => screen.getByRole('button', { name: /^Save changes$/ })
+const saveButton = () => screen.getByRole('button', { name: /^Save workflow$/ })
 async function saveWithStop(user: ReturnType<typeof userEvent.setup>) {
   await user.click(saveButton())
   const dialog = await screen.findByRole('alertdialog', { name: 'Stop running work and save?' })
