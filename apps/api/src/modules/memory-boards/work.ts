@@ -12,11 +12,21 @@ const liveStates = new Set(['queued','running','awaiting_acceptance','waiting_ch
 export function unresolved(binding: MemoryCardWorkBinding): boolean {
   return !binding.resolution && liveStates.has(binding.state)
 }
+function cardWorkReason(reason: string | null): string {
+  const text = reason?.trim() || 'Linked work needs attention.'
+  let length = 0
+  // Bound the display field without splitting a Unicode character; bindings retain the full cause.
+  for (const character of text) {
+    if (length + character.length > 1000) break
+    length += character.length
+  }
+  return text.slice(0, length)
+}
 export function aggregateCard(card: MemoryCard, bindings: MemoryCardWorkBinding[], claims: MemoryCardWorkClaim[], autoComplete = true): MemoryCard {
   if (card.status === 'done' && card.completionKind === 'dropped') return card
   const required = bindings.filter(binding => !binding.resolution)
   const blocked = required.find(binding => ['blocked','failed','canceled'].includes(binding.state))
-  if (blocked) return { ...card, status: 'blocked', completionKind: null, reason: blocked.reason || 'Linked work needs attention.' }
+  if (blocked) return { ...card, status: 'blocked', completionKind: null, reason: cardWorkReason(blocked.reason) }
   if (required.some(binding => ['running','awaiting_acceptance','waiting_children'].includes(binding.state))) {
     return { ...card, status: 'doing', completionKind: null, reason: null }
   }

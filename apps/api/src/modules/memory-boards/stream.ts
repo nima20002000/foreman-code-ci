@@ -44,7 +44,8 @@ export async function streamMemoryBoard(request: FastifyRequest, reply: FastifyR
   }
   try {
     // Authenticate before allocating a listener, while already observing close.
-    await service.changes(principal,{boardId,limit:1})
+    const initial = await service.changes(principal,{boardId,limit:1})
+    cursor ??= initial.watermark
     if(stopped)return
     unsubscribe=await service.listen(boardId,()=>{dirty=true;if(opened)void pump()},stop)
     if (stopped) { unsubscribe();return }

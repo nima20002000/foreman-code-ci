@@ -36,6 +36,7 @@ create table memory_card_claims (
 );
 create unique index memory_claims_armed on memory_card_claims(card_id,node_key) where state='armed';
 create index memory_claims_node on memory_card_claims(node_key,state,board_id);
+create index memory_claims_card on memory_card_claims(card_id,id);
 create table memory_board_commands (
   principal_id text not null, command_id text not null, board_id text not null references memory_boards(id),
   input_hash text not null, receipt jsonb, rejection jsonb, primary key(principal_id,command_id),
