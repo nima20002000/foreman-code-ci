@@ -17,7 +17,6 @@ import { claudePluginTools } from './tools/claudePlugins.js'
 import { settingsTools } from './tools/settings.js'
 import { providerAccountTools } from './tools/providerAccounts.js'
 import { agentChatTools } from './tools/agentChat.js'
-import { withWorkflowExecutionChatTools } from './executionChat.js'
 import { sessionControlTools } from './tools/sessionControls.js'
 import { workspaceDefaultsTools } from './tools/workspaceDefaults.js'
 import { workspaceTools } from './tools/workspaces.js'
@@ -60,7 +59,7 @@ export const OPERATOR_TOOL_GROUPS = {
   claudePlugins: claudePluginTools,
   settings: settingsTools,
   providerAccounts: providerAccountTools,
-  agentChat: withWorkflowExecutionChatTools(agentChatTools),
+  agentChat: agentChatTools,
   sessionControls: sessionControlTools,
   workspaceDefaults: workspaceDefaultsTools,
   workspaces: workspaceTools,
