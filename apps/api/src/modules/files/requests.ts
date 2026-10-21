@@ -1,8 +1,25 @@
 import { z } from 'zod'
 import {
-  AgentFileListInputSchema, FileScopeSchema,
+  AgentFileListInputSchema, FileRevisionSchema, FileScopeSchema,
   type FileScope,
 } from '@foreman-code/contracts/files'
+
+/** Backend transport envelope only. FIL-02 has no upload/finalize HTTP contracts.
+ * Do not duplicate file metadata or scope validation; compose the frozen schemas. */
+const description = FileRevisionSchema.unwrap().shape
+export const FileUploadRequestSchema = z.object({
+  requestId: z.string().trim().min(1).max(200),
+  filename: description.filename, mediaType: description.mediaType,
+  byteSize: description.byteSize, sha256: description.sha256,
+}).strict().superRefine((input, context) => {
+  const revision = FileRevisionSchema.safeParse({ filename: input.filename, mediaType: input.mediaType,
+    byteSize: input.byteSize, sha256: input.sha256, fileId: 'validation', revisionId: 'validation',
+    origin: 'upload', createdAt: '2000-01-01T00:00:00.000Z' })
+  if (!revision.success) for (const issue of revision.error.issues) {
+    context.addIssue({ code: 'custom', path: issue.path, message: issue.message })
+  }
+})
+export type FileUploadRequest = z.infer<typeof FileUploadRequestSchema>
 
 export const FileListQuerySchema = z.object({
   cursor: z.string().trim().min(1).max(2048).optional(),
