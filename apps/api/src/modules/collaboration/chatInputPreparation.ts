@@ -21,7 +21,7 @@ function credential(kind: 'agent-chat-mcp' | 'operator-chat-mcp') {
   return { kind, token: `opm_${randomBytes(32).toString('base64url')}` }
 }
 function prepare(input: { binding: WorkerConversationBinding; configuration: unknown; correlationId: string;
-  prompt: string; settings: AcceptedChatSettings; native?: NativeSessionReference; expectedNativeTurnId?: string | undefined;
+  prompt: string; settings: AcceptedChatSettings; native?: NativeSessionReference; expectedNativeTurnId?: string;
   intent?: string | undefined; fileInputs: boolean }): PreparedChatInput {
   const { binding, configuration, correlationId, prompt, settings, native, intent } = input
   const common = { binding, correlationId, prompt }
@@ -96,15 +96,14 @@ export function prepareOperatorChatInput(database: SqlQuery,
       configurationVersionId: configuration.id, configurationHash: commandInputHash(configuration) }
     const accountBinding = await readProviderAccountBinding(sql, 'operator-command', `${row.id}:session`)
       ?? legacyProviderAccountBinding(configuration.harness, profile)
-    const retained = row.worker_conversation_binding
-    const appMcpAccess = request.attachments?.length && configuration.harness.harness === 'claude' ? 'none' : 'scoped'
-    const binding = WorkerConversationBindingSchema.parse({ ...(retained ?? { owner,
+    const binding = row.worker_conversation_binding ?? WorkerConversationBindingSchema.parse({ owner,
       harness: configuration.harness.harness, profile,
       workingDirectory: workerOperatorDirectory(await runtimeRoot(profile), owner),
-      ...(accountBinding ? { accountBinding } : {}) }), appMcpAccess })
+      appMcpAccess: request.attachments?.length && configuration.harness.harness === 'claude' ? 'none' : 'scoped',
+      ...(accountBinding ? { accountBinding } : {}) })
     return prepare({ binding, configuration, prompt: input.prompt,
       correlationId: nativeCorrelation(row.id, request.requestId), settings: input.settings, intent: request.intent,
-      expectedNativeTurnId: request.expectedNativeTurnId ?? row.active_native_turn_id ?? undefined,
+      ...(request.expectedNativeTurnId ? { expectedNativeTurnId: request.expectedNativeTurnId } : {}),
       ...(row.native_session_id && row.provider_version ? { native: { harness: row.harness,
         nativeSessionId: row.native_session_id, providerVersion: row.provider_version } } : {}),
       fileInputs: configuration.harness.harness === 'codex' && Boolean(request.attachments?.length) })

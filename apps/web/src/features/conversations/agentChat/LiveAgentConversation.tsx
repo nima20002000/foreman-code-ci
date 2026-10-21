@@ -46,7 +46,7 @@ export function LiveAgentConversation(props: AgentConversationProps) {
 
 function AgentConversationContent({ context, name, activity, runLabel, onClose, onNewConversation, onRecover }: AgentConversationProps) {
   const [canonicalDenial, setCanonicalDenial] = useState<ApiError>()
-  const chat = useAgentChat(context, { denial: canonicalDenial }), state = chat.state
+  const chat = useAgentChat(context, canonicalDenial), state = chat.state
   const conversation = state?.conversation
   const retired = conversation?.harness === 'opencode' || state?.capabilities.harness === 'opencode'
   const conversationId = conversation?.id

@@ -21,7 +21,6 @@ export interface DeliveryOwnerBinding {
   nativeSessionId?: string
   deliveredNativeSessionId?: string
   nativeTurnId?: string
-  inputMessageId?: string
   sessionMode?: 'regular' | 'plan'
   acceptedInput?: AcceptedChatInput
 }

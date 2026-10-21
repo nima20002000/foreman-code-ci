@@ -1,8 +1,8 @@
 import { z } from 'zod'
 import { ChatControlReceiptSchema, ChatDeliveryReceiptSchema, ChatQueueCancelRequestSchema,
-  ChatSendRequestSchema, ChatStopRequestSchema, EngineChatReadbackSchema, EngineChatMessageSchema,
+  ChatSendRequestSchema, ChatStopRequestSchema, EngineChatReadbackSchema,
   WorkflowExecutionChatReadRequestSchema, WorkflowExecutionChatResolutionSchema,
-  WorkflowExecutionChatSelectionSchema, WorkflowExecutionChatMessageRequestSchema } from '@foreman-code/contracts'
+  WorkflowExecutionChatSelectionSchema } from '@foreman-code/contracts'
 import { DomainError } from '../../modules/errors.js'
 import { defineOperatorTool, type OperatorToolDefinition } from './definition.js'
 
@@ -15,8 +15,8 @@ const Stop = ChatStopRequestSchema.refine(workflowTarget, { message: 'Use an exa
 const Cancel = ChatQueueCancelRequestSchema.refine(workflowTarget, { message: 'Use an exact workflow execution or coordinator target.' })
 const CancelAll = Cancel.refine(input => input.selection.kind === 'all', { message: 'Use selection:{kind:"all"}.' })
 const engineSchemas = {
-  agent_chat_read: { input: z.union([WorkflowExecutionChatMessageRequestSchema, WorkflowExecutionChatReadRequestSchema, Resolve]),
-    output: z.union([EngineChatReadbackSchema, WorkflowExecutionChatResolutionSchema, EngineChatMessageSchema]) },
+  agent_chat_read: { input: z.union([WorkflowExecutionChatReadRequestSchema, Resolve]),
+    output: z.union([EngineChatReadbackSchema, WorkflowExecutionChatResolutionSchema]) },
   agent_chat_send: { input: Send, output: ChatDeliveryReceiptSchema },
   agent_chat_interrupt: { input: Stop, output: ChatControlReceiptSchema },
   agent_chat_cancel_queued: { input: Cancel, output: ChatControlReceiptSchema },
@@ -38,7 +38,6 @@ export function withWorkflowExecutionChatTools(legacy: readonly OperatorToolDefi
       outputSchema: tool.outputSchema ? z.union([schema.output, tool.outputSchema as z.ZodType]) : schema.output,
       description: `${tool.description}\nFor Run-owned work, pass the shared exact target directly at the top level. `
         + 'agent_chat_read also accepts resolve:{workspaceId,workflowId,workflowNodeId,runId?,workflowVersionId?,executionId?,waitingActivationId?}; '
-        + 'pass {target,messageId} to read the complete native message when a page reports truncation. '
         + 'choose ambiguous Run/execution identities explicitly. The response preserves the original native history and target, '
         + 'without creating a conversation or Run. Exact-target sends require explicit intent; auto never interrupts. '
         + 'Stop scope active_turn preserves queued input and active_and_queued cancels it. Cancel selection one/all affects only queued input. '
@@ -53,14 +52,9 @@ export function withWorkflowExecutionChatTools(legacy: readonly OperatorToolDefi
         }
         const service = context.services.executionChat
         if (!service) throw new DomainError('COLLABORATION_UNAVAILABLE', 'Run-owned chat is unavailable.', 503)
-        if (name === 'agent_chat_read') {
-          if ('resolve' in value) return service.resolve(context.principal, Resolve.parse(input).resolve)
-          if ('messageId' in value) {
-            const request = WorkflowExecutionChatMessageRequestSchema.parse(input)
-            return service.message(context.principal, request.target, request.messageId)
-          }
-          return service.read(context.principal, WorkflowExecutionChatReadRequestSchema.parse(input))
-        }
+        if (name === 'agent_chat_read') return 'resolve' in value
+          ? service.resolve(context.principal, Resolve.parse(input).resolve)
+          : service.read(context.principal, WorkflowExecutionChatReadRequestSchema.parse(input))
         if (name === 'agent_chat_send') return service.deliver(context.principal, ChatSendRequestSchema.parse(input))
         if (name === 'agent_chat_interrupt') return service.stop(context.principal, ChatStopRequestSchema.parse(input))
         return service.cancel(context.principal, ChatQueueCancelRequestSchema.parse(input))
