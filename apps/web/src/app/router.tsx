@@ -1,3 +1,4 @@
+import { MemoryBoardSearchSchema } from '@foreman-code/contracts'
 import {
   createRootRoute,
   createRoute,
@@ -69,6 +70,7 @@ const workflowsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/workspaces/$workspaceId/workflows',
   component: WorkflowsRouteEntry,
+  validateSearch: MemoryBoardSearchSchema,
 })
 
 const jobsRedirectRoute = createRoute({

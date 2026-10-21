@@ -88,6 +88,7 @@ export interface RepeatLockedHooks {
   /** Optional only for read/semantics-only hosts. Every native method fails
    * closed unless the complete native capability is installed. */
   native?: RepeatNativeLockedHooks
+  prepareMemoryLaunchLocked?(sql: GraphTransactionSql, execution: HarnessExecution): Promise<HarnessExecution>
   run: RepeatRuntimeRun
   assertAuthorityLocked(sql: GraphTransactionSql): Promise<void>
   /** SQL-only durable completeness for declared original artifacts. Optional
@@ -510,6 +511,7 @@ export class RepeatRunRepository {
       let next = HarnessExecutionSchema.parse({
         ...stored.execution, ...paths, systemPrompt, state: 'starting', startedAt: context.now,
       })
+      if (context.hooks.prepareMemoryLaunchLocked) next = await context.hooks.prepareMemoryLaunchLocked(context.sql, next)
       const sessionContinuation = await readWorkflowSessionContinuation(context.sql, next)
       if (sessionContinuation) next = HarnessExecutionSchema.parse({ ...next, sessionContinuation })
       const claim = repeatLaunchClaim(context.scope, stored.ref, next, stored.inputDigest)

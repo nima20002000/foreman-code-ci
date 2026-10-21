@@ -67,6 +67,10 @@ export class MemoryBoardService implements MemoryBoardPort {
   readDigest(input: Parameters<MemoryBoardPort['readDigest']>[0]) {
     return this.dependencies.readTransaction(tx => readDigest(tx,this.dependencies.authority,input))
   }
+  readDigestLocked(tx: GraphTransactionSql, input: Parameters<MemoryBoardPort['readDigest']>[0]) {
+    assertGraphTransaction(tx)
+    return readDigest(tx, this.dependencies.authority, input)
+  }
   applyLifecycleLocked(tx: GraphTransactionSql, fact: Parameters<MemoryBoardPort['applyLifecycleLocked']>[1]) {
     return applyLifecycle(tx,this.dependencies.authority,fact,this.now())
   }

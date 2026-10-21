@@ -111,7 +111,7 @@ export async function roleDeniedToolCall(context: GraphqlMcpContext, body: unkno
   const call = ToolCall.safeParse(body)
   if (!call.success) return undefined
   const name = call.data.params.name
-  const allowed = name.startsWith('memory_') ? ['operator', ...toolRoles(name)] : toolRoles(name)
+  const allowed: readonly McpRole[] = name.startsWith('memory_') ? ['operator', ...toolRoles(name)] : toolRoles(name)
   const enabled = name === 'bug_report' || !context.tools || context.tools.includes(name)
   const roleAllowed = allowed.includes(context.role)
   const workerReportDenied = context.role !== 'operator' && name === 'bug_report'

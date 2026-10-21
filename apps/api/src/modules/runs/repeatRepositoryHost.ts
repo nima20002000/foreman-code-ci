@@ -1,3 +1,5 @@
+import type { MemoryBoardService } from '../memory-boards/service.js'
+import { applyMemoryEffectLocked, applyMemoryNativeLocked, prepareMemoryLaunchLocked } from './memoryBoardEffects.js'
 import { AgentConfigurationVersionSchema, SourceCapacityErrorDetailsSchema, type HarnessExecution } from '@foreman-code/contracts'
 import {
   AcceptedWorkflowRunV3Schema, ExecutableWorkflowV3Schema, WorkflowVersionV3Schema, RunWorktreeSchema,
@@ -35,6 +37,7 @@ export interface RepeatCanonicalPublication {
   assertLaunchReceiptLocked(claim: RepeatLaunchClaim, digest: string): Promise<void>
 }
 export interface RepeatRepositoryServices {
+  memoryBoards?: MemoryBoardService
   reconcileWorkflowArtifacts?(owner: RunOwnership, run: AcceptedWorkflowRunV3,
     execution: HarnessExecution, signal: AbortSignal): Promise<void>
   preparePlacementExecution?(owner: RunOwnership, run: AcceptedWorkflowRunV3, execution: HarnessExecution): Promise<
@@ -234,6 +237,12 @@ export class RepeatRepositoryFactory {
     }
     const hooks: RepeatLockedHooks = {
       run,
+      ...(this.services.memoryBoards ? {
+        prepareMemoryLaunchLocked: (transaction: GraphTransactionSql, execution: HarnessExecution) => {
+          sameTransaction(transaction)
+          return prepareMemoryLaunchLocked(transaction, this.services.memoryBoards!, execution)
+        },
+      } : {}),
       persistDispatchLocked: async (transaction, execution, ref, inputDigest) => {
         sameTransaction(transaction)
         const node = version.definition.nodes.find(node => node.id === ref.nodeId)
@@ -271,7 +280,10 @@ export class RepeatRepositoryFactory {
       },
       publishLocked: async (transaction, effect, facts, mutate) => {
         sameTransaction(transaction)
-        await publication.publishEffectLocked(effect, facts, mutate)
+        await publication.publishEffectLocked(effect, facts, async () => {
+          await mutate()
+          if (this.services.memoryBoards) await applyMemoryEffectLocked(transaction, this.services.memoryBoards, effect)
+        })
       },
       assertPublicationReceiptLocked: async (transaction, effect) => {
         sameTransaction(transaction)
@@ -313,7 +325,10 @@ export class RepeatRepositoryFactory {
         },
         publishLocked: async (transaction, change, mutate) => {
           sameTransaction(transaction)
-          await publication.publishNativeLocked(change, mutate)
+          await publication.publishNativeLocked(change, async () => {
+            await mutate()
+            if (this.services.memoryBoards) await applyMemoryNativeLocked(transaction, this.services.memoryBoards, run, change)
+          })
         },
         assertReceiptLocked: async (transaction, change) => {
           sameTransaction(transaction)

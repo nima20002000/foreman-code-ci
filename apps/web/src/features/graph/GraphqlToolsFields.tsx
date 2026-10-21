@@ -24,7 +24,7 @@ export function GraphqlToolsFields({ role, defaults, override, readOnly = false,
   /** Missing defaults retain the legacy enabled set until explicitly edited. */
   onChange(defaults: GraphqlAgentTool[] | undefined, override: GraphqlToolOverride | undefined): void
 }) {
-  const implemented = memoryBoardTools('write')
+  const implemented: GraphqlAgentTool[] = memoryBoardTools('write')
   const tools = graphqlRoleTools(role, implemented)
   const agentDefault = effectiveGraphqlTools(role, defaults, undefined, false, implemented)
   const choice = (tool: GraphqlAgentTool): NodeChoice => override?.add.includes(tool) ? 'on' : override?.remove.includes(tool) ? 'off' : 'default'

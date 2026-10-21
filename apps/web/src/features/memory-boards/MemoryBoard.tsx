@@ -1,3 +1,4 @@
+import { useUnsavedChanges } from '../../shared/ui/unsavedChanges'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MemoryBoardMutation, MemoryBoardScope, MemoryCard as Card, MemoryCardWorkBinding } from '@foreman-code/contracts'
 import { Button } from '../../shared/ui/nocturne/Button'
@@ -72,6 +73,12 @@ function BoardBody(props: MemoryBoardProps & { board: MemoryBoardView; online: b
   const matchesConfirmedDraft = Boolean(save.data && memoryDraftMatchesCommand(draft, save.confirmedCommand))
   const confirmedDraft = matchesConfirmedDraft && save.data?.outcome !== 'existing'
   const dirty = Boolean(draft?.dirty && !save.retained.command)
+  useUnsavedChanges({ label: `${props.scopeName} memory board`, scope: 'surface', dirty,
+    busy: save.isPending, uncertain: Boolean(save.retained.command), saveDisabled: true,
+    save() { throw new Error('Save the card or note in the memory board before leaving.') },
+    discard() { setMemoryDraft(boardId) },
+  }, (current, next) => current.pathname !== next.pathname || current.search.workflowId !== next.search.workflowId
+    || current.search.boardMemory === true && next.search.boardMemory !== true)
   const requestLeave = useCallback((proceed: () => void) => {
     if (save.isPending) return
     if (dirty) setLeaveAction(() => proceed)
