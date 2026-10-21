@@ -99,7 +99,7 @@ export class MainWorkerConversationMcp {
     const stored = (await this.input.pool.query<{ workspace_id: string; workflow_id: string; workflow_node_id: string;
       agent_id: string; worker_conversation_binding: unknown }>(`select workspace_id,workflow_id,workflow_node_id,
         agent_id,worker_conversation_binding from operator_conversations where id=$1 and kind='agent'
-        and deleted_at is null and record->>'status'='open'`, [owner.conversationId])).rows[0]
+        and deleted_at is null and not coalesce((record->>'archived')::boolean,false)`, [owner.conversationId])).rows[0]
     if (!stored || stored.workspace_id !== owner.workspaceId || stored.workflow_id !== owner.workflowId
       || stored.workflow_node_id !== owner.workflowNodeId || stored.agent_id !== owner.agentId) denied()
     if (!stored.worker_conversation_binding || !isDeepStrictEqual(WorkerConversationBindingSchema.parse(stored.worker_conversation_binding), binding)) {

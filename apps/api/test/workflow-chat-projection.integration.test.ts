@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { ZodError } from 'zod'
 import type { AgentIdentity, BoardLifecycleFact, WorkflowChatPostRequest } from '@foreman-code/contracts'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { WorkflowChatProjector, type CommittedWorkflowChatFact, type CommittedReplySource } from '../src/modules/workflow-chat/projection.js'
@@ -34,6 +35,8 @@ describe('committed Group projection through durable public seams', () => {
     await enqueue(projector, fact('z-104-retry', 'retry_admitted'))
     await enqueue(projector, fact('z-105-retry-launched', 'launched', { execution: { ...execution, executionId: 'retry', attempt: 2 } }))
     await enqueue(projector, fact('z-106-waiting', 'waiting_children', { outstandingRequestIds: ['child'] }))
+    await expect(enqueue(projector, fact('invalid-acceptance', 'accepted', { outstandingRequestIds: ['child'] })))
+      .rejects.toBeInstanceOf(ZodError)
     await enqueue(projector, fact('z-107-intermediate', 'awaiting_acceptance', { outstandingRequestIds: ['child'] }))
     await projector.projectCommittedFacts()
     expect((await f.service.read(caller, scope)).items.filter(item => item.kind === 'finished')).toEqual([])
@@ -57,6 +60,9 @@ describe('committed Group projection through durable public seams', () => {
 
   it('keeps continuation admission silent and preserves a genuine successor preparation failure', async () => {
     const projector = new WorkflowChatProjector(f.repository, () => {}, { read: async () => undefined })
+    await expect(enqueue(projector, fact('superseded', 'canceled', { controlContinuationId: 'continuation',
+      previousExecution: execution, reason: 'This attempt was superseded.' }))).rejects.toBeInstanceOf(ZodError)
+    expect((await f.service.read(caller, scope)).items).toEqual([])
     await enqueue(projector, fact('continuing', 'continuation_admitted', { controlContinuationId: 'continuation', previousExecution: execution,
       execution: { ...execution, executionId: 'successor', attempt: 2 } }))
     await enqueue(projector, fact('successor-failed', 'failed', {
