@@ -163,6 +163,6 @@ export function createExecutionAuthorityExtension(pool: pg.Pool,
         owner: input.intent.owner, ...authority,
         ...(policy ? { reviewer: { agentId: policy.execution.agentId,
           expiresAt: new Date(Date.now() + 60_000).toISOString() } } : {}) }) }
-    }), { preparedReads: true }).catch((error: unknown) => { throw databaseReadFailure(error) })
+    })).catch((error: unknown) => { throw databaseReadFailure(error) })
   } }
 }

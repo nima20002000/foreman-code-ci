@@ -80,9 +80,7 @@ function fixture() {
   ports.principal.mockResolvedValue({ id: 'principal' })
   const authorize = (action: 'start' | 'read' | 'control' | 'stop', authenticated = connection) =>
     assertRemoteExecutionAuthority(sql, locations, { version: 1, intent, placement, action }, authenticated, producer)
-  const client = { query: (input: string | pg.QueryConfig, values?: unknown[]) =>
-    sql.query(typeof input === 'string' ? input : input.text, typeof input === 'string' ? values : input.values),
-  on() {}, removeListener() {}, release() {} }
+  const client = { query: sql.query, on() {}, removeListener() {}, release() {} }
   const extension = createExecutionAuthorityExtension({ connect: async () => client } as unknown as pg.Pool,
     locations, producer)
   const request = (action: 'read' | 'control' | 'stop' = 'read') => extension.handle!(
