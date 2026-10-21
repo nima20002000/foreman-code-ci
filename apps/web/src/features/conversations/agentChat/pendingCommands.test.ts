@@ -27,12 +27,15 @@ it('recovers a settled receipt through Query without replaying or replacing anot
   rememberPendingCommand('draft', first, receipt)
   const submittedAt = mutation.state.submittedAt
   let release!: () => void
+  let entered!: () => void
+  const started = new Promise<void>(resolve => { entered = resolve })
   const gate = new Promise<void>(resolve => { release = resolve })
   const pending = client.getMutationCache().build<AgentChatCommandResult, Error, AgentChatCommand, unknown>(client, {
-    mutationKey, mutationFn: async () => { submissions++; await gate; return {} },
+    mutationKey, mutationFn: async () => { submissions++; entered(); await gate; return {} },
   })
   const next = { ...first, input: { ...first.input, requestId: 'second', content: 'Keep this pending' } }
   const sending = pending.execute(next)
+  await started
   try {
     const completed = { ...receipt, state: 'completed' as const, updatedAt: '2026-01-01T00:01:00Z' }
     expect(() => acceptPendingDelivery(client, 'draft', 1, completed)).not.toThrow()

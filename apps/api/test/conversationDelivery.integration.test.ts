@@ -148,6 +148,26 @@ describe('common conversation delivery through authenticated public services', (
       .rejects.toMatchObject({ code: 'CHAT_COMMAND_CONFLICT' })
   })
 
+  it.each(['agent', 'operator'] as const)('%s keeps the settings revision stable when native preference key order differs', async kind => {
+    const selected = await target(kind)
+    const manager = f.native(selected.conversationId)
+    manager.autoFinish = false
+    const sent = await send(selected, `${kind}-stable-preferences`, 'Keep this turn active', 'plan')
+    await waitState(selected, sent.id, 'accepted')
+    const readControls = () => kind === 'agent'
+      ? f.agent.readSessionControls(f.owner, f.scope.workspaceId, selected.conversationId)
+      : f.operator.readSessionControls(selected.conversationId, f.owner)
+    const before = await readControls()
+    const applied = before.applied!
+    expect(applied).not.toBeNull()
+    await manager.configureSessionPreferences({ contextProfile: applied.contextProfile, contextBudget: applied.contextBudget,
+      autoCompactTokens: applied.autoCompactTokens, autoCompact: applied.autoCompact })
+    const after = await readControls()
+    expect(after.applied).toEqual(before.applied)
+    expect(after.revision).toBe(before.revision)
+    expect((await readControls()).revision).toBe(before.revision)
+  })
+
   it.each(['agent', 'operator'] as const)('%s retains queued mode and input proof across header changes and owner restart', async kind => {
     const selected = await target(kind), manager = f.native(selected.conversationId)
     manager.autoFinish = false
