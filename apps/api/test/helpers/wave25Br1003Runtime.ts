@@ -1,3 +1,5 @@
+import { createMemoryBoardService } from '../../src/modules/memory-boards/production.js'
+import { memoryBoardAuthority } from '../../src/modules/collaboration/memoryBoardAuthority.js'
 import { agentWorkflowVersion } from './agentWorkflowFixture.js'
 import { bindRunAuthority, currentOperatorAuthority, type AcceptedRunAuthority } from '../../src/modules/access/runAuthority.js'
 import { requireAuthorization } from '../../src/modules/access/policy.js'
@@ -17,7 +19,6 @@ import { ReviewNativeProofServices } from '../../src/modules/interactions/review
 import { PostgresRepeatReviewerBindings } from '../../src/modules/interactions/repeatReviewer.js'
 import { PostgresWorkflowClosureStore } from '../../src/modules/interactions/workflowClosure.js'
 import { createWorkflowRepositoryServices } from '../../src/modules/runs/workflowRepositoryServices.js'
-import { WorkflowCollaborationIntegration, type WorkflowFeaturePorts } from '../../src/modules/collaboration/workflowIntegration.js'
 import type { RepeatRepositoryServices } from '../../src/modules/runs/repeatRepositoryHost.js'
 import { randomUUID } from 'node:crypto'
 import { vi } from 'vitest'
@@ -58,8 +59,6 @@ export async function checkpointRuntimeFixture(branches: 1 | 2 = 1, pendingPerEx
     outputFor?: ConstructorParameters<typeof CheckpointTestProvider>[4];
     admitPlacementExecutionLocked?: RepeatRepositoryServices['admitPlacementExecutionLocked'];
     preparePlacementExecution?: RepeatRepositoryServices['preparePlacementExecution'];
-    /** Frozen A/B ports; the production D adapter owns lifecycle and preparation. */
-    collaborationPorts?: WorkflowFeaturePorts;
     /** Exact physical closure port; omitted unless a fixture supplies native lifetimes. */
     recoverNativeProcesses?: ConstructorParameters<typeof ApprovalExecutionCoordinator>[11];
     managerFactory?: (context: NativeManagerResolutionContext,
@@ -115,16 +114,10 @@ export async function checkpointRuntimeFixture(branches: 1 | 2 = 1, pendingPerEx
       vi.spyOn(locations, 'revalidateSnapshot').mockResolvedValue(undefined)
       const workflowCapture = createWorkflowNativeCaptureChannel()
       const reviewCapture = createReviewNativeCaptureChannel()
+      const memoryBoards = createMemoryBoardService(db.pool, memoryBoardAuthority)
       const repositoryServices = createWorkflowRepositoryServices(workflowCapture.verify, undefined, options.nativeSourcePersisted)
-      const collaboration = options.collaborationPorts
-        ? new WorkflowCollaborationIntegration(options.collaborationPorts, async () => 'fixture-main') : undefined
       const runs = new PostgresRunRepository(db.pool, workflows, locations,
-        { runtimeRoot: db.directory, ...repositoryServices, services: { ...repositoryServices.services,
-          ...(collaboration ? { collaboration: collaboration.hooks,
-            prepareCollaborationExecution: collaboration.prepare.bind(collaboration),
-            readCollaborationPrompt: collaboration.readPrompt.bind(collaboration),
-            releaseCollaborationExecution: (owner: RunOwnership, execution: Parameters<typeof collaboration.release>[1],
-              version: Parameters<typeof collaboration.release>[3]) => collaboration.release(owner, execution, 'terminal', version) } : {}),
+        { runtimeRoot: db.directory, ...repositoryServices, services: { ...repositoryServices.services, memoryBoards,
           ...(options.preparePlacementExecution ? { preparePlacementExecution: options.preparePlacementExecution } : {}),
           ...(options.admitPlacementExecutionLocked
             ? { admitPlacementExecutionLocked: options.admitPlacementExecutionLocked } : {}) } },
@@ -146,7 +139,7 @@ export async function checkpointRuntimeFixture(branches: 1 | 2 = 1, pendingPerEx
         launchCredentials, validate,
         new PostgresWorkflowClosureStore(db.pool), new PostgresRepeatReviewerBindings(db.pool),
         workflowCapture.capture, reviewCapture.capture, options.recoverNativeProcesses,
-        undefined, options.prepareManagerContext, undefined, collaboration)
+        undefined, options.prepareManagerContext)
       const engine = new LangGraphWorkflowEngine(runs, workflows, native, checkpointer, db.directory,
         locations, launchCredentials, repository, options.onRunTerminal,
         { workerParallelism: options.workerParallelism ?? 2 })
@@ -154,7 +147,7 @@ export async function checkpointRuntimeFixture(branches: 1 | 2 = 1, pendingPerEx
         undefined, (interaction) => native.inspectInteractionActivity(interaction))
       registerApprovalCheckpointResume(service, engine)
       engines.push(engine)
-      return { engine, service, repository, runs, native, locations, workflows, checkpointer }
+      return { engine, service, repository, runs, native, locations, workflows, checkpointer, memoryBoards }
     }
     const runtime = compose()
     const config = { configurable: { thread_id: f.run.id } }

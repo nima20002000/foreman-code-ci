@@ -1,3 +1,4 @@
+import { memoryBoardTools, HarnessConfigurationSchema } from '@foreman-code/contracts'
 import {
   IdSchema,
   ListInteractionsRequestSchema,
@@ -11,7 +12,6 @@ import {
   GraphqlToolOverrideSchema,
   effectiveGraphqlTools,
   type GraphqlAgentTool,
-  type AgentSubject,
   type WorkflowAgentProductRole,
 } from '@foreman-code/contracts'
 import { AcceptedWorkflowRunV3Schema, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
@@ -33,7 +33,6 @@ import {
 } from './mcpReadback.js'
 import type { InteractionResponseOptions } from './cancellation.js'
 import { ignoreError } from '../diagnostics/ignoredError.js'
-import { readConsultationCredentialSubject } from '../access/consultationAuthority.js'
 
 const CURSOR_PREFIX = 'interaction:'
 export const AppInteractionListInputSchema = ListInteractionsRequestSchema.pick({ cursor: true, limit: true }).strict()
@@ -57,7 +56,7 @@ export function decodeInteractionCursor(cursor: string | undefined): string | un
   }
 }
 
-export interface WorkerToolAccess { role: WorkflowAgentProductRole; tools: GraphqlAgentTool[]; subject?: AgentSubject }
+export interface WorkerToolAccess { role: WorkflowAgentProductRole; tools: GraphqlAgentTool[] }
 
 export interface AppInteractionService {
   context(principal: ManagementPrincipal): Promise<unknown>
@@ -170,16 +169,15 @@ export class PostgresAppInteractionService implements AppInteractionService {
     const role = row.role
     const defaults = row.defaults == null ? undefined : GraphqlToolDefaultsSchema.parse(row.defaults)
     const override = row.override == null ? undefined : GraphqlToolOverrideSchema.parse(row.override)
-    const subject = row.purpose === 'consultation'
-      ? await readConsultationCredentialSubject(this.pool, principal.id) : undefined
-    const tools = effectiveGraphqlTools(role, defaults, override, row.interval != null).filter(tool => {
-      if (subject && tool === 'interaction_respond') return false
+    const tools = effectiveGraphqlTools(role, defaults, override, row.interval != null, memoryBoardTools('write')).filter(tool => {
       const operation = WorkerNativeOutputOperationSchema.options.find(operation =>
         WORKER_NATIVE_OUTPUT_TOOL_NAMES[operation] === tool)
+      if (memoryBoardTools('write').includes(tool) && !memoryBoardTools('read').includes(tool)
+        && HarnessConfigurationSchema.parse(row.harness).sandbox === 'read-only') return false
       if (!operation) return true
       return false
     })
-    return { role, tools, ...(subject ? { subject } : {}) }
+    return { role, tools }
   }
 
   async canRead(principal: ManagementPrincipal): Promise<boolean> {
@@ -205,7 +203,6 @@ export class PostgresAppInteractionService implements AppInteractionService {
        join agent_configuration_versions c on c.id=(r.record->'agentConfigurationVersionIds'->>$2)
          and c.workspace_id=r.workspace_id and c.agent_id=e.agent_id
        where b.principal_id=$1 and b.agent_id=$2 and b.revoked_at is null
-         and b.purpose in ('workflow','reviewer')
          and c.record->>'productRole' in ('master','orchestrator')
          and r.execution_state in ('queued','running','waiting')
          and exists (select 1 from jsonb_to_recordset($3::jsonb)
