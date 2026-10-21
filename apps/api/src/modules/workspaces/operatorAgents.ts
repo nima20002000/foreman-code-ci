@@ -1,6 +1,6 @@
 import type pg from 'pg'
 import {
-  AgentSchema, AgentConfigurationVersionSchema, projectHarnessEffort,
+  AgentSchema, AgentConfigurationVersionSchema, agentTemplateForRole, projectHarnessEffort,
   validateHarnessWorkflowCompatibility, CodexSessionCompatibilitySchema,
   type Agent, type HarnessConfiguration,
 } from '@foreman-code/contracts'
@@ -117,7 +117,7 @@ export class OperatorAgentMutationService {
         requireAuthorization(livePrincipal, 'agents:read', { workspaceId: input.workspaceId })
         const existing = await client.query('select id from agents where id=$1', [input.agentId])
         if (existing.rows.length) throw new DomainError('AGENT_ID_CONFLICT', 'The Agent ID already exists.', 409)
-        const defaults = (await new PostgresFoundationSettingsRepository(this.pool).getAgentDefaults(client)).value[input.productRole]
+        const defaults = agentTemplateForRole((await new PostgresFoundationSettingsRepository(this.pool).getAgentDefaults(client)).value, input.productRole)
         const configuration = input.configuration ?? defaults.harness
         authorizeAgentConfiguration(livePrincipal, input.workspaceId, configuration, input.assignedSkills)
         return { configuration,
@@ -146,8 +146,8 @@ export class OperatorAgentMutationService {
         const agent = await saveAgentConfiguration(client,input.workspaceId,agentWithConfiguration(AgentSchema.parse({
           id:input.agentId,name:input.name,productRole:input.productRole,description:input.description,role:input.role,
           prompt:input.prompt ?? {},assignedSkills:input.assignedSkills ?? [], harnessProfileSelection,
-          nativeTools: input.nativeTools ?? defaults.value[input.productRole].nativeTools,
-          ...(input.graphqlTools ? {graphqlTools:input.graphqlTools} : {}),
+          nativeTools: input.nativeTools ?? agentTemplateForRole(defaults.value, input.productRole).nativeTools,
+          graphqlTools: input.graphqlTools ?? agentTemplateForRole(defaults.value, input.productRole).graphqlTools,
         }),configuration), false, this.validateProfile(livePrincipal))
         const revision = await client.query<{metadata_revision:string}>('select metadata_revision from agents where id=$1',[agent.id])
         return {agent,metadataRevision:Number(revision.rows[0]!.metadata_revision)}
@@ -187,6 +187,7 @@ export class OperatorAgentMutationService {
         const { configuration, selection: harnessProfileSelection } = preparation.value()
         authorizeAgentConfiguration(livePrincipal,input.workspaceId,configuration,input.assignedSkills ?? current.agent.assignedSkills)
         const edited = agentWithConfiguration(AgentSchema.parse({...current.agent, harnessProfileSelection,
+          ...(input.productRole !== undefined ? {productRole:input.productRole} : {}),
           ...(input.name !== undefined ? {name:input.name} : {}),
           ...(input.description !== undefined ? {description:input.description ?? undefined} : {}),
           ...(input.role !== undefined ? {role:input.role ?? undefined} : {}),
