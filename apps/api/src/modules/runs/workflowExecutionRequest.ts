@@ -68,7 +68,7 @@ export function workflowExecutionRequest(input: {
     JSON.stringify({ kind: 'return', requestId: workInput.work.request.requestId }),
     'requestId may be omitted when replying to the single open request you received. If supplied, copy it verbatim.',
   ].join('\n') : undefined
-  const prompts = [initialPrompt, noticePrompt, returnPrompt, execution.memoryBoardDigest?.text].filter(Boolean)
+  const prompts = [initialPrompt, noticePrompt, returnPrompt].filter(Boolean)
   return HarnessExecutionRequestSchema.parse({
     executionId: execution.id,
     runId: execution.runId,

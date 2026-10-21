@@ -88,8 +88,6 @@ export interface RepeatLockedHooks {
   /** Optional only for read/semantics-only hosts. Every native method fails
    * closed unless the complete native capability is installed. */
   native?: RepeatNativeLockedHooks
-  memoryWorkChangedLocked?(sql: GraphTransactionSql, executionId: string, sourceEventKey: string): Promise<void>
-  prepareMemoryLaunchLocked?(sql: GraphTransactionSql, execution: HarnessExecution): Promise<HarnessExecution>
   run: RepeatRuntimeRun
   assertAuthorityLocked(sql: GraphTransactionSql): Promise<void>
   /** SQL-only durable completeness for declared original artifacts. Optional
@@ -214,33 +212,19 @@ export class RepeatRunRepository {
   }
   /** One business request on the already-owned Run; replay returns its first receipt. */
   admitWorkRequest(sourceExecutionId: string, selectedRelationshipId?: string): Promise<WorkRequestAdmission> {
-    return this.transaction(async context => {
-      const receipt = await admitWorkHandoffLocked({ ...context, assertActive: () => this.active(context) },
-        sourceExecutionId, selectedRelationshipId)
-      let id: string
-      if (receipt.kind === 'accepted') id = receipt.request.requestId
-      else if (receipt.kind === 'limit_reached') id = receipt.denial.denialId
-      else id = receipt.unresolvedId
-      if (!receipt.replayed) await context.hooks.memoryWorkChangedLocked?.(context.sql, sourceExecutionId, `request:${id}`)
-      return receipt
-    })
+    return this.transaction((context) => admitWorkHandoffLocked({ ...context,
+      assertActive: () => this.active(context),
+    }, sourceExecutionId, selectedRelationshipId))
   }
   returnWork(sourceExecutionId: string): Promise<WorkReturnReceipt> {
-    return this.transaction(async context => {
-      const receipt = await returnWorkHandoffLocked({ ...context, assertActive: () => this.active(context) }, sourceExecutionId)
-      if (!receipt.replayed) await context.hooks.memoryWorkChangedLocked?.(context.sql, sourceExecutionId,
-        `return:${receipt.value.returnId}`)
-      return receipt
-    })
+    return this.transaction((context) => returnWorkHandoffLocked({ ...context,
+      assertActive: () => this.active(context),
+    }, sourceExecutionId))
   }
   recordWorkUnresolved(sourceExecutionId: string): Promise<{ unresolvedId: string; replayed: boolean }> {
-    return this.transaction(async context => {
-      const receipt = await recordUnresolvedWorkLocked({ ...context, assertActive: () => this.active(context) },
-        sourceExecutionId, 'finish_with_findings')
-      if (!receipt.replayed) await context.hooks.memoryWorkChangedLocked?.(context.sql, sourceExecutionId,
-        `unresolved:${receipt.unresolvedId}`)
-      return receipt
-    })
+    return this.transaction((context) => recordUnresolvedWorkLocked({ ...context,
+      assertActive: () => this.active(context),
+    }, sourceExecutionId, 'finish_with_findings'))
   }
   resolveWaitingWorkJoins(sourceActivationId: string): Promise<string[]> {
     return this.transaction((context) => resolveWaitingWorkJoinsLocked({ ...context,
@@ -526,7 +510,6 @@ export class RepeatRunRepository {
       let next = HarnessExecutionSchema.parse({
         ...stored.execution, ...paths, systemPrompt, state: 'starting', startedAt: context.now,
       })
-      if (context.hooks.prepareMemoryLaunchLocked) next = await context.hooks.prepareMemoryLaunchLocked(context.sql, next)
       const sessionContinuation = await readWorkflowSessionContinuation(context.sql, next)
       if (sessionContinuation) next = HarnessExecutionSchema.parse({ ...next, sessionContinuation })
       const claim = repeatLaunchClaim(context.scope, stored.ref, next, stored.inputDigest)
