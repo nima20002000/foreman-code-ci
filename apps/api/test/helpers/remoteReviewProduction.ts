@@ -263,7 +263,6 @@ export async function remoteReviewProduction(options: {
     if (mainService) closes.push(mainService.close)
     if (mainService) await execute(provider.binary, ['--version'], { env: logEnvironment })
     let mainFailure = ''
-    let workerFailure = ''
     const failures: Array<{ code: string; runId: string | null; namespace?: unknown; tool?: unknown;
       phase?: unknown; errorType?: unknown; errorLocation?: unknown; errorDetail?: string | undefined;
       role?: 'Main' | 'Worker'; message?: string | undefined; reason?: string | undefined; time?: unknown }> = []
@@ -575,6 +574,7 @@ export async function remoteReviewProduction(options: {
     let worker: ChildProcess | undefined
     let ready = false
     let workerStateRevision = 0
+    let workerFailure = ''
     let workerPhase = 'starting'
     let workerConnectionFailure = 'none'
     const startWorker = async () => {
