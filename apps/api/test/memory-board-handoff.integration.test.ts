@@ -51,7 +51,7 @@ it.runIf(postgresEnabled)('keeps linked parent work Doing until its required chi
     const board = decodeMcpToolResult(await runtime.client.callTool({ name: 'memory_board_get', arguments: { scope } }))
     boardId = (board.board as { id: string }).id
     const node = runtime.f.version.definition.nodes[0]!
-    if (node.kind === 'job') throw new Error('Expected Agent node')
+    expect(node.kind).not.toBe('job')
     const created = decodeMcpToolResult(await runtime.client.callTool({ name: 'memory_card_create', arguments: {
       kind: 'card_create', boardId, card: { title: 'Reviewed task', body: '', status: 'todo', completionKind: null,
         reason: null, assignee: null, linkedNodes: [] },
