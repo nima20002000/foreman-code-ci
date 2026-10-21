@@ -12,7 +12,7 @@ import { fileScopeIdentity } from '../requests.js'
 import { FileStorageService, type FileScopeAuthorization } from '../service.js'
 import type { FileByteStorage } from '../storage.js'
 import { decodeReferenceBytes, readReferenceRange } from './bytes.js'
-import { FileReferenceAddInputSchema, FileReferenceRemoveInputSchema } from './requests.js'
+import { FileReferenceAddInputSchema, FileReferenceRemoveInputSchema } from '@foreman-code/contracts/files'
 
 export class FileReferenceService extends FileStorageService<PermanentFileScope> {
   constructor(private readonly references: FileReferenceRepository, bytes: FileByteStorage,

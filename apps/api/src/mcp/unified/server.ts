@@ -26,6 +26,7 @@ import { MCP_ROLE_LABELS, roleInstructions, roleList, toolRoles, type McpRole } 
 export interface GraphqlMcpContext {
   role: McpRole
   principal: ManagementPrincipal
+  reauthorize?: () => Promise<ManagementPrincipal>
   operator?: OperatorServices
   interactions?: AppInteractionService
   references?: AgentReferenceService
@@ -89,6 +90,7 @@ function requestOperatorTools(context: GraphqlMcpContext, registration: McpReque
   if (!registration.operator) {
     const registered: OperatorRequestTools = { tools: [] }
     registered.tools = operatorRequestTools({ principal: context.principal, services: context.operator!,
+      ...(context.reauthorize ? { reauthorize: context.reauthorize } : {}),
       ...(context.signal ? { signal: context.signal } : {}),
     }, callbackContext => registered.catalog?.(callbackContext) ?? Promise.resolve([]))
     registration.operator = Promise.resolve(registered)
