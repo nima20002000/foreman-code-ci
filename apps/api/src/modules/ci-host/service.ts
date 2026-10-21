@@ -101,7 +101,7 @@ async function inBatches<T>(items: readonly T[], limit: number, work: (item: T) 
 export class HostCiService {
   private dispatching: Promise<void> | undefined
   private dispatchRequested = false
-  private cleaningTickets: Promise<void> | undefined
+  private superseding: Promise<void> | undefined
   private readonly observingRuns = new Map<string, Promise<void>>()
   private readonly cancelingTickets = new Map<string, Promise<{ run: CiRunRecord }>>()
   /** Observed runs whose execution is settled and whose logs and results are still being collected. */
@@ -207,10 +207,10 @@ export class HostCiService {
     await Promise.all([this.drain(), this.circleCredits?.close?.()])
   }
 
-  /** Resolves when dispatch, ticket cleanup, observations and readiness reads have finished, including work they start. */
+  /** Resolves when dispatch, superseded cleanup, observations and readiness reads have finished, including work they start. */
   async drain() {
     for (;;) {
-      const pending = [this.dispatching, this.cleaningTickets, this.prewarm.drain(),
+      const pending = [this.dispatching, this.superseding, this.prewarm.drain(),
         ...this.observingRuns.values(), ...this.observingComputers.values(), ...this.cloudDispatches.values(),
         ...this.policyRefreshes.values(), ...this.retainedExecutors.work()]
         .filter(work => work !== undefined)
@@ -764,26 +764,17 @@ export class HostCiService {
     })
   }
 
-  private async cancelObsoleteTickets() {
+  private async cancelSuperseded() {
     const rows = (await this.pool.query<{ record: unknown }>(`select record from ci_runs
-      where state in ('queued','starting','running') and (record->>'supersededBy' is not null
-        or record->>'gate'='true' and exists (
-          select 1 from ci_runs failed where failed.workspace_id=ci_runs.workspace_id
-            and failed.group_id=ci_runs.group_id and failed.state='failed' and failed.record->>'gate'='true'))`)).rows
-    const runs = rows.map(row => CiRunRecordSchema.parse(row.record))
-    let canceled = false
+      where state in ('queued','starting','running') and record->>'supersededBy' is not null`)).rows
+    const runs = rows.map(row => CiRunRecordSchema.parse(row.record)).filter(run => run.supersededBy)
     await inBatches(runs, 8, async run => {
       try {
-        const audit: CiCancellation | undefined = run.supersededBy ? undefined : {
-          principalId: run.initiator.principalId, source: 'mcp', commandId: randomUUID(), reason: 'gate_failed',
-        }
-        const result = await this.cancelTicket(run.workspaceId, run.id, audit)
-        if (result.run.state === 'canceled') canceled = true
+        await this.cancelTicket(run.workspaceId, run.id)
       } catch (error) {
-        log.warn({ err: error, runId: run.id }, 'CI ticket cleanup failed; retrying')
+        log.warn({ err: error, runId: run.id }, 'Superseded CI cleanup failed; retrying')
       }
     })
-    if (canceled) void this.dispatch()
   }
 
   private async saveCancellation(sql: string, parameters: unknown[], run: CiRunRecord,
@@ -1507,9 +1498,9 @@ export class HostCiService {
 
   private async dispatchOnce() {
     const snapshots: PolicySnapshots = new Map()
-    this.cleaningTickets ??= withoutCiDatabasePriority(() => this.cancelObsoleteTickets())
-      .catch(error => log.warn({ err: error }, 'CI ticket cleanup failed; retrying'))
-      .finally(() => { this.cleaningTickets = undefined })
+    this.superseding ??= withoutCiDatabasePriority(() => this.cancelSuperseded())
+      .catch(error => log.warn({ err: error }, 'Superseded CI cleanup failed; retrying'))
+      .finally(() => { this.superseding = undefined })
     const knownComputers = await this.endpoint.computers()
     const { parsed, durations, coverage } = await readQueuedCiRuns(this.pool)
     void withoutCiDatabasePriority(async () => this.prewarm.schedule(knownComputers, parsed))
