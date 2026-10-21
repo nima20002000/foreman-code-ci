@@ -29,6 +29,7 @@ import type { RepeatRunRepository } from './repeatPostgres.js'
 import { buildWorkHandoffGraph } from './workHandoffGraph.js'
 import { workHandoffNodeAction } from './workHandoffNode.js'
 import { WorkExecutionFailure } from './workExecutionFailure.js'
+import { workflowCoordinationPrompt } from './workflowCoordinationPrompt.js'
 import { isTransientExecutionError, repeatSettlementPending, transientExecutionFailure } from './executionRetryPolicy.js'
 export { repeatSettlementPending } from './executionRetryPolicy.js'
 import { ExecutionLimiter } from './limiter.js'
@@ -178,6 +179,7 @@ export interface RepeatNativeObserverContext {
   /** Existing accepted runtime root + repeatExecutionDirectoryKey(executionId). */
   executionHostKey?(execution: HarnessExecution): Promise<string>
   preparePlacement?(execution: HarnessExecution): Promise<{ workingDirectory: string; runtimeDirectory: string; revalidate(): Promise<void> } | undefined>
+  readCollaborationPrompt?(execution: HarnessExecution): Promise<string | undefined>
   directory(executionId: string): string
 }
 
@@ -318,15 +320,22 @@ export function repeatNativeObserver(context: RepeatNativeObserverContext):
       const executionContext = context.version.definition.handoffs && repeatTickIndex(execution.input) === undefined
         ? await store.readWorkExecutionContext(execution.id) : undefined
       check()
+      const collaborationPrompt = await context.readCollaborationPrompt?.(execution)
+      check()
       const request = workflowExecutionRequest({ execution: { ...execution, ...paths },
-        version: context.version, configuration, workspaceId: run.workspaceId, executionContext })
-      const workHandoffContract = context.version.definition.handoffs && repeatTickIndex(execution.input) === undefined
+        version: context.version, configuration, workspaceId: run.workspaceId, executionContext,
+        resultProtocol: run.resultProtocol, collaborationPrompt })
+      const coordinationResult = run.resultProtocol ? { resultProtocol: run.resultProtocol,
+        definition: context.version.definition, workflowNodeId: node.id,
+        interval: repeatTickIndex(execution.input) !== undefined } : undefined
+      const workHandoffContract = coordinationResult ? workflowCoordinationPrompt(coordinationResult)
+        : context.version.definition.handoffs && repeatTickIndex(execution.input) === undefined
         ? currentInitialPrompt({ ...node, initialPrompt: undefined }, false, true) : undefined
       const deliverable = workflowDeliverableContract(context.version, execution,
-        (kind, values) => context.workflows.referencesCreatedByExecution(kind, values, run.workspaceId, execution.id))
+        (kind, values) => context.workflows.referencesCreatedByExecution(kind, values, run.workspaceId, execution.id), run.resultProtocol)
       for (;;) {
         const observation = await native.observeExact({ ...common, execution, request, store: boundary, signal, onStarted: release,
-          workHandoffContract, deliverable })
+          workHandoffContract, coordinationResult, deliverable })
         execution = observation.execution
         if (observation.state === 'completed') {
           return
@@ -505,6 +514,26 @@ async function waitForIntervalRun(input: Parameters<typeof startIntervalChecks>[
   } finally { stopChecks() }
 }
 
+function workActivationDriver(input: Parameters<typeof executeRepeatRuntime>[0], limiter: ExecutionLimiter,
+  signal: AbortSignal, bookkeeping: <T>(work: () => Promise<T>) => Promise<T>) {
+  return async (activationId: string): Promise<readonly string[]> => {
+    try {
+      return await workHandoffNodeAction({ version: input.version, store: input.store,
+        driver: input.driver, limiter, signal })(activationId)
+    } catch (error) {
+      if (!(error instanceof WorkExecutionFailure)) throw error
+      const executionId = error.pendingExecutionId
+      if (executionId) {
+        const recordFailure = input.lifecycle.recordExecutionFailure?.bind(input.lifecycle)
+        if (!recordFailure) throw new DomainError('WORK_FAILURE_WRITER_REQUIRED',
+          'A handoff launch failure requires its persisted execution cause.', 409, undefined, { cause: error })
+        await bookkeeping(() => recordFailure(executionId, error.result))
+      }
+      return input.store.resolveWaitingWorkJoins(activationId)
+    }
+  }
+}
+
 /** Executes the one graph on the existing Run thread. Settlement retries drain
  * wrappers and re-enter the same checkpoint; business progression stays inside
  * guarded graph edges. The shared engine owns Run ownership/admission,
@@ -517,7 +546,7 @@ export async function executeRepeatRuntime(input: {
   store: Pick<RepeatRunRepository, 'admit' | 'acceptTerminal' | 'enterBlock' | 'readOccurrence' | 'transition'
     | 'resolveExcluded' | 'completeRun' | 'ensureWorkEntry' | 'admitWorkActivation' | 'acceptWorkTerminal'
     | 'admitWorkRequest' | 'returnWork' | 'recordWorkUnresolved' | 'resolveWaitingWorkJoins' | 'completeWorkRun'>
-    & Partial<Pick<RepeatRunRepository, 'admitTick'>>
+    & Partial<Pick<RepeatRunRepository, 'admitTick' | 'admitHierarchyGroup'>>
   driver: RepeatExecutionDriver; lifecycle: RepeatRuntimeLifecycle
   checkpointer: import('@langchain/langgraph-checkpoint').BaseCheckpointSaver
   configuredParallelism?: number
@@ -560,22 +589,7 @@ export async function executeRepeatRuntime(input: {
   const work = input.version.definition.handoffs ? buildWorkHandoffGraph({
     runId: input.runId, version: input.version, checkpointer: input.checkpointer, signal, track,
     port: { ensureEntryActivation: () => input.store.ensureWorkEntry(),
-      executeActivation: async activationId => {
-        try {
-          return await workHandoffNodeAction({ version: input.version, store: input.store,
-            driver: input.driver, limiter, signal })(activationId)
-        } catch (error) {
-          if (!(error instanceof WorkExecutionFailure)) throw error
-          const executionId = error.pendingExecutionId
-          if (executionId) {
-            const recordFailure = input.lifecycle.recordExecutionFailure?.bind(input.lifecycle)
-            if (!recordFailure) throw new DomainError('WORK_FAILURE_WRITER_REQUIRED',
-              'A handoff launch failure requires its persisted execution cause.', 409, undefined, { cause: error })
-            await bookkeeping(() => recordFailure(executionId, error.result))
-          }
-          return input.store.resolveWaitingWorkJoins(activationId)
-        }
-      },
+      executeActivation: workActivationDriver(input, limiter, signal, bookkeeping),
     },
   }) : null
   const repeat = work ? null : buildRepeatGraph({ ...input, signal, track, limiter })

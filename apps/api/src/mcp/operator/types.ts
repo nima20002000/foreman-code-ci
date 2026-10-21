@@ -23,6 +23,8 @@ import type { FoundationSettingsManagementService } from '../../modules/settings
 import type { OperatorInteractionService } from '../../modules/interactions/operator.js'
 
 export interface OperatorServices {
+  executionChat?: import('../../modules/collaboration/workflowChatService.js').WorkflowExecutionChatService
+  workflowHierarchy?: import('../../modules/workflow-hierarchy/service.js').WorkflowHierarchyService
   circleAccounts?: import('../../modules/settings/circleAccounts.js').CircleAccountsManagementService
   bugReports?: import('../../modules/bug-reports/service.js').BugReportService
   providerAccounts?: import('../../modules/provider-accounts/service.js').ProviderAccountsService
