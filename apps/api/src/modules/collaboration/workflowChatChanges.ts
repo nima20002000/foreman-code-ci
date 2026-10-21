@@ -5,9 +5,10 @@ import { controlDigest, workflowTargetRunId } from './workflowControlRecords.js'
 import { readWorkflowChatIdentity } from './workflowChatIdentity.js'
 import { withWorkflowChatRead } from './workflowChatRead.js'
 import type { WorkflowChatOwnerPort, WorkflowChatTarget } from './workflowControlTypes.js'
+import { readWorkflowNativeChat } from '../interactions/workflowChatNativeRead.js'
 
 export async function readWorkflowChatChanges(pool: pg.Pool, owner: WorkflowChatOwnerPort,
-  principal: Principal, target: WorkflowChatTarget) {
+  principal: Principal, target: WorkflowChatTarget, afterRevision?: string) {
   return withWorkflowChatRead(pool, principal, target, 'agent_chat:read', async sql => {
     const identity = await readWorkflowChatIdentity(sql, target)
     const kind = target.kind === 'workflow_execution' ? 'execution' : 'consultation'
@@ -18,9 +19,15 @@ export async function readWorkflowChatChanges(pool: pg.Pool, owner: WorkflowChat
     const commands = (await sql.query<{ revision: string }>(`select coalesce(sum(revision),0)::text as revision
       from run_chat_commands where run_id=$1 and target_key=$2`,
     [workflowTargetRunId(target), controlDigest(target)])).rows[0]!
+    const activity = (await sql.query<{ revision: string }>(`select coalesce(max(sequence),0)::text as revision
+      from run_activity where run_id=$1`, [workflowTargetRunId(target)])).rows[0]!
     const observation = await owner.observe(target)
-    return WorkflowExecutionChatChangeSchema.parse({ target, snapshotRequired: true,
-      revision: Number(native.revision) + Number(commands.revision),
-      cursor: controlDigest({ target, state: identity.state, native, commands, observation }) })
+    const stateCursor = controlDigest({ target, state: identity.state, commands, observation })
+    const messages = afterRevision === undefined ? undefined : await readWorkflowNativeChat(sql, target,
+      { afterRevision, limit: 100, bindings: [], messageBytes: 32 * 1024 })
+    return { stateCursor, nativeRevision: native.revision, messages,
+      change: WorkflowExecutionChatChangeSchema.parse({ target, snapshotRequired: true,
+        revision: Math.max(Number(native.revision), Number(activity.revision)),
+        cursor: controlDigest({ stateCursor, native }) }) }
   })
 }

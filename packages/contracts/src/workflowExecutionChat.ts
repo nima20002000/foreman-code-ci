@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { IdSchema, GraphIdSchema } from './schemaPrimitives.js';
 import { AgentIdentitySchema, AgentNodeRefSchema } from './agentIdentity.js';
 import { DeliveryTargetSchema } from './chatDelivery.js';
+import { EngineChatMessageSchema } from './workflowChat.js';
 
 /** Shared F3/F4 boundary. Resolving a selected node never starts or forks work. */
 export const WorkflowExecutionChatSelectionSchema = z.object({
@@ -54,6 +55,12 @@ export const WorkflowExecutionChatChangeSchema = z.object({
   target: WorkflowExecutionChatTargetSchema,
   cursor: z.string().min(1),
   revision: z.number().int().nonnegative(),
-  snapshotRequired: z.literal(true),
-}).strict();
+  sequence: z.number().int().nonnegative().optional(),
+  snapshotRequired: z.literal(true).optional(),
+  message: EngineChatMessageSchema.optional(),
+}).strict().superRefine((change, context) => {
+  if (Boolean(change.snapshotRequired) === Boolean(change.message)) {
+    context.addIssue({ code: 'custom', message: 'Publish a message revision or request a snapshot.' });
+  }
+});
 export type WorkflowExecutionChatChange = z.infer<typeof WorkflowExecutionChatChangeSchema>;

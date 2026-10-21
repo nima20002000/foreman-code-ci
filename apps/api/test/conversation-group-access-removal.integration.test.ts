@@ -23,7 +23,11 @@ it('continues the same native conversation after removing its previously bound G
     } })
     expect(response.isError, JSON.stringify(response)).not.toBe(true)
     const state = await eventually(read, value => value.turns.some(turn => turn.requestId === requestId
-      && ['completed', 'failed', 'canceled'].includes(turn.delivery)))
+      && ['completed', 'failed', 'canceled'].includes(turn.delivery))).catch(async cause => {
+      const latest = await read()
+      throw new Error(JSON.stringify({ turns: latest.turns, availability: latest.availability,
+        starts: f.replay.starts, calls: f.replay.calls.slice(-12), closes: f.replay.closes }), { cause })
+    })
     expect(state.turns.find(turn => turn.requestId === requestId)).toMatchObject({ delivery: 'completed' })
     return state
   }

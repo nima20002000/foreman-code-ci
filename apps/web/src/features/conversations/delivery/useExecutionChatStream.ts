@@ -61,13 +61,14 @@ export function useExecutionChatStream(target: ExecutionChatTarget, source: Exec
       if (disposed || controller.signal.aborted) return
       if (!parsed.success || !sameDeliveryTarget(parsed.data.target, target)) { buffered = []; readback.request(); return }
       const event = parsed.data
-      if (event.snapshotRequired || !event.message || seen >= 0 && event.revision > seen + 1
+      const sequence = event.sequence ?? event.revision
+      if (event.snapshotRequired || !event.message || seen >= 0 && sequence > seen + 1
         || !messageBelongsToExecution(event.message, target) || event.message.revision === undefined
         || event.message.sequence === undefined
         || new TextEncoder().encode(JSON.stringify(event)).byteLength > 64 * 1024) {
-        buffered = []; readback.request(); seen = Math.max(seen, event.revision); return
+        buffered = []; readback.request(); seen = Math.max(seen, sequence); return
       }
-      seen = Math.max(seen, event.revision)
+      seen = Math.max(seen, sequence)
       buffered.push(event)
       if (buffered.length > 100 || new TextEncoder().encode(JSON.stringify(buffered)).byteLength > 256 * 1024) { buffered = []; readback.request(); return }
       timer ??= setTimeout(flush, 100)
