@@ -1,4 +1,6 @@
 import { OperatorInteractionService } from '../../src/modules/interactions/operator.js'
+import { WorkflowHierarchyService } from '../../src/modules/workflow-hierarchy/service.js'
+import { createWorkflowExecutionChatService } from '../../src/modules/collaboration/workflowChatProduction.js'
 import { PostgresWorkspaceRepository } from '../../src/modules/workspaces/postgres.js'
 import { ExecutionReadinessService } from '../../src/modules/harnesses/executionReadiness.js'
 import { NativeRollout } from '../../src/modules/harnesses/nativeRollout.js'
@@ -25,7 +27,7 @@ import { checkpointRuntimeFixture } from './wave25Br1003Runtime.js'
 
 /** Real authenticated transport and qualified production binding over the shared
  * provider-boundary fixture. No fake engine Start/Stop receipt or native proof. */
-export async function currentOperatorIntegration(options: Parameters<typeof checkpointRuntimeFixture>[2] & { agentManagement?: boolean; graphReads?: boolean; interactions?: boolean } = {}) {
+export async function currentOperatorIntegration(options: Parameters<typeof checkpointRuntimeFixture>[2] & { agentManagement?: boolean; graphReads?: boolean; interactions?: boolean; workflowHierarchy?: boolean; executionChat?: boolean } = {}) {
   const f = await checkpointRuntimeFixture(1, 1, options)
   const clients: Client[] = []
   const commands = new PostgresCommandCoordinator(f.db.pool), access = new PostgresAccessService(f.db.pool)
@@ -51,6 +53,8 @@ export async function currentOperatorIntegration(options: Parameters<typeof chec
   } })
   if (options.graphReads) Object.assign(services, { runGraph: new RunGraphReadService(f.db.pool, { qualifiedReads: true }) })
   if (options.interactions) Object.assign(services, { interactions: new OperatorInteractionService(f.service) })
+  if (options.workflowHierarchy) Object.assign(services, { workflowHierarchy: new WorkflowHierarchyService(f.db.pool, commands, services.workflows) })
+  if (options.executionChat) Object.assign(services, { executionChat: createWorkflowExecutionChatService(f.db.pool, f.native) })
   const app = buildApp({ ...(options.interactions ? { product: {
     workspaces: new PostgresWorkspaceRepository(f.db.pool, f.workflows, f.runs),
     workflows: f.workflows, runs: f.runs, engine: f.engine, interactions: f.service,
