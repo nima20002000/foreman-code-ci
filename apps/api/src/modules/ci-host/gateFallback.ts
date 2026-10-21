@@ -8,8 +8,6 @@ import { supportsUserSystemd } from './computerCapabilities.js'
 import type { HostCiComputer } from './serviceTypes.js'
 import { serializeCiJson } from './text.js'
 import { ciExecutionRunId } from './executionAttempt.js'
-import { CLOUD_GATE_JOB_BUDGET_MS } from './cloudJobLimits.js'
-import { executorSpeedFactor, type ExecutorSpeeds } from './executorSpeed.js'
 
 const BUILD_WAIT_MS = 90_000
 const CLOUD_TEST_MS = 240_000
@@ -27,7 +25,6 @@ interface FallbackCapacity {
   durations: Map<string, CiDurations | null>
   reservedCloud: Set<string>
   gate: CiRunRecord | undefined
-  speeds?: ExecutorSpeeds
   freeSlots(computer: HostCiComputer): number
   idle(computer: HostCiComputer): boolean
   canTake(run: CiRunRecord, computer: HostCiComputer): boolean
@@ -44,7 +41,6 @@ function cloudParts(run: CiRunRecord, capacity: FallbackCapacity) {
     .sort((left, right) => left - right)
   const median = known[Math.floor(known.length / 2)] ?? 30_000
   const duration = (file: string) => durations[file] ?? median
-  const speeds = capacity.speeds ?? new Map()
   const result: CiRunRecord[] = []
   for (const systemd of [false, true]) {
     const selected = files.filter(file => requiresUserSystemd(file) === systemd)
@@ -57,14 +53,6 @@ function cloudParts(run: CiRunRecord, capacity: FallbackCapacity) {
       const slice = integrationPartition(selected, durations, { index, count, targetDurationMs: CLOUD_TEST_MS })
       if (!slice.length) continue
       const computer = eligible[index % eligible.length]!
-      const speedFactor = executorSpeedFactor(computer, speeds)
-      const expectedDurationMs = Math.ceil(speedFactor * (BUILD_WAIT_MS + slice.reduce((sum, file) => sum + duration(file), 0)))
-      if (expectedDurationMs > CLOUD_GATE_JOB_BUDGET_MS) {
-        componentLogger('jobs').warn({ operation: 'reassign unavailable CI build part', runId: run.id,
-          provider: computer.hostRef.provider, expectedDurationMs, budgetMs: CLOUD_GATE_JOB_BUDGET_MS },
-        'Cloud fallback exceeds the job budget; retaining the builder assignment')
-        return []
-      }
       const original = result.length === 0
       const id = original ? run.id : randomUUID()
       // The original ticket alone owns earlier attempts; each added ticket starts its own execution.
@@ -75,8 +63,8 @@ function cloudParts(run: CiRunRecord, capacity: FallbackCapacity) {
         setupRetry: original ? run.setupRetry : undefined,
         files: slice, partition: null, plannedHostKey: computer.key,
         integrationShards: capacity.shards.get(computer.key), requiresBuildComputer: systemd,
-        expectedDurationMs,
-        speedFactor: speedFactor === 1 ? undefined : speedFactor, dispatchAttempts: undefined,
+        expectedDurationMs: BUILD_WAIT_MS + slice.reduce((sum, file) => sum + duration(file), 0),
+        speedFactor: undefined, dispatchAttempts: undefined,
         reassignment: { count: (run.reassignment?.count ?? 0) + 1, previousHostKey: run.plannedHostKey!,
           lastError: 'CI_BUILD_COMPUTER_UNAVAILABLE', at: new Date().toISOString() },
         message: `Build computer ${run.plannedHostKey} unavailable after 90 seconds; reassigned to cloud.` }))
