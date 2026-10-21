@@ -1,4 +1,4 @@
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import type pg from 'pg'
 import { MessageSchema, type ActivitySourceRevision, type Message } from '@foreman-code/contracts'
 import { readClaudeMessagePublications } from '../harnesses/claudeSdk/publications.js'
 import {
@@ -10,7 +10,7 @@ import { readOriginalMessageInputs } from './originalMessageInputs.js'
 import { DomainError } from '../errors.js'
 import { MessagePublicationRefsSchema, mergeMessagePins, readCodexMessagePublications } from './messagePublications.js'
 
-type Queryable = SqlQuery
+type Queryable = Pick<pg.PoolClient, 'query'>
 const StoredMessageSchema = MessageSchema.omit({ attachments: true, originalInput: true }).extend({
   attachmentRefs: MessageAttachmentRefsSchema.optional(), publicationRefs: MessagePublicationRefsSchema.optional(),
 }).strict()

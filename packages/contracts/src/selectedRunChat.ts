@@ -4,7 +4,7 @@ import { SelectedRunChatKeySchema } from "./runSnapshots.js";
 import {
   AgentChatHistoryPageSchema, AgentChatReadbackQuerySchema, AgentChatStateSchema,
   AgentChatTurnPageSchema, InterruptAgentChatRequestSchema, ReadAgentChatRequestSchema, ReadAgentChatResponseSchema,
-  AgentChatMessageCommandSchema,
+  SendAgentChatMessageRequestSchema,
 } from "./agentChat.js";
 
 /** SCH-06 is an additive envelope; the frozen Run snapshot and FEAT-15 shapes are unchanged. */
@@ -70,7 +70,7 @@ export type ReadSelectedRunChatResponse = z.infer<typeof ReadSelectedRunChatResp
 export const SendSelectedRunChatRequestSchema = z.object({
   selection: SelectedRunChatExecutionSchema,
   // Derive fields before refining: preserve content and attachment-steering checks.
-  message: z.object(AgentChatMessageCommandSchema.shape).omit({ context: true }).strict()
+  message: z.object(SendAgentChatMessageRequestSchema.shape).omit({ context: true }).strict()
     .refine((value) => value.content.length > 0 || value.attachments.length > 0, {
       path: ["content"], message: "Message requires text or an attachment.",
     }).refine((value) => value.intent !== "steer" || value.attachments.length === 0, {
@@ -91,7 +91,7 @@ export const AgentChatReadToolInputSchema = ReadAgentChatRequestSchema.extend({
 });
 
 export const AgentChatSendToolInputSchema = z.object({
-  workspaceId: IdSchema, request: AgentChatMessageCommandSchema.optional(),
+  workspaceId: IdSchema, request: SendAgentChatMessageRequestSchema.optional(),
   selection: SelectedRunChatExecutionSchema.omit({ workspaceId: true }).optional(),
   message: SendSelectedRunChatRequestSchema.shape.message.optional(),
 }).strict().superRefine((value, context) => {
