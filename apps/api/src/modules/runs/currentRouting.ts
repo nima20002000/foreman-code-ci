@@ -41,6 +41,12 @@ export function currentInitialPrompt(node: { initialPrompt?: string | undefined;
   return prompt ? `${prompt}\n\n${contract}` : contract
 }
 
+function resultKeys(business: string[], protocol?: ResultProtocol): string {
+  const keys = protocol ? [...business, 'summary', 'board'] : business
+  if (keys.length === 2) return `${keys[0]} and ${keys[1]}`
+  return `${keys.slice(0, -1).join(', ')}, and ${keys.at(-1)}`
+}
+
 function basePrompt(node: { initialPrompt?: string | undefined; choice?: WorkflowChoice | undefined;
   artifactOutputs?: WorkflowArtifactOutputsV1 | undefined }, repeatExit: boolean, handoff: boolean, protocol?: ResultProtocol): string | undefined {
   if (handoff) {
@@ -48,7 +54,7 @@ function basePrompt(node: { initialPrompt?: string | undefined; choice?: Workflo
     const outcomes = node.choice ? WorkflowChoiceSchema.parse(node.choice).outcomes.map(({ outcome }) => outcome) : []
     const contract = [
       'Foreman Code work-handoff result contract (version 1)',
-      `On successful completion, return exactly one complete JSON object with exactly ${['routing', 'data', ...(saved ? ['artifactOutputs'] : []), ...(protocol ? ['summary', 'board'] : [])].join(', ')}.`,
+      `On successful completion, return exactly one complete JSON object with exactly ${resultKeys(['routing', 'data', ...(saved ? ['artifactOutputs'] : [])], protocol)}.`,
       'routing.kind is request, return, or finish.',
       `For a NEW work request, use {"kind":"request","outcome":<one of ${JSON.stringify(outcomes)}>}; only saved named outcomes are permitted.`,
       'A request routing object has exactly kind and outcome. Never include requestId in a new request; requestId belongs only to return routing.',
@@ -85,7 +91,7 @@ function basePrompt(node: { initialPrompt?: string | undefined; choice?: Workflo
     const contract = [
       'Foreman Code saved workflow artifact result contract (version 1)',
       `Required saved output keys: ${JSON.stringify(saved.outputKeys)}`,
-      `On success return exactly one complete JSON object with ${[...(outcomes ? ['routing'] : []), 'data', 'artifactOutputs', ...(protocol ? ['summary', 'board'] : [])].join(', ')}.`,
+      `On success return exactly one complete JSON object with ${resultKeys([...(outcomes ? ['routing'] : []), 'data', 'artifactOutputs'], protocol)}.`,
       ...(outcomes ? [`routing has exactly outcome, one of ${JSON.stringify(outcomes)}.`] : []),
       'artifactOutputs has exactly version: 1 and outputs: an array containing each required key exactly once.',
       'Use files_native_output_create, files_native_output_append, files_native_output_seal, then files_native_output_publish to produce each original artifact. These tools supply the execution scope and transfer the sealed bytes.',
