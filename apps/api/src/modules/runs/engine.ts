@@ -345,7 +345,7 @@ export class LangGraphWorkflowEngine {
         if (cleanupRequired && (snapshot.run.executionState !== 'completed'
           || snapshot.stopRequested || snapshot.run.outcome !== 'succeeded')) {
           await this.nativeExecutions.cancelRun(owner.runId, owner)
-          await settleWorkflowRun(owner, await hasRecoveredWorkflowNativeLifetime(owner), this.runs.memoryBoards)
+          await settleWorkflowRun(owner, await hasRecoveredWorkflowNativeLifetime(owner))
         } else await this.nativeExecutions.finishRun(owner.runId)
         await this.finishOwned(owner)
       } catch (error) {
