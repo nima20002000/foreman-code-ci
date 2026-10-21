@@ -1039,6 +1039,7 @@ export class AgentChatService {
           throw new DomainError('AGENT_CHAT_TURN_NOT_ACTIVE', 'The turn finished before the steer arrived. Send it as the next turn instead.', 409, undefined, { cause: error })
         }
         await this.repository.unknown(row.id, input.requestId, errorMessage(error, 'Steer delivery is unconfirmed.'))
+        this.scheduleReconcile(row.id)
       }
       this.events.publish(row.id, 'turn', { requestId: input.requestId })
       const turn = (await this.repository.turn(row.id, input.requestId))!
