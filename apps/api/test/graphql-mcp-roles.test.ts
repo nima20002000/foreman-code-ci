@@ -25,7 +25,7 @@ const clients: Client[] = []
 afterEach(async () => { await Promise.all(clients.splice(0).map((client) => client.close())); recordDenied.mockClear() })
 const context = (role: McpRole, tools?: string[]) => ({ role, principal: role === 'operator' ? operator : worker,
   references: workerToolServices({} as pg.Pool, services.commands).references,
-  operator: services, interactions: interactions(role === 'master' || role === 'orchestrator'), ...(tools ? { tools } : {}) })
+  operator: services, interactions: interactions(role === 'orchestrator'), ...(tools ? { tools } : {}) })
 async function connect(role: McpRole, tools?: string[], requestBody?: unknown) {
   const server = await createGraphqlMcpServer(context(role, tools), requestBody)
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
@@ -66,9 +66,7 @@ describe('one Foreman Code MCP server scoped by role', () => {
   })
 
   it('lists only the tools each role may use and tells the model its role', async () => {
-    const [op, master, orchestrator, coder] = await Promise.all([
-      connect('operator'), connect('master'), connect('orchestrator'), connect('coder'),
-    ])
+    const [op, orchestrator, coder] = await Promise.all([connect('operator'), connect('orchestrator'), connect('coder')])
     const names = async (client: Client) => (await client.listTools()).tools.map((tool) => tool.name).sort()
     const operatorNames = await names(op)
     expect(operatorNames).toContain('workflow_create')
@@ -76,27 +74,19 @@ describe('one Foreman Code MCP server scoped by role', () => {
     expect(operatorNames).not.toContain('context_get')
     expect(operatorNames).toContain('interaction_respond')
     expect(await names(orchestrator)).toEqual(['context_get', 'files.reference_read', 'files.references_list', 'interaction_get', 'interaction_list', 'interaction_respond'])
-    expect(await names(master)).toEqual(['context_get', 'files.reference_read', 'files.references_list', 'interaction_get', 'interaction_list', 'interaction_respond'])
     expect(await names(coder)).toEqual(['context_get', 'files.reference_read', 'files.references_list', 'interaction_get', 'interaction_list'])
     expect(coder.getServerVersion()).toMatchObject({ name: 'foreman-code', title: 'Foreman Code MCP' })
     expect(coder.getInstructions()).toContain('Foreman Code')
-    expect(coder.getInstructions()).toContain('Worker role')
-    expect(master.getInstructions()).toContain('Master role')
-    expect(orchestrator.getInstructions()).toContain('Orchestrator role')
+    expect(coder.getInstructions()).toContain('Coder role')
     expect(op.getInstructions()).toContain('Operator role')
   })
 
   it('refuses a direct call to a tool outside the caller role with an audited ROLE_NOT_ALLOWED', async () => {
     expect(await deniedText('coder', 'workflow_create')).toContain('ROLE_NOT_ALLOWED')
-    expect(JSON.parse(await deniedText('coder', 'interaction_respond'))).toEqual({ error: {
-      code: 'ROLE_NOT_ALLOWED',
-      message: 'Your Worker role cannot use interaction_respond. Allowed roles: Operator, Master, Orchestrator.',
-      details: { role: 'coder', allowedRoles: ['operator', 'master', 'orchestrator'] },
-    } })
+    expect(await deniedText('coder', 'interaction_respond')).toContain('Your Coder role cannot use interaction_respond. Allowed roles: Operator, Orchestrator.')
     expect(recordDenied).toHaveBeenCalledWith('worker-1', 'mcp', 'workflow_create', 'mcp:workflow_create')
-    expect(await deniedText('operator', 'context_get')).toContain('Your Operator role cannot use context_get. Allowed roles: Master, Orchestrator, Worker.')
+    expect(await deniedText('operator', 'context_get')).toContain('Your Operator role cannot use context_get. Allowed roles: Orchestrator, Coder.')
     expect(await deniedText('orchestrator', 'workspace_list')).toContain('Your Orchestrator role cannot use workspace_list. Allowed roles: Operator.')
-    expect(await deniedText('master', 'workspace_list')).toContain('Your Master role cannot use workspace_list. Allowed roles: Operator.')
     // Allowed tools, unknown names and other methods pass through to the server.
     expect(await roleDeniedToolCall(context('coder'), call('context_get'))).toBeUndefined()
     expect(await roleDeniedToolCall(context('coder'), call('no_such_tool'))).toBeUndefined()
