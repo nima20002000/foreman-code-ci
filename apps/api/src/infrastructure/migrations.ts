@@ -1,4 +1,3 @@
-import { workflowChatMigration } from './workflowChatMigration.js'
 import { operatorSummaryActivityMigration } from './operatorSummaryActivityMigration.js'
 import { ciIntegrationSelectionMigration } from './ciIntegrationSelectionMigration.js'
 import { ciExecutorCleanupMigration } from './ciExecutorCleanupMigration.js'
@@ -1007,7 +1006,6 @@ export const migrations = [
   ciRetainedExecutorsMigration,
   workReturnGroupMigration,
   workReturnNodeGroupingMigration,
-  workflowChatMigration,
 ] as const
 
 export function assertMigrationVersions(entries: readonly { version: number }[]): void {

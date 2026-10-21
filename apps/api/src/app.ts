@@ -27,7 +27,6 @@ import { registerRunPlacementRoutes, registerNodePlacementChoicesRoutes } from '
 import { registerManagementRoutes } from './routes/management.js'
 import { registerMcpDetectionRoute } from './routes/mcpDetection.js'
 import { registerProductRoutes, type ProductServices } from './routes/product.js'
-import { registerWorkflowChatRoutes } from './routes/workflowChat.js'
 import { registerAgentChatRoutes } from './routes/agentChat.js'
 import { registerWorkflowScheduleRoutes } from './routes/workflowSchedules.js'
 import { registerProviderAccountRoutes } from './routes/providerAccounts.js'
@@ -211,7 +210,6 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     registerMcpDetectionRoute(app, options.operator.services.locations, options.mcpDetection.service,
       options.operator.services.harnessSettings?.mcp)
   }
-  if (options.operator?.services.workflowChat) registerWorkflowChatRoutes(app, options.operator.services.workflowChat)
   if (options.operator?.services.agentChat) registerAgentChatRoutes(app, options.operator.services.agentChat)
   if (options.operator && options.product?.interactions) registerUserInteractions(app, options.product.interactions)
   if (options.product) registerProductRoutes(app, options.product, options.operator?.services)

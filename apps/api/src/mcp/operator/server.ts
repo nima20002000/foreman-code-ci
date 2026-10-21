@@ -71,7 +71,7 @@ export function operatorToolCatalog(services: OperatorServices): readonly BoundT
 
 export function operatorRequestTools(context: OperatorRequestContext, catalog?: OperatorCatalog) {
   const request: CatalogContext = { ...context, principal: authorizationPrincipal(context.principal), catalog }
-  return operatorToolCatalog(context.services).filter(tool => catalogToolAvailable(request, tool.name, OPERATOR_TOOLS)).map(tool => ({
+  return operatorToolCatalog(context.services).filter(tool => catalogToolAvailable(request, tool.name)).map(tool => ({
     name: tool.name,
     description: tool.description,
     register: (server: McpServer) => tool.register(server, request),
@@ -110,7 +110,6 @@ function registerOperatorDefinitions(server: McpServer, context: OperatorRequest
   group('settings')
   group('providerAccounts')
   group('agentChat')
-  group('workflowChat')
   group('sessionControls')
   group('workspaceDefaults')
   registerFileRetentionTools(server, context)

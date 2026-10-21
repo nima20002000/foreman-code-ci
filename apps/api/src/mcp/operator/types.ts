@@ -50,7 +50,6 @@ export interface OperatorServices {
   buildComputers?: import('../../modules/settings/buildComputers.js').BuildComputerSettings
   devices?: DeviceManagementService
   sources?: import('../../modules/sources/service.js').PostgresSourceService
-  temporaryFiles?: import('../../modules/files/service.js').TemporaryFileService
   fileReferences?: FileReferenceService
   executionReadiness?: import('../../modules/harnesses/executionReadiness.js').ExecutionReadinessService
   runGraph?: RunGraphReadApi
@@ -59,8 +58,6 @@ export interface OperatorServices {
   operatorChat?: Pick<OperatorChatService,
     'readSessionControls' | 'changeSessionControls' | 'setup' | 'create' | 'list' | 'get' | 'history' | 'activityPage'
     | 'send' | 'handoffHistory' | 'cancel' | 'respond' | 'setDeleted'>
-  workflowChat?: import('../../modules/workflow-chat/service.js').WorkflowChatService
-  chatDelivery?: import('../../modules/workflow-chat/delivery.js').ChatDeliveryRouter
   agentChat?: AgentChatService
   fileRetention?: FileRetentionService
   harnessSettings?: { mcp: HarnessMcpSettingsService; directories: HarnessDirectoryBrowser; plugins?: CodexPluginSettingsService; claudePlugins?: ClaudePluginSettingsService }
@@ -81,7 +78,6 @@ export interface OperatorServices {
 
 export interface OperatorRequestContext {
   principal: ManagementPrincipal
-  reauthorize?: () => Promise<ManagementPrincipal>
   signal?: AbortSignal
   services: OperatorServices
 }
