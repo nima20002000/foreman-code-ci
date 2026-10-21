@@ -64,6 +64,19 @@ it('keeps an indivisible check exceeding the cloud job budget on a builder', asy
   }
 })
 
+it('preserves the ticket-count cap while splitting long cloud jobs', async () => {
+  const files = Array.from({ length: 901 }, (_, index) => `apps/api/test/feature-${index}.integration.test.ts`)
+  const parts = await planCiGate({ suite: 'integration', scope: 'full', gate: true },
+    { files, durations: Object.fromEntries(files.map(file => [file, 2_400_000])) }, unit, {}, fleet('github'),
+    new Map([['builder', 3]]))
+  for (const part of parts.filter(part => part.plannedHostKey.startsWith('github:'))) {
+    expect(part.expectedDurationMs).toBeLessThanOrEqual(budgetMs)
+  }
+  expect(parts.length).toBeLessThanOrEqual(256)
+  expect(parts.filter(part => part.suite === 'integration').flatMap(part => part.files).sort())
+    .toEqual([...files].sort())
+})
+
 it.each(['github', 'circleci'] as const)('retains builder ownership when a fallback file exceeds the %s job budget', async provider => {
   const file = 'apps/api/test/long.integration.test.ts'
   const run = CiRunRecordSchema.parse({ id: randomUUID(), groupId: randomUUID(), workspaceId: 'fixture',
