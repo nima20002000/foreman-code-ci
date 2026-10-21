@@ -16,8 +16,8 @@ export function refreshHierarchyReports(cache: QueryClient, scope: WorkflowHiera
 }
 
 /** Explicit node history owns an immutable cursor window, separate from live child summaries. */
-export function useHierarchyReportHistory(scope: WorkflowHierarchyReadInput, workflowNodeId: string) {
-  return useInfiniteQuery({ queryKey: [...hierarchyKey(scope), 'report-history', workflowNodeId], enabled: !!scope.runId,
+export function useHierarchyReportHistory(scope: WorkflowHierarchyReadInput, workflowNodeId: string, { enabled = true } = {}) {
+  return useInfiniteQuery({ queryKey: [...hierarchyKey(scope), 'report-history', workflowNodeId], enabled: enabled && !!scope.runId,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ signal, pageParam }) => readHierarchyReports({ workspaceId: scope.workspaceId,
       workflowId: scope.workflowId, runId: scope.runId!, workflowNodeId, limit: 20,
@@ -27,8 +27,8 @@ export function useHierarchyReportHistory(scope: WorkflowHierarchyReadInput, wor
     refetchOnMount: false, maxPages: 20,
   })
 }
-export function useHierarchy(scope: WorkflowHierarchyReadInput) {
-  return useQuery({ queryKey: hierarchyKey(scope), queryFn: ({ signal }) => readHierarchy(scope, { signal }),
+export function useHierarchy(scope: WorkflowHierarchyReadInput, { enabled = true } = {}) {
+  return useQuery({ queryKey: hierarchyKey(scope), enabled, queryFn: ({ signal }) => readHierarchy(scope, { signal }),
     retry: false, staleTime: Infinity, refetchOnMount: 'always', refetchOnWindowFocus: false })
 }
 export function useHierarchyReports(scope: WorkflowHierarchyReadInput, parentNodeId: string, enabled: boolean) {

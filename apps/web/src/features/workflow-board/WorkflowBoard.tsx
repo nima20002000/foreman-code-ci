@@ -42,6 +42,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
     : undefined, [sharedSlots, inheritedSlots, suppliedSlots, executionChat])
   const browserRelease = useBrowserPanelRelease(collaborationSlots?.beforeBrowserHide)
   const side = useWorkflowSidePanel(workspaceId, workflowId, requestedRun, browserRelease.request)
+  const { releaseBrowser } = side
   const [sidePanelHost, setSidePanelHost] = useState<HTMLDivElement | null>(null)
   const [authoringActions, setAuthoringActions] = useState<WorkflowAuthoringActions>()
   const registerAuthoringActions = useCallback((actions?: WorkflowAuthoringActions) => setAuthoringActions(actions), [])
@@ -55,18 +56,18 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
     return selection.current.generation
   }, [router])
   const chooseRun = useCallback((scope?: RepeatGraphScopeV3) => {
-    if (scope?.runId !== requestedRun?.runId) side.releaseBrowser()
+    if (scope?.runId !== requestedRun?.runId) releaseBrowser()
     selection.current.generation++
     selectRun(scope)
-  }, [selectRun, requestedRun?.runId, side.releaseBrowser])
+  }, [selectRun, requestedRun?.runId, releaseBrowser])
   const selectedRun = useSelectedRun({ workspaceId, workflowId })
   const navigationSelection = useMemo(() => ({ ...selectedRun,
     selectRun: (runId: string | null) => {
-      if (runId !== selectedRun.identity.runId) side.releaseBrowser()
+      if (runId !== selectedRun.identity.runId) releaseBrowser()
       selection.current.generation++
       return selectedRun.selectRun(runId)
     },
-  }), [selectedRun, side.releaseBrowser])
+  }), [selectedRun, releaseBrowser])
   // Canonical and legacy links both render the immutable RunBoardSlot.
   const legacyRun = requestedRun?.workspaceId === workspaceId && requestedRun.workflowId === workflowId
     && !location.search.selectedRunId ? requestedRun : undefined
@@ -137,6 +138,8 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   const showExecution = (nodeId: string, execution: ExecutionRef) => {
     side.selectExecution({ ...execution, nodeId })
   }
+  const suppliedOverview = collaborationSlots?.overview
+  const overviewContent = side.memoryOpen ? null : suppliedOverview?.()
   return <WorkflowBoardContext.Provider value={value}>
     <div ref={toolbar} className="unified-workflow-board" data-testid="unified-workflow-board" style={{ flexDirection: 'column' }}>
       <nav className="workflow-collaboration-toolbar" aria-label="Workflow views">
@@ -169,8 +172,10 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
         </div>
       </RunBoardSlot>
       </div>
-      {side.view === 'overview' ? <section className="workflow-overview-slot" aria-label="Workflow Overview">
-        {collaborationSlots?.overview?.() ?? <MasterOverview workspaceId={workspaceId} workflowId={workflowId}
+      {side.view === 'overview' ? <section className="workflow-overview-slot" aria-label="Workflow Overview"
+        hidden={side.memoryOpen} inert={side.memoryOpen}>
+        {suppliedOverview ? overviewContent : <MasterOverview workspaceId={workspaceId} workflowId={workflowId}
+          visible={!side.memoryOpen}
           runId={legacyRun?.runId ?? pickedRunId}
           teamNodeId={side.teamNodeId} onTeam={side.selectTeam}
           onChat={(nodeId, execution) => side.selectPanel({ kind: 'agent', nodeId, tab: 'chat',

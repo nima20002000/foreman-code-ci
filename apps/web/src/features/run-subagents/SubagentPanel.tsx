@@ -73,7 +73,9 @@ export function SubagentPanel({ scope, subagentId, anchor, onClose, visible = tr
       if (receipt.state === 'acknowledged') setText('')
       void queryClient.invalidateQueries({ queryKey: subagentsKey(scope) })
     },
-    onError: () => { void detail.refetch() },
+    onError: () => {
+      void queryClient.invalidateQueries({ queryKey: [...subagentsKey(scope), subagentId, 'detail'], exact: true })
+    },
   })
   const pending = lastCommand?.status === 'pending'
   const commandError = lastCommand?.status === 'error'
