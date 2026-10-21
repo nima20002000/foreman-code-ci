@@ -37,10 +37,7 @@ export function ProviderAccountSelect({ provider, value, onChange, disabled = fa
       disabled={disabled || !available || !query.isSuccess || access.discovery.isError || Boolean(denied)}
       labelHint={<InfoHint label="Account">Choose an account on the selected computer. Manage accounts in Settings &gt; Harnesses.</InfoHint>}
       onChange={event => onChange(event.target.value || undefined)} />
-    {access.discovery.isPending || !unavailable && query.isPending ? <small role="status">Loading accounts…</small> : null}
-    {query.isError || access.discovery.isError ? <div role="alert">Account details could not be refreshed. Your selection is kept.
-      <Button size="sm" variant="ghost" onClick={() => { void access.discovery.refetch(); void query.refetch() }}>Retry accounts</Button>
-    </div> : null}
-    {unavailable ? <p role="alert">Accounts are unavailable on the selected computer. Your saved selection is kept.</p> : null}
+    {query.isError || access.discovery.isError ? <Button size="sm" variant="ghost" onClick={() => { void access.discovery.refetch(); void query.refetch() }}>Retry accounts</Button> : null}
+    {unavailable ? <small role="alert">Accounts unavailable on this computer.</small> : null}
   </div>
 }

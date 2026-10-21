@@ -26,7 +26,6 @@ export function ThemeToggle() {
           {uncertain ? 'Retry theme save' : 'Refresh theme settings'}
         </Button>
       </Alert>}
-      {unavailable && <Button size="sm" onClick={() => void refresh()}>Refresh theme settings</Button>}
     </>
   )
 }

@@ -6,9 +6,9 @@ import { ChatNotice } from '../conversations/ChatNotice'
 export function OperatorSetupNotice({ data, checking, failed, onRetry }: {
   data?: OperatorChatSetup; checking: boolean; failed: boolean; onRetry(): void;
 }) {
-  if (checking && !data) return null
+  // A failed check stays visible while it retries, so background retries do not make it flicker.
   if (failed) return <ChatNotice title="Tool connection check failed"
-    action={<Button size="sm" disabled={checking} onClick={onRetry}>Check again</Button>}>
+    action={<Button size="sm" onClick={onRetry}>Check again</Button>}>
     {data?.status === 'configured' ? 'The connection was configured at the last successful check.'
       : 'Check the tool connection before sending a message.'}
   </ChatNotice>

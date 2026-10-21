@@ -20,9 +20,9 @@ export function WorkflowSettings({ draftKey, edit, change, report, defaultMs, lo
   const { graph, context, agentEdits } = edit
   return <>
     <HierarchyEditor draftKey={draftKey} edit={edit} report={report} />
-    <EntryFields graph={graph} context={context} agentEdits={agentEdits} change={change} />
+    {graph.hierarchy ? null : <EntryFields graph={graph} context={context} agentEdits={agentEdits} change={change} />}
     <ApprovalFields graph={graph} context={context} agentEdits={agentEdits} change={change} report={report} />
-    <section className="next-draft-section" aria-label="Execution bounds">
+    <section className="next-draft-section" aria-label="Limits">
       <h3>Limits{graph.handoffs ? <InfoHint label="Limits">Set each work connection’s Run-wide handoff limit on its line. The Board keeps these edits as a draft until Save.</InfoHint> : null}</h3>
       {graph.executionPolicy ? <AgentActiveTimeField policy={graph.executionPolicy} defaultMs={defaultMs}
         onChange={(executionPolicy) => change((item) => ({ ...item, executionPolicy }))} /> : null}
@@ -46,7 +46,7 @@ export function WorkflowSettings({ draftKey, edit, change, report, defaultMs, lo
       </div> : <Button data-save-field="limits" size="sm" onClick={() => change((item) => ({ ...item,
         executionPolicy: { maxParallelism: Number.NaN, maxNodeExecutions: Number.NaN } }))}>Set limits</Button>}
       {graph.requiredAgentCount !== undefined ? <div className="next-draft-inline">
-        <TextField label="Required Agent count" type="number" min={0} max={10000}
+        <TextField label="Required Agents" type="number" min={0} max={10000}
           value={Number.isFinite(graph.requiredAgentCount) ? graph.requiredAgentCount : ''}
           onChange={(event) => {
             const requiredAgentCount = event.target.valueAsNumber
@@ -56,19 +56,17 @@ export function WorkflowSettings({ draftKey, edit, change, report, defaultMs, lo
           const next = { ...item }
           delete next.requiredAgentCount
           return next
-        })}>Remove fixed Agent count</Button>
+        })}>Remove</Button>
       </div> : null}
     </section>
     <section className="next-draft-section">
-      <h3>Execution folder<InfoHint label="Execution folder">Runs work in this workspace’s folder.</InfoHint></h3>
-      {!locationReady ? <p className="next-draft-hint">{locationMessage}</p> : null}
-      <Button size="sm" onClick={onChangeFolder}>Change folder</Button>
+      <h3>Folder</h3>
+      <p className="next-draft-hint">{locationReady ? 'Runs work in this workspace’s folder.' : locationMessage}</p>
+      <Button size="sm" onClick={onChangeFolder}>{locationReady ? 'Change folder' : 'Choose folder'}</Button>
     </section>
-    <section className="next-draft-section"><h3>Draft</h3>
-      <p className="next-draft-hint">{context.draft.baseWorkflowVersionId
-        ? <>Based on saved version <code>{context.draft.baseWorkflowVersionId}</code>.</>
-        : 'This workflow hasn’t been saved yet.'}</p>
-      <Button size="sm" disabled={!!edit.pending} onClick={onReload}>Reload saved draft</Button>
-    </section>
+    {context.draft.baseWorkflowVersionId ? <section className="next-draft-section"><h3>Saved version</h3>
+      <p className="next-draft-hint">Load the latest saved workflow. Unsaved edits are kept for comparison.</p>
+      <Button size="sm" disabled={!!edit.pending} onClick={onReload}>Reload saved workflow</Button>
+    </section> : null}
   </>
 }

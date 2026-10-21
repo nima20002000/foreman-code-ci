@@ -22,7 +22,6 @@ import { useCollaborationUISlots } from '../../shared/ui/collaborationSlots'
 import { createWorkflowExecutionChatSlot } from '../workflow-hierarchy/execution-chat/createWorkflowExecutionChatSlot'
 import { SelectedRunControls } from './actions/SelectedRunControls'
 import { GroupChatPanel } from './GroupChatPanel'
-import { KanbanButton } from './kanban/KanbanButton'
 import './workflowBoard.css'
 
 /** This component is keyed by workspace/workflow only, NEVER by selected Run. */
@@ -147,7 +146,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   }), [workspaceId, workflowId, chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent, activeRuns, setRunsOpen, setLocationOpen, navigationSelection, current, side.view, side.panel, side.agentSelection?.nodeId, side.selectPanel, sidePanelHost, side.memoryOpen, setMemoryOpen, side.teamNodeId, side.selectTeam, collaborationSlots, registerAuthoringActions])
   const detailsValue = useMemo(() => detailsScope ? { ...value, run: detailsScope } : value, [value, detailsScope])
   const authoringEvent = (event: SyntheticEvent) => {
-    if (event.target instanceof Element && event.target.closest('.workflow-side-panel')) return
+    if (event.target instanceof Element && event.target.closest('.workflow-floating-panel')) return
     // React capture also covers descendants portalled outside the inert subtree.
     if (!currentRef.current) { event.preventDefault(); event.stopPropagation() }
   }
@@ -172,13 +171,12 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
           runsLabel={current && side.view === 'overview' ? 'Choose run' : undefined} />
         {detailsScope ? <IconButton label="Activities" onClick={() => setRunsOpen(true)}><Icon name="history" size={16} /></IconButton> : null}
         <IconButton label="Group chat" onClick={() => side.selectPanel({ kind: 'group_chat' })}><Icon name="chat" size={16} /></IconButton>
-        {side.view === 'graph' ? <KanbanButton workspaceId={workspaceId} workflowId={workflowId} /> : null}
         {boardSelection.active && !boardSelection.invalid && boardSelection.identity.runId ?
           <SelectedRunControls key={JSON.stringify(boardSelection.identity)} visible={!side.memoryOpen}
             scope={{ workspaceId, workflowId, runId: boardSelection.identity.runId,
               ...(picked?.kind === 'available' ? { workflowVersionId: picked.workflowVersionId } : {}) }} /> : null}
       </header> : null}
-      <div className="workflow-collaboration-layout" data-panel-open={side.panel.kind !== 'none' && side.panel.kind !== 'group_chat' && !side.memoryOpen}>
+      <div className="workflow-collaboration-layout">
       <div className="workflow-collaboration-canvas" hidden={side.view !== 'graph'} inert={side.view !== 'graph'}>
       <RunBoardSlot selection={boardSelection}>
         <div className="workflow-board-authoring" onClickCapture={authoringEvent} onKeyDownCapture={authoringEvent} onSubmitCapture={authoringEvent}>

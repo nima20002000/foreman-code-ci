@@ -1,9 +1,8 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import type { ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useManagedWorkspaceQuery } from '../../shared/api/query'
 import { useBlockingReadError } from '../../shared/api/readFailure'
-import { Button, ErrorState, LoadingState } from '../../shared/ui/nocturne'
+import { Button, ErrorState, LoadingState, SettingRow, SettingsSection } from '../../shared/ui/nocturne'
 import { WorkspaceSettingsHeader } from './WorkspaceSettingsHeader'
 import { WorkspaceRepositoryForm } from './WorkspaceRepositoryForm'
 import '../settings/settingsExperience.css'
@@ -22,32 +21,31 @@ export function WorkspaceDetailPage({ workspaceId, section, children }: {
   // never wait for the identity read, and nothing below the header remounts when it arrives.
   const settings = (actions: { rename(): void; remove(): void; chooseLocation(): void }) => <>
           {workspace.isError && unavailable}
-          <div hidden={Boolean(blocked)}>
-            <div className="workspace-settings-actions" role="group" aria-label="Workspace actions">
-              <Button variant="ghost" onClick={actions.rename}>Rename workspace</Button>
-              <Button variant="ghost" onClick={actions.chooseLocation}>Choose location</Button>
-              <Button variant="danger" onClick={actions.remove}>Remove workspace</Button>
-            </div>
-            {current && <WorkspaceRepositoryForm key={workspaceId} workspaceId={workspaceId}
-              revision={current.revision} repository={current.workspace.repository} />}
-            {current && <section className="workspace-repository" aria-label="GitHub Actions CI">
-              <div className="n-field-label"><h2>GitHub Actions CI</h2>
-                {current.workspace.ciMirror && <InfoHint label="GitHub Actions CI">
-                  CI also runs on free GitHub Actions runners in the public mirror. Main publishes only each tested commit's files there, without history, and refuses files that name your computers.
-                </InfoHint>}
-              </div>
-              {current.workspace.ciMirror
-                ? <p><code>{current.workspace.ciMirror.owner}/{current.workspace.ciMirror.name}</code></p>
-                : <p>Not set up. Ask the Operator to set a public CI mirror for this workspace.</p>}
-            </section>}
-            {current && !blocked ? <Link to="/settings/browser-profiles">Browser profiles</Link> : null}
+          <div className="workspace-settings-sections" hidden={Boolean(blocked)}>
+            <SettingsSection title="General">
+              <SettingRow title="Name" description={current?.workspace.name}>
+                <Button size="sm" onClick={actions.rename}>Rename</Button>
+              </SettingRow>
+              <SettingRow title="Location" description="Where this workspace's files live.">
+                <Button size="sm" onClick={actions.chooseLocation}>Change</Button>
+              </SettingRow>
+            </SettingsSection>
+            <SettingsSection title="Repository" description="Each agent gets its own branch and worktree of this repository.">
+              {current && <WorkspaceRepositoryForm key={workspaceId} workspaceId={workspaceId}
+                revision={current.revision} repository={current.workspace.repository} />}
+            </SettingsSection>
+            <SettingsSection title="Danger zone">
+              <SettingRow title="Remove workspace" description="Removes it from Foreman.">
+                <Button size="sm" variant="danger" onClick={actions.remove}>Remove</Button>
+              </SettingRow>
+            </SettingsSection>
           </div>
         </>
-  const content = (actions: { rename(): void; remove(): void; chooseLocation(): void }) => <div className="settings-editor-layout">
+  const content = (actions: { rename(): void; remove(): void; chooseLocation(): void }) => <div className="settings-editor-layout workspace-detail-layout">
       <nav className="settings-editor-nav workspace-detail-nav" aria-label="Workspace sections">
-        <Link to="/workspaces/$workspaceId/files" params={{ workspaceId }} aria-current={section === 'files' ? 'page' : undefined}>Project files<span aria-hidden="true">›</span></Link>
-        <Link to="/workspaces/$workspaceId/workflows" params={{ workspaceId }} aria-current={section === 'workflows' ? 'page' : undefined}>Workflows<span aria-hidden="true">›</span></Link>
-        <Link to="/workspaces/$workspaceId/settings" params={{ workspaceId }} aria-current={section === 'settings' ? 'page' : undefined}>Settings<span aria-hidden="true">›</span></Link>
+        <Link to="/workspaces/$workspaceId/files" params={{ workspaceId }} aria-current={section === 'files' ? 'page' : undefined}>Project files</Link>
+        <Link to="/workspaces/$workspaceId/workflows" params={{ workspaceId }} aria-current={section === 'workflows' ? 'page' : undefined}>Workflows</Link>
+        <Link to="/workspaces/$workspaceId/settings" params={{ workspaceId }} aria-current={section === 'settings' ? 'page' : undefined}>Settings</Link>
       </nav>
       <div className={`settings-editor-content workspace-detail-content${section === 'settings' ? ' workspace-detail-content--settings' : ''}`}>
         {!current && workspace.isError ? unavailable : children ?? (current ? settings(actions) : unavailable)}

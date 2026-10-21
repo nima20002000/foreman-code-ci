@@ -9,12 +9,12 @@ export function AgentActiveTimeField({ policy, defaultMs, onChange }: {
   onChange(policy: WorkflowExecutionPolicy): void
 }) {
   const hint = defaultMs === undefined
-    ? 'Per Agent execution; approval waits are excluded. Leave blank to use the server default.'
-    : `Per Agent execution; approval waits are excluded. Leave blank to use the server default (${defaultMs / 1000} seconds).`
-  return <TextField data-save-field="active-time" label="Agent active-time budget (seconds)"
-    labelHint={<InfoHint label="Agent active-time budget (seconds)">{hint}</InfoHint>}
+    ? 'Per Agent turn. Leave blank for the default.'
+    : `Per Agent turn. Leave blank for the default (${defaultMs / 1000} seconds).`
+  return <TextField data-save-field="active-time" label="Agent time limit (seconds)"
+    labelHint={<InfoHint label="Agent time limit (seconds)">{hint}</InfoHint>}
     type="number" min={0.001} max={MAX_AGENT_ACTIVE_TIMEOUT_MS / 1000} step={0.001}
-    placeholder="Use server default"
+    placeholder="Default"
     value={policy.agentActiveTimeoutMs === undefined || !Number.isFinite(policy.agentActiveTimeoutMs)
       ? '' : policy.agentActiveTimeoutMs / 1000}
     onChange={(event) => {

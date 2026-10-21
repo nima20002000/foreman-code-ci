@@ -3,22 +3,19 @@ import { create } from 'zustand'
 
 type ScrollPosition = { top: number; left: number }
 type SidePanelPresentation = {
-  widths: Record<string, number>
   scroll: Record<string, Record<string, ScrollPosition>>
   collapsedTeams: Record<string, string[]>
-  setWidth(scope: string, width: number): void
   rememberScroll(scope: string, positions: Record<string, ScrollPosition>): void
   toggleTeam(scope: string, nodeId: string): void
 }
 
 /** Local presentation only. The URL remains the sole owner of active selection. */
 export const useSidePanelPresentation = create<SidePanelPresentation>(set => ({
-  widths: {}, scroll: {}, collapsedTeams: {},
+  scroll: {}, collapsedTeams: {},
   toggleTeam: (scope, nodeId) => set(state => ({ collapsedTeams: { ...state.collapsedTeams,
     [scope]: (state.collapsedTeams[scope] ?? []).includes(nodeId)
       ? state.collapsedTeams[scope]!.filter(id => id !== nodeId) : [...(state.collapsedTeams[scope] ?? []), nodeId],
   } })),
-  setWidth: (scope, width) => set(state => ({ widths: { ...state.widths, [scope]: width } })),
   rememberScroll: (scope, positions) => set(state => ({ scroll: { ...state.scroll, [scope]: positions } })),
 }))
 

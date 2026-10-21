@@ -116,7 +116,7 @@ it.each(['navigation', 'session'])('does not keep fetching remaining cursors aft
   const fetchNextPage = vi.fn(() => new Promise<{ hasNextPage: boolean; isError: boolean }>((done) => { resolve = done }))
   const user = userEvent.setup()
   const rendered = renderWithRouter(<LoadMore loadAll label="workflows" query={{ hasNextPage: true,
-    isFetching: false, isFetchNextPageError: false, fetchNextPage }} />)
+    isFetchingNextPage: false, isFetchNextPageError: false, fetchNextPage }} />)
   await user.click(await screen.findByRole('button', { name: 'Show more workflows' }))
   await waitFor(() => expect(fetchNextPage).toHaveBeenCalledTimes(1))
   try {
@@ -133,7 +133,7 @@ it('starts only one all-page request when the button is activated twice before a
   let resolve!: (result: { hasNextPage: boolean; isError: boolean }) => void
   const fetchNextPage = vi.fn(() => new Promise<{ hasNextPage: boolean; isError: boolean }>((done) => { resolve = done }))
   renderWithRouter(<LoadMore loadAll label="workflows" query={{ hasNextPage: true,
-    isFetching: false, isFetchNextPageError: false, fetchNextPage }} />)
+    isFetchingNextPage: false, isFetchNextPageError: false, fetchNextPage }} />)
   const button = await screen.findByRole('button', { name: 'Show more workflows' })
   fireEvent.click(button)
   fireEvent.click(button)

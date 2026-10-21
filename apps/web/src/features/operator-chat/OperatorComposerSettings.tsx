@@ -10,13 +10,11 @@ import { harnessNames } from '../settings/settingsPresentation'
 import { supportedEfforts } from '../settings/harnessModelSelection'
 import { ProviderAccountSelect } from '../provider-accounts/ProviderAccountSelect'
 
-export function OperatorComposerSettings({ value, onChange, disabled, access, hideThinking = false, futureChats = false }: {
+export function OperatorComposerSettings({ value, onChange, disabled, access, hideThinking = false }: {
   value: OperatorChatSettings; onChange(value: OperatorChatSettings): void; disabled: boolean;
   access?: ReactNode;
   /** Agent chats have no thinking display setting. */
   hideThinking?: boolean;
-  /** Operator defaults do not change the selected conversation's accepted configuration. */
-  futureChats?: boolean;
 }) {
   const catalog = useProviderHarnessModels(value.harness, value.accountId)
   const defaults = useHarnessDefaultsQuery()
@@ -80,7 +78,6 @@ export function OperatorComposerSettings({ value, onChange, disabled, access, hi
       <span>{modelName}</span>{value.harness !== 'claude' || effort ? <small>{effort || 'default'}</small> : null}{value.harness === 'codex' && value.serviceTier === 'priority' ? <small className="operator-fast-indicator">Fast</small> : null}<Icon name="down" size={13} />
     </button>
     {open ? <div ref={panel} popover="manual" className="operator-agent-panel" id={id} role="dialog" aria-label="Agent settings">
-      {futureChats ? <p>These settings apply to new chats. The selected chat keeps its current settings.</p> : null}
       {choosingModel ? <>
         <Button size="sm" variant="ghost" leading={<Icon name="chevron" className="operator-chat-previous" size={14} />} onClick={() => setChoosingModel(false)}>Agent settings</Button>
         <SearchField autoFocus label="Search models" placeholder="Model name or ID" value={search} onChange={(event) => setSearch(event.target.value)} />
@@ -123,7 +120,6 @@ export function OperatorComposerSettings({ value, onChange, disabled, access, hi
               if (effort.success) update({ ...value, reasoningEffort: effort.data })
             } else if (value.harness === 'claude') { const effort = ClaudeEffortSchema.safeParse(next); if (effort.success) update({ ...value, effort: effort.data }) }
           }} /> : null}
-        {effort && !efforts.includes(effort) ? <p>Saved effort {effort} is unavailable for this model.</p> : null}
         {access}
         <div className="operator-agent-toggles">
         <Switch label="Fast mode" checked={value.harness === 'codex' && value.serviceTier === 'priority'}
@@ -131,8 +127,7 @@ export function OperatorComposerSettings({ value, onChange, disabled, access, hi
           onChange={(event) => { if (value.harness === 'codex') update({ ...value, serviceTier: event.target.checked ? 'priority' : 'standard' }) }} />
         {hideThinking ? null : <Switch label="Show thinking" checked={value.showThinking} disabled={disabled} onChange={(event) => update({ ...value, showThinking: event.target.checked })} />}
         </div>
-        {catalog.isPending ? <small role="status">Loading models…</small> : null}
-        {catalog.isError || defaults.isError ? <div role="alert">Settings unavailable. <Button size="sm" onClick={() => { void catalog.refetch(); void defaults.refetch() }}>Retry</Button></div> : null}
+        {catalog.isError || defaults.isError ? <Button size="sm" variant="ghost" onClick={() => { void catalog.refetch(); void defaults.refetch() }}>Retry</Button> : null}
       </>}
     </div> : null}
   </div>

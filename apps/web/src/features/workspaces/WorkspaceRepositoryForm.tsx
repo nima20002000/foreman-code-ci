@@ -1,4 +1,3 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import { useQueryClient } from '@tanstack/react-query'
 import { WorkspaceRepositorySchema, type WorkspaceRepository } from '@foreman-code/contracts'
 import type { ManagedWorkspace } from '@foreman-code/contracts/management'
@@ -162,26 +161,23 @@ export function WorkspaceRepositoryForm({ workspaceId, revision, repository }: {
     saveDisabled: navigationSaveDisabled,
     error: conflict ? 'Review the repository conflict before saving.' : form.error, save, discard: form.reset })
   return <section className="workspace-repository" aria-label="GitHub repository">
-    <h2>GitHub repository</h2>
     <div className="workspace-repository-fields">
-      <TextField label="Repository"
-        labelHint={<InfoHint label="Repository">Each agent in a run gets its own branch and worktree of this repository on its computer.</InfoHint>} placeholder="owner/name" value={fields.slug} disabled={locked}
+      <TextField label="GitHub repository" placeholder="owner/name" value={fields.slug} disabled={locked}
         onChange={event => form.setDraft({ ...fields, slug: event.target.value })}
         error={fields.slug && repositoryInvalid
           ? 'Use owner/name or a GitHub repository URL without extra path segments.' : undefined} />
       <TextField label="Base branch" value={fields.branch} disabled={locked}
         onChange={event => form.setDraft({ ...fields, branch: event.target.value })} error={branchError} />
     </div>
-    {status?.state !== 'ready' && <>
+    {status?.state !== 'ready' && bases.length > 1 && <>
       <Select label="Project location on Main" value={base?.base.baseId ?? ''} disabled={locked}
         options={[{ value: '', label: 'Choose an approved location', disabled: true },
           ...bases.map(item => ({ value: item.base.baseId, label: item.base.canonicalPath }))]}
         onChange={event => setSelectedBase(event.target.value)} />
-      {!base && !roots.isPending && <p role="status">An approved writable Workspaces location on Main is required.</p>}
     </>}
+    {status?.state !== 'ready' && bases.length === 0 && !roots.isPending
+      && <p role="status">An approved writable Workspaces location on Main is required.</p>}
     <RepositoryProjectStatus result={status} loading={project.isPending} />
-    {status && status.state !== 'ready' && <Button disabled={form.isSaving || project.isFetching}
-      onClick={() => void project.refetch()}>Check project status</Button>}
     {project.isError && <Alert tone="warning" title="Project status could not be read."
       action={<Button disabled={form.isSaving} onClick={() => void project.refetch()}>Check project status</Button>} />}
     {conflict && <Alert tone="warning" title="Repository settings changed elsewhere. Your edits are preserved.">
@@ -191,8 +187,6 @@ export function WorkspaceRepositoryForm({ workspaceId, revision, repository }: {
     </Alert>}
     {form.error && !conflict && <Alert tone="danger" title={form.error} />}
     {!form.error && prepare.isError && <Alert tone="danger" title={prepare.error.message} />}
-    {incomplete && !importPending && <p role="status">This incomplete import cannot be retried with this access.
-      Check project status to see whether preparation has finished.</p>}
     {uncertain && <Alert tone="warning" title={importPending || incomplete
       ? 'Project preparation is unconfirmed. Retry the original request before editing or leaving.'
       : 'The repository save is unconfirmed. Retry before editing or leaving.'} />}
@@ -200,12 +194,11 @@ export function WorkspaceRepositoryForm({ workspaceId, revision, repository }: {
       {(!repository || status?.state !== 'ready' || importPending) && <Button variant="primary"
         disabled={busy || (!importPending && (locked || preparationDisabled))}
         onClick={() => void prepareProject()}>{importPending ? 'Retry project preparation' : repository ? 'Prepare project' : 'Add project'}</Button>}
-      {(!repository || status?.state !== 'ready' || importPending) && <InfoHint label="Add project">Add project prepares a clone on Main and approves the supported tracked files from this base branch.</InfoHint>}
-      {repository && !importPending && <Button variant={status?.state === 'ready' ? 'primary' : 'secondary'}
+      {repository && !importPending && (form.isDirty || form.uncertain) && <Button variant={status?.state === 'ready' ? 'primary' : 'secondary'}
         disabled={form.isSaving || incomplete || (!form.uncertain && (saveDisabled || !form.isDirty))}
         onClick={() => void saveMetadata()}>{form.uncertain ? 'Retry repository save' : 'Save repository'}</Button>}
       {repository && <Button variant="ghost" disabled={locked || conflict}
-        onClick={() => void leave(() => { form.setDraft(null); void save() })}>Remove</Button>}
+        onClick={() => void leave(() => { form.setDraft(null); void save() })}>Disconnect</Button>}
     </div>
   </section>
 }
@@ -213,20 +206,15 @@ export function WorkspaceRepositoryForm({ workspaceId, revision, repository }: {
 function RepositoryProjectStatus({ result, loading }: { result?: WorkspaceRepositoryReadResult; loading: boolean }) {
   if (!result) return loading ? <p role="status">Reading project status…</p> : null
   if (result.state === 'unconfigured') return <p role="status">No project has been added.</p>
-  if (result.state === 'metadata-only') return <p role="status">Repository saved. Project preparation is still needed.</p>
+  if (result.state === 'metadata-only') return <p role="status">Not prepared yet.</p>
   if (result.state !== 'ready') return <Alert tone="warning" title={result.state === 'preparing'
     ? 'Project preparation is incomplete.' : 'Project could not be prepared.'}>
     <p>Last completed step: {result.operation?.phase ?? 'Unknown'}.</p>
     {result.operation?.failure && <p>{result.operation.failure.message}</p>}
     {result.operation?.failure?.newCommandRequired && <p>A new import attempt is required.</p>}
   </Alert>
-  return <div className="workspace-project-readback" role="status">
-    <strong>Project ready</strong>
-    <dl>
-      <dt>Clone location</dt><dd>{result.location?.evidence === 'bound' ? result.location.binding.canonicalProjectRoot : 'Unavailable'}</dd>
-      <dt>Base branch</dt><dd>{result.repository?.defaultBranch}</dd>
-      <dt>Approved commit</dt><dd><code>{result.approvedSource?.manifest.git?.commit}</code></dd>
-      <dt>Source files</dt><dd>{result.approvedSource?.availability}</dd>
-    </dl>
-  </div>
+  const commit = result.approvedSource?.manifest.git?.commit
+  return <p className="workspace-project-readback" role="status">
+    Ready{commit ? <> at <code>{commit.slice(0, 7)}</code></> : null}
+  </p>
 }

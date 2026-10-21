@@ -33,9 +33,13 @@
   .pinned-run-canvas { padding-top: 120px; overflow: auto; }
 }
 
-/* CI server: a presentation-only Board component beside the Agents, with its jobs, tests and log in a dialog. */
+/* CI server: a presentation-only Board component beside the Agents, with its jobs, tests and log in a small floating window. */
 .react-flow__edge-ciTransfer { pointer-events: none; }
-.ci-server-dialog .n-dialog-body { display: grid; gap: var(--space-3); min-width: 0; }
+.ci-server-window { position: fixed; z-index: 40; top: 80px; left: 24px; width: min(460px, calc(100vw - 24px)); height: min(420px, calc(100vh - 24px)); min-width: 280px; min-height: 200px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); resize: both; overflow: hidden; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-lg, 12px); background: var(--surface-raised); box-shadow: var(--shadow-lg, 0 12px 32px rgb(0 0 0 / 0.35)); }
+.ci-server-window > header { display: flex; align-items: center; gap: var(--space-1); padding: var(--space-1) var(--space-2); cursor: move; user-select: none; touch-action: none; border-bottom: 1px solid var(--border); }
+.ci-server-window > header > :last-child { margin-inline-start: auto; }
+.ci-server-window h2 { display: inline-flex; align-items: center; gap: var(--space-1); margin: 0; font: var(--type-heading); }
+.ci-server-window-body { display: grid; align-content: start; gap: var(--space-2); flex: 1; min-width: 0; min-height: 0; overflow: auto; padding: var(--space-2); font-size: 0.9em; }
 .ci-jobs-table td { vertical-align: top; }
 .ci-jobs-table td small { display: block; color: var(--text-muted); font: var(--type-caption); margin-top: 2px; }
 .ci-jobs-table tr[aria-selected='true'] td { background: color-mix(in srgb, var(--accent) 8%, transparent); }

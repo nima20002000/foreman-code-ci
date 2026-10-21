@@ -82,17 +82,16 @@ function HierarchyEditorVisit({ draftKey, edit, report }: Props) {
         options={[{ value: '', label: 'Choose an Orchestrator' }, ...coordinators.map(item => ({
           value: item.node.id, label: nodeTitle(edit.graph, item.node.id),
         }))]} />)}
-      <p className="next-draft-hint">Applying stages the selected Agent’s Master role. Keeping the previous Master stages its Orchestrator role; removing its node leaves the reusable Agent unchanged and removes only incident edges. Save checks every affected Run, including other workflows using these Agents. Required parent connections are added or reused. Named outcomes for removed connections remain visible for explicit editing.</p>
       {missingParent ? <p role="status">Choose a reporting Orchestrator for every Worker before applying.</p> : null}
       {missingPreviousChoice ? <p role="status">Choose whether to keep or remove the previous Master before applying.</p> : null}
       <Button size="sm" disabled={missingParent || missingPreviousChoice} onClick={() => attempt(apply)}>
-        Apply hierarchy to draft</Button>
+        Apply hierarchy</Button>
     </> : <p className="next-draft-hint">Create a Master from Add Agent, or explicitly select an existing Agent here.</p>}
     {edit.graph.hierarchy ? <Button size="sm" variant="danger" onClick={() => setConfirmRemoval(true)}>Remove Master hierarchy</Button> : null}
     <ConfirmDialog open={confirmRemoval} onOpenChange={setConfirmRemoval} title="Remove the Master hierarchy?"
       description="The former Master becomes an Orchestrator in this draft. Connections and the starting node stay in place. Save checks affected Runs before publishing the new Agent configuration."
       confirmLabel="Remove hierarchy" onConfirm={() => { setConfirmRemoval(false); attempt(() => update(removeMasterHierarchy, true)) }} />
-    {edit.workflowForms?.hierarchy ? <Button size="sm" variant="ghost" onClick={() => attempt(discard)}>Discard hierarchy form</Button> : null}
+    {edit.workflowForms?.hierarchy ? <Button size="sm" variant="ghost" onClick={() => attempt(discard)}>Discard changes</Button> : null}
     {changedConnections.length || reorientedConnections.length || formerParentConnections.length ? <section aria-label="Changed connections">
       <h4>Changed connections · Unsaved</h4><ul>
         {changedConnections.map(edge => <li key={edge.id}>Added: {nodeTitle(edit.graph, edge.source)} → {nodeTitle(edit.graph, edge.target)}</li>)}

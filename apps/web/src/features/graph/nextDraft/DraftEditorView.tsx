@@ -14,7 +14,6 @@ import { WorkflowName } from '../../workflow-board/WorkflowName'
 import { WorkflowWorktreeField } from '../../workflow-board/WorkflowWorktreeField'
 import { BoardUndoNotice } from '../../workflow-board/BoardUndoNotice'
 import { BoardAlerts, type BoardUpdateFailure } from '../../workflow-board/BoardAlerts'
-import { KanbanButton } from '../../workflow-board/kanban/KanbanButton'
 import { RemoveWorkflowButton } from '../../workflows/RemoveWorkflowButton'
 import { useApprovalInboxStore } from '../../approvals'
 import { raiseFloating, useFloatingZ } from '../../../shared/ui/floatingStack'
@@ -89,12 +88,11 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
             disabled={edit.busy || reloading || editIntent.locked || starting || !!edit.pending || !!pendingStart} />
           <IconButton label="Workflow settings" onClick={() => openPanel('workflow')}><Icon name="settings" size={16} /></IconButton>
           <Button variant="secondary" className="n-icon-button workflow-approval-inbox" aria-label={`Open human approval inbox${pendingApprovals ? `, ${pendingApprovals} pending` : ''}`}
-            title="Approval inbox" onClick={() => useApprovalInboxStore.getState().openInbox({ workspaceId: graph.workspaceId, workflowId: graph.id })}><Inbox aria-hidden="true" size={16} />
+            title="Approval inbox" onClick={event => useApprovalInboxStore.getState().openInbox({ workspaceId: graph.workspaceId, workflowId: graph.id }, event.currentTarget.getBoundingClientRect())}><Inbox aria-hidden="true" size={16} />
             {pendingApprovals ? <span className="workflow-approval-inbox-badge" aria-hidden="true">{pendingApprovals}</span> : null}</Button>
           {!graph.handoffs ? <Button size="sm" variant="ghost" onClick={() => openPanel('repeat')}>Repeats</Button> : null}
           {board ? <IconButton label="Activities" onClick={board.openRuns}><Icon name="history" size={16} /></IconButton> : null}
           {board?.selectSidePanel ? <IconButton label="Group chat" onClick={() => board.selectSidePanel!({ kind: 'group_chat' })}><Icon name="chat" size={16} /></IconButton> : null}
-          {board ? <KanbanButton workspaceId={graph.workspaceId} workflowId={graph.id} /> : null}
           <Button variant="primary" leading={<Icon name="play" size={14} />} aria-label={pendingStart ? 'Reconcile Start' : needsSave ? 'Save and run' : 'Start saved version'}
             title={startReason} disabled={startDisabled} loading={starting} onClick={() => void (pendingStart ? start() : prepare(() => needsSave ? startMutation.mutateAsync({ saveFirst: true }) : start())).catch(report)}>{pendingStart ? 'Confirm start' : needsSave ? 'Save and run' : 'Run'}</Button>
         </Toolbar>
@@ -151,7 +149,7 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
             }} /> : null}
           {panel === 'workflow' ? <ConflictRecoveryPanel draftKey={draftKey} edit={edit}
             pending={reloading || edit.busy || !!edit.pending || editIntent.locked || starting}
-            inspectLatest={inspectLatest} report={report} /> : null}
+            report={report} /> : null}
         </fieldset>
       </aside> : null}
       <nav className="board-keyboard-list" aria-label="Agents and connections">

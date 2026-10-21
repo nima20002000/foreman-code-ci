@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react'
+import { placeBeside } from '../../shared/ui/floatingWindow'
 
 export const approvalResizeEdges = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'] as const
 type Edge = typeof approvalResizeEdges[number]
@@ -37,6 +38,11 @@ export function useApprovalInboxResize() {
   }, [])
   return {
     panelRef,
+    /** Opens the window beside its button, per the shared floating-window contract. */
+    placeBeside(anchor: DOMRect) {
+      const start = readBox()
+      if (start && !narrow()) setBox({ ...start, ...placeBeside(start.width, start.height, anchor) })
+    },
     style: box ? { position: 'fixed', ...box } as CSSProperties : undefined,
     moveGrip: {
       'aria-label': 'Move approval inbox',

@@ -8,7 +8,9 @@ interface ApprovalInboxScope {
 
 interface ApprovalInboxUiState extends ApprovalInboxScope {
   open: boolean
-  openInbox(scope: ApprovalInboxScope): void
+  /** The button that opened the inbox; the window opens beside it (see shared/ui/floatingWindow). */
+  anchor?: DOMRect
+  openInbox(scope: ApprovalInboxScope, anchor?: DOMRect): void
   closeInbox(): void
 }
 
@@ -17,6 +19,6 @@ export const APPROVAL_INBOX_STACK_ID = 'approval-inbox'
 export const useApprovalInboxStore = create<ApprovalInboxUiState>((set) => ({
   open: false,
   workspaceId: '',
-  openInbox: (scope) => { raiseFloating(APPROVAL_INBOX_STACK_ID); set({ ...scope, open: true }) },
+  openInbox: (scope, anchor) => { raiseFloating(APPROVAL_INBOX_STACK_ID); set({ ...scope, anchor, open: true }) },
   closeInbox: () => set({ open: false }),
 }))

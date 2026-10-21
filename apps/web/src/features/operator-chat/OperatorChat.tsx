@@ -2,7 +2,6 @@ import { useId, useRef, useState } from 'react'
 import { useSessionControls } from '../conversations/sessionControls/useSessionControls'
 import { useFileDrop } from '../../shared/ui/useFileDrop'
 import { ChatAttachmentBoundary } from '../conversations/ChatAttachmentBoundary'
-import { UnavailableChatDraft } from '../conversations/delivery/UnavailableChatDraft'
 import { Alert, Button } from '../../shared/ui/nocturne'
 import { useAccessFailureLatch } from '../../shared/api/useAccessFailureLatch'
 import { sessionGeneration, sessionIsSwitching } from '../../shared/api/sessionBoundary'
@@ -20,6 +19,8 @@ import { useOperatorCreateConversation } from './useOperatorCreateConversation'
 import { useOperatorSendMutation } from './useOperatorSendMutation'
 import { useOperatorSetupState } from './useOperatorSetupState'
 import { useOperatorSubmit } from './useOperatorSubmit'
+import { useOperatorReconnect } from './useOperatorReconnect'
+import { isApiRestartError } from '../../shared/api/client'
 import { deriveOperatorLiveText, deriveOperatorMessaging, deriveOperatorNavigation } from './operatorChatDerived'
 import type { AskSend, ConnectionState, PartialState, PreparationError } from './operatorChatShared'
 import { useProviderAccounts } from '../provider-accounts/providerAccountsQueries'
@@ -75,6 +76,8 @@ function OperatorChatContent({ settingsWarning }: { settingsWarning?: string }) 
     historyTriggerRef, setAskSend, setup, preferences, accessDenied, selectedId })
   const send = useOperatorSendMutation({ acceptState, invalidate, attachmentReceipts, setPreparationError, setHandoffNotice, refreshOutbox })
   const { cancel, respond, remove, restore } = useOperatorConversationMutations({ acceptState, invalidate, deletedRevisions, setRemoved })
+  const reconnect = useOperatorReconnect(open && !accessDenied && !missingSelection && (isApiRestartError(selected.error) || isApiRestartError(shownSetup.error)),
+    () => { if (selected.isError) void selected.refetch(); if (shownSetup.isError) void shownSetup.refetch() })
   useOperatorChatShellEffects({ enabled, open, closing, setClosing, closeRef, launcherRef, refreshOutbox })
   useOperatorChatStream({ enabled, open, selectedId, accessDenied, acceptState, readGeneration, setPartial, setConnection })
 
@@ -134,7 +137,7 @@ function OperatorChatContent({ settingsWarning }: { settingsWarning?: string }) 
         <main className="operator-chat-main">
           <OperatorChatNotices handoffNotice={handoffNotice} setHandoffNotice={setHandoffNotice} recoveredSelection={recoveredSelection}
             missingSelection={missingSelection} shownSetup={shownSetup} remove={remove} restore={restore} create={create} request={request}
-            accessDenied={accessDenied} createConversation={createConversation} selectedId={selectedId} selected={selected} conversation={conversation} />
+            accessDenied={accessDenied} createConversation={createConversation} selectedId={selectedId} selected={selected} conversation={conversation} reconnect={reconnect} />
           {conversation ? <>
             <OperatorConversationTranscript conversation={conversation} retired={retired} archived={archived} requestId={requestId}
               selectedId={selectedId} partial={partial} partialText={partialText} thinkingText={thinkingText} selected={selected} respond={respond} />
@@ -149,8 +152,7 @@ function OperatorChatContent({ settingsWarning }: { settingsWarning?: string }) 
               createConversation={createConversation}
               canonical={{ refresh: () => { if (selectedId) void invalidate(selectedId) },
                 onDenied: () => { setPartial(undefined); setDeniedConversation(selectedId) } }} />
-          </> : selectedId && !accessDenied ? <UnavailableChatDraft draftKey={selectedId} pending={selected.isPending}
-            onRefresh={() => void selected.refetch()} /> : null}
+          </> : null}
         </main>
       </div>
       {removed ? <div className="operator-chat-undo" role="status">Chat deleted. <Button size="sm" variant="ghost" disabled={restore.isPending}

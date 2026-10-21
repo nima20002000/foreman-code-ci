@@ -56,11 +56,11 @@ export function OperatorComposer({ conversationId, context, attachmentControl, f
     ? feedback.compaction : undefined
   const recovered = !!compaction && compaction.status !== 'failed'
   const menu = useSlashCommandMenu(value, content => setDraft(conversationId, content), content => { void send(content) }, true)
-  return <form className="operator-composer" aria-label="Conversation composer" {...fileDropProps}
+  return <><form className="operator-composer" aria-label="Conversation composer" {...fileDropProps}
     onSubmit={event => { event.preventDefault(); void send() }}>
     {menu.menu}
     <label htmlFor={id} className="n-sr-only">Message</label>
-    {/* One compact block: attach, message and send share a row; agent settings sit in a quiet row below.
+    {/* One compact block: attach, message and send share a row; agent settings sit below the box.
         Attachment chips wrap above the input row. */}
     <div className="operator-composer-input">
       {attachmentControl}
@@ -79,10 +79,11 @@ export function OperatorComposer({ conversationId, context, attachmentControl, f
         </ChatPrimaryActions>
       </div>
     </div>
-    <div className="operator-composer-options">
-      <div className="operator-composer-model">{context}</div>
-    </div>
     {commandError?.conversationId === conversationId && !recovered
       ? <p role="alert">{compaction?.message ?? commandError.message}</p> : null}
   </form>
+  {/* Agent settings sit below the composer box, not inside it. */}
+  <div className="operator-composer-options">
+    <div className="operator-composer-model">{context}</div>
+  </div></>
 }

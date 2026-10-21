@@ -23,8 +23,16 @@
 .board-kanban-bar h2 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 0.9rem; flex: 1 1 auto; }
 .board-kanban-error { color: var(--danger); font-size: 0.8rem; }
 .board-kanban-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px; cursor: default; }
-.board-kanban-columns { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(190px, 1fr); gap: 10px; min-height: 100%; }
-.board-kanban-column { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.board-kanban-columns { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(170px, 1fr); gap: 10px; height: 100%; }
+/* Each column is its own colored card; all five sit side by side, empty or not. */
+.board-kanban-column { --col: var(--accent); display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; overflow: auto;
+  padding: 10px; border: 1px solid color-mix(in srgb, var(--col) 45%, var(--border)); border-top: 4px solid var(--col);
+  border-radius: var(--radius-md, 10px); background: color-mix(in srgb, var(--col) 10%, var(--surface)); }
+.board-kanban-column[data-status="todo"] { --col: #6b8afd; }
+.board-kanban-column[data-status="doing"] { --col: #f0a640; }
+.board-kanban-column[data-status="waiting_for_user"] { --col: #b57cf2; }
+.board-kanban-column[data-status="blocked"] { --col: #e5596b; }
+.board-kanban-column[data-status="done"] { --col: #3fbf7f; }
 .board-kanban-column h3 { margin: 0; font-size: 0.85rem; }
 .board-kanban-column h3 small { color: var(--text-muted); font-weight: 400; }
 .board-kanban-card { border-radius: 9px; transition: box-shadow var(--motion-duration, 200ms) var(--motion-ease, ease); }

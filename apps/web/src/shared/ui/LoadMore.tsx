@@ -7,7 +7,7 @@ export function LoadMore({ label, query, loadAll = false }: {
   label: string
   loadAll?: boolean
   query: {
-    hasNextPage: boolean; isFetching: boolean; isFetchNextPageError: boolean
+    hasNextPage: boolean; isFetchingNextPage: boolean; isFetchNextPageError: boolean
     fetchNextPage: (options?: { cancelRefetch?: boolean }) => Promise<{ hasNextPage: boolean; isError: boolean }>
   }
 }) {
@@ -29,7 +29,8 @@ export function LoadMore({ label, query, loadAll = false }: {
       } finally { inFlight.current = false }
     },
   })
-  const fetching = query.isFetching || remaining.isPending
+  // Background refetches (polling) must not toggle the control; only next-page loads do.
+  const fetching = query.isFetchingNextPage || remaining.isPending
   const failed = query.isFetchNextPageError || remaining.isError
   const compact = loadAll && !fetching && !failed
   if (!query.hasNextPage) return null

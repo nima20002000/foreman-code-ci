@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { NodeChange } from '@xyflow/react'
 import type { WorkflowKanbanFrame, WorkflowKanbanLayout } from '@foreman-code/contracts'
 import { useReducedMotion } from '../../../shared/ui/nocturne'
@@ -20,7 +20,7 @@ const rounded = (frame: WorkflowKanbanFrame): WorkflowKanbanFrame =>
   ({ x: Math.round(frame.x), y: Math.round(frame.y), width: Math.round(frame.width), height: Math.round(frame.height) })
 
 /** The Kanban object of one Board canvas: its flow node while shown, the lights from Agents that just changed
- * a card, and the handlers for moving, resizing and removing it. Layout is saved per workflow on the server. */
+ * a card, and the handlers for moving and resizing it. Layout is saved per workflow on the server. */
 export function useBoardKanban({ workspaceId, workflowId, nodes, nodeIds, enabled = true }: {
   workspaceId: string; workflowId: string; nodes: readonly Placed[]; nodeIds: ReadonlySet<string>; enabled?: boolean
 }) {
@@ -29,18 +29,16 @@ export function useBoardKanban({ workspaceId, workflowId, nodes, nodeIds, enable
   const [moving, setMoving] = useState<{ base?: WorkflowKanbanLayout; frame: WorkflowKanbanFrame }>()
   const placed = useMemo(() => layout?.frame ?? defaultKanbanFrame(nodes), [layout?.frame, nodes])
   const frame = moving && moving.base === layout ? moving.frame : placed
-  const latest = useRef({ frame, layout })
-  latest.current = { frame, layout }
   const actions = useMemo(() => ({
     store: (next: WorkflowKanbanFrame) => save({ visible: true, frame: rounded(next) }),
-    remove: () => save({ visible: false, frame: latest.current.layout?.frame ?? rounded(latest.current.frame) }),
   }), [save])
-  const visible = enabled && layout?.visible === true
+  // The Kanban is always on the Board, empty or not.
+  const visible = enabled
   const error = saveError ? errorMessage(saveError) : undefined
   const node = useMemo<KanbanFlowNode | undefined>(() => visible ? {
     id: KANBAN_NODE_ID, type: 'boardKanban', position: { x: frame.x, y: frame.y }, width: frame.width, height: frame.height,
     dragHandle: '.board-kanban-bar', draggable: true, selectable: false, connectable: false, deletable: false, focusable: false,
-    data: { workspaceId, workflowId, ...(error ? { saveError: error } : {}), remove: actions.remove, resized: actions.store },
+    data: { workspaceId, workflowId, ...(error ? { saveError: error } : {}), resized: actions.store },
   } : undefined, [visible, frame, workspaceId, workflowId, error, actions])
   const activity = useKanbanActivity((state) => state.items[kanbanScope(workspaceId, workflowId)])
   const reduced = useReducedMotion()

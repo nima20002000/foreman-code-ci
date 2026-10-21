@@ -1,4 +1,4 @@
-import { useId, useMemo } from 'react'
+import { useId, useLayoutEffect, useMemo } from 'react'
 import type { Agent, DurableInteraction } from '@foreman-code/contracts'
 import { useInfiniteInteractionsQuery, useWorkspaceDetailsQuery } from '../../shared/api/query'
 import { useUserInteractionResponse } from '../../shared/api/userApprovals'
@@ -92,7 +92,10 @@ function ApprovalInboxPanel({ open, exiting, resize }: {
   const workspaceId = useApprovalInboxStore((state) => state.workspaceId)
   const workflowId = useApprovalInboxStore((state) => state.workflowId)
   const closeInbox = useApprovalInboxStore((state) => state.closeInbox)
-  const { panelRef, style, moveGrip, grip } = resize
+  const anchor = useApprovalInboxStore((state) => state.anchor)
+  const { panelRef, style, moveGrip, grip, placeBeside } = resize
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- place once per open, from the button that opened it
+  useLayoutEffect(() => { if (open && anchor) placeBeside(anchor) }, [open, anchor])
   const zIndex = useFloatingZ(APPROVAL_INBOX_STACK_ID, !exiting)
   const scope = { workspaceId: workspaceId || undefined, workflowId, limit: 100 }
   const queue = useInfiniteInteractionsQuery({ ...scope, status: 'pending' }, open && Boolean(workspaceId))

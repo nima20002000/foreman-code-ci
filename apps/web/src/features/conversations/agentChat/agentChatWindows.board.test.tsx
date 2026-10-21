@@ -115,23 +115,6 @@ describe('Agent chats in the shared Board rail', () => {
     expect(await findLoadedComposer(within(await panelNamed(names.first)))).toHaveValue('Keep first')
   }, 30_000)
 
-  it('retains the resized rail width across Agent changes and closing and reopening', async () => {
-    const { names, chatAction, panelNamed } = await mountDraftBoard('chat-width')
-    await userEvent.click(await chatAction(names.first))
-    const panel = await panelNamed(names.first)
-    fireEvent.change(within(panel).getByRole('slider', { name: 'Panel width' }), { target: { value: '510' } })
-    expect(panel.style.getPropertyValue('--workflow-rail-width')).toBe('510px')
-    expect(within(panel).getByRole('slider', { name: 'Panel width' })).toHaveAttribute('aria-valuetext', '510 px')
-    await userEvent.click(await chatAction(names.second))
-    await panelNamed(names.second)
-    expect(panel.style.getPropertyValue('--workflow-rail-width')).toBe('510px')
-    await userEvent.click(within(panel).getByRole('button', { name: 'Back to Board' }))
-    await waitFor(() => expect(panel).not.toBeVisible())
-    await userEvent.click(await chatAction(names.first))
-    expect(await panelNamed(names.first)).toBe(panel)
-    expect(panel.style.getPropertyValue('--workflow-rail-width')).toBe('510px')
-  }, 30_000)
-
   it('closes the selected chat with Escape and restores its opener', async () => {
     const { names, chatAction, panelNamed } = await mountDraftBoard('chat-escape')
     const trigger = await chatAction(names.first)

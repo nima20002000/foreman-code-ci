@@ -16,7 +16,7 @@ type HandoffNotice = { id: string; epoch: string } | undefined
 
 /** Status messages, errors and the empty/loading states above the conversation. */
 export function OperatorChatNotices({ handoffNotice, setHandoffNotice, recoveredSelection, missingSelection, shownSetup, remove, restore,
-  create, request, accessDenied, createConversation, selectedId, selected, conversation }: {
+  create, request, accessDenied, createConversation, selectedId, selected, conversation, reconnect }: {
   handoffNotice: HandoffNotice
   setHandoffNotice: Dispatch<SetStateAction<HandoffNotice>>
   recoveredSelection: boolean
@@ -31,13 +31,14 @@ export function OperatorChatNotices({ handoffNotice, setHandoffNotice, recovered
   selectedId: string | undefined
   selected: ReturnType<typeof useOperatorChatReadback>['selected']
   conversation: OperatorConversationState | undefined
+  reconnect: 'reconnecting' | 'down' | undefined
 }) {
   const select = useOperatorChatStore((state) => state.select)
   return <>
     {handoffNotice && handoffNotice.epoch === identityEpoch() ? <ChatNotice tone="info" title="Your continued chat is ready."
       action={<Button size="sm" variant="ghost" onClick={() => { select(handoffNotice.id); setHandoffNotice(undefined) }}>Open continued chat</Button>} /> : null}
     {recoveredSelection ? <ChatNotice title="The previous conversation is no longer available.">Start a new chat. Any saved draft or pending message has been kept on this device.</ChatNotice> : null}
-    {!missingSelection ? <OperatorSetupNotice data={shownSetup.data} checking={shownSetup.isFetching} failed={shownSetup.isError} onRetry={() => void shownSetup.refetch()} /> : null}
+    {!missingSelection && !reconnect ? <OperatorSetupNotice data={shownSetup.data} checking={shownSetup.isFetching} failed={shownSetup.isError} onRetry={() => void shownSetup.refetch()} /> : null}
     {remove.error instanceof Error ? <Alert live tone="danger" title="Chat could not be deleted">{remove.error.message}</Alert> : null}
     {restore.error instanceof Error ? <Alert live tone="danger" title="Chat could not be restored">{restore.error.message}</Alert> : null}
     {create.error instanceof Error ? <Alert live tone="danger" title="Conversation could not be created"
@@ -52,7 +53,11 @@ export function OperatorChatNotices({ handoffNotice, setHandoffNotice, recovered
       titleHint={<InfoHint label="Chat with Operator">Ask about your workspaces and workflows, or describe a change you need.</InfoHint>}
       action={<Button variant="primary" leading={<Icon name="plus" size={15} />} onClick={() => void createConversation({ retry: create.isError })}
         disabled={create.isPending} loading={create.isPending} loadingLabel="Starting…">Start chat</Button>} /></div> : null}
-    {selected.isLoading ? <LoadingState label="Loading conversation…" rows={4} /> : null}
-    {selected.isError && !missingSelection ? <Alert live tone="danger" title={conversation ? 'Conversation refresh failed' : 'Conversation could not be loaded'} action={<Button size="sm" disabled={selected.isFetching} loading={selected.isFetching} onClick={() => void selected.refetch()}>Retry conversation</Button>}>{conversation ? 'Previously loaded messages are still shown.' : 'Try the request again.'}</Alert> : null}
+    {reconnect === 'down' ? <Alert live tone="danger" title="Operator is unreachable"
+      action={<Button size="sm" disabled={selected.isFetching || shownSetup.isFetching}
+        onClick={() => { void selected.refetch(); void shownSetup.refetch() }}>Retry</Button>}>Your draft is kept.</Alert>
+      : reconnect && conversation ? <ChatNotice tone="info" title="Reconnecting…" />
+      : (reconnect || (selectedId && !conversation && selected.isPending)) && !accessDenied
+        ? <LoadingState label={reconnect ? 'Reconnecting…' : 'Loading conversation…'} rows={4} /> : null}
   </>
 }

@@ -14,8 +14,10 @@ function needsReconnect(query: Query): boolean {
 }
 
 function isRecoverableError(error: unknown): boolean {
+  // A 5xx the API answered with its own error code is a domain failure (e.g. a harness that is signed out),
+  // not a restart: polling it every second only makes its notice flicker.
   return isApiRestartError(error)
-    || ApiError.is(error) && error.status >= 500 && isTransientReadError(error)
+    || ApiError.is(error) && error.code === 'HTTP_ERROR' && (error.status ?? 0) >= 500 && isTransientReadError(error)
 }
 
 function needsRecovery(query: Query): boolean {

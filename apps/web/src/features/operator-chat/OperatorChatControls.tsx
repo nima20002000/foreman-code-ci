@@ -63,7 +63,7 @@ export function OperatorChatControls({ conversation, retired, settings, preferen
     <CanonicalOperatorComposer key={`${identityEpoch()}:${conversation.conversation.id}`} conversation={conversation}
       attachments={attachments} sessionControls={sessionControls} fileDropProps={fileDrop.dropTargetProps}
       attachmentControl={<ChatAttachmentControl draft={attachments} disabled={attachmentsDisabled} composerDrop={fileDrop} />}
-      context={settings ? <OperatorComposerSettings futureChats value={settings} disabled={active || !!pending.command || attachmentReceiptPending || preparing || preferences.form.isSaving || preferences.form.uncertain || preferences.query.isError}
+      context={settings ? <OperatorComposerSettings value={settings} disabled={active || !!pending.command || attachmentReceiptPending || preparing || preferences.form.isSaving || preferences.form.uncertain || preferences.query.isError}
         onChange={preferences.change} access={preferences.harness ? <OperatorAccessPicker key={preferences.harness.harness}
           value={preferences.harness} disabled={active || !!pending.command || attachmentReceiptPending || preferences.form.isSaving || preferences.form.uncertain || preferences.query.isError}
           saving={preferences.form.isSaving} saveError={preferences.form.error} onChange={preferences.changeAccess} /> : undefined} /> : undefined}

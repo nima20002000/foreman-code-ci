@@ -1,10 +1,11 @@
 import { InfoHint } from '../../../shared/ui/InfoHint'
-import { memo, useEffect, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import './inspection.css'
 import { useQuery } from '@tanstack/react-query'
 import { Handle, Position, type Edge, type EdgeProps, type Node, type NodeProps } from '@xyflow/react'
 import type { CiRunJob, CiTestStatus } from '@foreman-code/contracts'
 import type { RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
-import { Alert, Badge, Button, Dialog, EmptyState, Icon, Spinner, Tabs, type Tone } from '../../../shared/ui/nocturne'
+import { Alert, Badge, Button, EmptyState, Icon, IconButton, Spinner, Tabs, type Tone } from '../../../shared/ui/nocturne'
 import { PulseFlight, type EdgePulse } from '../../graph/SignalEdgeShape'
 import { useFloatingCurve } from '../../graph/signalEdge'
 import { formatClock, formatDuration } from '../../run-subagents/presentation'
@@ -78,12 +79,56 @@ export function CiServerDialog({ open, onOpenChange, scope, workflow, jobs, name
   const selected = jobs.find((job) => job.ticketId === selectedId)
   const agent = (job: CiRunJob) => names.get(job.requester.nodeId) ?? job.requester.nodeName
   const show = (job: CiRunJob) => { setSelectedId(job.ticketId); setTab('tests') }
-  return <Dialog open={open} onOpenChange={onOpenChange} size="xl" className="ci-server-dialog" title="CI server"
-    closeLabel="Close CI server" headerLeading={<InfoHint label="CI server">{scope
-      ? 'CI jobs the Agents of this Run requested, on Host CI, GitHub Actions or CircleCI.'
-      : 'CI jobs that Agents request during a Run appear here, on Host CI, GitHub Actions or CircleCI.'}</InfoHint>}>
-    {/* The shared Dialog keeps its children while closed; nothing here may poll then. */}
-    {open ? <>{error ? <Alert tone="warning" title="CI jobs could not be read.">
+  const panelRef = useRef<HTMLElement>(null)
+  const close = useRef(onOpenChange)
+  close.current = onOpenChange
+  // Open next to the item that opened it (the focused control), like the Board's floating windows.
+  useLayoutEffect(() => {
+    const panel = panelRef.current
+    if (!open || !panel) return
+    const focused = document.activeElement
+    const opener = focused instanceof HTMLElement && focused !== document.body && !panel.contains(focused) ? focused : null
+    const anchor = opener?.getBoundingClientRect()
+    const { offsetWidth: w, offsetHeight: h } = panel
+    const right = anchor ? anchor.right + 12 : window.innerWidth - w - 24
+    const left = right + w <= window.innerWidth - 12 ? right : (anchor?.left ?? 0) - w - 12
+    panel.style.left = `${Math.max(12, Math.min(left, window.innerWidth - w - 12))}px`
+    panel.style.top = `${Math.max(12, Math.min(anchor?.top ?? 80, window.innerHeight - h - 12))}px`
+    panel.focus({ preventScroll: true })
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || !panel.contains(document.activeElement)) return
+      event.preventDefault()
+      close.current(false)
+    }
+    document.addEventListener('keydown', escape)
+    return () => {
+      document.removeEventListener('keydown', escape)
+      if (opener?.isConnected) opener.focus()
+    }
+  }, [open])
+  const drag = (event: ReactPointerEvent<HTMLElement>) => {
+    const panel = panelRef.current
+    if (!panel || event.button !== 0 || (event.target as Element).closest('button')) return
+    const startX = event.clientX - panel.offsetLeft, startY = event.clientY - panel.offsetTop
+    const move = (e: PointerEvent) => {
+      panel.style.left = `${Math.max(0, Math.min(e.clientX - startX, window.innerWidth - 80))}px`
+      panel.style.top = `${Math.max(0, Math.min(e.clientY - startY, window.innerHeight - 40))}px`
+    }
+    const stop = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop) }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
+    event.preventDefault()
+  }
+  if (!open) return null
+  return <aside ref={panelRef} tabIndex={-1} className="ci-server-window" aria-label="CI server">
+    <header onPointerDown={drag}>
+      <h2><Icon name="server" size={14} />CI server</h2>
+      <InfoHint label="CI server">{scope
+        ? 'CI jobs the Agents of this Run requested, on Host CI, GitHub Actions or CircleCI.'
+        : 'CI jobs that Agents request during a Run appear here, on Host CI, GitHub Actions or CircleCI.'}</InfoHint>
+      <IconButton label="Close CI server" variant="ghost" onClick={() => onOpenChange(false)}><Icon name="close" size={16} /></IconButton>
+    </header>
+    <div className="ci-server-window-body">{error ? <Alert tone="warning" title="CI jobs could not be read.">
       {jobs.length ? 'The list shows the last jobs read.' : 'Reading CI needs the CI read grants for this workspace.'}</Alert> : null}
     <Tabs label="CI server" value={tab} onValueChange={(value) => setTab(value as Tab)} keepMounted={false} items={[
       { value: 'jobs', label: 'Jobs', badge: jobs.length, content: loading ? <Spinner label="Loading CI jobs" />
@@ -94,8 +139,8 @@ export function CiServerDialog({ open, onOpenChange, scope, workflow, jobs, name
       { value: 'log', label: 'Log', disabled: !selected || !scope, content: selected && scope ? <CiJobLog scope={scope} job={selected} /> : null },
       ...(workflow ? [{ value: 'workflow-jobs', label: 'Workflow jobs',
         content: <WorkflowJobs key={JSON.stringify(workflow)} {...workflow} /> }] : []),
-    ]} /></> : null}
-  </Dialog>
+    ]} /></div>
+  </aside>
 }
 
 export function CiJobsTable({ jobs, agent, selectedId, truncated, onShow, run }: { jobs: readonly CiRunJob[]; agent(job: CiRunJob): string

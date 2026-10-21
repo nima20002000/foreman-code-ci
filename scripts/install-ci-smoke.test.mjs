@@ -22,6 +22,7 @@ async function fixture(t, failure, token, { firstAdmissionDelayMs = 0, firstAdmi
   const admissions = []
   const canceled = []
   let probes = 0
+  let stalledOnce = false
   let firstAdmissionProbeCount = 0
   let firstAdmissionComplete = false
   const admissionProbed = Promise.withResolvers()
@@ -47,6 +48,7 @@ async function fixture(t, failure, token, { firstAdmissionDelayMs = 0, firstAdmi
     } else if (request.url === '/health/live') {
       probes++
       if (failure === 'stall' && admissions.length) return
+      if (failure === 'stall-once' && admissions.length && probes > 0 && !stalledOnce) { stalledOnce = true; return }
       if (admissions.length === 1 && !firstAdmissionComplete) {
         firstAdmissionProbeCount++
         if (firstAdmissionProbeCount >= firstAdmissionProbes) admissionProbed.resolve()
@@ -182,6 +184,13 @@ test('a stalled health probe fails quickly while a slow admission is still in pr
   await assert.rejects(runInstallCiSmoke({ ...options, origin: f.origin, admissionTimeoutMs: 800 }),
     /health probe.*GET \/health\/live.*timed out.*60 ms/)
   assert.ok(Date.now() - started < 700)
+})
+
+test('one slow health probe right after a restart does not fail the smoke', { timeout: 30_000 }, async t => {
+  const { runInstallCiSmoke } = await import('./install-ci-smoke.mjs')
+  const f = await fixture(t, 'stall-once')
+  await runInstallCiSmoke({ ...options, origin: f.origin, timeoutMs: 10_000, requestTimeoutMs: 200, admissionTimeoutMs: 2000 })
+  assert.ok(f.probes() >= 2)
 })
 
 test('a stuck admission has its own bounded timeout and identifies the slow step', async t => {

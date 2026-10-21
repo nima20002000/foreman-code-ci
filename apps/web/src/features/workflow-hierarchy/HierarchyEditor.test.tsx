@@ -32,7 +32,7 @@ function context() {
 function Surface() {
   const edit = useGraphDraftStore(state => state.nextDrafts[draftKey]!)
   return <><HierarchyEditor draftKey={draftKey} edit={edit} report={report} />
-    <ConflictRecoveryPanel draftKey={draftKey} edit={edit} pending={false} report={report} inspectLatest={async () => {}} /></>
+    <ConflictRecoveryPanel draftKey={draftKey} edit={edit} pending={false} report={report} /></>
 }
 beforeEach(() => {
   report.mockClear(); localStorage.clear(); sessionStorage.clear()

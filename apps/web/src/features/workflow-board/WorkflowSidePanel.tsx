@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefCallback, type RefObject } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefCallback, type RefObject } from 'react'
 import type { BoardSidePanel } from '@foreman-code/contracts/wave25'
 import type { HierarchyReport } from '@foreman-code/contracts'
-import { Button, Dialog, Slider } from '../../shared/ui/nocturne'
-import { useSidePanelPresentation, useSidePanelScroll } from './sidePanelPresentation'
+import { Button, Dialog, Icon, IconButton } from '../../shared/ui/nocturne'
+import { placeBeside } from '../../shared/ui/floatingWindow'
+import { useSidePanelScroll } from './sidePanelPresentation'
 import type { CollaborationFieldSlots } from '../graph/collaborationFields'
 import type { WorkflowExecutionChatSlotSelection } from '../workflow-hierarchy/execution-chat/types'
 
@@ -40,38 +41,42 @@ export interface WorkflowSidePanelProps {
 
 const destinations = [['agent', 'Agent'], ['browser', 'Browser']] as const
 
-/** Only the selected body mounts. The fixed portal host preserves existing conversation/store ownership. */
+/** Floating, draggable, resizable window opened next to the selected node. Only the selected body mounts;
+ * the portal host preserves existing conversation/store ownership. */
 export function WorkflowSidePanel({ scope, workspaceId, workflowId, runId, workflowVersionId,
   opener, selection, agentSelection, onSelect, onSelectTarget, onSelectRun, bodyRef, modalOpen, slots }: WorkflowSidePanelProps) {
   const panelRef = useRef<HTMLElement>(null)
   const heldFocus = useRef(false)
   const [host, setHost] = useState<HTMLDivElement | null>(null)
-  const width = useSidePanelPresentation(state => state.widths[scope] ?? 420)
   const attach = useCallback((element: HTMLDivElement | null) => { setHost(element); bodyRef(element) }, [bodyRef])
   useSidePanelScroll(host, JSON.stringify([scope, runId, selection]), modalOpen)
-  // Group chat opens in its own resizable dialog, never in this rail.
   const groupChat = selection.kind === 'group_chat'
-  const active = selection.kind !== 'none' && !groupChat
+  const active = selection.kind !== 'none'
+  // Open next to the node that opened it; keep the user's position while it stays open.
   useLayoutEffect(() => {
     const panel = panelRef.current
     if (!active || modalOpen || !panel) return
     if (!panel.contains(document.activeElement)) panel.focus({ preventScroll: true })
-    const viewport = window.visualViewport
-    const resize = () => {
-      const top = viewport?.offsetTop ?? 0
-      const bottom = top + (viewport?.height ?? window.innerHeight)
-      panel.style.maxHeight = `${Math.max(0, bottom - Math.max(top, panel.getBoundingClientRect().top))}px`
+    if (panel.dataset.placed) return
+    const { left, top } = placeBeside(panel.offsetWidth, panel.offsetHeight, opener.current?.getBoundingClientRect())
+    panel.style.left = `${left}px`
+    panel.style.top = `${top}px`
+    panel.dataset.placed = 'true'
+  }, [active, modalOpen, opener])
+  useEffect(() => { if (!active) delete panelRef.current?.dataset.placed }, [active])
+  const drag = (event: ReactPointerEvent<HTMLElement>) => {
+    const panel = panelRef.current
+    if (!panel || event.button !== 0 || (event.target as Element).closest('button')) return
+    const startX = event.clientX - panel.offsetLeft, startY = event.clientY - panel.offsetTop
+    const move = (e: PointerEvent) => {
+      panel.style.left = `${Math.max(0, Math.min(e.clientX - startX, window.innerWidth - 80))}px`
+      panel.style.top = `${Math.max(0, Math.min(e.clientY - startY, window.innerHeight - 40))}px`
     }
-    resize()
-    window.addEventListener('resize', resize)
-    viewport?.addEventListener('resize', resize)
-    viewport?.addEventListener('scroll', resize)
-    return () => {
-      window.removeEventListener('resize', resize)
-      viewport?.removeEventListener('resize', resize)
-      viewport?.removeEventListener('scroll', resize)
-    }
-  }, [active, modalOpen])
+    const stop = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop) }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
+    event.preventDefault()
+  }
   useEffect(() => {
     const panel = panelRef.current
     if (!active || modalOpen || !panel) {
@@ -108,7 +113,9 @@ export function WorkflowSidePanel({ scope, workspaceId, workflowId, runId, workf
     const openedFrom = opener.current
     return () => { if (openedFrom?.isConnected) openedFrom.focus() }
   }, [active, opener])
-  const content = modalOpen ? null : selection.kind === 'browser'
+  const content = modalOpen ? null : groupChat
+    ? slots?.groupChat?.({ workspaceId, workflowId, ...(runId ? { runId } : {}) }) ?? <p role="status">Group chat is not available yet.</p>
+    : selection.kind === 'browser'
       ? slots?.browser?.({ ...selection, workspaceId, workflowId, ...(runId ? { runId } : {}),
         ...(workflowVersionId ? { workflowVersionId } : {}) }) ?? <p role="status">Browser is not available yet. No browser session has been started.</p>
       : selection.kind === 'agent' && selection.tab === 'chat'
@@ -119,19 +126,13 @@ export function WorkflowSidePanel({ scope, workspaceId, workflowId, runId, workf
           ...(selection.waitingActivationId ? { waitingActivationId: selection.waitingActivationId } : {}) })
           ?? (selection.executionId || selection.waitingActivationId ? <p role="status">Chat for this selected execution is not available yet. Your execution selection is kept.</p> : null)
         : null
-  return <><Dialog open={groupChat && !modalOpen} onOpenChange={open => { if (!open) onSelect({ kind: 'none' }) }}
-    title="Group chat" closeLabel="Close group chat" className="workflow-group-chat-dialog">
-    {groupChat && !modalOpen ? slots?.groupChat?.({ workspaceId, workflowId, ...(runId ? { runId } : {}) })
-      ?? <p role="status">Group chat is not available yet.</p> : null}
-  </Dialog>
-  <aside ref={panelRef} tabIndex={-1} className="workflow-side-panel" aria-label="Workflow side panel"
-    style={{ '--workflow-rail-width': `${width}px` } as CSSProperties}
+  return <aside ref={panelRef} tabIndex={-1} className="workflow-floating-panel" aria-label="Workflow side panel"
     hidden={!active || modalOpen} inert={!active || modalOpen}>
-    <header>
-      <h2>{selection.kind === 'browser' ? 'Browser' : 'Agent'}</h2>
-      <Button size="sm" variant="ghost" onClick={() => onSelect({ kind: 'none' })}>Back to Board</Button>
+    <header onPointerDown={drag}>
+      <h2>{groupChat ? 'Group chat' : selection.kind === 'browser' ? 'Browser' : 'Agent'}</h2>
+      <IconButton label={groupChat ? 'Close group chat' : 'Back to Board'} variant="ghost" onClick={() => onSelect({ kind: 'none' })}><Icon name="close" size={16} /></IconButton>
     </header>
-    <nav aria-label="Workflow panel destination">
+    {groupChat ? null : <><nav aria-label="Workflow panel destination">
       {destinations.map(([kind, label]) => <Button key={kind} size="sm" variant="ghost"
         aria-pressed={selection.kind === kind} disabled={kind === 'agent' && !agentSelection}
         onClick={() => {
@@ -139,16 +140,14 @@ export function WorkflowSidePanel({ scope, workspaceId, workflowId, runId, workf
           else onSelect({ kind })
         }}>{label}</Button>)}
     </nav>
-    {!agentSelection ? <p className="workflow-panel-hint">Select a node on the Board to open Agent chat or settings.</p> : null}
+    {!agentSelection ? <p className="workflow-panel-hint">Select a node on the Board to open Agent chat or settings.</p> : null}</>}
     {selection.kind === 'agent' ? <nav aria-label="Agent panel view">
       {(['chat', 'settings', 'details'] as const).map(tab => <Button key={tab} size="sm" variant="ghost"
         aria-pressed={selection.tab === tab} onClick={() => onSelect({ ...selection, tab })}>
         {tab === 'chat' ? 'Chat' : tab === 'settings' ? 'Settings' : 'Details'}</Button>)}
     </nav> : null}
-    <div className="workflow-rail-size"><Slider label="Panel width" min={320} max={640} value={width}
-      onValueChange={value => useSidePanelPresentation.getState().setWidth(scope, value)} format={value => `${value} px`} /></div>
-    <div className="workflow-side-panel-body" ref={attach}>{modalOpen ? null : content}</div>
-  </aside></>
+    <div className="workflow-floating-panel-body" ref={attach}>{modalOpen ? null : content}</div>
+  </aside>
 }
 
 export function WorkflowMemoryDialog({ open, onOpenChange, slots }: {

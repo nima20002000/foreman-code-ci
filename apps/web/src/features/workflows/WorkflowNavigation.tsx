@@ -185,7 +185,7 @@ function WorkflowNavigationContent({ workspaceId, activeWorkflowId }: WorkflowNa
         </p>
       ) : null}
 
-      <LoadMore label="workflows" query={{ ...managedQuery, isFetching: managedQuery.isFetching || order.mutation.isPending }} />
+      <LoadMore label="workflows" query={{ ...managedQuery, isFetchingNextPage: managedQuery.isFetchingNextPage || order.mutation.isPending }} />
     </section>
   )
 }

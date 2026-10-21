@@ -101,7 +101,7 @@
 .operator-composer-input .attachment-control > .n-icon-button { grid-row: 2; grid-column: 1; width: 28px; height: 28px; min-width: 28px; min-height: 28px; margin-bottom: .2rem; border-radius: var(--radius-full); color: var(--color-text-muted); }
 .operator-composer-input > textarea { grid-row: 2; grid-column: 2; }
 .operator-composer-actions { grid-row: 2; grid-column: 3; display: flex; align-items: center; gap: .25rem; }
-.operator-composer-options { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; min-width: 0; }
+.operator-composer-options { display: flex; padding: .25rem .25rem 0; flex-wrap: wrap; align-items: center; gap: .25rem; min-width: 0; }
 .operator-chat-navigation .session-context, .operator-chat-navigation .session-context-popover { pointer-events: auto; }
 .operator-chat-navigation .session-context-meter { width: auto; min-width: 0; height: 28px; min-height: 28px; padding: 0 .45rem; align-self: center; }
 .operator-chat-navigation .provider-account-chip { align-self: center; }
