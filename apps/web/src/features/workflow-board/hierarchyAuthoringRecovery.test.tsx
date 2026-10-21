@@ -43,7 +43,8 @@ async function createWorker(parent: string, name: string, prompt: string, { appl
 async function refresh(f: Fixture, view: Awaited<ReturnType<typeof mount>>) {
   const href = view.router.history.location.href
   view.unmount()
-  act(() => useGraphDraftStore.getState().clearAllDrafts())
+  // A page reload drops in-memory state, keeping the browser's recovery records.
+  act(() => useGraphDraftStore.setState({ nextDrafts: {} }))
   return mount({ ...f, href })
 }
 async function removal() {
