@@ -43,6 +43,7 @@ export class ConversationNativeAccess {
   }
 
   readonly rebind: ConversationFeatureBinder = async ({ manager, session, context, correlationId, signal }) => {
+    if (!this.bindings.has(manager) && !conversationChatTools(context).length) return
     if (!manager.rebindApplicationAccess) throw new DomainError('CHAT_SUBJECT_BINDING_UNAVAILABLE',
       'This native session cannot refresh its scoped conversation access.', 503)
     const issued = await this.credentials.issue(context)
