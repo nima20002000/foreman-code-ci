@@ -52,7 +52,7 @@ export async function createBrowserHost(options: BrowserHostOptions) {
     key: await unwrapBrowserSnapshotKey(envelope, await binding(), options.pairing), keyId: envelope.keyId,
     sourceInstallationId: envelope.source.installationId, sourceOperationId: envelope.operationId, stateHash: envelope.stateHash,
   })
-  const storage = new BrowserSnapshotStorage({ root: profileStateRoot, computerId: options.computerId, installationId: options.installationId,
+  const storage: BrowserSnapshotStorage = new BrowserSnapshotStorage({ root: profileStateRoot, computerId: options.computerId, installationId: options.installationId,
     exportKey: async (profileId, publishedRevision, operationId, stateHash) => material(await options.keys.exportKey(await binding(), { profileId, publishedRevision, operationId, stateHash })),
     snapshotKey: async transfer => {
       const jobId = applyJobs.get(transfer.snapshot.profileId)
@@ -63,7 +63,7 @@ export async function createBrowserHost(options: BrowserHostOptions) {
     closeProfile: profileId => driver.closeProfile(profileId), exportState: (profileId, origins) => driver.exportState(profileId, origins),
     importState: (profileId, directory, generation, state) => driver.importState(profileId, directory, generation, state),
   })
-  const driver = new ManagedBrowserNativeDriver({ runtime: options.runtime, profileDirectory: profileId => storage.directory(profileId),
+  const driver: ManagedBrowserNativeDriver = new ManagedBrowserNativeDriver({ runtime: options.runtime, profileDirectory: profileId => storage.directory(profileId),
     allocateGeneration: profileId => storage.allocateProcessGeneration(profileId), onOrigin: (profileId, origin) => storage.noteOrigin(profileId, origin),
     onDisconnected: (profileId, generation) => { void broker.disconnected(profileId, generation).catch(options.reportFailure) },
     downloadDirectory: profileId => join(root, 'native-downloads', browserInputHash(profileId)),
@@ -80,9 +80,9 @@ export async function createBrowserHost(options: BrowserHostOptions) {
       }
     } })
   const journal = createBrowserRuntimeJournal(join(root, 'journal'))
-  const broker = new BrowserBroker({ computerId: options.computerId, driver, journal, authority: options.subjectAuthority,
+  const broker: BrowserBroker = new BrowserBroker({ computerId: options.computerId, driver, journal, authority: options.subjectAuthority,
     closeSessionResources: sessionId => createBrowserSessionCleanup(media, files, options.reportFailure)(sessionId) })
-  const files = new BrowserFileStore(join(root, 'session-files'), async (owner, mutate) => {
+  const files: BrowserFileStore = new BrowserFileStore(join(root, 'session-files'), async (owner, mutate) => {
     await options.assertHostOwnership()
     const read = broker.read(owner.sessionId)
     if (mutate && (read.session.state === 'closed' || read.session.browserGeneration !== owner.browserGeneration
@@ -90,7 +90,7 @@ export async function createBrowserHost(options: BrowserHostOptions) {
       throw new DomainError('BROWSER_FILE_SCOPE', 'The upload no longer has its exact owned tab.', 403)
     }
   })
-  const media = new BrowserMediaService(broker, options.reportFailure)
+  const media: BrowserMediaService = new BrowserMediaService(broker, options.reportFailure)
   const ensureComputer = async (computerId: string, installationId?: string) => {
     const current = await binding()
     if (computerId !== options.computerId || installationId && current.installationId !== installationId) throw new DomainError('BROWSER_COMPUTER_SCOPE', 'This operation belongs to another installed computer.', 403)
