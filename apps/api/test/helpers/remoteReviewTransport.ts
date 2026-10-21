@@ -28,6 +28,7 @@ export async function createRemoteReviewTransport(input: {
   const sockets = new Set<WebSocket>()
   let paused = false
   let dropPhysical: (() => void) | undefined
+  let dropSettlement: (() => void) | undefined
   let loseCompactionResponse = false
   const conversationRequests: WorkerConversationRpcRequest[] = []
   const deliveryReads: Array<{ command: ReturnType<typeof RemoteOwnerControlSchema.parse>; phase: string }> = []
@@ -62,6 +63,15 @@ export async function createRemoteReviewTransport(input: {
       if (direction === 'to-worker' && payload.method === 'physical-readout' && dropPhysical) {
         const dropped = dropPhysical
         dropPhysical = undefined
+        worker.terminate()
+        main.terminate()
+        dropped()
+        return true
+      }
+      if (direction === 'to-worker' && payload.method === 'settle-turn' && dropSettlement) {
+        const dropped = dropSettlement
+        dropSettlement = undefined
+        paused = true
         worker.terminate()
         main.terminate()
         dropped()
@@ -169,6 +179,10 @@ export async function createRemoteReviewTransport(input: {
     dropNextPhysicalReadout() {
       if (dropPhysical) throw new Error('A physical readout interruption is already armed.')
       return new Promise<void>(resolve => { dropPhysical = resolve })
+    },
+    dropNextSettlement() {
+      if (dropSettlement) throw new Error('A settlement interruption is already armed.')
+      return new Promise<void>(resolve => { dropSettlement = resolve })
     },
     loseNextCompactionResponse: () => { loseCompactionResponse = true },
     close: async () => {
