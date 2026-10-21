@@ -144,8 +144,7 @@ function NewWorkspaceControl() {
       )).value.workspace
       assertSession(generation)
       attempt.current.succeeded()
-      void queryClient.invalidateQueries({ queryKey: queryKeys.managedWorkspaces })
-        .catch(() => { /* ignore: the workspace was created; the list refreshes on its next query. */ })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.managedWorkspaces }).catch(() => undefined)
       inFlight.current = false
       closeCreateDialog()
       void navigate({ to: '/workspaces/$workspaceId/settings', params: { workspaceId: workspace.id } })

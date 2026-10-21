@@ -26,8 +26,6 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { AgentChatService, type AgentChatManagerFactory } from '../src/modules/conversations/agentChat.js'
 import { agentChatCorrelation, agentChatKey, PostgresAgentChatRepository } from '../src/modules/conversations/agentChatRepository.js'
 import { PostgresOperatorConversationRepository } from '../src/modules/conversations/operatorChatRepository.js'
-import { qualifiedAgentChatSteer } from '../src/modules/conversations/chatSteerQualification.js'
-import { prepareAgentChatInput } from '../src/modules/collaboration/chatInputPreparation.js'
 import { HarnessExecutionError, NativeDeliveryError, NativeTurnNotActiveError } from '../src/modules/harnesses/errors.js'
 import { DomainError } from '../src/modules/errors.js'
 import type { NativeCompactInput, NativeHarnessSessionManager, NativeHistory, NativeInitialTurnInput, NativeSessionStart, NativeSteerInput, NativeTurnInput } from '../src/modules/harnesses/port.js'
@@ -169,8 +167,6 @@ function makeService(options: { native?: (harness: 'codex' | 'claude') => FakeNa
     managers.set(id, manager)
     return manager
   }, { release: (id: string) => { managers.delete(id) },
-    // Production composes the same input preparation and steering qualification ports.
-    prepareInput: prepareAgentChatInput(pool), qualifiedSteer: qualifiedAgentChatSteer,
     ...(options.recoverCompaction ? { recoverCompaction: options.recoverCompaction } : {}) })
   const runs = {
     // Read-only fake Run store for the Run-origin path. The service has no write port to it.
@@ -1238,36 +1234,32 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
 
   it('blocks chat for an active Run and forks a finished Run session without writing the Run', async () => {
     const { service } = makeService()
-    // Real Run and execution rows of the chat's own workflow (the conversation references them); reads still go through the fake read port.
+    const workspace = fixture.scope.workspaceId
+    // Real Run and execution rows (the conversation references them); reads still go through the fake read port.
     const runFixture = await seedAgent3(pool, root, makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential'))
-    runSourceFixture = runFixture
-    const workspace = runFixture.scope.workspaceId
-    const node = runFixture.version.definition.nodes[0]!
-    const agentConfigurationVersionId = runFixture.version.agentConfigurationVersionIds[node.agentId]!
     const runId = runFixture.run.id
-    const context = (selectedRunId?: string) => ({ workflowId: runFixture.scope.workflowId, workflowNodeId: node.id,
-      agentId: node.agentId, ...(selectedRunId ? { runId: selectedRunId } : {}) })
     const executionId = `exec-${randomUUID()}`
     await pool.query(`insert into harness_executions(id,run_id,workflow_node_id,agent_id,attempt,record) values($1,$2,$3,$4,1,$5::jsonb)`,
-      [executionId, runId, node.id, node.agentId,
-        JSON.stringify({ id: executionId, runId, workflowNodeId: node.id, agentId: node.agentId, agentConfigurationVersionId,
+      [executionId, runId, runFixture.version.definition.nodes[0]!.id, runFixture.version.definition.nodes[0]!.agentId,
+        JSON.stringify({ id: executionId, runId, workflowNodeId: runFixture.version.definition.nodes[0]!.id, agentId: runFixture.version.definition.nodes[0]!.agentId,
+          agentConfigurationVersionId: runFixture.version.agentConfigurationVersionIds[runFixture.version.definition.nodes[0]!.agentId],
           attempt: 1, input: {}, state: 'queued', createdAt: runFixture.createdAt })])
     runState = 'running'
-    const blocked = await service.read(writer, workspace, context(runId))
+    const blocked = await service.read(writer, workspace, query(codexNode, runId))
     expect(blocked.availability).toMatchObject({ canSend: false, reason: 'run_active' })
-    await expect(service.send(writer, workspace, { ...request(node, 'x', null), context: context(runId) }))
+    await expect(service.send(writer, workspace, { ...request(codexNode, 'x', null), context: query(codexNode, runId) }))
       .rejects.toMatchObject({ code: 'AGENT_CHAT_UNAVAILABLE' })
     runState = 'completed'
-    const missing = await service.read(writer, workspace, context(runId))
+    const missing = await service.read(writer, workspace, query(codexNode, runId))
     expect(missing.availability).toMatchObject({ canSend: false, reason: 'native_session_missing' })
-    runExecutions = [{ id: executionId, runId, workflowNodeId: node.id, agentId: node.agentId,
-      agentConfigurationVersionId, attempt: 1,
+    runExecutions = [{ id: executionId, runId, workflowNodeId: codexNode.id, agentId: codexNode.agentId,
+      agentConfigurationVersionId: fixture.version.agentConfigurationVersionIds[codexNode.agentId]!, attempt: 1,
       nativeSessionId: 'run-thread-1', workingDirectory: root, input: {}, state: 'completed', result: { outcome: 'succeeded' },
-      createdAt: runFixture.createdAt, finishedAt: runFixture.createdAt }]
+      createdAt: fixture.createdAt, finishedAt: fixture.createdAt }]
     const before = await pool.query(`select (select record::text from runs where id=$1) as run,
       (select record::text from harness_executions where id=$2) as execution`, [runId, executionId])
-    await service.send(writer, workspace, { ...request(node, 'what did you do?', null), context: context(runId) })
-    const done = await settled(service, () => service.read(writer, workspace, context(runId)))
+    await service.send(writer, workspace, { ...request(codexNode, 'what did you do?', null), context: query(codexNode, runId) })
+    const done = await settled(service, () => service.read(writer, workspace, query(codexNode, runId)))
     const native = FakeNative.all[0]!
     expect(native.forked).toEqual([expect.objectContaining({ source: 'run-thread-1' })])
     expect(native.forked[0]!.input).toMatchObject({ instructionsDelivered: true })
@@ -1278,7 +1270,7 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
     expect((await pool.query(`select (select record::text from runs where id=$1) as run,
       (select record::text from harness_executions where id=$2) as execution`, [runId, executionId])).rows[0]).toEqual(before.rows[0])
     // The same Agent without a Run is a different, isolated conversation.
-    expect((await service.read(writer, workspace, context())).conversation).toBeNull()
+    expect((await service.read(writer, workspace, query(codexNode))).conversation).toBeNull()
   })
 
   it('A-R07 never resends an in-flight turn after restart and fences queued work until terminal evidence', async () => {
@@ -1643,8 +1635,7 @@ describe('F4 authenticated transport / persistence regressions', { timeout: 60_0
       expect(canceled.statusCode, canceled.body).toBe(200)
       const cancelReceipt = await receipt(cancel.requestId)
       const later = await service.send(writer, fixture.scope.workspaceId, request(codexNode, 'later queued', id))
-      expect(decodeMcpToolResult((await replay('agent_chat_cancel_queued', { ...cancel, turnRequestId: queued.turn.requestId }))))
-        .toEqual({ state: await service.readConversation(writer, fixture.scope.workspaceId, id) })
+      expect(decodeMcpToolResult((await replay('agent_chat_cancel_queued', { ...cancel, turnRequestId: queued.turn.requestId })))).toEqual({ state: await read() })
       expect(await receipt(cancel.requestId)).toEqual(cancelReceipt)
       expect(cancelReceipt.result).toMatchObject({ status: 'completed', state: { conversation: { id },
         turns: expect.arrayContaining([expect.objectContaining({ requestId: queued.turn.requestId, delivery: 'canceled' })]) } })
@@ -1662,7 +1653,7 @@ describe('F4 authenticated transport / persistence regressions', { timeout: 60_0
       expect(responded.statusCode, responded.body).toBe(200)
       const respondReceipt = await receipt(respond.requestId)
       await repository.pending(id, active.activeTurn!.requestId, { ...pending, turn: { ...pending.turn, nativeRequestId: 'approval-two' } })
-      expect(decodeMcpToolResult((await replay('agent_chat_respond', respond)))).toEqual({ state: await service.readConversation(writer, fixture.scope.workspaceId, id) })
+      expect(decodeMcpToolResult((await replay('agent_chat_respond', respond)))).toEqual({ state: await read() })
       expect(await receipt(respond.requestId)).toEqual(respondReceipt)
       expect(respondReceipt.result).toMatchObject({ status: 'completed', acceptedControl: { modelRequestId: active.activeTurn!.requestId,
         native: { sessionId: pending.session.nativeSessionId, turnId: pending.turn.nativeTurnId, requestId: 'approval-one' } } })
@@ -1690,7 +1681,7 @@ describe('F4 authenticated transport / persistence regressions', { timeout: 60_0
       await service.send(writer, fixture.scope.workspaceId, request(codexNode, 'later active', id))
       const next = await settled(service, read, (state) => Boolean(state.activeTurn?.nativeTurnId && native.activeTurn))
       await vi.waitFor(async () => {
-        expect(decodeMcpToolResult((await replay('agent_chat_interrupt', interrupt)))).toEqual({ state: await service.readConversation(writer, fixture.scope.workspaceId, id) })
+        expect(decodeMcpToolResult((await replay('agent_chat_interrupt', interrupt)))).toEqual({ state: await read() })
       })
       expect(await receipt(interrupt.requestId)).toEqual(interruptReceipt)
       expect(interruptReceipt.result).toMatchObject({ status: 'completed', state: { conversation: { id },
@@ -1699,9 +1690,7 @@ describe('F4 authenticated transport / persistence regressions', { timeout: 60_0
       expect(native.cancels).toBe(1)
       expect((await read()).activeTurn?.requestId).toBe(next.activeTurn?.requestId)
       const receipts = (await pool.query<{ result: { status: string } }>(`select result from management_command_receipts
-        where principal_id=$1 and operation='agent_chat_control' and target_key=$2 and command_id=any($3::text[])`,
-      // Earlier tests reuse this deterministic conversation id; count only this test's three commands.
-      [writer.id, id, [cancel.requestId, respond.requestId, interrupt.requestId]])).rows
+        where principal_id=$1 and operation='agent_chat_control' and target_key=$2`, [writer.id, id])).rows
       expect(receipts.map((row) => row.result.status)).toEqual(['completed', 'completed', 'completed'])
     } finally {
       if (native.activeTurn) native.finish({ outcome: 'canceled' })

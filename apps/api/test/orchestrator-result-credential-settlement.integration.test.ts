@@ -12,16 +12,14 @@ describe.skipIf(!postgresEnabled)('designated Orchestrator credential across mar
     const fixture = makeCurrentWorkflowFixture(randomUUID(), 'approval')
     fixture.run.resultProtocol = COORDINATION_RESULT_PROTOCOL
     const orchestrator = fixture.configurations[0]!.agentId
-    // nativeCommitted can run before the fixture is returned, so it reads the fixture through this reference.
-    const runtime: { f?: Awaited<ReturnType<typeof checkpointRuntimeFixture>> } = {}
+    let f: Awaited<ReturnType<typeof checkpointRuntimeFixture>> | undefined
     let sweep: Wave25WorkerCredentialService | undefined
     const observed: { before: boolean; after: boolean }[] = []
     // Runs after each committed native publication, i.e. between the marked
     // terminal's COMMIT and the settlement that retains its original process.
     const nativeCommitted = async () => {
-      const f = runtime.f
       if (!f || observed.length) return
-      const live = async () => (await f.db.pool.query<{ live: boolean }>(`select b.revoked_at is null
+      const live = async () => (await f!.db.pool.query<{ live: boolean }>(`select b.revoked_at is null
         and p.revoked_at is null as live from worker_credential_bindings b
         join management_principals p on p.id=b.principal_id
         join workflow_coordination_terminals t on t.execution_id=b.execution_id and t.settled_native_proof_id is null
@@ -32,7 +30,7 @@ describe.skipIf(!postgresEnabled)('designated Orchestrator credential across mar
       await sweep.reconcileTerminalCredentials()
       observed.push({ before, after: (await live())! })
     }
-    const f = runtime.f = await checkpointRuntimeFixture(1, 1, { fixture, approvalNodeIds: [], collaborationPorts: {}, nativeCommitted,
+    f = await checkpointRuntimeFixture(1, 1, { fixture, approvalNodeIds: [], collaborationPorts: {}, nativeCommitted,
       outputFor: node => ({ data: { answer: `Completed ${node}` }, summary: 'Completed the task.',
         board: { kind: 'none', reason: 'no_access' } }) })
     try {
