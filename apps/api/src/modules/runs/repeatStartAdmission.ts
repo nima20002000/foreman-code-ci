@@ -112,7 +112,6 @@ function acceptedReceipt(raw: unknown, input: RunStartV3Input): AcceptedWorkflow
 function immutableRun(run: AcceptedWorkflowRunV3) {
   return { id: run.id, workspaceId: run.workspaceId, workflowId: run.workflowId, workflowVersionId: run.workflowVersionId,
     executionSemanticsVersion: run.executionSemanticsVersion, agentConfigurationVersionIds: run.agentConfigurationVersionIds,
-    ...(run.resultProtocol ? { resultProtocol: run.resultProtocol } : {}),
     executionLocation: run.executionLocation, authorizationPrincipalId: run.authorizationPrincipalId, approval: run.approval,
     executionCondition: run.executionCondition, input: run.input, createdAt: run.createdAt }
 }
@@ -345,7 +344,6 @@ export async function admitRepeatRun(pool: pg.Pool, locations: WorkspaceLocation
     if (!publication || typeof publication.initializeLocked !== 'function') {
       return conflict('REPEAT_START_RUNTIME_UNAVAILABLE', 'New v3 Runs remain disabled until canonical publication and the complete existing-engine lifecycle are composed.')
     }
-    // Hierarchy routing follows its saved definition. New-Run result-protocol pinning remains off.
     return await withRunSourceUse(pool, input.workspaceId, async () => {
       const sourceTransport = source === 'http' ? 'http' : 'mcp'
       const preparationStarted = performance.now()
