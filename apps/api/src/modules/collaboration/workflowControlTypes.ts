@@ -71,7 +71,7 @@ export interface WorkflowChatOwnerPort {
     cursor?: string; limit: number; bindings: CoordinatorConsultationBinding[]
   }): Promise<WorkflowNativeChatPage>
   /** Read the actual qualified writer, without attaching or acquiring an owner. */
-  observe(target: WorkflowChatTarget): Promise<Pick<EngineChatReadback, 'capabilities' | 'nativeTurnId'>>
+  capabilities(target: WorkflowChatTarget): Promise<EngineChatReadback['capabilities']>
   /** Check the exact serialized native/Worker envelope before durable admission. */
   validateAdmission(context: WorkflowChatLockedTarget, request: ChatSendRequest,
     admission: WorkflowChatAdmission): Promise<{ nativePrompt: string }>

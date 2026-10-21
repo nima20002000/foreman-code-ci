@@ -18,9 +18,7 @@ const returnSchema = z.object({ kind: z.literal('review_return'), ...identity, w
 const replySchema = z.object({ kind: z.literal('reply'), ...identity, commandId: z.string().min(1),
   receiptId: z.string().min(1), nativeMessageId: z.string().min(1), nativeSessionId: z.string().min(1),
   nativeTurnId: z.string().min(1).optional(), execution: ExecutionRefSchema.optional(), consultationId: z.string().min(1).optional() }).strict()
-const receiptChangeSchema = z.object({ kind: z.literal('receipt_changed'), ...identity,
-  receiptId: z.string().min(1) }).strict()
-const committedFactSchema = z.discriminatedUnion('kind', [lifecycleSchema, returnSchema, replySchema, receiptChangeSchema])
+const committedFactSchema = z.discriminatedUnion('kind', [lifecycleSchema, returnSchema, replySchema])
 /** Only owning committed transactions call this seam; it is never an HTTP/model input. */
 export type CommittedWorkflowChatFact = z.infer<typeof committedFactSchema>
 export interface CommittedReplySource {
@@ -95,7 +93,7 @@ export class WorkflowChatProjector {
         if (!prior) await tx.query(`insert into workflow_chat_projection_keys(source_event_key,input_hash,post_id)
           values($1,$2,$3)`, [fact.sourceEventKey, commandInputHash(fact), post?.id ?? null])
         await tx.query('delete from workflow_chat_projection_pending where source_event_key=$1', [fact.sourceEventKey])
-        return { fact, changed: Boolean(post) || !prior && fact.kind === 'receipt_changed' }
+        return { fact, changed: Boolean(post) }
       }, { conflictRetries: 2 })
       if (!result) break
       projected++
@@ -108,7 +106,6 @@ export class WorkflowChatProjector {
   }
 
   private async projectLocked(tx: TransactionSql, fact: CommittedWorkflowChatFact): Promise<WorkflowChatPost | undefined> {
-    if (fact.kind === 'receipt_changed') return undefined
     if (fact.kind === 'reply') return this.replyLocked(tx, fact)
     const work = fact.kind === 'lifecycle' ? fact.fact.work : fact.work
     const key = workKey(fact.agent, work)
