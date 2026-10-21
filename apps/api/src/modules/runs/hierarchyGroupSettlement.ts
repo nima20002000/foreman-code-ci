@@ -133,8 +133,7 @@ function assertReturnedMember(context: HierarchyGroupContext, row: MemberRow, gr
     returnId: returned.returnId, sourceActivationId: returned.sourceActivationId, sourceExecutionId: returned.sourceExecutionId,
     resultDigest: row.result_digest, outcome: returned.outcome,
     ...(returned.continuationActivationId ? { continuationActivationId: returned.continuationActivationId } : {}),
-    summary: [...result.summary].slice(0, 300).join(''), remainingFindingsCount: returned.remainingFindings.length,
-    latestDeliverable: returned.latestDeliverable, remainingFindings: returned.remainingFindings })
+    summary: [...result.summary].slice(0, 300).join(''), remainingFindingsCount: returned.remainingFindings.length })
 }
 
 export async function readHierarchyGroupInputLocked(context: HierarchyGroupContext,
@@ -146,15 +145,6 @@ export async function readHierarchyGroupInputLocked(context: HierarchyGroupConte
   const activation = WorkActivationIdentitySchema.parse(row.record)
   const current = await readGroup(context, row.cause_id)
   if (!['ready', 'continued'].includes(current.state)) return repeatConflict('HIERARCHY_GROUP_NOT_READY')
-  const pinned = (await context.sql.query<{ input_json: string }>(
-    'select input_json from run_repeat_slots where run_id=$1 and work_activation_id=$2',
-    [context.scope.runId, activationId])).rows[0]
-  if (pinned) {
-    const input = WorkActivationInputSchema.parse(JSON.parse(pinned.input_json))
-    if (input.work.kind !== 'hierarchy_group' || !sameRepeatValue(input.work.activation, activation)
-      || !sameRepeatValue(input.work.group, current.group)) return repeatConflict('HIERARCHY_CONTINUATION_INPUT_CONFLICT')
-    return input
-  }
   const rows = await memberRows(context, row.cause_id)
   const returns: ReturnType<typeof assertReturnedMember>[] = []
   const failures: ReturnType<typeof HierarchyWorkFailureInputSchema.parse>[] = []

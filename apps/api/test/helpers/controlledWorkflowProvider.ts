@@ -11,12 +11,11 @@ type Output = NonNullable<ExecutionResult['output']>
 export class ControlledWorkflowProvider {
   private readonly provider: CheckpointTestProvider
   private readonly gates = new Map<string, {
-    entered: ReturnType<typeof deferred>; released: ReturnType<typeof deferred>; outcome: 'succeeded' | 'canceled'; executionId?: string
+    entered: ReturnType<typeof deferred>; released: ReturnType<typeof deferred>; outcome: 'succeeded' | 'canceled'
   }>()
   readonly steers: string[] = []
   readonly cancellations: string[] = []
   readonly consultations: string[] = []
-  readonly credentials = new Map<string, string>()
   active = 0
   maximumActive = 0
 
@@ -30,7 +29,7 @@ export class ControlledWorkflowProvider {
   release(nodeId: string, outcome: 'succeeded' | 'canceled' = 'succeeded') {
     const gate = this.gates.get(nodeId)!
     gate.outcome = outcome
-    gate.released.resolve(undefined)
+    gate.released.resolve()
   }
   releaseAll() { for (const node of this.gates.keys()) this.release(node) }
 
@@ -49,15 +48,6 @@ export class ControlledWorkflowProvider {
     const remember = (start: NativeSessionStart) => {
       if (!hasWorkflowRequest(start)) throw new Error('Expected workflow or consultation input')
       request = start.request
-      const subjectId = start.kind === 'workflow-consultation' ? start.consultation.consultationId : request.executionId
-      const token = start.environment?.variables.GRAPHQL_MCP_TOKEN
-      if (token) this.credentials.set(subjectId, token)
-      if (start.kind !== 'workflow-consultation') {
-        const gate = this.gates.get(request.workflowNodeId)
-        if (gate?.executionId && gate.executionId !== request.executionId) this.gates.set(request.workflowNodeId,
-          { entered: deferred(), released: deferred(), outcome: 'succeeded', executionId: request.executionId })
-        else if (gate) gate.executionId = request.executionId
-      }
     }
     manager.createSession = async (start, signal) => {
       remember(start)
@@ -68,18 +58,15 @@ export class ControlledWorkflowProvider {
       remember(start)
       native = await attach(session, start.kind === 'workflow-consultation' ? {
         kind: 'workflow', request: start.request, correlationId: start.correlationId,
-        ...(start.environment ? { environment: start.environment } : {}), instructionsDelivered: true,
+        environment: start.environment, instructionsDelivered: true,
       } : start, signal)
       return native
     }
-    const { gates, consultations } = this
-    const produce = (current: HarnessExecutionRequest) => this.output(current.workflowNodeId, current)
-    const enter = () => { this.active++; this.maximumActive = Math.max(this.maximumActive, this.active) }
-    const leave = () => { this.active-- }
+    const provider = this
     manager.startTurn = async function* (session, input, signal) {
       if (!request) throw new Error('Missing accepted native request')
       const consultation = context.purpose === 'consultation'
-      const gate = consultation ? undefined : gates.get(request.workflowNodeId)
+      const gate = consultation ? undefined : provider.gates.get(request.workflowNodeId)
       if (!consultation && !gate) { yield* startTurn(session, input, signal); return }
       const correlationId = input.clientCorrelationId
       const providerId = `turn-${correlationId}`
@@ -88,17 +75,18 @@ export class ControlledWorkflowProvider {
         payload: { threadId: session.nativeSessionId, turnId: providerId, clientCorrelationId: correlationId,
           turn: { id: providerId, status: 'inProgress' } } }]
       ownHistory.set(correlationId, { events, pendingInteractions: [], correlationId, nativeTurnId: providerId })
-      enter()
+      provider.active++
+      provider.maximumActive = Math.max(provider.maximumActive, provider.active)
       try {
-        if (consultation) consultations.push(correlationId)
+        if (consultation) provider.consultations.push(correlationId)
         await input.onSubmitted?.(providerId)
         yield events[0]!
-        gate?.entered.resolve(undefined)
+        gate?.entered.resolve()
         if (gate) await gate.released.promise
         signal?.throwIfAborted()
         const outcome = gate?.outcome ?? 'succeeded'
         const result: ExecutionResult = outcome === 'canceled' ? { outcome } : {
-          outcome, output: consultation ? { text: 'The delegated work is still in progress.' } : produce(request),
+          outcome, output: consultation ? { text: 'The delegated work is still in progress.' } : provider.output(request.workflowNodeId, request),
         }
         const terminal: NativeHarnessEvent = { sequence: 1, occurredAt: new Date().toISOString(), type: 'turn.completed',
           payload: { threadId: session.nativeSessionId, turnId: providerId, clientCorrelationId: correlationId,
@@ -106,7 +94,7 @@ export class ControlledWorkflowProvider {
         ownHistory.set(correlationId, { events: [...events, terminal], pendingInteractions: [], correlationId,
           nativeTurnId: providerId, terminalResult: result, terminalTurn: { correlationId, providerId, result } })
         yield terminal
-      } finally { leave() }
+      } finally { provider.active-- }
     }
     manager.history = async (session, signal) => currentCorrelation && ownHistory.has(currentCorrelation)
       ? structuredClone(ownHistory.get(currentCorrelation)!) : history(session, signal)

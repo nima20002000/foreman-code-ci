@@ -7,7 +7,7 @@ import { ExecutionLimiter } from './limiter.js'
 import { waitBeforeRetry } from './executionRetryPolicy.js'
 import { assertRepeatNativeUpdate } from '../interactions/repeatNativeEvidence.js'
 import { parseCurrentChoiceResult } from './currentRouting.js'
-import { parseWorkflowWorkResult } from './workflowCoordinationResult.js'
+import { parseWorkResultForInput } from './workHandoffResult.js'
 import { parseWorkflowCoordinationResult } from './workflowCoordinationResult.js'
 import {
   assertRepeatExecution, blockForNode, repeatConflict, repeatDigest, repeatExecutionIdentity, repeatTickIndex,
@@ -80,7 +80,7 @@ export function normalizeRepeatTerminal(version: WorkflowVersionV3, scope: Repea
     }
   }
   if (version.definition.handoffs) {
-    try { parseWorkflowWorkResult(execution.result, version, execution.workflowNodeId, options.resultProtocol, execution.input, options.executionContext) }
+    try { parseWorkResultForInput(execution.result, execution.input, options.executionContext) }
     catch {
       return invalidWorkResult(execution)
     }

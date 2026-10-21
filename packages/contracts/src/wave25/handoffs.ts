@@ -112,15 +112,14 @@ export const HierarchyWorkTaskSchema = z.object({
 }).strict()
 export type HierarchyWorkTask = z.infer<typeof HierarchyWorkTaskSchema>
 
-/** New continuations carry the child's business result under the activation input limit.
- * Optional fields preserve immutable continuation inputs admitted before result expansion. */
+/** Parent context contains bounded summaries and exact durable evidence links,
+ * never the sum of every child's complete native output. */
 export const HierarchyWorkReturnInputSchema = z.object({
   requestId: GraphIdSchema, destinationNodeId: GraphIdSchema, returnId: GraphIdSchema,
   sourceActivationId: GraphIdSchema, sourceExecutionId: GraphIdSchema, resultDigest: GraphDigestSchema,
   outcome: z.enum(['accepted', 'needs_changes']), continuationActivationId: GraphIdSchema.optional(),
   summary: z.string().min(1).max(600).refine(value => [...value].length <= 300, 'HIERARCHY_SUMMARY_TOO_LONG'),
   remainingFindingsCount: z.number().int().min(0).max(1000),
-  latestDeliverable: z.json().optional(), remainingFindings: z.array(z.json()).max(1000).optional(),
 }).strict().refine(value => (value.outcome === 'needs_changes') === (value.continuationActivationId !== undefined),
   'HANDOFF_RETURN_CONTINUATION_CONFLICT')
 export const HierarchyWorkFailureInputSchema = z.object({

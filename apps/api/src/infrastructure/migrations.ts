@@ -1,6 +1,3 @@
-import { hierarchyFeedbackMigration } from './hierarchyFeedbackMigration.js'
-import { workflowChatIndexMigration } from './workflowChatIndexMigration.js'
-import { hierarchyControlSettlementMigration } from './hierarchyControlSettlementMigration.js'
 import { operatorSummaryActivityMigration } from './operatorSummaryActivityMigration.js'
 import { workflowControlsMigration } from './workflowControlsMigration.js'
 import { ciIntegrationSelectionMigration } from './ciIntegrationSelectionMigration.js'
@@ -1021,9 +1018,6 @@ export const migrations = [
   workflowCollaborationMigration,
   coordinationResultMigration,
   workflowControlsMigration,
-  hierarchyControlSettlementMigration,
-  workflowChatIndexMigration,
-  hierarchyFeedbackMigration,
 ] as const
 
 export function assertMigrationVersions(entries: readonly { version: number }[]): void {

@@ -13,7 +13,7 @@ describe.skipIf(!postgresEnabled)('Claude consultation callback authority', () =
     const provider = new ControlledWorkflowProvider(['builder'], (node, request) => coordinationOutput(node, request,
       node === 'master' ? { select: ['build'] } : {}))
     const configuration: ClaudeHarnessConfiguration = { harness: 'claude', model: 'fixture', authMode: 'subscription',
-      configDirectory: '/fixture/profile', permissionMode: 'default', sandbox: 'read-only', tools: ['Read'],
+      configDirectory: '/fixture/profile', permissionMode: 'default', sandbox: 'danger-full-access', tools: ['Read'],
       permissionRules: [], instructions: '', mcpServers: {} }
     let domain: ReturnType<typeof createPostgresClaudeInteractionBridge> | undefined
     const admissions: unknown[] = []

@@ -27,7 +27,7 @@ const LEGACY_GRAPHQL_AGENT_TOOLS = {
     roles: ['master', 'orchestrator', 'coder'],
   },
   'files.reference_read': {
-    label: 'Read a reference', description: 'Read up to 64 KiB of an inherited reference or an attachment admitted to this exact execution or consultation, using fileId and revisionId. Reading grants no file mutations.',
+    label: 'Read a reference', description: 'Read up to 64 KiB of an inherited reference using fileId and revisionId. Permanent references are read-only.',
     roles: ['master', 'orchestrator', 'coder'],
   },
   context_get: { label: "Read run context", description: "Its own identity, role, scope and enabled tools.", roles: ["master", "orchestrator", "coder"] },

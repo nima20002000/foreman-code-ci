@@ -22,7 +22,6 @@ export async function readWorkflowControlDispositionLocked(sql: GraphTransaction
   // Stop still fences a racing native success for this exact execution forever.
   const stop = (await sql.query<{ id: string }>(`select id from run_chat_commands where run_id=$1 and kind='stop'
     and target #>> '{execution,executionId}'=$2 and state in ('recorded','settling','submitting','accepted','completed','unknown')
-    and native_target is not null
     order by sequence limit 1`, [runId, executionId])).rows[0]
   return stop ? { kind: 'stopping', commandId: stop.id } : { kind: 'ordinary' }
 }

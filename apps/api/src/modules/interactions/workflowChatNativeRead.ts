@@ -54,8 +54,8 @@ const textProjection = `, public_events as (
 )
 select owner_id,binding,item_key,harness,session_id,turn_id,message_id,part_id,request_id,role,
   left(content,65536) as content,greatest(coalesce(original_bytes,0),octet_length(content)) as original_bytes,
-  complete,sequence::text,revision::text,(select coalesce(max(revision),0)::text from workflow_native_chat_items where kind=$6 and run_id=$1 and scope_id=$2) as scope_revision
-from messages where ($4::bigint is null or sequence<$4) order by messages.sequence desc limit $5`
+  complete,sequence::text,revision::text,(select coalesce(max(sequence),0)::text from source_events) as scope_revision
+from messages where ($4::bigint is null or sequence<$4) order by sequence desc limit $5`
 
 function beforeCursor(target: WorkflowChatTarget, cursor?: string): string | null {
   if (!cursor) return null
@@ -83,34 +83,24 @@ function nativeMessage(target: WorkflowChatTarget, row: TextRow, content: string
  * Old consultation pages load their actual bindings; recent hints are not a history limit. */
 export async function readWorkflowNativeChat(sql: GraphSqlClient, target: WorkflowChatTarget,
   input: { cursor?: string; limit: number; bindings: CoordinatorConsultationBinding[] }): Promise<WorkflowNativeChatPage> {
-  const kind = target.kind === 'workflow_execution' ? 'execution' : 'consultation'
-  const page = `with message_page as materialized (select source_id,message_key from workflow_native_chat_items
-    where kind=$6 and run_id=$1 and scope_id=$2 and ($4::bigint is null or sequence<$4)
-    order by sequence desc limit $5), source_events as (`
-  const source = page + (target.kind === 'workflow_execution' ? `
+  const source = target.kind === 'workflow_execution' ? `with source_events as (
     select n.sequence,n.record,e.id as owner_id,null::jsonb as binding,
       c.record#>>'{harness,harness}' as harness,e.record->>'nativeSessionId' as session_id
-    from message_page p cross join lateral (
-      select * from harness_native_events where execution_id=p.source_id
-        and workflow_native_message_key(record)=p.message_key offset 0
-    ) n join harness_executions e on e.id=n.execution_id
+    from harness_native_events n join harness_executions e on e.id=n.execution_id
     join agent_configuration_versions c on c.id=e.record->>'agentConfigurationVersionId'
     where e.run_id=$1 and e.id=$2 and e.workflow_node_id=$3
-  )` : `
+  )` : `with source_events as (
     select n.sequence,n.record,c.id as owner_id,c.binding,m.agent->>'configurationVersionId' as configuration_id,
       a.record#>>'{harness,harness}' as harness,c.binding->>'nativeSessionId' as session_id
-    from message_page p cross join lateral (
-      select * from run_coordinator_native_events where consultation_id=p.source_id
-        and workflow_native_message_key(record)=p.message_key offset 0
-    ) n join run_coordinator_consultations c
+    from run_coordinator_native_events n join run_coordinator_consultations c
       on c.id=n.consultation_id and c.run_id=n.run_id
     join run_coordinator_mailboxes m on m.run_id=c.run_id and m.waiting_activation_id=c.waiting_activation_id
     join agent_configuration_versions a on a.id=m.agent->>'configurationVersionId'
     where c.run_id=$1 and c.waiting_activation_id=$2 and m.workflow_node_id=$3
-  )`)
+  )`
   const rows = (await sql.query<TextRow>(source + textProjection, [workflowTargetRunId(target),
     target.kind === 'workflow_execution' ? target.execution.executionId : target.waitingActivationId,
-    target.agent.workflowNodeId, beforeCursor(target, input.cursor), Math.min(100, input.limit) + 1, kind])).rows
+    target.agent.workflowNodeId, beforeCursor(target, input.cursor), Math.min(100, input.limit) + 1])).rows
   const messages: EngineChatMessage[] = [], redactor = nativePersistenceRedactor([])
   let usedBytes = 2
   for (const row of rows.slice(0, Math.min(100, input.limit))) {

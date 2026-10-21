@@ -47,7 +47,7 @@ function conflict(message: string): never {
 export function createWorkflowCollaborationHooks(memoryBoards?: MemoryBoardPort): WorkflowCollaborationHooks {
   return {
     async lifecycleLocked(sql, input) {
-      if ((!input.run.resultProtocol && !input.version.definition.hierarchy) || repeatTickIndex(input.execution.input) !== undefined) return
+      if (!input.run.resultProtocol || repeatTickIndex(input.execution.input) !== undefined) return
       assertGraphTransaction(sql)
       const binding = await readWorkflowCollaborationBindingLocked(sql, input)
       if (!binding) return
@@ -57,7 +57,7 @@ export function createWorkflowCollaborationHooks(memoryBoards?: MemoryBoardPort)
         ...(input.requestGroupId ? { requestGroupId: input.requestGroupId } : {}),
         ...(input.controlContinuationId ? { controlContinuationId: input.controlContinuationId } : {}),
         ...(input.previousExecution ? { previousExecution: input.previousExecution } : {}) })
-      const receipt = input.run.resultProtocol && memoryBoards ? BoardApplicationReceiptSchema.parse(await memoryBoards.applyLifecycleLocked(sql, fact)) : undefined
+      const receipt = memoryBoards && BoardApplicationReceiptSchema.parse(await memoryBoards.applyLifecycleLocked(sql, fact))
       assertReceipt(receipt, fact.sourceEventKey)
       await projectLifecycleLocked(sql, input, fact, receipt)
     },

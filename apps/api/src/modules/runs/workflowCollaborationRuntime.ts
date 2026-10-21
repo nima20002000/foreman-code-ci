@@ -15,7 +15,7 @@ export async function workflowLifecycleLocked(context: Context, execution: Harne
   phase: WorkflowLifecycleInput['phase'], sourceEventKey: string,
   details: Pick<WorkflowLifecycleInput, 'reason' | 'summary' | 'continuationOf' | 'requestGroupId'
     | 'outstandingRequestIds' | 'controlContinuationId' | 'previousExecution'> = {}): Promise<void> {
-  if (!context.hooks.run.resultProtocol && !context.version.definition.hierarchy) return
+  if (!context.hooks.run.resultProtocol) return
   const control = await readWorkflowControlDispositionLocked(context.sql, execution.runId, execution.id)
   if (control.kind === 'superseded' && !['failed', 'canceled'].includes(control.continuation.state)) return
   const hook = context.hooks.collaboration
@@ -27,7 +27,7 @@ export async function workflowLifecycleLocked(context: Context, execution: Harne
 /** input.bind is the one claim/transfer authority for a real execution. */
 export async function workflowAdmissionLifecycleLocked(context: Context, execution: HarnessExecution,
   previousExecutionId: string | null, controlContinuation?: WorkflowControlContinuation): Promise<void> {
-  if (!context.hooks.run.resultProtocol && !context.version.definition.hierarchy) return
+  if (!context.hooks.run.resultProtocol) return
   if (controlContinuation) {
     if (controlContinuation.previousExecution.executionId !== previousExecutionId) return repeatConflict('CONTROL_SUCCESSOR_CONFLICT')
     await workflowLifecycleLocked(context, execution, 'continuation_admitted', `workflow:${execution.id}:admitted`, {
@@ -57,7 +57,7 @@ export async function workflowAdmissionLifecycleLocked(context: Context, executi
 /** Called after the native mutation, before its transaction commits. Native
  * success and its board effects remain factual if later work admission fails. */
 export async function workflowNativeLifecycleLocked(context: Context, change: RepeatNativeChange): Promise<void> {
-  if (!context.hooks.run.resultProtocol && !context.version.definition.hierarchy) return
+  if (!context.hooks.run.resultProtocol) return
   const { next: execution, previous } = change
   const control = await readWorkflowControlDispositionLocked(context.sql, execution.runId, execution.id)
   // Supersession is permanent even when the reserved successor later fails.
@@ -68,7 +68,6 @@ export async function workflowNativeLifecycleLocked(context: Context, change: Re
   }
   if (execution.state !== 'completed' || previous.state === 'completed' || !execution.result) return
   if (execution.result.outcome === 'succeeded') {
-    if (!context.hooks.run.resultProtocol) return // Hierarchy routing does not enable structured board effects.
     const node = context.version.definition.nodes.find(item => item.id === execution.workflowNodeId)
     if (!node || node.kind === 'job') return
     const interval = repeatTickIndex(execution.input) !== undefined

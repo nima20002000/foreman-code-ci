@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { COORDINATION_RESULT_PROTOCOL, type HarnessExecutionRequest } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture, RunStartV3ResultSchema, type RunStartV3Input } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, type RunStartV3Input } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { checkpointRuntimeFixture } from './helpers/wave25Br1003Runtime.js'
-import { hierarchyRuntimeFixture, coordinationOutput } from './helpers/hierarchyRuntimeFixture.js'
+import { hierarchyRuntimeFixture } from './helpers/hierarchyRuntimeFixture.js'
 import { postgresEnabled } from './helpers/wave25Agent3.js'
 import { graphHeaders, graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
 
@@ -54,10 +54,9 @@ describe.skipIf(!postgresEnabled)('immutable workflow result protocol and coordi
     } finally { await f.close() }
   }, 90_000)
 
-  it('starts the saved hierarchy equally through HTTP and MCP while result-protocol enforcement stays off', async () => {
+  it('reports saved hierarchy Start readiness equally through HTTP and MCP while enforcement is off', async () => {
     const f = await currentOperatorIntegration({ fixture: hierarchyRuntimeFixture(), insertRun: false,
-      approvalNodeIds: [], collaborationPorts: {}, outputFor: (node, request) => coordinationOutput(node, request,
-        node === 'master' ? { select: ['build'] } : {}) })
+      approvalNodeIds: [], collaborationPorts: {} })
     try {
       const version = f.f.version
       const revision = (await f.db.pool.query<{ revision: string }>('select revision::text from workflows where id=$1',
@@ -68,22 +67,21 @@ describe.skipIf(!postgresEnabled)('immutable workflow result protocol and coordi
         expectedLocationRevision: f.f.run.executionLocation!.locationRevision, input: { task: 'Run the saved hierarchy' } }
       const url = `/api/management/workspaces/${version.workspaceId}/workflows/${version.workflowId}/runs`
       const http = await f.app.inject({ method: 'POST', url, headers: graphHeaders(f.writer.token), payload: input })
-      expect(http.statusCode, http.body).toBe(201)
-      const started = RunStartV3ResultSchema.parse(http.json())
-      expect(started.run.resultProtocol).toBeUndefined()
+      expect(http.statusCode, http.body).toBe(409)
+      expect(http.json()).toMatchObject({ error: { code: 'HIERARCHY_RESULT_PROTOCOL_UNAVAILABLE' } })
       const mcp = await graphRpc(f.app, f.writer.token, 'tools/call', { name: 'run_start', arguments: input })
-      expect(mcp.result?.isError).not.toBe(true)
-      expect(graphRpcValue(mcp.result)).toMatchObject({ run: { id: started.run.id }, replayed: true })
+      expect(mcp.result?.isError).toBe(true)
+      expect(graphRpcValue(mcp.result)).toMatchObject({ error: { code: 'HIERARCHY_RESULT_PROTOCOL_UNAVAILABLE' } })
       const reader = await f.access.issue({ name: 'Read-only hierarchy caller', audience: 'operator',
         expiresAt: new Date(Date.now() + 300_000), grants: [{ actions: ['runs:read'], scope: { workspaceIds: [version.workspaceId] } }] })
       expect((await f.app.inject({ method: 'POST', url, headers: graphHeaders(reader.token), payload: input })).statusCode).toBe(403)
       const denied = await graphRpc(f.app, reader.token, 'tools/call', { name: 'run_start', arguments: input })
       expect(graphRpcValue(denied.result)).toMatchObject({ error: { code: 'ACCESS_DENIED' } })
-      await expect.poll(async () => (await f.runs.get(started.run.id))?.outcome, { timeout: 30_000 }).toBe('succeeded')
-      expect((await f.db.pool.query('select id from runs where workflow_id=$1', [version.workflowId])).rows).toEqual([{ id: started.run.id }])
+      expect((await f.db.pool.query('select id from runs where workflow_id=$1', [version.workflowId])).rows).toEqual([])
       expect((await f.db.pool.query('select record from workflow_versions where id=$1', [version.id])).rows)
         .toEqual([{ record: version }])
-      expect(f.provider.counts.starts).toBe(5)
+      expect(f.provider.counts.sessions).toBe(0)
+      expect(f.provider.counts.starts).toBe(0)
     } finally { await f.close() }
   }, 90_000)
 })
