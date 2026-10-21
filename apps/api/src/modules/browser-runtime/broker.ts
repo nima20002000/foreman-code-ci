@@ -48,18 +48,22 @@ export class BrowserBroker implements BrowserLifecyclePort {
       if (live.record.session.selectedTabId === owner.tabId) live.record.session.selectedTabId = live.record.leases[0]?.lease.tabId ?? null
       void this.persist(live).catch(() => { live.gate.fence(); live.record.session.state = 'recovering' })
     })
-    options.driver.onPopup((profileId, generation, openerTargetId, tab) => {
+    options.driver.onPopup(async (profileId, generation, openerTargetId, tab) => {
       const owner = [...this.sessions.values()].find(value => value.record.session.profileId === profileId
         && value.record.session.browserGeneration === generation
         && value.record.leases.some(lease => lease.targetId === openerTargetId))
-      if (!owner || owner.record.closing) return
+      if (!owner || owner.record.closing || owner.record.session.state === 'closed') {
+        await options.driver.closeTab(profileId, generation, tab.targetId)
+        return
+      }
       const opener = owner.record.leases.find(value => value.targetId === openerTargetId)!
       const lease = BrowserTabLeaseSchema.parse({ id: this.id(), sessionId: owner.record.session.id,
         tabId: this.id(), browserGeneration: generation, openerTabId: opener.lease.tabId, title: tab.title, url: tab.url })
       owner.record.leases.push({ lease, targetId: tab.targetId })
-      void this.persist(owner).catch(() => {
+      await this.persist(owner).catch(error => {
         owner.gate.fence(); owner.record.control.state = 'paused'
         owner.record.control.reason = 'Browser ownership could not be saved. Reconnect before continuing.'
+        throw error
       })
     })
   }
@@ -280,12 +284,24 @@ export class BrowserBroker implements BrowserLifecyclePort {
   }
 
   private async allocate(profileId: string, commandId: string, readOnly: boolean, subject?: AgentSubject): Promise<LiveSession> {
+    return this.controlOperation(`profile:${profileId}`, async () => {
     if (this.maintenanceProfiles.has(profileId)) throw new DomainError('PROFILE_BUSY', 'This profile is being maintained.', 409)
     this.allocatingProfiles.set(profileId, (this.allocatingProfiles.get(profileId) ?? 0) + 1)
     try { return await this.allocateNative(profileId, commandId, readOnly, subject) } finally {
       const remaining = (this.allocatingProfiles.get(profileId) ?? 1) - 1
       if (remaining) this.allocatingProfiles.set(profileId, remaining); else this.allocatingProfiles.delete(profileId)
+      if (!this.isProfileBusy(profileId)) await this.options.driver.closeProfile(profileId)
     }
+    })
+  }
+
+  private retireIdleProfile(profileId: string): Promise<void> {
+    return this.controlOperation(`profile:${profileId}`, async () => {
+      if (this.isProfileBusy(profileId) || this.maintenanceProfiles.has(profileId)) return
+      this.maintenanceProfiles.add(profileId)
+      try { await this.options.driver.closeProfile(profileId) }
+      finally { this.maintenanceProfiles.delete(profileId) }
+    })
   }
 
   private async allocateNative(profileId: string, commandId: string, readOnly: boolean, subject?: AgentSubject): Promise<LiveSession> {
@@ -695,7 +711,10 @@ export class BrowserBroker implements BrowserLifecyclePort {
     const sessionId = live.record.session.id
     if (live.record.session.state === 'recovering') { await this.restoreOwnedSession(live); await this.persist(live) }
     if (live.record.session.state === 'closed') {
-      try { await this.options.closeSessionResources?.(sessionId) } catch {
+      try {
+        await this.options.closeSessionResources?.(sessionId)
+        await this.retireIdleProfile(live.record.session.profileId)
+      } catch {
         return { sessionId, state: 'pending', reason: 'Browser media or file cleanup is not yet confirmed.' }
       }
       return { sessionId, state: 'already_closed', reason: null }
@@ -708,7 +727,11 @@ export class BrowserBroker implements BrowserLifecyclePort {
       return { sessionId, state: 'pending', reason: 'Browser media or file cleanup is not yet confirmed.' }
     }
     for (const { lease, targetId } of [...live.record.leases]) {
-      try { await this.options.driver.closeTab(live.record.session.profileId, live.record.session.browserGeneration, targetId) } catch {
+      try {
+        await this.options.driver.settlePopups(live.record.session.profileId, live.record.session.browserGeneration)
+        await this.options.driver.closeTab(live.record.session.profileId, live.record.session.browserGeneration, targetId)
+        await this.options.driver.settlePopups(live.record.session.profileId, live.record.session.browserGeneration)
+      } catch {
         return { sessionId, state: 'pending', reason: 'Native tab closure is not yet confirmed.' }
       }
       live.record.leases = live.record.leases.filter(value => value.lease.id !== lease.id)
@@ -719,6 +742,8 @@ export class BrowserBroker implements BrowserLifecyclePort {
     live.record.control.reason = 'Browser session closed.'
     live.gate.close()
     await this.persist(live)
+    try { await this.retireIdleProfile(live.record.session.profileId) }
+    catch { return { sessionId, state: 'pending', reason: 'Idle browser process closure is not yet confirmed.' } }
     return { sessionId, state: 'closed', reason: null }
   }
 }

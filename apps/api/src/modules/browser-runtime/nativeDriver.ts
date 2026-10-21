@@ -21,6 +21,7 @@ interface AttachedTab {
 interface NativeProfile {
   generation: number; process: ChildProcess | null; identity: BrowserProcessIdentity; connection: BrowserCdpConnection
   tabs: Map<string, AttachedTab>; headless: boolean
+  pendingPopups: Set<Promise<void>>
 }
 interface HeldInputRecord {
   generation: number
@@ -97,7 +98,7 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
   private install(profileId: string, identity: BrowserProcessIdentity, connection: BrowserCdpConnection,
     processHandle: ChildProcess | null): NativeProfile {
     const profile: NativeProfile = { generation: identity.generation, process: processHandle, identity,
-      connection, tabs: new Map(), headless: identity.headless }
+      connection, tabs: new Map(), headless: identity.headless, pendingPopups: new Set() }
     this.profiles.set(profileId, profile)
     connection.onEvent(event => this.event(profileId, profile, event))
     connection.onDisconnected(() => {
@@ -223,10 +224,13 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
     if (event.method === 'Target.targetCreated') {
       const info = object(event.params.targetInfo), openerId = text(info.openerId), targetId = text(info.targetId)
       if (info.type !== 'page' || !openerId || !profile.tabs.has(openerId) || !targetId) return
-      void this.attach(profile, targetId, text(info.title), text(info.url)).then(tab => {
-        for (const listener of this.popups) listener(profileId, profile.generation, openerId,
+      const pending = this.attach(profile, targetId, text(info.title), text(info.url)).then(async tab => {
+        for (const listener of this.popups) await listener(profileId, profile.generation, openerId,
           { targetId: tab.id, title: tab.title, url: tab.url })
-      }).catch(() => this.options.onDisconnected(profileId, profile.generation))
+      })
+      profile.pendingPopups.add(pending)
+      void pending.finally(() => profile.pendingPopups.delete(pending))
+        .catch(() => this.options.onDisconnected(profileId, profile.generation))
       return
     }
     const tab = [...profile.tabs.values()].find(value => value.sessionId === event.sessionId)
@@ -601,6 +605,11 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
       await profile.connection.send('Storage.clearCookies')
       await profile.connection.send('Storage.setCookies', { cookies: state.cookies })
     } finally { await staging.closeProfile(profileId) }
+  }
+
+  async settlePopups(profileId: string, generation: number): Promise<void> {
+    const profile = this.profile(profileId, generation)
+    while (profile.pendingPopups.size) await Promise.all([...profile.pendingPopups])
   }
 
   async closeProfile(profileId: string): Promise<void> {

@@ -129,6 +129,7 @@ function nativeFixture(): BrowserNativeDriver {
   }
   return {
     openProfile: async () => ({ generation: 1 }), reconnectProfile: async () => ({ generation: 1 }),
+    closeProfile: async () => undefined, settlePopups: async () => undefined,
     restoreTab: async (profile, generation, target) => own(profile, generation, target),
     createTab: async (profile, generation) => {
       const tab = { targetId: randomUUID(), title: 'Fixture page', url: 'about:blank', profile, generation }

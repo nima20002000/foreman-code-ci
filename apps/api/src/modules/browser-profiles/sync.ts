@@ -1,5 +1,6 @@
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { BrowserProfileSnapshotManifestSchema, BrowserProfileSyncJobSchema } from '@foreman-code/contracts/browser-profiles'
+import { BrowserProfileSnapshotManifestSchema, BrowserProfileSyncJobSchema,
+  BrowserProfileSyncPageSchema, type BrowserProfileSyncPage } from '@foreman-code/contracts/browser-profiles'
 import { DomainError } from '../errors.js'
 import { browserInputHash, browserPageCursor, browserPageLimit, readBrowserCursor, sameBrowserSnapshot } from './identity.js'
 import { newBrowserReplica, requireBrowserProfile, type BrowserProfileService } from './service.js'
@@ -80,7 +81,7 @@ export async function admitBrowserProfileSync(service: BrowserProfileService, pr
 
 export async function readBrowserProfileSync(service: BrowserProfileService, principal: ManagementPrincipal, input: {
   jobId: string; profileCursor?: string; targetCursor?: string; limit?: number
-}): Promise<{ job: BrowserProfileSyncJob; nextProfileCursor: string | null; nextTargetCursor: string | null }> {
+}): Promise<BrowserProfileSyncPage> {
   const job = await service.repository.read(tx => tx.job(input.jobId))
   if (!job) throw new DomainError('NOT_FOUND', 'Browser sync job not found.', 404)
   await service.authority.authorize(principal, 'settings:read', [...new Set(job.targets.map(target => target.computerId))])
@@ -91,9 +92,12 @@ export async function readBrowserProfileSync(service: BrowserProfileService, pri
     .sort((a, b) => a.profileId.localeCompare(b.profileId))
   const key = (target: BrowserProfileSyncJob['targets'][number]) => `${target.profileId}/${target.computerId}`
   const targets = job.targets.filter(target => !targetStart || key(target) > targetStart).sort((a, b) => key(a).localeCompare(key(b)))
-  return { job: { ...job, profiles: profiles.slice(0, limit), targets: targets.slice(0, limit) },
+  const pageTargets = targets.slice(0, limit)
+  const selectedProfiles = new Set([...profiles.slice(0, limit), ...pageTargets].map(value => value.profileId))
+  return BrowserProfileSyncPageSchema.parse({ job: { ...job,
+    profiles: job.profiles.filter(value => selectedProfiles.has(value.profileId)), targets: pageTargets },
     nextProfileCursor: profiles.length > limit ? browserPageCursor(`${job.id}:profiles`, profiles[limit - 1]!.profileId) : null,
-    nextTargetCursor: targets.length > limit ? browserPageCursor(`${job.id}:targets`, key(targets[limit - 1]!)) : null }
+    nextTargetCursor: targets.length > limit ? browserPageCursor(`${job.id}:targets`, key(targets[limit - 1]!)) : null })
 }
 
 export class BrowserProfileSyncCoordinator {

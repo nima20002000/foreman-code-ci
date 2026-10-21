@@ -32,8 +32,9 @@ function nativeFixture() {
   let nextTarget = 0
   const profiles = new Map<string, number>()
   const tabs = new Map<string, NativeBrowserTab & { profileId: string; generation: number }>()
-  const driver: BrowserNativeDriver & { closeProfile(profileId: string): Promise<void> } = {
+  const driver: BrowserNativeDriver = {
     closeProfile: vi.fn(async profileId => { profiles.delete(profileId) }),
+    settlePopups: vi.fn(async () => undefined),
     openProfile: vi.fn(async profileId => {
       const generation = profiles.get(profileId) ?? 1; profiles.set(profileId, generation); return { generation }
     }),

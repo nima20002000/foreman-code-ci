@@ -1,9 +1,10 @@
 import { createBrowserHttp, browserProfilePath, browserSessionPath, type BrowserHttpOptions,
   type BrowserMethodCodec, type BrowserWireCodec } from '../agent-browser/http'
 import type { BrowserProfileCatalog, BrowserProfilesPort, BrowserProfileSyncJob } from './types'
+import { BrowserProfileSyncPageSchema, type BrowserProfileSyncPage } from '@foreman-code/contracts/browser-profiles'
 
 type CatalogPage = BrowserProfileCatalog & { nextCursor: string | null; revision: number }
-type SyncPage = { job: BrowserProfileSyncJob; nextProfileCursor: string | null; nextTargetCursor: string | null }
+type SyncPage = BrowserProfileSyncPage
 export type BrowserProfileCodecs = { [Key in Exclude<keyof BrowserProfilesPort, 'readCatalog' | 'readSync'>]: BrowserMethodCodec<BrowserProfilesPort[Key]> } & {
   readCatalog: BrowserWireCodec<[string | null, AbortSignal], CatalogPage>
   readSync: BrowserWireCodec<[string, string | null, string | null, AbortSignal], SyncPage>
@@ -42,7 +43,7 @@ async function collectSync(jobId: string, read: (profile: string | null, target:
     let profileDone = false, targetDone = false, revision: number | undefined
     for (let pageNumber = 0; pageNumber < 1000; pageNumber += 1) {
       signal.throwIfAborted()
-      const page = await read(profile, target)
+      const page = BrowserProfileSyncPageSchema.parse(await read(profile, target))
       if (page.job.id !== jobId) throw new Error('Browser sync readback belongs to a different job.')
       if (revision !== undefined && revision !== page.job.revision) break
       revision = page.job.revision

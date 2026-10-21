@@ -35,6 +35,7 @@ export async function runtimeRecoveryFixture() {
   execution: { runId: 'run', workflowVersionId: 'version', executionId: 'execution', attempt: 1 } }
   const tabs = new Map<string, NativeBrowserTab>(), screenshots = { bytes: Buffer.from('fixture screenshot') }
   const driver: BrowserNativeDriver = {
+    closeProfile: vi.fn(async () => undefined), settlePopups: vi.fn(async () => undefined),
     openProfile: vi.fn(async () => ({ generation: 1 })), reconnectProfile: vi.fn(async () => ({ generation: 1 })),
     restoreTab: vi.fn(async (_profile, _generation, target) => tabs.get(target) ?? null),
     createTab: vi.fn(async () => {

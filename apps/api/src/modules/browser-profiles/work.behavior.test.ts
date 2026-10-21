@@ -4,6 +4,7 @@ import { reconcileBrowserProfileIntent } from './reconcile.js'
 import { profileWorkFixture } from './work.test-support.js'
 import { held } from '../browser-runtime/recovery.test-support.js'
 import { DomainError } from '../errors.js'
+import { BrowserProfileSyncJobSchema, BrowserProfileSyncPageSchema } from '@foreman-code/contracts/browser-profiles'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await dispose() })
@@ -129,4 +130,21 @@ it('keeps profile metadata associated with every independently paginated sync ta
     profileCursor: first.nextProfileCursor!, targetCursor: first.nextTargetCursor! })
   expect(second.job.targets).toHaveLength(1)
   expect(second.job.profiles.map(value => value.profileId)).toContain(second.job.targets[0]!.profileId)
+  expect(BrowserProfileSyncPageSchema.safeParse(second).success).toBe(true)
+})
+
+it('reads a partial job page without presenting that page as a complete job', async () => {
+  const f = profileWorkFixture()
+  f.statuses.set('another-worker', 'ready')
+  const profile = (await f.service.create(f.owner, { name: 'Profile', computerId: 'source' })).value
+  await reconcileBrowserProfileIntent(f.service, (await f.service.get(f.owner, profile.id)).operations[0]!.id)
+  vi.mocked(f.host.apply).mockRejectedValueOnce(new DomainError('SNAPSHOT_INVALID', 'Invalid transfer.', 422))
+  const job = (await admitBrowserProfileSync(f.service, f.owner, {})).value
+  expect((await new BrowserProfileSyncCoordinator(f.service).reconcile(job.id)).state).toBe('partial')
+  const page = await readBrowserProfileSync(f.service, f.owner, { jobId: job.id, limit: 1 })
+  expect(page.job.state).toBe('partial')
+  expect(page.job.targets).toHaveLength(1)
+  expect(BrowserProfileSyncPageSchema.safeParse(page).success).toBe(true)
+  expect(BrowserProfileSyncJobSchema.safeParse(page.job).success).toBe(false)
+  expect(BrowserProfileSyncPageSchema.safeParse({ ...page, job: { ...page.job, profiles: [] } }).success).toBe(false)
 })

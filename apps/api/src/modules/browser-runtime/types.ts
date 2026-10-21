@@ -43,6 +43,8 @@ export interface NativeBrowserProfile { generation: number }
 /** The native adapter is private. All CDP sends, including helper follow-ups, re-enter checked dispatch. */
 export interface BrowserNativeDriver {
   openProfile(profileId: string): Promise<NativeBrowserProfile>
+  closeProfile(profileId: string): Promise<void>
+  settlePopups(profileId: string, generation: number): Promise<void>
   reconnectProfile(profileId: string): Promise<NativeBrowserProfile | null>
   restoreTab(profileId: string, generation: number, targetId: string): Promise<NativeBrowserTab | null>
   createTab(profileId: string, generation: number, allocationToken?: string): Promise<NativeBrowserTab>
@@ -56,7 +58,7 @@ export interface BrowserNativeDriver {
   openLocal(profileId: string, generation: number, targetId: string): Promise<void>
   facts(profileId: string, generation: number, targetId: string): BrowserNativeFacts
   onTabClosed(listener: (profileId: string, generation: number, targetId: string) => void): () => void
-  onPopup(listener: (profileId: string, generation: number, openerTargetId: string, tab: NativeBrowserTab) => void): () => void
+  onPopup(listener: (profileId: string, generation: number, openerTargetId: string, tab: NativeBrowserTab) => void | Promise<void>): () => void
 }
 export type BrowserNativeDispatch = (method: string, params?: Record<string, unknown>) => Promise<unknown>
 
