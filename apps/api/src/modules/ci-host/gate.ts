@@ -6,7 +6,7 @@ import type { HostCiComputer, HostCiEndpoint } from './service.js'
 import type { CiIntegrationInventory } from './integrationParts.js'
 import { planCiParts, runsOnCircleCi, type CiUnitInventory } from './parts.js'
 import { buildComputerIntegrationShards } from './capacity.js'
-import { executorSpeedKey, type ExecutorSpeeds } from './executorSpeed.js'
+import { executorSpeedFactor, executorSpeedKey, type ExecutorSpeeds } from './executorSpeed.js'
 import { withoutReservedCloudSlots } from './cloudSlots.js'
 import { CLOUD_GATE_JOB_BUDGET_MS } from './cloudJobLimits.js'
 
@@ -137,10 +137,7 @@ export async function planCiGate(input: CiRunInput, integration: CiIntegrationIn
   const load = new Map<GateComputer, IntegrationLoad[]>(integrationFleet.map(item => [item, []]))
   const maxCloudParts = Math.max(0, CI_MAX_RUN_TICKETS - checks.length - hosts.length)
   let cloudPartCount = 0
-  const factor = (item: GateComputer) => {
-    const speed = speeds.get(executorSpeedKey(item.computer))
-    return typeof speed === 'number' ? speed : speed?.factor ?? 1
-  }
+  const factor = (item: GateComputer) => executorSpeedFactor(item.computer, speeds)
   const measuredTime = (item: GateComputer, work: number, nominal: number,
     estimate: 'typical' | 'conservative' = 'typical') => {
     const speed = speeds.get(executorSpeedKey(item.computer))
