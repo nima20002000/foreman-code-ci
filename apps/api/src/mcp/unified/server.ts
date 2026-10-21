@@ -1,3 +1,6 @@
+import { workflowChatTools } from '../operator/tools/workflowChat.js'
+import { registerToolDefinition } from '../operator/definition.js'
+import { invokeOperatorTool } from '../operator/invoke.js'
 import { MCP_DISPLAY_NAME, PRODUCT_SLUG } from '@foreman-code/contracts/product'
 import { McpServer } from '@modelcontextprotocol/server'
 import { paginateToolLists } from '../toolListPagination.js'
@@ -167,6 +170,13 @@ export async function createGraphqlMcpServer(context: GraphqlMcpContext, request
       await registerAppTools(collector, { principal: context.principal, interactions: context.interactions!,
         ...(context.bugReports ? { bugReports: context.bugReports } : {}),
         ...(context.signal ? { signal: context.signal } : {}) })
+      if (context.operator?.workflowChat) {
+        for (const tool of workflowChatTools(context.operator.workflowChat)) {
+          if (tool.name !== 'workflow_chat_read' && tool.name !== 'workflow_chat_post') continue
+          registerToolDefinition(collector, { principal: context.principal, services: context.operator }, tool,
+            { invoke: invokeOperatorTool })
+        }
+      }
       if (context.references) registerExecutionReferenceTools(collector, context.principal, context.references)
       if (context.operator) registerCiTools(collector, { principal: context.principal, services: context.operator,
         ...(context.signal ? { signal: context.signal } : {}) })
