@@ -238,7 +238,7 @@ export const CiPrioritySchema = z.enum(['normal', 'high'])
 export const CiPriorityReasonSchema = z.enum(['normal', 'requested', 'ci-infrastructure', 'gate'])
 export const CiCancellationSchema = z.object({
   principalId: IdSchema, source: z.enum(['http', 'mcp']), commandId: IdSchema,
-  runId: IdSchema.optional(), reason: z.enum(['direct', 'run_stop', 'superseded', 'gate_failed']),
+  runId: IdSchema.optional(), reason: z.enum(['direct', 'run_stop', 'superseded']),
 }).strict()
 export type CiCancellation = z.infer<typeof CiCancellationSchema>
 export const CiComputerRefSchema = z.object({ kind: z.enum(['main', 'device', 'cloud']), mainId: z.string(), deviceId: z.string().optional(),
