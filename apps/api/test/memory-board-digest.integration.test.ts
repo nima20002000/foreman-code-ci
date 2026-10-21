@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { AgentNodeRef, MemoryCard, MemoryCardWorkSelection } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
+import { memoryBoardsMigration } from '../src/infrastructure/memoryBoardsMigration.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { MemoryBoardService } from '../src/modules/memory-boards/service.js'
 import { memoryFixture } from '../src/modules/memory-boards/testing/fixture.js'
@@ -23,6 +24,7 @@ describe.skipIf(!postgresEnabled)('Memory board digest selection', () => {
   beforeAll(async () => {
     database = await agent3Database()
     await withTransaction(database.pool, async tx => {
+      await tx.query(memoryBoardsMigration.sql)
       await tx.query('create table memory_test_owner(id text primary key,record jsonb not null)')
       await tx.query('create table memory_test_facts(id text primary key,record jsonb not null)')
     })

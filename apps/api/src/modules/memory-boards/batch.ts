@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { MemoryBoardMutationSchema, type AgentSubject, type LogicalWorkRef, type MemoryBoardMutation } from '@foreman-code/contracts'
-import { lockSelectionRuns } from './runLocks.js'
+import { MemoryBoardMutationSchema, type AgentSubject, type MemoryBoardMutation } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { GraphTransactionSql } from '../run-graph/connection.js'
 import type { BoardRow, MemoryBoardAuthority, MemoryTool, MutationContext, Operation } from './types.js'
@@ -34,14 +33,13 @@ export async function applyBatch(tx: GraphTransactionSql, authority: MemoryBoard
       ? await authorizeCaller(tx,authority,caller.principal,scope,mutationTool(operation))
       : await authorizeSubject(tx,authority,caller.subject,scope,mutationTool(operation)))
   }
-  const currentWork: LogicalWorkRef[] = []
+  const currentWorkKeys: string[] = []
   // Default current-work binding also shares the lifecycle's work serialization.
   for (const context of contexts) if (context.subject?.kind === 'execution') {
     const current = await authority.currentWork(tx,context.subject)
-    if (current) currentWork.push(current.work)
+    if (current) currentWorkKeys.push(workKey(current.work))
   }
-  await lockSelectionRuns(tx, operations, currentWork)
-  await lockSelections(tx,operations,currentWork.map(workKey))
+  await lockSelections(tx,operations,currentWorkKeys)
   const commands = [...new Set(operations.map((operation,index) => `${contexts[index]!.principalId}:${operation.commandId}`))].sort()
   for (const key of commands) await lockIdentity(tx,`command:${key}`)
   const rows = new Map<string,BoardRow>()

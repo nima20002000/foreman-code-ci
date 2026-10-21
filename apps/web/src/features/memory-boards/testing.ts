@@ -67,16 +67,8 @@ export function createMemoryTestPort(initial: { cards?: MemoryCard[]; notes?: Me
       calls.push({ method: 'card', value: cardId })
       const card = cards.get(cardId)
       if (!card) throw new ApiError({ code: 'NOT_FOUND', message: 'This card is unavailable.' }, 404)
-      const { items: bindings, ...bindingPage } = page(structuredClone(control.bindings), board.revision, { limit: options?.limit })
-      const { items: claims, ...claimPage } = page(structuredClone(control.claims), board.revision, { limit: options?.limit })
-      return { card: structuredClone(card), bindings, claims,
-        bindingPage, claimPage,
-        workSummary: { activeBindings: control.bindings.filter(binding => ['queued','running','waiting_children','awaiting_acceptance','blocked'].includes(binding.state)).length,
-          unresolvedFailures: control.bindings.filter(binding => !binding.resolution && ['failed','canceled'].includes(binding.state)).length,
-          armedClaims: control.claims.filter(claim => claim.state === 'armed').length }, history: page(control.history, board.revision, options) }
+      return { card: structuredClone(card), bindings: structuredClone(control.bindings), claims: structuredClone(control.claims), history: page(control.history, board.revision, options) }
     },
-    readBindings: async (_boardId, _cardId, options) => page(control.bindings, board.revision, options),
-    readClaims: async (_boardId, _cardId, options) => page(control.claims, board.revision, options),
     readNotes: async (_id, archived, options) => { calls.push({ method: 'notes', value: archived }); return page([...notes.values()].filter((item) => item.archived === archived), board.revision, options) },
     readCommand: async (_id, commandId) => { calls.push({ method: 'command', value: commandId }); return control.lookup ? control.lookup(commandId) : commands.get(commandId) ?? { commandId, state: 'unknown' } },
     readChanges: async () => ({ ...page([], board.revision), watermark: board.revision, resetRequired: false }),
