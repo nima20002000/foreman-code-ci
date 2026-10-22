@@ -1317,6 +1317,38 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
     await restarted.service.shutdown()
   })
 
+  it('settles a Claude turn whose process died with the previous API as retryable and runs the queued turn', async () => {
+    const first = makeService()
+    const workspace = fixture.scope.workspaceId
+    const read = (service: AgentChatService) => () => service.read(writer, workspace, query(claudeNode))
+    const warm = await first.service.send(writer, workspace, request(claudeNode, 'warm', null))
+    await settled(first.service, read(first.service))
+    const id = warm.state.conversation!.id
+    FakeNative.all.at(-1)!.hold = true
+    const inflight = await first.service.send(writer, workspace, request(claudeNode, 'inflight', id))
+    await settled(first.service, read(first.service), (value) => value.activeTurn?.requestId === inflight.turn.requestId
+      && value.turns.some((turn) => turn.requestId === inflight.turn.requestId && turn.delivery === 'accepted'))
+    const queued = await first.service.send(writer, workspace, request(claudeNode, 'after restart', id))
+    await first.service.shutdown().catch(() => { /* ignore: only the durable rows matter after the simulated crash. */ })
+    // The resumed transcript proves the message was submitted but has no result: the old process never finished it.
+    const correlationId = agentChatCorrelation(id, inflight.turn.requestId)
+    const restarted = makeService({ native: (harness) => {
+      const native = new FakeNative(harness)
+      const previous = native.reconcile.bind(native)
+      native.reconcile = async (session, correlation) => correlation === correlationId
+        ? { correlationId, events: [], pendingInteractions: [], nativeSubmission: { kind: 'message', nativeSessionId: session.nativeSessionId,
+            nativeMessageId: 'turn-2', clientCorrelationId: correlationId } }
+        : previous(session, correlation)
+      return native
+    } })
+    await restarted.service.recover()
+    const done = await settled(restarted.service, read(restarted.service))
+    const byId = new Map(done.turns.map((turn) => [turn.requestId, turn.delivery]))
+    expect(byId.get(inflight.turn.requestId), JSON.stringify(done.turns)).toBe('failed')
+    expect(byId.get(queued.turn.requestId), JSON.stringify(done.turns)).toBe('completed')
+    await restarted.service.shutdown()
+  })
+
   it('A-R09/A-R10/A-R20 recovers the exact Codex answer once through HTTP history/state and MCP', async () => {
     const repository = new PostgresAgentChatRepository(pool)
     const workspaceId = fixture.scope.workspaceId
