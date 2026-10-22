@@ -250,26 +250,43 @@ describe('installed managed browser against a deterministic local website', () =
     }
   }, 30_000)
 
-  it('starts agent browsers headless even when the host has a graphical desktop', async () => {
+  it('starts agent browsers as a normal windowed Chrome in an invisible 1440x900 display, not on the host desktop', async () => {
     const directory = join(root, 'desktop-host-profile')
     await mkdir(directory, { recursive: true, mode: 0o700 })
-    const previous = process.env.DISPLAY
+    const previous = { DISPLAY: process.env.DISPLAY, WAYLAND_DISPLAY: process.env.WAYLAND_DISPLAY }
     process.env.DISPLAY = ':foreman-unused-display'
+    process.env.WAYLAND_DISPLAY = 'foreman-unused-wayland'
     const driver = new ManagedBrowserNativeDriver({ runtime, actionDirectory: root,
       profileDirectory: async () => ({ directory, generation: 1 }), allocateGeneration: async () => 1,
       onOrigin: async () => undefined, onDisconnected: () => undefined })
+    let display = ''
     try {
       const opened = await driver.openProfile('desktop-host')
-      await driver.createTab('desktop-host', opened.generation)
-      const identity = JSON.parse(await readFile(join(directory, 'foreman-process.json'), 'utf8')) as { headless: boolean; endpoint: string }
+      const tab = await driver.createTab('desktop-host', opened.generation)
+      const identity = JSON.parse(await readFile(join(directory, 'foreman-process.json'), 'utf8')) as { headless: boolean; endpoint: string; pid: number }
       expect(identity.headless).toBe(true)
-      // The browser itself reports headless mode; its command line is not a stable place to read it from.
+      // The browser runs inside its own X display, never the person's desktop or Wayland session.
+      const environment = (await readFile(`/proc/${identity.pid}/environ`, 'utf8')).split('\0')
+      display = environment.find(value => value.startsWith('DISPLAY='))?.slice('DISPLAY='.length) ?? ''
+      expect(display).toMatch(/^:\d+$/)
+      expect(environment.some(value => value.startsWith('WAYLAND_DISPLAY='))).toBe(false)
       const version = await (await fetch(`http://${new URL(identity.endpoint).host}/json/version`)).json() as { 'User-Agent': string }
-      expect(version['User-Agent']).toContain('HeadlessChrome')
+      expect(version['User-Agent']).toMatch(/ Chrome\/\d+/)
+      expect(version['User-Agent']).not.toContain('Headless')
+      const evaluated = await driver.dispatch('desktop-host', opened.generation, tab.targetId, 'Runtime.evaluate', { returnByValue: true,
+        expression: 'JSON.stringify({ webdriver: navigator.webdriver, userAgent: navigator.userAgent, screen: [screen.width, screen.height], outer: outerWidth })' }) as { result: { value: string } }
+      const facts = JSON.parse(evaluated.result.value) as { webdriver: boolean; userAgent: string; screen: number[]; outer: number }
+      expect(facts.webdriver).toBe(false)
+      expect(facts.userAgent).not.toContain('Headless')
+      expect(facts.screen).toEqual([1440, 900])
+      expect(facts.outer).toBeGreaterThanOrEqual(1400)
     } finally {
       await driver.closeProfile('desktop-host')
-      if (previous === undefined) delete process.env.DISPLAY; else process.env.DISPLAY = previous
+      await driver.closeVirtualDisplay()
+      for (const [name, value] of Object.entries(previous)) if (value === undefined) delete process.env[name]; else process.env[name] = value
     }
+    // Shutting the host down removes its virtual display.
+    await expect.poll(() => readdir('/tmp/.X11-unix').then(names => names.includes(`X${display.slice(1)}`))).toBe(false)
   }, 30_000)
 
   it('performs successive helper actions without changing the immutable helper workspace', async () => {

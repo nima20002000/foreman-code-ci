@@ -57,11 +57,18 @@ export async function writeBrowserProcessIdentity(value: BrowserProcessIdentity)
   try { await parent.sync() } finally { await parent.close() }
 }
 
+function commandLine(pid: number): string[] {
+  try { return readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0') } catch { return [] /* A disappeared process has no command line. */ }
+}
+
+/** The endpoint's browser process must be the recorded one; on Linux its command line must also carry the owner token. */
 export async function verifyBrowserProcess(connection: BrowserCdpConnection, identity: BrowserProcessIdentity): Promise<void> {
-  const result = await connection.send('Browser.getBrowserCommandLine') as { arguments?: unknown }
-  const args = result.arguments
-  if (!Array.isArray(args) || !args.includes(`--foreman-browser-owner=${identity.token}`)
-    || !args.includes(`--user-data-dir=${identity.directory}`) || !args.includes('--enable-automation')
+  // Browser.getBrowserCommandLine needs --enable-automation, which makes sites flag the browser; the process list does not.
+  const result = await connection.send('SystemInfo.getProcessInfo') as { processInfo?: Array<{ type?: unknown; id?: unknown }> }
+  const browser = result.processInfo?.find(value => value.type === 'browser')
+  const args = process.platform === 'linux' ? commandLine(identity.pid) : undefined
+  if (browser?.id !== identity.pid || args && (!args.includes(`--foreman-browser-owner=${identity.token}`)
+    || !args.includes(`--user-data-dir=${identity.directory}`))
     || !browserProcessAlive(identity.pid, identity.birthId)) {
     throw new DomainError('BROWSER_PROCESS_OWNERSHIP', 'The live browser does not match this host’s persisted process identity.', 503)
   }

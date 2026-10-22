@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn, execFile } from 'node:child_process';
 import { createReadStream, constants } from 'node:fs';
-import { lstat, mkdir, mkdtemp, open, readFile, readdir, readlink, realpath, rename, rm, statfs, symlink, writeFile } from 'node:fs/promises';
+import { access, lstat, mkdir, mkdtemp, open, readFile, readdir, readlink, realpath, rename, rm, statfs, symlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { createGunzip } from 'node:zlib';
 import { promisify } from 'node:util';
@@ -356,8 +356,34 @@ export async function readInstalledBrowserRuntime({ runtimeRoot, target }) {
   return verifyInstalled(join(runtimeRoot, reference), reference.slice('versions/'.length), target);
 }
 
+/** Agent browsers on Linux run headed inside an invisible Xvfb display, so websites see a normal Chrome. */
+export async function findBrowserVirtualDisplay() {
+  if (process.platform !== 'linux') return null;
+  for (const directory of [...(process.env.PATH ?? '').split(':').filter(isAbsolute), '/usr/bin', '/bin']) {
+    try { await access(join(directory, 'Xvfb'), constants.X_OK); return join(directory, 'Xvfb'); }
+    catch (error) { if (!['ENOENT', 'EACCES', 'ENOTDIR'].includes(error.code)) throw error; }
+  }
+  return null;
+}
+
+/** Linux browser runtimes require Xvfb; install it through passwordless apt when it is absent. */
+export async function provisionBrowserVirtualDisplay({ signal } = {}) {
+  if (process.platform !== 'linux') return null;
+  const install = ['-n', 'env', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', 'install', '-y', '-q', '--no-install-recommends', 'xvfb'];
+  for (const commands of [[], [['-n', 'env', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', 'update', '-q']]]) {
+    const found = await findBrowserVirtualDisplay();
+    if (found) return found;
+    try { for (const command of [...commands, install]) await execute('sudo', command, { timeout: 300000, maxBuffer: 1 << 20, signal }); }
+    catch (error) { console.warn(`Xvfb install attempt failed: ${String(error?.stderr || error?.message || error).slice(-400)}`); }
+  }
+  const found = await findBrowserVirtualDisplay();
+  invariant(found, 'Xvfb is required for agent browsers on Linux and could not be installed. Install it with: sudo apt-get install xvfb');
+  return found;
+}
+
 /** Installation-only readiness uses temporary managed data and the normal Chromium sandbox. */
 export async function checkBrowserRuntimeReadiness(descriptor, { signal } = {}) {
+  await provisionBrowserVirtualDisplay({ signal });
   const manifest = JSON.parse(await readFile(join(descriptor.rootDirectory, 'manifest.json'), 'utf8'));
   const workspace = join(descriptor.rootDirectory, 'empty-workspace');
   await privateDirectory(workspace, true);

@@ -165,6 +165,7 @@ export async function createBrowserHost(options: BrowserHostOptions) {
     }
     if (broker.activeSessionCount()) throw new DomainError('BROWSER_RUNTIME_BUSY', 'Browser preparation is still settling.', 409)
     await closeOwnedProfiles()
+    await driver.closeVirtualDisplay()
     await runtimeControl.close()
   }
   return { broker, driver, storage, files, media, profileEndpoint, profileStateRoot,

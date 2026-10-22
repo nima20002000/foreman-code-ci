@@ -12,6 +12,7 @@ import type { BrowserNativeDriver, BrowserNativeDispatch, BrowserPageInput, Brow
 import { browserProcessAlive, browserProcessBirthId, readBrowserProcessIdentity, writeBrowserProcessIdentity, verifyBrowserProcess, type BrowserProcessIdentity } from './processIdentity.js'
 import { assertPortableBrowserCookies, type BrowserPortableState } from './snapshotStorage.js'
 import { createBrowserRuntimeDirectory, removeBrowserRuntimeDirectory } from '../../../../worker/src/browserRuntimeInstall.mjs'
+import { BrowserVirtualDisplay } from './virtualDisplay.js'
 
 interface AttachedTab {
   id: string; sessionId: string; title: string; url: string
@@ -56,7 +57,11 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
   private readonly downloads = new Map<string, BrowserNativeDownload>()
   private readonly captures = new Map<string, Promise<{ connection: BrowserCdpConnection; listeners: Set<(frame: BrowserHostFrame) => void>; stop: () => Promise<void> }>>()
   private readonly retiringCaptures = new Map<string, Promise<void>>()
-  constructor(readonly options: BrowserNativeDriverOptions) {}
+  private readonly virtualDisplay: BrowserVirtualDisplay
+  constructor(readonly options: BrowserNativeDriverOptions) { this.virtualDisplay = new BrowserVirtualDisplay(options.actionDirectory) }
+
+  /** Stops the shared virtual display after the host has closed its browsers. */
+  closeVirtualDisplay(): Promise<void> { return this.virtualDisplay.close() }
 
   ownedProfileIds(): string[] { return [...new Set([...this.profiles.keys(), ...this.opening.keys(), ...this.reconnecting.keys()])] }
 
@@ -118,7 +123,12 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
     await connection.send('Target.setDiscoverTargets', { discover: true })
   }
 
-  /** Agent browsers always start headless; only `openLocal` relaunches a profile with a visible window, reusing its generation. */
+  /**
+   * Agent browsers start hidden (`headless` in the receipt means "not on the person's screen"); only `openLocal`
+   * relaunches a profile with a visible window, reusing its generation. On Linux a hidden browser is a normal windowed
+   * Chromium inside the shared invisible Xvfb display, so websites see an ordinary Chrome. macOS and Windows keep
+   * Chromium's headless mode for now.
+   */
   private async launch(profileId: string, headed = false, reuseGeneration?: number): Promise<{ generation: number }> {
     const { directory } = await this.options.profileDirectory(profileId)
     const previous = await readBrowserProcessIdentity(directory)
@@ -145,14 +155,19 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
     }
     const generation = reuseGeneration ?? await this.options.allocateGeneration(profileId), token = randomUUID()
     const headless = !headed
-    const args = [`--user-data-dir=${directory}`, `--foreman-browser-owner=${token}`, '--enable-automation',
+    const display = headless && process.platform === 'linux' ? await this.virtualDisplay.ensure() : undefined
+    const args = [`--user-data-dir=${directory}`, `--foreman-browser-owner=${token}`,
       '--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1', '--no-first-run', '--no-default-browser-check',
-      // Headless Chromium otherwise starts at 800x600, which sites treat as a tablet or phone.
-      '--disable-background-networking', ...(headless ? ['--headless=new', '--window-size=1440,900'] : []), 'about:blank']
+      // Chromium sets navigator.webdriver for any remote-debugged browser; sites read it as a bot signal.
+      '--disable-blink-features=AutomationControlled', '--disable-background-networking',
+      // Hidden browsers otherwise start at 800x600, which sites treat as a tablet or phone.
+      ...(display ? ['--ozone-platform=x11', '--window-position=0,0', '--window-size=1440,900']
+        : headless ? ['--headless=new', '--window-size=1440,900'] : []), 'about:blank']
     // Chromium's own profile lock remains authoritative; no lock removal or sandbox bypass.
     const runtimeDirectory = await createBrowserRuntimeDirectory(this.options.actionDirectory)
-    const processHandle = spawn(this.options.runtime.chromiumExecutable, args, { stdio: ['ignore', 'ignore', 'pipe'],
-      env: { ...process.env, TMPDIR: runtimeDirectory?.temporaryDirectory ?? process.env.TMPDIR } })
+    const env: NodeJS.ProcessEnv = { ...process.env, TMPDIR: runtimeDirectory?.temporaryDirectory ?? process.env.TMPDIR }
+    if (display) { env.DISPLAY = display; delete env.WAYLAND_DISPLAY }
+    const processHandle = spawn(this.options.runtime.chromiumExecutable, args, { stdio: ['ignore', 'ignore', 'pipe'], env })
     // Keep only Chromium's last fatal line, so a launch failure names its own cause.
     let fatal = ''
     processHandle.stderr?.setEncoding('utf8').on('data', (chunk: string) => {

@@ -5,3 +5,4 @@ export interface BrowserRuntimeDirectory {
 }
 export function createBrowserRuntimeDirectory(storageParent: string): Promise<BrowserRuntimeDirectory | null>
 export function removeBrowserRuntimeDirectory(runtime: BrowserRuntimeDirectory | null | undefined): Promise<void>
+export function findBrowserVirtualDisplay(): Promise<string | null>
