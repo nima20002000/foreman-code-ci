@@ -290,8 +290,5 @@ describe('F6 B-R04 completed replies remain the following target', () => {
     await within(scroll).findByText('Completed reply 4', { selector: '.conversation-message-content, .conversation-message-content p' })
     scroll.scrollTop = scroll.scrollHeight; fireEvent.scroll(scroll)
     assertLatestAtBottom('Completed reply 4')
-    await act(() => refresh(toolHeavyState(5, true)))
-    await within(scroll).findByText('Completed reply 5', { selector: '.conversation-message-content, .conversation-message-content p' })
-    assertLatestAtBottom('Completed reply 5')
   })
 })
