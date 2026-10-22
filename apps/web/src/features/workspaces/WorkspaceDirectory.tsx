@@ -174,7 +174,7 @@ export function WorkspaceDirectory() {
       const noun = confirmationTargets.current.every((target) => target.kind === 'workspace') ? 'workspace'
         : confirmationTargets.current.every((target) => target.kind === 'folder') ? 'folder' : 'item'
       selection.clear(`${confirmedDeleted.current} ${noun}${confirmedDeleted.current === 1 ? '' : 's'} deleted.`)
-    } catch { /* The mutation shows the error; only confirmed targets leave the selection. */ }
+    } catch { /* ignore: the mutation shows the error; only confirmed targets leave the selection. */ }
     finally {
       inFlight.current = false
       void queryClient.invalidateQueries({ queryKey: queryKeys.managedWorkspaces })
@@ -298,7 +298,7 @@ function useWorkspaceCardCommands(queryClient: ReturnType<typeof useQueryClient>
       queryClient.invalidateQueries({ queryKey: queryKeys.managedWorkspaces }),
       queryClient.invalidateQueries({ queryKey: queryKeys.workspaceStorageFolders }),
       queryClient.invalidateQueries({ queryKey: queryKeys.workspaceDetails(workspaceId) }),
-    ]).catch(() => undefined)
+    ]).catch(() => { /* ignore: a failed refresh keeps the cached lists */ })
   }
   return execute
 }

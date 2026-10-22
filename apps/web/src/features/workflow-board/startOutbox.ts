@@ -122,5 +122,5 @@ export function clearBoardStartStorage(): void {
       const key = window.localStorage.key(index)
       if (key?.startsWith(prefix)) window.localStorage.removeItem(key)
     }
-  } catch { /* Protected principal teardown also removes its outbox namespace. */ }
+  } catch { /* ignore: protected principal teardown also removes its outbox namespace. */ }
 }

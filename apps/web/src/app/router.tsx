@@ -3,10 +3,9 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
-  Link,
   redirect,
 } from '@tanstack/react-router'
-import { EmptyState } from '../shared/ui/nocturne'
+import { PageNotFound } from '../shared/ui/PageNotFound'
 import { ApprovalInboxSearchSchema, UrlSearchSelectionSchema, BrowserProfilesSettingsSearchSchema } from '@foreman-code/contracts'
 import { RunsSelectorSearchSchema } from '../features/runs-selector'
 import { RootShell } from './RootShell'
@@ -262,11 +261,6 @@ export const routeTree = rootRoute.addChildren([
   globalApprovalsRoute,
   workspaceApprovalsRoute,
 ])
-
-function PageNotFound() {
-  return <div className="n-theme page-not-found"><EmptyState title="Page not found" description="This address doesn't match a page."
-    action={<Link to="/workspaces" className="n-button n-button--secondary">Go to workspaces</Link>} /></div>
-}
 
 export const router = createRouter({ routeTree, defaultNotFoundComponent: PageNotFound })
 

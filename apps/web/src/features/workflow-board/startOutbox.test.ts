@@ -16,7 +16,7 @@ beforeEach(() => {
   window.localStorage.clear()
   let tail: Promise<unknown> = Promise.resolve()
   Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: vi.fn((_name: string, work: () => unknown) => {
-    const next = tail.then(work); tail = next.catch(() => undefined); return next
+    const next = tail.then(work); tail = next.catch(() => { /* ignore: the queue only orders work; the caller sees the failure */ }); return next
   }) } })
 })
 

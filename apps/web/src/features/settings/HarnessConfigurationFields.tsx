@@ -31,7 +31,7 @@ function EditableHarnessConfigurationFields({ editor, onChange, routedApproval =
   const presets = harnessDefaults ?? presetsQuery.data?.defaults
   const refresh = useRefreshNativeHarness(value.harness)
   let candidate: HarnessConfiguration | undefined
-  try { candidate = prepareHarnessEditor(editor) } catch { /* Incomplete drafts are validated on Save, never sent as valid configurations. */ }
+  try { candidate = prepareHarnessEditor(editor) } catch { /* ignore: incomplete drafts are validated on Save, never sent as valid configurations. */ }
   const configurationSection = section !== 'connections' && section !== 'workspace' && section !== 'plugins'
   const check = useAutomaticHarnessCheck(configurationSection ? candidate : undefined)
   const issuePath = issues[0]?.path.join('.') ?? ''

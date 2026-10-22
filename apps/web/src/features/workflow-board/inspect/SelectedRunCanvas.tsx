@@ -36,7 +36,7 @@ import { useCiTransfers } from './useCiTransfers'
 import { CI_SERVER_NODE_ID, ciNodeActivities, ciServerFlowNode, ciServerSummary, ciJobRefreshing, runCiApi } from './ciServer'
 import { useInspectionPresentation } from './presentation'
 import type { SubagentLayoutNode } from '../../run-subagents/layout'
-import { useRunDirectionWait, withDirectionWait } from '../actions/directionWait'
+import { useRunDirectionWait, withDirectionWait } from '../actions/directionWaitModel'
 import './inspection.css'
 
 const RunAgentPanels = createContext<{

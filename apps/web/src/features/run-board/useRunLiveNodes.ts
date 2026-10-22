@@ -8,7 +8,7 @@ import { useCurrentRunQuery } from '../workflow-board/currentRunQuery'
 import { useRunChoreography } from '../workflow-board/inspect/runChoreography'
 import { runningIntervalChecks } from '../workflow-board/inspect/pinnedTopology'
 import { interactionWaits, isActiveCi, liveNodeView } from '../workflow-board/inspect/runLiveStatus'
-import { useRunDirectionWait, withDirectionWait } from '../workflow-board/actions/directionWait'
+import { useRunDirectionWait, withDirectionWait } from '../workflow-board/actions/directionWaitModel'
 import { ciNodePresentation } from './ciPresentation'
 
 export type RunLiveNodeView = { state: AgentNodeState; label: string; transition?: AgentNodeTransition; transitionKey?: number }

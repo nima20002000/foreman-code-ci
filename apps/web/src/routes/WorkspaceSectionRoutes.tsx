@@ -1,4 +1,4 @@
-import { useCallback, useEffect, type ReactNode } from 'react'
+import { useCallback, useEffect } from 'react'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 
 import '../shared/ui/resourceDirectory.css'

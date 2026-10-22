@@ -96,7 +96,7 @@ export function createAttachmentDrafts(queryClient: QueryClient, client: Attachm
     const file = state?.data ?? upload.file
     if (file.state !== 'ready' || !('expiresAt' in file) || Date.parse(file.expiresAt) > Date.now()
       || (state?.dataUpdatedAt ?? 0) >= Date.parse(file.expiresAt) || state?.status === 'error') return
-    void queryClient.fetchQuery({ ...lifecycleOptions(key, selectionId, upload), staleTime: 0 }).catch(() => undefined)
+    void queryClient.fetchQuery({ ...lifecycleOptions(key, selectionId, upload), staleTime: 0 }).catch(() => { /* ignore: the lifecycle query keeps its own error state for the draft */ })
   }
 
   function selected(key: string, selectionId: string): AttachmentSelection | undefined {
@@ -145,7 +145,7 @@ export function createAttachmentDrafts(queryClient: QueryClient, client: Attachm
     })
     active.set(selection.id, { controller, mutation })
     // Mutation state, including failures, is the readback. No unhandled rejection.
-    void mutation.execute({ draftKey: key, selectionId: selection.id, input }).catch(() => undefined)
+    void mutation.execute({ draftKey: key, selectionId: selection.id, input }).catch(() => { /* ignore: the mutation cache records the failure for the draft */ })
   }
 
   function add(scopeInput: TemporaryFileScope, files: readonly File[]) {
@@ -198,7 +198,7 @@ export function createAttachmentDrafts(queryClient: QueryClient, client: Attachm
         retry: false, networkMode: 'always',
         mutationFn: () => client.cancel(cancelInput),
       })
-      void cleanup.execute(undefined).catch(() => undefined)
+      void cleanup.execute(undefined).catch(() => { /* ignore: cleanup is best effort; the server expires unsent attachments */ })
     }
   }
 
@@ -244,7 +244,7 @@ export function createAttachmentDrafts(queryClient: QueryClient, client: Attachm
       const selection = selected(key, selectionId)
       const upload = active.get(selectionId)?.mutation.state
       if (selection && upload?.status === 'success' && upload.data) {
-        void queryClient.fetchQuery({ ...lifecycleOptions(key, selectionId, upload.data), staleTime: 0 }).catch(() => undefined)
+        void queryClient.fetchQuery({ ...lifecycleOptions(key, selectionId, upload.data), staleTime: 0 }).catch(() => { /* ignore: the lifecycle query keeps its own error state for the draft */ })
       } else if (selection) start(key, selection)
     },
   }

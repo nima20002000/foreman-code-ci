@@ -175,8 +175,8 @@ function useLocationSettings({ workspaceId, presentation = 'field', onSaved }: P
       operation.saving = false
     }
   }
-  const runBrowse = async () => { if (selection && chosen) try { await browse.mutateAsync({ input: selection, expectedHost: chosen.host }) } catch { /* Mutation exposes the scoped error. */ } }
-  const runValidate = async () => { if (selection && chosen) try { await validate.mutateAsync({ input: selection, expectedHost: chosen.host }) } catch { /* Mutation exposes the scoped error. */ } }
+  const runBrowse = async () => { if (selection && chosen) try { await browse.mutateAsync({ input: selection, expectedHost: chosen.host }) } catch { /* ignore: the mutation exposes the scoped error */ } }
+  const runValidate = async () => { if (selection && chosen) try { await validate.mutateAsync({ input: selection, expectedHost: chosen.host }) } catch { /* ignore: the mutation exposes the scoped error */ } }
   return {
     scope, toasts, workspace, identity, defaults, current, saved, choices, browse, validate, save, operation,
     busy, picker, update, records, chosen, candidate, selection, locked, setPickerOpen, archived, conflict,

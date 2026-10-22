@@ -22,7 +22,8 @@ import { useCollaborationUISlots } from '../../shared/ui/collaborationSlots'
 import { createWorkflowExecutionChatSlot } from '../workflow-hierarchy/execution-chat/createWorkflowExecutionChatSlot'
 import { SelectedRunControls } from './actions/SelectedRunControls'
 import { GroupChatPanel } from './GroupChatPanel'
-import { DirectionWaitNotice, mentionInGroupChat, useRunDirectionWait } from './actions/directionWait'
+import { DirectionWaitNotice } from './actions/directionWait'
+import { mentionInGroupChat, useRunDirectionWait } from './actions/directionWaitModel'
 import './workflowBoard.css'
 
 /** This component is keyed by workspace/workflow only, NEVER by selected Run. */

@@ -13,7 +13,7 @@ import { useProtectedAccessError } from '../../shared/api/useProtectedAccessErro
 import { readRunActivities, readRunActivityFeed, mergeOlderRunActivities, isTransientRunActivityError,
   runActivitiesKey, runActivitiesRefetchInterval, type RunActivityFeed, type RunActivityScope } from './runActivitiesQuery'
 import { useManualRefetch } from '../../shared/api/useManualRefetch'
-import { useRunDirectionWait } from './actions/directionWait'
+import { useRunDirectionWait } from './actions/directionWaitModel'
 import './activities.css'
 
 /** focusAgentId pins the feed to one Agent: its filter controls and per-row Agent names are dropped. */

@@ -28,7 +28,7 @@ export function useUpdateWorkspaceDefaultsMutation() {
       if (epoch !== sessionGeneration() || sessionIsSwitching()) return
       client.setQueryData(settingsExperienceKeys.workspaceDefaults(), result.value)
       // A cache refresh failure does not turn a committed save into a failed write.
-      void client.invalidateQueries({ queryKey: settingsExperienceKeys.workspaceCreation() }).catch(() => undefined)
+      void client.invalidateQueries({ queryKey: settingsExperienceKeys.workspaceCreation() }).catch(() => { /* ignore: a failed refresh keeps the cached value */ })
     },
   })
 }
