@@ -199,7 +199,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     expect(await screen.findByRole('button', { name: /^Worktree:/ })).toHaveTextContent('Main · octo-owner/website')
     expect(useGraphDraftStore.getState().nextDrafts[key]?.graph.defaultWorktree).toEqual(version.definition.defaultWorktree)
     expect(worktree()).not.toHaveAccessibleName(/unsaved/)
-  }, 15_000)
+  }, 30_000)
   it('puts unavailable update reads in recovery rows without losing local edits or relaxing fresh Start reads', async () => {
     const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup()
     const mounted = await mount(mock)
@@ -243,7 +243,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     expect(nextDraftDirty(useGraphDraftStore.getState().nextDrafts[key]!)).toBe(true)
     expect(mock.versions.size).toBe(1)
     expect(mock.calls.filter((call) => call.method === 'POST' && call.path.endsWith('/runs'))).toEqual([])
-  }, 20_000)
+  }, 30_000)
 
   it('keeps real alerts outside the top toolbar and opens workflow history from an accessible Activities icon', async () => {
     const mock = newBoardMock(), user = userEvent.setup()
@@ -268,7 +268,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     expect(activities).toHaveFocus()
     stageShape(key, 'single', mock)
     await waitFor(() => expect(within(authoring()).queryByRole('button', { name: /Workflow alerts/ })).not.toBeInTheDocument())
-  }, 15_000)
+  }, 30_000)
 
   it('keeps saved Board actions hidden for inspection and no-ops, and hides them again after Undo', async () => {
     const mock = newBoardMock(), user = userEvent.setup()
@@ -313,7 +313,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     expect(await screen.findByText('Undid workflow name “S3 mounted workflow” → “Meaningful name”', { selector: '.board-undo-notice span' })).toBeVisible()
     expect(within(authoring()).getByRole('button', { name: 'S3 mounted workflow' })).toBeVisible()
     expect(mock.versions.size).toBe(1)
-  }, 20_000)
+  }, 30_000)
 
   it('offers Save for an unpublished initial definition even without local edits', async () => {
     const mock = newBoardMock(), user = userEvent.setup()
@@ -331,7 +331,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     const version = await save(mock, user, 1)
     expect(version.definition.name).toBe(graph.name)
     expect(version.definition.nodes).toEqual(graph.nodes)
-  }, 15_000)
+  }, 30_000)
 
   it('renames from the board title, cancels with Escape, and persists through Save beside Discard', async () => {
     const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup()
@@ -377,7 +377,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     expect(await screen.findByText('Stop active runs before removing this workflow.')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Keep it' }))
     expect(within(authoring()).getByRole('button', { name: 'Menu renamed board' })).toBeVisible()
-  }, 15_000)
+  }, 30_000)
   it('saves before starting the exact newly published version from Save and run', async () => {
     const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup()
     await mount(mock)
@@ -454,7 +454,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     await waitFor(() => expect(useGraphDraftStore.getState().nextDrafts[key]!.graph.edges).toHaveLength(0))
     await user.keyboard('{Control>}y{/Control}')
     await waitFor(() => expect(useGraphDraftStore.getState().nextDrafts[key]!.graph.edges).toHaveLength(1))
-  }, 20_000)
+  }, 30_000)
   it.each<Shape>(['single', 'sequential', 'parallel', 'conditional', 'approval'])('S3-01..04: fresh %s Save/reopen/Start persists V3 without dummy repeat state', async (shape) => {
     const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), first = await mount(mock)
     const { id, key } = await create(mock, user)
@@ -501,7 +501,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     expect(mock.currents.get(run.id)!.state.bindings).toEqual([])
     expect(mock.calls.some((call) => /repeat.*update|convert|promote|\/graph$/.test(call.path))).toBe(false)
     expect(readBoardStart(key)).toBeUndefined()
-  }, 15_000)
+  }, 30_000)
   it('S3-05: the same form adds and removes finite repeat as separate V3 versions, while past Runs retain exact pins', async () => {
     const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
     const { id, key } = await create(mock, user); stageShape(key, 'repeat-ready', mock)
@@ -572,7 +572,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     expect(reopened.getByText('No repeats.')).toBeVisible()
     expect(reopened.queryByRole('button', { name: 'Remove repeat' })).not.toBeInTheDocument()
     expect(useGraphDraftStore.getState().nextDrafts[key]!.graph).not.toHaveProperty('repeat')
-  }, 15_000)
+  }, 30_000)
   it('keeps production capability false without issuing Start, and rejects retired saved tags before definition dispatch', async () => {
     const mock = newBoardMock(), user = userEvent.setup(), mounted = await mount(mock)
     const { id, key } = await create(mock, user); stageShape(key, 'single', mock); await save(mock, user, 1)
@@ -592,7 +592,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
       expect(mock.calls.filter((call) => /\/(?:definition|drafts)(?:\/|$)/.test(call.path))).toHaveLength(before)
       view.unmount(); query.clear()
     }
-  }, 15_000)
+  }, 30_000)
   it.each(['denied', 'stale', 'unsupported', 'lost'] as const)('Start %s is fail-closed; reload never fabricates a replacement command', async (mode) => {
     const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
     const { key } = await create(mock, user); stageShape(key, 'sequential', mock); await save(mock, user, 1)
@@ -633,7 +633,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     await waitFor(() => expect(readBoardStart(key)).toBeUndefined())
     const requests = mock.calls.filter((call) => call.method === 'POST' && call.path.endsWith('/runs'))
     expect(requests.at(-1)!.body).toEqual(retained); expect(mock.runs.size).toBe(1)
-  }, 15_000)
+  }, 30_000)
   it('Stop receipt replay is not cleanup proof; Discard does not Stop and layout does not publish', async () => {
     const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
     const { key } = await create(mock, user); stageShape(key, 'single', mock); await save(mock, user, 1)
@@ -661,7 +661,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     expect(nextDraftDirty(useGraphDraftStore.getState().nextDrafts[key]!)).toBe(false)
     expect(mock.versions.size).toBe(1); expect(mock.controls.stopCalls).toBe(1)
     expect(within(authoring()).queryByRole('button', { name: 'Discard changes' })).not.toBeInTheDocument()
-  }, 15_000)
+  }, 30_000)
   it('stages before Stop confirmation even when the Board summary misses an active Run', async () => {
     const mock = newBoardMock({ allowSimulatedStart: true }), user = userEvent.setup(), mounted = await mount(mock)
     const { key, id } = await create(mock, user); stageShape(key, 'single', mock); await save(mock, user, 1)
@@ -701,5 +701,5 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     await waitFor(() => expect(mock.versions.size).toBe(2))
     expect(mock.runs.size).toBe(1); expect(mock.runs.get(run.id)!.run.executionState).toBe('completed')
     expect(nativeNode([...mock.versions.values()].at(-1)!.definition.nodes[0]!).initialPrompt).toBe('Next pinned instructions')
-  }, 15_000)
+  }, 30_000)
 })

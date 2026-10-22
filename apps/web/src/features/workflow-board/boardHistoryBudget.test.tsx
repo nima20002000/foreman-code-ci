@@ -6,6 +6,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { HttpResponse } from 'msw'
 import { RunActivitySchema } from '@foreman-code/contracts'
 import { CurrentRunDetailsSchema, RunExecutionDetailSchema } from '@foreman-code/contracts/wave25'
+import { server } from '../../mocks/server'
+import { createMemoryBoardHandlers } from '../memory-boards/mocks'
+import { createMemoryTestPort } from '../memory-boards/testing'
 import { inspectionBoardFixture } from './inspect/inspectionFixtures'
 import { executionPagesKey } from './inspect/queries'
 import {
@@ -16,7 +19,13 @@ import {
 installBoardTestLifecycle()
 let fixture: InspectionFixture
 let serial = 0
-beforeEach(async () => { fixture = await inspectionBoardFixture(`eng05d-budget-${++serial}`) })
+beforeEach(async () => {
+  fixture = await inspectionBoardFixture(`eng05d-budget-${++serial}`)
+  // The Kanban is always on the Board and reads the workflow's memory board; an unanswered read would keep the
+  // connection notice up for good.
+  const { workspaceId, workflowId } = fixture.runs.before.scope
+  server.use(...createMemoryBoardHandlers(createMemoryTestPort({ cards: [], scope: { kind: 'workflow', workspaceId, workflowId } }).port))
+})
 
 async function seedLongHistory() {
   const owner = fixture.runs.before
@@ -118,10 +127,10 @@ describe('mounted Board bounded-history wire budgets', () => {
     restarting = false
     await intervalTick(1000)
     await waitFor(() => expect(snapshotState(cache)).toMatchObject({ status: 'success', fetchStatus: 'idle' }))
-    try { await waitFor(async () => {
+    await waitFor(async () => {
       await intervalTick(1000)
       expect(screen.queryByRole('alert', { name: 'Server connection' })).not.toBeInTheDocument()
-    }) } catch (e) { throw new Error('DIAG ' + JSON.stringify(cache.getQueryCache().getAll().filter(q => q.state.error || q.state.fetchFailureReason).map(q => ({ key: q.queryKey, err: String(q.state.error), why: String(q.state.fetchFailureReason), active: q.isActive(), status: q.state.status, fs: q.state.fetchStatus })))) }
+    })
     await waitFor(() => expect(cache.isFetching()).toBe(0))
     expect(live().length).toBeGreaterThan(currentBefore)
     expect(wire.executions()).toHaveLength(2)

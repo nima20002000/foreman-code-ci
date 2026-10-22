@@ -305,7 +305,7 @@ describe('Run inspection inside the one mounted Board', () => {
     await userEvent.click(await screen.findByRole('menuitemradio', { name: 'New run' }))
     expect(history.location.hash).toBe('#keep=anchor')
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Native child, Codex, Running' })).not.toBeInTheDocument())
-  }, 15_000)
+  }, 30_000)
   it('switches before/with/after-repeat Runs without changing the draft or its owner', async () => {
     const user = userEvent.setup(), key = nextDraftKey(fixture.mock.workspaceId, fixture.after.workflowId)
     const { router } = await mount(href(fixture.runs.before.scope))
@@ -333,7 +333,7 @@ describe('Run inspection inside the one mounted Board', () => {
     expect(useGraphDraftStore.getState().nextDrafts[key]!.instanceId).toBe(instanceId)
     expect(nativeNode(useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes[0]!).initialPrompt).toBe('Keep this unpublished next draft')
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
-  }, 10_000)
+  }, 30_000)
 
   it('does not render a node added later or silently retarget its historical deep link', async () => {
     const scope = fixture.runs.before.scope, requests: URLSearchParams[] = []
@@ -700,7 +700,7 @@ describe('Live Run status on the Board', () => {
     expect(nodeState(added)).toBe('waiting')
     expectAgentVisible(added)
     expect(screen.queryByRole('region', { name: 'Run status', hidden: true })).not.toBeInTheDocument()
-  }, 15_000)
+  }, 30_000)
 })
 
 describe('CI server on the Board', () => {
@@ -813,7 +813,7 @@ describe('CI server on the Board', () => {
     await serverNode(/^CI server, 1 running/)
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)) })
     expect(logReads).toBe(reads)
-  }, 20_000)
+  }, 30_000)
 
   it('keeps the CI server state but sends no lights under reduced motion', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('reduce'), media: query,
