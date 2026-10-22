@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { expect, it, vi } from 'vitest'
+import { expect, it } from 'vitest'
 import * as diagnostics from './logger.js'
 import * as ignored from './ignoredError.js'
 import { fallbackOnError } from './ignoredError.js'

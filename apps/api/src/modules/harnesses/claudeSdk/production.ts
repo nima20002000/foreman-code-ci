@@ -161,6 +161,41 @@ function bindConsultationAccess(manager: ClaudeNativeSessionManager,
 
 }
 
+function assertNoInheritedAppMcpToken(input: ProductionClaudeInput, start: NativeSessionStart): void {
+  if (input.appMcpAccess === 'none' && APP_MCP_TOKEN_NAMES.some((name) => start.environment?.variables[name])) throw new DomainError('HARNESS_ROLE_AUTHORITY_INVALID',
+    'This Claude owner cannot inherit an application MCP credential.', 403)
+}
+
+async function workflowApprovalHandler(input: ProductionClaudeInput): Promise<string | null | undefined> {
+  if (input.binding.kind !== 'workflow') return undefined
+  return (await input.pool.query<{ handler: string | null }>(
+    `select v.record->'definition'->'approval'->>'handler' as handler from runs r
+      join workflow_versions v on v.id=r.workflow_version_id where r.id=$1`, [input.binding.runId])).rows[0]?.handler
+}
+
+async function createLocalFileServer(input: ProductionClaudeInput, allowMutation: boolean, signal: AbortSignal,
+  manager: () => ClaudeNativeSessionManager | undefined) {
+  const files = input.files!
+  if (input.binding.kind === 'workflow') throw new DomainError('CLAUDE_FILE_SCOPE_UNAVAILABLE', 'Workflow file authority must use its admitted execution file domain.', 409)
+  if (input.mode === 'replay' && !files.sdk) throw new DomainError('HARNESS_REPLAY_INCOMPLETE', 'Claude file replay requires its SDK server/tool port.', 500)
+  const sdk = await (files.sdk ? files.sdk() : import('@anthropic-ai/claude-agent-sdk'))
+  signal.throwIfAborted()
+  return createClaudeFileMcpServer({ sdk, service: files.service(), allowMutation,
+    calls: createClaudeFileCallResolver({ manager, signal }),
+    admission: productionClaudeFileAdmission({ pool: input.pool, binding: input.binding, manager, allowMutation }) })
+}
+
+function assertSelectedAccountMatches(configuration: ProductionClaudeInput['configuration'],
+  account: Awaited<ReturnType<typeof resolveRuntimeProviderAccount>>): void {
+  if (configuration.accountId && !account) throw new DomainError('PROVIDER_ACCOUNT_UNAVAILABLE',
+    'The selected managed provider account is unavailable.', 409)
+  if (account && (account.accountId !== configuration.accountId
+    || account.homePath !== configuration.configDirectory || account.authMode !== configuration.authMode)) {
+    throw new DomainError('PROVIDER_ACCOUNT_CONFIGURATION_CONFLICT',
+      'Save the selected account settings before starting this Claude session.', 409)
+  }
+}
+
 export function productionClaudeManager(input: ProductionClaudeInput) {
   input = ownedClaudeInput(input)
   let actual: ClaudeNativeSessionManager | undefined
@@ -191,13 +226,7 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
       ...(input.consultation ? { purpose: 'consultation', consultation: input.consultation } : {}) }
     const account = await resolveRuntimeProviderAccount(input.accounts, 'claude', input.configuration.accountId,
       input.recovery, input.accountSourceRecovery, input.accountBinding)
-    if (input.configuration.accountId && !account) throw new DomainError('PROVIDER_ACCOUNT_UNAVAILABLE',
-      'The selected managed provider account is unavailable.', 409)
-    if (account && (account.accountId !== input.configuration.accountId
-      || account.homePath !== input.configuration.configDirectory || account.authMode !== input.configuration.authMode)) {
-      throw new DomainError('PROVIDER_ACCOUNT_CONFIGURATION_CONFLICT',
-        'Save the selected account settings before starting this Claude session.', 409)
-    }
+    assertSelectedAccountMatches(input.configuration, account)
     const apiKey = account?.apiKey ?? input.apiKey
     requireClaudeApiKey(input.configuration, apiKey)
     const accepted = await admitWhenChecked(() => input.profiles!.admit(profileOwner, input.selector!), signal)
@@ -215,9 +244,7 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
     const domainBinding = input.binding.kind === 'workflow'
       ? { ...input.binding, ...(input.consultation ? { consultation: structuredClone(input.consultation) } : {}) } : input.binding
     // A workflow whose Agents handle approvals themselves runs this Claude Agent's tools without asking.
-    const handler = input.binding.kind === 'workflow' ? (await input.pool.query<{ handler: string | null }>(
-      `select v.record->'definition'->'approval'->>'handler' as handler from runs r
-        join workflow_versions v on v.id=r.workflow_version_id where r.id=$1`, [input.binding.runId])).rows[0]?.handler : undefined
+    const handler = await workflowApprovalHandler(input)
     const domain = createPostgresClaudeInteractionBridge({ database: input.pool, binding: domainBinding, autoAllowTools: handler === 'native',
       configuration: compiled.configuration, manager: { nativeCallbackContext: (sessionId, toolUseId) => actual?.nativeCallbackContext(sessionId, toolUseId) } })
     policyBridge = domain.bridge
@@ -246,8 +273,7 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
       }
       const initial = manager.startInitialTurn.bind(manager)
       manager.startInitialTurn = async function* (start, message, effectSignal) {
-        if (input.appMcpAccess === 'none' && APP_MCP_TOKEN_NAMES.some((name) => start.environment?.variables[name])) throw new DomainError('HARNESS_ROLE_AUTHORITY_INVALID',
-          'This Claude owner cannot inherit an application MCP credential.', 403)
+        assertNoInheritedAppMcpToken(input, start)
         callbackAuthority = await domain.callbackAdmission()
         effectSignal?.throwIfAborted()
         sessionStart = structuredClone(start)
@@ -255,8 +281,7 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
       }
       const attach = manager.attachSession.bind(manager)
       manager.attachSession = async (session, start, effectSignal) => {
-        if (input.appMcpAccess === 'none' && APP_MCP_TOKEN_NAMES.some((name) => start.environment?.variables[name])) throw new DomainError('HARNESS_ROLE_AUTHORITY_INVALID',
-          'This Claude owner cannot inherit an application MCP credential.', 403)
+        assertNoInheritedAppMcpToken(input, start)
         await domain.callbackAdmissionIfActive()
         effectSignal?.throwIfAborted()
         const attached = await attach(session, start, effectSignal)
@@ -267,8 +292,7 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
         // A Run follow-up chat forks the Run session; its later turns re-attach with the fork's start.
         const fork = manager.forkSession.bind(manager)
         manager.forkSession = async (source, start, effectSignal) => {
-          if (input.appMcpAccess === 'none' && APP_MCP_TOKEN_NAMES.some((name) => start.environment?.variables[name])) throw new DomainError('HARNESS_ROLE_AUTHORITY_INVALID',
-            'This Claude owner cannot inherit an application MCP credential.', 403)
+          assertNoInheritedAppMcpToken(input, start)
           await domain.callbackAdmissionIfActive()
           effectSignal?.throwIfAborted()
           const forked = await fork(source, start, effectSignal)
@@ -294,16 +318,7 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
         yield* turn(attached, acceptedMessage, effectSignal)
       }
     }
-    if (input.files) {
-      if (input.binding.kind === 'workflow') throw new DomainError('CLAUDE_FILE_SCOPE_UNAVAILABLE', 'Workflow file authority must use its admitted execution file domain.', 409)
-      if (input.mode === 'replay' && !input.files.sdk) throw new DomainError('HARNESS_REPLAY_INCOMPLETE', 'Claude file replay requires its SDK server/tool port.', 500)
-      const sdk = await (input.files.sdk ? input.files.sdk() : import('@anthropic-ai/claude-agent-sdk'))
-      signal.throwIfAborted()
-      const allowMutation = compiled.configuration.sandbox !== 'read-only'
-      fileServer = createClaudeFileMcpServer({ sdk, service: input.files.service(), allowMutation,
-        calls: createClaudeFileCallResolver({ manager: () => actual, signal }),
-        admission: productionClaudeFileAdmission({ pool: input.pool, binding: input.binding, manager: () => actual, allowMutation }) })
-    }
+    if (input.files) fileServer = await createLocalFileServer(input, compiled.configuration.sandbox !== 'read-only', signal, () => actual)
     domain.bridge.bindMcpTools(fileServer ? [fileServer.manifest] : [])
     const callbacks = createClaudeSdkCallbacks({ manager: () => actual!, bridge: domain.bridge })
     const serverName = appMcpServerName(compiled.mcpServers)
