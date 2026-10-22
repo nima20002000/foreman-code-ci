@@ -253,7 +253,7 @@ it('keeps the Operator composer compact: attach inline with the input, only agen
   const input = screen.getByRole('textbox', { name: 'Message' }).parentElement!
   expect(Array.from(input.querySelectorAll('button')).map(element => element.getAttribute('aria-label') ?? element.textContent?.trim()))
     .toEqual(['Attach files', 'Send message'])
-  const options = input.nextElementSibling!
+  const options = input.closest('form')!.nextElementSibling!
   expect(Array.from(options.querySelectorAll('button, select')).map(element => element.getAttribute('aria-label') ?? element.textContent?.trim() ?? ''))
     .toEqual(['Agent settings: model'])
   expect(screen.queryByRole('combobox', { name: 'Conversation mode' })).not.toBeInTheDocument()

@@ -128,9 +128,11 @@ describe('F6 B-R01 receipt readback', () => {
     expect(within(outside).getByText('This text is outside the current page')).toBeInTheDocument()
     await userEvent.click(within(outside).getByRole('button', { name: 'Send again as new message' }))
     const warning = screen.getByRole('alertdialog')
-    expect(within(warning).getByText(/original message may already have been accepted/)).toBeInTheDocument()
+    expect(within(warning).getByText(/first send may already have gone through/)).toBeInTheDocument()
     expect(sent).toHaveLength(1)
-    await userEvent.click(within(warning).getByRole('button', { name: 'Send as new message' }))
+    const mode = within(warning).getByRole('combobox', { name: 'Mode' }) as HTMLSelectElement
+    if (!mode.value) await userEvent.selectOptions(mode, 'regular')
+    await userEvent.click(within(warning).getByRole('button', { name: 'Send again' }))
     await waitFor(() => expect(sent).toHaveLength(2))
     expect(sent[1]!.requestId).not.toBe(sent[0]!.requestId)
     expect(sent[1]!.content).toBe(sent[0]!.content)

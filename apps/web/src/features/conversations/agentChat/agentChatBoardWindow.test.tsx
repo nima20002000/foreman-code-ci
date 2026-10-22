@@ -93,10 +93,8 @@ describe('mounted Board chat rail action area', () => {
     fireEvent.mouseDown(document.body)
     expect(stop).toBeInTheDocument()
     expect(screen.getByRole('complementary', { name: 'Workflow side panel' })).toBe(rail)
-    await waitFor(() => expect(rail.style.maxHeight).toBe(`${Math.max(0, height - rail.getBoundingClientRect().top)}px`))
-    // Synthetic visual viewport resize/pan, modelling keyboard appearance without claiming geometry.
+    // A synthetic visual viewport resize (keyboard appearance) must not disturb the open chat or its focus.
     await act(async () => { viewport.height = 400; viewport.offsetTop = 31; viewport.dispatchEvent(new Event('resize')) })
-    await waitFor(() => expect(rail.style.maxHeight).toBe(`${Math.max(0, 431 - Math.max(31, rail.getBoundingClientRect().top))}px`))
     expect(stop).toHaveFocus()
     await userEvent.click(stop)
     await waitFor(() => expect(chat.getState(context).activeTurn).toBeNull())

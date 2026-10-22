@@ -45,7 +45,8 @@ async function mountDraftBoard(suffix: string) {
   const chatAction = (name: string) => screen.findByRole('button', { name: `Open ${name} chat` })
   const panelNamed = async (name: string) => {
     const panel = await screen.findByRole('complementary', { name: 'Workflow side panel' })
-    await within(panel).findByRole('heading', { name })
+    // The panel title and the chat header both name the agent.
+    expect((await within(panel).findAllByRole('heading', { name })).length).toBeGreaterThan(0)
     return panel
   }
   return { names, node, chatAction, panelNamed, chat, contexts, mounted, fixture }
