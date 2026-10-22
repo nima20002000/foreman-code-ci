@@ -113,13 +113,15 @@ async function fixture(gate: boolean, failure: 'observed' | 'persisted', stopCon
   }
   return { ci, failed, running, starting, queued, passed, next, canceled, started, control, read,
     denied: () => call(clients[1]!, failed.id),
-    // An executor that has not confirmed cancellation is asked again only after a growing gap (at most a minute),
-    // so each pass runs a little after the longest gap instead of waiting it out.
+    // A ticket whose cancellation was contended or unconfirmed is asked again only after a growing gap (at most a
+    // minute). Each pass therefore runs after the longest gap, and a second pass retries what the first one missed.
     settle: async () => {
-      passes += 1
-      vi.useFakeTimers({ toFake: ['Date'] })
-      vi.setSystemTime(Date.now() + 61_000 * passes)
-      try { await ci.dispatch(); await ci.drain() } finally { vi.useRealTimers() }
+      for (let pass = 0; pass < 2; pass++) {
+        passes += 1
+        vi.useFakeTimers({ toFake: ['Date'] })
+        vi.setSystemTime(Date.now() + 61_000 * passes)
+        try { await ci.dispatch(); await ci.drain() } finally { vi.useRealTimers() }
+      }
     },
     close: async () => {
       await ci.close()
