@@ -48,7 +48,7 @@ describe('browser tools for an Agent chat and a Run Agent', () => {
     expect(state.properties).not.toHaveProperty('sessionId')
     expect(state.required ?? []).not.toContain('actor')
     const result = await client.callTool({ name: 'browser_tabs_list', arguments: {} })
-    expect(result.isError).not.toBe(true)
+    expect(result.isError, JSON.stringify(result.content)).not.toBe(true)
     expect(tabsList).toHaveBeenCalledWith(expect.anything(), { sessionId: 'chat-session' })
   })
 
@@ -59,7 +59,7 @@ describe('browser tools for an Agent chat and a Run Agent', () => {
     const missing = await client.callTool({ name: 'browser_tabs_list', arguments: {} })
     expect(missing.isError).toBe(true)
     const result = await client.callTool({ name: 'browser_tabs_list', arguments: { sessionId: 'run-session' } })
-    expect(result.isError).not.toBe(true)
+    expect(result.isError, JSON.stringify(result.content)).not.toBe(true)
     expect(tabsList).toHaveBeenCalledExactlyOnceWith(expect.anything(), { sessionId: 'run-session' })
   })
 })
