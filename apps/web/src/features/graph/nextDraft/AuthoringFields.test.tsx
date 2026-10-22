@@ -21,10 +21,10 @@ describe('Agent 6 accessible authoring forms (not browser performance evidence)'
     const user = userEvent.setup()
     render(<Form />)
     await user.tab()
-    expect(screen.getByRole('button', { name: 'About Starts the workflow' })).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'About Starts with' })).toHaveFocus()
     expect(screen.getByRole('tooltip')).toHaveTextContent('Only an Orchestrator can start a workflow that has one.')
     await user.tab()
-    expect(screen.getByLabelText('Starts the workflow', { selector: 'select' })).toHaveFocus()
+    expect(screen.getByLabelText('Starts with', { selector: 'select' })).toHaveFocus()
     expect(screen.getByRole('switch', { name: /Starts the workflow/ })).toBeChecked()
     await user.click(screen.getByRole('switch', { name: /Starts the workflow/ }))
     expect(screen.getByTestId('entry')).toBeEmptyDOMElement()
@@ -81,7 +81,7 @@ describe('Agent 6 accessible authoring forms (not browser performance evidence)'
     graph = { ...graph, approval: { handler: 'orchestrator', designatedOrchestratorAgentId: 'agent-0' } }
     const change = vi.fn((update: (value: WorkflowDefinitionV3) => WorkflowDefinitionV3) => { graph = update(graph) })
     render(<ApprovalFields graph={graph} context={context} change={change} report={report} />)
-    await user.selectOptions(screen.getByLabelText('Approval handler'), 'user')
+    await user.selectOptions(screen.getByLabelText('Who approves'), 'user')
     expect(report).toHaveBeenCalledOnce()
     expect(graph.edges.map((edge) => edge.id)).toEqual(['execution-1', 'approval'])
     expect(graph.approval!.handler).toBe('orchestrator')
@@ -92,10 +92,10 @@ describe('Agent 6 accessible authoring forms (not browser performance evidence)'
     const graph: WorkflowDefinitionV3 = { ...context.draft.graph,
       approval: { handler: 'orchestrator', designatedOrchestratorAgentId: 'agent-0' } }
     render(<ApprovalFields graph={graph} context={context} change={vi.fn()} report={vi.fn()} />)
-    expect(screen.getByRole('combobox', { name: 'Reviewing coordinator' })).toHaveValue('agent-0')
-    const explanation = 'The starting Master or Orchestrator reviews requests from agents it has an approval connection to.'
+    expect(screen.getByRole('combobox', { name: 'Coordinator' })).toHaveValue('agent-0')
+    const explanation = 'The starting Master or Orchestrator reviews requests from agents connected to it by an approval line.'
     expect(screen.queryByText(explanation)).not.toBeInTheDocument()
-    const hint = screen.getByRole('button', { name: 'About Reviewing coordinator' })
+    const hint = screen.getByRole('button', { name: 'About Coordinator' })
     await user.hover(hint)
     expect(screen.getByRole('tooltip')).toHaveTextContent(explanation)
     expect(hint).toHaveAccessibleDescription(explanation)
@@ -112,12 +112,12 @@ describe('Agent 6 accessible authoring forms (not browser performance evidence)'
         <output data-testid="routes">{JSON.stringify(graph.edges)}</output></>
     }
     render(<NativeApprovalForm />)
-    await user.selectOptions(screen.getByLabelText('Approval handler'), 'native')
+    await user.selectOptions(screen.getByLabelText('Who approves'), 'native')
     expect(screen.getByTestId('approval-mode')).toHaveTextContent('native')
     expect(screen.getByTestId('routes')).toHaveTextContent(JSON.stringify(before.draft.graph.edges))
-    expect(screen.queryByText(/Each Agent must explicitly use native approval handling/)).not.toBeInTheDocument()
-    await user.hover(screen.getByRole('button', { name: 'About Approval handler' }))
-    expect(screen.getByRole('tooltip')).toHaveTextContent(/Each Agent must explicitly use native approval handling/)
+    expect(screen.queryByText(/Each harness handles its own approvals/)).not.toBeInTheDocument()
+    await user.hover(screen.getByRole('button', { name: 'About Who approves' }))
+    expect(screen.getByRole('tooltip')).toHaveTextContent(/Each harness handles its own approvals/)
     expect(context).toEqual(before)
     expect(report).not.toHaveBeenCalled()
   })

@@ -157,6 +157,13 @@ beforeEach(() => {
   installFlowLayout(320, 480); installChatSource()
   server.use(http.get('*/api/management/workspaces/:workspaceId/runs/:runId/subagents', () =>
     HttpResponse.json({ items: [], nextCursor: null, projection: 'caught-up' })), selectedChatUnavailable,
+    // Run controls read the selected Run's status with a one-row executions page.
+    http.get('*/api/management/workspaces/:workspaceId/runs/:runId/executions', ({ params }) => HttpResponse.json({
+      run: { workspaceId: String(params.workspaceId), workflowId: chatScope.workflowId, runId: String(params.runId),
+        workflowVersionId: `version-${String(params.runId)}`, executionSemanticsVersion: 3, executionState: 'completed',
+        outcome: 'succeeded', createdAt: '2026-09-28T03:00:00.000Z', cleanupPending: false },
+      items: [], pageInfo: { nextCursor: null },
+    })),
     // These saved Runs have no recorded current cut; their Board nodes keep the saved presentation.
     http.get('*/api/workspaces/:workspaceId/workflows/:workflowId/runs/:runId/graph/v1/current', () => HttpResponse.json(
       { error: { code: 'NOT_FOUND', message: 'No current cut is recorded for this saved Run.' } }, { status: 404 })),

@@ -72,9 +72,11 @@ describe('Board conversation components share one rail', () => {
     expect(secondDraft).toHaveValue('')
     await user.type(secondDraft, 'Retain the second Agent draft')
     await user.click(screen.getByRole('button', { name: 'Group chat' }))
-    const group = await screen.findByRole('dialog', { name: 'Group chat' })
+    // Group chat takes over the one floating panel; the Agent body is not mounted beside it.
+    const group = await screen.findByRole('complementary', { name: 'Workflow side panel' })
+    expect(within(group).getByRole('heading', { name: 'Group chat' })).toBeVisible()
     expect(within(group).getByRole('region', { name: 'Group chat' })).toBeVisible()
-    expect(screen.queryByRole('complementary', { name: 'Workflow side panel' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('complementary', { name: 'Workflow side panel' })).toHaveLength(1)
     expect(screen.queryByRole('textbox', { name: 'Message' })).not.toBeInTheDocument()
     await user.click(within(group).getByRole('button', { name: 'Close group chat' }))
     await openChat(names.second)

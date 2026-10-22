@@ -10,6 +10,7 @@ import { currentWorkflowFixture } from '../../shared/mocks/currentWorkflow'
 import { WorkflowBoardContext } from './context'
 import { boardRunListKey } from './keys'
 import { RunActivityPanel } from './RunActivityPanel'
+import { shortRunId } from './runFacts'
 import { deferred } from '../../test/deferred'
 
 const fixture = currentWorkflowFixture('activity-list')
@@ -61,7 +62,7 @@ describe('Run activity list summary freshness', () => {
     const mounted = mount()
     await screen.findByRole('button', { name: 'Open Run historical-run-0 · completed · succeeded' })
     for (let index = 1; index <= 5; index++) {
-      await userEvent.click(screen.getByRole('button', { name: 'Load more Runs' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Show older runs' }))
       await screen.findByRole('button', { name: `Open Run historical-run-${index} · completed · succeeded` })
     }
     expect(screen.queryByRole('button', { name: 'Open Run historical-run-0 · completed · succeeded' })).toBeNull()
@@ -91,7 +92,7 @@ describe('Run activity list summary freshness', () => {
     const mounted = mount()
     await screen.findByRole('button', { name: 'Open Run historical-run-0 · completed · succeeded' })
     for (let index = 1; index <= 5; index++) {
-      await userEvent.click(screen.getByRole('button', { name: 'Load more Runs' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Show older runs' }))
       await screen.findByRole('button', { name: `Open Run historical-run-${index} · completed · succeeded` })
     }
     expect(screen.queryByRole('button', { name: 'Open Run historical-run-0 · completed · succeeded' })).toBeNull()
@@ -133,7 +134,7 @@ describe('Run activity list summary freshness', () => {
     mounted.update([summary(completedRun)])
     const completed = screen.getByRole('button', { name: `Open Run ${fixture.run.id} · completed · succeeded` })
     expect(completed).toHaveTextContent('Completed')
-    expect(completed).toHaveTextContent('Past Run')
+    expect(completed).toHaveTextContent(shortRunId(fixture.run.id))
     await waitFor(() => expect(reads).toBeGreaterThan(initialReads))
     await userEvent.click(completed)
     expect(mounted.selectRun).toHaveBeenCalledWith(fixture.scope)
@@ -192,7 +193,7 @@ describe('Run activity list summary freshness', () => {
     expect(screen.queryByRole('button', { name: 'Inspect run-other' })).toBeNull()
     denied = true
     await act(async () => { await mounted.client.invalidateQueries({ queryKey: boardRunListKey(workspaceId, workflowId) }) })
-    await screen.findByText('You don’t have access to this workflow’s runs.')
+    await screen.findByText('You can’t see this workflow’s runs.')
     expect(screen.queryByRole('button', { name: /Open Run|Inspect run-/ })).toBeNull()
   })
 })
@@ -208,7 +209,7 @@ it('keeps a refreshed terminal Run above stale active workspace details, includi
   const mounted = mount([active])
   await screen.findByRole('button', { name: `Open Run ${fixture.run.id} · running · pending` })
   completed = true
-  await userEvent.click(screen.getByRole('button', { name: 'Refresh Runs' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Refresh runs' }))
   const row = await screen.findByRole('button', { name: `Open Run ${fixture.run.id} · completed · succeeded` })
   expect(row).toHaveTextContent('Past Run')
   mounted.update([{ ...active }])

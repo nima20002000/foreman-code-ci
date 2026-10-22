@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { protectedKey } from '../../../shared/api/protectedChatStorage'
@@ -82,9 +82,8 @@ it('claims separate ownership before recovering a copied sessionStorage form and
   const clonedOwner = sessionStorage.getItem(ownerKey)!
   expect(screen.getByRole('button', { name: 'Opener draft' })).toBeVisible()
   expect(screen.queryByRole('button', { name: 'Other tab draft' })).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: 'Open Node 0 settings' }))
-  expect(await screen.findByRole('textbox', { name: 'Name' })).toHaveValue('Opener Agent')
-  fireEvent.click(screen.getByRole('button', { name: 'Close Node 0' }))
+  // Agent settings open in the Board side panel, so the recovered Agent edit is read from the draft itself.
+  expect(useGraphDraftStore.getState().nextDrafts[scope]?.agentEdits?.['agent-0']?.name).toBe('Opener Agent')
   expect(editSnapshotAcknowledged(scope, original, 'opener-acknowledgement')).toBe(true)
   act(() => useGraphDraftStore.getState().changeNextDraft(scope, graph => ({ ...graph, description: 'Cloned draft' })))
   expect(readEditSnapshot(scope)?.graph.description).toBe('Cloned draft')

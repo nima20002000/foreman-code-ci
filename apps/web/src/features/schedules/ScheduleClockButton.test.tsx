@@ -445,14 +445,12 @@ describe('schedule command uncertainty and scope', () => {
   })
 })
 
-it('shows saved-workflow policy on demand while retaining next-run data', async () => {
+it('states the saved-workflow policy in the dialog while retaining next-run data', async () => {
   persisted = weekly
   const { user } = mount()
   const dialog = await open(user)
-  expect(within(dialog).queryByText('Runs latest saved workflow')).not.toBeInTheDocument()
+  expect(within(dialog).getByText('Runs the latest saved version of this workflow.')).toBeVisible()
   const nextRun = within(dialog).getByText('Next run')
   expect(nextRun).toBeVisible()
   expect(nextRun.querySelector('time')).toHaveAttribute('datetime', next)
-  await user.hover(within(dialog).getByRole('button', { name: 'About Schedule' }))
-  expect(screen.getByRole('tooltip')).toHaveTextContent('Runs latest saved workflow')
 })

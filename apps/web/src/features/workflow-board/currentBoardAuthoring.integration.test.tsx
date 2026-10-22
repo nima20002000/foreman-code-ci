@@ -186,8 +186,8 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     const workspaceProject = await within(dialog).findByRole('button', { name: 'Use workspace project' })
     await waitFor(() => expect(workspaceProject).toBeEnabled())
     await user.click(workspaceProject)
-    await user.type(within(dialog).getByRole('textbox', { name: 'Agent branch prefix' }), 'foreman/site')
-    await user.click(within(dialog).getByRole('button', { name: 'Apply worktree' }))
+    await user.type(within(dialog).getByRole('textbox', { name: 'Branch prefix' }), 'foreman/site')
+    await user.click(within(dialog).getByRole('button', { name: 'Apply' }))
     // The worktree line marks an unsaved choice until Save.
     const worktree = () => screen.getByRole('button', { name: /^Worktree:/ })
     expect(worktree()).toHaveAccessibleName(/\(unsaved\)$/)
@@ -304,7 +304,6 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     assertClean()
     await user.click(within(authoring()).getByRole('button', { name: 'S3 mounted workflow' }))
     await user.keyboard('Meaningful name{Enter}')
-    await user.click(within(await screen.findByRole('dialog', { name: 'Rename workflow?' })).getByRole('button', { name: 'Rename' }))
     expect(screen.getByRole('group', { name: 'Draft actions' })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Undo' }))
     // Undo leaves only Redo; the Board says what it changed back.
@@ -351,7 +350,6 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     expect(within(authoring()).getByRole('button', { name: 'S3 mounted workflow' })).toHaveFocus()
     await user.click(within(authoring()).getByRole('button', { name: 'S3 mounted workflow' }))
     await user.keyboard('Renamed board{Enter}')
-    await user.click(within(await screen.findByRole('dialog', { name: 'Rename workflow?' })).getByRole('button', { name: 'Rename' }))
     expect(screen.getByRole('button', { name: 'Renamed board' })).toBeVisible()
     const actions = within(screen.getByRole('group', { name: 'Draft actions' }))
     expect(actions.getByRole('button', { name: 'Save workflow' })).toBeVisible()
@@ -363,7 +361,6 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Rename' }))
     expect(screen.getByRole('textbox', { name: 'Workflow name' })).toHaveFocus()
     await user.keyboard('Menu renamed board{Enter}')
-    await user.click(within(await screen.findByRole('dialog', { name: 'Rename workflow?' })).getByRole('button', { name: 'Rename' }))
     const menuVersion = await save(mock, user, 2)
     expect(menuVersion.definition.name).toBe('Menu renamed board')
     await user.click(screen.getByRole('button', { name: 'Workflow actions' }))
@@ -467,7 +464,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
       await user.click(control('Workflow settings'))
       const node = nativeNode(useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes[0]!)
       const settings = within(screen.getByRole('complementary', { name: 'Workflow settings' }))
-      await user.selectOptions(settings.getByRole('combobox', { name: 'Starts the workflow' }), node.id)
+      await user.selectOptions(settings.getByRole('combobox', { name: 'Starts with' }), node.id)
       await user.click(settings.getByRole('button', { name: 'Close panel' }))
     }
     const version = await save(mock, user, 1)
@@ -538,7 +535,7 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     await user.click(await screen.findByRole('button', { name: new RegExp(`Open Run ${oldRun.id} ·`) }))
     await waitFor(() => expect(mounted.router.state.location.search.workflowVersionId).toBe(ordinary.id))
     expect(screen.getByRole('region', { name: 'Workflow authoring', hidden: true })).toBe(editor)
-    await user.click(screen.getByRole('button', { name: 'Clear Run selection' }))
+    await returnToDraft(user)
     expect(useGraphDraftStore.getState().nextDrafts[key]!.graph).not.toHaveProperty('repeat')
     // Three Saves and two Starts on one mounted Board: about twice S3-01's work,
     // measured at 4-6 s idle and 12-16 s in the loaded heavy phase. Keep the heavy-tier limit.
@@ -616,9 +613,15 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
       expect(readBoardStart(key)).toBeUndefined()
       expect(mock.runs.size).toBe(0); expect(control('Start saved version')).toBeDisabled(); return
     }
+    if (mode === 'stale') {
+      // A definite rejection is final: no Run exists and nothing is kept as an uncertain earlier Start.
+      await waitFor(() => expect(readBoardStart(key)).toBeUndefined())
+      expect(mock.runs.size).toBe(0)
+      return
+    }
     await waitFor(() => expect(readBoardStart(key)).toBeDefined())
     const retained = readBoardStart(key)!, href = mounted.router.state.location.href
-    if (mode === 'denied' || mode === 'stale') expect(mock.runs.size).toBe(0)
+    if (mode === 'denied') expect(mock.runs.size).toBe(0)
     if (mode !== 'lost') return
     expect(mock.runs.size).toBe(1)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Reconcile Start' })).toBeEnabled())

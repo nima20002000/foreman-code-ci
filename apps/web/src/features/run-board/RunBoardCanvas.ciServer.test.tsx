@@ -41,7 +41,7 @@ it('shows the CI server on a saved Run Board and opens the Run CI jobs', async (
   await mount()
   // fireEvent: a real pointer press would start React Flow's zoom drag, which jsdom cannot host.
   fireEvent.click(await screen.findByRole('button', { name: /^CI server, .*Open CI jobs/ }))
-  const dialog = await screen.findByRole('dialog', { name: 'CI server' })
+  const dialog = await screen.findByRole('complementary', { name: 'CI server' })
   expect(await within(dialog).findByRole('button', { name: 'Show tests of unit · unit-api requested by X before rename' })).toBeVisible()
 })
 

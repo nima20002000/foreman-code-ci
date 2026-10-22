@@ -87,7 +87,7 @@ it.each(['write', 'read', 'latest-response'] as const)('keeps the original edito
   if (failure === 'latest-response') f.controls.failLatestRead = true
   await inspectLatest()
   if (failure === 'read') {
-    expect(await screen.findByRole('alert')).toHaveTextContent('Recovery read denied')
+    await waitFor(() => expect(screen.getAllByRole('alert').map(item => item.textContent).join(' ')).toContain('Recovery read denied'))
   }
   const errorText = failure === 'latest-response' ? 'Latest saved workflow could not be read.'
     : failure === 'read' ? 'Recovery read denied' : /Durable edit storage is unavailable/
@@ -125,6 +125,8 @@ it('blocks Inspect latest while Stage is uncertain and reconciles the original i
   expect(f.requests.length).toBeGreaterThan(1)
   for (const input of f.requests) expect(input).toEqual(original)
   expect(f.saved().version.definition.name).toBe('Exact pending name')
+  // A clean draft just reloads; an unsaved change is what Inspect latest keeps as a recovered copy.
+  await rename('Unsaved after reconcile')
   await inspectLatest()
   await waitFor(() => expect(draft(f).context.draft.id).not.toBe(original.draftId))
   expect(readConflictRecoveries(f.key)).toHaveLength(1)

@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, Outlet, RouterProvider, useMatch } from '@tanstack/react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EngineChatReadbackSchema, collaborationContractFixtures } from '@foreman-code/contracts'
@@ -13,6 +14,7 @@ import { WorkflowSidePanel, type WorkflowCollaborationSlots as PanelSlots } from
 
 type WorkflowCollaborationSlots = PanelSlots & { memoryBoard?(): ReactNode }
 import { useSelectedRun } from '../runs-selector/useSelectedRun'
+import { queryKeys } from '../../shared/api/query'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
@@ -81,7 +83,10 @@ function mount(entry: string, extra?: WorkflowCollaborationSlots | ((navigation:
   const settings = createRoute({ getParentRoute: () => root, path: '/settings', component: () => <p>Outside Board</p> })
   const router = createRouter({ routeTree: root.addChildren([board, pinned, settings]),
     history: createMemoryHistory({ initialEntries: [entry] }) })
-  render(<RouterProvider router={router} />)
+  // The panel names its Agent from the already loaded workflow; that read is seeded so the shell itself does no fetching.
+  const queries = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  queries.setQueryData(queryKeys.managedWorkflow('workspace', 'workflow'), { workflow: { nodes: [{ id: 'node-a', name: 'Alpha' }] } })
+  render(<QueryClientProvider client={queries}><RouterProvider router={router} /></QueryClientProvider>)
   return router
 }
 
@@ -302,19 +307,21 @@ describe('disabled collaboration shell through navigation and rendered controls'
     expect(await screen.findByText('Choose exact work')).toBeVisible()
   })
 
-  it('opens Group chat in a dialog instead of the rail, whose destinations are only Agent and Browser', async () => {
+  it('opens Group chat in the floating panel without Agent tabs, while the Agent panel offers Chat, Settings, Details and Browser', async () => {
     const user = userEvent.setup()
     const router = mount('/workspaces/workspace?workflowId=workflow', { groupChat: () => <p>Group messages</p> })
     await user.click(await screen.findByRole('button', { name: 'Open Agent settings' }))
     const rail = within(screen.getByRole('complementary', { name: 'Workflow side panel' }))
-    expect(rail.getByRole('navigation', { name: 'Workflow panel destination' }).textContent).toBe('AgentBrowser')
+    expect(rail.getByRole('heading', { name: 'Alpha' })).toBeVisible()
+    expect(rail.getByRole('navigation', { name: 'Workflow panel view' }).textContent).toBe('ChatSettingsDetailsBrowser')
     expect(rail.queryByRole('button', { name: 'Operator' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Open Group chat' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Group chat' })
-    expect(within(dialog).getByText('Group messages')).toBeVisible()
-    expect(screen.queryByRole('complementary', { name: 'Workflow side panel' })).not.toBeInTheDocument()
-    await user.click(within(dialog).getByRole('button', { name: 'Close group chat' }))
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Group chat' })).not.toBeInTheDocument())
+    const panel = within(screen.getByRole('complementary', { name: 'Workflow side panel' }))
+    expect(panel.getByRole('heading', { name: 'Group chat' })).toBeVisible()
+    expect(panel.getByText('Group messages')).toBeVisible()
+    expect(panel.queryByRole('navigation', { name: 'Workflow panel view' })).not.toBeInTheDocument()
+    await user.click(panel.getByRole('button', { name: 'Close group chat' }))
+    await waitFor(() => expect(screen.getByRole('complementary', { name: 'Workflow side panel', hidden: true })).not.toBeVisible())
     expect(router.state.location.search).not.toHaveProperty('boardPanel')
   })
 

@@ -160,7 +160,7 @@ describe('Run inspection inside the one mounted Board', () => {
       HttpResponse.json({ runId: scope.runId, truncated: false, jobs: [] })))
     await mount(href(scope))
     clickCiServer(await screen.findByRole('button', { name: /^CI server, Idle/ }))
-    const dialog = await screen.findByRole('dialog', { name: 'CI server' })
+    const dialog = await screen.findByRole('complementary', { name: 'CI server' })
     expect(within(dialog).getByText('No CI jobs in this Run yet')).toBeVisible()
     expect(within(dialog).getByRole('tab', { name: 'Tests' })).toBeDisabled()
     expect(within(dialog).getByRole('tab', { name: 'Log' })).toBeDisabled()
@@ -183,7 +183,7 @@ describe('Run inspection inside the one mounted Board', () => {
           startedAt: null, finishedAt: null } }] })))
     const { cache } = await mount(href(scope))
     clickCiServer(await within(pinnedCanvas()).findByRole('button', { name: /CI server, 1 running/ }))
-    const dialog = await screen.findByRole('dialog', { name: 'CI server' })
+    const dialog = await screen.findByRole('complementary', { name: 'CI server' })
     expect(within(dialog).getByRole('button', { name: /Show tests of build · build-api/ })).toBeVisible()
     responseStatus = 503
     await act(async () => { await cache.refetchQueries({ queryKey: [...runInspectionQueryKey(scope), 'ci-jobs'] }) })
@@ -677,7 +677,7 @@ describe('Live Run status on the Board', () => {
     expect((await within(canvas).findAllByText('CI build-api · running'))[0]).toBeVisible()
     expect(screen.queryByRole('list', { name: 'CI jobs' })).not.toBeInTheDocument()
     fireEvent.click(ciServerButton)
-    const ciDialog = await screen.findByRole('dialog', { name: 'CI server' })
+    const ciDialog = await screen.findByRole('complementary', { name: 'CI server' })
     const ciRow = within(within(ciDialog).getByRole('region', { name: 'CI jobs' })).getAllByRole('row')[1]!
     for (const text of ['build · build-api', 'GitHub Actions', 'GitHub Actions 2', 'Step build-api', 'Running', nameOf(added)]) {
       expect(ciRow).toHaveTextContent(text)
@@ -768,7 +768,7 @@ describe('CI server on the Board', () => {
     // A click on the canvas (jsdom has no pointer view for the canvas pan handler).
     fireEvent.click(within(failed).getByRole('button', { name: /^CI server/ }))
     const user = userEvent.setup()
-    const dialog = await screen.findByRole('dialog', { name: 'CI server' })
+    const dialog = await screen.findByRole('complementary', { name: 'CI server' })
     const row = within(within(dialog).getByRole('region', { name: 'CI jobs' })).getAllByRole('row')[1]!
     for (const text of ['unit · unit-api', 'Affected', 'GitHub Actions', 'GitHub Actions 1', 'Failed', '1 passed · 1 failed · 1 skipped', name, '2m 0s']) {
       expect(row).toHaveTextContent(text)
@@ -805,7 +805,7 @@ describe('CI server on the Board', () => {
     await user.click(within(dialog).getByRole('tab', { name: 'Log' }))
     await within(dialog).findByLabelText('Log tail')
     await user.click(within(dialog).getByRole('button', { name: 'Close CI server' }))
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'CI server' })).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('complementary', { name: 'CI server' })).not.toBeInTheDocument())
     // Closed from the Log tab, the dialog reads no log, even when the job runs again.
     const reads = logReads
     jobs = [job('running')]
@@ -855,7 +855,7 @@ it('inspects an immutable Run node named ci-server independently of its CI tower
     const tower = await within(canvas).findByRole('button', { name: /^CI server, Idle/ })
     expect(tower.closest('.react-flow__node')).not.toBe(owner.closest('.react-flow__node'))
     fireEvent.click(tower)
-    expect(await screen.findByRole('dialog', { name: 'CI server' })).toBeVisible()
+    expect(await screen.findByRole('complementary', { name: 'CI server' })).toBeVisible()
     expect(fixture.runs.before.version.definition.nodes[0]!.id).toBe('ci-server')
     expect(uncaughtError).not.toHaveBeenCalled()
   } finally {

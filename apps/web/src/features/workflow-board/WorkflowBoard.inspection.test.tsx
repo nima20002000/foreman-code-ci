@@ -28,10 +28,9 @@ describe('mounted historical identity and keyboard regressions', () => {
     const { cache } = await mountMeasuredBoard(boardHref(owner.scope, {
       runNodeId: nodeId, runExchangeKey: runInspectionKey({ executionId: id }),
     }))
-    // The linked execution opens in the shared rail; its Run's Activities show the repetitions and saved configuration.
+    // The linked execution opens in the shared rail; the saved configuration is checked in the Run inspector below.
     const rail = await screen.findByRole('complementary', { name: 'Workflow side panel' })
     const article = await within(rail).findByRole('article', { name: `Execution ${id}` })
-    expect(rail).toHaveTextContent(nativeNode(expected.execution).agentConfigurationVersionId)
     expect(await within(article).findByLabelText(`Accepted result ${id}`)).toHaveTextContent(id)
     expect(pinned()).toHaveAttribute('data-run-id', owner.run.id)
     const inspector = await openRunDetails()

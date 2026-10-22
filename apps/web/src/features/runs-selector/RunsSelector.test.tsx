@@ -89,7 +89,7 @@ describe('Runs window and URL selection (real HTTP boundary + MSW)', () => {
     expect(rows.slice(1).map((row) => row.getAttribute('data-run-id'))).toEqual(['run-a', 'run-b', 'run-c'])
     expect(rows[1]).toHaveTextContent('short-A')
     expect(rows[2]).toHaveTextContent('short-B')
-    expect(rows[3]).toHaveTextContent('short-C') // The Run column always names each row.
+    expect(rows[3]).not.toHaveTextContent('short-C') // A Run with a date of its own needs no id.
     await userEvent.click(rows[2]!)
     await waitFor(() => expect(screen.getByLabelText('Selected identity')).toHaveTextContent(selectedIdentity('run-b')))
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()

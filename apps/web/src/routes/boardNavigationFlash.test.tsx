@@ -86,7 +86,11 @@ it.each([
       expect(router.state.status).toBe('idle')
       expect(screen.queryByTestId('unified-workflow-board')).not.toBeInTheDocument()
     })
-    expect(await screen.findByRole('heading', { name: heading, level: 1 })).toBeVisible()
+    // The Workflows page is a workspace tab; its place is the current section tab, not a page heading.
+    if (heading === 'Workflows') {
+      const tabs = await screen.findByRole('navigation', { name: 'Workspace sections' })
+      expect(await within(tabs).findByRole('link', { name: 'Workflows' })).toHaveAttribute('aria-current', 'page')
+    } else expect(await screen.findByRole('heading', { name: heading, level: 1 })).toBeVisible()
     observer.disconnect()
     expect(screen.queryByText('Invalid board selection')).not.toBeInTheDocument()
     expect(flashes).toEqual([])

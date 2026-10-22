@@ -103,7 +103,7 @@ describe('open schedule readback refresh', () => {
       error: { code: 'UNAVAILABLE', message: 'Unavailable.' },
     }, { status: 503 })))
     await poll()
-    expect(await screen.findByText('Next unavailable')).toBeVisible()
+    expect(await screen.findByText('Next run unavailable')).toBeVisible()
     expect(screen.getByLabelText('Time')).toHaveValue('10:15')
     expect(screen.getByRole('button', { name: /^Save$/ })).toBeEnabled()
   })

@@ -211,7 +211,6 @@ describe('WorkspaceRouteEntry integration', () => {
     const name = screen.getByRole('textbox', { name: 'Workflow name' })
     await user.clear(name)
     await user.type(name, 'Activities persisted workflow{Enter}')
-    await user.click(await screen.findByRole('button', { name: 'Rename' }))
     await user.click(screen.getByRole('button', { name: 'Save workflow' }))
     expect(await screen.findByText('Saved.')).toBeVisible()
     first.unmount()
@@ -287,7 +286,7 @@ describe('WorkspaceRouteEntry integration', () => {
     missing.unmount()
   })
 
-  it.each([403, 404])('stops automatic polling after a terminal %s while keeping manual retry', async (status) => {
+  it.each([403, 404])('stops automatic polling after a terminal %s and offers a way forward', async (status) => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     let requests = 0
     server.use(http.get('/api/workspaces/stale-workspace', () => {
@@ -301,7 +300,12 @@ describe('WorkspaceRouteEntry integration', () => {
     }))
 
     const stale = await renderWorkspace('/workspaces/stale-workspace?workflowId=workflow-content-pipeline')
-    const retry = await screen.findByRole('button', { name: 'Retry workspace request' })
+    // A denied workspace can be tried again; a missing one can only be left.
+    const retry = status === 403 ? await screen.findByRole('button', { name: 'Try again' }) : undefined
+    if (status === 404) {
+      expect(await screen.findByTestId('workspace-not-found')).toBeVisible()
+      expect(screen.getByRole('link', { name: 'Go to workspaces' })).toBeVisible()
+    }
     expect(requests).toBe(1)
 
     // Advance the polling window to prove terminal errors suppress automatic requests.
@@ -309,8 +313,10 @@ describe('WorkspaceRouteEntry integration', () => {
     expect(requests).toBe(1)
 
     vi.useRealTimers()
-    fireEvent.click(retry)
-    await waitFor(() => expect(requests).toBe(2))
+    if (retry) {
+      fireEvent.click(retry)
+      await waitFor(() => expect(requests).toBe(2))
+    }
     stale.unmount()
   })
 

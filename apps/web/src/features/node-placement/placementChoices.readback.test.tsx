@@ -90,7 +90,8 @@ it.each(['ready', 'unavailable', 'empty'] as const)('does not poll a settled %s 
 })
 
 it.each(['omitted', 'ready'] as const)('refreshes a mounted %s choice when computer presence changes', async initial => {
-  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  // Date is faked too: a computer that was online stays online for a 60 second link blip before it counts as gone.
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
   let online = initial === 'ready'
   const reads = discovery(() => ({ ready: online, omitted: !online && initial === 'omitted', reason: 'Worker disconnected' }))
   server.use(http.get('*/api/management/computers/activity', () => HttpResponse.json({
@@ -107,6 +108,7 @@ it.each(['omitted', 'ready'] as const)('refreshes a mounted %s choice when compu
   expect(reads()).toBe(settledReads)
   online = !online
   await act(async () => { await client.invalidateQueries({ queryKey: ['computer-activity'] }) })
+  if (!online) await act(async () => { await vi.advanceTimersByTimeAsync(61_000) })
   const option = await screen.findByRole('option', { name: online ? 'Paired computer: Ready' : /Worker disconnected/ })
   if (online) expect(option).toBeEnabled()
   else expect(option).toBeDisabled()

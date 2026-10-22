@@ -83,7 +83,7 @@ describe('meaningful Save through the real Board transport', () => {
     await screen.findByText('Can’t save — fix 2 settings')
     const fixes = screen.getAllByRole('button', { name: 'Fix setting' })
     await user.click(fixes[0]!)
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Reviewing coordinator' })).toHaveFocus())
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Coordinator' })).toHaveFocus())
     await user.click(fixes[1]!)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Set limits' })).toHaveFocus())
     expect(nextDraftDirty(draft(f))).toBe(true)

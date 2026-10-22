@@ -98,7 +98,7 @@ describe('schedule Last attempt feedback', () => {
     const view = mount({ ...occurrence, status: 'accepted', reason: null, runId, workflowVersionId: 'saved-version' }, once)
     const section = await open(view.user)
     expect(await within(section).findByText('Accepted')).toBeVisible()
-    expect(screen.getByText('Next —')).toBeVisible()
+    expect(screen.getByText('Next run', { exact: false })).toHaveTextContent('Next run not scheduled')
     const link = within(section).getByRole('link', { name: 'View Run (opens in a new tab)' })
     const url = new URL(link.getAttribute('href')!, window.location.origin)
     expect(url.pathname).toBe(`/workspaces/${scope.workspaceId}`)
@@ -147,7 +147,7 @@ describe('schedule Last attempt feedback', () => {
     server.use(http.get(`${schedulePath(scope)}/occurrences`, () =>
       HttpResponse.json({ error: { code: 'ACCESS_DENIED', message: 'Private server detail.' } }, { status: 403 })))
     await act(async () => { vi.advanceTimersByTime(5_001) })
-    expect(await within(section).findByText('Could not load last attempt.')).toBeVisible()
+    expect(await within(section).findByText('Couldn’t load the last attempt.')).toBeVisible()
     expect(within(section).queryByRole('link')).not.toBeInTheDocument()
     expect(section).not.toHaveTextContent('Private server detail.')
     server.use(http.get(`${schedulePath(scope)}/occurrences`, () =>

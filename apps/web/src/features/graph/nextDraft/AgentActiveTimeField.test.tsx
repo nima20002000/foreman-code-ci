@@ -17,11 +17,11 @@ it('edits seconds, preserves other limits, and clears the override to inherit th
       onChange={(next) => { changes.push(next); setPolicy(next) }} />
   }
   render(<Form />)
-  const field = screen.getByRole('spinbutton', { name: 'Agent active-time budget (seconds)' })
+  const field = screen.getByRole('spinbutton', { name: 'Turn time limit (s)' })
   expect(field).toHaveValue(null)
-  expect(screen.queryByText(/server default \(600 seconds\)/)).not.toBeInTheDocument()
-  await userEvent.setup().hover(screen.getByRole('button', { name: 'About Agent active-time budget (seconds)' }))
-  expect(screen.getByRole('tooltip')).toHaveTextContent(/server default \(600 seconds\)/)
+  expect(screen.queryByText(/default \(600 s\)/)).not.toBeInTheDocument()
+  await userEvent.setup().hover(screen.getByRole('button', { name: 'About Turn time limit' }))
+  expect(screen.getByRole('tooltip')).toHaveTextContent(/Leave blank for the default \(600 s\)/)
   fireEvent.change(field, { target: { value: '3600' } })
   expect(field).toHaveValue(3600)
   expect(changes.at(-1)).toEqual({ maxParallelism: 2, maxNodeExecutions: 8, agentActiveTimeoutMs: 3_600_000 })
@@ -35,10 +35,10 @@ it('edits seconds, preserves other limits, and clears the override to inherit th
 it('describes default inheritance before capabilities finish loading', async () => {
   render(<AgentActiveTimeField policy={{ maxParallelism: 2, maxNodeExecutions: 8 }}
     defaultMs={undefined} onChange={() => {}} />)
-  expect(screen.queryByText(/Leave blank to use the server default\./)).not.toBeInTheDocument()
-  await userEvent.setup().hover(screen.getByRole('button', { name: 'About Agent active-time budget (seconds)' }))
-  expect(screen.getByRole('tooltip')).toHaveTextContent(/Leave blank to use the server default\./)
-  expect(screen.getByRole('spinbutton', { name: 'Agent active-time budget (seconds)' })).toHaveValue(null)
+  expect(screen.queryByText(/Leave blank for the default\./)).not.toBeInTheDocument()
+  await userEvent.setup().hover(screen.getByRole('button', { name: 'About Turn time limit' }))
+  expect(screen.getByRole('tooltip')).toHaveTextContent(/Leave blank for the default\./)
+  expect(screen.getByRole('spinbutton', { name: 'Turn time limit (s)' })).toHaveValue(null)
 })
 
 it('restores a saved override and retains unfinished invalid values in local drafts', () => {
@@ -46,7 +46,7 @@ it('restores a saved override and retains unfinished invalid values in local dra
   graph.executionPolicy!.agentActiveTimeoutMs = 3_600_000
   const restored = LocalWorkflowFormSchema.parse(JSON.parse(JSON.stringify(graph)))
   render(<AgentActiveTimeField policy={restored.executionPolicy!} defaultMs={300_000} onChange={() => {}} />)
-  expect(screen.getByRole('spinbutton', { name: 'Agent active-time budget (seconds)' })).toHaveValue(3600)
+  expect(screen.getByRole('spinbutton', { name: 'Turn time limit (s)' })).toHaveValue(3600)
   expect(LocalWorkflowFormSchema.parse({ ...graph, executionPolicy: {
     ...graph.executionPolicy, agentActiveTimeoutMs: 0,
   } }).executionPolicy?.agentActiveTimeoutMs).toBe(0)

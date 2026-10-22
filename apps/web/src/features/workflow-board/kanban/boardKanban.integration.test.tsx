@@ -61,24 +61,19 @@ async function streamOpened(after = 0) {
   return source!
 }
 
-it('adds the workflow Kanban to the Board, keeps its moved place, and only hides it on remove', async () => {
+it('shows the workflow Kanban on the Board, keeps its moved place across a reload, and never changes cards by viewing them', async () => {
   const board = install('kanban-layout')
   const user = userEvent.setup()
   const first = await mountMeasuredBoard(board.href)
-  const button = await screen.findByRole('button', { name: 'Kanban' })
-  await waitFor(() => expect(button).toBeEnabled())
-  expect(button).toHaveAttribute('aria-pressed', 'false')
-  expect(screen.queryByRole('region', { name: 'Kanban' })).not.toBeInTheDocument()
-
-  await user.click(button)
+  // The Kanban is always on the Board; it needs no switch and appears once its saved place is known.
+  expect(screen.queryByRole('button', { name: 'Kanban' })).not.toBeInTheDocument()
   const kanban = await screen.findByRole('region', { name: 'Kanban' })
   expect(canvas()).toContainElement(kanban)
   await streamOpened()
   expect(await within(kanban).findByRole('button', { name: 'Prepare release notes' })).toBeVisible()
   expect(within(within(kanban).getByRole('region', { name: 'Doing' })).getByRole('button', { name: 'Prepare release notes' })).toBeVisible()
   expect(within(within(kanban).getByRole('region', { name: 'Todo' })).getByRole('button', { name: 'Update the docs' })).toBeVisible()
-  expect(board.saves).toEqual([{ visible: true, frame: null }])
-  expect(button).toHaveAttribute('aria-pressed', 'true')
+  expect(board.saves).toEqual([])
 
   // Dragged by its bar, the Kanban keeps its new place on the server.
   const before = placed('board-kanban')
@@ -102,16 +97,10 @@ it('adds the workflow Kanban to the Board, keeps its moved place, and only hides
   const dialog = await screen.findByRole('dialog', { name: 'Memory board' })
   await user.click(within(dialog).getByRole('button', { name: /close memory board/i }))
   await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Memory board' })).not.toBeInTheDocument())
-
-  await user.click(within(screen.getByRole('region', { name: 'Kanban' })).getByRole('button', { name: 'Remove Kanban from Board' }))
-  await waitFor(() => expect(screen.queryByRole('region', { name: 'Kanban' })).not.toBeInTheDocument())
-  expect(board.saves.at(-1)).toMatchObject({ visible: false, frame: { x: Math.round(moved.x), y: Math.round(moved.y) } })
   expect(board.memory.calls.filter((call) => call.method === 'mutate')).toEqual([])
   expect([...board.memory.cards.keys()].sort()).toEqual(['card-docs', 'card-release'])
 
-  // Shown again after a reload, it comes back at the same place with the same cards.
-  await user.click(screen.getByRole('button', { name: 'Kanban' }))
-  await waitFor(() => expect(board.stored.layout.visible).toBe(true))
+  // After a reload it comes back at the same place with the same cards.
   first.unmount()
   const earlier = MemorySource.instances.length
   await mountMeasuredBoard(board.href)

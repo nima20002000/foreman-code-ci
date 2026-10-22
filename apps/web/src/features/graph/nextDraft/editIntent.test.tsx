@@ -30,7 +30,7 @@ async function confirmDiscard(user: ReturnType<typeof userEvent.setup>) {
   await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Discard changes' }))
 }
 async function reloadSavedDraft(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: 'Reload saved draft' }))
+  await user.click(screen.getByRole('button', { name: 'Reload' }))
   const dialog = screen.queryByRole('alertdialog')
   if (dialog) await user.click(within(dialog).getByRole('button', { name: 'Inspect latest' }))
 }
@@ -451,12 +451,12 @@ describe('NIM-2644 mounted frontend recovery through the real edit-intent hook',
     const rawWorker = structuredClone(edit().agentEdits![nativeNode(node).agentId]!)
     await user.click(screen.getByRole('button', { name: 'Entry · Node 0' }))
     await user.click(screen.getByRole('button', { name: /from workflow$/ }))
-    await user.click(within(await screen.findByRole('dialog', { name: /^Remove .* from workflow\?$/ })).getByRole('button', { name: 'Apply removal to draft' }))
+    await user.click(within(await screen.findByRole('alertdialog', { name: /^Remove .*\?$/ })).getByRole('button', { name: 'Remove' }))
     expect(edit().graph.entryNodeId).toBeNull()
     await user.click(screen.getByRole('button', { name: 'Workflow settings' }))
     const option = screen.getByRole('option', { name: /^Worker \d$/ })
     expect(option).toBeEnabled()
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Starts the workflow' }), node.id)
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Starts with' }), node.id)
     expect(edit().graph.entryNodeId).toBe(node.id); expectNoSavedStart()
     await saveWithStop(user); await waitFor(() => expect(advance).toHaveBeenCalledOnce())
     await waitFor(() => expect(savedStartButton()).toBeEnabled())

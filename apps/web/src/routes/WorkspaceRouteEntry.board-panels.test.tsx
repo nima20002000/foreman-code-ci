@@ -541,7 +541,7 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
     const files = within(group).getByRole('button', { name: 'Files' })
     expect(selector.compareDocumentPosition(clock) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(clock.compareDocumentPosition(files) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(group.closest('header')).toHaveStyle({ position: 'static', minWidth: '0', boxSizing: 'border-box' })
+    expect(group.closest('header')).toHaveStyle({ position: 'relative', minWidth: '0', boxSizing: 'border-box' })
     expect(container.querySelector('.unified-workflow-board')).toHaveStyle({ flexDirection: 'column' })
     await userEvent.click(selector)
     const menu = await screen.findByRole('menu', { name: 'Runs' })
