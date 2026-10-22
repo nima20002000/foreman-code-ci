@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Button, TextField } from '../../shared/ui/nocturne'
+import { Button, Icon, IconButton, TextField } from '../../shared/ui/nocturne'
 import { BrowserController } from './controller'
-import { BrowserControlStatus } from './BrowserControlStatus'
 import { BrowserViewer } from './BrowserViewer'
 import { BrowserSessionActions } from './BrowserSessionActions'
 import { BrowserPreparation, type BrowserPreparationRead } from './BrowserPreparation'
 import type { BrowserFilesPort } from './transferTypes'
 import { browserAccessDenied, browserErrorMessage, browserRequestUncertain } from './errors'
-import { roleLabel, subjectLabel } from './identity'
 import { browserSessionKey, useBrowserSession, useBrowserSessions, validateBrowserRead } from './queries'
 import type { BrowserSelection, BrowserSessionRead, BrowserTabLease, BrowserUiPort } from './types'
 import './agentBrowser.css'
@@ -93,9 +91,6 @@ function SelectedBrowser(props: AgentBrowserPanelProps & { keepControlOnTabChang
   const tab = data?.tabs.find(item => item.tabId === props.selection.tabId)
     ?? (props.selection.tabId === null ? data?.tabs.find(item => item.tabId === data.session.selectedTabId) : undefined)
   return <section className="agent-browser-panel" aria-label="Agent browser">
-    {props.compact ? <p className="agent-browser-where">{roleLabel(props.selection.subject)} · {props.computerName} · {props.profileName}</p>
-      : <header><h3>{props.selection.subject.agent.displayName} · {props.computerName} · {props.profileName}</h3>
-        <p>{roleLabel(props.selection.subject)} · {subjectLabel(props.selection.subject)}</p></header>}
     {rejected ? <div role="alert"><p>Browser access is unavailable.</p>
       <Button onClick={() => { void reconnect() }}>Check access</Button></div>
       : error ? <div role="alert"><p>{browserErrorMessage(error)}</p>
@@ -127,6 +122,8 @@ function SessionChoices({ sessions, loading, selection, onSelectSession, compact
   onSelectSession(sessionId: string): void; compact?: boolean
 }) {
   if (loading) return <p role="status">Loading browser sessions…</p>
+  // The sidebar shows live browsers only; ended ones are history, not choices.
+  if (compact) sessions = sessions?.filter(session => session.state !== 'closed' && session.state !== 'failed')
   if (!sessions?.length) return <p>{selection.historical ? 'No live browser remains for this historical selection.' : 'No live browser yet.'}</p>
   return <div><p>{sessions.length > 1 ? 'Choose the exact browser session to watch.' : 'Browser session for the selected agent.'}</p>
     {sessions.map((session, index) => <Button key={session.id} onClick={() => onSelectSession(session.id)}>
@@ -169,7 +166,8 @@ export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
     const outside = (event: globalThis.PointerEvent) => {
       if (event.target instanceof Node && !surface.current?.contains(event.target)) void controller.release()
     }
-    const blur = () => controller.pause(new Error('Browser actions are paused. Reconnect the view before continuing.'))
+    // Leaving the browser (clicking elsewhere or switching windows) hands control back to the agent.
+    const blur = () => { void controller.release() }
     document.addEventListener('pointerdown', outside)
     window.addEventListener('blur', blur)
     return () => {
@@ -219,30 +217,38 @@ export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
     setError(null)
     mutation.mutate({ action, commandId: crypto.randomUUID(), visit: effectVisit.current, selectedTabId, selectCreated })
   }
+  const busy = pending || snapshot.stale
   return <div ref={surface} className="agent-browser-content">
-    <BrowserControlStatus snapshot={snapshot} viewerId={props.viewerId} setup={props.setup ?? false} readOnly={props.readOnly}
-      onAcquire={() => { void controller.acquire().catch(failure => setError(browserErrorMessage(failure))) }}
-      onRelease={() => { void controller.release() }} onReconnect={() => { retiringForTab.current = true; props.onReconnect() }} />
-    <div className="agent-browser-tabs" aria-label="Browser tabs">{props.initial.tabs.map(tab =>
-      <Button key={tab.tabId} size="sm" variant="ghost" aria-current={tab.tabId === props.tab.tabId ? 'page' : undefined}
-        disabled={pending} onClick={() => {
-          if (tab.tabId === props.tab.tabId) return
-          if (props.readOnly) { retiringForTab.current = true; props.onSelectTab(tab.tabId); return }
-          mutate((epoch, commandId) => props.port.selectTab(props.initial.session, tab.tabId, props.viewerId, epoch, commandId), tab.tabId)
-        }}>{tab.title || 'Untitled tab'}</Button>)}</div>
-    {!props.readOnly ? <form className="agent-browser-address" onSubmit={event => {
+    {/* Chrome-like tab strip: choosing a tab takes control; nothing else sits above the page. */}
+    <div className="agent-browser-tabs" role="tablist" aria-label="Browser tabs">{props.initial.tabs.map(tab =>
+      <div key={tab.tabId} className="agent-browser-tab" data-selected={tab.tabId === props.tab.tabId || undefined}>
+        <button type="button" role="tab" aria-selected={tab.tabId === props.tab.tabId} disabled={pending}
+          title={tab.title || tab.url || 'Untitled tab'} onClick={() => {
+            if (tab.tabId === props.tab.tabId) { void controller.acquire().catch(failure => setError(browserErrorMessage(failure))); return }
+            if (props.readOnly) { retiringForTab.current = true; props.onSelectTab(tab.tabId); return }
+            mutate((epoch, commandId) => props.port.selectTab(props.initial.session, tab.tabId, props.viewerId, epoch, commandId), tab.tabId)
+          }}>{tab.title || tab.url || 'Untitled tab'}</button>
+        {!props.readOnly ? <IconButton label={`Close ${tab.title || 'tab'}`} variant="ghost" size="sm" disabled={busy}
+          onClick={() => { mutate((epoch, commandId) => props.port.closeTab(props.initial.session, tab.tabId, props.viewerId, epoch, commandId)) }}>
+          <Icon name="close" size={12} /></IconButton> : null}
+      </div>)}
+      {!props.readOnly ? <IconButton label="New tab" variant="ghost" size="sm" disabled={busy} onClick={() => { mutate((epoch, commandId) =>
+        props.port.createTab(props.initial.session, props.viewerId, epoch, commandId), undefined, true) }}><Icon name="plus" size={14} /></IconButton> : null}
+    </div>
+    {props.setup && !props.readOnly ? <form className="agent-browser-address" onSubmit={event => {
       event.preventDefault()
       mutate((epoch, commandId) => props.port.navigate(props.initial.session, props.tab, props.viewerId, epoch, url, commandId))
     }}><TextField label="Website address" value={url} onChange={event => setUrl(event.currentTarget.value)} disabled={pending}
       onFocus={() => { typing.current = true }} onBlur={() => { typing.current = false }} />
-      <Button type="submit" disabled={pending || snapshot.stale || !url.trim()}>Go</Button></form> : null}
-    {error || mutation.error ? <p role="alert">{error ?? browserErrorMessage(mutation.error)}</p> : null}
+      <Button type="submit" disabled={busy || !url.trim()}>Go</Button></form> : null}
+    {error || mutation.error || snapshot.error ? <p role="alert">{error ?? (mutation.error ? browserErrorMessage(mutation.error) : snapshot.error)}</p> : null}
     {unresolved ? <Button size="sm" disabled={mutation.isPending} onClick={() => {
       if (mutation.variables) mutation.mutate(mutation.variables)
     }}>Check original browser action</Button> : null}
+    {snapshot.stale && snapshot.notice !== 'denied' ? <Button size="sm" onClick={() => { retiringForTab.current = true; props.onReconnect() }}>Reconnect</Button> : null}
     <BrowserViewer controller={controller} snapshot={snapshot} readOnly={props.readOnly}
       onLeavePage={() => surface.current?.querySelector<HTMLButtonElement>('[data-browser-control]')?.focus()} />
-    <small id="browser-page-help">Click the page or choose Take control to interact. Tab moves through the website; Escape leaves page capture. Changing tabs keeps your control.</small>
+    <small id="browser-page-help" className="agent-browser-help">Click the page to take control; click elsewhere to give it back.</small>
     <BrowserSessionActions read={props.initial} tab={props.tab} files={props.files} disabled={pending || snapshot.stale}
       onDenied={failure => controller.pause(failure)}
       readOnly={props.readOnly} onChanged={() => { if (mounted.current) props.onRefresh() }}
@@ -254,19 +260,5 @@ export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
         return { viewerId: props.viewerId, epoch: control.epoch }
       }} onRespond={(accept, prompt) => mutate((epoch, commandId) =>
         props.port.respondDialog(props.initial.session, props.tab, props.viewerId, epoch, accept, prompt, commandId))} />
-    {!props.readOnly ? <div className="agent-browser-actions">
-      <Button size="sm" disabled={pending || snapshot.stale} onClick={() => { mutate((epoch, commandId) =>
-        props.port.createTab(props.initial.session, props.viewerId, epoch, commandId), undefined, true) }}>New tab</Button>
-      <Button size="sm" variant="ghost" disabled={pending || snapshot.stale} onClick={() => { mutate((epoch, commandId) =>
-        props.port.closeTab(props.initial.session, props.tab.tabId, props.viewerId, epoch, commandId)) }}>Close tab</Button>
-      <Button size="sm" variant="ghost" disabled={pending || snapshot.stale} onClick={() => {
-        const visit = effectVisit.current
-        mutate(async (epoch, commandId) => {
-          const control = await props.port.openLocalBrowser(props.initial.session, props.viewerId, epoch, commandId)
-          if (mounted.current && visit === effectVisit.current) controller.pause(new Error(`Complete in the browser on ${props.computerName}, then reconnect and return control.`))
-          return { ...props.initial, control }
-        })
-      }}>Continue on this computer</Button>
-    </div> : null}
   </div>
 }

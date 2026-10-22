@@ -78,10 +78,10 @@ export class QualificationCache<T> {
         loaded.checkedAt = new Date(this.now()).toISOString()
         loaded.lastError = null
         settle(this.ttlMs, true)
-      }, () => {
+      }, (error: unknown) => {
         loaded.failureCount++
         loaded.lastError = 'The native readiness check could not complete.'
-        if (previous) logger.warn({ component: 'harness', failureCount: loaded.failureCount,
+        if (previous) logger.warn({ component: 'harness', key, err: error, failureCount: loaded.failureCount,
           refreshCount: loaded.refreshCount, lastError: loaded.lastError }, 'Native readiness refresh failed')
         // A failed background refresh keeps the last success and retries soon; other failures are cached as rejections.
         if (stale && !loaded.invalidated) loaded.value = stale

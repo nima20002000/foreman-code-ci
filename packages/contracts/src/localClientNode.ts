@@ -176,7 +176,12 @@ export function localHumanClient(socket: ClientSocket): Promise<boolean> {
   const endpoints = `${socket.remoteAddress} ${socket.remotePort} ${socket.localAddress} ${socket.localPort}`
   const known = attributedSockets.get(socket)
   if (known?.endpoints === endpoints) return known.human
-  const human = attributeClient(socket)
+  // A busy machine can time out one OS lookup; inspect once more before reporting the connection unverifiable.
+  const human = attributeClient(socket).catch(async error => {
+    if (!(error instanceof LocalClientUnavailableError)) throw error
+    await new Promise(resolve => setTimeout(resolve, 250))
+    return attributeClient(socket)
+  })
   attributedSockets.set(socket, { endpoints, human })
   // Failed attribution is not a decision; the next request inspects again.
   human.catch(() => { if (attributedSockets.get(socket)?.human === human) attributedSockets.delete(socket) })

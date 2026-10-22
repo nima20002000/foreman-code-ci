@@ -125,7 +125,7 @@ export function WorkflowBrowserSidebar({ workspaceId, workflowId, runId, workflo
   const primary = selectedId ? byNode.get(selectedId)?.[0] : undefined
   const notice = listed.error ? <p className="browser-sidebar-notice" role="alert">{errorMessage(listed.error, 'Agent browsers could not be read.')}</p>
     : listed.data?.unreachable.length ? <p className="browser-sidebar-notice">{listed.data.unreachable.join(', ')} could not be reached; its browsers are not shown.</p>
-      : listed.isPending ? <p className="browser-sidebar-notice" role="status">Looking for agent browsers…</p> : null
+      : null
   return <BrowserSidebar tabs={tabs} selectedId={selectedId} notice={notice}
     emptyText={runId ? 'No agent browsers are active in this run.' : 'No agent browsers are active in this workflow.'}
     onSelect={sidebar.select} onClose={sidebar.close}

@@ -3,15 +3,17 @@ import { TextField } from '../../shared/ui/nocturne'
 import type { BrowserController } from './controller'
 import type { BrowserControllerSnapshot, PageFrame, PageGesture } from './types'
 
+/** The previous image stays on screen until the next one replaces it, so the page never blanks between frames. */
 function useFrameUrl(frame: PageFrame | null): string | null {
-  const [value, setValue] = useState<{ frame: PageFrame; url: string } | null>(null)
+  const [url, setUrl] = useState<string | null>(null)
   useEffect(() => {
     if (!frame) return
-    const url = URL.createObjectURL(frame.image)
-    setValue({ frame, url })
-    return () => { URL.revokeObjectURL(url) }
+    const next = URL.createObjectURL(frame.image)
+    setUrl(next)
+    // Revoked once the next image has had time to paint over it.
+    return () => { setTimeout(() => URL.revokeObjectURL(next), 2000) }
   }, [frame])
-  return value?.frame === frame ? value.url : null
+  return url
 }
 
 function pagePoint(event: PointerEvent<HTMLDivElement> | WheelEvent<HTMLDivElement>, frame: PageFrame) {
@@ -78,6 +80,6 @@ export function BrowserViewer({ controller, snapshot, readOnly, onLeavePage }: {
       autoComplete="off" spellCheck={false} disabled={!writable}
       onPaste={event => { event.preventDefault(); send({ kind: 'composition', phase: 'end', text: event.clipboardData.getData('text/plain') }) }}
       onInput={event => { if (!(event.nativeEvent as InputEvent).isComposing) event.currentTarget.value = '' }} />
-    {snapshot.stale && snapshot.frame ? <span className="agent-browser-stale">Last image · connection paused</span> : null}
+    {snapshot.stale && snapshot.frame ? <span className="agent-browser-stale">Connection paused</span> : null}
   </div>
 }

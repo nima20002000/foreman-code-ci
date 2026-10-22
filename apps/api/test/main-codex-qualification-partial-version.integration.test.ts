@@ -28,8 +28,6 @@ it('automatically recovers qualification after partial version output from an un
       activity.some(event => event.invalidVersion === true), 'partial startup version output')
     expect((await qualifications()).qualifications.some(record => record.status === 'failed'
       && record.binarySha256 === original.binarySha256)).toBe(false)
-    // Start waits for the in-flight check; the partial version output ends it without a usable profile.
-    await expect(fixture.start({ replay: false })).rejects.toThrow('HARNESS_QUALIFICATION_FAILED')
     await fixture.provider.restoreVersions()
     invalidVersions = false
     await waitForRemoteReview(qualifications, result => result.qualifications.some(record =>

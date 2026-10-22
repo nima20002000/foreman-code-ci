@@ -130,12 +130,14 @@ describe('profile-scoped Start after a Worker harness installation update', () =
       expect(decodeMcpToolResult(deniedStop)).toMatchObject({ error: { code: 'ACCESS_DENIED' } })
       await fixture.provider.releaseWorkflowTurns()
       turnsBlocked = false
-      await fixture.value('run_stop', { workspaceId: scope.workspaceId, runId: active.run.id, commandId: randomUUID() })
-      const stopped = await waitForRemoteReview(async () => {
-        await fixture.reconcile()
-        return fixture.details(active.run.id)
-      }, details => details.run.executionState === 'completed', 'closure of the active placement after the installation update')
-      expect(stopped.run.outcome).toBe('canceled')
+      for (const run of [active.run, checkedStart.run]) {
+        await fixture.value('run_stop', { workspaceId: scope.workspaceId, runId: run.id, commandId: randomUUID() })
+        const stopped = await waitForRemoteReview(async () => {
+          await fixture.reconcile()
+          return fixture.details(run.id)
+        }, details => details.run.executionState === 'completed', 'closure of the active placement after the installation update')
+        if (run.id === active.run.id) expect(stopped.run.outcome).toBe('canceled')
+      }
       const pendingGraph = structuredClone(fixture.version.definition)
       const node = pendingGraph.nodes[0]!
       if (node.kind === 'job' || !node.placement) throw new Error('Expected an Agent placement.')
@@ -192,7 +194,6 @@ describe('profile-scoped Start after a Worker harness installation update', () =
       expect(replay.run.id).toBe(started.run.id)
       // The Run on the checked profile must finish before Main shuts down, or its source preparation races the shutdown.
       await completedRun(fixture, started.run.id)
-      await completedRun(fixture, checkedStart.run.id)
     } finally {
       if (modelsBlocked) await fixture.provider.releaseModels()
       if (turnsBlocked) await fixture.provider.releaseWorkflowTurns()

@@ -56,3 +56,6 @@
 .workspace-shell .workflow-navigation-row:not(:hover):not(:has(:focus-visible)) :is(.workflow-navigation-move, .workflow-navigation-remove) { opacity: 0; pointer-events: none; }
 .workspace-shell .workflow-navigation-row:not(:hover):not(:has(:focus-visible)) .workflow-draft-badge { visibility: visible; }
 .workspace-shell .workflow-navigation-row:has(.nav-item-active) :is(.workflow-navigation-move, .workflow-navigation-remove) { background: var(--surface-selected); }
+/* A toggling scrollbar narrows the footer, rewraps its icons and toggles again; scroll without one. */
+.workspace-shell .sidebar-footer { scrollbar-width: none; }
+.workspace-shell .sidebar-footer::-webkit-scrollbar { display: none; }

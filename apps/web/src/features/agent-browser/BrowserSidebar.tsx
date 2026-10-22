@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from 'react'
+import { useId, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { Icon, IconButton } from '../../shared/ui/nocturne'
 import './browserSidebar.css'
 
@@ -6,6 +6,11 @@ export type BrowserSidebarStatus = 'working' | 'idle' | 'ended' | 'not_started'
 export interface BrowserSidebarTab { id: string; name: string; status: BrowserSidebarStatus; page?: string }
 
 const statusLabel: Record<BrowserSidebarStatus, string> = { working: 'Working', idle: 'Idle', ended: 'Ended', not_started: 'No browser' }
+const WIDTH_KEY = 'foreman.browserSidebarWidth'
+
+function savedWidth() {
+  try { return Number(localStorage.getItem(WIDTH_KEY)) || undefined } catch { return undefined } // ignore: storage blocked
+}
 
 /** Right-hand sidebar that shows only agent browsers: one tab per Agent, the selected tab's browser below. */
 export function BrowserSidebar({ tabs, selectedId, emptyText, notice, onSelect, onCloseTab, onClose, children }: {
@@ -14,23 +19,41 @@ export function BrowserSidebar({ tabs, selectedId, emptyText, notice, onSelect, 
 }) {
   const id = useId()
   const selected = tabs.find(tab => tab.id === selectedId)
-  return <aside className="browser-sidebar" aria-label="Agent browsers">
+  const [width, setWidth] = useState(savedWidth)
+  // Drag the left edge to resize; the width is remembered on this device.
+  const resize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
+    const startX = event.clientX, startWidth = (event.currentTarget.parentElement as HTMLElement).offsetWidth
+    let next = startWidth
+    const move = (e: PointerEvent) => {
+      next = Math.max(280, Math.min(window.innerWidth - 320, startWidth + startX - e.clientX))
+      setWidth(next)
+    }
+    const stop = () => {
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop)
+      try { localStorage.setItem(WIDTH_KEY, String(next)) } catch { /* ignore: storage blocked */ }
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
+    event.preventDefault()
+  }
+  return <aside className="browser-sidebar" aria-label="Agent browsers" style={width ? { flexBasis: width } : undefined}>
+    <div className="browser-sidebar-resize" aria-hidden="true" onPointerDown={resize} />
+    {/* One row: an Agent tab per browser, then close. */}
     <header className="browser-sidebar-head">
-      <h2>Browsers</h2>
+      <div className="browser-sidebar-tabs" role="tablist" aria-label="Agent browsers">
+        {tabs.map(tab => <div key={tab.id} className="browser-sidebar-tab" data-selected={tab.id === selectedId || undefined}>
+          <button type="button" role="tab" id={`${id}-${tab.id}`} aria-selected={tab.id === selectedId} aria-controls={`${id}-panel`}
+            title={`${tab.name} · ${statusLabel[tab.status]}${tab.page ? ` · ${tab.page}` : ''}`} onClick={() => onSelect(tab.id)}>
+            <span className="browser-sidebar-dot" data-status={tab.status} aria-hidden="true" />
+            <span className="browser-sidebar-name">{tab.name}</span>
+          </button>
+          <IconButton label={`Close ${tab.name} browser`} variant="ghost" size="sm" onClick={() => onCloseTab(tab.id)}>
+            <Icon name="close" size={12} /></IconButton>
+        </div>)}
+      </div>
       <IconButton label="Close browsers" variant="ghost" size="sm" onClick={onClose}><Icon name="close" size={16} /></IconButton>
     </header>
-    {tabs.length ? <div className="browser-sidebar-tabs" role="tablist" aria-label="Agent browsers">
-      {tabs.map(tab => <div key={tab.id} className="browser-sidebar-tab" data-selected={tab.id === selectedId || undefined}>
-        <button type="button" role="tab" id={`${id}-${tab.id}`} aria-selected={tab.id === selectedId} aria-controls={`${id}-panel`}
-          title={tab.page ? `${tab.name} · ${tab.page}` : tab.name} onClick={() => onSelect(tab.id)}>
-          <span className="browser-sidebar-dot" data-status={tab.status} aria-hidden="true" />
-          <span className="browser-sidebar-name">{tab.name}</span>
-          <span className="browser-sidebar-status">{statusLabel[tab.status]}</span>
-        </button>
-        <IconButton label={`Close ${tab.name} browser`} variant="ghost" size="sm" onClick={() => onCloseTab(tab.id)}>
-          <Icon name="close" size={12} /></IconButton>
-      </div>)}
-    </div> : null}
     {notice}
     <div className="browser-sidebar-body" id={`${id}-panel`} role={selected ? 'tabpanel' : undefined}
       aria-labelledby={selected ? `${id}-${selected.id}` : undefined}>
