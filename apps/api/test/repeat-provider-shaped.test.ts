@@ -80,5 +80,5 @@ describe('NIM-2648 ENG04-D provider-shaped observation regression', () => {
   })
 
   // Persisted readback and denied callers use the current authenticated graph
-  // API in eng04-b-graph-read-qualification.integration.test.ts.
+  // API in graph-read-qualification.integration.test.ts.
 })

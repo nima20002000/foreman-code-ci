@@ -246,7 +246,7 @@ it('describes waiting and tail omission in Operator discovery', async () => {
     expect(capabilities.find(tool => tool.name === 'ci_get')?.detail).toContain('logTail=false')
     const tool = await f.schema('ci_get')
     expect(tool.inputSchema.properties.waitSeconds).toMatchObject({ minimum: 0, maximum: CI_WAIT_MAX_SECONDS })
-    expect(tool.inputSchema.properties.logTail.type).toBe('boolean')
+    expect(tool.inputSchema.properties.logTail?.type).toBe('boolean')
   } finally { await f.close() }
 })
 

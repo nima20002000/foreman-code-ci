@@ -22,7 +22,7 @@ import type { AcceptedRepeatRunSnapshot } from '../src/modules/runs/repeatStartR
 // by these opt-in PostgreSQL integration fixtures:
 // eng05-run-inspection-saved-resolution.integration.test.ts
 // eng05-run-inspection-publication.integration.test.ts
-// eng05-run-inspection-fork-join.integration.test.ts
+// run-inspection-fork-join.integration.test.ts
 // eng05-run-inspection-repeat.integration.test.ts
 // eng05-run-inspection-waiting.integration.test.ts
 // eng05-run-inspection-large-record.integration.test.ts
