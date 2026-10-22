@@ -160,7 +160,8 @@ describe('Activities shared Agent and Job actors', () => {
     await mount({ expectedText: 'Approval delivery uncertain' })
     const uncertainRow = screen.getByText('Approval delivery uncertain').closest('li')!
     expect(within(uncertainRow).getByText('Builder')).toBeVisible()
-    expect(within(uncertainRow).getByText('unknown')).toHaveClass('is-warning')
+    expect(uncertainRow).toHaveAttribute('data-status', 'unknown')
+    expect(uncertainRow).toHaveAttribute('data-severity', 'warning')
     expect(within(screen.getByText('Approval canceled').closest('li')!).getByText('canceled')).toBeVisible()
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Agent' }), agent.agentId)
     await waitFor(() => expect(screen.queryByText('Approval canceled')).not.toBeInTheDocument())

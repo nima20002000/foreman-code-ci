@@ -6,6 +6,7 @@ import { GraphEditAdvanceInputV3Schema, GraphEditStageInputV3Schema,
   type GraphEditIntentV3, type GraphEditStageInputV3 } from '@foreman-code/contracts/wave25'
 import { useGraphDraftStore } from '../graph/store'
 import { fixture as authoringFixture } from '../graph/nextDraft/core.cases'
+import { readConflictRecoveries } from '../graph/nextDraft/editIntentStorage'
 import { graphEditIntentKey } from '../graph/nextDraft/useGraphEditIntent'
 import { journalIntent, savedJournal } from '../graph/nextDraft/nim2644Journal.fixture'
 import { measureBoardWire, mountMeasuredBoard } from './eng05D.testSupport'
@@ -102,13 +103,22 @@ export async function mount(f: Fixture) {
     draft(f).context.draft.id))).toMatchObject({ status: 'success', fetchStatus: 'idle' }))
   return view
 }
+/** Enter applies the rename to the draft straight away. */
 export async function rename(name: string) {
   await userEvent.click(authoring().getByTitle('Rename workflow'))
   const field = labelled('Workflow name', authoringRegion())
   await userEvent.clear(field); await userEvent.type(field, `${name}{Enter}`)
-  await userEvent.click(within(await findDialog('Rename workflow?')).getByRole('button', { name: 'Rename' }))
 }
 export async function settings() {
-  if (!queryLabelled('Draft conflict recovery')) await userEvent.click(toolbar('Workflow controls').getByRole('button', { name: 'Workflow settings' }))
-  return waitFor(() => labelled('Draft conflict recovery'))
+  if (!queryLabelled('Master hierarchy')) await userEvent.click(toolbar('Workflow controls').getByRole('button', { name: 'Workflow settings' }))
+  return waitFor(() => labelled('Master hierarchy'))
 }
+/** Reload in Workflow settings, confirmed as Inspect latest: the draft is kept as a recovered copy. */
+export async function inspectLatest() {
+  await settings()
+  await userEvent.click(within(labelled('Saved version')).getByRole('button', { name: 'Reload' }))
+  await userEvent.click(within(await findDialog('Inspect the latest saved workflow?', 'alertdialog')).getByRole('button', { name: 'Inspect latest' }))
+}
+/** The recovered copies are kept in browser storage; the comparison table shows only name, Master, Agents and connections. */
+export const storedRecoveries = (f: Fixture) => readConflictRecoveries(f.key)
+export const storedRecoveryText = (f: Fixture) => JSON.stringify(storedRecoveries(f))

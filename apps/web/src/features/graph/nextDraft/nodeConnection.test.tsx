@@ -1,3 +1,4 @@
+import type { ContextType } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ReactFlowProvider } from '@xyflow/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -9,6 +10,7 @@ import { useGraphDraftStore } from '../store'
 import { fixture } from './core.cases'
 import { DraftCanvas } from './DraftCanvas'
 import { nextDraftKey } from './state'
+import { WorkflowBoardContext } from '../../workflow-board/context'
 
 const key = nextDraftKey('workspace', 'workflow')
 // Three Agents with no edges between them, so every connection in these tests is made by the person.
@@ -25,12 +27,14 @@ afterEach(() => {
 })
 
 function mount() {
-  const change = vi.fn(), geometry = vi.fn()
-  render(<QueryClientProvider client={new QueryClient()}><GraphPresentationProvider><ReactFlowProvider><DraftCanvas draftKey={key} graph={context.draft.graph}
+  const change = vi.fn(), geometry = vi.fn(), selectSidePanel = vi.fn()
+  const board = { workspaceId: 'workspace', workflowId: 'workflow', inspection: {}, activeRuns: 0, selectSidePanel,
+    selectInspection: vi.fn(), selectRun: vi.fn(), openLocation: vi.fn(), openRuns: vi.fn() } as unknown as ContextType<typeof WorkflowBoardContext>
+  render(<QueryClientProvider client={new QueryClient()}><WorkflowBoardContext.Provider value={board}><GraphPresentationProvider><ReactFlowProvider><DraftCanvas draftKey={key} graph={context.draft.graph}
     agents={context.agents.map((item) => item.agent)} kind="execution" change={change} geometry={geometry}
     pending={vi.fn()} report={vi.fn()}
-    panels={(nodeId) => ({ chat: <p>{`Chat of ${nodeId}`}</p>, chatHasHeader: false, settings: null, info: null })} /></ReactFlowProvider></GraphPresentationProvider></QueryClientProvider>)
-  return { change, geometry }
+    panels={(nodeId) => ({ chat: <p>{`Chat of ${nodeId}`}</p>, chatHasHeader: false, settings: null, info: null })} /></ReactFlowProvider></GraphPresentationProvider></WorkflowBoardContext.Provider></QueryClientProvider>)
+  return { change, geometry, selectSidePanel }
 }
 const connected = (change: ReturnType<typeof vi.fn>): WorkflowDefinitionV3['edges'] =>
   change.mock.calls.reduce((graph: WorkflowDefinitionV3, [update]) => update(graph), context.draft.graph).edges
@@ -83,13 +87,12 @@ it('still connects Agents after one of them was dragged to a new place', async (
 })
 
 it('does not open a chat when an Agent or its connection handle is clicked, only from the chat action', async () => {
-  mount()
+  const { selectSidePanel } = mount()
   const core = await screen.findByRole('button', { name: /^Node 1, / })
   fireEvent.click(core)
   fireEvent.click(screen.getByLabelText('Connect Node 1 to another agent'))
-  expect(screen.queryByRole('dialog', { name: /chat$/ })).not.toBeInTheDocument()
+  expect(selectSidePanel).not.toHaveBeenCalledWith(expect.objectContaining({ tab: 'chat' }))
   fireEvent.click(screen.getByRole('button', { name: 'Open Node 1 chat' }))
-  const chat = await screen.findByRole('dialog', { name: 'Node 1 chat' })
-  expect(chat).toHaveTextContent('Chat of node-1')
-  expect(screen.queryByRole('dialog', { name: 'Node 2 chat' })).not.toBeInTheDocument()
+  expect(selectSidePanel).toHaveBeenCalledOnce()
+  expect(selectSidePanel).toHaveBeenCalledWith({ kind: 'agent', nodeId: 'node-1', tab: 'chat' })
 })

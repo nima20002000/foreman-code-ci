@@ -26,7 +26,8 @@ class ReportSource extends EventTarget {
   static instances: ReportSource[] = []
   closed = false
   close() { this.closed = true }
-  constructor() { super(); ReportSource.instances.push(this) }
+  /** Only the Master report stream is tracked; other Board streams (such as Group chat) are not under test here. */
+  constructor(url: string) { super(); if (url.includes('/hierarchy/events')) ReportSource.instances.push(this) }
 }
 beforeEach(() => {
   installFlowLayout()
@@ -193,7 +194,7 @@ it('retains native-child text through parent collapse, Memory, Overview and acce
   await act(async () => { await cache.invalidateQueries({ queryKey: subagentsKey(childScope) }) })
   expect(wire.requests).toHaveLength(hiddenReads)
   expect(screen.queryByRole('dialog', { name: 'Research' })).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: 'Close Memory board' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Close memory board' }))
   expect(await screen.findByRole('textbox', { name: 'Message to subagent' })).toHaveValue('Keep this direction')
   fireEvent.click(toolbar().getByRole('button', { name: 'Overview' }))
   await screen.findByRole('region', { name: 'Master Overview' })
@@ -230,7 +231,7 @@ it('keeps a hidden pending command identity and defers failure refresh until its
   await act(async () => { pending.resolve() })
   await waitFor(() => expect(cache.isMutating()).toBe(0))
   expect(wire.requests.filter(path => path === 'child')).toHaveLength(hiddenReads)
-  fireEvent.click(screen.getByRole('button', { name: 'Close Memory board' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Close memory board' }))
   expect(await screen.findByRole('textbox', { name: 'Message to subagent' })).toHaveValue('One direction')
   fireEvent.click(await screen.findByRole('button', { name: 'Check again' }))
   await screen.findByText('Message delivered to the subagent.')
@@ -252,7 +253,7 @@ it('suspends Overview reports while Memory is open and restores the selected bra
   const reports = wire.requests.filter(path => path === 'reports').length
   await act(async () => { await cache.invalidateQueries({ queryKey: ['workflow-hierarchy'] }) })
   expect(wire.requests.filter(path => path === 'reports')).toHaveLength(reports)
-  fireEvent.click(screen.getByRole('button', { name: 'Close Memory board' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Close memory board' }))
   await screen.findByRole('region', { name: 'Reports to Y' })
   await waitFor(() => expect(ReportSource.instances.filter(source => !source.closed)).toHaveLength(1))
 })

@@ -39,7 +39,7 @@ it('stages Agent Undo and Redo against the published configuration after saving'
   const saved = savedJournal(journalIntent(request, context))
   const published = acknowledgeEditIntentSnapshot(scope, second, saved)
   const statusInput = { edit: published, editIntent: { query: {}, mutation: {} }, agents: [],
-    startState: { preflight: {}, startOutbox: {} }, starting: false, reloading: false, workspace: {}, redoCount: 0,
+    startState: { preflight: {}, startOutbox: {}, changedAgents: [] }, starting: false, reloading: false, workspace: {}, redoCount: 0,
   } as unknown as Parameters<typeof deriveDraftEditorStatus>[0]
   expect(deriveDraftEditorStatus(statusInput).canUndo).toBe(true)
   const undone = undoNextDraft(published)
@@ -81,7 +81,7 @@ it('hides Undo for published graph-only history until another authored edit is m
   reserveEditOutbox(scope, { request, target: edit.graph })
   const published = acknowledgeEditIntentSnapshot(scope, edit, savedJournal(journalIntent(request, edit.context)))
   const status = (value: typeof edit) => deriveDraftEditorStatus({ edit: value,
-    editIntent: { query: {}, mutation: {} }, agents: [], startState: { preflight: {}, startOutbox: {} },
+    editIntent: { query: {}, mutation: {} }, agents: [], startState: { preflight: {}, startOutbox: {}, changedAgents: [] },
     starting: false, reloading: false, workspace: {}, redoCount: 0,
   } as unknown as Parameters<typeof deriveDraftEditorStatus>[0])
   expect(published.history).toHaveLength(1)

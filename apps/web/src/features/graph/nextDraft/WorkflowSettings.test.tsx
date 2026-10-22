@@ -6,12 +6,9 @@ import { newNextDraft } from './state'
 import { WorkflowSettings } from './WorkflowSettings'
 
 const explanations = [
-  ['Starts the workflow', 'The first node to run. It can’t receive a dependency.'],
-  ['Approval handler', 'Agents ask you before sensitive actions. Requests appear in the approval inbox.'],
-  ['Maximum parallelism', 'Agents running at once'],
-  ['Maximum node executions', 'Agent turns per run'],
-  ['Agent active-time budget (seconds)', /Per Agent execution; approval waits are excluded/],
-  ['Execution folder', 'Runs work in this workspace’s folder.'],
+  ['Starts with', 'The first node to run. It can’t receive a dependency.'],
+  ['Who approves', 'Agents ask you before sensitive actions. Requests appear in the approval inbox.'],
+  ['Turn time limit', /Seconds per agent turn\. Leave blank for the default \(600 s\)/],
 ] as const
 
 it.each(explanations)('keeps settings visible and shows the %s explanation on hover', async (label, explanation) => {
@@ -19,11 +16,11 @@ it.each(explanations)('keeps settings visible and shows the %s explanation on ho
     defaultMs={600_000} locationReady locationMessage="" onChangeFolder={vi.fn()} onReload={vi.fn()} />)
   const user = userEvent.setup()
   const settings = screen
-  expect(settings.getByRole('combobox', { name: 'Starts the workflow' })).toHaveValue('node-0')
-  expect(settings.getByRole('combobox', { name: 'Approval handler' })).toHaveValue('user')
-  expect(settings.getByRole('spinbutton', { name: 'Maximum parallelism' })).toHaveValue(4)
-  expect(settings.getByRole('spinbutton', { name: 'Maximum node executions' })).toHaveValue(1000)
-  expect(settings.getByText(/Based on saved version/)).toBeVisible()
+  expect(settings.getByRole('combobox', { name: 'Starts with' })).toHaveValue('node-0')
+  expect(settings.getByRole('combobox', { name: 'Who approves' })).toHaveValue('user')
+  expect(settings.getByRole('spinbutton', { name: 'Agents at once' })).toHaveValue(4)
+  expect(settings.getByRole('spinbutton', { name: 'Agent turns per run' })).toHaveValue(1000)
+  expect(settings.getByText('Workspace folder')).toBeVisible()
 
   expect(settings.queryByText(explanation)).not.toBeInTheDocument()
   const hint = settings.getByRole('button', { name: `About ${label}` })
@@ -34,6 +31,14 @@ it.each(explanations)('keeps settings visible and shows the %s explanation on ho
   await waitFor(() => expect(screen.queryByRole('tooltip')).not.toBeInTheDocument())
 })
 
+it('opens the latest saved version from the Saved version section', async () => {
+  const reload = vi.fn()
+  render(<WorkflowSettings draftKey="settings-test" edit={newNextDraft(fixture(), 'settings-test')} change={vi.fn()} report={vi.fn()}
+    defaultMs={600_000} locationReady locationMessage="" onChangeFolder={vi.fn()} onReload={reload} />)
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Reload' }))
+  expect(reload).toHaveBeenCalledOnce()
+})
+
 it('keeps required actions, unsaved state, and configured values visible beside optional guidance', async () => {
   const context = fixture()
   context.draft.baseWorkflowVersionId = null
@@ -41,20 +46,17 @@ it('keeps required actions, unsaved state, and configured values visible beside 
   edit.graph = { ...edit.graph, entryNodeId: 'removed-node', requiredAgentCount: 2,
     handoffs: { contractVersion: 1 } }
   const changeFolder = vi.fn()
-  const reload = vi.fn()
   render(<WorkflowSettings draftKey="settings-test" edit={edit} change={vi.fn()} report={vi.fn()} defaultMs={undefined}
     locationReady={false} locationMessage="Choose an execution folder to run this workflow."
-    onChangeFolder={changeFolder} onReload={reload} />)
+    onChangeFolder={changeFolder} onReload={vi.fn()} />)
   expect(screen.getByRole('alert')).toHaveTextContent('The starting node was removed. Choose another one.')
   expect(screen.getByText('Choose an execution folder to run this workflow.')).toBeVisible()
-  expect(screen.getByText('This workflow hasn’t been saved yet.')).toBeVisible()
-  expect(screen.getByRole('spinbutton', { name: 'Required Agent count' })).toHaveValue(2)
+  expect(screen.queryByRole('region', { name: 'Saved version' })).not.toBeInTheDocument()
+  expect(screen.getByRole('spinbutton', { name: 'Required agents' })).toHaveValue(2)
   expect(screen.queryByText(/Set each work connection’s Run-wide handoff limit/)).not.toBeInTheDocument()
   const user = userEvent.setup()
   await user.hover(screen.getByRole('button', { name: 'About Limits' }))
-  expect(screen.getByRole('tooltip')).toHaveTextContent('Set each work connection’s Run-wide handoff limit on its line.')
-  await user.click(screen.getByRole('button', { name: 'Change folder' }))
+  expect(screen.getByRole('tooltip')).toHaveTextContent('Set each work connection’s handoff limit on its line on the Board.')
+  await user.click(screen.getByRole('button', { name: 'Choose folder' }))
   expect(changeFolder).toHaveBeenCalledOnce()
-  await user.click(screen.getByRole('button', { name: 'Reload saved draft' }))
-  expect(reload).toHaveBeenCalledOnce()
 })

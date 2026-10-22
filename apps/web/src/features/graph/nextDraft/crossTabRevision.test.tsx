@@ -34,6 +34,7 @@ vi.mock('../../workflow-board/startPreflight', async (original) => ({
     capabilities: { ...CURRENT_WORKFLOW_CAPABILITIES, runtimeAdmission: true, persistedReadback: true },
     version: { id: draft.baseWorkflowVersionId, definition: draft.graph,
       agentConfigurationVersionIds: Object.fromEntries(draft.graph.nodes.map(nativeNode).map(({ agentId }) => [agentId, `configuration-${agentId}`])) },
+    agents: [],
   } }),
 }))
 vi.mock('./DraftCanvas', () => ({ DraftCanvas: () => <div>Canvas fixture</div> }))

@@ -8,8 +8,8 @@ import { readConflictRecoveries, storeEditSnapshot } from '../graph/nextDraft/ed
 import { fixture as authoringFixture } from '../graph/nextDraft/core.cases'
 import { stageHierarchyAgent } from '../workflow-hierarchy/authoring'
 import { installBoardTestLifecycle } from './eng05D.testSupport'
-import { agentList, draft, findDialog, hierarchyForm, labelled, mount, queryDialog, rail, recovery, recoveryFixture, settings,
-  toolbar } from './hierarchyRecovery.testSupport'
+import { agentList, draft, findDialog, hierarchyForm, inspectLatest, mount, queryDialog, rail, recovery, recoveryFixture,
+  settings, storedRecoveryText, toolbar } from './hierarchyRecovery.testSupport'
 
 installBoardTestLifecycle()
 
@@ -21,7 +21,7 @@ async function interruptedConflict({ unappliedForms }: { unappliedForms: boolean
   await userEvent.click(toolbar('Workflow controls').getByRole('button', { name: 'Workflow settings' }))
   await userEvent.selectOptions(hierarchyForm().getByLabelText('Master'), 'node-0')
   await userEvent.selectOptions(hierarchyForm().getByLabelText('Node 3 reports to'), 'node-1')
-  await userEvent.click(hierarchyForm().getByRole('button', { name: 'Apply hierarchy to draft' }))
+  await userEvent.click(hierarchyForm().getByRole('button', { name: 'Apply hierarchy' }))
   f.externalEdit('Concurrent saved workflow')
   await userEvent.click(toolbar('Draft actions').getByRole('button', { name: 'Save workflow' }))
   await screen.findByText('The saved workflow changed. Inspect latest to compare your draft.')
@@ -59,16 +59,15 @@ async function interruptedConflict({ unappliedForms }: { unappliedForms: boolean
 
 it('recovers an interrupted combined hierarchy, staged Agent and raw forms into a read-only comparison', async () => {
   const { f } = await interruptedConflict({ unappliedForms: true })
-  const removal = await findDialog('Remove Node 1 from workflow?')
-  expect(within(removal).getByLabelText('Move 2 Workers to')).toHaveValue('node-2')
-  await userEvent.click(within(removal).getByRole('button', { name: 'Inspect latest' }))
-  await waitFor(() => expect(queryDialog('Remove Node 1 from workflow?')).not.toBeInTheDocument())
-  await settings()
-  await userEvent.click(recovery().getByRole('button', { name: 'View unsaved draft' }))
-  const comparison = labelled('Read-only recovered draft')
-  await userEvent.click(within(comparison).getByText('All recovered fields'))
-  for (const text of ['private-worker', 'Staged Worker', 'Unapplied Worker direction', '"workerParents"', '"removeNode"', '"destinationParentId": "node-2"', '"previousMaster": "keep"']) {
-    expect(comparison).toHaveTextContent(text)
+  const removal = await findDialog('Remove Node 1?', 'alertdialog')
+  expect(within(removal).getByLabelText('Move its 2 workers to')).toHaveValue('node-2')
+  // The removal form is part of the modal and is dropped by Cancel; everything else is kept as the recovered copy.
+  await userEvent.click(within(removal).getByRole('button', { name: 'Cancel' }))
+  await waitFor(() => expect(queryDialog('Remove Node 1?', 'alertdialog')).not.toBeInTheDocument())
+  await inspectLatest()
+  await recovery().findByRole('button', { name: 'Compare' })
+  for (const text of ['private-worker', 'Staged Worker', 'Unapplied Worker direction', '"workerParents"', '"previousMaster":"keep"']) {
+    expect(storedRecoveryText(f)).toContain(text)
   }
   expect(draft(f).graph.hierarchy).toBeUndefined()
   expect(draft(f).graph.nodes).toHaveLength(4)
@@ -78,27 +77,26 @@ it('recovers an interrupted combined hierarchy, staged Agent and raw forms into 
 
 it('saves only an explicitly reapplied hierarchy after repeated conflicts on an interrupted staged Agent', async () => {
   const { f, rejected, refreshed } = await interruptedConflict({ unappliedForms: false })
-  await settings()
-  await userEvent.click(recovery().getByRole('button', { name: 'Inspect latest' }))
-  await recovery().findByRole('button', { name: 'View unsaved draft' })
+  await inspectLatest()
+  await recovery().findByRole('button', { name: 'Compare' })
   expect(draft(f).graph.nodes).toHaveLength(4)
 
   await userEvent.selectOptions(hierarchyForm().getByLabelText('Master'), 'node-0')
   await userEvent.selectOptions(hierarchyForm().getByLabelText('Node 3 reports to'), 'node-2')
-  await userEvent.click(hierarchyForm().getByRole('button', { name: 'Apply hierarchy to draft' }))
+  await userEvent.click(hierarchyForm().getByRole('button', { name: 'Apply hierarchy' }))
   f.externalEdit('Second concurrent workflow')
   await userEvent.click(toolbar('Draft actions').getByRole('button', { name: 'Save workflow' }))
   await screen.findByText('The saved workflow changed. Inspect latest to compare your draft.')
-  await userEvent.click(recovery().getByRole('button', { name: 'Inspect latest' }))
-  await waitFor(() => expect(recovery().getAllByRole('button', { name: 'View unsaved draft' })).toHaveLength(2))
+  await inspectLatest()
+  await waitFor(() => expect(recovery().getAllByRole('button', { name: 'Compare' })).toHaveLength(2))
   refreshed.unmount()
   act(() => useGraphDraftStore.setState({ nextDrafts: {} }))
   await mount(f)
   await settings()
-  expect(recovery().getAllByRole('button', { name: 'View unsaved draft' })).toHaveLength(2)
+  expect(recovery().getAllByRole('button', { name: 'Compare' })).toHaveLength(2)
   await userEvent.selectOptions(hierarchyForm().getByLabelText('Master'), 'node-0')
   await userEvent.selectOptions(hierarchyForm().getByLabelText('Node 3 reports to'), 'node-2')
-  await userEvent.click(hierarchyForm().getByRole('button', { name: 'Apply hierarchy to draft' }))
+  await userEvent.click(hierarchyForm().getByRole('button', { name: 'Apply hierarchy' }))
   await userEvent.click(toolbar('Draft actions').getByRole('button', { name: 'Save workflow' }))
   await waitFor(() => expect(nextDraftDirty(draft(f))).toBe(false))
   const accepted = f.requests.at(-1)!

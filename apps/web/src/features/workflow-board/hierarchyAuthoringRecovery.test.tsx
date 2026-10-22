@@ -10,8 +10,8 @@ import { useGraphDraftStore } from '../graph/store'
 import { fixture } from '../graph/nextDraft/core.cases'
 import { MasterOverview } from '../workflow-hierarchy/MasterOverview'
 import { installBoardTestLifecycle } from './eng05D.testSupport'
-import { agentList, authoring, findDialog, hierarchyForm, labelled, mount, queryDialog, rail, recovery, recoveryFixture,
-  settings, toolbar, type Fixture } from './hierarchyRecovery.testSupport'
+import { agentList, authoring, draft, findDialog, hierarchyForm, inspectLatest, labelled, mount, queryDialog, rail, recovery,
+  recoveryFixture, settings, storedRecoveryText, toolbar, type Fixture } from './hierarchyRecovery.testSupport'
 
 installBoardTestLifecycle()
 
@@ -19,7 +19,7 @@ async function applyHierarchy(parent: string) {
   await settings()
   await userEvent.selectOptions(hierarchyForm().getByLabelText('Master'), 'node-0')
   await userEvent.selectOptions(hierarchyForm().getByLabelText('Node 3 reports to'), parent)
-  await userEvent.click(hierarchyForm().getByRole('button', { name: 'Apply hierarchy to draft' }))
+  await userEvent.click(hierarchyForm().getByRole('button', { name: 'Apply hierarchy' }))
 }
 async function openAgent(name: string) {
   await userEvent.click(agentList().getByRole('button', { name }))
@@ -49,14 +49,13 @@ async function refresh(f: Fixture, view: Awaited<ReturnType<typeof mount>>) {
 async function removal() {
   await openAgent('Node 1')
   await userEvent.click(rail().getByRole('button', { name: 'Remove Agent 1 from workflow' }))
-  return within(await findDialog('Remove Node 1 from workflow?'))
+  return within(await findDialog('Remove Node 1?', 'alertdialog'))
 }
+/** The comparison table shows name, Master, Agents and connections; the rest of the recovered draft is checked in storage. */
 async function compare() {
   await settings()
-  await userEvent.click(recovery().getAllByRole('button', { name: 'View unsaved draft' })[0]!)
-  const comparison = labelled('Read-only recovered draft')
-  await userEvent.click(within(comparison).getByText('All recovered fields'))
-  return comparison
+  await userEvent.click(recovery().getAllByRole('button', { name: 'Compare' })[0]!)
+  return labelled('Recovered draft compared with the current draft')
 }
 
 async function conflictedBoard({ create = true } = {}) {
@@ -74,16 +73,15 @@ async function conflictedBoard({ create = true } = {}) {
 }
 
 async function inspectLatestFromSettings(recoveries: number) {
-  await settings()
-  await userEvent.click(recovery().getByRole('button', { name: 'Inspect latest' }))
-  await waitFor(() => expect(recovery().getAllByRole('button', { name: 'View unsaved draft' })).toHaveLength(recoveries))
+  await inspectLatest()
+  await waitFor(() => expect(recovery().getAllByRole('button', { name: 'Compare' })).toHaveLength(recoveries))
 }
 
 it('recovers an applied creation after the saved workflow changed', async () => {
-  await conflictedBoard()
+  const { f } = await conflictedBoard()
   await inspectLatestFromSettings(1)
-  const comparison = await compare()
-  for (const text of ['Created Worker', 'Applied creation task']) expect(comparison).toHaveTextContent(text)
+  expect(await compare()).toHaveTextContent('Created Worker')
+  expect(storedRecoveryText(f)).toContain('Applied creation task')
   expect(authoring().getByTitle('Rename workflow')).toHaveTextContent('Saved on another computer')
   expect(agentList().queryByRole('button', { name: 'Created Worker' })).not.toBeInTheDocument()
 }, 30000)
@@ -102,24 +100,21 @@ it('retains unapplied Worker, creation and Master forms through refreshes', asyn
   await userEvent.selectOptions(hierarchyForm().getByLabelText('Previous Master'), 'keep')
   await refresh(f, view)
   await inspectLatestFromSettings(1)
-  const comparison = await compare()
+  await compare()
   for (const text of ['Unapplied Worker direction', 'Unapplied Worker', 'Creation in progress',
-    '"workerParents"', '"previousMaster": "keep"']) {
-    expect(comparison).toHaveTextContent(text)
+    '"workerParents"', '"previousMaster":"keep"']) {
+    expect(storedRecoveryText(f)).toContain(text)
   }
 }, 30000)
 
-it('retains a planned Agent removal through refresh until the latest workflow is inspected', async () => {
+it('retains a planned Agent removal through refresh', async () => {
   const { f, view: mounted } = await conflictedBoard()
   const remove = await removal()
-  await userEvent.selectOptions(remove.getByLabelText('Move 2 Workers to'), 'node-2')
+  await userEvent.selectOptions(remove.getByLabelText('Move its 2 workers to'), 'node-2')
   await refresh(f, mounted)
-  const resumedRemoval = within(await findDialog('Remove Node 1 from workflow?'))
-  expect(resumedRemoval.getByLabelText('Move 2 Workers to')).toHaveValue('node-2')
-  await userEvent.click(resumedRemoval.getByRole('button', { name: 'Inspect latest' }))
-  await waitFor(() => expect(queryDialog('Remove Node 1 from workflow?')).not.toBeInTheDocument())
-  const comparison = await compare()
-  for (const text of ['"removeNode"', '"destinationParentId": "node-2"']) expect(comparison).toHaveTextContent(text)
+  const resumedRemoval = within(await findDialog('Remove Node 1?', 'alertdialog'))
+  expect(resumedRemoval.getByLabelText('Move its 2 workers to')).toHaveValue('node-2')
+  expect(draft(f).workflowForms?.removeNode).toEqual({ nodeId: 'node-1', destinationParentId: 'node-2' })
 }, 30000)
 
 it('keeps an unapplied creation form through a second conflict recovery', async () => {
@@ -131,10 +126,9 @@ it('keeps an unapplied creation form through a second conflict recovery', async 
   f.externalEdit('Second concurrent save')
   await userEvent.click(toolbar('Draft actions').getByRole('button', { name: 'Save workflow' }))
   await screen.findByText('The saved workflow changed. Inspect latest to compare your draft.')
-  await userEvent.click(recovery().getByRole('button', { name: 'Inspect latest' }))
-  await waitFor(() => expect(recovery().getAllByRole('button', { name: 'View unsaved draft' })).toHaveLength(2))
+  await inspectLatestFromSettings(2)
   await refresh(f, view)
-  expect(await compare()).toHaveTextContent('Creation in progress')
+  expect(storedRecoveryText(f)).toContain('Creation in progress')
 }, 30000)
 
 it('saves a reapplied creation and removal after conflict recovery', async () => {
@@ -143,9 +137,8 @@ it('saves a reapplied creation and removal after conflict recovery', async () =>
   await applyHierarchy('node-2')
   await createWorker('node-2', 'Created Worker', 'Applied creation task')
   const reappliedRemoval = await removal()
-  expect(queryDialog('Remove Node 1 from workflow?'))
-    .toHaveTextContent('named outcomes will need explicit connection editing')
-  await userEvent.click(reappliedRemoval.getByRole('button', { name: 'Apply removal to draft' }))
+  expect(queryDialog('Remove Node 1?', 'alertdialog')).toHaveTextContent('Give these outcomes a new target before saving')
+  await userEvent.click(reappliedRemoval.getByRole('button', { name: 'Remove' }))
   await openAgent('Entry · Node 0')
   expect(rail().getByRole('combobox', { name: 'Target for outcome 1' })).toHaveDisplayValue('Removed handoff')
   await userEvent.click(rail().getByRole('button', { name: 'Remove outcome 1' }))
@@ -160,7 +153,7 @@ it('saves a reapplied creation and removal after conflict recovery', async () =>
   expect(accepted.stagedAgents).toContainEqual(expect.objectContaining({ baseRevision: null,
     agent: expect.objectContaining({ name: 'Created Worker' }) }))
   await settings()
-  expect(recovery().getAllByRole('button', { name: 'View unsaved draft' })).toHaveLength(1)
+  expect(recovery().getAllByRole('button', { name: 'Compare' })).toHaveLength(1)
   expect(f.wire.writes().every(request => request.path.endsWith('/definition/edits'))).toBe(true)
 }, 30000)
 
@@ -171,14 +164,13 @@ it('keeps both recovered drafts after saving following repeated conflicts', asyn
   f.externalEdit('Second concurrent save')
   await userEvent.click(toolbar('Draft actions').getByRole('button', { name: 'Save workflow' }))
   await screen.findByText('The saved workflow changed. Inspect latest to compare your draft.')
-  await userEvent.click(recovery().getByRole('button', { name: 'Inspect latest' }))
-  await waitFor(() => expect(recovery().getAllByRole('button', { name: 'View unsaved draft' })).toHaveLength(2))
+  await inspectLatestFromSettings(2)
   await refresh(f, view)
   await applyHierarchy('node-2')
   await userEvent.click(toolbar('Draft actions').getByRole('button', { name: 'Save workflow' }))
   await waitFor(() => expect(f.saved().version.definition.hierarchy?.masterNodeId).toBe('node-0'))
   await settings()
-  expect(recovery().getAllByRole('button', { name: 'View unsaved draft' })).toHaveLength(2)
+  expect(recovery().getAllByRole('button', { name: 'Compare' })).toHaveLength(2)
   expect(f.wire.writes().every(request => request.path.endsWith('/definition/edits'))).toBe(true)
 }, 30000)
 

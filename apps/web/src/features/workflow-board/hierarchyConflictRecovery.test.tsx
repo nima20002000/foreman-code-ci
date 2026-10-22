@@ -6,8 +6,8 @@ import { useGraphDraftStore } from '../graph/store'
 import { nextDraftDirty } from '../graph/nextDraft/state'
 import { readConflictRecoveries, readEditOutbox } from '../graph/nextDraft/editIntentStorage'
 import { installBoardTestLifecycle } from './eng05D.testSupport'
-import { authoring, draft, findDialog, labelled, mount, queryDialog, recovery, recoveryFixture, rename, settings,
-  toolbar } from './hierarchyRecovery.testSupport'
+import { authoring, draft, findDialog, inspectLatest, labelled, mount, queryDialog, recovery, recoveryFixture, rename, settings,
+  storedRecoveries, toolbar } from './hierarchyRecovery.testSupport'
 
 installBoardTestLifecycle()
 
@@ -20,16 +20,15 @@ it('opens latest into a fresh durable base after a rejected save and saves only 
   await screen.findByText('The saved workflow changed. Inspect latest to compare your draft.')
   const rejected = f.requests[0]!
   expect(readEditOutbox(f.key)).toBeUndefined()
-  await settings()
-  await userEvent.click(recovery().getByRole('button', { name: 'Inspect latest' }))
+  await inspectLatest()
   await waitFor(() => expect(authoring().getByTitle('Rename workflow')).toHaveTextContent('Other saved name'))
   const freshId = draft(f).context.draft.id
   expect(freshId).not.toBe(originalId)
   expect(draft(f).context.draft.baseWorkflowVersionId).toBe(f.saved().currentVersionId)
   expect(readConflictRecoveries(f.key)).toHaveLength(1)
-  await userEvent.click(recovery().getByRole('button', { name: 'View unsaved draft' }))
-  expect(labelled('Read-only recovered draft')).toHaveTextContent('My first unsaved name')
-  expect(labelled('Read-only recovered draft')).toHaveTextContent(originalVersion!)
+  await userEvent.click(recovery().getByRole('button', { name: 'Compare' }))
+  expect(labelled('Recovered draft compared with the current draft')).toHaveTextContent('My first unsaved name')
+  expect(storedRecoveries(f)[0]!.snapshot.context.draft.baseWorkflowVersionId).toBe(originalVersion)
   const freshBase = { revision: draft(f).context.draft.publishedRevision, version: draft(f).context.draft.baseWorkflowVersionId }
   await rename('My first unsaved name')
   await userEvent.click(toolbar('Draft actions').getByRole('button', { name: 'Save workflow' }))
@@ -46,13 +45,12 @@ it('retains repeated recoveries through refresh, saves into the newest base and 
   const f = await recoveryFixture(), first = await mount(f)
   await rename('My first unsaved name')
   f.externalEdit('Other saved name')
-  await settings()
-  await userEvent.click(recovery().getByRole('button', { name: 'Inspect latest' }))
+  await inspectLatest()
   await waitFor(() => expect(authoring().getByTitle('Rename workflow')).toHaveTextContent('Other saved name'))
   expect(readConflictRecoveries(f.key)).toHaveLength(1)
   await rename('My second unsaved name')
   f.externalEdit('Newer saved name')
-  await userEvent.click(recovery().getByRole('button', { name: 'Inspect latest' }))
+  await inspectLatest()
   await waitFor(() => expect(authoring().getByTitle('Rename workflow')).toHaveTextContent('Newer saved name'))
   expect(readConflictRecoveries(f.key)).toHaveLength(2)
   const finalBase = { id: draft(f).context.draft.id, revision: draft(f).context.draft.publishedRevision,
@@ -60,7 +58,7 @@ it('retains repeated recoveries through refresh, saves into the newest base and 
   first.unmount()
   act(() => useGraphDraftStore.setState({ nextDrafts: {} }))
   await mount(f); await settings()
-  expect(recovery().getAllByRole('button', { name: 'View unsaved draft' })).toHaveLength(2)
+  expect(recovery().getAllByRole('button', { name: 'Compare' })).toHaveLength(2)
   expect(draft(f).context.draft.id).toBe(finalBase.id)
   await rename('My first unsaved name')
   await userEvent.click(toolbar('Draft actions').getByRole('button', { name: 'Save workflow' }))
@@ -69,9 +67,9 @@ it('retains repeated recoveries through refresh, saves into the newest base and 
     expectedWorkflowVersionId: finalBase.version, graph: { name: 'My first unsaved name' } })
   expect(f.saved().version.definition.name).toBe('My first unsaved name')
   expect(readConflictRecoveries(f.key)).toHaveLength(2)
-  await userEvent.click(recovery().getAllByRole('button', { name: 'Discard recovered draft' })[0]!)
+  await userEvent.click(recovery().getAllByRole('button', { name: 'Discard' })[0]!)
   await userEvent.click(within(await findDialog('Discard this recovered draft?', 'alertdialog'))
-    .getByRole('button', { name: 'Discard recovered draft' }))
+    .getByRole('button', { name: 'Discard' }))
   expect(readConflictRecoveries(f.key)).toHaveLength(1)
   expect(f.wire.writes().every(sample => sample.path.endsWith('/definition/edits'))).toBe(true)
 }, 30000)
@@ -87,7 +85,7 @@ it.each(['write', 'read', 'latest-response'] as const)('keeps the original edito
       return getItem.call(this, key)
     }) : undefined
   if (failure === 'latest-response') f.controls.failLatestRead = true
-  await userEvent.click(recovery().getByRole('button', { name: 'Inspect latest' }))
+  await inspectLatest()
   if (failure === 'read') {
     expect(await screen.findByRole('alert')).toHaveTextContent('Recovery read denied')
   }
@@ -115,19 +113,19 @@ it('blocks Inspect latest while Stage is uncertain and reconciles the original i
   await userEvent.click(toolbar('Draft actions').getByRole('button', { name: 'Save workflow' }))
   await waitFor(() => expect(readEditOutbox(f.key)).toBeDefined())
   const original = structuredClone(readEditOutbox(f.key)!.request)
-  expect(recovery().getByRole('button', { name: 'Inspect latest' })).toBeDisabled()
+  expect(within(labelled('Saved version')).getByRole('button', { name: 'Reload' })).toBeDisabled()
   expect(readConflictRecoveries(f.key)).toEqual([])
   await waitFor(() => expect(f.requests).toHaveLength(1))
   await waitFor(() => expect(view.cache.isMutating()).toBe(0))
   await waitFor(() => expect(toolbar('Draft actions').getByRole('button', { name: 'Reconcile Save' })).toBeEnabled())
-  expect(queryDialog('Remove workflow node')).not.toBeInTheDocument()
+  expect(queryDialog('Remove Node 1?', 'alertdialog')).not.toBeInTheDocument()
   await userEvent.click(toolbar('Draft actions').getByRole('button', { name: 'Reconcile Save' }))
   expect(queryDialog('Save changes before leaving?', 'alertdialog')).not.toBeInTheDocument()
   await waitFor(() => expect(readEditOutbox(f.key)).toBeUndefined())
   expect(f.requests.length).toBeGreaterThan(1)
   for (const input of f.requests) expect(input).toEqual(original)
   expect(f.saved().version.definition.name).toBe('Exact pending name')
-  await userEvent.click(recovery().getByRole('button', { name: 'Inspect latest' }))
+  await inspectLatest()
   await waitFor(() => expect(draft(f).context.draft.id).not.toBe(original.draftId))
   expect(readConflictRecoveries(f.key)).toHaveLength(1)
 }, 30000)
