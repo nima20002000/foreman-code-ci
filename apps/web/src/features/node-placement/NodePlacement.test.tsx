@@ -110,7 +110,7 @@ it('withdraws private facts on selection change, missing legacy data and access 
 
 it('does not describe a configured host as removed while authorized choices are loading', () => {
   render(<NodePlacementField value={saved} options={[]} optionsState="loading" onChange={vi.fn()} />)
-  expect(screen.getByText('Reading authorized computer choices…')).toBeInTheDocument()
+  expect(screen.getByText('Checking computers…')).toBeInTheDocument()
   expect(screen.queryByText(/no longer available/)).not.toBeInTheDocument()
 })
 
