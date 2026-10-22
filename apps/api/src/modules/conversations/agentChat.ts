@@ -2289,9 +2289,18 @@ export class AgentChatService {
         if (!configuration) throw new Error('The pinned Agent configuration is unavailable.')
         const binding = requestId ? row : { ...row, active_native_turn_id: target!.targetNativeTurnId }
         const principalId = await this.repository.turnPrincipalId(id, recoveryRequestId)
+        // A Claude turn lives only in the query of the process that started it. When recovery has to open a fresh
+        // local runtime, that process died with the previous API and the turn can never produce terminal evidence.
+        const orphanedClaudeTurn = Boolean(requestId) && row.harness === 'claude' && !this.runtimes.has(id)
+          && configuration.harnessProfileSelection?.target.hostRef.kind !== 'device'
         const runtime = await this.runtime(binding, configuration, correlationId,
           AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(60_000)]), principalId)
         if (requestId) await this.observe(id, requestId, runtime, correlationId, true)
+        if (requestId && orphanedClaudeTurn && (await this.repository.get(id))?.active_request_id === requestId) {
+          await this.settle(id, requestId, row.cancel_requested ? { outcome: 'canceled' } : { outcome: 'failed', error: {
+            code: 'NATIVE_TURN_INTERRUPTED', retryable: true,
+            message: 'The Agent process stopped when the API restarted before this message finished. Send it again.' } })
+        }
         if (steers.length) {
           const identities = steers.flatMap((entry) => entry.targetNativeTurnId
             ? [{ clientCorrelationId: agentChatCorrelation(id, entry.requestId), expectedTurnId: entry.targetNativeTurnId }] : [])
