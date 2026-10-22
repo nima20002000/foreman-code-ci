@@ -29,11 +29,11 @@ describe('workspace settings actions', () => {
     expect(screen.getByRole('navigation', { name: 'Workspace sections' })).toBeVisible()
   })
 
-  it('shows the workspace name once as the page title, with location and removal as the only actions', async () => {
+  it('shows the workspace name once as the page title, with where it runs and removal alongside', async () => {
     renderWithRouter(<WorkspaceDetailPage workspaceId="workspace-1" section="settings" />)
 
     expect(await screen.findByRole('textbox', { name: 'Workspace name' })).toHaveValue('Website')
-    expect(screen.getByLabelText('Execution location', { selector: 'button' })).toBeEnabled()
+    expect(screen.getByText('Runs on')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Remove workspace' })).toBeEnabled()
     expect(screen.queryByRole('heading', { name: 'Workspace settings' })).not.toBeInTheDocument()
     expect(screen.queryByText('Name', { exact: true })).not.toBeInTheDocument()
@@ -50,10 +50,10 @@ describe('workspace settings actions', () => {
     expect(screen.getByRole('textbox', { name: 'Workspace name' })).toHaveValue('Settings action rename')
 
     await user.click(screen.getByRole('button', { name: 'Remove workspace' }))
-    const removal = screen.getByRole('dialog', { name: 'Remove Settings action rename?' })
+    const removal = screen.getByRole('alertdialog', { name: 'Remove Settings action rename?' })
     expect(removal).toHaveTextContent('folders you picked are kept')
-    await user.click(within(removal).getByRole('button', { name: 'Cancel' }))
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await user.click(within(removal).getByRole('button', { name: 'Keep it' }))
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'Workspace name' })).toHaveValue('Settings action rename')
   })
 

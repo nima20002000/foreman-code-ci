@@ -45,9 +45,9 @@ it('selects disk folders across pages, excludes protected folders and preserves 
   expect(screen.getByRole('checkbox', { name: 'Select folder Protected' })).not.toBeChecked()
   await user.click(screen.getByRole('button', { name: 'Delete selected (2)' }))
   const dialog = screen.getByRole('alertdialog', { name: 'Delete 2 folders?' })
-  expect(dialog).toHaveTextContent(alpha.path)
-  expect(dialog).toHaveTextContent(beta.path)
-  expect(dialog).toHaveTextContent('permanently deleted with all files and subfolders')
+  expect(within(dialog).getByText('Alpha')).toBeVisible()
+  expect(within(dialog).getByText('Beta')).toBeVisible()
+  expect(dialog).toHaveTextContent('are deleted with everything in them')
   await user.click(within(dialog).getByRole('button', { name: 'Delete 2 folders' }))
   await screen.findByText('2 folders deleted.')
   expect(commands.map(({ path, expectedIdentity }) => ({ path, expectedIdentity }))).toEqual([

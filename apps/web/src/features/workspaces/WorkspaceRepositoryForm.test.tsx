@@ -97,7 +97,7 @@ describe('repository draft', () => {
     expect(input).toBeInTheDocument()
     expect(input).toHaveValue('octo-owner/remote-repo')
     expect(screen.getByRole('textbox', { name: 'Base branch' })).toHaveValue('main')
-    expect(screen.getByRole('button', { name: 'Save repository' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Save repository' })).not.toBeInTheDocument()
   })
 
   it('locks fields during save and installs the persisted result without remounting', async () => {
@@ -119,7 +119,7 @@ describe('repository draft', () => {
     await waitFor(() => expect(input).toBeEnabled())
     expect(input).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'Base branch' })).toHaveValue('main-release')
-    expect(screen.getByRole('button', { name: 'Save repository' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Save repository' })).not.toBeInTheDocument()
     expect(state.read().workspace.repository?.defaultBranch).toBe('main-release')
   })
 

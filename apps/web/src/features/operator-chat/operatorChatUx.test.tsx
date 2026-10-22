@@ -386,7 +386,7 @@ describe('Operator chat UX', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(api.send).not.toHaveBeenCalled()
     expect(useOperatorChatStore.getState().selectedConversationId).toBe('conversation-one')
-    fireEvent.click(screen.getByRole('button', { name: 'New chat' }))
+    fireEvent.click(within(screen.getByText('Your Operator settings changed. They apply to a new chat.')).getByRole('button', { name: 'New chat' }))
     await waitFor(() => expect(useOperatorChatStore.getState().selectedConversationId).toBe('new-chat'))
     expect(useConversationDraftStore.getState().drafts['conversation-one']).toBe('Continue here')
     expect(await screen.findByRole('textbox', { name: 'Message' })).toHaveValue('')
