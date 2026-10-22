@@ -22,8 +22,10 @@ async function fixture() {
 describe('Operator MCP presentation', () => {
   it('projects before pagination, retains input constraints and invalidates changed catalog cursors', async () => {
     const f = await fixture()
-    const description = 'Operational instructions. '.repeat(10000)
-    const registered = [0, 1, 2].map((index) => f.server.registerTool(`read_${index}`, {
+    // Listed descriptions keep their first sentence only, so this one long sentence still fills a page.
+    const description = `${'Operational instructions '.repeat(10000)}end.`
+    const names = ['workspace_list', 'workspace_get', 'workflow_list']
+    const registered = names.map((name) => f.server.registerTool(name, {
       description, inputSchema: z.object({ limit: z.number().int().min(1).max(10) }),
       outputSchema: z.object({ value: z.string().describe('Large output documentation. '.repeat(10000)) }),
       annotations: { readOnlyHint: true },
@@ -37,8 +39,8 @@ describe('Operator MCP presentation', () => {
         inputSchema: { properties: { limit: { minimum: 1, maximum: 10, type: 'integer' } } } })
       expect(first.tools[0]).not.toHaveProperty('outputSchema')
       const all = await f.client.listTools()
-      expect(all.tools.map((tool) => tool.name)).toEqual(['read_0', 'read_1', 'read_2'])
-      const result = await f.client.callTool({ name: 'read_2', arguments: { limit: 1 } })
+      expect(all.tools.map((tool) => tool.name)).toEqual(names)
+      const result = await f.client.callTool({ name: 'workflow_list', arguments: { limit: 1 } })
       expect(decodeMcpToolResult(result)).toEqual({ value: 'ok' })
       registered[0]!.update({ description: 'Changed instructions.' })
       await expect(f.client.request({ method: 'tools/list', params: { cursor: first.nextCursor! } }))
@@ -49,7 +51,7 @@ describe('Operator MCP presentation', () => {
   it('keeps SDK output validation and sends one complete JSON text body with distinct content', async () => {
     const f = await fixture()
     const value = { items: ['first', 'last'], description: 'x'.repeat(1000), nullable: null }
-    f.server.registerTool('read', {
+    f.server.registerTool('run_get', {
       inputSchema: z.object({}), outputSchema: z.object({
         items: z.array(z.string()), description: z.string(), nullable: z.null(),
       }),
@@ -64,8 +66,10 @@ describe('Operator MCP presentation', () => {
       async () => toolResult({ count: 'invalid' }))
     await f.connect()
     try {
-      expect((await f.client.listTools()).tools.every((tool) => tool.outputSchema === undefined)).toBe(true)
-      const result = await f.client.callTool({ name: 'read', arguments: {} })
+      const listed = (await f.client.listTools()).tools
+      expect(listed.map((tool) => tool.name)).toEqual(['run_get'])
+      expect(listed.every((tool) => tool.outputSchema === undefined)).toBe(true)
+      const result = await f.client.callTool({ name: 'run_get', arguments: {} })
       expect(result.structuredContent).toBeUndefined()
       expect(result.content).toEqual([
         { type: 'text', text: JSON.stringify(value) },
