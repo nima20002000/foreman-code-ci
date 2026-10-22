@@ -1,6 +1,7 @@
 import { InfoHint } from '../../../shared/ui/InfoHint'
 import { memo, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import './inspection.css'
+import '../dock/boardDock.css'
 import { useQuery } from '@tanstack/react-query'
 import { Handle, Position, type Edge, type EdgeProps, type Node, type NodeProps } from '@xyflow/react'
 import type { CiRunJob, CiTestStatus } from '@foreman-code/contracts'
@@ -18,15 +19,19 @@ import { isApiAccessError } from '../../../shared/api/accessError'
 
 const SHORT_PLACEMENTS = { host: 'Host CI', github: 'GitHub', circleci: 'CircleCI' } as const
 
-export type CiServerFlowNode = Node<{ summary: CiServerSummary; open(): void; rim: 'box' }, 'ciServer'>
+export type CiServerFlowNode = Node<{ summary: CiServerSummary; open(): void; rim: 'box'; close?(): void }, 'ciServer'>
 /** A presentation-only component of the Board, never a workflow node: no edges, no saved geometry, no execution.
  * Drawn as a server tower (drive bays, status LEDs, vents) so it never reads as an Agent. */
 export const CiServerNode = memo(function CiServerNode({ data }: NodeProps<CiServerFlowNode>) {
   const { summary } = data
+  // The tower drags by its body; a press that moved it is a drag, not a click that opens it.
+  const pressed = useRef<{ x: number; y: number }>(undefined)
   const where = summary.placements.length ? summary.placements.map((placement) => SHORT_PLACEMENTS[placement]).join(' · ')
     : 'Host CI · GitHub · CircleCI'
   return <div className="ci-server-node" data-state={summary.state}>
-    <button type="button" className="ci-server-chassis" onClick={data.open}
+    <button type="button" className="ci-server-chassis" onPointerDown={(event) => { pressed.current = { x: event.clientX, y: event.clientY } }}
+      onClick={(event) => { const from = pressed.current
+        if (!from || Math.hypot(event.clientX - from.x, event.clientY - from.y) < 4) data.open() }}
       aria-label={`CI server, ${summary.label}. Open CI jobs and test results`}>
       <span className="ci-server-bays" aria-hidden="true">{[0, 1, 2].map((bay) => <span key={bay} className="ci-server-bay">
         <i className="ci-server-led" /><i className="ci-server-slot" /></span>)}</span>
@@ -37,6 +42,8 @@ export const CiServerNode = memo(function CiServerNode({ data }: NodeProps<CiSer
         <span><small>Failed</small><b>{summary.failed}</b></span></span>
       <span className="ci-server-vents" aria-hidden="true" />
     </button>
+    {data.close ? <button type="button" className="board-object-close nodrag nopan" aria-label="Close CI server to the dock"
+      title="Close to the dock" onClick={data.close}><Icon name="close" size={12} /></button> : null}
     {/* Only for the passing lights; nothing connects to the server. */}
     <Handle id="left" type="target" position={Position.Left} isConnectable={false} className="ci-server-target" />
   </div>

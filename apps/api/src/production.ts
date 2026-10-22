@@ -2281,6 +2281,7 @@ function configureOperatorServices(composition: ProductionComposition) {
             workerExecution.requireEnabled(host)
             if (host.kind === 'device') await deviceRuntime.endpointForDomains().assertWorkerBundleReady(host.deviceId)
           },
+          computerOnline: host => host.kind === 'main' || deviceRuntime.presenceFor(host.deviceId)?.phase === 'ready',
           provisionRoot: (...args: Parameters<ProductionCiEnrollmentInventory['root']>) => {
             const workspaceRoots = composition.runtimeServices.workspaceRoots
             if (!workspaceRoots) throw new DomainError('PLACEMENT_CHOICES_UNAVAILABLE', 'Workspace roots are not initialized.', 503)

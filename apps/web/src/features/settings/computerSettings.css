@@ -98,3 +98,10 @@
 .computers-page .device-setup-status p strong { color: var(--n-text); font-weight: 550; }
 .computer-revoke { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; }
 .computer-revoke > p:first-of-type { flex: 1 1 20rem; margin: 0; color: var(--n-muted); font-size: 13px; }
+.computer-detail-heading { display: flex; align-items: center; gap: .6rem; }
+.computer-detail-inline { display: flex; align-items: flex-end; gap: .5rem; }
+.computer-detail-actions { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; padding-top: .5rem; }
+.computer-detail-settings .computer-card-grid { grid-template-columns: minmax(0, 1fr); }
+/* The section already says Sign-ins; the accounts list's own heading would repeat it. */
+.computer-detail-settings .provider-accounts-settings > .provider-accounts-heading { display: none; }
+.computer-detail-settings .provider-accounts-settings { border-top: 0; padding-top: 0; margin-top: 0; }

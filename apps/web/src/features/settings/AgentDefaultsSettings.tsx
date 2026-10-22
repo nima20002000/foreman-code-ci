@@ -3,9 +3,9 @@ import { agentTemplateForRole, nativeToolsSummary, memoryBoardTools, newAgentGra
 import type { SettingsAgentRole } from '@foreman-code/contracts/management'
 import { ErrorState, LoadingState, Switch } from '../../shared/ui/nocturne'
 import { useAgentDefaultsQuery, useUpdateAgentDefaultsMutation } from '../../shared/api/query'
-import { askOperator } from '../operator-chat/operatorChatStore'
 import { SettingsChoice, SettingsOverview } from './SettingsCards'
 import { agentRoleOrder, harnessSummary, rolePresentation } from './settingsPresentation'
+import { AgentRoleSettings } from './AgentRoleSettings'
 import { PromptSettings } from './PromptSettings'
 
 /** Hiding the chat would also hide the way to ask for it back, so this one setting stays a direct switch. */
@@ -21,12 +21,14 @@ function OperatorChatVisibility({ value, revision }: { value: AgentDefaults; rev
   </>
 }
 
-/** Role defaults are summary cards; the Operator agent edits them through MCP. */
-export function AgentDefaultsSettings({ selectedRole, onOpen }: {
-  selectedRole?: SettingsAgentRole; onOpen?(role?: SettingsAgentRole): void;
+/** Role defaults are summary cards; each opens its own editor. */
+export function AgentDefaultsSettings({ selectedRole, promptOpen = false, onOpen }: {
+  selectedRole?: SettingsAgentRole; promptOpen?: boolean; onOpen?(role?: SettingsAgentRole, section?: 'prompt'): void;
 }) {
   const query = useAgentDefaultsQuery()
-  if (selectedRole === 'operator') return <PromptSettings page="operator-initial-prompt" onBack={() => onOpen?.()} />
+  if (selectedRole === 'operator' && promptOpen) return <PromptSettings page="operator-initial-prompt" />
+  if (selectedRole) return <AgentRoleSettings key={selectedRole} role={selectedRole}
+    onEditPrompt={() => onOpen?.('operator', 'prompt')} />
   if (query.isError) return <ErrorState title="Agent defaults are unavailable" description={query.error.message} onRetry={() => void query.refetch()} />
   if (!query.data) return <LoadingState label="Loading agent defaults…" />
   const { value, revision } = query.data
@@ -45,10 +47,7 @@ export function AgentDefaultsSettings({ selectedRole, onOpen }: {
         ...(value.operator.harness.harness === 'codex' ? [{ label: 'Thinking', value: value.operator.showThinking ? 'Shown' : 'Hidden' }] : []),
       ] : [])]
       return <SettingsChoice key={role} title={info.title} summary={summary}
-        onSelect={() => {
-          if (role === 'operator') onOpen?.(role)
-          else askOperator(`Change the ${info.title} defaults: `, { send: false })
-        }}
+        onSelect={() => onOpen?.(role)}
         footer={role === 'operator' ? <OperatorChatVisibility value={value} revision={revision} /> : undefined} />
     })}
   </SettingsOverview>

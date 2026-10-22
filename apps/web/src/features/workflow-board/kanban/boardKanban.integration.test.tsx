@@ -61,19 +61,24 @@ async function streamOpened(after = 0) {
   return source!
 }
 
-it('shows the workflow Kanban on the Board, keeps its moved place across a reload, and never changes cards by viewing them', async () => {
+it('adds the Kanban from the toolbar, keeps its moved place across a reload, closes it into the dock, and never changes cards', async () => {
   const board = install('kanban-layout')
   const user = userEvent.setup()
   const first = await mountMeasuredBoard(board.href)
-  // The Kanban is always on the Board; it needs no switch and appears once its saved place is known.
-  expect(screen.queryByRole('button', { name: 'Kanban' })).not.toBeInTheDocument()
+  // Off by default: the toolbar's Kanban button puts it on the Board.
+  const toggle = await screen.findByRole('button', { name: 'Kanban' })
+  await waitFor(() => expect(toggle).toBeEnabled())
+  expect(toggle).toHaveAttribute('aria-pressed', 'false')
+  expect(screen.queryByRole('region', { name: 'Kanban' })).not.toBeInTheDocument()
+  await user.click(toggle)
+  await waitFor(() => expect(board.saves).toEqual([{ visible: true, frame: null }]))
   const kanban = await screen.findByRole('region', { name: 'Kanban' })
   expect(canvas()).toContainElement(kanban)
   await streamOpened()
   expect(await within(kanban).findByRole('button', { name: 'Prepare release notes' })).toBeVisible()
   expect(within(within(kanban).getByRole('region', { name: 'Doing' })).getByRole('button', { name: 'Prepare release notes' })).toBeVisible()
   expect(within(within(kanban).getByRole('region', { name: 'Todo' })).getByRole('button', { name: 'Update the docs' })).toBeVisible()
-  expect(board.saves).toEqual([])
+  expect(board.saves).toHaveLength(1)
 
   // Dragged by its bar, the Kanban keeps its new place on the server.
   const before = placed('board-kanban')
@@ -108,6 +113,22 @@ it('shows the workflow Kanban on the Board, keeps its moved place across a reloa
   expect(placed('board-kanban')).toEqual({ x: Math.round(moved.x), y: Math.round(moved.y) })
   await streamOpened(earlier)
   expect(await within(again).findByRole('button', { name: 'Update the docs' })).toBeVisible()
+
+  // Its X only minimizes it into the dock: the saved layout and the cards stay, and the dock item restores it.
+  const saved = board.saves.length
+  await user.click(within(again).getByRole('button', { name: 'Close Kanban to the dock' }))
+  await waitFor(() => expect(screen.queryByRole('region', { name: 'Kanban' })).not.toBeInTheDocument())
+  await user.click(screen.getByRole('button', { name: /^Restore Kanban/ }))
+  expect(await screen.findByRole('region', { name: 'Kanban' })).toBeInTheDocument()
+  expect(placed('board-kanban')).toEqual({ x: Math.round(moved.x), y: Math.round(moved.y) })
+  expect(board.saves).toHaveLength(saved)
+
+  // Pressed again, the toolbar button takes it off the Board; its cards stay.
+  await user.click(screen.getByRole('button', { name: 'Kanban' }))
+  await waitFor(() => expect(board.saves.at(-1)).toMatchObject({ visible: false }))
+  await waitFor(() => expect(screen.queryByRole('region', { name: 'Kanban' })).not.toBeInTheDocument())
+  expect(screen.queryByRole('button', { name: /^Restore Kanban/ })).not.toBeInTheDocument()
+  expect([...board.memory.cards.keys()].sort()).toEqual(['card-docs', 'card-release'])
 })
 
 it('shows which Agent just changed a card on that card only, with a light from the Agent node', async () => {

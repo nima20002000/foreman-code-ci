@@ -85,7 +85,7 @@ describe('meaningful Save through the real Board transport', () => {
     await user.click(fixes[0]!)
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Coordinator' })).toHaveFocus())
     await user.click(fixes[1]!)
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Set limits' })).toHaveFocus())
+    await waitFor(() => expect(screen.getByRole('spinbutton', { name: 'Agents at once' })).toHaveFocus())
     expect(nextDraftDirty(draft(f))).toBe(true)
     expect(readEditOutbox(f.key)).toBeUndefined()
     expect(f.requests.publications).toBe(0)

@@ -1,0 +1,64 @@
+/* Closed board objects, top right of the Board under its toolbar. */
+.board-dock { position: absolute; top: 72px; right: 16px; z-index: 6; display: flex; gap: 6px; }
+.board-dock-item {
+  --dock-hue: var(--text-faint);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.board-dock-item:hover { border-color: var(--border-strong); background: var(--surface-hover); }
+.board-dock-item:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.board-dock-item[data-state='running'], .board-dock-item[data-state='queued'] { --dock-hue: var(--info); }
+.board-dock-item[data-state='completed'] { --dock-hue: var(--success); }
+.board-dock-item[data-state='failed'] { --dock-hue: var(--danger); }
+.board-dock-dot { width: 6px; height: 6px; border-radius: var(--radius-full); background: var(--dock-hue); }
+.board-dock-item[data-state='running'] .board-dock-dot { animation: board-dock-blink 1.2s ease-in-out infinite; }
+.board-dock-badge {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: var(--on-accent, #fff);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  animation: board-dock-pulse 900ms ease-out;
+}
+.board-dock-item[data-active] { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+@keyframes board-dock-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 70%, transparent); transform: scale(1.25); }
+  100% { box-shadow: 0 0 0 8px transparent; transform: scale(1); }
+}
+@keyframes board-dock-blink { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .board-dock-badge, .board-dock-item .board-dock-dot { animation: none; } }
+
+/* The close control of a Board object (CI server, Kanban); closing only minimizes it into the dock. */
+.board-object-close {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.board-object-close:hover { border-color: var(--border); background: var(--surface-hover); color: var(--text); }
+.board-object-close:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.ci-server-node > .board-object-close { position: absolute; top: -10px; right: -10px; z-index: 2; border-color: var(--border);
+  border-radius: var(--radius-full); background: var(--surface-raised); opacity: 0; transition: opacity 140ms ease; }
+.ci-server-node:hover > .board-object-close, .ci-server-node > .board-object-close:focus-visible { opacity: 1; }

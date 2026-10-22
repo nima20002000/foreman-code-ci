@@ -1,31 +1,32 @@
 import { InfoHint } from '../../shared/ui/InfoHint'
 import { errorMessage } from '../../shared/errorMessage'
-import { nativeToolsSummary } from '@foreman-code/contracts'
 import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { SavedNodePlacementSchema, type SavedNodePlacement } from '@foreman-code/contracts/node-placement'
 import {
   AgentWorktreeSettingsSchema, type AgentWorktreeSettings, type WorkflowWorktreeSettings,
 } from '@foreman-code/contracts/worktree-settings'
-import { NodePlacementField, type NodePlacementOption } from '../node-placement/NodePlacementField'
+import { NodePlacementField, type NodePlacementOption, type UnavailableComputer } from '../node-placement/NodePlacementField'
 import type { AgentForm } from './nextDraft/agentForm'
 import { useUnsavedChanges } from '../../shared/ui/unsavedChanges'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
-  AgentHarnessSchema, CodexSessionCompatibilitySchema, DEFAULT_HARNESS_DEFAULTS, legacyEffortForHarness,
+  AgentHarnessSchema, CodexSessionCompatibilitySchema, agentTemplateForRole, legacyEffortForHarness,
   validateHarnessWorkflowCompatibility, withAdvancedDefaults,
   type Agent, type ApprovalHandler, type AssignedSkill, type GraphqlToolOverride, type HarnessDefaults, type WorkflowExecutionPolicy,
 } from '@foreman-code/contracts'
 
 import { Alert, Button, Icon, IconButton, Select, Textarea, TextField } from '../../shared/ui/nocturne'
 import { configuredHarness, initialModel } from '../agents/agentSettings'
-import { useHarnessDefaultsQuery, useManagedHarnessCatalogQuery } from '../../shared/api/query'
+import { useAgentDefaultsQuery, useHarnessDefaultsQuery, useManagedHarnessCatalogQuery } from '../../shared/api/query'
 import { ClaudeFullAccessConfigurationSchema } from '@foreman-code/contracts/claude'
 import { harnessNames, retiredHarnessLabel } from '../settings/settingsPresentation'
 import { HarnessConfigurationFields } from '../settings/HarnessConfigurationFields'
-import { HarnessBasicFields } from '../settings/HarnessBasicFields'
-import { createHarnessEditor, prepareHarnessEditor, switchHarnessEditor } from '../settings/harnessEditor'
+import { createHarnessEditor, prepareHarnessEditor } from '../settings/harnessEditor'
 import { FieldValidationError, fieldMessage, focusFirstInvalid, issuesAt, validationIssues, type FieldIssue } from '../settings/fieldValidation'
+import { ProviderAccountSelect } from '../provider-accounts/ProviderAccountSelect'
 import { GraphqlToolsFields } from './GraphqlToolsFields'
+import { AgentHarnessRows, AgentMemoryRow, NodeRow } from './AgentMainFields'
+import { harnessSwitchPreset, switchAgentHarness } from './harnessSwitch'
 import { AgentSkillsField } from '../skills/AgentSkillsField'
 import './agentSettingsPanel.css'
 
@@ -34,6 +35,14 @@ type EditableAgentSettingsFormProps = {
   embedded?: boolean
   additionalDirty?: boolean
   additionalFields?: ReactNode
+  /** Node rows shown with the main settings (browser). */
+  mainFields?: ReactNode
+  /** Node settings folded under More settings (workflow start, routes). */
+  moreFields?: ReactNode
+  /** Paired computers that can't run this Agent, with the plain reason. */
+  unavailableComputers?: readonly UnavailableComputer[]
+  /** Why computer choices can't be read right now. */
+  placementNote?: string
   nodePlacement?: SavedNodePlacement
   nodeWorktree?: AgentWorktreeSettings
   workflowWorktree?: WorkflowWorktreeSettings
@@ -77,7 +86,7 @@ function useAgentSettingsForm({ agent, initialPrompt, nodeGraphqlTools, creation
   const [localSkills, setLocalSkills] = useState<AssignedSkill[]>(agent.assignedSkills ?? [])
   const [error, setError] = useState<string>()
   const [issues, setIssues] = useState<FieldIssue[]>([])
-  const [view, setView] = useState<'general' | 'advanced'>('general')
+  const [moreOpen, setMoreOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
   useEffect(() => { if (issues.length) focusFirstInvalid(root.current) }, [issues])
   const [localEditor, setLocalEditor] = useState(() => {
@@ -112,6 +121,9 @@ function useAgentSettingsForm({ agent, initialPrompt, nodeGraphqlTools, creation
   const defaultsQuery = useHarnessDefaultsQuery({ enabled: !creationDefaults })
   const catalogQuery = useManagedHarnessCatalogQuery(!creationDefaults)
   const providerDefaults = creationDefaults ?? defaultsQuery.data?.defaults
+  const agentDefaults = useAgentDefaultsQuery(!creationDefaults)
+  const role: 'master' | 'orchestrator' | 'coder' = agent.productRole === 'master' || agent.productRole === 'orchestrator' ? agent.productRole : 'coder'
+  const roleDefault = agentDefaults.data ? agentTemplateForRole(agentDefaults.data.value, role).harness : undefined
   const configuration = withAdvancedDefaults(editor.configuration)
   const harnessOptions = AgentHarnessSchema.options.map((harness) => {
     const draft = editor.drafts?.[harness]
@@ -145,6 +157,14 @@ function useAgentSettingsForm({ agent, initialPrompt, nodeGraphqlTools, creation
     setEditor((current) => ({ ...current, configuration: next }))
     clearErrors()
   }
+  /** A new harness starts from its role default or preset; settings that only fit the old harness are dropped. */
+  const switchHarness = (next: 'codex' | 'claude') => {
+    if (next === configuration.harness || harnessOptions.find((option) => option.value === next)?.disabled) return
+    const workflow = { approvalHandler: workflowApprovalHandler, designatedOrchestrator }
+    const preset = harnessSwitchPreset(next, roleDefault, providerDefaults, workflow)
+    setEditor((current) => switchAgentHarness(current, next, preset, workflow))
+    clearErrors()
+  }
   const save = () => {
     const previousSnapshot = initialSnapshot.current
     try {
@@ -175,119 +195,118 @@ function useAgentSettingsForm({ agent, initialPrompt, nodeGraphqlTools, creation
       initialSnapshot.current = previousSnapshot
       const nextIssues = validationIssues(failure)
       setIssues(nextIssues)
-      setError(nextIssues.length ? 'Review the marked fields before saving.' : errorMessage(failure, 'Agent settings are invalid.'))
+      // A problem with no field of its own is shown in words instead of an unexplained "marked fields" note.
+      const unmarked = nextIssues.find((issue) => !markedField(issue.path))
+      if (nextIssues.some((issue) => !mainField(issue.path))) setMoreOpen(true)
+      setError(unmarked?.message ?? (nextIssues.length ? 'Review the marked fields before saving.' : errorMessage(failure, 'Agent settings are invalid.')))
     }
   }
   const leave = useUnsavedChanges({ scope: 'surface', label: 'agent settings', canResume, get dirty() { return additionalDirty || currentSnapshot !== initialSnapshot.current },
     error, save, discard: () => { initialSnapshot.current = currentSnapshot; onDiscardForm?.(); onClose() },
   })
   return {
-    error, issues, view, setView, root, setLocalPlacement, setLocalPrefix, name, prompt, editor, placement,
+    error, issues, moreOpen, setMoreOpen, root, setLocalPlacement, setLocalPrefix, name, prompt, editor, placement,
     branchPrefix, graphqlTools, instructions, skills, changeForm, setName, setPrompt, setGraphqlTools,
     setInstructions, setSkills, setEditor, providerDefaults, configuration, harnessOptions, harnessReason,
-    isDirty, nameError, clearErrors, updateConfiguration, save, leave,
+    isDirty, nameError, clearErrors, updateConfiguration, switchHarness, save, leave, role,
   }
 }
 
-function EditableAgentSettingsForm({ agent, initialPrompt, nodeGraphqlTools, creationDefaults, onClose, onRemove, onSave, retainedForm, onFormChange, onDiscardForm, canResume,
-  nodePlacement, nodeWorktree, workflowWorktree, workflowWorktreeLabel, worktreeDisabled,
-  placementOptions, placementHidden, placementOptionsState, placementStage,
-  executionPolicy = { maxNodeExecutions: 1, maxParallelism: 1 }, workspaceId,
-  workflowApprovalHandler, designatedOrchestrator = false, embedded = false, additionalDirty, additionalFields,
-}: EditableAgentSettingsFormProps) {
-  const {
-    error, issues, view, setView, root, setLocalPlacement, setLocalPrefix, name, prompt, editor, placement,
+const mainFields = new Set(['harness.model', 'harness.reasoningEffort', 'harness.effort', 'harness.sandbox', 'harness.serviceTier'])
+const moreFields = new Set(['name', 'branchPrefix', 'harness.configDirectory', 'harness.authMode'])
+const mainField = (path: readonly PropertyKey[]) => mainFields.has(path.map(String).join('.'))
+/** Fields that show their own error next to the control. */
+const markedField = (path: readonly PropertyKey[]) => {
+  const key = path.map(String).join('.')
+  return mainFields.has(key) || moreFields.has(key) || key.startsWith('harness.advanced.')
+}
+
+function EditableAgentSettingsForm(props: EditableAgentSettingsFormProps) {
+  const { agent, onClose, onRemove, onFormChange, nodePlacement, nodeWorktree, workflowWorktree, workflowWorktreeLabel, worktreeDisabled,
+    placementOptions, placementHidden, placementOptionsState, workspaceId, workflowApprovalHandler, embedded = false,
+    additionalFields, mainFields, moreFields, unavailableComputers, placementNote } = props
+  const form = useAgentSettingsForm(props)
+  const { error, issues, moreOpen, setMoreOpen, root, setLocalPlacement, setLocalPrefix, name, prompt, editor, placement,
     branchPrefix, graphqlTools, instructions, skills, changeForm, setName, setPrompt, setGraphqlTools,
     setInstructions, setSkills, setEditor, providerDefaults, configuration, harnessOptions, harnessReason,
-    isDirty, nameError, clearErrors, updateConfiguration, save, leave,
-  } = useAgentSettingsForm({
-    agent, initialPrompt, nodeGraphqlTools, creationDefaults, onClose, onRemove, onSave, retainedForm,
-    onFormChange, onDiscardForm, canResume, nodePlacement, nodeWorktree, workflowWorktree,
-    workflowWorktreeLabel, worktreeDisabled, placementOptions, placementHidden, placementOptionsState,
-    placementStage, executionPolicy, workspaceId, workflowApprovalHandler, designatedOrchestrator, embedded, additionalDirty,
-  })
+    isDirty, nameError, clearErrors, updateConfiguration, switchHarness, save, leave, role } = form
+  const readOnly = configuration.harness === 'opencode' || configuration.sandbox === 'read-only'
+  const harnessIssues = issuesAt(issues, ['harness'])
+  const changeTools = (defaults: Parameters<typeof setGraphqlTools>[0]['defaults'], override: Parameters<typeof setGraphqlTools>[0]['override']) => {
+    setGraphqlTools({ ...(defaults ? { defaults } : {}), ...(override ? { override } : {}) }); clearErrors()
+  }
+  const showPlacement = !placementHidden && Boolean(workspaceId || nodePlacement || placementOptions)
   return <div ref={root} className={`agent-settings-panel${embedded ? ' agent-settings-panel-embedded' : ''}`}>
-    {embedded ? view === 'advanced' ? <header className="agent-settings-heading">
-      <div className="agent-settings-title">
-        <IconButton size="sm" variant="ghost" className="agent-settings-back" label="Back to general settings" onClick={() => setView('general')}><Icon name="chevron" size={15} /></IconButton>
-        <strong>Advanced settings</strong>
-      </div>
-    </header> : null : <header className="agent-settings-heading">
-      <div className="agent-settings-title">
-        {view === 'advanced' ? <IconButton size="sm" variant="ghost" className="agent-settings-back" label="Back to general settings" onClick={() => setView('general')}><Icon name="chevron" size={15} /></IconButton> : null}
-        <strong>{view === 'advanced' ? 'Advanced settings' : 'Agent settings'}<InfoHint label="Agent settings">Save updates this graph draft. Use Save graph to persist it.</InfoHint></strong>
-      </div>
+    {embedded ? null : <header className="agent-settings-heading">
+      <div className="agent-settings-title"><strong>Agent settings</strong></div>
       <div className="agent-settings-header-actions">
-      <Button size="sm" variant="primary" className="agent-settings-save" aria-label="Save agent settings" disabled={!isDirty} onClick={save} leading={<Icon name="check" size={13} />}>Save</Button>
-      <IconButton size="sm" variant="ghost" label="Close agent settings" onClick={() => void leave(onClose)}><Icon name="close" size={15} /></IconButton>
+        <Button size="sm" variant="primary" className="agent-settings-save" aria-label="Save agent settings" disabled={!isDirty} onClick={save}>Save</Button>
+        <IconButton size="sm" variant="ghost" label="Close agent settings" onClick={() => void leave(onClose)}><Icon name="close" size={15} /></IconButton>
       </div>
     </header>}
-    {view === 'general' ? <div className="agent-settings-general">
-      <div className="agent-settings-row agent-settings-row-primary">
-        <TextField label="Name" aria-label="Name" value={name} error={nameError} onChange={(event) => { setName(event.target.value); clearErrors() }} />
-        <Select label="Harness" aria-label="Harness" value={configuration.harness} options={harnessOptions}
-          hint={harnessReason ? `Provider preset unavailable: ${harnessReason} Saved agent settings are kept.` : undefined}
-          onChange={(event) => {
-          const next = AgentHarnessSchema.parse(event.target.value)
-          if (harnessOptions.find((option) => option.value === next)?.disabled) return
-          const fallback = providerDefaults?.[next] ?? DEFAULT_HARNESS_DEFAULTS[next]
-          setEditor((current) => switchHarnessEditor(current, next, fallback))
-          clearErrors()
-        }} />
-      </div>
-      <div className={`agent-settings-row agent-settings-row-runtime agent-settings-row-${configuration.harness}`}>
-        <HarnessBasicFields value={configuration} issues={issuesAt(issues, ['harness'])} onChange={updateConfiguration}
-          accountHost={placement?.hostRef} />
-      </div>
-      <p>Native tools: {nativeToolsSummary(agent.nativeTools)}</p>
-      {additionalFields}
-      {Boolean(workspaceId || nodePlacement || placementOptions) && <section className="agent-worktree-fields" aria-label="Worktree">
-        <h3>Worktree</h3>
-        <Button size="sm" variant="secondary" disabled={worktreeDisabled || (!placement && !branchPrefix)}
-          onClick={() => {
-            if (onFormChange) changeForm({ placement: undefined, branchPrefix: '' })
-            else { setLocalPlacement(undefined); setLocalPrefix('') }
-            clearErrors()
-          }}>Use workflow default</Button>
-        {!placementHidden && (nodePlacement || placementOptions) && <NodePlacementField value={placement}
-          options={placementOptions ?? []} optionsState={placementOptionsState} disabled={worktreeDisabled}
-          inheritedWorktree={workflowWorktreeLabel} stage={!sameWorkflowValue(placement, nodePlacement) ? 'editing' : placementStage}
+    <div className="agent-settings-general">
+      <div className="agent-node-rows">
+        <NodeRow label="Harness" note={harnessReason} tone="warning">
+          <Select label="Harness" aria-label="Harness" className="agent-node-inline" value={configuration.harness}
+            options={harnessOptions}
+            onChange={(event) => switchHarness(AgentHarnessSchema.parse(event.target.value))} />
+        </NodeRow>
+        <AgentHarnessRows value={configuration} issues={harnessIssues} onChange={updateConfiguration} accountHost={placement?.hostRef} />
+        {mainFields}
+        <AgentMemoryRow role={role} defaults={graphqlTools.defaults} override={graphqlTools.override} readOnly={readOnly} onChange={changeTools} />
+        {showPlacement ? <NodePlacementField value={placement} options={placementOptions ?? []} unavailableComputers={unavailableComputers}
+          optionsState={placementOptionsState} note={placementNote} disabled={worktreeDisabled} inheritedWorktree={workflowWorktreeLabel}
           onChange={next => {
             if (onFormChange) changeForm({ placement: next })
             else setLocalPlacement(next)
             clearErrors()
-          }} />}
-        <TextField label="Agent branch prefix" value={branchPrefix} placeholder={workflowWorktree?.branchPrefix ?? 'Generated automatically'}
-          disabled={worktreeDisabled} error={fieldMessage(issues, 'branchPrefix')}
-          labelHint={<InfoHint label="Agent branch prefix">Optional override. Each execution adds a unique suffix.</InfoHint>}
-          onChange={event => {
-            if (onFormChange) changeForm({ branchPrefix: event.target.value })
-            else setLocalPrefix(event.target.value)
-            clearErrors()
-          }} />
-      </section>}
-      {workspaceId ? <AgentSkillsField workspaceId={workspaceId} value={skills} onChange={(next) => { setSkills(next); clearErrors() }} /> : null}
-    </div> : <div className="agent-settings-advanced-view">
-      <Textarea label="Agent instructions" className="agent-settings-prompt" rows={4} value={instructions}
-        labelHint={<InfoHint label="Agent instructions">Given to this Agent before its skills on every turn. Not part of the task.</InfoHint>}
-        onChange={(event) => { setInstructions(event.target.value); clearErrors() }} />
-      <Textarea label="Initial prompt" aria-label="Initial prompt" className="agent-settings-prompt" rows={3} value={prompt}
-        labelHint={<InfoHint label="Initial prompt">The task this node starts with.</InfoHint>}
-        onChange={(event) => { setPrompt(event.target.value); clearErrors() }} />
-      <GraphqlToolsFields role={agent.productRole === 'master' ? 'master' : agent.productRole === 'orchestrator' ? 'orchestrator' : 'coder'} defaults={graphqlTools.defaults} override={graphqlTools.override}
-        executionReadOnly={configuration.harness === 'codex' && configuration.sandbox === 'read-only'}
-        readOnly={configuration.harness === 'opencode' || configuration.sandbox === 'read-only'}
-        onChange={(defaults, override) => { setGraphqlTools({ ...(defaults ? { defaults } : {}), ...(override ? { override } : {}) }); clearErrors() }} />
-      <HarnessConfigurationFields editor={editor} issues={issuesAt(issues, ['harness'])} onChange={(next) => { setEditor(next); clearErrors() }} allowHarnessChange={false} harnessDefaults={providerDefaults} workspaceId={workspaceId} routedApproval={Boolean(workflowApprovalHandler)} allowAutoReview={workflowApprovalHandler === 'orchestrator'} compact advancedOnly />
-    </div>}
+          }} /> : null}
+      </div>
+      <details className="agent-settings-more" open={moreOpen} onToggle={(event) => setMoreOpen(event.currentTarget.open)}>
+        <summary>More settings</summary>
+        <div className="agent-settings-more-body">
+          <TextField label="Name" aria-label="Name" value={name} error={nameError} onChange={(event) => { setName(event.target.value); clearErrors() }} />
+          {configuration.harness !== 'opencode' ? <ProviderAccountSelect provider={configuration.harness} value={configuration.accountId} hostRef={placement?.hostRef}
+            onChange={accountId => {
+              const next = { ...configuration }
+              if (accountId) next.accountId = accountId; else delete next.accountId
+              updateConfiguration(next)
+            }} /> : null}
+          {configuration.harness === 'claude' && !configuration.accountId ? <>
+            <TextField label="Claude profile folder" value={configuration.configDirectory} error={fieldMessage(harnessIssues, 'configDirectory')}
+              onChange={(event) => updateConfiguration({ ...configuration, configDirectory: event.target.value })} />
+            <Select label="Sign-in" value={configuration.authMode} error={fieldMessage(harnessIssues, 'authMode')}
+              options={[{ value: 'subscription', label: 'Claude subscription' }, { value: 'api-key', label: 'API key' }]}
+              onChange={(event) => updateConfiguration({ ...configuration, authMode: event.target.value as typeof configuration.authMode })} />
+          </> : null}
+          {additionalFields}
+          {showPlacement ? <TextField label="Branch prefix" value={branchPrefix} placeholder={workflowWorktree?.branchPrefix ?? 'Automatic'}
+            disabled={worktreeDisabled} error={fieldMessage(issues, 'branchPrefix')}
+            onChange={event => {
+              if (onFormChange) changeForm({ branchPrefix: event.target.value })
+              else setLocalPrefix(event.target.value)
+              clearErrors()
+            }} /> : null}
+          {workspaceId ? <AgentSkillsField workspaceId={workspaceId} value={skills} onChange={(next) => { setSkills(next); clearErrors() }} /> : null}
+          <Textarea label="Instructions" className="agent-settings-prompt" rows={3} value={instructions}
+            labelHint={<InfoHint label="Instructions">Given to this agent on every turn.</InfoHint>}
+            onChange={(event) => { setInstructions(event.target.value); clearErrors() }} />
+          <Textarea label="Initial prompt" aria-label="Initial prompt" className="agent-settings-prompt" rows={2} value={prompt}
+            labelHint={<InfoHint label="Initial prompt">The task this node starts with.</InfoHint>}
+            onChange={(event) => { setPrompt(event.target.value); clearErrors() }} />
+          {moreFields}
+          <GraphqlToolsFields role={role} defaults={graphqlTools.defaults} override={graphqlTools.override} hideMemory
+            executionReadOnly={configuration.harness === 'codex' && configuration.sandbox === 'read-only'} readOnly={readOnly} onChange={changeTools} />
+          <HarnessConfigurationFields editor={editor} issues={harnessIssues} onChange={(next) => { setEditor(next); clearErrors() }} allowHarnessChange={false} harnessDefaults={providerDefaults} workspaceId={workspaceId} routedApproval={Boolean(workflowApprovalHandler)} allowAutoReview={workflowApprovalHandler === 'orchestrator'} compact advancedOnly />
+        </div>
+      </details>
+    </div>
     {error ? <Alert tone="danger" live title={error} /> : null}
     <footer className="agent-settings-footer">
-      {view === 'general' ? <Button size="sm" variant="ghost" className="agent-settings-advanced-link" onClick={() => setView('advanced')} trailing={<Icon name="chevron" size={13} />}>Advanced settings</Button> : null}
-      {onRemove ? embedded ? <Button size="sm" variant="ghost" className="agent-settings-trash" aria-label={`Remove ${agent.name} from workflow`} onClick={() => void leave(onRemove)}>Remove from workflow</Button>
-        : <IconButton size="sm" variant="ghost" className="agent-settings-trash" label={`Remove ${agent.name} from workflow`} onClick={() => void leave(onRemove)}><Icon name="minus" size={15} /></IconButton> : null}
-      {embedded ? <Button size="sm" variant="ghost" onClick={() => { onDiscardForm?.(); onClose() }}>Cancel</Button> : null}
+      {onRemove ? <Button size="sm" variant="ghost" className="agent-settings-trash" aria-label={`Remove ${agent.name} from workflow`} onClick={() => void leave(onRemove)}>Remove</Button> : null}
+      {embedded ? <Button size="sm" variant="ghost" className="agent-settings-cancel" onClick={() => { props.onDiscardForm?.(); onClose() }}>Cancel</Button> : null}
       {embedded ? <Button size="sm" variant="primary" className="agent-settings-save" aria-label="Apply agent settings to draft"
-        disabled={!isDirty} onClick={save}>Apply to draft</Button> : null}
+        disabled={!isDirty} onClick={save}>Apply</Button> : null}
     </footer>
   </div>
 }

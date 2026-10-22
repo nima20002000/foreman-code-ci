@@ -18,9 +18,12 @@ export function useBrowserComputers() {
   const maintenance = useComputerMaintenance(targets)
   const activity = useComputerActivity()
   const names = new Map(activity.data?.computers.map(computer => [computerKey(computer.target), computer.name]) ?? [])
+  // Presence comes from the same activity read as every other computer card, so a page never says Online and Offline at once.
+  const presence = new Map(activity.data?.computers.map(computer => [computerKey(computer.target), computer.online]) ?? [])
   const computers = targets.map((target, index) => ({
     id: target.hostRef.kind === 'main' ? target.hostRef.mainId : target.hostRef.deviceId,
-    name: names.get(computerKey(target)) ?? computerDisplayName(target.hostRef), online: target.hostRef.kind === 'main' || maintenance[index]?.data?.status != null,
+    name: names.get(computerKey(target)) ?? computerDisplayName(target.hostRef),
+    online: target.hostRef.kind === 'main' || (presence.get(computerKey(target)) ?? maintenance[index]?.data?.status != null),
     runtimeReady: maintenance[index]?.data?.status?.browserRuntime?.ready === true, lastSeenAt: null,
   }))
   return { mainId, targets, computers, error: main.error ?? registrations.error ?? maintenance.find(query => query.error)?.error }

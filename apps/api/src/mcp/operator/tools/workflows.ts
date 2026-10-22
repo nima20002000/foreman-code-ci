@@ -1,4 +1,4 @@
-import { CurrentWorkflowCreateInputSchema } from '@foreman-code/contracts/wave25'
+import { CurrentWorkflowCreateInputSchema, DEFAULT_WORKFLOW_EXECUTION_POLICY } from '@foreman-code/contracts/wave25'
 import { SavedManagedWorkflowCommandResultSchema as ManagedWorkflowCommandResultSchema,
   SavedManagedWorkflowPageSchema as ManagedWorkflowPageSchema, SavedManagedWorkflowSchema as ManagedWorkflowSchema } from '@foreman-code/contracts/wave25'
 
@@ -51,6 +51,7 @@ export const workflowTools = [
     enabled: s => !!s.workflows,
     description: 'Create a named semantics-3 workflow using global workflow defaults. '
       + 'The built-in approval handler is native; saved global defaults take precedence. '
+      + `New workflows start with executionPolicy ${JSON.stringify(DEFAULT_WORKFLOW_EXECUTION_POLICY)}; change it with the workflow edit tools. `
       + 'Omit initialSave for an unsaved workflow, or provide initialSave '
       + '{graph, expectedAgentConfigurationVersionIds} to atomically create and save. '
       + 'Omitted graph.approval uses the workflow creation default; explicit orchestrator handling requires a designated reviewer. '

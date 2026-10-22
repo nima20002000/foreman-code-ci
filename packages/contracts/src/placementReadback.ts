@@ -23,6 +23,9 @@ export const NodePlacementChoicesResultSchema = z.object({ ...NodePlacementChoic
   /** A matching harness profile is still being checked on some computer, which may be missing from `choices`
    * until its check finishes; read the choices again until this is false. */
   pending: z.boolean(),
+  /** Paired computers with no choice above, each with a plain reason it can't run this Agent. They are never hidden. */
+  unavailableComputers: z.array(z.object({ hostRef: SavedNodePlacementSchema.shape.hostRef, name: z.string().min(1),
+    reason: z.string().min(1) }).strict()).max(100).optional(),
 }).strict()
 export type NodePlacementChoicesInput = z.infer<typeof NodePlacementChoicesInputSchema>
 export type NodePlacementChoice = z.infer<typeof NodePlacementChoiceSchema>

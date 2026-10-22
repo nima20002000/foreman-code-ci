@@ -1,4 +1,6 @@
-import { Button, Checkbox, Select } from '../../shared/ui/nocturne'
+import { useEffect } from 'react'
+import { Button, Select, Switch } from '../../shared/ui/nocturne'
+import { NodeRow } from '../graph/AgentMainFields'
 import type { BrowserComputerLabel, BrowserProfileCatalog } from '../browser-profiles/types'
 import type { NodeBrowserSettings } from './types'
 
@@ -12,6 +14,11 @@ export interface BrowserSettingsFieldsProps {
   onManageProfiles(): void
 }
 
+/** The profile a newly enabled browser uses: one named "Default", else the first one (ready here first, then by name). */
+function defaultProfileId(profiles: BrowserProfileCatalog['profiles']): string | undefined {
+  return (profiles.find(profile => profile.name.trim().toLowerCase() === 'default') ?? profiles[0])?.id
+}
+
 /** A controlled draft field. Applying/saving belongs to the existing Board form. */
 export function BrowserSettingsFields({ value, onChange, catalog, computer, disabled, loading, onManageProfiles }: BrowserSettingsFieldsProps) {
   const enabled = value?.enabled ?? false
@@ -21,24 +28,32 @@ export function BrowserSettingsFields({ value, onChange, catalog, computer, disa
     const available = (id: string) => catalog?.presentReplicas.some(item => item.profileId === id && item.computerId === computer?.id)
     return Number(available(right.id)) - Number(available(left.id)) || left.name.localeCompare(right.name)
   })
-  const options = [{ value: '', label: loading ? 'Loading browser profiles…' : 'Choose a browser profile' },
+  const fallback = defaultProfileId(profiles)
+  // A browser that is on always has a profile: pick the default once the profiles are known.
+  useEffect(() => {
+    if (enabled && !value?.profileId && fallback && !disabled) onChange({ enabled: true, profileId: fallback })
+  }, [enabled, value?.profileId, fallback, disabled, onChange])
+  const options = [...(value?.profileId ? [] : [{ value: '', label: loading ? 'Loading…' : 'No profile' }]),
     ...profiles.map(profile => ({ value: profile.id, label: profile.name }))]
-  if (value?.profileId && !selected) options.push({ value: value.profileId, label: 'Unavailable profile — choose another profile' })
-  const readiness = !computer ? 'Choose or save an execution computer to check this profile.'
-    : !computer.online ? 'Computer offline' : !computer.runtimeReady ? 'Browser setup needed'
+  if (value?.profileId && !selected) options.push({ value: value.profileId, label: 'Removed profile' })
+  const readiness = !computer ? undefined
+    : !computer.online ? `${computer.name} is offline.` : !computer.runtimeReady ? `Browser setup needed on ${computer.name}.`
       : !catalog?.presentReplicas.some(item => item.profileId === value?.profileId && item.computerId === computer.id)
-        ? 'Not added here' : replica?.reason ?? 'Ready'
-  return <section className="browser-settings-fields" aria-label="Node browser settings">
-    <Checkbox label="Browser" checked={enabled} disabled={disabled}
-      onChange={event => onChange({ ...value, enabled: event.currentTarget.checked })}
-      hint="Applies to the next run. Apply to draft, then Save workflow." />
-    {enabled ? <>
+        ? `This profile isn’t on ${computer.name} yet.` : replica?.reason ?? undefined
+  let note: string | undefined = readiness
+  if (value?.profileId && !selected && catalog) note = 'This profile was removed. Choose another.'
+  else if (enabled && !profiles.length && !loading) note = 'No browser profiles yet.'
+  return <>
+    <NodeRow label="Browser">
+      <Switch label="Browser" checked={enabled} disabled={disabled}
+        onChange={event => onChange(event.currentTarget.checked
+          ? { enabled: true, ...(value?.profileId ?? fallback ? { profileId: value?.profileId ?? fallback } : {}) }
+          : { ...value, enabled: false })} />
+    </NodeRow>
+    {enabled ? <NodeRow label="Profile" tone="warning" note={note && <>{note} {!profiles.length || value?.profileId && !selected
+      ? <Button variant="ghost" size="sm" onClick={onManageProfiles}>Manage profiles</Button> : null}</>}>
       <Select label="Browser profile" value={value?.profileId ?? ''} options={options} disabled={disabled || loading}
-        onChange={event => onChange(event.currentTarget.value ? { enabled: true, profileId: event.currentTarget.value } : { enabled: true })}
-        error={!value?.profileId ? 'Choose a profile before saving the workflow.' : undefined}
-        hint="Uses this profile on the agent’s execution computer. Agents sharing a profile share website sign-ins." />
-      <p role="status">{computer ? `Browser on ${computer.name} · ` : ''}{readiness}</p>
-      <Button variant="ghost" size="sm" onClick={onManageProfiles}>Manage browser profiles</Button>
-    </> : null}
-  </section>
+        onChange={event => onChange(event.currentTarget.value ? { enabled: true, profileId: event.currentTarget.value } : { enabled: true })} />
+    </NodeRow> : null}
+  </>
 }

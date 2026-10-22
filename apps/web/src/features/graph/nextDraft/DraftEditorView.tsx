@@ -14,6 +14,7 @@ import { WorkflowName } from '../../workflow-board/WorkflowName'
 import { WorkflowWorktreeField } from '../../workflow-board/WorkflowWorktreeField'
 import { BoardUndoNotice } from '../../workflow-board/BoardUndoNotice'
 import { BoardAlerts, type BoardUpdateFailure } from '../../workflow-board/BoardAlerts'
+import { KanbanButton } from '../../workflow-board/kanban/KanbanButton'
 import { RemoveWorkflowButton } from '../../workflows/RemoveWorkflowButton'
 import { useApprovalInboxStore } from '../../approvals'
 import { raiseFloating, useFloatingZ } from '../../../shared/ui/floatingStack'
@@ -94,6 +95,7 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
           {!graph.handoffs ? <Button size="sm" variant="ghost" onClick={() => openPanel('repeat')}>Repeats</Button> : null}
           {board ? <IconButton label="Activities" onClick={board.openRuns}><Icon name="history" size={16} /></IconButton> : null}
           {board?.selectSidePanel ? <IconButton label="Group chat" onClick={() => board.selectSidePanel!({ kind: 'group_chat' })}><Icon name="chat" size={16} /></IconButton> : null}
+          {board ? <KanbanButton workspaceId={graph.workspaceId} workflowId={graph.id} /> : null}
           <Button variant="primary" leading={<Icon name="play" size={14} />} aria-label={pendingStart ? 'Reconcile Start' : needsSave ? 'Save and run' : 'Start saved version'}
             title={startReason} disabled={startDisabled} loading={starting} onClick={() => void (pendingStart ? start() : prepare(() => needsSave ? startMutation.mutateAsync({ saveFirst: true }) : start())).catch(report)}>{pendingStart ? 'Confirm start' : needsSave ? 'Save and run' : 'Run'}</Button>
         </Toolbar>

@@ -10,7 +10,8 @@ import { DomainError } from '../errors.js'
 /** Discovery reads authorized destination metadata; Start validates the selected pins again. */
 export interface PlacementChoiceDiscovery {
   list(principal: ManagementPrincipal, input: NodePlacementChoicesInput, source?: 'http' | 'mcp'):
-    Promise<{ choices: readonly NodePlacementChoice[]; pending: boolean }>
+    Promise<{ choices: readonly NodePlacementChoice[]; pending: boolean
+      unavailableComputers?: NodePlacementChoicesResult['unavailableComputers'] }>
 }
 export const placementChoiceRequirements = [
   { action: 'workflows:read', scope: 'workflow' },
@@ -54,10 +55,11 @@ export class NodePlacementChoicesService {
   async get(principal: ManagementPrincipal, raw: unknown, source: 'http' | 'mcp' = 'mcp'): Promise<NodePlacementChoicesResult> {
     const input = NodePlacementChoicesInputSchema.parse(raw)
     const { mainId } = await this.pinned(principal, input)
-    const { choices, pending } = await this.discovery.list(principal, input, source)
+    const { choices, pending, unavailableComputers = [] } = await this.discovery.list(principal, input, source)
     const current = await this.pinned(principal, input) // external discovery held no SQL locks
-    const result = NodePlacementChoicesResultSchema.parse({ ...input, choices, pending })
+    const result = NodePlacementChoicesResultSchema.parse({ ...input, choices, pending, unavailableComputers })
     if (current.mainId !== mainId || result.choices.some(choice => choice.placement.hostRef.mainId !== mainId)
+      || result.unavailableComputers?.some(computer => computer.hostRef.mainId !== mainId)
       || new Set(result.choices.map(choice => choice.id)).size !== result.choices.length) throw new DomainError(
       'PLACEMENT_CHOICES_INVALID', 'Destination discovery returned duplicate selection identities.', 409)
     return result

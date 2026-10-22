@@ -304,7 +304,7 @@ describe('workspace section routes', () => {
     renderRoute('/settings')
 
     const mainCard = await screen.findByRole('link', { name: /Main PC/ })
-    expect(mainCard).toHaveAttribute('href', '/settings/computers')
+    expect(mainCard).toHaveAttribute('href', '/settings/computers/main')
     expect(await within(mainCard).findByText('CI')).toBeVisible()
     expect(within(mainCard).getByText('Online')).toBeVisible()
     expect(within(mainCard).getByText('1 agent running')).toBeVisible()

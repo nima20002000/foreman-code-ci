@@ -31,8 +31,8 @@ export function BrowserProfilesSettingsRouteEntry() {
 export function AgentSettingsRouteEntry() {
   const search = useSearch({ from: '/settings/agents' })
   const navigate = useNavigate({ from: '/settings/agents' })
-  return <SettingsShell><AgentDefaultsSettings selectedRole={search.role}
-    onOpen={role => void navigate({ search: role ? { role } : {} })} /></SettingsShell>
+  return <SettingsShell><AgentDefaultsSettings selectedRole={search.role} promptOpen={search.section === 'prompt'}
+    onOpen={(role, section) => void navigate({ search: role ? { role, ...(section ? { section } : {}) } : {} })} /></SettingsShell>
 }
 export function SystemPromptSettingsRouteEntry() {
   return <SettingsShell><PromptSettings page="system-prompt" /></SettingsShell>
@@ -103,7 +103,8 @@ export function ComputersSettingsRouteEntry() {
 }
 export function ComputerDetailsSettingsRouteEntry() {
   const params = useParams({ strict: false })
-  const device = DeviceRegistrationSchema.shape.deviceId.safeParse(params.deviceId)
+  const device = params.deviceId === 'main' ? { success: true as const, data: 'main' }
+    : DeviceRegistrationSchema.shape.deviceId.safeParse(params.deviceId)
   return <SettingsShell>
     {device.success ? <ComputerSettings key={device.data} deviceId={device.data} /> : <Alert tone="danger" title="The computer address is invalid." />}
   </SettingsShell>

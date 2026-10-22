@@ -3,6 +3,7 @@ import type { CiRunJob } from '@foreman-code/contracts'
 import type { RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
 import { CiServerDialog } from './CiServer'
 import { ciServerFlowNode, ciServerSummary } from './ciServer'
+import { useCiPlacement } from '../dock/boardObjects'
 
 /** The draft and saved-Run Boards show the same presentation-only CI server as live inspection.
  * Without a Run scope it is idle; with one, its jobs come from the caller's CI read. */
@@ -15,8 +16,11 @@ export function useBoardCiServer({ nodes, names, workflow, scope, jobs, truncate
   const summary = useMemo(() => !scope || jobs ? ciServerSummary(jobs ?? []) : {
     ...ciServerSummary([]), state: 'unavailable' as const, label: error ? 'CI unavailable' : 'Loading CI',
   }, [scope, jobs, error])
-  const node = useMemo(() => ciServerFlowNode(nodes, summary, () => setOpen(true)), [nodes, summary])
+  const place = useCiPlacement(workflow)
+  const { position, closed, close } = place
+  const node = useMemo(() => closed ? undefined : ciServerFlowNode(nodes, summary, () => setOpen(true), { position, close }),
+    [nodes, summary, position, closed, close])
   const dialog = <CiServerDialog open={open} onOpenChange={setOpen} scope={scope} workflow={workflow} jobs={jobs ?? []} names={names}
     truncated={truncated} error={error} loading={loading} />
-  return { node, dialog }
+  return { node, dialog, summary, place }
 }

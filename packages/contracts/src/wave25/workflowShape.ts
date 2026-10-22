@@ -69,6 +69,8 @@ export const ExecutionConditionSchema = z
 
 export const DEFAULT_AGENT_ACTIVE_TIMEOUT_MS = 6 * 60 * 60 * 1000
 export const MAX_AGENT_ACTIVE_TIMEOUT_MS = 2_147_483_647
+/** Execution limits a new workflow starts with; each workflow can change them. */
+export const DEFAULT_WORKFLOW_EXECUTION_POLICY = Object.freeze({ maxParallelism: 4, maxNodeExecutions: 100 })
 export const AgentActiveTimeoutMsSchema = z.number().int().positive().max(MAX_AGENT_ACTIVE_TIMEOUT_MS)
 
 export const WorkflowExecutionPolicySchema = z

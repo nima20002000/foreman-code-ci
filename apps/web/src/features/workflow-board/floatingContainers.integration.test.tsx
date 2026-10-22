@@ -26,7 +26,7 @@ afterEach(() => {
 async function mountBoard(suffix: string) {
   installChatSource()
   const fixture = await inspectionBoardFixture(suffix), saved = fixture.runs.before.scope
-  // The Kanban is always on the Board and reads the workflow's memory board as soon as it mounts.
+  // A Kanban on the Board reads the workflow's memory board as soon as it mounts.
   const memory = createMemoryTestPort({ cards: [memoryTestCard({ title: 'Keep the conversation draft' })],
     scope: { kind: 'workflow', workspaceId: saved.workspaceId, workflowId: saved.workflowId } })
   server.use(...createMemoryBoardHandlers(memory.port))

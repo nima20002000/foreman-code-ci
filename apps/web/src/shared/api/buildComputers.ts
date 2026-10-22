@@ -1,5 +1,6 @@
-import { useQueries, type QueryFunctionContext } from '@tanstack/react-query'
-import { BuildComputerStatusSchema } from '@foreman-code/contracts/build-computers'
+import { useMutation, useQueries, useQueryClient, type QueryFunctionContext } from '@tanstack/react-query'
+import { BuildComputerStatusSchema, BuildComputerUpdateSchema } from '@foreman-code/contracts/build-computers'
+import type { z } from 'zod'
 import { sameDeviceProvisioningTarget, type DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import { apiClient, ApiError } from './client'
 import { useHarnessSessionEpoch } from './harnessSettings'
@@ -30,4 +31,14 @@ export function buildComputerQuery(target: DeviceProvisioningTarget) {
 export function useBuildComputers(targets: readonly DeviceProvisioningTarget[]) {
   useHarnessSessionEpoch()
   return useQueries({ queries: targets.map(target => buildComputerQuery(target)) })
+}
+
+/** Saves one computer's build settings against the revision it was read at; a stale revision is rejected. */
+export function useUpdateBuildComputer() {
+  const client = useQueryClient()
+  return useMutation({ retry: false,
+    mutationFn: (input: z.input<typeof BuildComputerUpdateSchema>) => apiClient.request(
+      '/api/management/settings/build-computers/update', BuildComputerStatusSchema,
+      { method: 'POST', body: BuildComputerUpdateSchema.parse(input) }),
+    onSettled: () => client.invalidateQueries({ queryKey: buildComputerKeys.root }) })
 }

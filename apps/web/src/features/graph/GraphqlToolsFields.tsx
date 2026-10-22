@@ -17,13 +17,15 @@ function normalizeToolOverride(override: GraphqlToolOverride | undefined): Graph
 }
 
 /** The Agent's default Foreman Code MCP tools, and this workflow node's change to them. */
-export function GraphqlToolsFields({ role, defaults, override, onChange, executionReadOnly = false, readOnly = false }: {
+export function GraphqlToolsFields({ role, defaults, override, onChange, executionReadOnly = false, readOnly = false, hideMemory = false }: {
   /** Workflow Agent roles only; Operator tools are never enabled per Agent. */
   role: WorkflowAgentProductRole
   defaults: readonly GraphqlAgentTool[] | undefined
   override: GraphqlToolOverride | undefined
   executionReadOnly?: boolean
   readOnly?: boolean
+  /** Memory access is edited elsewhere in the same form. */
+  hideMemory?: boolean
   /** Missing defaults retain the legacy enabled set until explicitly edited. */
   onChange(defaults: GraphqlAgentTool[] | undefined, override: GraphqlToolOverride | undefined): void
 }) {
@@ -55,8 +57,8 @@ export function GraphqlToolsFields({ role, defaults, override, onChange, executi
     onChange(defaults ? [...defaults] : undefined, normalizeToolOverride({ add, remove }))
   }
   return <fieldset className="agent-graphql-tools" aria-label="Foreman Code MCP tools">
-    <legend>Foreman Code MCP tools<InfoHint label="Foreman Code MCP tools">Bug reporting is always available. For other tools, the Agent default applies in every workflow. This workflow can turn a tool on or off for this node only.</InfoHint></legend>
-    {fields?.memoryAccess ? fields.memoryAccess({ role, defaults, override, executionReadOnly: readOnly || executionReadOnly, onChange }) : <MemoryBoardAccessField agentDefaultTools={agentDefault} readOnly={readOnly || executionReadOnly}
+    <legend>Tools<InfoHint label="Tools">Bug reporting is always available. For other tools, the Agent default applies in every workflow. This workflow can turn a tool on or off for this node only.</InfoHint></legend>
+    {hideMemory ? null : fields?.memoryAccess ? fields.memoryAccess({ role, defaults, override, executionReadOnly: readOnly || executionReadOnly, onChange }) : <MemoryBoardAccessField agentDefaultTools={agentDefault} readOnly={readOnly || executionReadOnly}
       value={override?.add.some(tool => memoryTools.includes(tool)) || override?.remove.some(tool => memoryTools.includes(tool))
         ? effectiveGraphqlTools(role, defaults, override, false, memoryTools) : undefined}
       onChange={selected => {
@@ -76,7 +78,6 @@ export function GraphqlToolsFields({ role, defaults, override, onChange, executi
           return <div key={tool} className="agent-graphql-tool">
             <div className="agent-graphql-tool-name">
               <strong>{definition.label}<InfoHint label={definition.label}>{definition.description}</InfoHint></strong>
-              <span><code>{tool}</code></span>
             </div>
             <span>Always available</span>
           </div>
@@ -85,7 +86,6 @@ export function GraphqlToolsFields({ role, defaults, override, onChange, executi
         return <div key={tool} className="agent-graphql-tool" data-changed={choice(tool) !== 'default' || undefined}>
           <div className="agent-graphql-tool-name">
             <strong>{definition.label}<InfoHint label={definition.label}>{definition.description}</InfoHint></strong>
-            <span><code>{tool}</code></span>
           </div>
           <Checkbox label="Agent default" aria-label={`${definition.label}: Agent default`} checked={inDefault}
             onChange={(event) => setDefault(tool, event.target.checked)} />

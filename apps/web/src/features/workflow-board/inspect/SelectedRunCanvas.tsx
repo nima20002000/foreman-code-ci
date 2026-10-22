@@ -33,6 +33,9 @@ import { RunSubagentsOverlay } from '../../run-subagents/RunSubagentsOverlay'
 import { CiServerDialog, CiServerNode, CiTransferEdge,
   type CiServerFlowNode, type CiTransferFlowEdge } from './CiServer'
 import { useCiTransfers } from './useCiTransfers'
+import { useCiPlacement } from '../dock/boardObjects'
+import { BoardDock } from '../dock/BoardDock'
+import { useAgentProximity } from '../../graph/useAgentProximity'
 import { CI_SERVER_NODE_ID, ciNodeActivities, ciServerFlowNode, ciServerSummary, ciJobRefreshing, runCiApi } from './ciServer'
 import { useInspectionPresentation } from './presentation'
 import type { SubagentLayoutNode } from '../../run-subagents/layout'
@@ -278,8 +281,11 @@ export function SelectedRunCanvas({ scope, panels: suppliedPanels, layout, geome
     cis, waits, checks, checking, executionQueue, live])
   const { canvasNodes, presentedNodes, onNodesChange, beginResize, resize, finishResize } =
     useRunCanvasGeometry({ nodes, layout, version, geometry })
-  const ciServerNode = useMemo(() => canvasNodes.length ? ciServerFlowNode(canvasNodes, ciSummary,
-    () => useInspectionPresentation.getState().setOpen(ciDialogKey, true)) : undefined, [ciSummary, canvasNodes, ciDialogKey])
+  const ciPlace = useCiPlacement(scope), { position: ciPosition, closed: ciClosed, close: closeCi } = ciPlace
+  const ciServerNode = useMemo(() => canvasNodes.length && !ciClosed ? ciServerFlowNode(canvasNodes, ciSummary,
+    () => useInspectionPresentation.getState().setOpen(ciDialogKey, true), { position: ciPosition, close: closeCi }) : undefined,
+  [ciSummary, canvasNodes, ciDialogKey, ciPosition, ciClosed, closeCi])
+  const proximity = useAgentProximity()
   const flowNodes = useMemo(() => ciServerNode ? [...canvasNodes, ciServerNode] : canvasNodes, [canvasNodes, ciServerNode])
   const edges = usePinnedRunEdges(lines, board.inspection.runRelationshipId, version, handoffs)
   // A light per Agent while its CI request or result travels; no lasting line to the server.
@@ -301,9 +307,10 @@ export function SelectedRunCanvas({ scope, panels: suppliedPanels, layout, geome
     {missingNode ? <Alert tone="warning" title="The linked node is not in this Run’s saved version.">
       <Button size="sm" onClick={() => board.selectInspection({})}>Clear missing node selection</Button>
     </Alert> : null}
-    {version ? <div className="pinned-run-flow">
+    {version ? <div className="pinned-run-flow" {...proximity}>
       <ReactFlowProvider><RunAgentPanels.Provider value={{ panels, open, setOpen, openChat, beginResize, resize, finishResize }}><Choreography.Provider value={motion}><ReactFlow<RunNode | CiServerFlowNode, RunEdge | CiTransferFlowEdge> nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
-        onNodesChange={onNodesChange} nodesDraggable={Boolean(geometry)} nodesConnectable={false} nodesFocusable edgesFocusable
+        onNodesChange={(changes) => { ciPlace.applyChanges(changes); onNodesChange(changes) }}
+        onNodeDragStop={(_event, node) => { if (node.id === CI_SERVER_NODE_ID) ciPlace.moved(node.position) }} nodesDraggable={Boolean(geometry)} nodesConnectable={false} nodesFocusable edgesFocusable
         elementsSelectable deleteKeyCode={null} onlyRenderVisibleElements
         fitView fitViewOptions={fitViewOptions} proOptions={proOptions} minZoom={0.1} maxZoom={1.6}
         aria-label="Run graph canvas">
@@ -311,6 +318,7 @@ export function SelectedRunCanvas({ scope, panels: suppliedPanels, layout, geome
         <Background color="var(--border)" gap={24} size={1} />
       </ReactFlow></Choreography.Provider></RunAgentPanels.Provider></ReactFlowProvider>
     </div> : null}
+    {ciClosed ? <BoardDock ci={{ summary: ciSummary, restore: ciPlace.restore }} /> : null}
     {panels ? <RunRailAgentPanel panels={panels} nodes={presentedNodes} /> : null}
     <CiServerDialog open={ciDialogOpen} onOpenChange={setCiDialogOpen} scope={scope} workflow={{ workspaceId: scope.workspaceId, workflowId: scope.workflowId }} jobs={ciRunJobs ?? []} names={names}
       truncated={!ciDenied && (ciList.data?.truncated ?? false)} error={Boolean(ciDenied || ciList.isError)} loading={ciList.isPending} />

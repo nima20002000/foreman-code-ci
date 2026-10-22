@@ -1,0 +1,4 @@
+/* Options of an Agent the pointer is near (see useAgentProximity); hover and keyboard focus still show them too. */
+.n-agent[data-near] .n-agent-action { opacity: 1; pointer-events: auto; }
+.n-agent[data-near] .n-agent-port.react-flow__handle { opacity: 1; transform: translate(0, -50%) scale(1); }
+.is-connecting .n-agent[data-near] .n-agent-action { pointer-events: none; }

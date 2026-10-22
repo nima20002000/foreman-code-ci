@@ -28,6 +28,8 @@ import { CI_SERVER_NODE_ID } from '../../workflow-board/inspect/ciServer'
 import { useBoardCiServer } from '../../workflow-board/inspect/useBoardCiServer'
 import { BoardKanbanNode, KanbanActivityEdge, KANBAN_NODE_ID, type KanbanActivityFlowEdge, type KanbanFlowNode } from '../../workflow-board/kanban/BoardKanban'
 import { useBoardKanban } from '../../workflow-board/kanban/useBoardKanban'
+import { BoardDock } from '../../workflow-board/dock/BoardDock'
+import { useAgentProximity } from '../useAgentProximity'
 import { HierarchyCanvasControls } from '../../workflow-hierarchy/HierarchyCanvasControls'
 import { useCollapsedWorkers } from '../../workflow-hierarchy/useCollapsedWorkers'
 import '@xyflow/react/dist/style.css'
@@ -163,13 +165,14 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
   const shownIds = useMemo(() => new Set(nodes.filter(node => !collapsed.has(node.id)).map(node => node.id)), [nodes, collapsed])
   const kanban = useBoardKanban({ workspaceId: graph.workspaceId, workflowId: graph.id, nodes, nodeIds: shownIds, enabled: !!board })
   const kanbanShown = !!kanban.node, refit = responsive.refit
+  const proximity = useAgentProximity()
   useEffect(() => {
     if (!kanbanShown) return
     const frame = requestAnimationFrame(refit)
     return () => cancelAnimationFrame(frame)
   }, [kanbanShown, refit])
   const flowNodes = useMemo<(GraphNode | CiServerFlowNode | KanbanFlowNode)[]>(() => [...nodes.filter(node => !collapsed.has(node.id)).map(node =>
-    teamNodeId === node.id ? { ...node, selected: true } : node), ci.node, ...(kanban.node ? [kanban.node] : [])],
+    teamNodeId === node.id ? { ...node, selected: true } : node), ...(kanban.node ? [kanban.node] : []), ...(ci.node ? [ci.node] : [])],
   [nodes, collapsed, teamNodeId, ci.node, kanban.node])
   const selectedIds = useGraphPresentation((state) => state.selectedNodeIds)
   const presentation = useGraphPresentationStore()
@@ -220,6 +223,7 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
     && !collapsed.has(edge.target)), ...kanban.edges], [edges, collapsed, kanban.edges])
   const onNodesChange = (allChanges: NodeChange<GraphNode | CiServerFlowNode | KanbanFlowNode>[]) => {
     kanban.applyChanges(allChanges)
+    ci.place.applyChanges(allChanges)
     const changes = allChanges.filter((item): item is NodeChange<GraphNode> => !('id' in item)
       || (item.id !== CI_SERVER_NODE_ID && item.id !== KANBAN_NODE_ID))
     const nextSelection = new Set(presentation.getState().selectedNodeIds)
@@ -264,12 +268,15 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
   }
   const context = { draftKey, inspect, open: board?.selectSidePanel ? shown : open, setOpen: setPanel, openChat, selectNode, beginResize, resize, finishResize, changedAgentIds }
   return <CanvasContext.Provider value={context}>
-    <div ref={responsive.containerRef} className={`next-draft-canvas board-draft-canvas${connecting ? ' is-connecting' : ''}`} style={selectedRun ? { display: 'none' } : undefined} aria-hidden={!!selectedRun} inert={!!selectedRun} aria-label="Editable workflow graph">
+    <div ref={responsive.containerRef} {...proximity} className={`next-draft-canvas board-draft-canvas${connecting ? ' is-connecting' : ''}`} style={selectedRun ? { display: 'none' } : undefined} aria-hidden={!!selectedRun} inert={!!selectedRun} aria-label="Editable workflow graph">
       {/* While a Run is shown, the draft's data stays mounted but its flow does not: a hidden
           flow measures a zero-size box and would come back empty on Return to draft. */}
       {selectedRun ? null : <ReactFlow<GraphNode | CiServerFlowNode | KanbanFlowNode, DraftEdge | KanbanActivityFlowEdge> nodes={flowNodes}
         edges={visibleEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
-        onNodesChange={onNodesChange} onNodeDragStop={(_event, node) => { if (node.id === KANBAN_NODE_ID) kanban.moved(node.position) }}
+        onNodesChange={onNodesChange} onNodeDragStop={(_event, node) => {
+          if (node.id === KANBAN_NODE_ID) kanban.moved(node.position)
+          if (node.id === CI_SERVER_NODE_ID) ci.place.moved(node.position)
+        }}
         connectionMode={ConnectionMode.Loose} connectionRadius={120} deleteKeyCode={null}
         fitView fitViewOptions={fitViewOptions} proOptions={proOptions} minZoom={RESPONSIVE_MIN_ZOOM} maxZoom={1.6} onInit={responsive.onInit}
         onMove={responsive.onMove}
@@ -287,6 +294,8 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
         <Background color="var(--border)" gap={24} size={1} />
       </ReactFlow>}
       {children}
+      {selectedRun ? null : <BoardDock kanban={kanban.dock}
+        ci={ci.node ? undefined : { summary: ci.summary, restore: ci.place.restore }} />}
       <HierarchyCanvasControls scope={draftKey} hierarchy={graph.hierarchy} name={nodeId => nodeTitle(graph, nodeId)} onTeam={board?.selectTeam} />
       <WorkflowAgentPanel panels={panels} active={!selectedRun && board?.authoringActive !== false}
         findNode={nodeId => graph.nodes.some(node => node.id === nodeId) ? undefined : false} />

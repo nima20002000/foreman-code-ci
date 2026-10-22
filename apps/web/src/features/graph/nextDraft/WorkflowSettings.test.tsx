@@ -8,7 +8,7 @@ import { WorkflowSettings } from './WorkflowSettings'
 const explanations = [
   ['Starts with', 'The first node to run. It can’t receive a dependency.'],
   ['Who approves', 'Agents ask you before sensitive actions. Requests appear in the approval inbox.'],
-  ['Turn time limit', /Seconds per agent turn\. Leave blank for the default \(600 s\)/],
+  ['Turn time limit', /Seconds per agent turn\. Clear it to use the default \(600 s\)/],
 ] as const
 
 it.each(explanations)('keeps settings visible and shows the %s explanation on hover', async (label, explanation) => {
@@ -59,4 +59,19 @@ it('keeps required actions, unsaved state, and configured values visible beside 
   expect(screen.getByRole('tooltip')).toHaveTextContent('Set each work connection’s handoff limit on its line on the Board.')
   await user.click(screen.getByRole('button', { name: 'Choose folder' }))
   expect(changeFolder).toHaveBeenCalledOnce()
+})
+
+it('shows the default execution limits as editable values when the workflow has none yet', async () => {
+  const edit = newNextDraft(fixture(), 'settings-test')
+  const graph = { ...edit.graph }
+  delete graph.executionPolicy
+  edit.graph = graph
+  const change = vi.fn()
+  render(<WorkflowSettings draftKey="settings-test" edit={edit} change={change} report={vi.fn()} defaultMs={21_600_000}
+    locationReady locationMessage="" onChangeFolder={vi.fn()} onReload={vi.fn()} />)
+  expect(screen.getByRole('spinbutton', { name: 'Agents at once' })).toHaveValue(4)
+  expect(screen.getByRole('spinbutton', { name: 'Agent turns per run' })).toHaveValue(100)
+  expect(screen.getByRole('spinbutton', { name: 'Turn time limit (s)' })).toHaveValue(21600)
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Use these' }))
+  expect(change.mock.calls[0]![0](graph).executionPolicy).toEqual({ maxParallelism: 4, maxNodeExecutions: 100 })
 })

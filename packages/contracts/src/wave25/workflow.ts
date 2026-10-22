@@ -3,7 +3,7 @@
  * legacy union, old validator, or V3-to-V2 projection is retained here. */
 export { EXECUTION_SEMANTICS_VERSION, ExecutionSemanticsVersionSchema } from './workflowShape.js'
 export {
-  DEFAULT_AGENT_ACTIVE_TIMEOUT_MS, MAX_AGENT_ACTIVE_TIMEOUT_MS, AgentActiveTimeoutMsSchema,
+  DEFAULT_AGENT_ACTIVE_TIMEOUT_MS, MAX_AGENT_ACTIVE_TIMEOUT_MS, AgentActiveTimeoutMsSchema, DEFAULT_WORKFLOW_EXECUTION_POLICY,
   AGENT_INTERVAL_MIN_SECONDS, AGENT_INTERVAL_MAX_SECONDS, AGENT_INTERVAL_PROMPT_MAX_LENGTH,
   WorkflowExecutionPolicySchema,
   ChoiceOutcomeSchema, ChoiceTargetSchema, WorkflowChoiceSchema, WorkflowRelationshipSchema,

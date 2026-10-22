@@ -91,67 +91,54 @@ it('opens the System prompt editor from Settings at a linkable route', async () 
   await waitFor(() => expect(router.state.location.pathname).toBe('/settings'))
 })
 
-it.each(['', '&section=model', '&section=permissions'])(
-  'names the Operator prompt and keeps breadcrumb navigation in its settings location: %s',
-  async search => {
-    const { router } = mount(`/settings/agents?role=operator${search}`)
-    const user = userEvent.setup()
-    expect(await screen.findByRole('textbox', { name: 'Initial prompt' })).toHaveValue('Operator instructions')
-    const breadcrumbs = screen.getByRole('navigation', { name: 'Breadcrumbs' })
-    expect(within(breadcrumbs).getAllByRole('listitem').map(item => item.textContent))
-      .toEqual(['Settings', 'Agents', 'Operator', 'Initial prompt'])
-    expect(breadcrumbs.querySelector('[aria-current="page"]')).toHaveTextContent('Initial prompt')
-    expect(within(breadcrumbs).getByRole('link', { name: 'Go to Settings' })).toHaveAttribute('href', '/settings')
-    const agents = within(breadcrumbs).getByRole('link', { name: 'Go to Agents' })
-    expect(agents).toHaveAttribute('href', '/settings/agents')
-    const operator = within(breadcrumbs).getByRole('link', { name: 'Go to Operator' })
-    expect(operator).toHaveAttribute('href', '/settings/agents?role=operator')
-    await user.click(operator)
-    await waitFor(() => expect(router.state.location.search).toEqual({ role: 'operator' }))
-    expect(screen.getByRole('textbox', { name: 'Initial prompt' })).toHaveValue('Operator instructions')
-    await user.click(agents)
-    expect(await screen.findByRole('button', { name: 'Edit Operator defaults' })).toBeVisible()
-    expect(router.state.location.search).toEqual({})
-  },
-)
+it('names the Operator prompt and keeps breadcrumb navigation in its settings location', async () => {
+  const { router } = mount('/settings/agents?role=operator&section=prompt')
+  const user = userEvent.setup()
+  expect(await screen.findByRole('textbox', { name: 'Initial prompt' })).toHaveValue('Operator instructions')
+  const breadcrumbs = screen.getByRole('navigation', { name: 'Breadcrumbs' })
+  expect(within(breadcrumbs).getAllByRole('listitem').map(item => item.textContent))
+    .toEqual(['Settings', 'Agents', 'Operator', 'Initial prompt'])
+  expect(breadcrumbs.querySelector('[aria-current="page"]')).toHaveTextContent('Initial prompt')
+  expect(within(breadcrumbs).getByRole('link', { name: 'Go to Settings' })).toHaveAttribute('href', '/settings')
+  const agents = within(breadcrumbs).getByRole('link', { name: 'Go to Agents' })
+  expect(agents).toHaveAttribute('href', '/settings/agents')
+  const operator = within(breadcrumbs).getByRole('link', { name: 'Go to Operator' })
+  expect(operator).toHaveAttribute('href', '/settings/agents?role=operator')
+  await user.click(operator)
+  await waitFor(() => expect(router.state.location.search).toEqual({ role: 'operator' }))
+  expect(await screen.findByRole('button', { name: 'Edit prompt' })).toBeVisible()
+  await user.click(within(screen.getByRole('navigation', { name: 'Breadcrumbs' })).getByRole('link', { name: 'Go to Agents' }))
+  expect(await screen.findByRole('button', { name: 'Edit Operator defaults' })).toBeVisible()
+  expect(router.state.location.search).toEqual({})
+})
 
-it.each(['', '&section=model', '&section=permissions'])(
-  'returns from a direct Operator prompt link to Agents using Back: %s',
-  async search => {
-    const { router } = mount(`/settings/agents?role=operator${search}`)
-    expect(await screen.findByRole('textbox', { name: 'Initial prompt' })).toHaveValue('Operator instructions')
-    await userEvent.click(screen.getByRole('button', { name: 'Back' }))
-    expect(await screen.findByRole('button', { name: 'Edit Operator defaults' })).toBeVisible()
-    expect(router.state.location.pathname).toBe('/settings/agents')
-    expect(router.state.location.search).toEqual({})
-  },
-)
+it('returns from a direct Operator prompt link to the Operator settings using Back', async () => {
+  const { router } = mount('/settings/agents?role=operator&section=prompt')
+  expect(await screen.findByRole('textbox', { name: 'Initial prompt' })).toHaveValue('Operator instructions')
+  await userEvent.click(screen.getByRole('button', { name: 'Back' }))
+  expect(await screen.findByRole('button', { name: 'Edit prompt' })).toBeVisible()
+  expect(router.state.location.pathname).toBe('/settings/agents')
+  expect(router.state.location.search).toEqual({ role: 'operator' })
+})
 
-it('opens the Operator card by URL selection and protects edited text when returning to Agents', async () => {
+it('opens the Operator prompt from its settings and protects edited text when going back', async () => {
   const { router } = mount('/settings/agents')
   const user = userEvent.setup()
   await user.click(await screen.findByRole('button', { name: 'Edit Operator defaults' }))
+  await user.click(await screen.findByRole('button', { name: 'Edit prompt' }))
   const editor = await screen.findByRole('textbox', { name: 'Initial prompt' })
   await waitFor(() => expect(editor).not.toHaveAttribute('readonly'))
   expect(editor).toHaveValue('Operator instructions')
   expect(router.state.location.pathname).toBe('/settings/agents')
-  expect(router.state.location.search).toMatchObject({ role: 'operator' })
+  expect(router.state.location.search).toMatchObject({ role: 'operator', section: 'prompt' })
   await user.type(editor, '\nUnsaved addition')
   await user.click(screen.getByRole('button', { name: 'Back' }))
   const dialog = await screen.findByRole('alertdialog', { name: 'Save changes before leaving?' })
   expect(editor).toHaveValue('Operator instructions\nUnsaved addition')
-  expect(router.state.location.search).toMatchObject({ role: 'operator' })
+  expect(router.state.location.search).toMatchObject({ role: 'operator', section: 'prompt' })
   await user.click(within(dialog).getByRole('button', { name: 'Discard' }))
-  expect(await screen.findByRole('button', { name: 'Edit Operator defaults' })).toBeVisible()
-  expect(router.state.location.search).not.toHaveProperty('role')
-})
-
-it('reads the Operator initial prompt when opening its saved URL directly', async () => {
-  const { router } = mount('/settings/agents?role=operator')
-  expect(await screen.findByRole('textbox', { name: 'Initial prompt' })).toHaveValue('Operator instructions')
-  await userEvent.click(screen.getByRole('button', { name: 'Back' }))
-  expect(await screen.findByRole('button', { name: 'Edit Operator defaults' })).toBeVisible()
-  expect(router.state.location.search).not.toHaveProperty('role')
+  expect(await screen.findByRole('button', { name: 'Edit prompt' })).toBeVisible()
+  expect(router.state.location.search).toEqual({ role: 'operator' })
 })
 
 it('keeps edited prompts guarded after the global update grant is revoked without allowing a save', async () => {
@@ -160,7 +147,7 @@ it('keeps edited prompts guarded after the global update grant is revoked withou
     writes += 1
     return HttpResponse.json({ error: { code: 'FORBIDDEN', message: 'Updates are denied.' } }, { status: 403 })
   }))
-  const { router, client } = mount('/settings/agents?role=operator')
+  const { router, client } = mount('/settings/agents?role=operator&section=prompt')
   const user = userEvent.setup()
   const editor = await screen.findByRole('textbox', { name: 'Initial prompt' })
   await waitFor(() => expect(editor).not.toHaveAttribute('readonly'))
@@ -186,7 +173,7 @@ it('keeps edited prompts guarded after the global update grant is revoked withou
 })
 
 it.each([503, 403])('recovers edited prompts after a %s app access failure and restores navigation guards', async status => {
-  const { router, client } = mount('/settings/agents?role=operator')
+  const { router, client } = mount('/settings/agents?role=operator&section=prompt')
   const user = userEvent.setup()
   const editor = await screen.findByRole('textbox', { name: 'Initial prompt' })
   await waitFor(() => expect(editor).not.toHaveAttribute('readonly'))
@@ -225,7 +212,7 @@ it.each([503, 403])('retries the original uncertain prompt save after a %s app a
       value: { revision: 5, versionId: 'operator-prompt-5', value: input.value }, replayed: true,
     })
   }))
-  const { router, client } = mount('/settings/agents?role=operator')
+  const { router, client } = mount('/settings/agents?role=operator&section=prompt')
   const user = userEvent.setup()
   const editor = await screen.findByRole('textbox', { name: 'Initial prompt' })
   await waitFor(() => expect(editor).not.toHaveAttribute('readonly'))
@@ -265,7 +252,7 @@ it.each([false, true])('guards navigation and blocks saving after prompt denial 
     writes += 1
     return HttpResponse.json({ error: { code: 'UNAVAILABLE', message: 'Save not confirmed.' } }, { status: 503 })
   }))
-  const { router, client } = mount('/settings/agents?role=operator')
+  const { router, client } = mount('/settings/agents?role=operator&section=prompt')
   const user = userEvent.setup()
   const editor = await screen.findByRole('textbox', { name: 'Initial prompt' })
   await waitFor(() => expect(editor).not.toHaveAttribute('readonly'))

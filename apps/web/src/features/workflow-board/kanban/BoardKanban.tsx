@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode
 import { Handle, NodeResizer, Position, type Edge, type EdgeProps, type Node, type NodeProps } from '@xyflow/react'
 import { MemoryBoardWireSchemas, type MemoryBoardScope, type MemoryCard as Card, type WorkflowKanbanFrame } from '@foreman-code/contracts'
 import { Button, Icon } from '../../../shared/ui/nocturne'
+import '../dock/boardDock.css'
 import { useManagedWorkflowQuery } from '../../../shared/api/query'
 import { MemoryCard } from '../../memory-boards/MemoryCard'
 import { createMemoryBoardClient } from '../../memory-boards/client'
@@ -19,10 +20,10 @@ export const KANBAN_NODE_ID = 'board-kanban'
 const KANBAN_MIN = { width: 240, height: 160 }
 
 export type KanbanFlowNode = Node<{ workspaceId: string; workflowId: string; saveError?: string
-  resized(frame: WorkflowKanbanFrame): void }, 'boardKanban'>
+  resized(frame: WorkflowKanbanFrame): void; close(): void }, 'boardKanban'>
 
-/** The workflow's memory board as one Board object: drag it by its bar, resize it from its edges.
- * Each card inside is its own element and shows an Agent's change live. */
+/** The workflow's memory board as one Board object: drag it by its bar, resize it from its edges, close it into
+ * the dock with its X. Each card inside is its own element and shows an Agent's change live. */
 export const BoardKanbanNode = memo(function BoardKanbanNode({ data }: NodeProps<KanbanFlowNode>) {
   return <section className="board-kanban" aria-label="Kanban">
     <NodeResizer minWidth={KANBAN_MIN.width} minHeight={KANBAN_MIN.height} handleClassName="board-kanban-resize"
@@ -30,6 +31,8 @@ export const BoardKanbanNode = memo(function BoardKanbanNode({ data }: NodeProps
     <header className="board-kanban-bar" title="Drag to move the Kanban">
       <h2><Icon name="grid" size={14} />Kanban</h2>
       {data.saveError ? <span className="board-kanban-error" role="alert">Layout not saved: {data.saveError}</span> : null}
+      <button type="button" className="board-object-close nodrag nopan" aria-label="Close Kanban to the dock" title="Close to the dock"
+        onClick={data.close}><Icon name="close" size={14} /></button>
     </header>
     <div className="board-kanban-body nodrag nopan nowheel">
       <KanbanColumns workspaceId={data.workspaceId} workflowId={data.workflowId} />

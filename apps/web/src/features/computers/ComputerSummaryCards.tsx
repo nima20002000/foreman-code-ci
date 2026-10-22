@@ -15,7 +15,7 @@ function Body({ name, labels }: { name: string; labels: React.ReactNode }) {
 
 function agentCount(count: number) { return `${count} ${count === 1 ? 'agent' : 'agents'} running` }
 
-/** One compact card per computer: presence, role and running work. Details and changes live on the Computers page. */
+/** One compact card per computer: presence, role and running work. Each opens that computer's own settings page. */
 export function ComputerSummaryCards() {
   const activity = useComputerActivity()
   const targets: DeviceProvisioningTarget[] = activity.data?.computers.map(computer => computer.target) ?? []
@@ -36,9 +36,8 @@ export function ComputerSummaryCards() {
         {computer.agents.length ? <Badge>{agentCount(computer.agents.length)}</Badge> : null}
       </>
       return <li key={computerKey(computer.target)}><Card className="settings-card">
-        {host.kind === 'main'
-          ? <Link to="/settings/computers" className="settings-card-open"><Body name={computer.name} labels={labels} /></Link>
-          : <Link to="/settings/computers/$deviceId" params={{ deviceId: host.deviceId }} className="settings-card-open"><Body name={computer.name} labels={labels} /></Link>}
+        <Link to="/settings/computers/$deviceId" params={{ deviceId: host.kind === 'main' ? 'main' : host.deviceId }}
+          className="settings-card-open"><Body name={computer.name} labels={labels} /></Link>
       </Card></li>
     })}
   </ul>

@@ -153,7 +153,6 @@ it('retires unused management endpoints even when their MCP services are compose
     '/api/management/harness-instances/check',
     '/api/management/harnesses/codex/qualification',
     '/api/management/harnesses/codex/compatibility/retry',
-    '/api/management/settings/build-computers/update',
     '/api/management/settings/build-computers/batch-update',
   ]
   for (const url of paths) {
@@ -166,4 +165,17 @@ it('retires unused management endpoints even when their MCP services are compose
     expect(response.statusCode, url).toBe(400)
   }
   expect(unused).not.toHaveBeenCalled()
+})
+
+it('saves one computer\'s build settings over HTTP through the shared revision-checked service', async () => {
+  const update = vi.fn(async () => ({ saved: true }))
+  const { app } = await fixture(principal(), {
+    buildComputers: { read: vi.fn(), update, updateBatch: vi.fn() },
+  } as unknown as Partial<OperatorServices>)
+  const payload = { expectedRevision: 3, buildEnabled: true, buildPriority: 50 }
+  const response = await app.inject({ method: 'POST', url: '/api/management/settings/build-computers/update',
+    headers: { authorization: 'Bearer owner-token' }, payload })
+  expect(response.statusCode).toBe(200)
+  expect(response.json()).toEqual({ saved: true })
+  expect(update).toHaveBeenCalledWith(expect.anything(), 'http', payload)
 })

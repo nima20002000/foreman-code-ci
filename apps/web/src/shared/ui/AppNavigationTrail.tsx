@@ -65,21 +65,19 @@ export function AppNavigationTrail({ activeWorkflowId }: { activeWorkflowId?: st
     if (section === 'harnesses' && typeof harness === 'string' && harness in harnessNames) {
       crumbs.push({ label: harnessNames[harness as keyof typeof harnessNames], to: '/settings/harnesses', search: { ...search, section: 'model' } })
     } else if (section === 'agents' && typeof role === 'string' && role in rolePresentation) {
-      const roleSearch = role === 'operator' ? { role } : { role, section: 'model' }
       crumbs.push({ label: rolePresentation[role as keyof typeof rolePresentation].title,
-        to: '/settings/agents', search: roleSearch })
+        to: '/settings/agents', search: { role } })
     }
-    if (section === 'agents' && role === 'operator') {
-      crumbs.push({ label: 'Initial prompt', to: '/settings/agents', search: { role } })
-    } else if ((section === 'harnesses' && harness || section === 'agents' && role) && crumbs.length > 2) {
+    if (section === 'agents' && role === 'operator' && search.section === 'prompt') {
+      crumbs.push({ label: 'Initial prompt', to: '/settings/agents', search: { role, section: 'prompt' } })
+    } else if (section === 'harnesses' && harness && crumbs.length > 2) {
       crumbs.push({ label: harnessSections.find(entry => entry.id === (search.section ?? 'model'))?.label ?? 'Model & speed', to: location.pathname, search })
     }
     if (segments[2]) crumbs.push({ label: section === 'skills' ? segments[2] === 'new' ? 'New skill' : 'Skill' : 'Computer', to: location.pathname })
   } else crumbs.push({ label: segments[0] === 'approvals' ? 'Workspaces' : sectionNames[segments[0] ?? ''] ?? 'Workspaces', to: location.pathname })
   const search = location.search as Record<string, unknown>
-  const isOperatorPrompt = segments[1] === 'agents' && search.role === 'operator'
-  const ancestors = segments[0] === 'settings' && (segments[1] === 'harnesses' || segments[1] === 'agents')
-    && (isOperatorPrompt || search.section === undefined || search.section === 'model')
+  const ancestors = segments[0] === 'settings' && segments[1] === 'harnesses'
+    && (search.section === undefined || search.section === 'model')
     && crumbs.length > 2 ? crumbs.slice(0, 2) : crumbs.slice(0, -1)
   const parent = ancestors.reverse().find(crumb => crumb.to !== location.pathname
     || [...new Set([...Object.keys(search), ...Object.keys(crumb.search ?? {})])].some(key => search[key] !== crumb.search?.[key]))

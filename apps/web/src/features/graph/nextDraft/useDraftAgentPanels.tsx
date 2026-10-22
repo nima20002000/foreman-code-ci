@@ -6,7 +6,7 @@ import { nodeTitle, removeNode, roleEvidence } from './model'
 import { editorAgents } from './agentEdits'
 import { type NextDraftEdit } from './state'
 import { useGraphEditIntent } from './useGraphEditIntent'
-import { NodeConnections, NodeWorkflowFields } from './AuthoringFields'
+import { NodeBrowserField, NodeConnections, NodeWorkflowFields } from './AuthoringFields'
 import { AgentInfoTabs } from '../../workflow-board/AgentInfoTabs'
 import { type AgentPanels } from './DraftCanvas'
 import { AgentChatPanel } from '../AgentPanels'
@@ -81,10 +81,11 @@ export function useDraftAgentPanels({ draftKey, edit, editIntent, core, board, r
       chatHasHeader: !unsavedChat,
       settings: <fieldset className="board-popover-fields" disabled={edit.busy || reloading || editIntent.locked}>
         <BoardAgentSettings draftKey={draftKey} edit={edit} nodeId={node.id} close={closePanel}
+          mainFields={<NodeBrowserField graph={graph} node={graph.nodes.find((item) => item.id === node.id)!} change={change} />}
+          moreFields={<NodeWorkflowFields graph={graph} node={graph.nodes.find((item) => item.id === node.id)!} context={context} agentEdits={edit.agentEdits} change={change} browser={false} />}
           remove={() => useGraphDraftStore.getState().updateNextDraft(draftKey, current => ({ ...current,
             workflowForms: { ...current.workflowForms, removeNode: { nodeId: node.id, destinationParentId: '' } },
           }))} />
-        <NodeWorkflowFields graph={graph} node={graph.nodes.find((item) => item.id === node.id)!} context={context} agentEdits={edit.agentEdits} change={change} />
       </fieldset>,
       info: <AgentInfoTabs scope={board?.run} agentId={node.agentId} details={<>
         <AgentFacts items={[

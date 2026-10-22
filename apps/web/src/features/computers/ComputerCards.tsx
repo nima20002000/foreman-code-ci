@@ -26,7 +26,7 @@ type Card = { target: DeviceProvisioningTarget; build: BuildComputerStatus | und
 /** One summary card per computer. Changes go through the Operator agent; the cards update from readback. */
 export function ComputerCards({ mainId, devices, onSelectComputer, only }: {
   mainId: string; devices: DeviceRegistration[]; onSelectComputer?: ((deviceId: string) => void) | undefined
-  /** Show just this paired device (its details page). */
+  /** Show just this computer (its settings page): a paired device's ID, or 'main'. */
   only?: string
 }) {
   const targets: DeviceProvisioningTarget[] = [{ hostRef: { kind: 'main' as const, mainId }, applicationInstallationId: mainId,
@@ -36,7 +36,8 @@ export function ComputerCards({ mainId, devices, onSelectComputer, only }: {
     authorizationRevision: device.authorizationRevision,
   }))]
   const reads = useBuildComputers(targets)
-  const visibleTargets = targets.filter(target => !only || target.hostRef.kind === 'device' && target.hostRef.deviceId === only)
+  const visibleTargets = targets.filter(target => !only || (only === 'main' ? target.hostRef.kind === 'main'
+    : target.hostRef.kind === 'device' && target.hostRef.deviceId === only))
   const activity = useComputerActivity()
   const maintenance = useComputerMaintenance(visibleTargets)
   const start = useStartMaintenance()
@@ -89,9 +90,8 @@ export function ComputerCards({ mainId, devices, onSelectComputer, only }: {
             onMaintain={tasks => start.mutate(tasks.map(task => ({ task, targets: [card.target] })))}
             starting={start.isPending && [start.variables ?? []].flat().some(input => !input.targets || input.targets.some(target => sameDeviceProvisioningTarget(target, card.target)))}
             maintaining={start.isPending || start.unresolved}
-            buildPosition={ranksKnown ? builders.indexOf(card) + 1 : undefined} buildCount={builders.length}
-            onOpen={card.target.hostRef.kind === 'device' && onSelectComputer
-              ? () => { if (card.target.hostRef.kind === 'device') onSelectComputer(card.target.hostRef.deviceId) } : undefined} />
+            buildPosition={ranksKnown ? builders.indexOf(card) + 1 : undefined} buildCount={builders.length} editable={Boolean(only)}
+            onOpen={onSelectComputer ? () => onSelectComputer(card.target.hostRef.kind === 'device' ? card.target.hostRef.deviceId : 'main') : undefined} />
         </li>
       })}
       {devices.filter(device => device.status === 'pending' && (!only || device.deviceId === only)).map(device => <li key={device.deviceId}>
@@ -109,13 +109,15 @@ export function ComputerCards({ mainId, devices, onSelectComputer, only }: {
 
 type Task = ComputerMaintenanceStartInput['task']
 function ComputerCard({ card, observed, fresh, namePending, activityComplete, connections, maintenance, workerPublication, workerReadiness, maintenanceError,
-  onRetryMaintenance, onMaintain, starting, maintaining, buildPosition, buildCount, onOpen }: {
+  onRetryMaintenance, onMaintain, starting, maintaining, buildPosition, buildCount, onOpen, editable = false }: {
   card: Card; observed: ComputerActivity | undefined; fresh: boolean; namePending: boolean; connections: ComputerConnections | undefined
   activityComplete: boolean; maintenanceError: boolean; onRetryMaintenance(): void
   maintenance: MaintenanceStatus | null | undefined; onMaintain(tasks: Task[]): void; starting: boolean; maintaining: boolean
   workerPublication: WorkerReleasePublication | undefined
   workerReadiness: WorkerBundleReadiness | undefined
   buildPosition: number | undefined; buildCount: number; onOpen: (() => void) | undefined
+  /** On the computer's own settings page its settings are edited there, not through the Operator. */
+  editable?: boolean
 }) {
   const name = observed?.name ?? computerDisplayName(card.target.hostRef)
   // A read that fails once and recovers on the next poll is a link blip, not something to show.
@@ -174,7 +176,7 @@ function ComputerCard({ card, observed, fresh, namePending, activityComplete, co
       {maintenance?.system.rebootRequired ? <Badge tone="warning">Restart needed</Badge> : null}
       <RestartButton status={maintenance} busy={maintaining || maintenanceError} onRestart={() => onMaintain([{ kind: 'restart' }])}
         agents={observed?.agents.length ?? 0} jobs={observed?.jobs.length ?? 0} activityComplete={Boolean(observed) && fresh && activityComplete} />
-      <Button size="sm" variant="ghost" onClick={() => askOperator(`On ${name}: `, { send: false })}>Ask Operator to change…</Button>
+      {editable ? null : <Button size="sm" variant="ghost" onClick={() => askOperator(`On ${name}: `, { send: false })}>Ask Operator to change…</Button>}
       <Button size="sm" disabled={maintaining || maintenanceError || !maintenance || updateState === 'running' || updateTasks.length === 0}
         title={updateTasks.length === 0 && maintenance ? 'Nothing to update' : undefined}
         onClick={() => onMaintain(updateTasks)}>Update</Button>

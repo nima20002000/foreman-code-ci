@@ -11,6 +11,7 @@ import { runInspectionQueryKey } from '../workflow-board/inspect/queries'
 import { useBoardCiServer } from '../workflow-board/inspect/useBoardCiServer'
 import { BoardKanbanNode, KanbanActivityEdge, KANBAN_NODE_ID, type KanbanActivityFlowEdge, type KanbanFlowNode } from '../workflow-board/kanban/BoardKanban'
 import { useBoardKanban } from '../workflow-board/kanban/useBoardKanban'
+import { BoardDock } from '../workflow-board/dock/BoardDock'
 import '../workflow-board/inspect/inspection.css'
 import { ciNodePresentation } from './ciPresentation'
 import { SignalEdgeShape } from '../graph/SignalEdgeShape'
@@ -130,7 +131,7 @@ export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hier
     return () => cancelAnimationFrame(frame)
   }, [kanbanShown, refit])
   const flowNodes = useMemo<(SavedBoardNode | CiServerFlowNode | KanbanFlowNode)[]>(() =>
-    [...visibleNodes, ci.node, ...(kanban.node ? [kanban.node] : [])], [visibleNodes, ci.node, kanban.node])
+    [...visibleNodes, ...(kanban.node ? [kanban.node] : []), ...(ci.node ? [ci.node] : [])], [visibleNodes, ci.node, kanban.node])
   const ciJobs = !ciDenied && !ciList.isError && ciList.data?.runId === scope.runId ? ciList.data.jobs : undefined
   // A node waits on its newest unfinished CI from either the Run's Activity or the CI server's own list.
   const cis = useMemo(() => new Map([...runBoardCi(snapshot, activitySnapshot), ...ciNodeActivities(ciJobs ?? [])]),
@@ -139,11 +140,11 @@ export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hier
   const liveNodes = useRunLiveNodes(scope, names, cis, visible && !!board)
   // A light per Agent while its CI request or result travels; no lasting line to the server.
   const transfers = useCiTransfers(ciJobs, useReducedMotion())
-  const ciEdges = useMemo<(SavedBoardEdge | CiTransferFlowEdge)[]>(() => transfers.size ? [...visibleEdges,
+  const ciEdges = useMemo<(SavedBoardEdge | CiTransferFlowEdge)[]>(() => ci.node && transfers.size ? [...visibleEdges,
     ...[...transfers].filter(([nodeId]) => visibleNodes.some(node => node.id === nodeId)).map(([nodeId, pulses]) => ({
       id: `ci-transfer:${nodeId}`, type: 'ciTransfer' as const, source: nodeId, target: CI_SERVER_NODE_ID,
       sourceHandle: 'right', targetHandle: 'left', selectable: false, focusable: false, deletable: false, data: { pulses } }))]
-    : visibleEdges, [visibleEdges, visibleNodes, transfers])
+    : visibleEdges, [visibleEdges, visibleNodes, transfers, ci.node])
   const flowEdges = useMemo<(SavedBoardEdge | CiTransferFlowEdge | KanbanActivityFlowEdge)[]>(() => kanban.edges.length
     ? [...ciEdges, ...kanban.edges] : ciEdges, [ciEdges, kanban.edges])
   return <div ref={containerRef} className="run-board-canvas" data-testid="run-board-canvas" onKeyDown={(event) => {
@@ -155,8 +156,11 @@ export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hier
   }}>
     <ReactFlowProvider><RunLiveNodes.Provider value={liveNodes}>
       <ReactFlow<SavedBoardNode | CiServerFlowNode | KanbanFlowNode, SavedBoardEdge | CiTransferFlowEdge | KanbanActivityFlowEdge> nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
-        {...READ_ONLY_FLOW_PROPS} onNodesChange={kanban.applyChanges}
-        onNodeDragStop={(_event, node) => { if (node.id === KANBAN_NODE_ID) kanban.moved(node.position) }} fitView fitViewOptions={fitViewOptions} minZoom={0.02} maxZoom={2}
+        {...READ_ONLY_FLOW_PROPS} onNodesChange={(changes) => { kanban.applyChanges(changes); ci.place.applyChanges(changes) }}
+        onNodeDragStop={(_event, node) => {
+          if (node.id === KANBAN_NODE_ID) kanban.moved(node.position)
+          if (node.id === CI_SERVER_NODE_ID) ci.place.moved(node.position)
+        }} fitView fitViewOptions={fitViewOptions} minZoom={0.02} maxZoom={2}
         onInit={onInit} onMove={onMove}
         proOptions={proOptions} preventScrolling={false} aria-label="Saved Run graph"
         ariaLabelConfig={{ 'node.a11yDescription.default': 'Saved agent, read only.', 'edge.a11yDescription.default': 'Saved connection, read only.' }}>
@@ -169,5 +173,6 @@ export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hier
     <HierarchyCanvasControls scope={displayScope} hierarchy={hierarchy?.hierarchy}
       name={nodeId => names.get(nodeId) ?? nodeId} onTeam={board?.selectTeam} />
     {visible ? ci.dialog : null}
+    <BoardDock kanban={kanban.dock} ci={ci.node ? undefined : { summary: ci.summary, restore: ci.place.restore }} />
   </div>
 }

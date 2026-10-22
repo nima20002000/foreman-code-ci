@@ -1,5 +1,5 @@
 import { storeEditSnapshot } from '../graph/nextDraft/editIntentStorage'
-import { useId } from 'react'
+import { useId, type ReactNode } from 'react'
 import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { usePlacementChoices } from '../node-placement/usePlacementChoices'
 import type { SavedNodePlacement } from '@foreman-code/contracts/node-placement'
@@ -54,11 +54,13 @@ function installAgent(draftKey: string, instanceId: string, agent: Agent, nodeId
   })
 }
 
-type BoardAgentSettingsProps = { draftKey: string; edit: NextDraftEdit; nodeId: string; close(): void; remove?(): void; placementOptions?: readonly NodePlacementOption[] }
+type BoardAgentSettingsProps = { draftKey: string; edit: NextDraftEdit; nodeId: string; close(): void; remove?(): void; placementOptions?: readonly NodePlacementOption[]
+  /** Node rows shown with the main settings, and node settings folded under More settings. */
+  mainFields?: ReactNode; moreFields?: ReactNode }
 export function BoardAgentSettings(props: BoardAgentSettingsProps) {
   return <BoardAgentSettingsVisit key={`${props.edit.instanceId}:${props.nodeId}`} {...props} />
 }
-function BoardAgentSettingsVisit({ draftKey, edit, nodeId, close, remove, placementOptions }: BoardAgentSettingsProps) {
+function BoardAgentSettingsVisit({ draftKey, edit, nodeId, close, remove, placementOptions, mainFields, moreFields }: BoardAgentSettingsProps) {
   const node = edit.graph.nodes.filter(item => item.kind !== 'job').find((item) => item.id === nodeId)
   const agent = node && editorAgents(edit).find((item) => item.id === node.agentId)
   const visit = useId()
@@ -81,18 +83,19 @@ function BoardAgentSettingsVisit({ draftKey, edit, nodeId, close, remove, placem
   const parentDirty = selectedParent !== undefined && selectedParent !== edit.graph.hierarchy?.parents.find(member => member.workflowNodeId === nodeId)?.parentNodeId
   // Re-key on the staged agent so a discard or reload never leaves stale values in the open form.
   return <>
-    {!choiceScope ? <p role="status">Save this node and Agent before choosing its computer.</p> : choices.isError ? <Alert tone="warning" title="Computer choices are unavailable." /> : null}
     <AgentSettingsForm key={`${edit.instanceId}:${node.id}:${JSON.stringify(agent)}:${node.initialPrompt ?? ''}:${JSON.stringify(node.graphqlTools ?? null)}:${JSON.stringify(node.placement ?? null)}:${JSON.stringify(node.worktree ?? null)}`} embedded agent={agent} initialPrompt={node.initialPrompt}
     nodeGraphqlTools={node.graphqlTools} nodePlacement={node.placement} nodeWorktree={node.worktree}
     workflowWorktree={edit.graph.defaultWorktree}
     workflowWorktreeLabel={edit.graph.defaultWorktree ? worktreeLabel(edit.graph.defaultWorktree, roots) : undefined}
     worktreeDisabled={edit.busy || !!edit.pending}
-    placementHidden={!choices.current} placementOptions={options}
+    placementHidden={!choices.current} placementOptions={options} unavailableComputers={choices.unavailableComputers}
+    placementNote={!choiceScope ? 'Save the workflow to choose another computer.' : choices.isError ? 'Computers can’t be checked right now. Try again shortly.' : undefined}
     placementStage={sameWorkflowValue(node.placement, savedNode?.placement) ? 'saved' : 'draft'}
     placementOptionsState={placementOptions ? 'ready' : !choiceScope || choices.isError || choices.isPaused ? 'unavailable' : choices.isPending ? 'loading' : 'ready'}
     retainedForm={edit.agentForms?.[node.id]}
     additionalDirty={parentDirty}
     additionalFields={worker ? <WorkerParentField draftKey={draftKey} edit={edit} nodeId={node.id} /> : undefined}
+    mainFields={mainFields} moreFields={moreFields}
     onFormChange={(form) => useGraphDraftStore.getState().updateNextDraft(draftKey, (current) => ({ ...current,
       agentForms: { ...current.agentForms, [node.id]: form } }))}
     onDiscardForm={() => useGraphDraftStore.getState().updateNextDraft(draftKey, (current) => {

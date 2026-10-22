@@ -44,17 +44,18 @@ export const CI_SERVER_SIZE = { width: 184, height: 212 } as const
 // Slashes and @ are outside the shared persisted-ID alphabet. Saved node and Run IDs stay unchanged.
 export const CI_SERVER_NODE_ID = '@presentation/ci-server'
 
-/** The CI server stands below the Board's nodes, centered under them, so it adds no width; it is not part of the saved graph.
- * Every Board shows it automatically, an empty one at the origin; it can be opened, never selected, dragged or added by hand. */
+/** The CI server first stands below the Board's nodes, centered under them; once dragged it keeps the viewer's place.
+ * It is not part of the saved graph. Every Board shows it automatically, an empty one at the origin; it can be
+ * opened, moved and closed into the dock, never selected or added by hand. */
 export function ciServerFlowNode(nodes: readonly { position: { x: number; y: number }; width?: number | undefined; height?: number | undefined }[],
-  summary: CiServerSummary, open: () => void): CiServerFlowNode {
+  summary: CiServerSummary, open: () => void, place?: { position?: { x: number; y: number } | undefined; close(): void }): CiServerFlowNode {
   const left = nodes.length ? Math.min(...nodes.map((node) => node.position.x)) : 0
   const right = nodes.length ? Math.max(...nodes.map((node) => node.position.x + (node.width ?? 212))) : 0
   const bottom = nodes.length ? Math.max(...nodes.map((node) => node.position.y + (node.height ?? 212))) + 160 : 0
-  return { id: CI_SERVER_NODE_ID, type: 'ciServer', position: { x: (left + right) / 2 - CI_SERVER_SIZE.width / 2, y: bottom },
-    // Not selectable or draggable, yet its button must still take clicks.
-    ...CI_SERVER_SIZE, style: { ...CI_SERVER_SIZE, pointerEvents: 'all' }, draggable: false, selectable: false, connectable: false,
-    deletable: false, data: { summary, rim: 'box', open } }
+  return { id: CI_SERVER_NODE_ID, type: 'ciServer', position: place?.position ?? { x: (left + right) / 2 - CI_SERVER_SIZE.width / 2, y: bottom },
+    // Not selectable, yet its button must still take clicks.
+    ...CI_SERVER_SIZE, style: { ...CI_SERVER_SIZE, pointerEvents: 'all' }, draggable: !!place, selectable: false, connectable: false,
+    deletable: false, data: { summary, rim: 'box', open, ...(place ? { close: place.close } : {}) } }
 }
 
 export const CI_PLACEMENT_LABELS: Record<CiPlacement, string> = { host: 'Host CI', github: 'GitHub Actions', circleci: 'CircleCI' }

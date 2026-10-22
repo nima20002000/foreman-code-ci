@@ -6,6 +6,7 @@ import {
   redirect,
 } from '@tanstack/react-router'
 import { PageNotFound } from '../shared/ui/PageNotFound'
+import { ComputerSettingsTabs, type ComputerSettingsTab } from '../features/settings/computerSettingsTabs'
 import { ApprovalInboxSearchSchema, UrlSearchSelectionSchema, BrowserProfilesSettingsSearchSchema } from '@foreman-code/contracts'
 import { RunsSelectorSearchSchema } from '../features/runs-selector'
 import { RootShell } from './RootShell'
@@ -100,6 +101,9 @@ const browserProfilesSettingsRoute = createRoute({
 const computerDetailsSettingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings/computers/$deviceId',
+  // The open tab is part of the address, so a link or reload lands on the same part of the page.
+  validateSearch: (search: Record<string, unknown>): { tab?: ComputerSettingsTab } =>
+    ComputerSettingsTabs.includes(search.tab as ComputerSettingsTab) ? { tab: search.tab as ComputerSettingsTab } : {},
   component: ComputerDetailsSettingsRouteEntry,
 })
 

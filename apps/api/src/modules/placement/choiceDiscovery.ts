@@ -4,7 +4,7 @@ import { AgentConfigurationVersionSchema, withAdvancedDefaults, type AgentConfig
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { HostHarnessOverride } from '@foreman-code/contracts/harness-registry'
 import type { CanonicalMachineReference } from '@foreman-code/contracts/device-identity'
-import type { NodePlacementChoice, NodePlacementChoicesInput } from '@foreman-code/contracts/placement-readback'
+import type { NodePlacementChoice, NodePlacementChoicesInput, NodePlacementChoicesResult } from '@foreman-code/contracts/placement-readback'
 import { SavedNodePlacementSchema } from '@foreman-code/contracts/node-placement'
 import { SourceRootRecordSchema, type SourceRootRecord } from '@foreman-code/contracts/source-admission'
 import type { WorkspaceRootPolicy } from '@foreman-code/contracts/workspace-root-policies'
@@ -22,7 +22,10 @@ type DiscoveryServices = PairedRootServices & {
   roots: WorkspaceRootPolicyPort
   sources: SourceAdmissionPort
   ensureComputerReady?: (host: CanonicalMachineReference) => Promise<void>
+  /** Whether a paired computer is connected now. */
+  computerOnline?: (host: CanonicalMachineReference) => boolean
 }
+type UnavailableComputer = NonNullable<NodePlacementChoicesResult['unavailableComputers']>[number]
 
 type PlacementRootPolicy = Pick<WorkspaceRootPolicy, 'hostRef' | 'applicationInstallationId'
   | 'rootPolicyId' | 'rootPolicyRevision' | 'locationRevision' | 'canonicalProjectRoot'>
@@ -45,7 +48,8 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
   constructor(private readonly pool: pg.Pool, private readonly services: () => DiscoveryServices) {}
 
   async list(principal: ManagementPrincipal, input: NodePlacementChoicesInput,
-    source: 'http' | 'mcp' = 'mcp'): Promise<{ choices: NodePlacementChoice[]; pending: boolean }> {
+    source: 'http' | 'mcp' = 'mcp'): Promise<{ choices: NodePlacementChoice[]; pending: boolean
+      unavailableComputers: UnavailableComputer[] }> {
     const services = this.services()
     const configuration = await withTransaction(this.pool, async sql => {
       const row = (await sql.query<{ record: unknown }>(
@@ -98,8 +102,41 @@ export class ProductionPlacementChoiceDiscovery implements PlacementChoiceDiscov
           pending ||= found.pending
         }
       }
-      return { choices, pending }
+      return { choices, pending,
+        unavailableComputers: await this.unavailableComputers(sql, services, configuration, roots, choices) }
     })
+  }
+
+  /** Every paired computer stays offered: one with no choice above says in plain words why it can't run this Agent.
+   * Main is always offered as the workflow default, so only connected computers are listed here. */
+  private async unavailableComputers(sql: pg.PoolClient, services: DiscoveryServices,
+    configuration: AgentConfigurationVersion, roots: readonly SourceRootRecord[],
+    choices: readonly NodePlacementChoice[]): Promise<UnavailableComputer[]> {
+    const main = (await sql.query<{ id: string }>(
+      'select id::text as id from application_installation where singleton=true')).rows[0]
+    if (!main) return []
+    const devices = await sql.query<{ id: string }>(`select id::text as id from device_registrations
+      where main_id=$1 and record->>'status'='paired' order by id limit 100`, [main.id])
+    const names = await readComputerNames(sql, main.id)
+    const driver = configuration.harness.harness
+    const harness = driver === 'claude' ? 'Claude' : 'Codex'
+    const computers: UnavailableComputer[] = []
+    for (const { id: deviceId } of devices.rows) {
+      const hostRef = { kind: 'device' as const, mainId: main.id, deviceId }
+      if (choices.some(choice => sameWorkflowValue(choice.placement.hostRef, hostRef))) continue
+      const name = names.get(computerNameKey(main.id, deviceId)) ?? `Computer ${deviceId.slice(0, 8)}`
+      const installed = services.registry.installations.list().some(installation => installation.installed
+        && installation.driverId === driver && sameWorkflowValue(installation.hostRef, hostRef))
+      let reason = `${name} has no ${harness} setup that matches this agent’s model and settings yet.`
+      if (services.computerOnline && !services.computerOnline(hostRef)) reason = `${name} is offline.`
+      else if (driver !== 'codex') reason = `${harness} agents run only on Main for now, not on ${name}.`
+      else if (!installed) reason = `${harness} isn’t installed on ${name}.`
+      else if (!roots.some(root => sameWorkflowValue(root.selection.hostRef, hostRef))) {
+        reason = `This workspace’s project isn’t set up on ${name} yet.`
+      }
+      computers.push({ hostRef, name, reason })
+    }
+    return computers
   }
 
   private async sourceRoots(sql: pg.PoolClient, workspaceId: string) {

@@ -7,7 +7,7 @@ const HarnessSettingsSectionSchema = z.enum(["model", "permissions", "session", 
 export type HarnessSettingsSection = z.infer<typeof HarnessSettingsSectionSchema>;
 export const AgentSettingsSearchSchema = z.object({
   role: SettingsAgentRoleSchema.optional().catch(undefined),
-  section: z.enum(["model", "permissions", "session", "tools"]).optional().catch(undefined),
+  section: z.enum(["model", "permissions", "session", "tools", "prompt"]).optional().catch(undefined),
 });
 export const HarnessSettingsSearchSchema = z.object({
   harness: z.enum(["codex", "claude"]).optional().catch(undefined),

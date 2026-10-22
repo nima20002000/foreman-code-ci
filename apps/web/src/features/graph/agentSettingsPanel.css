@@ -202,3 +202,71 @@
 .node-placement-field dt { color: var(--text-muted); }
 .node-placement-field dd { margin: 0; overflow-wrap: anywhere; }
 .node-placement-field p { font-size: 12px; color: var(--text-muted); }
+
+/* Compact agent node settings: plain label on the left, flat control on the right, like the settings cards. */
+.agent-settings-panel-embedded { background: transparent; }
+.agent-settings-panel-embedded .agent-settings-general { padding: 0; gap: 0; }
+.agent-node-rows { display: grid; min-width: 0; }
+.agent-node-row {
+  display: grid;
+  grid-template-columns: minmax(5rem, .8fr) minmax(0, 1.6fr);
+  align-items: center;
+  column-gap: var(--space-3);
+  min-height: 2.35rem;
+  min-width: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.agent-node-row-label { color: var(--color-text-muted); font-size: 12.5px; }
+.agent-node-row-control { display: flex; justify-content: flex-end; min-width: 0; }
+.agent-node-row-control > :is(.n-field, .n-combobox) { width: 100%; min-width: 0; gap: 2px; }
+.agent-node-row-control :is(.n-field > label, .n-field > .n-field-label, .n-switch-text),
+.agent-node-row-control .n-input-leading {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+.agent-node-row-control .n-switch-field { width: auto; min-height: 0; }
+.agent-node-row-control :is(.n-input-wrap, .n-select-wrap) { min-height: 0; }
+.agent-node-row-control .n-input {
+  height: 1.9rem; min-height: 1.9rem; padding: 0 1.6rem 0 .5rem;
+  border-color: transparent; background: transparent; box-shadow: none;
+  font-size: 12.5px; text-align: right; text-align-last: right; text-overflow: ellipsis;
+}
+.agent-node-row-control .n-input-wrap .n-input { padding-left: .5rem; }
+.agent-node-row-control .n-input:hover:not(:disabled),
+.agent-node-row-control .n-input:focus-visible { border-color: var(--color-border); background: var(--color-surface-raised); }
+.agent-node-row-control .n-field-error { justify-content: flex-end; font-size: 11px; }
+.agent-node-row-note { grid-column: 1 / -1; margin: -2px 0 6px; color: var(--color-text-muted); font-size: 11.5px; line-height: 1.35; overflow-wrap: anywhere; }
+.agent-node-row-note[data-tone='warning'] { color: var(--color-warning-text); }
+.agent-node-row-note .n-button { min-height: 0; padding: 0 .25rem; font-size: 11.5px; }
+
+.agent-settings-more { min-width: 0; }
+.agent-settings-more > summary {
+  display: flex; align-items: center; gap: var(--space-1);
+  padding: .55rem 0; color: var(--color-text-muted); font-size: 12.5px; cursor: pointer; list-style: none;
+}
+.agent-settings-more > summary::-webkit-details-marker { display: none; }
+.agent-settings-more > summary::before { content: '›'; display: inline-block; width: .75rem; font-size: 15px; line-height: 1; transition: transform 120ms ease; }
+.agent-settings-more[open] > summary::before { transform: rotate(90deg); }
+.agent-settings-more > summary:hover { color: var(--color-text); }
+.agent-settings-more-body { display: grid; gap: var(--space-3); min-width: 0; padding: 0 0 var(--space-3); }
+.agent-settings-more-body .next-draft-section { margin: 0; padding: 0; border: 0; }
+
+.agent-settings-panel-embedded > .agent-settings-footer { padding: var(--space-2) 0 0; justify-content: flex-end; gap: var(--space-2); }
+.agent-settings-panel .agent-settings-footer .agent-settings-trash { margin-right: auto; margin-left: 0; color: var(--color-text-muted); }
+.agent-settings-panel-embedded > .n-alert { margin-top: var(--space-2); }
+@media (prefers-reduced-motion: reduce) { .agent-settings-more > summary::before { transition: none; } }
+.agent-settings-panel-embedded .agent-settings-footer .agent-settings-save { margin-left: 0; }
+.agent-node-row-control .n-select-wrap .n-input { padding-right: 1.9rem; }
+/* Tools under More settings: flat divider rows, name and agent default on the left, this node's choice on the right. */
+.agent-settings-more-body .agent-graphql-tools { padding-top: var(--space-2); gap: 0; }
+.agent-settings-more-body .agent-graphql-tools > legend { font-size: 12.5px; }
+.agent-settings-more-body .agent-graphql-tools-list { gap: 0; }
+.agent-settings-more-body .agent-graphql-tool {
+  grid-template-columns: minmax(0, 1fr) auto; gap: 2px var(--space-2);
+  padding: .45rem 0; border: 0; border-bottom: 1px solid var(--color-border); border-radius: 0;
+}
+.agent-settings-more-body .agent-graphql-tool:last-child { border-bottom: 0; }
+.agent-settings-more-body .agent-graphql-tool-name { grid-column: 1; font-size: 12.5px; }
+.agent-settings-more-body .agent-graphql-tool-name strong { font-weight: 500; }
+.agent-settings-more-body .agent-graphql-tool > .n-check-field { grid-column: 1; font-size: 11.5px; color: var(--color-text-muted); }
+.agent-settings-more-body .agent-graphql-tool > :last-child:not(.n-check-field):not(.agent-graphql-tool-name) { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+.agent-settings-more-body .agent-graphql-tool > span:last-child { color: var(--color-text-muted); font-size: 11.5px; }

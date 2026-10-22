@@ -1,3 +1,4 @@
+import { ApiError } from '../../shared/api/client'
 import { InfoHint } from '../../shared/ui/InfoHint'
 import { retiredHarnessLabel } from './settingsPresentation'
 import { useId, useState } from 'react'
@@ -56,7 +57,9 @@ function EditableHarnessBasicFields({ value, onChange, issues = [], includeSandb
       <div className="harness-model-toggles"><HarnessModelOptions accountHost={accountHost} value={value} onChange={onChange} issues={issues} /></div>
     </div>
     {query.isPending ? <span className="harness-status" role="status">Loading native models…</span> : null}
-    {query.isError || refresh.isError ? <Alert live tone="danger" title={(refresh.error ?? query.error)?.message ?? 'Model discovery failed.'}
+    {query.isError || refresh.isError ? <Alert live tone={signedOut(refresh.error ?? query.error) ? 'warning' : 'danger'}
+      title={signedOut(refresh.error ?? query.error) ? 'Codex is signed out on this computer'
+        : (refresh.error ?? query.error)?.message ?? 'Model discovery failed.'}
       action={<Button size="sm" disabled={refresh.isPending} onClick={() => {
         if (value.accountId || accountHost?.kind === 'device') void query.refetch()
         else refresh.mutate()
@@ -101,4 +104,9 @@ export function HarnessSandboxField({ value, onChange, issues = [] }: {
 export function HarnessBasicFields(props: Parameters<typeof EditableHarnessBasicFields>[0]) {
   if (props.value.harness === 'opencode') return <p role="status">{retiredHarnessLabel}</p>
   return <EditableHarnessBasicFields {...props} />
+}
+
+/** The server's "sign in to this harness" refusal, which reads better as a plain state than as an error. */
+function signedOut(error: unknown) {
+  return ApiError.is(error) && error.code === 'CODEX_APP_SERVER_AUTH_UNQUALIFIED'
 }

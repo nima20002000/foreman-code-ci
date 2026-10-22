@@ -64,7 +64,7 @@ export function nodeTitle(graph: WorkflowDefinitionV3, id: string): string {
 /** Hints explain frozen acceptance rules. Only the shared service can accept a version. */
 export function authoringHints(graph: WorkflowDefinitionV3, context: NextDraftContext, agentEdits: DraftAgentEdits = {}): AuthoringIssue[] {
   const issues: AuthoringIssue[] = []
-  if (!graph.executionPolicy) issues.push({ code: 'EXECUTION_LIMITS_REQUIRED', message: 'Set execution limits in workflow settings.' })
+  if (!graph.executionPolicy) issues.push({ code: 'EXECUTION_LIMITS_REQUIRED', message: 'Use the default execution limits in workflow settings, or set your own.' })
   else if (graph.executionPolicy.maxNodeExecutions < graph.nodes.length) issues.push({ code: 'EXECUTION_LIMIT_TOO_LOW',
     message: `Increase “Maximum node executions” to at least ${graph.nodes.length}.` })
   const entry = entryChoices(graph, context, agentEdits)

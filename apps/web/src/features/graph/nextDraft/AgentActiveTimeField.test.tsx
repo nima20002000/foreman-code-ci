@@ -9,7 +9,7 @@ import { LocalWorkflowFormSchema } from './localGraph'
 
 afterEach(cleanup)
 
-it('edits seconds, preserves other limits, and clears the override to inherit the default', async () => {
+it('shows the default, edits seconds, preserves other limits, and clears the override to inherit the default', async () => {
   const changes: WorkflowExecutionPolicy[] = []
   function Form() {
     const [policy, setPolicy] = useState<WorkflowExecutionPolicy>({ maxParallelism: 2, maxNodeExecutions: 8 })
@@ -18,10 +18,10 @@ it('edits seconds, preserves other limits, and clears the override to inherit th
   }
   render(<Form />)
   const field = screen.getByRole('spinbutton', { name: 'Turn time limit (s)' })
-  expect(field).toHaveValue(null)
+  expect(field).toHaveValue(600)
   expect(screen.queryByText(/default \(600 s\)/)).not.toBeInTheDocument()
   await userEvent.setup().hover(screen.getByRole('button', { name: 'About Turn time limit' }))
-  expect(screen.getByRole('tooltip')).toHaveTextContent(/Leave blank for the default \(600 s\)/)
+  expect(screen.getByRole('tooltip')).toHaveTextContent(/Clear it to use the default \(600 s\)/)
   fireEvent.change(field, { target: { value: '3600' } })
   expect(field).toHaveValue(3600)
   expect(changes.at(-1)).toEqual({ maxParallelism: 2, maxNodeExecutions: 8, agentActiveTimeoutMs: 3_600_000 })
@@ -30,14 +30,16 @@ it('edits seconds, preserves other limits, and clears the override to inherit th
   expect(changes.at(-1)?.agentActiveTimeoutMs).toBe(1005)
   fireEvent.change(field, { target: { value: '' } })
   expect(changes.at(-1)).toEqual({ maxParallelism: 2, maxNodeExecutions: 8 })
+  fireEvent.blur(field)
+  expect(field).toHaveValue(600)
 })
 
 it('describes default inheritance before capabilities finish loading', async () => {
   render(<AgentActiveTimeField policy={{ maxParallelism: 2, maxNodeExecutions: 8 }}
     defaultMs={undefined} onChange={() => {}} />)
-  expect(screen.queryByText(/Leave blank for the default\./)).not.toBeInTheDocument()
+  expect(screen.queryByText(/Clear it to use the default\./)).not.toBeInTheDocument()
   await userEvent.setup().hover(screen.getByRole('button', { name: 'About Turn time limit' }))
-  expect(screen.getByRole('tooltip')).toHaveTextContent(/Leave blank for the default\./)
+  expect(screen.getByRole('tooltip')).toHaveTextContent(/Clear it to use the default\./)
   expect(screen.getByRole('spinbutton', { name: 'Turn time limit (s)' })).toHaveValue(null)
 })
 

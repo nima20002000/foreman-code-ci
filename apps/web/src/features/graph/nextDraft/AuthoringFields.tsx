@@ -65,9 +65,22 @@ export function ApprovalFields({ graph, context, change, report, agentEdits }: {
 }
 
 /** The node's place in this workflow: whether it starts it and where its result goes. */
-export function NodeWorkflowFields({ graph, node, context, change, agentEdits }: { graph: WorkflowDefinitionV3; node: DraftNode; context: NextDraftContext; change: EditGraph; agentEdits?: DraftAgentEdits }) {
+/** The node's browser switch and profile. */
+export function NodeBrowserField({ graph, node, change }: { graph: WorkflowDefinitionV3; node: DraftNode; change: EditGraph }) {
   const sharedFields = useCollaborationUISlots()
   const fields = useWorkflowBoard()?.collaborationFields ?? sharedFields
+  if (node.kind === 'job') return null
+  return fields?.nodeBrowser?.({ workspaceId: graph.workspaceId, workflowId: graph.id,
+    nodeId: node.id, value: node.browser, onChange: browser => changeNode(change, node.id, current => {
+      if (current.kind === 'job') return current
+      const next = { ...current }; if (browser) next.browser = browser; else delete next.browser
+      return withBrowserToolDefaults(next)
+    }) }) ?? null
+}
+
+export function NodeWorkflowFields({ graph, node, context, change, agentEdits, browser = true }: { graph: WorkflowDefinitionV3; node: DraftNode; context: NextDraftContext; change: EditGraph; agentEdits?: DraftAgentEdits
+  /** False when the browser field is shown elsewhere. */
+  browser?: boolean }) {
   const choices = entryChoices(graph, context, agentEdits)
   const eligible = choices.eligible.some((item) => item.id === node.id)
   const starts = graph.entryNodeId === node.id
@@ -80,12 +93,7 @@ export function NodeWorkflowFields({ graph, node, context, change, agentEdits }:
       onChange={(event) => { const checked = event.currentTarget.checked; change((value) => ({ ...value, entryNodeId: checked ? node.id : value.entryNodeId === node.id ? null : value.entryNodeId })) }} />
     {graph.hierarchy && role === 'coder' ? <p>Reports to {member ? nodeTitle(graph, member.parentNodeId) : 'Unassigned'} · Applied draft</p> : null}
     {graph.hierarchy && role === 'orchestrator' ? <p>Reports to {nodeTitle(graph, graph.hierarchy.masterNodeId)} (Master).</p> : null}
-    {node.kind !== 'job' ? fields?.nodeBrowser?.({ workspaceId: graph.workspaceId, workflowId: graph.id,
-      nodeId: node.id, value: node.browser, onChange: browser => changeNode(change, node.id, current => {
-        if (current.kind === 'job') return current
-        const next = { ...current }; if (browser) next.browser = browser; else delete next.browser
-        return withBrowserToolDefaults(next)
-      }) }) : null}
+    {browser ? <NodeBrowserField graph={graph} node={node} change={change} /> : null}
     <ChoiceFields graph={graph} node={node} change={change} coordinator={!!graph.hierarchy && (role === 'master' || role === 'orchestrator')} />
     {graph.hierarchy ? <>
       {node.join ? <Button size="sm" onClick={() => changeNode(change, node.id, value => { const next = { ...value }; delete next.join; return next })}>Remove unsupported join</Button> : null}
@@ -104,7 +112,7 @@ export function ChoiceFields({ graph, node, change, coordinator = false }: { gra
   const outcomes = node.choice?.outcomes ?? []
   const setOutcomes = (update: (items: typeof outcomes) => typeof outcomes) => changeNode(change, node.id, (value) => ({ ...value, choice: { outcomes: update(value.choice?.outcomes ?? []) } }))
   return <fieldset className="next-draft-choice"><legend>{hierarchyRequests ? coordinator ? 'Delegation routes' : 'Request and review routes' : `When this ${node.kind === 'job' ? 'job' : 'agent'} finishes`}</legend>
-    {hierarchyRequests ? <p>{coordinator ? 'Delegates work and waits for reports. A delegation can select several direct children.' : 'Each named outcome identifies a saved request or review route.'} Only explicitly selected requests run; unselected routes create no obligation.</p> : <Select label="Routing mode" labelHint={node.choice ? <InfoHint label="Routing mode">{node.kind === 'job'
+    {hierarchyRequests ? <p>{coordinator ? 'Hands work to the agents below it and waits for their reports.' : 'Each outcome names a request or review route.'}</p> : <Select label="Routing mode" labelHint={node.choice ? <InfoHint label="Routing mode">{node.kind === 'job'
       ? 'The observed process and output result select the matching dependency.'
       : 'The agent ends with an outcome name, and only the matching handoff runs.'}</InfoHint> : undefined} value={node.choice ? 'choice' : 'fanout'} onChange={(event) => changeNode(change, node.id, (value) => {
       if (event.target.value === 'choice') return { ...value, choice: { outcomes: [] } }

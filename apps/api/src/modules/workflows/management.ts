@@ -1,7 +1,7 @@
 import { workflowCreationWorktree, validateWorkflowWorktrees, requireWorkflowWorktreeReads } from './worktreeSettings.js'
 import { randomUUID } from 'node:crypto'
 
-import { WorkflowDefinitionV3Schema as WorkflowDefinitionSchema, CurrentWorkflowCreateInputSchema, type CurrentWorkflowCreateInput } from '@foreman-code/contracts/wave25'
+import { WorkflowDefinitionV3Schema as WorkflowDefinitionSchema, CurrentWorkflowCreateInputSchema, DEFAULT_WORKFLOW_EXECUTION_POLICY, type CurrentWorkflowCreateInput } from '@foreman-code/contracts/wave25'
 import { requireCurrentWorkflowAccess } from './currentWorkflowPolicy.js'
 import { CurrentWorkflowAuthoring, type WorkflowAuthoringOptions } from './currentAuthoring.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
@@ -138,6 +138,7 @@ export class WorkflowManagementService {
           id: `workflow-${randomUUID()}`, workspaceId: input.workspaceId, name: input.name,
           ...(input.description !== undefined ? { description: input.description } : {}),
           approval: { handler: defaults.value.approvalHandler },
+          executionPolicy: { ...DEFAULT_WORKFLOW_EXECUTION_POLICY },
           executionSemanticsVersion: 3, entryNodeId: null,
           handoffs: { contractVersion: 1 },
           ...(defaultWorktree ? { defaultWorktree } : {}),

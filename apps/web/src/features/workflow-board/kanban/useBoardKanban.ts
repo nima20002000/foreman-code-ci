@@ -7,6 +7,7 @@ import { KANBAN_NODE_ID, type KanbanActivityFlowEdge, type KanbanFlowNode } from
 import { kanbanScope, useKanbanActivity } from './kanbanActivity'
 import { useKanbanLayout } from './kanbanLayout'
 import { CI_SERVER_SIZE } from '../inspect/ciServer'
+import { useKanbanDocked } from '../dock/boardObjects'
 
 type Placed = { position: { x: number; y: number }; width?: number | undefined; height?: number | undefined }
 const DEFAULT_SIZE = { width: 760, height: 460 }
@@ -34,14 +35,17 @@ export function useBoardKanban({ workspaceId, workflowId, nodes, nodeIds, enable
   const actions = useMemo(() => ({
     store: (next: WorkflowKanbanFrame) => save({ visible: true, frame: rounded(next) }),
   }), [save])
-  // The Kanban is always on the Board, empty or not; it appears once its saved place is known, so it never jumps.
-  const visible = enabled && read
+  // Off by default: the toolbar's Kanban button puts it on the Board. Its X closes it into the dock; it appears
+  // once its saved place is known, so it never jumps.
+  const docked = useKanbanDocked({ workspaceId, workflowId })
+  const onBoard = enabled && read && layout?.visible === true
+  const visible = onBoard && !docked.closed
   const error = saveError ? errorMessage(saveError) : undefined
   const node = useMemo<KanbanFlowNode | undefined>(() => visible ? {
     id: KANBAN_NODE_ID, type: 'boardKanban', position: { x: frame.x, y: frame.y }, width: frame.width, height: frame.height,
     dragHandle: '.board-kanban-bar', draggable: true, selectable: false, connectable: false, deletable: false, focusable: false,
-    data: { workspaceId, workflowId, ...(error ? { saveError: error } : {}), resized: actions.store },
-  } : undefined, [visible, frame, workspaceId, workflowId, error, actions])
+    data: { workspaceId, workflowId, ...(error ? { saveError: error } : {}), resized: actions.store, close: docked.close },
+  } : undefined, [visible, frame, workspaceId, workflowId, error, actions, docked.close])
   const activity = useKanbanActivity((state) => state.items[kanbanScope(workspaceId, workflowId)])
   const reduced = useReducedMotion()
   const edges = useMemo<KanbanActivityFlowEdge[]>(() => !node || reduced ? [] : (activity ?? []).flatMap((item) =>
@@ -62,5 +66,6 @@ export function useBoardKanban({ workspaceId, workflowId, nodes, nodeIds, enable
   }
   /** React Flow reports the dropped position once the drag ends. */
   const moved = (position: { x: number; y: number }) => actions.store({ ...frame, ...position })
-  return { node, edges, applyChanges, moved }
+  const dock = onBoard && docked.closed ? { workspaceId, workflowId, restore: docked.restore } : undefined
+  return { node, edges, applyChanges, moved, dock }
 }

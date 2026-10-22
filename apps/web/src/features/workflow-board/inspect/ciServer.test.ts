@@ -81,3 +81,11 @@ it('places the CI tower outside every valid authored node identity', () => {
   expect(WorkflowDefinitionV3Schema.safeParse({ ...graph, nodes: [{ ...owner, id: tower.id }], edges: [], entryNodeId: tower.id }).success).toBe(false)
   expect(tower).toMatchObject({ type: 'ciServer', selectable: false, draggable: false })
 })
+
+it('keeps a moved CI tower where the viewer put it and lets it close', () => {
+  const owner = { ...fixture().draft.graph.nodes[0]!, position: { x: 0, y: 0 } }
+  const close = () => undefined
+  const tower = ciServerFlowNode([owner], ciServerSummary([]), () => undefined, { position: { x: 640, y: -80 }, close })
+  expect(tower).toMatchObject({ draggable: true, selectable: false, position: { x: 640, y: -80 } })
+  expect(tower.data.close).toBe(close)
+})

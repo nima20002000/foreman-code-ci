@@ -39,11 +39,10 @@
 }
 .n-agent-core:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
 
+/* Block-level so a long state ("Waiting for CI …") ellipsizes inside the circle instead of running past its edge. */
 .n-agent-status {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  max-width: 172px;
+  display: inline-block;
+  max-width: 128px;
   color: var(--text-muted);
   font: var(--type-eyebrow);
   letter-spacing: var(--type-eyebrow-tracking);
@@ -52,7 +51,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.n-agent-status i { flex: none; width: 6px; height: 6px; border-radius: var(--radius-full); background: currentColor; }
+.n-agent-status i { display: inline-block; width: 6px; height: 6px; margin-right: var(--space-1); vertical-align: middle; border-radius: var(--radius-full); background: currentColor; }
 .n-agent-glyph { display: grid; place-items: center; height: 20px; margin: 6px 0 2px; color: var(--agent-hue); }
 .n-agent-name {
   max-width: 156px;

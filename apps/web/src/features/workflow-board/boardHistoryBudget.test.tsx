@@ -21,8 +21,8 @@ let fixture: InspectionFixture
 let serial = 0
 beforeEach(async () => {
   fixture = await inspectionBoardFixture(`eng05d-budget-${++serial}`)
-  // The Kanban is always on the Board and reads the workflow's memory board; an unanswered read would keep the
-  // connection notice up for good.
+  // A Kanban on the Board reads the workflow's memory board; an unanswered read would keep the connection
+  // notice up for good.
   const { workspaceId, workflowId } = fixture.runs.before.scope
   server.use(...createMemoryBoardHandlers(createMemoryTestPort({ cards: [], scope: { kind: 'workflow', workspaceId, workflowId } }).port))
 })
