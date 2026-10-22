@@ -16,6 +16,7 @@ import { agentChatTools } from '../src/mcp/operator/tools/agentChat.js'
 import { registerOperatorToolGroup } from '../src/mcp/operator/server.js'
 import type { OperatorRequestContext } from '../src/mcp/operator/types.js'
 import { registerAgentChatRoutes } from '../src/routes/agentChat.js'
+import { isLiveWorkflowRead } from './helpers/chatWorkflowVersion.js'
 
 const base = agentChatFixtures.idleAfterCompletion
 const actions: ManagementAction[] = ['agent_chat:read', 'agent_chat:write', 'agent_chat:cancel', 'agent_chat:respond']
@@ -45,6 +46,7 @@ function fixture(runId?: string) {
         ? [{ item_key: 'source-reply', role: 'assistant', content: 'Saved Run reply', original_bytes: 15,
           complete: true, sequence: '1', revision: '1' }] : [] }
     }
+    if (isLiveWorkflowRead(sql)) return { rows: values[0] === context.workflowId && values[1] === context.workspaceId ? [{ '?column?': 1 }] : [] }
     if (!sql.startsWith('select ') || !sql.includes('from management_principals')) {
       throw new Error('Unexpected chat persistence operation')
     }

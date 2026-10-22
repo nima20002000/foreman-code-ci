@@ -11,7 +11,7 @@ import type { PostgresOperatorConversationRepository } from '../../src/modules/c
 import { NativeTurnNotActiveError } from '../../src/modules/harnesses/errors.js'
 import type { NativeHarnessSessionManager, NativeHistory, NativeSteerInput, NativeTurnInput } from '../../src/modules/harnesses/port.js'
 import type { PostgresWorkflowRepository } from '../../src/modules/workflows/postgres.js'
-import { chatWorkflowVersionRow, isCurrentVersionRead } from './chatWorkflowVersion.js'
+import { chatWorkflowVersionRow, isCurrentVersionRead, isLiveWorkflowRead } from './chatWorkflowVersion.js'
 import { deferred } from './deferred.js'
 
 export async function eventually(check: () => boolean | Promise<boolean>) {
@@ -96,6 +96,9 @@ export class F1Store {
         grants: principal.grants, expires_at: new Date(principal.expiresAt), revoked_at: null, delegated_from: null }] : [])
     }
     if (['begin', 'commit', 'rollback', 'begin isolation level repeatable read read only'].includes(sql) || sql.startsWith('select pg_advisory_xact_lock')) return result()
+    if (sql === 'select 1 from workflows where id=$1 and workspace_id=$2 and archived_at is null') {
+      return result(values[0] === context.workflowId && values[1] === context.workspaceId ? [{ '1': 1 }] : [])
+    }
     if (sql === 'select archived_at from workspaces where id = $1 for share') {
       return result([{ archived_at: this.workspaceArchived ? new Date() : null }])
     }
@@ -103,6 +106,7 @@ export class F1Store {
       return result(values[0] === this.row.id ? [{ path: this.row.record.workingDirectory, host_kind: 'main' }] : [])
     }
     if (sql.startsWith('select record, revision, current_version_id from application_settings')) return result()
+    if (isLiveWorkflowRead(sql)) return result(values[0] === context.workflowId && values[1] === context.workspaceId ? [{ '?column?': 1 }] : [])
     if (isCurrentVersionRead(sql)) {
       return result(values[0] === context.workspaceId && values[1] === context.workflowId ? [chatWorkflowVersionRow({ ...context,
         configurationId: configuration.id })] : [])

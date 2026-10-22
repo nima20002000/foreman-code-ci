@@ -75,7 +75,9 @@ export const BrowserOperationRequestSchemas = {
     z.object({ intent: z.literal('native_window'), ...tab, commandId: id.optional() }).strict(),
     z.object({ intent: z.literal('reconnect'), sessionId: id, commandId: id.optional() }).strict(),
   ]),
-  browser_sessions_list: z.object({ ...page, subject: AgentSubjectSchema.optional(), setupForProfileId: id.optional(), computerId: id.optional() }).strict(),
+  browser_sessions_list: z.object({ ...page, subject: AgentSubjectSchema.optional(), setupForProfileId: id.optional(), computerId: id.optional(),
+    /** Only sessions that are still open. */
+    live: z.boolean().optional() }).strict(),
   browser_session_get: z.object({ sessionId: id }).strict(),
   browser_session_close: z.object({ sessionId: id, commandId: id.optional() }).strict(),
   browser_tabs_list: z.object({ sessionId: id }).strict(),

@@ -1,3 +1,4 @@
+import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { DomainError } from '../errors.js'
 import { browserInputHash } from '../browser-profiles/identity.js'
 import type { BrowserBroker } from './broker.js'
@@ -22,7 +23,7 @@ export type BrowserFileAction =
   } }['finish' | 'cancel' | 'remove' | 'metadata']
   | { intent: 'file'; phase: 'read'; sessionId: string; fileId: string; offset: number; length: number }
   | ({ intent: 'file'; phase: 'attach' } & Parameters<BrowserBroker['attachFile']>[0])
-export type BrowserSessionListInput = { subject?: AgentSubject; setupForProfileId?: string; computerId?: string; cursor?: string | undefined; limit?: number }
+export type BrowserSessionListInput = { subject?: AgentSubject; setupForProfileId?: string; computerId?: string; cursor?: string | undefined; limit?: number; live?: boolean }
 
 /** The same authenticated service is consumed by HTTP, Operator MCP and exact scoped agent adapters. */
 export class BrowserSessionService<Principal> {
@@ -67,12 +68,22 @@ export class BrowserSessionService<Principal> {
     if (!Number.isSafeInteger(limit)) throw new DomainError('BROWSER_PAGE_INVALID', 'Invalid browser session page size.', 400)
     const visible: BrowserSession[] = [], candidates = this.broker.list(input.subject)
       .filter(value => (!input.setupForProfileId || value.setupForProfileId === input.setupForProfileId)
-        && (!input.computerId || value.computerId === input.computerId) && (!input.cursor || value.id > input.cursor)).sort((a, b) => a.id.localeCompare(b.id))
+        && (!input.computerId || value.computerId === input.computerId) && (!input.cursor || value.id > input.cursor)
+        && (!input.live || value.state !== 'closed' && value.state !== 'failed')).sort((a, b) => a.id.localeCompare(b.id))
+    // Many sessions share one Agent subject; each subject is authorized once per page, not once per session.
+    const allowed = new Map<string, Promise<boolean>>()
     for (const session of candidates) {
-      try { await this.authority.session(principal, session, false); visible.push(session) } catch (error) {
-        // Hidden: another person's session, or one whose owner ended (e.g. a finished coordinator reply).
-        if (!(error instanceof DomainError) || (error.status !== 403 && error.code !== 'AUTH_REVOKED')) throw error
+      const key = canonicalJson(session.subject ?? [session.profileId, session.computerId])
+      let check = allowed.get(key)
+      if (!check) {
+        check = this.authority.session(principal, session, false).then(() => true, error => {
+          // Hidden: another person's session, or one whose owner ended (e.g. a finished coordinator reply).
+          if (!(error instanceof DomainError) || (error.status !== 403 && error.code !== 'AUTH_REVOKED')) throw error
+          return false
+        })
+        allowed.set(key, check)
       }
+      if (await check) visible.push(session)
       if (visible.length > limit) break
     }
     return { sessions: visible.slice(0, limit), nextCursor: visible.length > limit ? visible[limit - 1]!.id : null }

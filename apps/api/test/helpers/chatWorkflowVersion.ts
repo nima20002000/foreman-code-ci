@@ -12,6 +12,11 @@ export function isCurrentVersionRead(sql: string): boolean {
     && text.includes('from workflows workflow join workflow_versions version on version.id = workflow.current_version_id')
 }
 
+/** True for the existence check that lets a chat open on a draft (never-saved or unsaved-node) workflow. */
+export function isLiveWorkflowRead(sql: string): boolean {
+  return normalized(sql) === 'select 1 from workflows where id=$1 and workspace_id=$2 and archived_at is null'
+}
+
 /** True for the exact saved Version read by id. */
 export function isSavedVersionRead(sql: string): boolean {
   return normalized(sql).startsWith('select id,workspace_id,workflow_id,version,entry_node_id,execution_semantics_version,record from workflow_versions where id = $1')

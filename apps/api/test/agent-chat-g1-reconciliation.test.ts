@@ -13,7 +13,7 @@ import { agentChatCorrelation, agentChatKey, PostgresAgentChatRepository, type A
 import type { PostgresOperatorConversationRepository } from '../src/modules/conversations/operatorChatRepository.js'
 import { qualifiedAgentChatSteer } from '../src/modules/conversations/chatSteerQualification.js'
 import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart, NativeSteerInput, NativeSteerReceipt, NativeTurnInput } from '../src/modules/harnesses/port.js'
-import { chatWorkflowVersionRow, isCurrentVersionRead } from './helpers/chatWorkflowVersion.js'
+import { chatWorkflowVersionRow, isCurrentVersionRead, isLiveWorkflowRead } from './helpers/chatWorkflowVersion.js'
 
 const now = new Date('2026-09-27T00:00:00Z')
 const context: AgentChatContext = { workspaceId: 'workspace', workflowId: 'workflow', workflowNodeId: 'node', agentId: 'agent' }
@@ -25,6 +25,7 @@ const sender: ManagementPrincipal = { ...principal, id: 'chat-sender', name: 'Ch
   grants: [{ actions: ['agent_chat:read', 'agent_chat:write'], scope: principal.grants[0]!.scope }] }
 const savedVersion = chatWorkflowVersionRow({ ...context, configurationId: 'configuration' })
 const pool = { query: async (sql: string, values: unknown[] = []) => {
+  if (isLiveWorkflowRead(sql)) return { rows: [{ '?column?': 1 }], rowCount: 1 }
   if (isCurrentVersionRead(sql)) return { rows: [savedVersion], rowCount: 1 }
   const authority = [principal, sender].find(candidate => candidate.id === values[0])
   return { rows: sql.includes('from management_principals') && authority

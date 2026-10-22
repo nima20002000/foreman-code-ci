@@ -32,7 +32,7 @@ function useLiveBrowserSessions() {
         try {
           let cursor: string | null = null
           for (let page = 0; page < 20; page++) {
-            const input: { computerId: string; limit: number; cursor?: string } = { computerId, limit: 100, ...(cursor ? { cursor } : {}) }
+            const input: { computerId: string; limit: number; live: true; cursor?: string } = { computerId, limit: 100, live: true, ...(cursor ? { cursor } : {}) }
             const result: { sessions: BrowserSession[]; nextCursor: string | null } = await apiClient.request(`/api/browser/sessions?${new URLSearchParams({ input: JSON.stringify(input) })}`,
               BrowserOperationResponseSchemas.browser_sessions_list, { signal })
             sessions.push(...result.sessions.filter(live))
@@ -145,6 +145,9 @@ function SidebarBrowser({ session, runId, workflowVersionId, ...props }: {
   onOpenSettings(): void
 }) {
   const subject = session?.subject
+  const board = useWorkflowBoard()
+  // A node not saved in the workflow yet finds its chat's browser through its Agent.
+  const agentId = subject?.agent.agentId ?? board?.draftNodeAgentId?.(props.nodeId)
   const [picked, setPicked] = useState<{ runId: string; workflowVersionId: string; executionId?: string; waitingActivationId?: string }>()
   const [view, setView] = useState<{ sessionId?: string; tabId?: string }>({ sessionId: session?.id })
   const target = picked ?? (subject?.kind === 'execution' ? { runId: subject.execution.runId, workflowVersionId: subject.execution.workflowVersionId,
@@ -152,7 +155,7 @@ function SidebarBrowser({ session, runId, workflowVersionId, ...props }: {
     : subject?.kind === 'coordinator_consultation' ? { runId: subject.binding.runId, workflowVersionId: subject.binding.workflowVersionId,
       waitingActivationId: subject.binding.waitingActivationId }
       : subject?.kind === 'conversation' ? {} : runId && workflowVersionId ? { runId, workflowVersionId } : {})
-  return <WorkflowBrowserTarget key={JSON.stringify(target)} {...props} {...target} compact
+  return <WorkflowBrowserTarget key={JSON.stringify(target)} {...props} {...target} {...(agentId ? { agentId } : {})} compact
     {...(view.sessionId ? { sessionId: view.sessionId } : {})} {...(view.tabId ? { tabId: view.tabId } : {})}
     onSelect={(sessionId, tabId) => setView({ sessionId, tabId })}
     onPickTarget={(pickedRun, pickedVersion, executionId, waitingActivationId) => {

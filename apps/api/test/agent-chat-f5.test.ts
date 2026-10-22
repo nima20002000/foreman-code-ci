@@ -10,7 +10,7 @@ import {
   AGENT_CHAT_OPEN_TURN_LIMIT, agentChatInputHash, agentChatKey, PostgresAgentChatRepository, type AgentConversationRow,
 } from '../src/modules/conversations/agentChatRepository.js'
 import { AgentChatF5Native, approval, eventually } from './helpers/agentChatF5.js'
-import { chatWorkflowVersionRow, isCurrentVersionRead } from './helpers/chatWorkflowVersion.js'
+import { chatWorkflowVersionRow, isCurrentVersionRead, isLiveWorkflowRead } from './helpers/chatWorkflowVersion.js'
 import { deferred } from './helpers/deferred.js'
 
 const context = { workspaceId: 'ws-f5', workflowId: 'wf-f5', workflowNodeId: 'node-f5', agentId: 'agent-f5' }
@@ -77,6 +77,7 @@ function approvalFixture() {
   const controls = memorySessionControlPool()
   const savedVersion = chatWorkflowVersionRow({ ...context, configurationId: configuration.id })
   const pool = { query: async (text: string, values: unknown[]) => {
+    if (isLiveWorkflowRead(text)) return { rows: [{ '?column?': 1 }], rowCount: 1 }
     if (isCurrentVersionRead(text)) return { rows: [savedVersion], rowCount: 1 }
     if (text.includes('conversation_session_') || text.includes('as compaction')) {
       return controls.query(text, values)

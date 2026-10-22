@@ -19,7 +19,8 @@ export function WorkflowBrowser(props: Selection) {
 }
 function SelectedWorkflowBrowser(props: Selection & { nodeId: string }) {
   const board = useWorkflowBoard(), navigate = useNavigate(), location = useLocation()
-  return <WorkflowBrowserTarget {...props}
+  const agentId = board?.draftNodeAgentId?.(props.nodeId)
+  return <WorkflowBrowserTarget {...props} {...(agentId ? { agentId } : {})}
     onSelect={(sessionId, tabId) => board?.selectSidePanel?.({ ...props, kind: 'browser', sessionId, tabId })}
     onOpenSettings={() => board?.selectSidePanel?.({ kind: 'agent', nodeId: props.nodeId, tab: 'settings' })}
     onPickTarget={(runId, workflowVersionId, executionId, waitingActivationId) => {
@@ -33,6 +34,8 @@ function SelectedWorkflowBrowser(props: Selection & { nodeId: string }) {
 export interface WorkflowBrowserTargetProps {
   workspaceId: string; workflowId: string; nodeId: string; runId?: string; workflowVersionId?: string
   executionId?: string; waitingActivationId?: string; sessionId?: string; tabId?: string
+  /** The node's Agent, so a node not saved in the workflow yet still finds its chat's browser. */
+  agentId?: string
   /** The browser sidebar names the Agent itself and hides raw ids. */
   compact?: boolean
   onSelect(sessionId?: string, tabId?: string): void
@@ -45,7 +48,7 @@ export function WorkflowBrowserTarget(props: WorkflowBrowserTargetProps) {
   const [notice, setNotice] = useState<string | null>(null)
   const input = BrowserTargetSelectionSchema.parse({ workspaceId: props.workspaceId, workflowId: props.workflowId,
     workflowNodeId: props.nodeId, runId: props.runId, workflowVersionId: props.workflowVersionId,
-    executionId: props.executionId, waitingActivationId: props.waitingActivationId, cursor })
+    executionId: props.executionId, waitingActivationId: props.waitingActivationId, agentId: props.agentId, cursor })
   const query = useQuery({ queryKey: ['browser-target', browserAuthBoundary(), input],
     queryFn: ({ signal }) => apiClient.request(`/api/browser/target?${new URLSearchParams({ input: JSON.stringify(input) })}`, BrowserTargetResultSchema, { signal }) })
   const catalog = useBrowserProfiles(browserProfileClient, browserAuthBoundary(), true), facts = useBrowserComputers()

@@ -15,7 +15,7 @@ const id = agentChatFixtures.active.conversation.id
 /** Exercise the actual route handler/writer with an instrumented socket; no app/DB/provider is started. */
 function route(read = async (): Promise<AgentChatState> => structuredClone(agentChatFixtures.active), writeFails = false) {
   let handler!: (request: FastifyRequest, reply: FastifyReply) => Promise<void>
-  const app = { addHook: vi.fn(), post: vi.fn(), get: (path: string, callback: typeof handler) => { if (path.endsWith('/events')) handler = callback } }
+  const app = { addHook: vi.fn(), post: vi.fn(), put: vi.fn(), get: (path: string, callback: typeof handler) => { if (path.endsWith('/events')) handler = callback } }
   const events = new AgentChatEvents()
   let subscriptions = 0
   const originalSubscribe = events.subscribe.bind(events)

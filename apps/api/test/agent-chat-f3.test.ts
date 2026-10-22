@@ -17,7 +17,7 @@ import { agentChatKey, type AgentConversationRow, PostgresAgentChatRepository } 
 import type { PostgresOperatorConversationRepository } from '../src/modules/conversations/operatorChatRepository.js'
 import { HarnessExecutionError, NativeDeliveryError } from '../src/modules/harnesses/errors.js'
 import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart, NativeTurnInput } from '../src/modules/harnesses/port.js'
-import { immutableVersionRow, isCurrentVersionRead, isRunVersionRead, isSavedVersionRead } from './helpers/chatWorkflowVersion.js'
+import { immutableVersionRow, isCurrentVersionRead, isLiveWorkflowRead, isRunVersionRead, isSavedVersionRead } from './helpers/chatWorkflowVersion.js'
 import { deferred } from './helpers/deferred.js'
 import { createAdmittedNativeManager } from '../src/modules/harnesses/admittedManager.js'
 
@@ -188,6 +188,7 @@ async function setup(options: { ephemeral?: boolean; stored?: boolean; origin?: 
   const query = async (text: string, values: unknown[] = []) => {
     const sql = text.replace(/\s+/g, ' ').trim()
     if (['begin', 'commit', 'rollback'].includes(sql)) return { rows: [] }
+    if (isLiveWorkflowRead(sql)) return { rows: values[0] === versionRow.workflow_id && values[1] === versionRow.workspace_id ? [{ '?column?': 1 }] : [] }
     if (isCurrentVersionRead(sql)) return { rows: values[0] === versionRow.workspace_id && values[1] === versionRow.workflow_id ? [versionRow] : [] }
     if (isSavedVersionRead(sql)) return { rows: values[0] === versionRow.id ? [versionRow] : [] }
     if (isRunVersionRead(sql)) return { rows: values[0] === fixture.run.id ? [{ workflow_version_id: fixture.run.workflowVersionId }] : [] }
