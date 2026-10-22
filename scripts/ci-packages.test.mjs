@@ -34,9 +34,13 @@ function fixture(t) {
   writeFileSync(join(bin, 'corepack'), '#!/bin/sh\n[ "$1" = pnpm ] || exit 2\nshift\nexec pnpm "$@"\n',
     { mode: 0o755 })
   writeFileSync(join(bin, 'pnpm'), `#!${process.execPath}
-const { appendFileSync, mkdirSync, writeFileSync } = require('node:fs')
+const { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } = require('node:fs')
 const args = process.argv.slice(2)
 appendFileSync(process.env.CALLS_FILE, JSON.stringify(args) + '\\n')
+// Like pnpm, a frozen install refuses workspace overrides its lockfile does not record.
+const text = file => existsSync(file) ? readFileSync(file, 'utf8') : ''
+if (args.includes('--frozen-lockfile') && /^overrides:\\s*\\n\\s+\\S/m.test(text('pnpm-workspace.yaml'))
+  && !/^overrides:/m.test(text('pnpm-lock.yaml'))) process.exit(7)
 if (args.includes('--offline') && process.env.FAIL_OFFLINE === 'true') process.exit(9)
 mkdirSync('node_modules/.pnpm', { recursive: true })
 writeFileSync('node_modules/.modules.yaml', 'installed')
@@ -149,3 +153,13 @@ for (const restored of [false, true]) {
     assert.equal(existsSync(join(f.root, '.logs/ci-packages-restored')), false)
   })
 }
+
+test('the native payload install succeeds when the workspace has dependency overrides', t => {
+  const f = fixture(t)
+  nativeProviderFixture(f.root)
+  const overrides = "overrides:\n  'hono@<4.12.25': 4.13.13\n"
+  writeFileSync(join(f.root, 'pnpm-workspace.yaml'), `minimumReleaseAge: 2880\n${overrides}`)
+  writeFileSync(join(f.root, 'pnpm-lock.yaml'), readFileSync(join(f.root, 'pnpm-lock.yaml'), 'utf8') + overrides)
+  const result = f.run()
+  assert.equal(result.status, 0, result.stdout + result.stderr)
+})

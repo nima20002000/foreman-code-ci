@@ -1,4 +1,4 @@
-import { browserAgentTools, browserOperatorTools } from '../../modules/collaboration/browserTools.js'
+import { browserAgentTools, browserOperatorTools, chatBrowserInputSchema } from '../../modules/collaboration/browserTools.js'
 import { workflowChatTools } from '../operator/tools/workflowChat.js'
 import { registerToolDefinition, type OperatorToolDefinition } from '../operator/definition.js'
 import { invokeOperatorTool } from '../operator/invoke.js'
@@ -184,18 +184,24 @@ export async function createGraphqlMcpServer(context: GraphqlMcpContext, request
       }
       if (context.operator?.browser) {
         const chat = context.operator.browser.chat
+        const ownChat = await chat.isChat(context.principal)
         for (const tool of browserOperatorTools({ principal: context.principal, services: context.operator })) {
           if (!browserAgentTools.some(name => name === tool.name) || !tool.run) continue
           // An Agent chat always works in its own browser, opened on its first browser call.
           const original = tool
-          const owned: OperatorToolDefinition = { ...original, run: async (toolContext, input, call) => {
+          const owned: OperatorToolDefinition = { ...original, ...(ownChat ? { inputSchema: chatBrowserInputSchema(original.inputSchema),
+            description: `${original.description} Acts on this chat's own browser; no session ID is needed.` } : {}),
+            run: async (toolContext, input, call) => {
             const sessionId = await chat.sessionFor(toolContext.principal)
             if (!sessionId) return original.run(toolContext, input, call)
             const value: Record<string, unknown> = { ...input as Record<string, unknown>, sessionId }
             // The chat's own session: its current generation and control epoch, not ones read from another session.
             const actor = value.actor as { kind?: string } | undefined
-            const current = actor?.kind === 'agent' ? chat.agentActor(sessionId) : undefined
-            return original.run(toolContext, (current ? { ...value, actor: current } : value) as typeof input, call)
+            const current = !actor || actor.kind === 'agent' ? chat.agentActor(sessionId) : undefined
+            const acted = current && { ...value, actor: current }
+            // Tools without an actor field keep the input as typed.
+            const next = acted && (actor || (original.inputSchema as z.ZodType).safeParse(acted).success) ? acted : value
+            return original.run(toolContext, next as typeof input, call)
           } }
           registerToolDefinition(collector, { principal: context.principal, services: context.operator }, owned,
             { invoke: invokeOperatorTool })

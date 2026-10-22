@@ -1,5 +1,6 @@
 import { COLLABORATION_AGENT_TOOLS, BrowserTargetSelectionSchema, BrowserTargetResultSchema, type GraphqlAgentTool,
   type GraphqlToolOverride } from '@foreman-code/contracts'
+import { z } from 'zod'
 import type { OperatorRequestContext } from '../../mcp/operator/types.js'
 import type { OperatorToolDefinition } from '../../mcp/operator/definition.js'
 import { createBrowserProfileTools } from '../../mcp/operator/tools/browserProfiles.js'
@@ -15,6 +16,23 @@ export function chatToolOverride(override: GraphqlToolOverride | undefined, brow
   const removed = new Set(override?.remove ?? [])
   return { add: [...new Set([...override?.add ?? [], ...browserAgentTools.filter(tool => !removed.has(tool))])],
     remove: [...removed] }
+}
+
+/** A chat's browser tools always act on the chat's own session, so callers never type its ID; the actor is filled
+ * in from the session's current control facts. */
+export function chatBrowserInputSchema<S>(input: S): S {
+  const schema = input as unknown
+  if (schema instanceof z.ZodObject) {
+    const shape = schema.shape as Record<string, z.ZodType>
+    if (!('sessionId' in shape)) return input
+    const rest = schema.omit({ sessionId: true } as never)
+    return ('actor' in shape ? rest.extend({ actor: shape.actor!.optional() }) : rest) as S
+  }
+  if (schema instanceof z.ZodDiscriminatedUnion) {
+    return z.discriminatedUnion(schema.def.discriminator, schema.options.map(chatBrowserInputSchema) as never) as S
+  }
+  if (schema instanceof z.ZodUnion) return z.union(schema.options.map(chatBrowserInputSchema) as never) as S
+  return input
 }
 
 export function browserOperatorTools(context: OperatorRequestContext): OperatorToolDefinition[] {

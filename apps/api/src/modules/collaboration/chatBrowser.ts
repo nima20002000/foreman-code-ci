@@ -34,11 +34,20 @@ export class ChatBrowserSessions {
 
   private now() { return this.options.now?.() ?? Date.now() }
 
+  private async subjectOf(principal: ManagementPrincipal) {
+    if (principal.audience !== 'worker') return undefined
+    return this.options.chatSubject ? await this.options.chatSubject(principal)
+      : (await readConversationCredential(this.options.pool, principal.id))?.subject
+  }
+
+  /** Whether the caller is an Agent chat, whose browser tools then need no session ID. */
+  async isChat(principal: ManagementPrincipal): Promise<boolean> {
+    return !!await this.subjectOf(principal)
+  }
+
   /** The calling chat's own browser session, opened on first use; undefined when the caller is not an Agent chat. */
   async sessionFor(principal: ManagementPrincipal): Promise<string | undefined> {
-    if (principal.audience !== 'worker') return undefined
-    const subject = this.options.chatSubject ? await this.options.chatSubject(principal)
-      : (await readConversationCredential(this.options.pool, principal.id))?.subject
+    const subject = await this.subjectOf(principal)
     if (!subject) return undefined
     const conversationId = subject.conversationId
     const pending = this.opening.get(conversationId)

@@ -38,6 +38,7 @@ export interface WorkflowSidePanelProps {
   onSelectRun: WorkflowExecutionChatSlotSelection['onSelectRun']
   bodyRef: RefCallback<HTMLDivElement>
   headerSlotRef?: RefCallback<HTMLDivElement>
+  footerSlotRef?: RefCallback<HTMLDivElement>
   modalOpen: boolean
   slots?: WorkflowCollaborationSlots
 }
@@ -66,7 +67,7 @@ function placeNear(width: number, height: number, opener: HTMLElement | null) {
 /** Floating, draggable, resizable window opened next to the selected node. Only the selected body mounts;
  * the portal host preserves existing conversation/store ownership. */
 export function WorkflowSidePanel({ scope, workspaceId, workflowId, runId, workflowVersionId,
-  opener, selection, agentSelection, onSelect, onSelectTarget, onSelectRun, bodyRef, headerSlotRef, modalOpen, slots }: WorkflowSidePanelProps) {
+  opener, selection, agentSelection, onSelect, onSelectTarget, onSelectRun, bodyRef, headerSlotRef, footerSlotRef, modalOpen, slots }: WorkflowSidePanelProps) {
   const panelRef = useRef<HTMLElement>(null)
   const workflow = useManagedWorkflowQuery(workspaceId, workflowId)
   const heldFocus = useRef(false)
@@ -99,6 +100,35 @@ export function WorkflowSidePanel({ scope, workspaceId, workflowId, runId, workf
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', stop)
     event.preventDefault()
+  }
+  const resize = (event: ReactPointerEvent<HTMLElement>) => {
+    const panel = panelRef.current
+    const edge = event.currentTarget.dataset.edge ?? ''
+    if (!panel || event.button !== 0) return
+    const start = { x: event.clientX, y: event.clientY, left: panel.offsetLeft, top: panel.offsetTop,
+      width: panel.offsetWidth, height: panel.offsetHeight }
+    const style = getComputedStyle(panel)
+    const minW = parseFloat(style.minWidth) || 280, minH = parseFloat(style.minHeight) || 220
+    const move = (e: PointerEvent) => {
+      const dx = e.clientX - start.x, dy = e.clientY - start.y
+      if (edge.includes('e')) panel.style.width = `${Math.max(minW, start.width + dx)}px`
+      if (edge.includes('s')) panel.style.height = `${Math.max(minH, start.height + dy)}px`
+      if (edge.includes('w')) {
+        const width = Math.max(minW, start.width - dx)
+        panel.style.width = `${width}px`
+        panel.style.left = `${start.left + start.width - width}px`
+      }
+      if (edge.includes('n')) {
+        const height = Math.max(minH, start.height - dy)
+        panel.style.height = `${height}px`
+        panel.style.top = `${start.top + start.height - height}px`
+      }
+    }
+    const stop = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop) }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
+    event.preventDefault()
+    event.stopPropagation()
   }
   useEffect(() => {
     const panel = panelRef.current
@@ -154,19 +184,24 @@ export function WorkflowSidePanel({ scope, workspaceId, workflowId, runId, workf
     : agentName ? agentName.name ?? agentName.label ?? 'Agent' : 'Agent'
   return <aside ref={panelRef} tabIndex={-1} className="workflow-floating-panel" aria-label="Workflow side panel"
     hidden={!active || modalOpen} inert={!active || modalOpen}>
-    {/* One compact row: title, the view tabs and close. */}
+    {/* One compact row: title and close; the view tabs sit in the footer, below the composer. */}
     <header onPointerDown={drag}>
       <h2>{title}</h2>
       <div className="workflow-panel-header-slot" ref={headerSlotRef} onPointerDown={event => event.stopPropagation()} />
-      {groupChat ? null : <nav className="workflow-panel-tabs" aria-label="Workflow panel view" onPointerDown={event => event.stopPropagation()}>
+      <IconButton label={groupChat ? 'Close group chat' : 'Back to Board'} variant="ghost" onClick={() => onSelect({ kind: 'none' })}><Icon name="close" size={16} /></IconButton>
+    </header>
+    {!groupChat && !agentSelection ? <p className="workflow-panel-hint">Select an agent on the Board to see its chat and settings.</p> : null}
+    {(['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] as const).map(edge =>
+      <span key={edge} className="workflow-panel-resize" data-edge={edge} aria-hidden="true" onPointerDown={resize} />)}
+    <div className="workflow-floating-panel-body" ref={attach}>{modalOpen ? null : content}</div>
+    {groupChat ? null : <footer className="workflow-panel-footer">
+      <div className="workflow-panel-footer-slot" ref={footerSlotRef} />
+      <nav className="workflow-panel-tabs" aria-label="Workflow panel view">
         {tabs.map(([tab, label]) => <Button key={tab} size="sm" variant="ghost" disabled={!agentSelection}
           aria-pressed={selection.kind === 'agent' && selection.tab === tab}
           onClick={() => { if (agentSelection) onSelect({ ...agentSelection, tab }) }}>{label}</Button>)}
         <Button size="sm" variant="ghost" aria-pressed={selection.kind === 'browser'} onClick={() => onSelect({ kind: 'browser' })}>Browser</Button>
-      </nav>}
-      <IconButton label={groupChat ? 'Close group chat' : 'Back to Board'} variant="ghost" onClick={() => onSelect({ kind: 'none' })}><Icon name="close" size={16} /></IconButton>
-    </header>
-    {!groupChat && !agentSelection ? <p className="workflow-panel-hint">Select an agent on the Board to see its chat and settings.</p> : null}
-    <div className="workflow-floating-panel-body" ref={attach}>{modalOpen ? null : content}</div>
+      </nav>
+    </footer>}
   </aside>
 }

@@ -31,9 +31,11 @@ function provisionNativeStore(root, options) {
     const workspace = existsSync(workspacePath) ? parse(readFileSync(workspacePath, 'utf8')) : {}
     writeFileSync(join(staging, 'package.json'), JSON.stringify({ private: true,
       packageManager: manifest.packageManager, dependencies: { [name]: specifier } }))
-    // This tree installs only an unpatched native payload; retain all registry and release-age settings.
-    writeFileSync(join(staging, 'pnpm-workspace.yaml'), stringify({ ...workspace,
-      packages: [], patchedDependencies: {} }))
+    // This tree installs only an unpatched native payload; retain all registry and release-age settings. Its lockfile
+    // carries no overrides, so the workspace overrides stay out too or the frozen install refuses the mismatch.
+    const staged = { ...workspace, packages: [], patchedDependencies: {} }
+    delete staged.overrides
+    writeFileSync(join(staging, 'pnpm-workspace.yaml'), stringify(staged))
     if (existsSync(join(root, '.npmrc'))) {
       writeFileSync(join(staging, '.npmrc'), readFileSync(join(root, '.npmrc')))
     }

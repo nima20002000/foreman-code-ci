@@ -20,7 +20,7 @@ import { useBrowserSidebar } from './useBrowserSidebar'
 import { WorkflowSidePanel, type WorkflowCollaborationSlots } from './WorkflowSidePanel'
 import { useBrowserPanelRelease } from './useBrowserPanelRelease'
 import { useCollaborationUISlots } from '../../shared/ui/collaborationSlots'
-import { PanelHeaderSlotContext } from '../../shared/ui/panelHeaderSlot'
+import { PanelFooterSlotContext, PanelHeaderSlotContext } from '../../shared/ui/panelHeaderSlot'
 import { createWorkflowExecutionChatSlot } from '../workflow-hierarchy/execution-chat/createWorkflowExecutionChatSlot'
 import { SelectedRunControls } from './actions/SelectedRunControls'
 import { GroupChatPanel } from './GroupChatPanel'
@@ -61,6 +61,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   }, [sidePanel, openBrowsers])
   const [sidePanelHost, setSidePanelHost] = useState<HTMLDivElement | null>(null)
   const [panelHeaderSlot, setPanelHeaderSlot] = useState<HTMLDivElement | null>(null)
+  const [panelFooterSlot, setPanelFooterSlot] = useState<HTMLDivElement | null>(null)
   const [authoringActions, setAuthoringActions] = useState<WorkflowAuthoringActions>()
   const registerAuthoringActions = useCallback((actions?: WorkflowAuthoringActions) => setAuthoringActions(actions), [])
   const selection = useRef({ location: router.history.location, generation: 0 })
@@ -189,7 +190,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   const direction = useRunDirectionWait(runControlsScope)
   const suppliedOverview = collaborationSlots?.overview
   const overviewContent = side.memoryOpen ? null : suppliedOverview?.()
-  return <WorkflowBoardContext.Provider value={value}><PanelHeaderSlotContext.Provider value={panelHeaderSlot}>
+  return <WorkflowBoardContext.Provider value={value}><PanelHeaderSlotContext.Provider value={panelHeaderSlot}><PanelFooterSlotContext.Provider value={panelFooterSlot}>
     <div ref={toolbar} className="unified-workflow-board" data-testid="unified-workflow-board" style={{ flexDirection: 'column' }}>
       <nav className="workflow-collaboration-toolbar" aria-label="Workflow views">
         <span>{legacyRun || pickedRunId ? 'Selected Run' : 'Editing draft'}</span>
@@ -249,7 +250,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
       </WorkflowBoardContext.Provider> : null}
       <WorkflowSidePanel scope={side.scope} workspaceId={workspaceId} workflowId={workflowId}
         workflowVersionId={legacyRun?.workflowVersionId ?? (picked?.kind === 'available' ? picked.workflowVersionId : undefined)}
-        opener={side.opener} runId={legacyRun?.runId ?? pickedRunId} selection={side.panel} agentSelection={side.agentSelection} onSelect={selectPanel} bodyRef={setSidePanelHost} headerSlotRef={setPanelHeaderSlot}
+        opener={side.opener} runId={legacyRun?.runId ?? pickedRunId} selection={side.panel} agentSelection={side.agentSelection} onSelect={selectPanel} bodyRef={setSidePanelHost} headerSlotRef={setPanelHeaderSlot} footerSlotRef={setPanelFooterSlot}
         onSelectTarget={side.selectChatTarget} onSelectRun={side.selectChatRun}
         modalOpen={side.memoryOpen} slots={{ ...collaborationSlots, groupChat: collaborationSlots?.groupChat ?? (() =>
           <GroupChatPanel workspaceId={workspaceId} workflowId={workflowId} runId={legacyRun?.runId ?? pickedRunId} onSelect={side.selectPanel} />) }} />
@@ -259,5 +260,5 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
       {side.memoryOpen && <MemoryBoardSurface scope={{ kind: 'workflow', workspaceId, workflowId }}
           scopeName="Workflow" dialog={{ open: true, onOpenChange: side.setMemoryOpen, historicalRun: Boolean(legacyRun || pickedRunId) }} />}
     </div>
-  </PanelHeaderSlotContext.Provider></WorkflowBoardContext.Provider>
+  </PanelFooterSlotContext.Provider></PanelHeaderSlotContext.Provider></WorkflowBoardContext.Provider>
 }
