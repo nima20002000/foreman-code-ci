@@ -46,7 +46,7 @@ function fixture(runId?: string) {
         ? [{ item_key: 'source-reply', role: 'assistant', content: 'Saved Run reply', original_bytes: 15,
           complete: true, sequence: '1', revision: '1' }] : [] }
     }
-    if (isLiveWorkflowRead(sql)) return { rows: values[0] === context.workflowId && values[1] === context.workspaceId ? [{ '?column?': 1 }] : [] }
+    if (isLiveWorkflowRead(sql)) return values[0] === context.workflowId && values[1] === context.workspaceId ? { rows: [{ '?column?': 1 }], rowCount: 1 } : { rows: [], rowCount: 0 }
     if (!sql.startsWith('select ') || !sql.includes('from management_principals')) {
       throw new Error('Unexpected chat persistence operation')
     }

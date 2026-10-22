@@ -188,7 +188,7 @@ async function setup(options: { ephemeral?: boolean; stored?: boolean; origin?: 
   const query = async (text: string, values: unknown[] = []) => {
     const sql = text.replace(/\s+/g, ' ').trim()
     if (['begin', 'commit', 'rollback'].includes(sql)) return { rows: [] }
-    if (isLiveWorkflowRead(sql)) return { rows: values[0] === versionRow.workflow_id && values[1] === versionRow.workspace_id ? [{ '?column?': 1 }] : [] }
+    if (isLiveWorkflowRead(sql)) return values[0] === versionRow.workflow_id && values[1] === versionRow.workspace_id ? { rows: [{ '?column?': 1 }], rowCount: 1 } : { rows: [], rowCount: 0 }
     if (isCurrentVersionRead(sql)) return { rows: values[0] === versionRow.workspace_id && values[1] === versionRow.workflow_id ? [versionRow] : [] }
     if (isSavedVersionRead(sql)) return { rows: values[0] === versionRow.id ? [versionRow] : [] }
     if (isRunVersionRead(sql)) return { rows: values[0] === fixture.run.id ? [{ workflow_version_id: fixture.run.workflowVersionId }] : [] }

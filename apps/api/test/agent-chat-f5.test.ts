@@ -82,6 +82,10 @@ function approvalFixture() {
     if (text.includes('conversation_session_') || text.includes('as compaction')) {
       return controls.query(text, values)
     }
+    if (text.replace(/\s+/g, ' ').trim().startsWith("select c.record->>'workingDirectory' as path,")) {
+      const rows = values[0] === current.id ? [{ path: current.record.workingDirectory, host_kind: 'main' }] : []
+      return { rows, rowCount: rows.length }
+    }
     if (text.includes('from agents')) return { rows:
       values[0] === workspaceId && values[1] === context.agentId
         ? [{ current_configuration_version_id: configuration.id }] : [] }
