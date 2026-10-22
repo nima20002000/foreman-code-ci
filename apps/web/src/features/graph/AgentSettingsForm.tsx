@@ -222,7 +222,7 @@ const markedField = (path: readonly PropertyKey[]) => {
 }
 
 function EditableAgentSettingsForm(props: EditableAgentSettingsFormProps) {
-  const { agent, onClose, onRemove, onFormChange, nodePlacement, nodeWorktree, workflowWorktree, workflowWorktreeLabel, worktreeDisabled,
+  const { agent, onClose, onRemove, onFormChange, nodePlacement, workflowWorktree, workflowWorktreeLabel, worktreeDisabled,
     placementOptions, placementHidden, placementOptionsState, workspaceId, workflowApprovalHandler, embedded = false,
     additionalFields, mainFields, moreFields, unavailableComputers, placementNote } = props
   const form = useAgentSettingsForm(props)

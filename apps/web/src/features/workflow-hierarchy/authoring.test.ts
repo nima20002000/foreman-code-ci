@@ -86,11 +86,14 @@ describe('explicit Master authoring through the ordinary staged Agent journal', 
     expect(pending.agentForms['node-0']!.name).toBe('Still typing')
   })
 
-  it('stages new Agents without saved pins or publishing and requires an explicit Worker parent', () => {
+  it('stages new Agents without saved pins or publishing and places a Worker unconnected until an Orchestrator parent is chosen', () => {
     const first = applyMasterHierarchy(draft(), 'node-0', { 'node-2': 'node-1' })
     const worker = { id: 'new-worker', name: 'Private Worker', productRole: 'coder' as const,
       harness: 'codex' as const, harnessConfiguration: DEFAULT_HARNESS_DEFAULTS.codex }
-    expect(() => stageHierarchyAgent(first, worker, 'new-node')).toThrow('Choose an Orchestrator')
+    expect(() => stageHierarchyAgent(first, worker, 'new-node', 'node-0')).toThrow('Choose an Orchestrator')
+    const unconnected = stageHierarchyAgent(first, worker, 'new-node')
+    expect(unconnected.graph.nodes.some(node => node.id === 'new-node')).toBe(true)
+    expect(unconnected.graph.hierarchy?.parents.some(member => member.workflowNodeId === 'new-node')).toBe(false)
     const added = stageHierarchyAgent(first, worker, 'new-node', 'node-1')
     expect(stageAgentEdits(added)).toContainEqual({ agent: worker, baseRevision: null })
     expect(added.context.agents.some(record => record.agent.id === worker.id)).toBe(false)

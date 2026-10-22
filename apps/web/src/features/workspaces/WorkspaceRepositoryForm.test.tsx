@@ -53,6 +53,16 @@ function mount() {
   </UnsavedChangesProvider>)
 }
 
+// The save retries a transient failure twice with the same command ID (1 s, then 3 s) before it is unconfirmed.
+const failFirstThreeAttempts = (attempts: unknown[]) => http.patch('/api/management/workspaces/workspace-1', async ({ request }) => {
+  attempts.push(await request.clone().json())
+  if (attempts.length <= 3) return HttpResponse.json({
+    error: { code: 'INTERNAL_ERROR', message: 'Save response unavailable.' },
+  }, { status: 503 })
+  return undefined
+})
+const unconfirmed = { timeout: 8_000 }
+
 describe('repository draft', () => {
   it('retains edits across workspace revisions and requires explicit conflict resolution', async () => {
     const state = fixture()
@@ -174,18 +184,12 @@ describe('repository draft', () => {
   ] as const)('retains the original unconfirmed command through a failed workspace refresh with HTTP %s', async (status, message) => {
     const state = fixture()
     const attempts: unknown[] = []
-    server.use(http.patch('/api/management/workspaces/workspace-1', async ({ request }) => {
-      attempts.push(await request.clone().json())
-      if (attempts.length === 1) return HttpResponse.json({
-        error: { code: 'INTERNAL_ERROR', message: 'Save response unavailable.' },
-      }, { status: 503 })
-      return undefined
-    }))
+    server.use(failFirstThreeAttempts(attempts))
     const user = userEvent.setup()
     const view = mount()
     await user.type(await screen.findByRole('textbox', { name: 'Base branch' }), '-release')
     await user.click(screen.getByRole('button', { name: 'Save repository' }))
-    expect(await screen.findByRole('button', { name: 'Retry repository save' })).toBeEnabled()
+    expect(await screen.findByRole('button', { name: 'Retry repository save' }, unconfirmed)).toBeEnabled()
     expect(await screen.findByText('Save response unavailable.')).toBeVisible()
     let fail = true
     server.use(http.get('/api/management/workspaces/workspace-1', () => fail
@@ -194,12 +198,12 @@ describe('repository draft', () => {
     await act(async () => {
       await view.queryClient.invalidateQueries({ queryKey: queryKeys.managedWorkspace('workspace-1') })
     })
-    expect(await screen.findByText(message)).toBeVisible()
+    expect(await screen.findByText(message, undefined, unconfirmed)).toBeVisible()
     expect(screen.getByText('Save response unavailable.')).toBeVisible()
     expect(screen.getByText('The repository save is unconfirmed. Retry before editing or leaving.')).toBeVisible()
     expect(screen.getByRole('textbox', { name: 'Base branch' })).toHaveValue('main-release')
     expect(screen.getByRole('button', { name: 'Retry repository save' })).toBeEnabled()
-    expect(attempts).toHaveLength(1)
+    expect(attempts).toHaveLength(3)
     fail = false
     await user.click(screen.getByRole('button', { name: 'Try again' }))
     await waitFor(() => expect(screen.queryByText(message)).not.toBeInTheDocument())
@@ -207,10 +211,10 @@ describe('repository draft', () => {
     const retry = await screen.findByRole('button', { name: 'Retry repository save' })
     expect(screen.getByRole('textbox', { name: 'Base branch' })).toBeDisabled()
     await user.click(retry)
-    await waitFor(() => expect(attempts).toHaveLength(2))
-    expect(attempts[1]).toEqual(attempts[0])
+    await waitFor(() => expect(attempts).toHaveLength(4))
+    expect(attempts[3]).toEqual(attempts[0])
     expect(state.read().workspace.repository?.defaultBranch).toBe('main-release')
-  })
+  }, 20_000)
 
   it('withholds the repository draft after denial until a successful workspace read', async () => {
     fixture()
@@ -261,27 +265,21 @@ describe('repository draft', () => {
   it('retains an unconfirmed command for retry and prevents discarding it', async () => {
     const state = fixture()
     const attempts: unknown[] = []
-    server.use(http.patch('/api/management/workspaces/workspace-1', async ({ request }) => {
-      attempts.push(await request.clone().json())
-      if (attempts.length === 1) return HttpResponse.json({
-        error: { code: 'INTERNAL_ERROR', message: 'Save response unavailable.' },
-      }, { status: 503 })
-      return undefined
-    }))
+    server.use(failFirstThreeAttempts(attempts))
     const user = userEvent.setup()
     mount()
     await user.type(await screen.findByRole('textbox', { name: 'Base branch' }), '-release')
     await user.click(screen.getByRole('button', { name: 'Save repository' }))
-    expect(await screen.findByText('The repository save is unconfirmed. Retry before editing or leaving.')).toBeVisible()
+    expect(await screen.findByText('The repository save is unconfirmed. Retry before editing or leaving.', undefined, unconfirmed)).toBeVisible()
     expect(screen.getByRole('textbox', { name: 'Base branch' })).toBeDisabled()
     await user.click(screen.getByRole('link', { name: /Project files/ }))
     const dialog = within(await screen.findByRole('alertdialog'))
     expect(dialog.getByRole('button', { name: 'Discard' })).toBeDisabled()
     await user.click(dialog.getByRole('button', { name: 'Retry original save' }))
-    await waitFor(() => expect(attempts).toHaveLength(2))
-    expect(attempts[1]).toEqual(attempts[0])
+    await waitFor(() => expect(attempts).toHaveLength(4))
+    expect(attempts[3]).toEqual(attempts[0])
     expect(state.read().workspace.repository?.defaultBranch).toBe('main-release')
-  })
+  }, 20_000)
 
   it('persists disconnecting and offers an empty repository form afterwards', async () => {
     const state = fixture()

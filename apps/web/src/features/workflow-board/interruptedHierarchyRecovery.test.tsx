@@ -29,7 +29,7 @@ async function interruptedConflict({ unappliedForms }: { unappliedForms: boolean
   if (unappliedForms) {
     await userEvent.click(agentList().getByRole('button', { name: 'Node 3' }))
     await userEvent.selectOptions(await waitFor(() => rail().getByLabelText('Reports to')), 'node-2')
-    await userEvent.click(rail().getByRole('button', { name: 'Advanced settings' }))
+    await userEvent.click(rail().getByText('More settings'))
     await userEvent.click(rail().getByRole('textbox', { name: 'Initial prompt' }))
     await userEvent.paste('Unapplied Worker direction')
   }

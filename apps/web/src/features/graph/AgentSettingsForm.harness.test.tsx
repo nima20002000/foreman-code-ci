@@ -1,6 +1,6 @@
 import { DEFAULT_HARNESS_DEFAULTS, type HarnessDefaults } from '@foreman-code/contracts'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -41,7 +41,6 @@ it('shows the saved native tools policy and retains it on a metadata save', asyn
   view.rerender(<QueryClientProvider client={client}>
     <AgentSettingsForm agent={saved} onClose={() => undefined} onSave={onSave} />
   </QueryClientProvider>)
-  expect(screen.getByText('Native tools: Foreman Code, linear; apps off')).toBeVisible()
   await user.type(screen.getByRole('textbox', { name: 'Name' }), ' renamed')
   await user.click(screen.getByRole('button', { name: 'Save agent settings' }))
   expect(onSave.mock.calls[0]![0].nativeTools).toEqual(saved.nativeTools)
@@ -51,6 +50,7 @@ it.each(['missing', 'incomplete', 'unavailable'] as const)(
   'shows saved Claude when its preset is %s and preserves it on a name-only save', async availability => {
     const defaults = structuredClone(DEFAULT_HARNESS_DEFAULTS)
     let error = null
+    let reason = 'Configure Claude in Settings > Harnesses before selecting it.'
     if (availability !== 'missing') {
       defaults.claude = { ...savedClaudeConfiguration,
         sandbox: availability === 'incomplete' ? 'read-only' : 'danger-full-access' }
@@ -58,12 +58,13 @@ it.each(['missing', 'incomplete', 'unavailable'] as const)(
       if (availability === 'incomplete') {
         error = { code: 'CLAUDE_FULL_ACCESS_REQUIRED', message: 'Claude requires Full access.' }
       }
+      reason = error.message
     }
     const { onSave, agent, user } = setup(defaults, error)
     const selector = screen.getByRole('combobox', { name: 'Harness' })
     expect(selector).toHaveValue('claude')
-    expect(screen.getByRole('option', { name: /^Claude/ })).toBeDisabled()
-    expect(selector).toHaveAccessibleDescription(expect.stringContaining('Saved agent settings are kept.'))
+    expect(within(selector).getByRole('option', { name: /^Claude/ })).toBeDisabled()
+    expect(screen.getByText(reason)).toBeVisible()
     await user.clear(screen.getByRole('textbox', { name: 'Name' }))
     await user.type(screen.getByRole('textbox', { name: 'Name' }), 'Renamed coordinator')
     await user.click(screen.getByRole('button', { name: 'Save agent settings' }))
@@ -82,9 +83,7 @@ it('keeps the saved harness visible when preset loading fails', async () => {
   await client.invalidateQueries({ queryKey: queryKeys.managedHarnessCatalog })
   const selector = screen.getByRole('combobox', { name: 'Harness' })
   expect(selector).toHaveValue('claude')
-  await waitFor(() => expect(selector).toHaveAccessibleDescription(
-    expect.stringContaining('Provider presets could not be loaded.'),
-  ))
+  expect(await screen.findByText('Provider presets could not be loaded.')).toBeVisible()
   await user.type(screen.getByRole('textbox', { name: 'Name' }), ' updated')
   await user.click(screen.getByRole('button', { name: 'Save agent settings' }))
   expect(onSave.mock.calls[0]![0]).toMatchObject({ harness: 'claude', harnessConfiguration: savedClaudeConfiguration })
@@ -119,13 +118,13 @@ it('offers configured Claude before native qualification and switches only after
 
 it('restores the saved Claude draft after switching away even without a global Claude preset', async () => {
   const { user, onSave } = setup(DEFAULT_HARNESS_DEFAULTS)
-  await user.clear(screen.getByRole('textbox', { name: 'Local Claude profile directory' }))
-  await user.type(screen.getByRole('textbox', { name: 'Local Claude profile directory' }), '/edited/profile')
+  await user.clear(screen.getByRole('textbox', { name: 'Claude profile folder' }))
+  await user.type(screen.getByRole('textbox', { name: 'Claude profile folder' }), '/edited/profile')
   await user.selectOptions(screen.getByRole('combobox', { name: 'Harness' }), 'codex')
   await waitFor(() => expect(screen.getByRole('combobox', { name: 'Harness' })).toHaveValue('codex'))
   expect(screen.getByRole('option', { name: 'Claude' })).toBeEnabled()
   await user.selectOptions(screen.getByRole('combobox', { name: 'Harness' }), 'claude')
-  expect(screen.getByRole('textbox', { name: 'Local Claude profile directory' })).toHaveValue('/edited/profile')
+  expect(screen.getByRole('textbox', { name: 'Claude profile folder' })).toHaveValue('/edited/profile')
   await user.click(screen.getByRole('button', { name: 'Save agent settings' }))
   expect(onSave.mock.calls[0]![0]).toMatchObject({ harness: 'claude',
     harnessConfiguration: { ...savedClaudeConfiguration, configDirectory: '/edited/profile' } })

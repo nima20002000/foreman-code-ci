@@ -50,7 +50,9 @@ describe('WorkspaceShell', () => {
     useNavigationUiStore.getState().setCollapsed(collapsed)
     try {
       renderWithRouter(<WorkspaceShell workspaceId="workspace-1" />)
-      expect(await screen.findByRole('img', { name: 'Foreman Code' })).toBeInTheDocument()
+      // The product name is the way into Settings.
+      expect(await screen.findByTestId('sidebar-brand')).toHaveTextContent('Foreman Code')
+      expect(screen.getByRole('button', { name: 'Settings' })).toContainElement(screen.getByTestId('sidebar-brand'))
       expect(useNavigationUiStore.getState().collapsed).toBe(collapsed)
       expect(sessionStorage.getItem('graphql-navigation-collapsed')).toBe(String(collapsed))
     } finally { useNavigationUiStore.getState().setCollapsed(previous) }
@@ -161,8 +163,9 @@ describe('WorkspaceShell', () => {
     expectNewTab(screen.getByRole('button', { name: 'Settings' }), '/settings')
     const settings = screen.getByRole('button', { name: 'Settings' })
     expect(screen.queryByRole('button', { name: 'Account' })).not.toBeInTheDocument()
-    expect(settings.parentElement).toContainElement(screen.getByRole('button', { name: /Switch to .* theme/ }))
-    expect(screen.getByRole('button', { name: 'Settings' })).toHaveTextContent('')
+    // Theme lives in Settings › Appearance, not in the sidebar.
+    expect(screen.queryByRole('button', { name: /Switch to .* theme/ })).not.toBeInTheDocument()
+    expect(settings).toHaveTextContent('Foreman Code')
     expect(screen.queryByRole('button', { name: 'Browsers' })).not.toBeInTheDocument()
     expect(screen.queryByText('Unavailable')).not.toBeInTheDocument()
   })

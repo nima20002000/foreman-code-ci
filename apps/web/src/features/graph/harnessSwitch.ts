@@ -9,9 +9,12 @@ type Workflow = { approvalHandler?: ApprovalHandler | undefined; designatedOrche
 /** The starting settings for a harness the user switches to: the role's default when it uses that harness,
  * otherwise the harness preset, adjusted so the workflow accepts it. Nothing from the old harness carries over. */
 export function harnessSwitchPreset(next: AgentHarness, roleDefault: HarnessConfiguration | undefined,
-  presets: Partial<HarnessDefaults> | undefined, workflow: Workflow): HarnessConfiguration {
-  const base = withAdvancedDefaults(roleDefault?.harness === next ? roleDefault
-    : presets?.[next] ?? DEFAULT_HARNESS_DEFAULTS[next] as HarnessConfiguration)
+  presets: Partial<HarnessDefaults> | undefined, workflow: Workflow): HarnessConfiguration | undefined {
+  // Without a preset (Claude has no built-in one) only an earlier draft of that harness can be restored.
+  const source: HarnessConfiguration | undefined = roleDefault?.harness === next ? roleDefault
+    : presets?.[next] ?? (DEFAULT_HARNESS_DEFAULTS as Partial<HarnessDefaults>)[next]
+  if (!source) return undefined
+  const base = withAdvancedDefaults(source)
   if (base.harness === 'claude') return { ...base, sandbox: 'danger-full-access' }
   if (base.harness !== 'codex' || !base.advanced) return base
   const advanced = { ...base.advanced }
@@ -34,7 +37,7 @@ function workflowAccepts(editor: HarnessEditor, workflow: Workflow): boolean {
 }
 
 /** Switch harness, restoring this visit's earlier edits for that harness only while they are still valid. */
-export function switchAgentHarness(editor: HarnessEditor, next: AgentHarness, preset: HarnessConfiguration, workflow: Workflow): HarnessEditor {
+export function switchAgentHarness(editor: HarnessEditor, next: AgentHarness, preset: HarnessConfiguration | undefined, workflow: Workflow): HarnessEditor {
   const draft = editor.drafts?.[next]
   if (draft && !workflowAccepts(draft, workflow)) {
     const drafts = { ...editor.drafts }

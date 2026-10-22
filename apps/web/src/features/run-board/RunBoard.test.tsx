@@ -120,6 +120,8 @@ beforeEach(() => {
           definition: { ...version.definition, id: workflowId, workspaceId } },
       }))
     }),
+    // The saved Run board names the computer that ran each Agent.
+    http.get('*/api/provider-accounts/targets', () => HttpResponse.json({ targets: [] })),
     http.all('*/api/*', ({ request }) => {
       unexpected.push(`${request.method} ${new URL(request.url).pathname}`)
       return HttpResponse.json({ error: { code: 'UNEXPECTED', message: 'Only saved Run reads are allowed in this test.' } }, { status: 500 })

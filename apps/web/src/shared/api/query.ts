@@ -39,6 +39,9 @@ import { keepLatestWorkspaceLocation, locationMutationKey, shareManagedWorkspace
 import { shareRunResponseOrSelection } from './runLiveCache'
 import { retryTransientCommand, transientRetryDelay } from './queryRetry'
 
+/** Prefetches and background refreshes: a failure only means the next real read shows its own error. */
+const ignoreBackgroundFailure = () => /* ignore: the next real read reports the failure */ undefined
+
 /**
  * Query keys deliberately carry every scope identity used by the endpoint.
  * This prevents a conversation/workspace projection from leaking across tabs.
@@ -168,13 +171,13 @@ export function usePrefetchBoard() {
   return {
     workspace: (workspaceId: string) => {
       void client.prefetchQuery({ queryKey: queryKeys.managedWorkspace(workspaceId), staleTime: 10_000,
-        queryFn: ({ signal }) => getManagedWorkspace(workspaceId, { signal }) }).catch(() => undefined)
+        queryFn: ({ signal }) => getManagedWorkspace(workspaceId, { signal }) }).catch(ignoreBackgroundFailure)
     },
     /** The Workflows directory's first page, under the same key the directory reads. */
     workflows: (workspaceId: string) => {
       void client.prefetchInfiniteQuery({ queryKey: [...queryKeys.managedWorkflows(workspaceId), 'pages', 'directory'], staleTime: 10_000,
         initialPageParam: undefined as string | undefined,
-        queryFn: ({ pageParam, signal }) => apiClient.listManagedWorkflowPage(workspaceId, pageParam, { signal }) }).catch(() => undefined)
+        queryFn: ({ pageParam, signal }) => apiClient.listManagedWorkflowPage(workspaceId, pageParam, { signal }) }).catch(ignoreBackgroundFailure)
     },
   }
 }
@@ -254,7 +257,7 @@ export function useSetWorkspaceLocationMutation(workspaceId = 'unscoped') {
           locationRevision: result.value.locationRevision,
           locationValidation: { status: 'ready', checkedAt: result.value.validation.checkedAt },
         }) : current)
-      void queryClient.invalidateQueries({ queryKey: queryKeys.managedWorkspaces }).catch(() => undefined)
+      void queryClient.invalidateQueries({ queryKey: queryKeys.managedWorkspaces }).catch(ignoreBackgroundFailure)
     },
   })
 }
@@ -333,8 +336,8 @@ export function useUpdateManagedHarnessDefaultsMutation() {
             capability: unchanged ? prior.capability : null, discoveryError: unchanged ? prior.discoveryError : null }
         })
       })
-      void client.invalidateQueries({ queryKey: queryKeys.managedHarnessCatalog }).catch(() => undefined)
-      void client.invalidateQueries({ queryKey: ['operator-chat', 'setup'] }).catch(() => undefined)
+      void client.invalidateQueries({ queryKey: queryKeys.managedHarnessCatalog }).catch(ignoreBackgroundFailure)
+      void client.invalidateQueries({ queryKey: ['operator-chat', 'setup'] }).catch(ignoreBackgroundFailure)
     },
   })
 }
@@ -436,7 +439,7 @@ export function useRespondToInteractionMutation() {
     onSuccess: (response) => {
       client.setQueryData<Awaited<ReturnType<typeof getInteraction>>>(queryKeys.interaction(response.interaction.id), (current) =>
         current && current.interaction.revision > response.interaction.revision ? current : { ...current, interaction: response.interaction })
-      void client.invalidateQueries({ queryKey: ['workbench', 'interactions'] }).catch(() => undefined)
+      void client.invalidateQueries({ queryKey: ['workbench', 'interactions'] }).catch(ignoreBackgroundFailure)
     },
   })
 }

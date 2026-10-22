@@ -146,7 +146,8 @@ export const nim2644StateCases: { name: string; run: () => void }[] = [
     assert(!entryChoices(removed, context, edits).valid)
     const selected = { ...removed, entryNodeId: newNode.id }
     assert(entryChoices(selected, context, edits).valid)
-    assert.equal(authoringHints(selected, context, edits).length, 0)
+    // The only remaining hint is the unconnected Worker; the entry itself needs nothing.
+    assert.deepEqual(authoringHints(selected, context, edits).map((hint) => hint.code), ['WORKER_UNCONNECTED'])
     assert.equal(local.configurationVersionId, undefined)
     assert.equal(roleEvidence(context, local.id).source, 'unavailable')
   } },

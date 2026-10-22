@@ -235,26 +235,44 @@ it.each(['succeeded', 'failed', 'canceled'] as const)(
   expect(selectRun).not.toHaveBeenCalled()
 })
 
-it('keeps the draft selected when background facts discover a running Run', async () => {
-  installSelectedHandlers()
+const runSummaries = (items: object[]) => HttpResponse.json({ items, pageInfo: { nextCursor: null } })
+const liveSummary = { runId: 'run-a', shortId: 'a', startedAt: '2026-10-04T09:00:00.000Z', status: 'running', trigger: 'manual' }
+const summariesRoute = `*/api/management/workspaces/${scope.workspaceId}/workflows/${scope.workflowId}/runs/summaries`
+function Count() { return <output aria-label="Active Runs">{useWorkflowBoard()?.activeRuns}</output> }
+async function mountWithSummaries(selectRun: () => void) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(client)
-  const selectRun = vi.fn(), snapshotReads = vi.fn(() => HttpResponse.json(snapshot('run-a')))
-  const listReads = vi.fn(() => HttpResponse.json({ items: [{ runId: 'run-a', shortId: 'a',
-    startedAt: '2026-10-04T09:00:00.000Z', status: 'running', trigger: 'manual' }], pageInfo: { nextCursor: null } }))
-  server.use(http.get(`*/api/management/workspaces/${scope.workspaceId}/workflows/${scope.workflowId}/runs/summaries`, listReads),
-    http.get(snapshotRoute, snapshotReads))
-  function Count() { return <output aria-label="Active Runs">{useWorkflowBoard()?.activeRuns}</output> }
   const root = createRootRoute({ component: Outlet })
   const route = createRoute({ getParentRoute: () => root, path: '/workspaces/$workspaceId', validateSearch: RunsSelectorSearchSchema,
     component: () => <WorkflowBoard {...scope} inspection={{}} selectInspection={() => undefined} selectRun={selectRun}
-      summaries={[]}><Count /><button type="button">Edit workflow</button></WorkflowBoard> })
+      summaries={[]}><CurrentNavigation /><Count /><button type="button">Edit workflow</button></WorkflowBoard> })
   const router = createRouter({ routeTree: root.addChildren([route]), defaultPendingMinMs: 0,
     history: createMemoryHistory({ initialEntries: [`/workspaces/${scope.workspaceId}?workflowId=${scope.workflowId}`] }) })
   await router.load()
   render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>)
+  return client
+}
+
+it('keeps the draft selected when a Run starts later and only lights the Running control', async () => {
+  installSelectedHandlers()
+  const selectRun = vi.fn(), snapshotReads = vi.fn(() => HttpResponse.json(snapshot('run-a')))
+  const listReads = vi.fn(() => runSummaries([]))
+  server.use(http.get(summariesRoute, listReads), http.get(snapshotRoute, snapshotReads))
+  const client = await mountWithSummaries(selectRun)
   await waitFor(() => expect(listReads).toHaveBeenCalled())
+  expect(await screen.findByRole('button', { name: 'Edit workflow' })).toBeInTheDocument()
+  server.use(http.get(summariesRoute, () => runSummaries([liveSummary])))
+  await act(async () => { await client.invalidateQueries() })
   await waitFor(() => expect(screen.getByLabelText('Active Runs')).toHaveTextContent('1'))
+  expect(await screen.findByRole('button', { name: 'Running' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Edit workflow' })).toBeInTheDocument()
   expect(snapshotReads).not.toHaveBeenCalled()
   expect(selectRun).not.toHaveBeenCalled()
+})
+
+it('opens the live Run when the Board opens while a Run is running', async () => {
+  installSelectedHandlers()
+  server.use(http.get(summariesRoute, () => runSummaries([liveSummary])))
+  await mountWithSummaries(vi.fn())
+  expect(await screen.findByRole('region', { name: 'Selected Run board' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Edit workflow' })).not.toBeInTheDocument()
 })

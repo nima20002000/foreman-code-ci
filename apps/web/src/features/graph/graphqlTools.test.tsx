@@ -18,7 +18,7 @@ function open(role: 'orchestrator' | 'coder', extra: { graphqlTools?: GraphqlAge
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(<QueryClientProvider client={client}><AgentSettingsForm agent={agent} nodeGraphqlTools={nodeGraphqlTools}
     creationDefaults={DEFAULT_HARNESS_DEFAULTS} onClose={() => undefined} onSave={onSave} /></QueryClientProvider>)
-  fireEvent.click(screen.getByRole('button', { name: 'Advanced settings' }))
+  fireEvent.click(screen.getByText('More settings'))
   return { onSave, tools: screen.getByRole('group', { name: 'Foreman Code MCP tools' }) }
 }
 
@@ -30,7 +30,7 @@ describe('Foreman Code MCP tools in Agent settings', () => {
     expect(within(tools).queryByLabelText('Report a bug: Agent default')).not.toBeInTheDocument()
     expect(within(tools).queryByRole('group', { name: 'Report a bug: this workflow' })).not.toBeInTheDocument()
     expect(tools).not.toHaveTextContent('Enabled in this workflow:')
-    expect(within(tools).getByText('bug_report')).toBeVisible()
+    expect(within(tools).queryByText('bug_report')).not.toBeInTheDocument()
   })
 
   it('lists only the role tools, never Operator tools', () => {
@@ -84,11 +84,12 @@ describe('Foreman Code MCP tools in Agent settings', () => {
   })
 })
 
-it('shows tool explanations on demand while retaining names, codes, and selections', async () => {
+it('shows tool explanations on demand with plain names and no raw tool IDs', async () => {
   const { tools } = open('coder')
   const explanation = GRAPHQL_AGENT_TOOLS.bug_report.description
   expect(within(tools).queryByText(explanation)).not.toBeInTheDocument()
   await userEvent.hover(within(tools).getByRole('button', { name: 'About Report a bug' }))
   expect(screen.getByRole('tooltip')).toHaveTextContent(explanation)
-  expect(within(tools).getByText('bug_report')).toBeVisible()
+  expect(within(tools).getByText('Report a bug')).toBeVisible()
+  expect(within(tools).queryByText('bug_report')).not.toBeInTheDocument()
 })

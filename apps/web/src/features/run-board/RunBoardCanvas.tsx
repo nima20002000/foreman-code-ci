@@ -74,7 +74,6 @@ export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hier
   hierarchy?: WorkflowHierarchyReadResult; visible?: boolean
 }) {
   const board = useWorkflowBoard()
-  const displayScope = JSON.stringify(['run', snapshot.workspaceId, snapshot.workflowId, snapshot.runId])
   const { containerRef, onInit, onMove, onManualMove, refit } = useResponsiveGraphViewport<SavedBoardNode | CiServerFlowNode | KanbanFlowNode,
     SavedBoardEdge | CiTransferFlowEdge | KanbanActivityFlowEdge>({
     fitViewOptions,
