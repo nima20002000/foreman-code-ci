@@ -12,6 +12,7 @@ import { requireRsyncTransferOwner } from './modules/byte-transfer/rsyncTransfer
 import { WorkflowCollaborationIntegration, type WorkflowFeaturePorts } from './modules/collaboration/workflowIntegration.js'
 import { createWorkflowExecutionChatService } from './modules/collaboration/workflowChatProduction.js'
 import { MANAGED_MCP_NAMESPACE } from '@foreman-code/contracts/managed-mcp-channel'
+import { isDatabasePoolTimeout } from '@foreman-code/contracts/failure'
 import { DeviceManagedMcp } from './modules/harnesses/deviceManagedMcp.js'
 import { RunWorktrees } from './modules/runs/runWorktrees.js'
 import { withTransaction } from './infrastructure/transaction.js'
@@ -178,7 +179,8 @@ import {
 import { inspectClaudeOperatorConfiguration } from './modules/harnesses/claudeSdk/operatorConfigurationInspection.js'
 import { inspectWorkerClaudeOperatorConfiguration } from './modules/harnesses/workerClaudeOperatorInspection.js'
 import { requireClaudePolicyQualification } from './modules/harnesses/claudeSdk/configuration.js'
-import { qualificationError } from './modules/harnesses/qualificationErrors.js'
+import { harnessSignInRequired, onlySignInRequired, qualificationError } from './modules/harnesses/qualificationErrors.js'
+import { chatModelOptions } from './modules/harnesses/sessionControlDefaults.js'
 import { authorizeOperatorConfigurationRead } from './modules/operators/configurationRead.js'
 import { operatorCodexFileAdmissions } from './modules/harnesses/operatorFiles/codex.js'
 import { nativeCorrelation } from './modules/conversations/operatorChatRepository.js'
@@ -1296,9 +1298,19 @@ function configureHarnessProfiles(composition: ProductionComposition) {
     }, async () => {
       if (!harnessQualifications) return
       const result = await harnessQualifications.verify('codex', { force: true })
-      if (result.status !== 'qualified') throw new DomainError('HARNESS_REQUALIFICATION_FAILED',
+      if (result.status === 'qualified') return
+      // A signed-out Codex cannot run the check's model turn. That is the owner's sign-in to do, not a fault.
+      if (await composition.nativeConfigurations.options('codex').then(() => false, harnessSignInRequired)) {
+        throw new DomainError('HARNESS_SIGN_IN_REQUIRED', 'Sign in to Codex on the server; its updated installation is checked after sign-in.',
+          409, { signInRequired: true })
+      }
+      throw new DomainError('HARNESS_REQUALIFICATION_FAILED',
         result.failureReason ?? 'The updated Codex installation failed its native checks.', 409)
-    }, error => composition.app.log.error({ err: error }, 'Automatic harness installation checks failed'),
+    }, error => {
+      if (onlySignInRequired(error)) composition.app.log.warn({ err: error }, 'Automatic harness installation checks wait for sign-in')
+      else if (isDatabasePoolTimeout(error)) composition.app.log.warn({ err: error }, 'Automatic harness installation checks retry after a busy database')
+      else composition.app.log.error({ err: error }, 'Automatic harness installation checks failed')
+    },
     infrastructure?.installationRefreshIntervalMs)
   const claudeMetadata = infrastructure?.mode === 'replay' ? undefined : productionClaudeMetadata({ registry: harnessRegistry,
     accounts: providerAccounts,
@@ -1425,7 +1437,6 @@ function configureWorkflowManagers(composition: ProductionComposition) {
       if (!context.runId || !context.attempt) throw new DomainError('HARNESS_PROFILE_OWNER_CONFLICT', 'The exact Run attempt is unavailable.', 409)
       const { manager } = productionSelectedProfileManager({ factories: nativeFactories, registry: harnessRegistry, profiles: selectedProfiles,
         ...(accountBinding ? { accountBinding } : {}),
-        ...(context.nativeSessionId ? { nativeSessionId: context.nativeSessionId } : {}),
         selector, binding: { kind: 'workflow', runId: context.runId, executionId: context.executionId, attempt: context.attempt, getOwner,
           ...(context.purpose ? { purpose: context.purpose } : {}),
           ...(context.consultation ? { consultation: context.consultation } : {}) },
@@ -1961,9 +1972,8 @@ function configureOperatorChat(composition: ProductionComposition) {
     if (binding) operatorAccountBindings.set(conversationId, binding)
     else operatorAccountBindings.delete(conversationId)
   }
-  resolveOperatorManager.modelOptions = async configuration =>
-    configuration.harness === 'opencode' ? []
-      : (await composition.nativeConfigurations.options(configuration.harness)).models
+  resolveOperatorManager.modelOptions = configuration =>
+    chatModelOptions(configuration, harness => composition.nativeConfigurations.options(harness))
   resolveOperatorManager.qualifiedSteer = qualifiedAgentChatSteer
   resolveOperatorManager.recoverCompaction = recoverChatCompaction
   composition.chat = new OperatorChatService(
@@ -2106,9 +2116,8 @@ function configureAgentChat(composition: ProductionComposition) {
   }
   resolveAgentChatManager.prepareInput = prepareAgentChatInput(database.pool)
   resolveAgentChatManager.qualifiedSteer = qualifiedAgentChatSteer
-  resolveAgentChatManager.modelOptions = async configuration =>
-    configuration.harness === 'opencode' ? []
-      : (await composition.nativeConfigurations.options(configuration.harness)).models
+  resolveAgentChatManager.modelOptions = configuration =>
+    chatModelOptions(configuration, harness => composition.nativeConfigurations.options(harness))
   resolveAgentChatManager.release = (conversationId) => { agentChatManagers.delete(conversationId) }
   resolveAgentChatManager.closeRetainedSession = (conversationId, configuration, principalId, signal) =>
     workerChats!.closeRetainedSession(conversationId, configuration, principalId, signal)
@@ -2356,6 +2365,11 @@ function configureHttpApplication(composition: ProductionComposition) {
     detection, locations, workflows: operatorServices.workflows.current,
     provisioningRoot: projectRoot, harnessProfiles: harnessInstances,
     accountConfigurations,
+    rebindRestoredFolder: (principal, selection) => {
+      const roots = composition.runtimeServices.workspaceRoots
+      if (!roots) throw new DomainError('WORKSPACE_ROOTS_UNAVAILABLE', 'Workspace folder binding is unavailable.', 503)
+      return roots.set(principal, 'mcp', selection)
+    },
   })
   const runtimeServices = composition.runtimeServices = { ...operatorServices, extensions: operatorExtensions, harnessSettings }
   const localHuman = new PostgresLocalHumanAccess(database.pool, access)

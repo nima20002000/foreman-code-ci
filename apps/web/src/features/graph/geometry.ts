@@ -1,6 +1,6 @@
 import type { Node, NodeChange } from '@xyflow/react'
 import type { GraphNode } from './types'
-import { GRAPH_NODE_MIN_WIDTH, GRAPH_NODE_MAX_WIDTH, GRAPH_NODE_MIN_HEIGHT, GRAPH_NODE_MAX_HEIGHT } from './mapper'
+import { GRAPH_NODE_MIN_WIDTH, GRAPH_NODE_MIN_HEIGHT } from './mapper'
 import { retainArray, sameFields } from './graphReferences'
 
 export type GraphGeometryChange = {
@@ -12,8 +12,8 @@ export type GraphGeometryChange = {
 
 function size(width: number, height: number) {
   return {
-    width: Math.max(GRAPH_NODE_MIN_WIDTH, Math.min(GRAPH_NODE_MAX_WIDTH, width)),
-    height: Math.max(GRAPH_NODE_MIN_HEIGHT, Math.min(GRAPH_NODE_MAX_HEIGHT, height)),
+    width: Math.max(GRAPH_NODE_MIN_WIDTH, width),
+    height: Math.max(GRAPH_NODE_MIN_HEIGHT, height),
   }
 }
 
@@ -82,9 +82,13 @@ export function createGraphGeometryAdapter<T extends Node = GraphNode>(initial: 
     nodes = retainArray(nodes, base.map((node) => {
       const before = previous.get(node.id)
       const change = pending.get(node.id)
+      const width = change?.width ?? node.width, height = change?.height ?? node.height
+      // A size that changed outside a gesture (Undo, Redo, a reload) is the node's new measured size; keeping the old
+      // measurement would draw its connections for the previous size until the browser measures again.
+      const resized = before?.measured && width !== undefined && height !== undefined && (before.width !== width || before.height !== height)
       const candidate: T = {
         ...node,
-        ...(before?.measured ? { measured: before.measured } : {}),
+        ...(before?.measured ? { measured: resized ? { width, height } : before.measured } : {}),
         ...(change?.position ? { position: change.position } : {}),
         ...(change?.width !== undefined || change?.height !== undefined ? {
           width: change.width ?? node.width, height: change.height ?? node.height,

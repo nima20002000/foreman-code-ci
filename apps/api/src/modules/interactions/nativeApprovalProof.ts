@@ -1,4 +1,4 @@
-import { DurableInteractionSchema, isSessionNativeInteraction, type DurableInteraction } from '@foreman-code/contracts'
+import { DurableInteractionSchema, type DurableInteraction } from '@foreman-code/contracts'
 import { canonicalGraphJson, GraphEvidenceSchema, GraphExecutionIdentitySchema, GraphIdSchema,
   GraphDigestSchema, RepeatOccurrenceIdentityV1Schema, RunGraphScopeSchema, type GraphEvidence,
   type GraphExecutionIdentity } from '@foreman-code/contracts/wave25'
@@ -12,6 +12,7 @@ import { readAcceptedRepeatRunLocked } from '../runs/repeatStartRead.js'
 import { repeatExecutionIdentity, sameRepeatValue } from '../runs/repeatResolution.js'
 import { matchingDeliveryEvidence } from './delivery.js'
 import { nativeApprovalContext } from './nativeApprovalContext.js'
+import { pendingOnLaneTurn } from './pendingLaneTurn.js'
 import { decisionDigest } from './wave25/publication.js'
 import { DomainError } from '../errors.js'
 import { APPROVAL_SETTLEMENT_PENDING_MESSAGE } from './repeatNativeEvidence.js'
@@ -53,7 +54,7 @@ export async function assertPendingApprovalOriginalLocked(sql: GraphTransactionS
   if (requests.length !== 1) return pending()
   const request = requests[0]!
   if (!sameRepeatValue(request.session, proof.session)
-    || !isSessionNativeInteraction(request) && request.turn.nativeTurnId !== proof.lane.providerId
+    || !pendingOnLaneTurn(request, proof.lane.providerId)
     || request.nativeRequestType !== i.nativeRequestType || !sameRepeatValue(request.request, i.request)
     || !sameRepeatValue(request.responseOptions, i.responseOptions)
     || !sameRepeatValue(nativeApprovalContext(request, history.events), i.reviewContext)) return pending()

@@ -139,7 +139,7 @@ export async function persistWorkflowApprovalWait(owner: RunOwnership, saver: Ba
     // its interrupt. Retain its task/error for retry; it must not prevent binding
     // the OTHER branch's original interrupt. This classification grants no
     // receipt/terminal authority: the replay rechecks the actual live guards.
-    || checkpoint.tasks.some((task) => task.error != null
+    || checkpoint.tasks.some((task) => task.error != null && !task.interrupts?.length
       && !isSettlementPendingCheckpointError(task.error))) return fail('GRAPH_INTERRUPT_INVALID')
   return owner.oneShotConnection().transaction(async (sql) => {
     try {
@@ -170,6 +170,12 @@ export async function persistWorkflowApprovalWait(owner: RunOwnership, saver: Ba
             if (seen.has(id)) return fail('GRAPH_INTERRUPT_INVALID')
             seen.add(id)
             const item = await lockInteraction(sql, id)
+            // LangGraph keeps a failed attempt's error write beside the interrupt its retry raised (an attempt
+            // abandoned at restart, then a fresh attempt asked for approval). Only a resume can run the task after
+            // its interrupt, so until this request resumed the graph the error is the earlier attempt's.
+            if (task.error != null && !isSettlementPendingCheckpointError(task.error)
+              && (await sql.query(`select 1 from interaction_graph_resumes where interaction_id=$1
+                and state in ('resuming','resumed')`, [item.id])).rowCount) return fail('GRAPH_INTERRUPT_INVALID')
             if (item.runId !== run.id || item.graphThreadId !== run.id || item.workspaceId !== run.workspaceId
               || item.workflowId !== run.workflowId || item.graphInterruptId && item.graphInterruptId !== pending.id) return fail('INTERACTION_IDENTITY_CONFLICT')
             if (executionId && executionId !== item.executionId) return fail('INTERACTION_INTERRUPT_CONFLICT')

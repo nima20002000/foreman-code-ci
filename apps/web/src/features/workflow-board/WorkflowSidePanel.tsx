@@ -15,6 +15,8 @@ export interface WorkflowCollaborationSlots extends CollaborationFieldSlots {
   browser?(selection: Extract<BoardSidePanel, { kind: 'browser' }> & {
     workspaceId: string; workflowId: string; runId?: string; workflowVersionId?: string
   }): ReactNode
+  /** The right-hand sidebar of live Agent browsers in the selected Run, one tab per Agent. */
+  browserSidebar?(scope: { workspaceId: string; workflowId: string; runId?: string; workflowVersionId?: string }): ReactNode
   /** B retains exact release identity and minimal reconciliation after its body unmounts. */
   beforeBrowserHide?(): void | Promise<void>
   browserRecovery?(): ReactNode
@@ -35,6 +37,7 @@ export interface WorkflowSidePanelProps {
   onSelectTarget: WorkflowExecutionChatSlotSelection['onSelectTarget']
   onSelectRun: WorkflowExecutionChatSlotSelection['onSelectRun']
   bodyRef: RefCallback<HTMLDivElement>
+  headerSlotRef?: RefCallback<HTMLDivElement>
   modalOpen: boolean
   slots?: WorkflowCollaborationSlots
 }
@@ -63,7 +66,7 @@ function placeNear(width: number, height: number, opener: HTMLElement | null) {
 /** Floating, draggable, resizable window opened next to the selected node. Only the selected body mounts;
  * the portal host preserves existing conversation/store ownership. */
 export function WorkflowSidePanel({ scope, workspaceId, workflowId, runId, workflowVersionId,
-  opener, selection, agentSelection, onSelect, onSelectTarget, onSelectRun, bodyRef, modalOpen, slots }: WorkflowSidePanelProps) {
+  opener, selection, agentSelection, onSelect, onSelectTarget, onSelectRun, bodyRef, headerSlotRef, modalOpen, slots }: WorkflowSidePanelProps) {
   const panelRef = useRef<HTMLElement>(null)
   const workflow = useManagedWorkflowQuery(workspaceId, workflowId)
   const heldFocus = useRef(false)
@@ -151,16 +154,18 @@ export function WorkflowSidePanel({ scope, workspaceId, workflowId, runId, workf
     : agentName ? agentName.name ?? agentName.label ?? 'Agent' : 'Agent'
   return <aside ref={panelRef} tabIndex={-1} className="workflow-floating-panel" aria-label="Workflow side panel"
     hidden={!active || modalOpen} inert={!active || modalOpen}>
+    {/* One compact row: title, the view tabs and close. */}
     <header onPointerDown={drag}>
       <h2>{title}</h2>
+      <div className="workflow-panel-header-slot" ref={headerSlotRef} onPointerDown={event => event.stopPropagation()} />
+      {groupChat ? null : <nav className="workflow-panel-tabs" aria-label="Workflow panel view" onPointerDown={event => event.stopPropagation()}>
+        {tabs.map(([tab, label]) => <Button key={tab} size="sm" variant="ghost" disabled={!agentSelection}
+          aria-pressed={selection.kind === 'agent' && selection.tab === tab}
+          onClick={() => { if (agentSelection) onSelect({ ...agentSelection, tab }) }}>{label}</Button>)}
+        <Button size="sm" variant="ghost" aria-pressed={selection.kind === 'browser'} onClick={() => onSelect({ kind: 'browser' })}>Browser</Button>
+      </nav>}
       <IconButton label={groupChat ? 'Close group chat' : 'Back to Board'} variant="ghost" onClick={() => onSelect({ kind: 'none' })}><Icon name="close" size={16} /></IconButton>
     </header>
-    {groupChat ? null : <nav className="workflow-panel-tabs" aria-label="Workflow panel view">
-      {tabs.map(([tab, label]) => <Button key={tab} size="sm" variant="ghost" disabled={!agentSelection}
-        aria-pressed={selection.kind === 'agent' && selection.tab === tab}
-        onClick={() => { if (agentSelection) onSelect({ ...agentSelection, tab }) }}>{label}</Button>)}
-      <Button size="sm" variant="ghost" aria-pressed={selection.kind === 'browser'} onClick={() => onSelect({ kind: 'browser' })}>Browser</Button>
-    </nav>}
     {!groupChat && !agentSelection ? <p className="workflow-panel-hint">Select an agent on the Board to see its chat and settings.</p> : null}
     <div className="workflow-floating-panel-body" ref={attach}>{modalOpen ? null : content}</div>
   </aside>

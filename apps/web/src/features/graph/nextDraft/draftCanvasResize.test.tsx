@@ -13,6 +13,8 @@ import { DraftCanvas } from './DraftCanvas'
 import { nextDraftKey } from './state'
 
 const key = nextDraftKey('workspace', 'workflow'), context = fixture()
+// These cases measure resizing from a known size, not the role default.
+context.draft.graph.nodes = context.draft.graph.nodes.map(node => ({ ...node, width: 156, height: 156 }))
 const geometry = vi.fn(), change = vi.fn()
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', class {
@@ -161,13 +163,13 @@ it('resizes from the circular rim at minimum zoom, keeping the center without co
   expect(change).not.toHaveBeenCalled()
 })
 
-it('resizes from the top rim and clamps the circular diameter to the existing limits', async () => {
+it('resizes from the top rim without an upper limit and keeps the smallest readable diameter', async () => {
   mount()
   const ring = await screen.findByRole('slider', { name: 'Resize Node 0' })
   pointer(ring, 'pointerDown', 78, 0)
   pointer(ring, 'pointerUp', 78, -400)
-  expect(geometry).toHaveBeenLastCalledWith([{ id: 'node-0', position: { x: -82, y: -82 }, width: 320, height: 320 }])
-  for (let index = 0; index < 9; index++) fireEvent.keyDown(ring, { key: 'ArrowLeft', shiftKey: true })
+  expect(geometry).toHaveBeenLastCalledWith([{ id: 'node-0', position: { x: -400, y: -400 }, width: 956, height: 956 }])
+  for (let index = 0; index < 40; index++) fireEvent.keyDown(ring, { key: 'ArrowLeft', shiftKey: true })
   expect(ring).toHaveAttribute('aria-valuenow', '120')
   // The Board places nodes itself, so only the size is a saved fact here.
   expect(geometry.mock.lastCall![0][0]).toMatchObject({ id: 'node-0', width: 120, height: 120 })

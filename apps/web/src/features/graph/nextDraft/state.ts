@@ -1,5 +1,5 @@
 import type { AgentForm } from './agentForm'
-import type { GraphDraftOperationV3, GraphEditIntentV3, WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import { sameAuthoredWorkflow, type GraphDraftOperationV3, type GraphEditIntentV3, type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 import { hasAgentEdits, rebaseAgentEdits, referencedAgentEdits, snapshotAgentEdits, type DraftAgentEdits } from './agentEdits'
 import { hasLocalChanges, sameValue, type AuthoringIssue, type NextDraftContext } from './model'
 
@@ -101,7 +101,11 @@ export function nextDraftDirty(edit: NextDraftEdit): boolean {
 }
 
 export function canUndoNextDraft(edit: NextDraftEdit): boolean {
-  return edit.history.length > 0 && (nextDraftDirty(edit) || hasAgentEdits(undoNextDraft(edit)))
+  const previous = edit.history.at(-1)
+  if (!previous) return false
+  // A move or resize saves its layout at once; undoing it moves the node back and saves that layout.
+  const layoutOnly = sameAuthoredWorkflow(previous, edit.graph) && !sameValue(previous.nodes, edit.graph.nodes)
+  return layoutOnly || nextDraftDirty(edit) || hasAgentEdits(undoNextDraft(edit))
 }
 
 export type NextDraftSlice = {

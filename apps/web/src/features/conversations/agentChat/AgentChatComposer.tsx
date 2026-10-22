@@ -62,7 +62,7 @@ export function AgentChatComposer({ name, draftKey, inputRef, disabled, reason, 
           event.preventDefault()
           submit()
         }} />
-      {deliveryActions ? null : canStop ? <Tooltip content={stopReason ?? 'Stop this chat’s active turn and queued messages'}>
+      {deliveryActions ? deliveryActions : canStop ? <Tooltip content={stopReason ?? 'Stop this chat’s active turn and queued messages'}>
         <IconButton label="Stop chat" className="agent-chat-send" variant="ghost" disabled={pending || !!stopReason}
           onClick={onStop}><Square size={14} fill="currentColor" aria-hidden="true" /></IconButton>
       </Tooltip> : <Tooltip content={reason ?? 'Send message'}>
@@ -82,6 +82,5 @@ export function AgentChatComposer({ name, draftKey, inputRef, disabled, reason, 
       </Tooltip> : null}
       {actions}
     </div>
-    {deliveryActions}
   </form>
 }

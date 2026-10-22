@@ -44,6 +44,11 @@ export class CircleRest {
       const resource = path === `/api/v2/pipeline/${args[2]}` ? 'pipeline' : 'child'
       throw new DomainError('CI_CLOUD_RUN_NOT_FOUND', 'CircleCI run is not visible.', 502, { resource })
     }
+    if (args[1] === 'cancel' && (response.status === 401 || response.status === 403)) {
+      // A suspended or denied account can never confirm a cancel; retrying it forever only fills the log.
+      await response.body?.cancel()
+      throw new DomainError('CI_RUN_UNKNOWN', 'CircleCI refused the cancel (account suspended or denied).', 404)
+    }
     const lookupDenied = args[1] === 'get' && (args[0] === 'run' || args[0] === 'job')
       && (response.status === 401 || response.status === 403)
     try {

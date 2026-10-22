@@ -23,6 +23,7 @@ import { WorkerExecutionPolicy } from '../settings/workerExecution.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { assertDeviceHostInstallation } from '../devices/hostAuthorization.js'
 import { DomainError } from '../errors.js'
+import { admitWhenChecked } from '../harnesses/instanceSettings/profileCheckWait.js'
 import { readPlacementHarnessFacts } from './harnessFacts.js'
 import { freezePlacement, deriveDispatch, directoryIdentityHash, placementDigest } from './binding.js'
 import type { ProviderAccountResolver } from '../provider-accounts/service.js'
@@ -97,7 +98,9 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
     }, [...initial.selected.values()], { captureSource: !!initial.repository }) : []
     signal?.throwIfAborted()
     const roots = new Map([...initial.selected.keys()].map((key, index) => [key, refreshed[index]!]))
-    return withExclusiveGraphConnection(this.pool, connection => connection.transaction(async sql => {
+    // A profile still being checked (for example right after a restart) rolls the transaction back; Start waits
+    // for the check outside it, holding no locks, under the preparation budget, then admits again.
+    return admitWhenChecked(() => withExclusiveGraphConnection(this.pool, connection => connection.transaction(async sql => {
       signal?.throwIfAborted()
       if (signal) beforeGraphCommit(sql, async () => signal.throwIfAborted())
       const version = await this.readVersion(sql, input)
@@ -238,7 +241,7 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
           }
           await this.assertPinsCurrent(transaction, pin, live, input.workspaceId)
         }) }
-    }))
+    })), signal ?? new AbortController().signal, undefined, options.sourcePreparationStarted)
   }
   private async readSelectedRoots(input: RunStartV3Input, principal: ManagementPrincipal,
     options: { includeImplicitMain?: boolean } = {}) {

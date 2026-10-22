@@ -13,11 +13,11 @@ export async function registerBuiltWeb(app: FastifyInstance, root: string): Prom
     wildcard: true,
     index: false,
     cacheControl: false,
-    setHeaders(response, path) {
+    setHeaders(reply, path) {
       const cache = path.includes(`${sep}assets${sep}`)
         ? 'public, max-age=31536000, immutable' : 'no-cache'
-      response.setHeader('cache-control', cache)
-      response.setHeader('x-content-type-options', 'nosniff')
+      reply.header('cache-control', cache)
+      reply.header('x-content-type-options', 'nosniff')
     },
   })
   const shellRoutes = [

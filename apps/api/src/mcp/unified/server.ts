@@ -1,6 +1,6 @@
 import { browserAgentTools, browserOperatorTools } from '../../modules/collaboration/browserTools.js'
 import { workflowChatTools } from '../operator/tools/workflowChat.js'
-import { registerToolDefinition } from '../operator/definition.js'
+import { registerToolDefinition, type OperatorToolDefinition } from '../operator/definition.js'
 import { invokeOperatorTool } from '../operator/invoke.js'
 import { MCP_DISPLAY_NAME, PRODUCT_SLUG } from '@foreman-code/contracts/product'
 import { McpServer } from '@modelcontextprotocol/server'
@@ -183,9 +183,21 @@ export async function createGraphqlMcpServer(context: GraphqlMcpContext, request
         }
       }
       if (context.operator?.browser) {
+        const chat = context.operator.browser.chat
         for (const tool of browserOperatorTools({ principal: context.principal, services: context.operator })) {
-          if (!browserAgentTools.some(name => name === tool.name)) continue
-          registerToolDefinition(collector, { principal: context.principal, services: context.operator }, tool,
+          if (!browserAgentTools.some(name => name === tool.name) || !tool.run) continue
+          // An Agent chat always works in its own browser, opened on its first browser call.
+          const original = tool
+          const owned: OperatorToolDefinition = { ...original, run: async (toolContext, input, call) => {
+            const sessionId = await chat.sessionFor(toolContext.principal)
+            if (!sessionId) return original.run(toolContext, input, call)
+            const value: Record<string, unknown> = { ...input as Record<string, unknown>, sessionId }
+            // The chat's own session: its current generation and control epoch, not ones read from another session.
+            const actor = value.actor as { kind?: string } | undefined
+            const current = actor?.kind === 'agent' ? chat.agentActor(sessionId) : undefined
+            return original.run(toolContext, (current ? { ...value, actor: current } : value) as typeof input, call)
+          } }
+          registerToolDefinition(collector, { principal: context.principal, services: context.operator }, owned,
             { invoke: invokeOperatorTool })
         }
       }

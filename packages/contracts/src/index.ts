@@ -4,6 +4,7 @@ import { AgentProductRoleSchema as WorkflowAgentProductRoleSchema, type Workflow
 import { ResultProtocolSchema } from './coordinationResult.js';
 import { MessageSchema } from './messages.js';
 export * from './messages.js';
+export * from './appErrors.js';
 import { RecordedAgentHarnessSchema } from './harnessIdentity.js';
 export * from './harnessIdentity.js';
 import { OptionalTimestampFields } from './schemaPrimitives.js';
@@ -311,7 +312,8 @@ export const HarnessWorkflowCompatibilitySchema = z.object({
     const configuration = value.configuration;
     const advanced = configuration.harness === "codex"
       ? configuration.advanced ?? DEFAULT_CODEX_ADVANCED_CONFIGURATION : undefined;
-    const native = advanced?.approvalPolicy === "never" || advanced?.approvalsReviewer === "auto_review";
+    // A Claude Agent (always full access) runs its tools without asking when its workflow handles approvals natively.
+    const native = configuration.harness === "claude" || advanced?.approvalPolicy === "never" || advanced?.approvalsReviewer === "auto_review";
     if (!native) context.addIssue({ code: z.ZodIssueCode.custom, path: ["configuration"],
       message: "native workflow handling requires an Agent that does not ask for user approval" });
     return;

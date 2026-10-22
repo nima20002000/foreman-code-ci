@@ -105,6 +105,9 @@ export class ApiError extends Error {
   readonly status: number
   readonly details?: Record<string, unknown>
   readonly requestId?: string
+  /** The failed call, for error reports. */
+  method?: string
+  path?: string
 
   constructor(payload: ApiErrorPayload, status = 0, options?: ErrorOptions) {
     super(payload.message, options)
@@ -124,10 +127,11 @@ function isGatewayStatus(status: number): boolean {
   return status === 502 || status === 503 || status === 504
 }
 
-/** The API is restarting or unreachable: no response, or a gateway status without an API error body. */
+/** The API is restarting or unreachable: no response, a gateway status without an API error body, or work the
+ * API canceled while it shut down. */
 export function isApiRestartError(error: unknown): boolean {
-  return ApiError.is(error)
-    && (error.code === 'NETWORK_ERROR' || (error.code === 'HTTP_ERROR' && isGatewayStatus(error.status)))
+  return ApiError.is(error) && (error.code === 'NETWORK_ERROR' || error.code === 'API_RESTARTING'
+    || (error.code === 'HTTP_ERROR' && isGatewayStatus(error.status)))
 }
 
 type FetchLike = typeof fetch
@@ -191,11 +195,19 @@ export class ApiClient {
     return () => { if (this.runtimeCompatibility === check) this.runtimeCompatibility = undefined }
   }
 
-  async request<T>(
+  request<T>(
     path: string,
     schema: z.ZodType<T>,
     options: RequestOptions & { method?: string; body?: unknown } = {},
   ): Promise<T> {
+    return this.timedRequest(path, schema, options).catch((error: unknown) => {
+      if (ApiError.is(error)) { error.method ??= options.method ?? 'GET'; error.path ??= path.split('?')[0] }
+      throw error
+    })
+  }
+
+  private async timedRequest<T>(path: string, schema: z.ZodType<T>,
+    options: RequestOptions & { method?: string; body?: unknown }): Promise<T> {
     const { timeoutMs, ...requestOptions } = options
     if (timeoutMs === undefined) return this.readResponse(path, schema, requestOptions)
     const controller = new AbortController()

@@ -1,7 +1,7 @@
 import type { Agent } from '@foreman-code/contracts'
-import type { WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import { DEFAULT_WORKFLOW_EXECUTION_POLICY, sameWorkflowValue, type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 import { changeDraftAgents, editorAgents } from '../graph/nextDraft/agentEdits'
-import { nodeTitle, removeNode, roleEvidence } from '../graph/nextDraft/model'
+import { nodeTitle, removeNode, reportingRoute, roleEvidence, withoutChoiceTargets } from '../graph/nextDraft/model'
 import type { NextDraftEdit } from '../graph/nextDraft/state'
 
 export function hierarchyNodes(edit: NextDraftEdit, masterNodeId = edit.graph.hierarchy?.masterNodeId) {
@@ -74,6 +74,55 @@ function withHierarchyRoutes(graph: WorkflowDefinitionV3): WorkflowDefinitionV3 
   return { ...graph, nodes, edges }
 }
 
+/** Drawing a line between a Master and an Orchestrator, or an Orchestrator and a Worker, that does not
+ * report yet makes the lower one report to the upper one, with its work route, in either drawing direction.
+ * Returns undefined when the line is an ordinary connection. */
+export function connectHierarchyMember(graph: WorkflowDefinitionV3, roles: ReadonlyMap<string, string | undefined>,
+  first: string, second: string): WorkflowDefinitionV3 | undefined {
+  const hierarchy = graph.hierarchy
+  if (!hierarchy) return undefined
+  const role = (nodeId: string) => nodeId === hierarchy.masterNodeId ? 'master' : roles.get(nodeId) === 'coder' ? 'coder' : 'orchestrator'
+  const reports = (nodeId: string) => nodeId === hierarchy.masterNodeId || hierarchy.parents.some(member => member.workflowNodeId === nodeId)
+  for (const [parent, child] of [[first, second], [second, first]] as const) {
+    const pair = `${role(parent)}>${role(child)}`
+    if ((pair === 'master>orchestrator' || pair === 'orchestrator>coder') && !reports(child)) {
+      return withHierarchyRoutes({ ...graph, hierarchy: { ...hierarchy, parents: [...hierarchy.parents, { workflowNodeId: child, parentNodeId: parent }] } })
+    }
+  }
+  return undefined
+}
+
+/** On a Master Board the lines are the reporting. Repairs a draft whose lines and reporting disagree (before a
+ * removed line also removed its route): routes without a line are dropped, a member without its reporting line
+ * stops reporting there, and a member that reports nowhere reports along its only line to an eligible parent.
+ * Returns the same graph when nothing needs repair. */
+export function repairHierarchyRoutes(graph: WorkflowDefinitionV3, roles: ReadonlyMap<string, string | undefined>): WorkflowDefinitionV3 {
+  const hierarchy = graph.hierarchy
+  if (!hierarchy) return graph
+  const ids = new Set(graph.edges.map(edge => edge.id))
+  const nodes = graph.nodes.map(node => withoutChoiceTargets(node, id => !ids.has(id)))
+  let edges = graph.edges
+  const parents = hierarchy.parents.filter(member => reportingRoute(nodes, edges, member))
+  const role = (nodeId: string) => nodeId === hierarchy.masterNodeId ? 'master' : roles.get(nodeId) === 'coder' ? 'coder' : 'orchestrator'
+  for (const node of nodes) {
+    if (node.kind === 'job' || node.id === hierarchy.masterNodeId || parents.some(member => member.workflowNodeId === node.id)) continue
+    const other = (edge: WorkflowDefinitionV3['edges'][number]) => edge.source === node.id ? edge.target : edge.source
+    const eligible = role(node.id) === 'coder' ? 'orchestrator' : 'master'
+    const lines = edges.filter(edge => edge.kind === 'execution' && (edge.source === node.id || edge.target === node.id) && role(other(edge)) === eligible)
+    const candidates = new Set(lines.map(other))
+    if (candidates.size !== 1) continue
+    const parent = [...candidates][0]!
+    // A line drawn from the member to its parent becomes the parent's work route.
+    const drawnUp = lines.find(edge => edge.source === node.id && !edge.artifactInputs)
+    if (!reportingRoute(nodes, edges, { workflowNodeId: node.id, parentNodeId: parent }) && drawnUp) {
+      edges = edges.map(edge => edge === drawnUp ? { ...edge, source: parent, target: node.id } : edge)
+    }
+    parents.push({ workflowNodeId: node.id, parentNodeId: parent })
+  }
+  const next = withHierarchyRoutes({ ...graph, nodes, edges, hierarchy: { ...hierarchy, parents } })
+  return sameWorkflowValue(next, graph) ? graph : next
+}
+
 /** Reparenting is an explicit draft edit; the former handoff remains an ordinary connection. */
 export function reparentHierarchyWorker(graph: WorkflowDefinitionV3, nodeId: string, parentNodeId: string): WorkflowDefinitionV3 {
   if (!graph.hierarchy) return graph
@@ -144,7 +193,14 @@ export function removeHierarchyNode(edit: NextDraftEdit, nodeId: string, destina
     graph = withHierarchyRoutes({ ...graph, hierarchy: { ...graph.hierarchy!, parents: graph.hierarchy!.parents.map(member =>
       member.parentNodeId === nodeId ? { ...member, parentNodeId: destinationParentId! } : member) } })
   }
+  const before = graph
   graph = graph.hierarchy?.masterNodeId === nodeId ? withoutNode(graph, nodeId) : removeNode(graph, nodeId)
+  if (graph.hierarchy) {
+    // On a Master Board a removed line takes its route along, as Remove connection does.
+    const kept = new Set(graph.edges.map(edge => edge.id))
+    const removed = new Set(before.edges.filter(edge => !kept.has(edge.id)).map(edge => edge.id))
+    graph = { ...graph, nodes: graph.nodes.map(item => withoutChoiceTargets(item, id => removed.has(id))) }
+  }
   const agentForms = { ...edit.agentForms }; delete agentForms[nodeId]
   const workflowForms = { ...edit.workflowForms }; delete workflowForms.removeNode
   const workerParents = { ...workflowForms.workerParents }; delete workerParents[nodeId]
@@ -183,20 +239,26 @@ export function stageHierarchyAgent(edit: NextDraftEdit, agent: Agent, nodeId: s
     }
     assertHierarchySupported(edit.graph)
   }
+  // A new node starts with real, editable workflow limits: the saved ones, else the defaults new workflows get.
   const graph = { ...edit.graph, nodes: [...edit.graph.nodes, { ...fields, id: nodeId, agentId: agent.id, name: agent.name }],
-    entryNodeId: edit.graph.nodes.length ? edit.graph.entryNodeId : nodeId }
+    entryNodeId: edit.graph.nodes.length ? edit.graph.entryNodeId : nodeId,
+    executionPolicy: edit.graph.executionPolicy ?? { ...DEFAULT_WORKFLOW_EXECUTION_POLICY } }
   if (agent.productRole === 'master') {
     graph.entryNodeId = nodeId
     graph.handoffs ??= { contractVersion: 1 }
     graph.hierarchy = { version: 1, masterNodeId: nodeId, parents: hierarchyNodes(edit)
       .filter(item => item.role === 'orchestrator').map(item => ({ workflowNodeId: item.node.id, parentNodeId: nodeId })) }
   } else if (graph.hierarchy) {
-    if (agent.productRole === 'coder' && !hierarchyNodes(edit).some(item => item.node.id === parentNodeId && item.role === 'orchestrator')) {
+    // A Worker without a parent is just placed on the Board; connecting it to an Orchestrator makes it report there.
+    if (agent.productRole === 'coder' && parentNodeId !== undefined
+      && !hierarchyNodes(edit).some(item => item.node.id === parentNodeId && item.role === 'orchestrator')) {
       throw new Error('Choose an Orchestrator for the new Worker to report to.')
     }
-    graph.hierarchy = { ...graph.hierarchy, parents: [...graph.hierarchy.parents, {
-      workflowNodeId: nodeId, parentNodeId: agent.productRole === 'orchestrator' ? graph.hierarchy.masterNodeId : parentNodeId!,
-    }] }
+    const parent = agent.productRole === 'orchestrator' ? graph.hierarchy.masterNodeId : parentNodeId
+    if (parent) graph.hierarchy = { ...graph.hierarchy, parents: [...graph.hierarchy.parents, { workflowNodeId: nodeId, parentNodeId: parent }] }
   }
-  return changeDraftAgents(edit, [agent], withHierarchyRoutes(graph))
+  // A new Master also takes in the Workers already connected to an Orchestrator by a line.
+  return changeDraftAgents(edit, [agent], agent.productRole === 'master'
+    ? repairHierarchyRoutes(withHierarchyRoutes(graph), new Map(hierarchyNodes(edit).map(item => [item.node.id, item.role])))
+    : withHierarchyRoutes(graph))
 }

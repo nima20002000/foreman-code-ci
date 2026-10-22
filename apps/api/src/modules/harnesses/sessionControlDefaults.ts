@@ -1,9 +1,21 @@
 import type { HarnessOptions } from '@foreman-code/contracts/management'
 import { RETIRED_OPENCODE_MESSAGE, unavailableSessionControls, type HarnessConfiguration, type SessionControlCapabilities } from '@foreman-code/contracts'
+import { harnessSignInRequired } from './qualificationErrors.js'
 
 /** Preferences for a not-yet-created native session are desired, never applied. */
 export interface ChatModelCatalog {
   modelOptions?(configuration: HarnessConfiguration): Promise<HarnessOptions['models']>
+}
+
+/** The chat model catalog. A signed-out harness has none yet; its session controls still read, without a model
+ * window, and the composer reports the sign-in when a message is sent. */
+export async function chatModelOptions(configuration: HarnessConfiguration,
+  read: (harness: Exclude<HarnessConfiguration['harness'], 'opencode'>) => Promise<Pick<HarnessOptions, 'models'>>): Promise<HarnessOptions['models']> {
+  if (configuration.harness === 'opencode') return []
+  try { return (await read(configuration.harness)).models } catch (error) {
+    if (harnessSignInRequired(error)) return []
+    throw error
+  }
 }
 
 export function pendingSessionControls(configuration: HarnessConfiguration,

@@ -194,6 +194,9 @@ import { fileToolsMigration } from '../modules/files/tools/migration.js'
 import { harnessQualificationMigration } from './harnessQualificationMigration.js'
 import { workspaceProvisioningMigration } from './workspaceProvisioningMigration.js'
 import { workflowCollaborationMigration } from './workflowCollaborationMigration.js'
+import { codexNeverAskDefaultsMigration } from './codexNeverAskDefaultsMigration.js'
+import { removedProjectFolderMigration } from './removedProjectFolderMigration.js'
+import { draftChatCredentialsMigration } from './draftChatCredentialsMigration.js'
 
 export const migrations = [
   { version: 1, sql: `
@@ -1046,6 +1049,9 @@ export const migrations = [
   memoryRepeatDecisionMigration,
   workflowKanbanMigration,
   memoryWaitingForUserMigration,
+  codexNeverAskDefaultsMigration,
+  removedProjectFolderMigration,
+  draftChatCredentialsMigration,
 ] as const
 
 export function assertMigrationVersions(entries: readonly { version: number }[]): void {

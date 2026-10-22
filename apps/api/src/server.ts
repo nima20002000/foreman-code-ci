@@ -5,7 +5,8 @@ import { mkdir, realpath } from 'node:fs/promises'
 import { workspaceStorageRoot } from './modules/workspaces/storage.js'
 import { pathsOverlap } from './modules/workspaces/filesystem.js'
 import { loadConfig } from './config.js'
-import { componentLogger, enableFileLogging } from './infrastructure/logger.js'
+import { componentLogger, enableAppErrorLog, enableFileLogging } from './infrastructure/logger.js'
+import { readRuntimeBuildIdentity } from './infrastructure/runtimeIdentity.js'
 import { trackInFlightRequests } from './infrastructure/inFlightRequests.js'
 import { installProcessLifecycleLogging } from './infrastructure/processLifecycle.js'
 import { retryStartupDatabase, runBackgroundPassAtStartup } from './infrastructure/startupDatabase.js'
@@ -29,7 +30,8 @@ async function main() {
   if (readProductEnvironment(process.env, 'TEST_ROOT') || readProductEnvironment(process.env, 'TEST_OWNER')) {
     readTestResourcesIdentity(loadConfig(process.env))
   }
-  await enableFileLogging(process.env)
+  const logFile = await enableFileLogging(process.env)
+  if (logFile) enableAppErrorLog(logFile, readRuntimeBuildIdentity().buildId)
   lifecycle.info({ node: process.version }, 'api starting')
   const config = loadConfig(process.env)
   // Invalid resource ownership must fail before loading the database and native workflow runtime.

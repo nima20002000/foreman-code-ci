@@ -12,7 +12,7 @@ import { registerWorkflowExecutionChatEvents } from './workflowExecutionChatEven
 type Scope = { workspaceId: string; workflowId: string }
 const SelectionQuery = z.object({ workflowNodeId: z.string().min(1), runId: z.string().min(1).optional(),
   workflowVersionId: z.string().min(1).optional(), executionId: z.string().min(1).optional(),
-  waitingActivationId: z.string().min(1).optional(), cursor: z.string().optional(),
+  waitingActivationId: z.string().min(1).optional(), agentId: z.string().min(1).optional(), cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50) }).strict()
 function targetScope(params: Scope, raw: unknown) {
   const target = asWorkflowChatTarget(raw)

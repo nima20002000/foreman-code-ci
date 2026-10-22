@@ -230,3 +230,17 @@ it('saves a changed role while retaining an unchanged default on a revoked compu
   await expect(async () => service.updateAgentDefaults({ ...writer, grants: [] }, 'mcp', { commandId: 'denied', value }))
     .rejects.toMatchObject({ code: 'ACCESS_DENIED' })
 })
+
+describe('local Claude profile reuse', () => {
+  it('reuses a qualified exact profile while a re-check of it is running', async () => {
+    const claude = withAdvancedDefaults(DEFAULT_HARNESS_DEFAULTS.claude)
+    const value: HostHarnessOverride = { ...selection, revision: 3, presetId: 'preset', enabled: true, driverId: 'claude', configuration: claude,
+      configurationFingerprint: commandInputHash(claude), qualification: 'unqualified' }
+    const repository = { list: vi.fn(async () => [value]), latest: vi.fn(async () => value), lockRevision: vi.fn(async () => {}) } as unknown as HarnessInstanceSettingsRepository
+    const evidence = async () => ({ target: value.target, configurationFingerprint: value.configurationFingerprint, qualified: true }) as never
+    const checks = { pending: () => true, failure: async () => undefined } as never
+    const service = new HostHarnessOverrideService(repository, {} as PostgresCommandCoordinator, { authorize: async () => {} }, evidence, checks)
+    const client = { query: vi.fn(async () => ({ rows: [{ id: mainId }] })) } as unknown as pg.PoolClient
+    await expect(service.selectionForConfiguration(principal, DEFAULT_HARNESS_DEFAULTS.claude, client)).resolves.toEqual(selection)
+  })
+})

@@ -121,13 +121,16 @@ export function describeDraftChange(before: WorkflowDefinitionV3, after: Workflo
   for (const node of after.nodes) if (!beforeNodes.has(node.id)) parts.push(`added ${quoted(nodeName(node))}`)
   for (const node of before.nodes) if (!afterNodes.has(node.id)) parts.push(`removed ${quoted(nodeName(node))}`)
   let moved = 0
+  // Adding, removing or connecting nodes pins the others where they are shown; that is not a move.
+  const structural = before.nodes.length !== after.nodes.length || JSON.stringify(before.edges) !== JSON.stringify(after.edges)
   for (const node of after.nodes) {
     const previous = beforeNodes.get(node.id)
     if (!previous) continue
     if (nodeName(previous) !== nodeName(node)) parts.push(`renamed ${quoted(nodeName(previous))} → ${quoted(nodeName(node))}`)
     const { position: a, width: aw, height: ah, ...restBefore } = previous
     const { position: b, width: bw, height: bh, ...restAfter } = node
-    if (JSON.stringify(a) !== JSON.stringify(b) || aw !== bw || ah !== bh) moved++
+    const pinned = structural && !a?.manual && !!b?.manual
+    if (!pinned && JSON.stringify(a) !== JSON.stringify(b) || aw !== bw || ah !== bh) moved++
     if (nodeName(previous) === nodeName(node) && JSON.stringify(restBefore) !== JSON.stringify(restAfter)) parts.push(`${quoted(nodeName(node))} settings`)
   }
   if (moved) parts.push(moved === 1 ? 'moved a node' : `moved ${moved} nodes`)

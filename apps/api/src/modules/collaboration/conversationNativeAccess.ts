@@ -51,6 +51,8 @@ export class ConversationNativeAccess {
       if (!this.bindings.has(manager)) return
       return { restart: true }
     }
+    // A runtime started without Foreman tools has no app connection to rebind; a fresh runtime resumes the session with one.
+    if (!this.bindings.has(manager)) return { restart: true }
     if (!manager.rebindApplicationAccess) throw new DomainError('CHAT_SUBJECT_BINDING_UNAVAILABLE',
       'This native session cannot refresh its scoped conversation access.', 503)
     const issued = await this.credentials.issue(context)

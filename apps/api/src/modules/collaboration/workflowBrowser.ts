@@ -105,7 +105,13 @@ export class WorkflowBrowserOwnership {
 
   async readPrompt(owner: RunOwnership, execution: HarnessExecution, version: WorkflowVersionV3): Promise<string | undefined> {
     const node = version.definition.nodes.find(item => item.id === execution.workflowNodeId)
-    if (!this.installed || !node || node.kind === 'job' || !node.browser?.enabled) return undefined
+    if (!node || node.kind === 'job' || !node.browser?.enabled) return undefined
+    return this.readSessionPrompt(owner, execution)
+  }
+
+  /** The session prompt of the browser this exact execution prepared, if it is ready. */
+  async readSessionPrompt(owner: RunOwnership, execution: HarnessExecution): Promise<string | undefined> {
+    if (!this.installed) return undefined
     return withWorkflowPreparation(owner, execution, false, async sql => {
       const row = (await sql.query<BrowserBinding>('select * from workflow_collaboration_preparations where execution_id=$1',
         [execution.id])).rows[0]

@@ -1,4 +1,4 @@
-import { browserAgentTools } from '../collaboration/browserTools.js'
+import { browserAgentTools, chatToolOverride } from '../collaboration/browserTools.js'
 import { AgentConfigurationVersionSchema, AgentSubjectSchema, canonicalJson, effectiveGraphqlTools,
   COLLABORATION_AGENT_TOOLS, type GraphqlAgentTool } from '@foreman-code/contracts'
 import { ManagementPrincipalSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -12,16 +12,18 @@ const groupTools = new Set<GraphqlAgentTool>([
   'workflow_chat_read', 'workflow_chat_post',
 ])
 export function conversationChatTools(context: ConversationFeatureContext): GraphqlAgentTool[] {
+  // A draft chat has no saved workflow yet, so no Group chat; its browser is the chat's own and works anyway.
   const configuration = context.configuration
   const readOnly = configuration.harness.harness === 'opencode' || configuration.harness.sandbox === 'read-only'
-  const implemented = [...groupTools, ...(context.node.browser?.enabled ? browserAgentTools : [])]
+  const implemented = [...context.workflowVersionId === null ? [] : groupTools,
+    ...(context.node.browser?.enabled ? browserAgentTools : [])]
   return effectiveGraphqlTools(context.subject.agent.productRole, configuration.graphqlTools,
-    context.node.graphqlTools, false, implemented)
+    chatToolOverride(context.node.graphqlTools, context.node.browser), false, implemented)
     .filter(tool => implemented.includes(tool) && (!readOnly || COLLABORATION_AGENT_TOOLS[tool as keyof typeof COLLABORATION_AGENT_TOOLS].readOnly))
 }
 
 export async function readConversationCredential(sql: SqlQuery, principalId: string) {
-  const credential = (await sql.query<{ subject: unknown; conversation_id: string; workflow_version_id: string }>(
+  const credential = (await sql.query<{ subject: unknown; conversation_id: string; workflow_version_id: string | null }>(
     'select subject,conversation_id,workflow_version_id from agent_conversation_credentials where principal_id=$1', [principalId])).rows[0]
   if (!credential) return undefined
   const subject = AgentSubjectSchema.parse(credential.subject)
@@ -36,7 +38,7 @@ export async function readConversationCredential(sql: SqlQuery, principalId: str
   }
   const config = (await sql.query<{ record: unknown }>('select record from agent_configuration_versions where id=$1',
     [row.agent_configuration_version_id])).rows[0]
-  const context = await conversationFeatureContext(sql, row, AgentConfigurationVersionSchema.parse(config?.record), credential.workflow_version_id)
+  const context = await conversationFeatureContext(sql, row, AgentConfigurationVersionSchema.parse(config?.record), credential.workflow_version_id ?? undefined)
   if (canonicalJson(context.subject) !== canonicalJson(subject)) throw new DomainError('AUTH_REVOKED',
     'The saved conversation no longer matches its credential.', 401)
   return { principal, subject, context, tools: conversationChatTools(context) }

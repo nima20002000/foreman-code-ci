@@ -8,8 +8,6 @@
 .hierarchy-branches > li { min-width: 0; padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
 .hierarchy-branches > li > section { margin-top: var(--space-3); padding-left: var(--space-3); border-left: 2px solid var(--border-strong); }
 .hierarchy-branches .next-draft-inline { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.hierarchy-canvas-controls { position: absolute; left: var(--space-3); bottom: var(--space-3); z-index: 5; display: flex; flex-wrap: wrap; gap: var(--space-2); max-width: calc(100% - 2 * var(--space-3)); padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
-.hierarchy-canvas-controls > span { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
 [aria-label='Selected immutable report'] { display: grid; gap: var(--space-3); min-width: 0; }
 [aria-label='Selected immutable report'] p { white-space: pre-wrap; overflow-wrap: anywhere; }
 [aria-label='Selected immutable report'] dl { display: grid; grid-template-columns: minmax(7rem, auto) minmax(0, 1fr); gap: var(--space-2) var(--space-3); }

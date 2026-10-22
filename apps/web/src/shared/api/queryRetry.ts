@@ -8,6 +8,10 @@ export function retryTransientRead(failureCount: number, error: unknown): boolea
   return error.code === 'NETWORK_ERROR' || error.status >= 500 || error.status === 408 || error.status === 429
 }
 
+/** A command that carries a commandId replays on the server instead of applying twice, so it retries the same
+ * transient failures with the same input (and so the same commandId) before showing an error. */
+export const retryTransientCommand = retryTransientRead
+
 export function transientRetryDelay(attempt: number): number {
   return attempt === 0 ? 1_000 : 3_000
 }

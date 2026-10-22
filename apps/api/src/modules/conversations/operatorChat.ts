@@ -70,6 +70,7 @@ import { nativeActivityFence } from './nativeActivityFence.js'
 import { createNativeTextStream } from './nativeTextStream.js'
 import { ignoreError } from '../diagnostics/ignoredError.js'
 import { sameOperatorExecutionConfiguration } from './workerExecutionConfiguration.js'
+import { admitWhenChecked } from '../harnesses/instanceSettings/profileCheckWait.js'
 
 export { PostgresOperatorConversationRepository } from './operatorChatRepository.js'
 
@@ -303,7 +304,10 @@ export class OperatorChatService {
       if (selected.harness.harness === 'claude') {
         if (!this.authority.setupConfiguration) throw new DomainError('OPERATOR_SETUP_INSPECTION_UNAVAILABLE',
           'Claude installation inspection is unavailable.', 503)
-        const result = await this.authority.setupConfiguration(principal, selected, signal)
+        // Right after a restart the Operator profile may still be checked; wait for it (each inspection keeps
+        // its own 30-second deadline) instead of answering 503.
+        const result = await admitWhenChecked(() => this.authority.setupConfiguration!(principal, selected,
+          AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(30_000)])), this.lifetime.signal)
         return { ...result, ...(selected.id === 'application-operator-inspection' ? {} : { configurationVersionId: selected.id }) }
       }
       const id = `operator-setup:${randomUUID()}`

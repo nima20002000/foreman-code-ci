@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { parseSessionCommand, type ChatDeliveryIntent, type ChatDeliveryReceipt, type EngineChatReadback, type SessionMode } from '@foreman-code/contracts'
 import { Alert, Button, LoadingState } from '../../../shared/ui/nocturne'
@@ -7,13 +7,13 @@ import { isApiAccessError } from '../../../shared/api/accessError'
 import type { ConversationAttachments } from '../../attachments'
 import { ConversationViewport } from '../ConversationViewport'
 import { AgentChatComposer } from '../agentChat/AgentChatComposer'
+import { sameStructuredResult } from '../agentChat/AgentChatMessage'
 import { useConversationDraftStore } from '../conversationDraftStore'
 import { prepareChatAttachments, type ChatAttachmentAttempt } from '../chatAttachmentAttempt'
 import { ChatDeliveryActions } from './ChatDeliveryActions'
 import { deliveryAction } from './deliveryAction'
 import { ChatDeliveryReceipts } from './ChatDeliveryReceipts'
-import { deliveryTargetLabel } from './deliveryTargetLabel'
-import { RetainedDeliveryInputs, type DirectRecovery } from './RetainedDeliveryInputs'
+import { RetainedInput, RetainedInputsStatus, useRetainedInputs, type DirectRecovery } from './RetainedDeliveryInputs'
 import { chatDeliveryClient } from './client'
 import { useChatDelivery } from './useChatDelivery'
 import { useDeliveryDraftPin } from './useDeliveryDraftPin'
@@ -89,36 +89,54 @@ function ExecutionChatContent(props: ExecutionChatPanelProps) {
       ...(files.attachments.length ? { attachments: [...files.attachments] } : {}) })
   }
   const visible = older ?? state, receipts = state?.receipts ?? []
+  const retained = useRetainedInputs(target, revoke)
+  const messages = visible?.messages.filter((message, index, all) => !(index > 0 && message.role === 'assistant'
+    && all[index - 1]!.role === 'assistant' && sameStructuredResult(all[index - 1]!.content, message.content))) ?? []
+  // Messages you sent that wait outside the native transcript sit in time order, before the reply they asked for.
+  const placed = retained.items.map(input => {
+    const consultationId = receipts.find(receipt => receipt.id === input.receiptId)?.consultationId
+    const reply = consultationId ? messages.findIndex(message => message.provenance.kind === 'consultation'
+      && message.provenance.binding.consultationId === consultationId) : -1
+    return { input, before: reply >= 0 ? reply
+      : messages.findIndex(message => !!message.createdAt && message.createdAt > input.createdAt) }
+  })
+  const retainedProps = { target, receipts, onDenied: revoke, onRecover: props.onRecover, controlsReason, onOpenGroup: props.onOpenGroup,
+    onCancel: delivery.pendingControl ? undefined : (receipt: ChatDeliveryReceipt) => delivery.cancel(receipt.id), onRefresh: delivery.refresh, state: retained }
+  const retainedAt = (index: number) => placed.filter(item => item.before === index).map(({ input }) =>
+    <RetainedInput key={input.receiptId} input={input} {...retainedProps} />)
+  // A finished Run attempt takes no new messages: offer only the follow-up in Agent chat, without an input.
+  const followUp = state?.state === 'idle' && target.kind === 'workflow_execution' && props.onFollowUp
+  const closed = !!followUp && !presentation.capabilities.queue
   if (denied || delivery.denied) return <Alert tone="warning" title="Chat access unavailable"><Button onClick={() => {
     detailAbort.current = new AbortController(); setDenied(false); delivery.refresh()
   }}>Refresh access</Button></Alert>
   return <section className="agent-conversation" aria-label="Selected execution chat">
-    <header><h2>{props.name}</h2><p>{deliveryTargetLabel(target)}</p>
-      {target.kind === 'workflow_coordinator' ? <p>Stops this reply; delegated work continues.</p> : null}</header>
-    {state?.state === 'idle' && target.kind === 'workflow_execution' && props.onFollowUp
-      ? <Button onClick={props.onFollowUp}>Follow up in Agent chat</Button> : null}
+    {/* The Board's chat tab already names the Run attempt above this panel. */}
+    <header className="agent-chat-identity"><h2>{props.name}</h2></header>
     {delivery.query.isPending ? <LoadingState label="Loading selected execution…" rows={2} /> : null}
     {delivery.query.isError ? <p role="alert">Could not refresh this execution. <Button onClick={delivery.refresh}>Retry</Button></p> : null}
-    <ConversationViewport storageKey={draftKey} revision={JSON.stringify([visible?.revision, visible?.messages])}>{onBrowse => <>
+    <ConversationViewport storageKey={draftKey} revision={JSON.stringify([visible?.revision, visible?.messages, retained.items.length])}>{onBrowse => <>
       {visible?.hasMore ? <Button loading={history.isPending} disabled={!stream.historyReady} onClick={() => { onBrowse(); history.mutate() }}>Load earlier messages</Button> : null}
       {!stream.historyReady ? <p role="status">Refreshing the message window. <Button onClick={stream.refresh}>Refresh message window</Button></p> : null}
       {history.isError ? <p role="alert">Earlier messages could not be loaded.</p> : null}
       {older ? <Button onClick={() => { setOlder(undefined); delivery.refresh() }}>Back to latest messages</Button> : null}
-      {visible?.messages.map(message => <ExecutionNativeMessage key={message.id} message={message} name={props.name}
-        target={target} source={props.source} onBrowse={onBrowse} onDenied={revoke} />)}
+      <RetainedInputsStatus state={retained} />
+      {messages.map((message, index) => <Fragment key={message.id}>{retainedAt(index)}<ExecutionNativeMessage message={message} name={props.name}
+        target={target} source={props.source} onBrowse={onBrowse} onDenied={revoke} /></Fragment>)}
+      {retainedAt(-1)}
     </>}</ConversationViewport>
-    <ChatDeliveryReceipts receipts={receipts} controlsReason={controlsReason} onCancel={delivery.pendingControl ? undefined : receipt => delivery.cancel(receipt.id)}
+    <ChatDeliveryReceipts receipts={receipts.filter(receipt => receipt.state === 'queued' || receipt.state === 'unknown')} controlsReason={controlsReason} onCancel={delivery.pendingControl ? undefined : receipt => delivery.cancel(receipt.id)}
       onRefresh={delivery.refresh} onOpenContinuation={props.onOpenContinuation} />
-    <RetainedDeliveryInputs target={target} receipts={receipts} onDenied={revoke} onRecover={props.onRecover}
-      controlsReason={controlsReason}
-      onOpenGroup={props.onOpenGroup} onCancel={delivery.pendingControl ? undefined : receipt => delivery.cancel(receipt.id)} onRefresh={delivery.refresh} />
     {pin.stale ? <Button onClick={pin.refresh}>Refresh target</Button> : null}
+    {/* Below the messages, where the input would be; above them it covered the first message. */}
+    {closed ? <p className="execution-chat-closed">This agent can’t take a new message here. Continue it in Agent chat.</p> : null}
+    {followUp ? <Button className="execution-chat-follow-up" onClick={props.onFollowUp}>Follow up in Agent chat</Button> : null}
     {delivery.feedback ? <p role="alert">{delivery.feedback}</p> : null}
     {delivery.pending ? <p role="status">Delivery is not confirmed. <Button onClick={() => void delivery.reconcile()}>Check status</Button>
       <Button onClick={() => void delivery.reconcile(true)}>Retry original message</Button></p> : null}
     {delivery.pendingControl ? <p role="status">Control is not confirmed. <Button disabled={delivery.busy || !delivery.online}
       onClick={delivery.retryControl}>Retry original control</Button></p> : null}
-    <AgentChatComposer name={props.name} draftKey={draftKey} inputRef={inputRef} disabled={false} pending={delivery.busy || !!delivery.pending}
+    {closed ? null : <AgentChatComposer name={props.name} draftKey={draftKey} inputRef={inputRef} disabled={false} pending={delivery.busy || !!delivery.pending}
       reason={reason} controlPending={false} hasAttachments={!!props.attachments?.hasAttachments} attachmentControl={props.attachmentControl}
       sessionCommands={false} controlReason={sessionReason}
       onSubmit={submit} onStop={delivery.stop} canStop={false}
@@ -126,6 +144,6 @@ function ExecutionChatContent(props: ExecutionChatPanelProps) {
         controlsReason={controlsReason}
         reason={reason} pending={delivery.busy || !!delivery.pending} empty={!draft.trim() && !props.attachments?.hasAttachments || props.attachments?.hasBlockingAttachments}
         onStop={!delivery.pendingControl && presentation.state === 'active' ? delivery.stop : undefined}
-        onCancelQueued={delivery.pendingControl ? undefined : delivery.cancelAll} queueCount={receipts.filter(receipt => receipt.state === 'queued').length} />} />
+        onCancelQueued={delivery.pendingControl ? undefined : delivery.cancelAll} queueCount={receipts.filter(receipt => receipt.state === 'queued').length} />} />}
   </section>
 }

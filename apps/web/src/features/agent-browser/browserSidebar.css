@@ -1,0 +1,35 @@
+.browser-sidebar { display: flex; flex-direction: column; flex: 0 0 clamp(360px, 34vw, 560px); min-width: 0; min-height: 0;
+  /* Fill the Board's height without growing it: the browser scrolls inside the sidebar. */
+  contain: size;
+  border-left: 1px solid var(--border); background: var(--surface); }
+.browser-sidebar-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); }
+.browser-sidebar-head h2 { margin: 0; font: var(--type-heading); color: var(--text-strong); }
+.browser-sidebar-tabs { display: flex; flex-wrap: wrap; gap: var(--space-1); padding: var(--space-2); border-bottom: 1px solid var(--border); }
+.browser-sidebar-tab { display: flex; align-items: center; min-width: 0; max-width: 100%; border: 1px solid var(--border);
+  border-radius: var(--radius-md); background: var(--surface-raised); }
+.browser-sidebar-tab[data-selected] { border-color: var(--accent); background: var(--accent-subtle); }
+.browser-sidebar-tab > button[role="tab"] { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 4px 4px 4px 8px;
+  border: 0; background: none; color: var(--text); font: var(--type-body-strong); cursor: pointer; }
+.browser-sidebar-tab > button[role="tab"]:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; border-radius: var(--radius-md); }
+.browser-sidebar-tab .n-icon-button { width: 22px; height: 22px; min-height: 22px; padding: 0; margin-right: 2px; color: var(--text-faint); }
+.browser-sidebar-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 12rem; }
+.browser-sidebar-status { color: var(--text-muted); font: var(--type-caption); white-space: nowrap; }
+.browser-sidebar-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: var(--radius-full); background: var(--text-faint); }
+.browser-sidebar-dot[data-status="working"] { background: var(--success); box-shadow: 0 0 0 3px var(--success-subtle); }
+.browser-sidebar-dot[data-status="idle"] { background: var(--warning); }
+.browser-sidebar-dot[data-status="ended"], .browser-sidebar-dot[data-status="not_started"] { background: transparent; border: 1px solid var(--text-faint); }
+.browser-sidebar-body { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding: var(--space-3); }
+.browser-sidebar-body > p, .browser-sidebar-empty { margin: 0; color: var(--text-muted); font: var(--type-body); }
+.browser-sidebar-empty { margin: auto; padding: var(--space-6) var(--space-3); text-align: center; }
+.browser-sidebar-notice { margin: 0; padding: var(--space-2) var(--space-3); color: var(--text-muted); font: var(--type-caption); border-bottom: 1px solid var(--border); }
+.browser-sidebar .agent-browser-panel { height: auto; gap: var(--space-2); }
+.browser-sidebar .agent-browser-where { color: var(--text-muted); font: var(--type-caption); }
+/* The shared browser panel, compacted for the sidebar: one scroll area, status and control on one line. */
+.browser-sidebar .agent-browser-content { overflow: visible; gap: var(--space-2); }
+.browser-sidebar .agent-browser-control { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.browser-sidebar .agent-browser-control > p { flex: 1 1 10rem; color: var(--text-muted); font: var(--type-caption); }
+.browser-sidebar .agent-browser-address { align-items: center; }
+.browser-sidebar .agent-browser-address label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.browser-sidebar .agent-browser-page { border-radius: var(--radius-md); }
+.browser-sidebar #browser-page-help { color: var(--text-faint); font: var(--type-caption); }

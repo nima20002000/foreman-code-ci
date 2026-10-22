@@ -16,6 +16,7 @@ import { useWorkflowBoard } from '../../workflow-board/context'
 import { BoardAgentSettings } from '../../workflow-board/AgentControls'
 import type { DraftEditorCore } from './useDraftEditorCore'
 import { useGraphDraftStore } from '../store'
+import { rebaseAgentFormTools } from './agentForm'
 
 export function useDraftAgentPanels({ draftKey, edit, editIntent, core, board, reloading, agents }: {
   draftKey: string
@@ -81,7 +82,10 @@ export function useDraftAgentPanels({ draftKey, edit, editIntent, core, board, r
       chatHasHeader: !unsavedChat,
       settings: <fieldset className="board-popover-fields" disabled={edit.busy || reloading || editIntent.locked}>
         <BoardAgentSettings draftKey={draftKey} edit={edit} nodeId={node.id} close={closePanel}
-          mainFields={<NodeBrowserField graph={graph} node={graph.nodes.find((item) => item.id === node.id)!} change={change} />}
+          mainFields={<NodeBrowserField graph={graph} node={graph.nodes.find((item) => item.id === node.id)!} change={update => {
+            change(update)
+            useGraphDraftStore.getState().updateNextDraft(draftKey, current => rebaseAgentFormTools(current, node.id))
+          }} />}
           moreFields={<NodeWorkflowFields graph={graph} node={graph.nodes.find((item) => item.id === node.id)!} context={context} agentEdits={edit.agentEdits} change={change} browser={false} />}
           remove={() => useGraphDraftStore.getState().updateNextDraft(draftKey, current => ({ ...current,
             workflowForms: { ...current.workflowForms, removeNode: { nodeId: node.id, destinationParentId: '' } },

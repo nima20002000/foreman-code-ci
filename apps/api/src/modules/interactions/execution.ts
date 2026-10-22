@@ -2947,7 +2947,8 @@ export class ApprovalExecutionCoordinator {
     assertSameRepeatExecution(execution, stored)
     if (stored.state === 'completed') return
     componentLogger('harness').warn({ executionId: stored.id, runId: owner.runId, attempt: stored.attempt,
-      code: failure.outcome === 'failed' ? failure.error?.code : undefined }, 'Abandoning one native attempt')
+      code: failure.outcome === 'failed' ? failure.error?.code : undefined,
+      reason: failure.outcome === 'failed' ? failure.error?.message : undefined }, 'Abandoning one native attempt')
     await this.budgets.ensure(stored.id, owner.runId, this.activeTimeoutMs)
     await this.runs.recordExecutionFailure(owner, stored.id, failure)
     const timeoutMs = await this.recoveryCleanupTimeout(owner, stored)
@@ -3090,7 +3091,10 @@ export class ApprovalExecutionCoordinator {
       throw new DomainError('REPEAT_EXECUTION_INPUT_CONFLICT', 'Native work requires its exact pinned request.', 409)
     }
     await input.store.assertExecutionAdmission(execution.id)
-    const queuedInput = await (await this.runs.repeat(input.owner)).claimWorkflowInput(execution.id)
+    const claimed = await (await this.runs.repeat(input.owner)).claimWorkflowInput(execution.id)
+    // The saved chat prompt was composed before this attempt prepared its browser; name the session it owns.
+    const browserPrompt = claimed?.nativePrompt ? await this.collaboration?.readBrowserPrompt(input.owner, execution) : undefined
+    const queuedInput = claimed && browserPrompt ? { ...claimed, nativePrompt: `${claimed.nativePrompt}\n\n${browserPrompt}` } : claimed
     const admittedRequest = appendWorkflowChatInput(request, queuedInput)
     input.signal.throwIfAborted()
     input.owner.assertOwned()

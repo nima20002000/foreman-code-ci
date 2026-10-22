@@ -1,17 +1,14 @@
-import { Button, Textarea } from '../../../shared/ui/nocturne'
-import { useConversationDraftStore } from '../conversationDraftStore'
+import { useEffect, useRef } from 'react'
+import { LoadingState } from '../../../shared/ui/nocturne'
 
-/** Local editing does not require a readable native snapshot or a newly resolved target. */
-export function UnavailableChatDraft({ draftKey, pending, onRefresh }: {
-  draftKey: string; pending: boolean; onRefresh(): void
-}) {
-  const text = useConversationDraftStore(store => store.drafts[draftKey] ?? '')
-  const setDraft = useConversationDraftStore(store => store.setDraft)
-  return <div className="agent-chat-composer">
-    <Textarea label="Message" value={text} rows={3} onChange={event => setDraft(draftKey, event.currentTarget.value)} />
-    <p>{pending ? 'Loading the selected chat. Your draft remains editable.'
-      : 'The selected chat could not be read. Your draft is kept; refresh its target before sending.'}</p>
-    <div className="n-actions"><Button disabled>Send message</Button>
-      <Button disabled={pending} onClick={onRefresh}>Refresh selected chat</Button></div>
-  </div>
+/** While the chat loads or reconnects, a quiet status only; the draft stays in its store and returns with the composer. */
+export function UnavailableChatDraft({ pending, onRefresh }: { draftKey?: string; pending: boolean; onRefresh(): void }) {
+  const retry = useRef(onRefresh)
+  retry.current = onRefresh
+  useEffect(() => {
+    if (pending) return
+    const timer = setInterval(() => retry.current(), 3_000)
+    return () => clearInterval(timer)
+  }, [pending])
+  return <LoadingState label={pending ? 'Loading this conversation…' : 'Reconnecting…'} rows={1} />
 }

@@ -7,8 +7,8 @@ interface DirectionQuery {
 }
 
 /** Findings are free JSON; an object's own words (message, summary, title...) read better than its JSON. */
-const findingText = (value: unknown) => {
-  const words = value && typeof value === 'object' ? ['message', 'summary', 'title', 'description', 'text', 'finding']
+export const findingText = (value: unknown) => {
+  const words = value && typeof value === 'object' ? ['message', 'summary', 'title', 'description', 'detail', 'reason', 'text', 'finding']
     .map(key => (value as Record<string, unknown>)[key]).find(item => typeof item === 'string' && item.trim()) : undefined
   const text = (typeof value === 'string' ? value : typeof words === 'string' ? words : JSON.stringify(value)).trim()
   return text.length > 500 ? `${text.slice(0, 499)}…` : text

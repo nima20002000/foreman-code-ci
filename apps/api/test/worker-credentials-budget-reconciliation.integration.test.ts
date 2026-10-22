@@ -1,4 +1,5 @@
 import { beforeEach, expect, it } from 'vitest'
+import { randomUUID } from 'node:crypto'
 import pg from 'pg'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { Wave25WorkerCredentialService } from '../src/modules/interactions/wave25/credentials.js'
@@ -54,3 +55,17 @@ for (const lockedRow of ['run', 'execution', 'principal', 'binding'] as const) {
     }
   })
 }
+
+it('keeps a live Agent chat credential through the terminal credential sweep', async () => {
+  const issued = await access.issue({ name: 'Agent conversation sweep', audience: 'worker', agentId: 'agent-developer',
+    expiresAt: new Date('2099-01-01T00:00:00Z'), grants: [{ actions: ['agent_chat:read'],
+      scope: { workspaceIds: ['workspace-1'], workflowIds: ['workflow-content-pipeline'] } }] })
+  const conversationId = `agent-chat-sweep-${randomUUID()}`
+  await pool.query(`insert into operator_conversations(id,kind,agent_key,workspace_id,workflow_id,workflow_node_id,agent_id,
+    agent_configuration_version_id,harness,record) values($1,'agent',$1,'workspace-1','workflow-content-pipeline','node-developer',
+    'agent-developer','agent-developer-config-v1','claude','{}'::jsonb)`, [conversationId])
+  await pool.query(`insert into agent_conversation_credentials(principal_id,conversation_id,subject,workflow_version_id)
+    values($1,$2,'{}'::jsonb,'workflow-content-pipeline-v1')`, [issued.principal.id, conversationId])
+  await credentials.reconcileTerminalCredentials()
+  await expect(access.authenticate(issued.token, 'worker')).resolves.toMatchObject({ id: issued.principal.id })
+})

@@ -26,7 +26,7 @@ export function ChatDeliveryReceipts({ receipts, onCancel, onRefresh, onOpenPost
         {' · '}{deliveryTargetLabel(receipt.target)}</p>
       {receipt.requestedIntent !== receipt.appliedIntent && receipt.requestedIntent !== 'auto'
         ? <p>Requested: {intentLabels[receipt.requestedIntent]} · Applied: {intentLabels[receipt.appliedIntent]}</p> : null}
-      {receipt.consultationId ? <p>Reply {receipt.consultationId} · Delegated work continues independently.</p> : null}
+      {receipt.consultationId ? <p>Delegated work continues while it replies.</p> : null}
       {receipt.continuationId && !receipt.continuationExecution ? <p>Changing direction · Waiting for the continuing execution.</p> : null}
       {receipt.continuationExecution ? <p>Continuing task · A new execution is available.
         {onOpenContinuation ? <Button size="sm" onClick={() => onOpenContinuation(receipt)}>Open continuation</Button> : null}</p> : null}

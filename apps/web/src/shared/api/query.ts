@@ -37,6 +37,7 @@ import {
 } from './client'
 import { keepLatestWorkspaceLocation, locationMutationKey, shareManagedWorkspace } from './workspaceLocationCache'
 import { shareRunResponseOrSelection } from './runLiveCache'
+import { retryTransientCommand, transientRetryDelay } from './queryRetry'
 
 /**
  * Query keys deliberately carry every scope identity used by the endpoint.
@@ -280,7 +281,8 @@ export function useCreateManagedWorkspaceMutation() {
 }
 
 export function useUpdateManagedWorkspaceMutation() {
-  return useMutation({ mutationFn: (input: WorkspaceUpdateInput) => updateManagedWorkspace(input) })
+  return useMutation({ retry: retryTransientCommand, retryDelay: transientRetryDelay,
+    mutationFn: (input: WorkspaceUpdateInput) => updateManagedWorkspace(input) })
 }
 
 export function useArchiveManagedWorkspaceMutation() {

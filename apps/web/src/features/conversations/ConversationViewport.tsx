@@ -1,5 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { Button } from '../../shared/ui/nocturne'
+import { useLayoutEffect, useRef, type ReactNode } from 'react'
 import { useRememberedChatScroll } from './chatScrollStore'
 
 /** Shared transcript scrolling, following the Operator transcript pattern. No server data lives here. */
@@ -9,13 +8,11 @@ export function ConversationViewport({ revision, children, storageKey }: {
   const scrollRef = useRef<HTMLDivElement>(null), contentRef = useRef<HTMLDivElement>(null)
   const following = useRef(true)
   useRememberedChatScroll(storageKey, scrollRef, following)
-  const [newOutput, setNewOutput] = useState(false)
   const onBrowse = () => { following.current = false }
   useLayoutEffect(() => {
     const scroll = scrollRef.current
     if (!scroll) return
-    if (following.current) { scroll.scrollTop = scroll.scrollHeight; setNewOutput(false) }
-    else setNewOutput(true)
+    if (following.current) scroll.scrollTop = scroll.scrollHeight
   }, [revision])
   useLayoutEffect(() => {
     if (!contentRef.current || typeof ResizeObserver === 'undefined') return
@@ -31,14 +28,8 @@ export function ConversationViewport({ revision, children, storageKey }: {
       onScroll={(event) => {
         const scroll = event.currentTarget
         following.current = scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop < 48
-        setNewOutput(!following.current)
       }}>
       <div ref={contentRef}>{children(onBrowse)}</div>
     </div>
-    {newOutput ? <Button size="sm" className="conversation-jump" onClick={() => {
-      const scroll = scrollRef.current
-      if (scroll) scroll.scrollTop = scroll.scrollHeight
-      following.current = true; setNewOutput(false)
-    }}>Jump to latest</Button> : null}
   </div>
 }

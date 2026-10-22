@@ -1,8 +1,16 @@
 import { createContext, useContext, type ReactNode } from 'react'
 import type { BoardSidePanel, RepeatGraphScopeV3, WorkspaceBoardInspection } from '@foreman-code/contracts/wave25'
 import type { CollaborationFieldSlots } from '../graph/collaborationFields'
+import type { NodeBrowserSettings } from '@foreman-code/contracts'
 
-export type WorkflowAuthoringActions = { openWorkflowSettings(): void }
+export type WorkflowAuthoringActions = {
+  openWorkflowSettings(): void
+  draftNodeAgentId(nodeId: string): string | undefined
+  /** The draft node's current browser switch, applied or not; undefined when the node is not in the draft. */
+  draftNodeBrowser(nodeId: string): NodeBrowserSettings | null | undefined
+  /** Saves only a draft node's Agent and its configuration, never the workflow graph; resolves to its Agent id. */
+  saveChatAgent(nodeId: string): Promise<string | undefined>
+}
 
 /** Callbacks and presentation context only; neither drafts nor Run facts live here. */
 export const WorkflowBoardContext = createContext<{
@@ -17,6 +25,11 @@ export const WorkflowBoardContext = createContext<{
   navigationControls?: ReactNode
   authoringActive?: boolean
   registerAuthoringActions?(actions?: WorkflowAuthoringActions): void
+  /** Present while the editable draft is mounted, so a draft-only Agent's chat can save that Agent first. */
+  saveChatAgent?(nodeId: string): Promise<string | undefined>
+  /** The draft node's Agent, also before the node is saved. */
+  draftNodeAgentId?(nodeId: string): string | undefined
+  draftNodeBrowser?(nodeId: string): NodeBrowserSettings | null | undefined
   sidePanel?: BoardSidePanel
   selectedPanelNodeId?: string
   selectSidePanel?(selection: BoardSidePanel): void
@@ -31,5 +44,7 @@ export const WorkflowBoardContext = createContext<{
   selectTeam?(nodeId?: string): void
   /** Active or recovering Runs in the workspace; saving meaningful edits may stop them. */
   activeRuns: number
+  /** The newest active Run of this workflow, if any. */
+  liveRunId?: string
 } | null>(null)
 export const useWorkflowBoard = () => useContext(WorkflowBoardContext)

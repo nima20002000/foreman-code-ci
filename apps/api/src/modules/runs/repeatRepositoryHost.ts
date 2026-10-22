@@ -157,7 +157,8 @@ export class RepeatRepositoryFactory {
       // Preparation transport failures are retried from the saved checkpoint,
       // rather than treated as an interrupted native launch by the driver.
       const unavailable = new DomainError('EXECUTION_PREPARATION_UNAVAILABLE',
-        'Execution preparation is temporarily unavailable.', 503, { retryable: true })
+        error instanceof DomainError ? `Execution preparation is temporarily unavailable: ${error.message}`
+          : 'Execution preparation is temporarily unavailable.', 503, { retryable: true })
       unavailable.cause = error
       throw unavailable
     }

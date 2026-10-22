@@ -53,6 +53,9 @@ const unavailable = (): never => { throw new DomainError('HARNESS_PROFILE_UNAVAI
 
 /** Reads existing immutable settings and real native proof. No manager, native probe or default-profile synthesis. */
 export class AcceptedHarnessProfileAdmission<Owner> {
+  // The saved selector each admitted profile was read for. A requalified installation changes the admitted
+  // target, but the owner's authority (for example a saved Operator configuration) names the saved one.
+  private readonly selectors = new WeakMap<object, AcceptedProfileSelector>()
   constructor(
     private readonly settings: HarnessInstanceSettingsRepository,
     private readonly proofs: HostHarnessProfileEvidenceRepository,
@@ -61,15 +64,19 @@ export class AcceptedHarnessProfileAdmission<Owner> {
   async admit(owner: Owner, selector: AcceptedProfileSelector): Promise<AcceptedHarnessProfile> {
     const selected = structuredClone(selector)
     try {
-      return await this.readProfile(owner, selected, { purpose: 'execution' })
+      return this.remember(await this.readProfile(owner, selected, { purpose: 'execution' }), selected)
     } catch (error) {
       if (error instanceof DomainError && error.code === 'HARNESS_PROFILE_UNAVAILABLE') {
         // Qualification can start or complete while the authorized read awaits IO; the reread asserts the
         // selected profile's readiness and picks up a proof the completed check replaced.
-        return this.readProfile(owner, selected, { purpose: 'execution' })
+        return this.remember(await this.readProfile(owner, selected, { purpose: 'execution' }), selected)
       }
       throw error
     }
+  }
+  protected remember<T extends object>(accepted: T, selector: AcceptedProfileSelector): T {
+    this.selectors.set(accepted, freeze(structuredClone(selector)))
+    return accepted
   }
   async admitObservation(owner: Owner, selector: AcceptedProfileSelector): Promise<AcceptedHarnessProfile> {
     return this.readProfile(owner, selector, { purpose: 'observation' })
@@ -133,7 +140,7 @@ export class AcceptedHarnessProfileAdmission<Owner> {
   }
   /** Invoke in the existing async native-effect guard; the synchronous factory consumes only the frozen snapshot. */
   async revalidate(owner: Owner, accepted: AcceptedHarnessProfile): Promise<void> {
-    const current = await this.admit(owner, {
+    const current = await this.admit(owner, this.selectors.get(accepted) ?? {
       instanceId: accepted.override.instanceId, instanceRevision: accepted.override.instanceRevision, target: accepted.override.target,
     })
     // Rechecks replace proof metadata even when the admitted runtime binding is unchanged.
@@ -155,6 +162,6 @@ export class AcceptedClaudeProfileAdmission<Owner> extends AcceptedHarnessProfil
   override async admit(owner: Owner, selector: AcceptedProfileSelector): Promise<AcceptedClaudeProfile> {
     const accepted = await super.admit(owner, selector)
     if (accepted.override.driverId !== 'claude' || accepted.override.configuration.harness !== 'claude' || !accepted.currentBinding.pin) return unavailable()
-    return freeze({ ...accepted, currentBinding: { ...accepted.currentBinding, pin: accepted.currentBinding.pin } })
+    return this.remember(freeze({ ...accepted, currentBinding: { ...accepted.currentBinding, pin: accepted.currentBinding.pin } }), selector)
   }
 }

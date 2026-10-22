@@ -1,0 +1,15 @@
+# Lets the managed Chromium create user namespaces for its own sandbox on
+# Ubuntu 23.10+ (kernel.apparmor_restrict_unprivileged_userns=1), the same way
+# Ubuntu's stock `chrome` profile does for /opt/google/chrome/chrome. Without it
+# Chromium aborts with "No usable sandbox!" when started by a systemd service.
+# Install: sudo install -m 0644 <this file> /etc/apparmor.d/foreman-browser-runtime
+#          sudo apparmor_parser -r /etc/apparmor.d/foreman-browser-runtime
+
+abi <abi/4.0>,
+include <tunables/global>
+
+profile foreman-browser-runtime /home/**/browser-runtime/versions/*/chromium/chrome-linux64/chrome flags=(unconfined) {
+  userns,
+
+  include if exists <local/foreman-browser-runtime>
+}

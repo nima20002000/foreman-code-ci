@@ -20,15 +20,21 @@ import type {
 
 export const AGENT_HANDOFF_EDGE_TYPE = 'agentHandoff'
 
+// Nodes have a smallest readable size and no largest one: how big a node gets is up to the person.
 export const GRAPH_NODE_MIN_WIDTH = 120
-export const GRAPH_NODE_MAX_WIDTH = 520
 export const GRAPH_NODE_MIN_HEIGHT = 120
-export const GRAPH_NODE_MAX_HEIGHT = 320
 // Compact on purpose: a hierarchy of many Agents has to stay readable at a glance.
 export const GRAPH_NODE_DEFAULT_SIZE = 156
 const DEFAULT_NODE_WIDTH = GRAPH_NODE_DEFAULT_SIZE
 const DEFAULT_NODE_HEIGHT = GRAPH_NODE_DEFAULT_SIZE
-export const ORCHESTRATOR_NODE_SIZE = 188
+/** Default diameters by role: the Master is biggest, an Orchestrator half of it, a Worker half again. */
+export const MASTER_NODE_SIZE = 480
+export const ORCHESTRATOR_NODE_SIZE = MASTER_NODE_SIZE / 2
+export const WORKER_NODE_SIZE = ORCHESTRATOR_NODE_SIZE / 2
+export function roleNodeSize(role: string | undefined): number {
+  return role === 'master' ? MASTER_NODE_SIZE : role === 'orchestrator' ? ORCHESTRATOR_NODE_SIZE
+    : role === 'coder' ? WORKER_NODE_SIZE : GRAPH_NODE_DEFAULT_SIZE
+}
 const DEFAULT_NODE_GAP = 92
 const DEFAULT_NODE_Y = 120
 // Placement reserves the default circle plus room for rim actions and connections.
@@ -126,8 +132,8 @@ export function findOpenNodePosition(
 
 function clampNodeSize(width: number, height: number) {
   return {
-    width: Math.min(GRAPH_NODE_MAX_WIDTH, Math.max(GRAPH_NODE_MIN_WIDTH, width)),
-    height: Math.min(GRAPH_NODE_MAX_HEIGHT, Math.max(GRAPH_NODE_MIN_HEIGHT, height)),
+    width: Math.max(GRAPH_NODE_MIN_WIDTH, width),
+    height: Math.max(GRAPH_NODE_MIN_HEIGHT, height),
   }
 }
 
@@ -219,7 +225,9 @@ export function workflowToGraph(
     const liveActivity = options.runActive ? options.liveActivitiesByNodeId?.get(workflowNode.id) : undefined
     const runState = options.runStatesByNodeId?.get(workflowNode.id)
     const runOutcome = options.runOutcomesByNodeId?.get(workflowNode.id)
-    const defaultSize = agent.productRole === 'master' || agent.productRole === 'orchestrator' ? ORCHESTRATOR_NODE_SIZE : DEFAULT_NODE_WIDTH
+    // In a hierarchy only its Master node is drawn as the Master; another Master-role Agent works as an Orchestrator.
+    const defaultSize = roleNodeSize(workflow.hierarchy?.masterNodeId === workflowNode.id ? 'master'
+      : workflow.hierarchy && agent.productRole === 'master' ? 'orchestrator' : agent.productRole)
     const size = clampNodeSize(workflowNode.width ?? defaultSize, workflowNode.height ?? defaultSize)
     return {
       id: workflowNode.id,

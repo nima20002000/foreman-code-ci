@@ -21,12 +21,14 @@ export function WorkflowSettings({ draftKey, edit, change, report, defaultMs, lo
   const { graph, context, agentEdits } = edit
   // A workflow without saved limits shows the defaults it starts with; any edit saves them.
   const policy = graph.executionPolicy ?? DEFAULT_WORKFLOW_EXECUTION_POLICY
+  // Turns per run only bound agents that hand work to each other; one unconnected agent runs once.
+  const connected = graph.edges.some(edge => edge.kind === 'execution')
   return <div className="workflow-settings">
     <HierarchyEditor draftKey={draftKey} edit={edit} report={report} />
     {graph.hierarchy ? null : <EntryFields graph={graph} context={context} agentEdits={agentEdits} change={change} />}
     <ApprovalFields graph={graph} context={context} agentEdits={agentEdits} change={change} report={report} />
     <section className="next-draft-section" aria-label="Limits">
-      <h3>Limits{graph.handoffs ? <InfoHint label="Limits">Set each work connection’s handoff limit on its line on the Board.</InfoHint> : null}</h3>
+      <h3>Limits{graph.handoffs && connected ? <InfoHint label="Limits">Set each work connection’s handoff limit on its line on the Board.</InfoHint> : null}</h3>
       <AgentActiveTimeField policy={policy} defaultMs={defaultMs}
         onChange={(executionPolicy) => change((item) => ({ ...item, executionPolicy }))} />
       <TextField data-save-field="limits" label="Agents at once" type="number" min={1} max={100}
@@ -35,12 +37,12 @@ export function WorkflowSettings({ draftKey, edit, change, report, defaultMs, lo
           const value = event.target.valueAsNumber
           change((item) => ({ ...item, executionPolicy: { ...(item.executionPolicy ?? DEFAULT_WORKFLOW_EXECUTION_POLICY), maxParallelism: value } }))
         }} />
-      <TextField data-save-field="executions" label="Agent turns per run" type="number" min={1} max={10000}
+      {connected ? <TextField data-save-field="executions" label="Agent turns per run" type="number" min={1} max={10000}
         value={Number.isFinite(policy.maxNodeExecutions) ? policy.maxNodeExecutions : ''}
         onChange={(event) => {
           const value = event.target.valueAsNumber
           change((item) => ({ ...item, executionPolicy: { ...(item.executionPolicy ?? DEFAULT_WORKFLOW_EXECUTION_POLICY), maxNodeExecutions: value } }))
-        }} />
+        }} /> : null}
       {graph.executionPolicy ? null : <div className="workflow-settings-row" data-tone="warning"><span>Default limits, not saved yet</span>
         <Button size="sm" variant="ghost" onClick={() => change((item) => ({ ...item,
           executionPolicy: { ...DEFAULT_WORKFLOW_EXECUTION_POLICY } }))}>Use these</Button></div>}

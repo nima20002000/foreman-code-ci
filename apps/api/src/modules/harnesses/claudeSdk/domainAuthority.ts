@@ -283,9 +283,10 @@ export class PostgresClaudeInteractionAuthority implements ClaudeInteractionAuth
 /** Actual concrete authority + the ONE SDK callback map; history publication stays in existing owners. */
 export function createPostgresClaudeInteractionBridge(input: {
   database: Database; binding: ClaudeDomainBinding; manager: ClaudeCurrentCallbackOwner; configuration: ClaudeHarnessConfiguration
+  autoAllowTools?: boolean
 }) {
   const authority = new PostgresClaudeInteractionAuthority(input.database, input.binding, input.manager)
-  const bridge = new ClaudeInteractionBridge(input.configuration, authority)
+  const bridge = new ClaudeInteractionBridge(input.configuration, authority, { autoAllowTools: input.autoAllowTools ?? false })
   authority.bind(bridge)
   return { authority, bridge, callbackAdmission: () => authority.callbackAdmission(),
     callbackAdmissionIfActive: () => authority.callbackAdmissionIfActive(),

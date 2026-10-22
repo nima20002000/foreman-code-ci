@@ -76,7 +76,7 @@ type LineMotion = { pulses: Map<string, EdgePulse[]> }
 const Choreography = createContext<LineMotion>({ pulses: new Map() })
 
 type RunEdge = Edge<{ kind: WorkflowRelationship['kind']; bend: number;
-  handoffs: boolean; limit?: number; used?: number; reportingParent?: string }>
+  handoffs: boolean; limit?: number; used?: number }>
 const PinnedRunEdge = memo(function PinnedRunEdge({ id, source, target, data, selected }: EdgeProps<RunEdge>) {
   const { pulses } = useContext(Choreography)
   const curve = useFloatingCurve(source, target, data?.bend ?? 0)
@@ -87,7 +87,7 @@ const PinnedRunEdge = memo(function PinnedRunEdge({ id, source, target, data, se
   const usage = data?.used === undefined ? 'Usage unavailable' : data.limit === undefined
     ? `${data.used} used · no connection cap` : `${data.used} of ${data.limit} used`
   return <g onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
-    <SignalEdgeShape id={id} curve={curve} kind={data?.kind} pulses={pulses.get(id)} reportingParent={data?.reportingParent} />
+    <SignalEdgeShape id={id} curve={curve} kind={data?.kind} pulses={pulses.get(id)} />
     {data?.handoffs && showUsage ? <rect className="board-edge-hover-bridge"
       x={curve.mid.x - 90} y={curve.mid.y} width={180} height={54} /> : null}
     {data?.handoffs ? <foreignObject className="pinned-work-limit-object" data-visible={showUsage}
@@ -348,13 +348,11 @@ function usePinnedRunEdges(lines: ReturnType<typeof relationshipLines<WorkflowRe
       const pair = JSON.stringify([edge.source, edge.target].sort()), count = counts.get(pair) ?? 0
       counts.set(pair, count + 1)
       const reporting = isHierarchyReportingRoute(version?.definition.hierarchy, edge)
-      const parent = version?.definition.nodes.find(node => node.id === edge.source)
       return { id: edge.id, source: edge.source, target: edge.target, type: 'pinnedRunEdge',
         sourceHandle: 'right', targetHandle: 'left',
         selected: edge.members.some(member => member.id === selectedId),
         ariaLabel: `${reporting ? 'Orchestrates' : edge.kind} relationship ${edge.id} from ${edge.source} to ${edge.target}`,
         data: { kind: edge.kind, bend: edgeBend(count, edge.source < edge.target),
-          reportingParent: reporting ? parent?.name ?? parent?.label ?? edge.source : undefined,
           handoffs: Boolean(version?.definition.handoffs && edge.kind === 'execution'),
           limit: edge.maxWorkHandoffsPerRun, used: handoffs?.connections.find(item => item.relationshipId === edge.id)?.used } }
     })

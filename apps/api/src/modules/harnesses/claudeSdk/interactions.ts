@@ -51,7 +51,11 @@ export class ClaudeInteractionBridge {
   private mcpManifests: readonly ClaudeMcpToolManifest[] = []
   private readonly controller = new AbortController()
   private readonly listeners = new Set<(notification: ClaudePendingNotification) => void>()
-  constructor(configuration: ClaudeHarnessConfiguration, private readonly authority: ClaudeInteractionAuthority) {
+  /** autoAllowTools: the workflow lets its Agents handle approvals themselves (prototype permission model), so every
+   * tool this Agent may use runs without asking. Its tool list, MCP tool limits and deny rules still apply, and
+   * AskUserQuestion and explicit ask rules still reach the user. */
+  constructor(configuration: ClaudeHarnessConfiguration, private readonly authority: ClaudeInteractionAuthority,
+    private readonly options: { autoAllowTools?: boolean } = {}) {
     this.configuration = ClaudeFullAccessConfigurationSchema.parse(configuration)
   }
   close(): void {
@@ -296,7 +300,7 @@ export class ClaudeInteractionBridge {
       return { behavior: 'deny', message: 'The pending permission callback window is full.' }
     }
     // Bound app MCP tools need no approval (prototype permission model); an explicit ask rule still routes through the app.
-    if (toolName !== 'AskUserQuestion' && (this.hasRule(toolName, 'allow') || toolName.startsWith('mcp__'))
+    if (toolName !== 'AskUserQuestion' && (this.options.autoAllowTools || this.hasRule(toolName, 'allow') || toolName.startsWith('mcp__'))
       && !this.hasRule(toolName, 'ask')) {
       return { behavior: 'allow', updatedInput: structuredClone(input) }
     }

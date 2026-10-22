@@ -7,6 +7,7 @@ import type { useWorkflowBoard } from '../../workflow-board/context'
 import type { DraftEditorCore } from './useDraftEditorCore'
 import type { useGraphEditIntent } from './useGraphEditIntent'
 import { canUndoNextDraft } from './state'
+import { modalOpen } from '../../../shared/ui/modalOpen'
 
 /** Undo/redo across draft steps and server-saved settings, plus the Ctrl/Cmd+Z/Y shortcuts. */
 export function useDraftEditorHistory({ draftKey, undoScope, board, editIntent, core, saveBusy, starting, schedule }: {
@@ -64,6 +65,8 @@ export function useDraftEditorHistory({ draftKey, undoScope, board, editIntent, 
       if (target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], dialog')) return
       const key = event.key.toLowerCase()
       if (key !== 'z' && key !== 'y') return
+      // An open dialog owns the keyboard; Undo must not change the Board behind it.
+      if (modalOpen()) return
       if (saveBusy || starting || editIntent.locked || board?.run) return
       event.preventDefault()
       historyAction(key === 'y' || event.shiftKey ? 'redo' : 'undo')

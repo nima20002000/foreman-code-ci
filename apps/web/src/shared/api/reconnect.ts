@@ -1,5 +1,5 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react'
-import { onlineManager, useQuery, useQueryClient, type Query } from '@tanstack/react-query'
+import { onlineManager, useQuery, useQueryClient, type Query, type QueryClient } from '@tanstack/react-query'
 import { RuntimeIdentitySchema } from '@foreman-code/contracts'
 import { ApiError, apiClient, isApiRestartError } from './client'
 import { isTransientReadError } from './readFailure'
@@ -9,8 +9,11 @@ export const reconnectingMessage = 'Updating — reconnecting…'
 const reconnectIntervalMs = 1_000
 
 function needsReconnect(query: Query): boolean {
+  // While a fresh read runs without a failure yet, its last restart error is stale: the first reads after a restart
+  // can take many seconds. A new failure brings the notice back.
+  const rereading = query.state.fetchStatus === 'fetching' && query.state.fetchFailureCount === 0
   return query.isActive() && query.meta?.refetchOnApiReconnect !== false
-    && (isApiRestartError(query.state.error) || isApiRestartError(query.state.fetchFailureReason))
+    && (isApiRestartError(query.state.fetchFailureReason) || !rereading && isApiRestartError(query.state.error))
 }
 
 function isRecoverableError(error: unknown): boolean {
@@ -33,6 +36,15 @@ function hasPendingRetry(query: Query): boolean {
 function canRefetchAfterReconnect(query: Query): boolean {
   return query.meta?.refetchOnApiReconnect !== false
     && (!query.state.error || isTransientReadError(query.state.error))
+}
+
+/** Reads every failed read again now. TanStack pauses retries while the tab is hidden, and a refetch of a query
+ * without data only resumes its pending retry, so attempts that already failed are cancelled and read afresh. */
+export async function retryApiReads(client: QueryClient): Promise<void> {
+  const failed = client.getQueryCache().getAll().filter(needsRecovery)
+  await Promise.all(failed.filter(query => query.state.fetchFailureCount > 0)
+    .map(query => query.cancel({ revert: true })))
+  await client.refetchQueries({ predicate: query => failed.includes(query), type: 'active' }, { cancelRefetch: false })
 }
 
 /** Request failures stay in Query; recovery refreshes the other mounted reads too. */
@@ -60,7 +72,8 @@ export function useApiReconnect(): boolean {
   useQuery({
     queryKey: ['workbench', 'api-reachability', sessionGeneration()],
     enabled: (recovering || !online) && !sessionIsSwitching(),
-    networkMode: 'always', staleTime: 0, gcTime: 0,
+    // Every tick is a fresh request: a retry would pause in a hidden tab and every later tick would only wait on it.
+    networkMode: 'always', retry: false, staleTime: 0, gcTime: 0,
     refetchInterval: reconnectIntervalMs, refetchIntervalInBackground: true,
     refetchOnReconnect: false, meta: { refetchOnApiReconnect: false },
     queryFn: async ({ signal }) => {
@@ -72,6 +85,9 @@ export function useApiReconnect(): boolean {
         throw error
       }
       onlineManager.setOnline(true)
+      // The API answers: read failed reads now instead of waiting out a retry backoff (up to 10 s) or a retry
+      // paused in a hidden tab. A fresh read counts no failure until it fails, so a slow read is never restarted.
+      void retryApiReads(client)
       if (probeFailed.current) {
         probeFailed.current = false
         void client.invalidateQueries({

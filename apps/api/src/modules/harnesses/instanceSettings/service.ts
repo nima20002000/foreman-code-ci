@@ -72,12 +72,13 @@ export class HostHarnessOverrideService {
       throw error
     }
   }
-  private async describe(value: HostHarnessOverride, client?: pg.PoolClient): Promise<HostHarnessOverride> {
+  private async describe(value: HostHarnessOverride, client?: pg.PoolClient,
+    options?: { ignorePendingCheck?: boolean }): Promise<HostHarnessOverride> {
     if (value.driverId === 'opencode' || value.configuration.harness === 'opencode') return {
       ...value, qualification: 'retired', retirementMessage: RETIRED_OPENCODE_MESSAGE,
     }
     if (!value.enabled) return { ...value, qualification: 'disabled' }
-    if (this.profileChecks?.pending(value)) return { ...value, qualification: 'qualifying' }
+    if (!options?.ignorePendingCheck && this.profileChecks?.pending(value)) return { ...value, qualification: 'qualifying' }
     // Missing/remote failed evidence remains unavailable, never substitutes local discovery.
     const evidence = await this.evidence(value, client).catch(fallbackOnError(null, 'harness', 'read harness qualification evidence'))
     const qualification = !evidence ? 'unqualified' : harnessHostKey(evidence.target.hostRef) !== harnessHostKey(value.target.hostRef)
@@ -141,7 +142,8 @@ export class HostHarnessOverrideService {
     const profiles = await this.repository.list(hostRef, installation.id, client)
     for (const profile of profiles) {
       if (!profile.enabled || !isDeepStrictEqual(withAdvancedDefaults(profile.configuration), withAdvancedDefaults(configuration))) continue
-      if ((await this.describe(profile, client)).qualification !== 'qualified') continue
+      // A re-check in progress keeps the profile's last proof; an Agent saved meanwhile still gets it.
+      if ((await this.describe(profile, client, { ignorePendingCheck: true })).qualification !== 'qualified') continue
       const selection = { instanceId: profile.instanceId, instanceRevision: profile.instanceRevision, target: profile.target }
       await this.validateSelection(principal, selection, configuration, client)
       return selection

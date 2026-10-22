@@ -36,6 +36,10 @@ export class WorkflowCollaborationIntegration {
     const browser = await this.browser.readPrompt(owner, execution, version)
     return [memory, browser].filter(Boolean).join('\n\n') || undefined
   }
+  /** An admitted chat prompt predates this attempt's browser, so dispatch names the session it owns. */
+  readBrowserPrompt(owner: RunOwnership, execution: HarnessExecution): Promise<string | undefined> {
+    return this.browser.readSessionPrompt(owner, execution)
+  }
   async effectRepairPrompt(owner: RunOwnership, failure: WorkflowResultEffectFailure): Promise<string> {
     owner.assertOwned()
     if (!this.ports.memoryBoards || failure.work.runId !== owner.runId) throw new DomainError(

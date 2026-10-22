@@ -80,9 +80,16 @@ async function outsideRun(sql: GraphSqlClient, principal: Principal,
   const workflow = (await sql.query<{ current_version_id: string | null }>(
     'select current_version_id from workflows where id=$1 and workspace_id=$2', [input.workflowId, input.workspaceId])).rows[0]
   const id = input.workflowVersionId ?? workflow?.current_version_id
-  if (!id) return { kind: 'unavailable', reason: 'WORKFLOW_UNAVAILABLE' }
-  const version = await readWorkflowChatVersion(sql, { ...input, workflowVersionId: id })
-  const node = version.definition.nodes.find(item => item.id === input.workflowNodeId)
+  const version = id ? await readWorkflowChatVersion(sql, { ...input, workflowVersionId: id }) : undefined
+  const node = version?.definition.nodes.find(item => item.id === input.workflowNodeId)
+  if (!node && workflow && !input.workflowVersionId && input.agentId) {
+    // Draft chat: the node is not saved in this workflow yet, but its Agent is. The graph need not be valid.
+    const agent = (await sql.query('select 1 from agents where id=$1 and workspace_id=$2 and archived_at is null',
+      [input.agentId, input.workspaceId])).rowCount
+    if (agent) return { kind: 'outside_run', reason: 'NO_LIVE_RUN', agent: AgentNodeRefSchema.parse({ agentId: input.agentId,
+      workspaceId: input.workspaceId, workflowId: input.workflowId, workflowNodeId: input.workflowNodeId }) }
+  }
+  if (!version) return { kind: 'unavailable', reason: 'WORKFLOW_UNAVAILABLE' }
   if (!node || node.kind === 'job') return { kind: 'unavailable', reason: 'NODE_UNAVAILABLE' }
   return { kind: 'outside_run', reason: 'NO_LIVE_RUN', workflowVersionId: version.id,
     agent: AgentNodeRefSchema.parse({ agentId: node.agentId,

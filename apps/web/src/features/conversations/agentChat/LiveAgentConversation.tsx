@@ -1,8 +1,10 @@
 import { errorMessage } from '../../../shared/errorMessage'
 import { useSessionControls } from '../sessionControls/useSessionControls'
 import { compactionBlocksSend, DeliveryTargetSchema, parseSessionCommand } from '@foreman-code/contracts'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { AgentChatContext } from '@foreman-code/contracts/agent-chat'
+import type { NodeBrowserSettings } from '@foreman-code/contracts'
+import { agentChatApi } from '../../../shared/api/agentChat'
 import { ChatAttachmentControl, useConversationAttachments } from '../../attachments'
 import { ChatAttachmentBoundary } from '../ChatAttachmentBoundary'
 
@@ -31,6 +33,7 @@ import { useAgentConversationComposer } from './useAgentConversationComposer'
 import { useFirstAttachment } from './useFirstAttachment'
 import { AgentChatSettings } from './AgentChatSettings'
 import { AgentConversationHistory } from './AgentConversationHistory'
+import { MissingChatFolderActions } from './MissingChatFolder'
 import './agentChat.css'
 import '../chatAttachments.css'
 
@@ -38,13 +41,15 @@ import '../chatAttachments.css'
 type AgentConversationProps = {
   context: AgentChatContext; name: string; role?: string; activity?: string; runLabel?: string
   visible?: boolean; onClose?: () => void; onNewConversation?: () => void
+  /** The Board's current browser switch for a chat outside any Run (undefined: keep the saved node setting). */
+  browser?: NodeBrowserSettings | null
   onRecover?(recovery: DirectRecovery): void
 }
 export function LiveAgentConversation(props: AgentConversationProps) {
   return props.visible === false ? null : <ChatAttachmentBoundary><AgentConversationContent key={`${identityEpoch()}:${agentChatContextKey(props.context)}`} {...props} /></ChatAttachmentBoundary>
 }
 
-function AgentConversationContent({ context, name, activity, runLabel, onClose, onNewConversation, onRecover }: AgentConversationProps) {
+function AgentConversationContent({ context, name, activity, runLabel, onClose, onNewConversation, onRecover, browser }: AgentConversationProps) {
   const [canonicalDenial, setCanonicalDenial] = useState<ApiError>()
   const chat = useAgentChat(context, { denial: canonicalDenial }), state = chat.state
   const conversation = state?.conversation
@@ -62,6 +67,25 @@ function AgentConversationContent({ context, name, activity, runLabel, onClose, 
     workspaceId: conversation.workspaceId, workflowId: conversation.workflowId,
     ...(conversation.origin.kind === 'run_execution' ? { runId: conversation.origin.runId, executionId: conversation.origin.executionId } : {}),
   } } : null)
+  const sentBrowser = useRef<string | undefined>(undefined)
+  const refreshChat = chat.refresh
+  useEffect(() => {
+    if (browser === undefined || context.runId || !state) return
+    const value = JSON.stringify(browser)
+    if (sentBrowser.current === value) return
+    // A browser turned on before the first message opens the conversation now, so that message already has it.
+    if (!conversationId && !browser?.enabled) return
+    sentBrowser.current = value
+    void (async () => {
+      const id = conversationId ?? (await agentChatApi.ensureConversation(context)).conversation?.id
+      if (!id) throw new Error('The conversation could not be opened.')
+      await agentChatApi.setBrowser(context.workspaceId, id, browser)
+      if (!conversationId) refreshChat()
+    })().catch((error: unknown) => {
+      sentBrowser.current = undefined
+      console.error('The chat browser setting could not be saved', error)
+    })
+  }, [browser, conversationId, context, state, refreshChat])
   const writeReason = retired ? 'Retired harness (OpenCode): read-only' : chat.blocked('agent_chat:write')
   const firstAttachment = useFirstAttachment({ context, executionId: state?.sourceTranscript?.executionId,
     hasConversation: !!conversation, ready: !!state && !writeReason, attachments, refresh: chat.refresh })
@@ -79,8 +103,8 @@ function AgentConversationContent({ context, name, activity, runLabel, onClose, 
         label={conversation?.origin.kind === 'run_execution' ? 'Source Run account · saved chat account' : 'Saved chat account'} />
       <SessionContext controls={sessionControls} />
     </>} />
-  if (chat.access.isPending || chat.access.isError || chat.denial || !state && !chat.canRead) return <AgentChatAccessState
-    header={header} pending={chat.access.isPending} error={chat.access.error} denial={chat.denial} draftKey={chat.draftKey}
+  if (chat.access.isPending || chat.access.isError && !chat.access.data || chat.denial || !state && !chat.canRead) return <AgentChatAccessState
+    header={header} pending={chat.access.isPending} error={chat.access.error} denial={chat.denial}
     refresh={() => { setCanonicalDenial(undefined); void chat.access.refetch(); chat.refresh() }} />
 
   const candidate = chat.query.data && 'deliveryTarget' in chat.query.data ? DeliveryTargetSchema.safeParse(chat.query.data.deliveryTarget) : undefined
@@ -128,6 +152,11 @@ function AgentConversationContent({ context, name, activity, runLabel, onClose, 
     attention = 'Original session unavailable'
     if (!conversation?.providerAccountBinding && onNewConversation) attentionAction = <Button size="sm" variant="ghost"
       onClick={onNewConversation}>{context.runId ? 'Start separate chat without this Run' : 'Choose another Agent for a new conversation'}</Button>
+  }
+  const missingFolder = state?.availability.missingFolder
+  if (missingFolder) {
+    attention = state?.availability.message ?? 'This chat’s workspace folder is missing.'
+    attentionAction = <MissingChatFolderActions workspaceId={context.workspaceId} path={missingFolder.path} onRecreated={chat.refresh} />
   }
   if (!attention && compactReason) attention = compactReason
   if (!attention && background) attention = background.label

@@ -68,15 +68,35 @@ export function authoringHints(graph: WorkflowDefinitionV3, context: NextDraftCo
   else if (graph.executionPolicy.maxNodeExecutions < graph.nodes.length) issues.push({ code: 'EXECUTION_LIMIT_TOO_LOW',
     message: `Increase “Maximum node executions” to at least ${graph.nodes.length}.` })
   const entry = entryChoices(graph, context, agentEdits)
+  const roleOf = (nodeId: string) => entry.roles.get(nodeId)?.role
+  const orchestrators = graph.nodes.filter(node => roleOf(node.id) === 'orchestrator').map(node => node.id)
+  // Orchestrators without a Master: one alert to add the Master, which then starts the workflow.
+  const masterless = !graph.hierarchy && orchestrators.length > 0 && !graph.nodes.some(node => roleOf(node.id) === 'master')
   if (!graph.nodes.length) issues.push({ code: 'ENTRY_REQUIRED', message: 'Add an agent to start building this workflow.' })
   else if (entry.unresolved.length) issues.push({ code: 'ROLE_PIN_UNAVAILABLE', message: 'An agent’s role changed or can’t be confirmed. Reload the saved draft.' })
+  else if (masterless) issues.push({ code: 'MASTER_REQUIRED', message: 'Add a Master to lead this workflow. It starts the work and hands it to the Orchestrators.' })
   else if (!entry.valid) issues.push({ code: 'ENTRY_REQUIRED', message: entry.mode === 'sole'
     ? 'Mark the only agent as the one that starts the workflow.'
     : entry.mode === 'master' ? 'Choose the master that starts the workflow.'
     : entry.mode === 'orchestrator' ? 'Choose the orchestrator that starts the workflow.'
       : 'Choose the worker that starts the workflow.' })
+  // New Workers are placed unconnected; a line to their Orchestrator makes them report there.
+  if (graph.hierarchy) for (const node of graph.nodes) {
+    if (node.kind === 'job' || node.id === graph.hierarchy.masterNodeId
+      || graph.hierarchy.parents.some(member => member.workflowNodeId === node.id)) continue
+    const worker = roleEvidence(context, node.agentId, agentEdits).role === 'coder'
+    issues.push({ code: 'HIERARCHY_PARENT_REQUIRED', nodeId: node.id,
+      message: `Connect ${nodeTitle(graph, node.id)} to ${worker ? 'an Orchestrator' : 'the Master'} before saving.` })
+  }
+  // Without a Master yet, a Worker still needs a line to an Orchestrator.
+  if (!graph.hierarchy) for (const node of graph.nodes) {
+    if (roleOf(node.id) !== 'coder' || graph.edges.some(edge => edge.kind === 'execution'
+      && (edge.source === node.id && orchestrators.includes(edge.target) || edge.target === node.id && orchestrators.includes(edge.source)))) continue
+    issues.push({ code: 'WORKER_UNCONNECTED', nodeId: node.id, message: orchestrators.length
+      ? `Connect ${nodeTitle(graph, node.id)} to an Orchestrator.` : `Add an Orchestrator and connect ${nodeTitle(graph, node.id)} to it.` })
+  }
   for (const edge of graph.edges) {
-    if (!(graph.hierarchy && graph.handoffs) && edge.kind === 'execution' && edge.target === graph.entryNodeId) issues.push({
+    if (!masterless && !(graph.hierarchy && graph.handoffs) && edge.kind === 'execution' && edge.target === graph.entryNodeId) issues.push({
       code: 'ENTRY_HAS_DEPENDENCY', relationshipId: edge.id, message: 'The starting agent can’t receive a handoff. Remove or redirect that connection.',
     })
   }
@@ -102,6 +122,9 @@ export function authoringHints(graph: WorkflowDefinitionV3, context: NextDraftCo
       code: 'UNDECLARED_CHOICE_EDGE', nodeId: node.id, relationshipId: edge.id, message: 'Every handoff from an agent that chooses by outcome needs an outcome.',
     })
   }
+  const asking = graph.approval?.handler === 'native' ? codexAgentsAskingUser(graph, context, agentEdits) : []
+  if (asking.length) issues.push({ code: 'CODEX_ASKS_FOR_APPROVAL', message: `${asking.map(agent => agent.name).join(', ')} `
+    + `${asking.length === 1 ? 'asks' : 'ask'} you for approval, but in this workflow Agents handle approvals themselves.` })
   const approvals = graph.edges.filter((edge) => edge.kind === 'approval')
   if (!graph.approval) issues.push({ code: 'APPROVAL_MODE_REQUIRED', message: 'Choose who handles approvals in workflow settings.' })
   if (graph.approval?.handler !== 'orchestrator' && approvals.length) issues.push({ code: 'APPROVAL_MODE_CONFLICT', message: 'Approval connections only work when an agent reviews approvals. Remove them or change who handles approvals.' })
@@ -125,10 +148,47 @@ export function authoringHints(graph: WorkflowDefinitionV3, context: NextDraftCo
   return issues
 }
 
+/** Codex Agents on this Board set to ask the user for approval (not never, not Codex automatic review). */
+export function codexAgentsAskingUser(graph: WorkflowDefinitionV3, context: NextDraftContext, agentEdits: DraftAgentEdits = {}): Agent[] {
+  const ids = new Set(graph.nodes.flatMap(node => node.kind === 'job' ? [] : [node.agentId]))
+  return [...ids].flatMap(id => {
+    const agent = agentEdits[id] ?? context.agents.find(item => item.agent.id === id)?.agent
+    const configuration = agent?.harnessConfiguration
+    return agent && configuration?.harness === 'codex' && configuration.advanced?.approvalPolicy === 'on-request'
+      && configuration.advanced.approvalsReviewer !== 'auto_review' ? [agent] : []
+  })
+}
+
 export function removeRelationship(graph: WorkflowDefinitionV3, relationshipId: string): WorkflowDefinitionV3 {
   const edges = graph.edges.filter((edge) => edge.id !== relationshipId)
+  if (edges.length === graph.edges.length) return graph
   // Deliberately retain now-incomplete choice references. Do not invent a branch end.
-  return edges.length === graph.edges.length ? graph : { ...graph, edges }
+  if (!graph.hierarchy) return { ...graph, edges }
+  // On a Master Board every line is one connection and its route is named for it, so removing the line removes
+  // that route; a member whose reporting line it was stops reporting there until it is connected again.
+  const nodes = graph.nodes.map(node => node.choice ? withoutChoiceTargets(node, id => id === relationshipId) : node)
+  const parents = graph.hierarchy.parents.filter(member => reportingRoute(nodes, edges, member))
+  return { ...graph, nodes, edges, hierarchy: { ...graph.hierarchy, parents } }
+}
+
+/** Drops named routes whose relationship matches; a node left with none no longer chooses by outcome. */
+export function withoutChoiceTargets(node: DraftNode, drop: (relationshipId: string) => boolean): DraftNode {
+  if (!node.choice) return node
+  const outcomes = node.choice.outcomes.filter(item => item.target.kind !== 'edge' || !drop(item.target.relationshipId))
+  if (outcomes.length === node.choice.outcomes.length) return node
+  if (outcomes.length) return { ...node, choice: { outcomes } }
+  const rest = { ...node }
+  delete rest.choice
+  return rest
+}
+
+/** The parent's work connection to a reporting member: a forward line, or a two-way one drawn the other way. */
+export function reportingRoute(nodes: readonly DraftNode[], edges: WorkflowDefinitionV3['edges'],
+  member: { workflowNodeId: string; parentNodeId: string }): WorkflowRelationship | undefined {
+  if (!nodes.some(node => node.id === member.parentNodeId)) return undefined
+  return edges.find(edge => edge.kind === 'execution'
+    && (edge.source === member.parentNodeId && edge.target === member.workflowNodeId
+      || edge.workRequestDirection === 'both' && edge.source === member.workflowNodeId && edge.target === member.parentNodeId))
 }
 
 export function removeNode(graph: WorkflowDefinitionV3, nodeId: string): WorkflowDefinitionV3 {
@@ -202,7 +262,8 @@ export function draftOperations(context: NextDraftContext, graph: WorkflowDefini
         if (!source?.agent.configurationVersionId || source.archivedAt) throw new Error('The selected Agent source pin is unavailable. Reload before attaching it.')
         operations.push({ type: 'agent.attach', agentId: node.agentId, nodeId: node.id,
           expectedAgentRevision: source.metadataRevision, expectedConfigurationVersionId: source.agent.configurationVersionId,
-          name: node.name ?? node.label, ...(node.position ? { position: node.position } : {}) })
+          // The attach position is x/y only; node.replace_v3 below carries the full position, manual placement included.
+          name: node.name ?? node.label, ...(node.position ? { position: { x: node.position.x, y: node.position.y } } : {}) })
       }
       operations.push({ type: 'node.replace_v3', node })
     } else if (!sameValue(executableNodeContent(old), executableNodeContent(node))) {

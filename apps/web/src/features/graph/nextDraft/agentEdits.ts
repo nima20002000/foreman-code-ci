@@ -2,7 +2,7 @@ import { SupportedHarnessConfigurationSchema } from '@foreman-code/contracts'
 import type { Agent } from '@foreman-code/contracts'
 import { StagedAgentSchema } from '@foreman-code/contracts/management'
 import type { GraphDraftOperationV3, WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
-import { draftAgents, sameValue, type DraftNode, type NextDraftContext } from './model'
+import { codexAgentsAskingUser, draftAgents, sameValue, type DraftNode, type NextDraftContext } from './model'
 import type { NextDraftEdit } from './state'
 
 export type DraftAgentEdits = Record<string, Agent>
@@ -90,6 +90,16 @@ export function changeDraftAgents(edit: NextDraftEdit, agents: Agent[], graph: W
     history: [...edit.history.slice(-49), edit.graph],
     historyOffset: (edit.historyOffset ?? 0) + Math.max(0, edit.history.length - 49),
     agentHistory: [...history.slice(-49), previous], validation: undefined }
+}
+
+/** One-click fix: Codex Agents that ask the user for approval never ask (prototype permission model). One undo step. */
+export function neverAskCodexAgents(edit: NextDraftEdit): NextDraftEdit {
+  const changed = codexAgentsAskingUser(edit.graph, edit.context, edit.agentEdits).flatMap(agent => {
+    const configuration = agent.harnessConfiguration
+    return configuration?.harness === 'codex' && configuration.advanced
+      ? [{ ...agent, harnessConfiguration: { ...configuration, advanced: { ...configuration.advanced, approvalPolicy: 'never' as const } } }] : []
+  })
+  return changed.length ? changeDraftAgents(edit, changed, edit.graph) : edit
 }
 
 /** Empty edit maps still capture previously edited Agents' authored base content. */

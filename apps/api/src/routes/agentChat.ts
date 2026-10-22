@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ChatControlReceiptSchema, parseSessionCommand, SessionControlRequestSchema, SessionControlStateSchema } from '@foreman-code/contracts'
+import { ChatControlReceiptSchema, NodeBrowserSettingsSchema, parseSessionCommand, SessionControlRequestSchema, SessionControlStateSchema } from '@foreman-code/contracts'
 import type { FastifyInstance } from 'fastify'
 
 import {
@@ -97,6 +97,11 @@ export function registerAgentChatRoutes(app: FastifyInstance, chat: AgentChatSer
     const { context, executionId } = EnsureAgentChatConversationRequestSchema.parse(request.body)
     return AgentChatStateResponseSchema.parse({ state: await chat.ensureConversation(requirePrincipal(request),
       { workspaceId: request.params.workspaceId, ...context }, executionId) })
+  })
+  app.put<{ Params: ConversationParams; Body: unknown }>(`${root}/conversations/:conversationId/browser`, async (request) => {
+    const { browser } = z.object({ browser: NodeBrowserSettingsSchema.nullable() }).strict().parse(request.body)
+    await chat.setChatBrowser(requirePrincipal(request), request.params.workspaceId, request.params.conversationId, browser)
+    return { ok: true }
   })
   app.post<{ Params: ConversationParams; Body: unknown }>(`${root}/conversations/:conversationId/interrupt`, async (request) => {
     const input = InterruptAgentChatRequestSchema.parse(request.body)

@@ -75,3 +75,12 @@ it('shows the default execution limits as editable values when the workflow has 
   await userEvent.setup().click(screen.getByRole('button', { name: 'Use these' }))
   expect(change.mock.calls[0]![0](graph).executionPolicy).toEqual({ maxParallelism: 4, maxNodeExecutions: 100 })
 })
+
+it('hides agent turns per run until agents are connected to each other', () => {
+  const edit = newNextDraft(fixture(), 'settings-test')
+  edit.graph = { ...edit.graph, edges: [] }
+  render(<WorkflowSettings draftKey="settings-test" edit={edit} change={vi.fn()} report={vi.fn()} defaultMs={600_000}
+    locationReady locationMessage="" onChangeFolder={vi.fn()} onReload={vi.fn()} />)
+  expect(screen.getByRole('spinbutton', { name: 'Agents at once' })).toHaveValue(4)
+  expect(screen.queryByRole('spinbutton', { name: 'Agent turns per run' })).not.toBeInTheDocument()
+})

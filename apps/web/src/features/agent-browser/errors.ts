@@ -1,3 +1,4 @@
+import { ZodError } from 'zod'
 import { SessionChangedError } from '../../shared/api/sessionBoundary'
 
 export function browserAccessDenied(error: unknown): boolean {
@@ -10,6 +11,8 @@ export function browserAccessDenied(error: unknown): boolean {
 
 export function browserErrorMessage(error: unknown): string {
   if (browserAccessDenied(error)) return 'Browser access is unavailable.'
+  // A response that fails validation is a fault in the app, not something the person can act on; never show the dump.
+  if (error instanceof ZodError) return 'The browser answered in an unexpected way. Check the page, then try again.'
   return error instanceof Error ? error.message : 'The browser request could not be confirmed.'
 }
 

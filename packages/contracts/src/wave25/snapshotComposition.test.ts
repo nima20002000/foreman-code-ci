@@ -86,7 +86,7 @@ describe('parsed workflow snapshot composition', () => {
     }))
     const snapshot = { version: nativeVersion, configurations: incompatible }
     expect(() => assertExecutableWorkflow(snapshot))
-      .toThrow('pinned native configuration conflicts with approval authority')
+      .toThrow('asks you for approval, but in this workflow Agents handle approvals themselves')
     expect(ExecutableWorkflowV3Schema.safeParse(snapshot).success).toBe(false)
   })
 })

@@ -32,7 +32,9 @@ export type BrowserPageInput =
 
 export interface BrowserHostFrame { data: Uint8Array; mimeType: 'image/jpeg' | 'image/png'; width: number; height: number; viewportOffsetTop: number; capturedAt: string }
 export interface BrowserPageObservation { title: string; url: string; text: string; dialog: { type: string; message: string; defaultPrompt?: string } | null }
-export interface BrowserNativeFacts { dialog: BrowserPageObservation['dialog']; uploadChooser: { selector: string; multiple: boolean } | null }
+export interface BrowserNativeFacts { dialog: BrowserPageObservation['dialog']; uploadChooser: { selector: string; multiple: boolean } | null
+  /** The page the tab shows now, also after navigation Foreman did not cause. */
+  page?: { title: string; url: string } }
 export interface BrowserNativeDownload {
   profileId: string; generation: number; targetId: string; nativeId: string; name: string; byteLength: number
   receivedBytes: number; state: 'inProgress' | 'completed' | 'canceled'; privatePath: string
@@ -55,7 +57,8 @@ export interface BrowserNativeDriver {
   input(input: BrowserPageInput, dispatch: BrowserNativeDispatch): Promise<void>
   releasePressed(dispatch: BrowserNativeDispatch): Promise<void>
   capture(profileId: string, generation: number, targetId: string, frame: (value: BrowserHostFrame) => void): Promise<() => Promise<void>>
-  openLocal(profileId: string, generation: number, targetId: string): Promise<void>
+  /** Resolves with old-to-new target IDs when the profile had to be relaunched with a visible window. */
+  openLocal(profileId: string, generation: number, targetId: string): Promise<Record<string, string> | undefined>
   facts(profileId: string, generation: number, targetId: string): BrowserNativeFacts
   onTabClosed(listener: (profileId: string, generation: number, targetId: string) => void): () => void
   onPopup(listener: (profileId: string, generation: number, openerTargetId: string, tab: NativeBrowserTab) => void | Promise<void>): () => void

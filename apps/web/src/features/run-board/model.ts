@@ -1,13 +1,13 @@
 import type { Edge, Node, ReactFlowProps } from '@xyflow/react'
 import type { RunBoardSnapshot, RunBoardNodeSnapshot, RunBoardEdgeSnapshot } from '@foreman-code/contracts/run-snapshots'
-import { GRAPH_NODE_DEFAULT_SIZE } from '../graph/mapper'
+import { roleNodeSize } from '../graph/mapper'
 import { layoutHierarchy } from '../graph/hierarchyLayout'
 import { agentProductRoleLabel, isHierarchyReportingRoute, type ActivitySnapshotV1, type CiActivity, type WorkRef,
   type WorkflowHierarchyReadResult } from '@foreman-code/contracts'
 
 export type AvailableRunBoardSnapshot = Extract<RunBoardSnapshot, { kind: 'available' }>
 export type SavedBoardNode = Node<{ snapshot: RunBoardNodeSnapshot; role?: string; reportingParent?: string; ci?: CiActivity; inspect?: () => void }, 'savedBoardNode'>
-export type SavedBoardEdge = Edge<{ snapshot: RunBoardEdgeSnapshot; lane: number; reportingParent?: string }, 'savedBoardEdge'>
+export type SavedBoardEdge = Edge<{ snapshot: RunBoardEdgeSnapshot; lane: number }, 'savedBoardEdge'>
 
 /** No caller-provided canvas props may override these locks. Viewport movement is harmless. */
 export const READ_ONLY_FLOW_PROPS = {
@@ -31,12 +31,17 @@ export function projectRunBoard(snapshot: AvailableRunBoardSnapshot, activity?: 
     && node.id === agent.workflowNodeId && node.agentId === agent.agentId && node.agentConfigurationVersionId === agent.configurationVersionId))
     .map(agent => [agent.workflowNodeId, agent]))
   // Saved positions and sizes are not drawn: a Run lays itself out as the same hierarchy the Board does.
-  const size = { width: GRAPH_NODE_DEFAULT_SIZE, height: GRAPH_NODE_DEFAULT_SIZE }
-  const placed = layoutHierarchy(snapshot.nodes.map((node) => ({ id: node.id, ...size })), snapshot.edges)
+  // Same role sizes as the Board: Master, then Orchestrator at half, then Worker at half again.
+  const sizes = new Map(snapshot.nodes.map((node) => {
+    const role = saved?.hierarchy?.masterNodeId === node.id ? 'master' : identities.get(node.id)?.productRole
+    const diameter = roleNodeSize(role === 'master' && saved?.hierarchy?.masterNodeId !== node.id ? 'orchestrator' : role)
+    return [node.id, { width: diameter, height: diameter }] as const
+  }))
+  const placed = layoutHierarchy(snapshot.nodes.map((node) => ({ id: node.id, ...sizes.get(node.id)! })), snapshot.edges)
   const nodes: SavedBoardNode[] = snapshot.nodes.map((node) => ({
     id: node.id, type: 'savedBoardNode', position: { ...placed.get(node.id)! }, origin: [0, 0],
-    initialWidth: size.width, initialHeight: size.height,
-    style: { ...size }, data: { snapshot: node,
+    initialWidth: sizes.get(node.id)!.width, initialHeight: sizes.get(node.id)!.height,
+    style: { ...sizes.get(node.id)! }, data: { snapshot: node,
       ...(identities.has(node.id) ? { role: agentProductRoleLabel(identities.get(node.id)!.productRole) } : {}),
       // The Master reports to no one, so it gets no "Reports to" caption.
       ...(saved?.hierarchy && node.id !== saved.hierarchy.masterNodeId ? { reportingParent:
@@ -56,8 +61,7 @@ export function projectRunBoard(snapshot: AvailableRunBoardSnapshot, activity?: 
     return {
       id: edge.id, type: 'savedBoardEdge', source: edge.source, target: edge.target,
       sourceHandle: edge.sourceHandle ?? 'right', targetHandle: edge.targetHandle ?? 'left',
-      data: { snapshot: edge, lane, ...(isHierarchyReportingRoute(saved?.hierarchy ?? undefined, edge)
-        ? { reportingParent: names.get(edge.source) ?? edge.source } : {}) },
+      data: { snapshot: edge, lane },
       selectable: false, deletable: false, reconnectable: false, focusable: true,
       ariaRole: 'img',
       ariaLabel: `${isHierarchyReportingRoute(saved?.hierarchy ?? undefined, edge) ? 'Orchestrates' : edge.kind === 'approval' ? 'Approval' : 'Handoff'} from ${names.get(edge.source)} to ${names.get(edge.target)}${edge.label ? `: ${edge.label}` : ''}, read only`,

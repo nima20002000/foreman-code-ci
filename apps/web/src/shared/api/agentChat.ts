@@ -6,7 +6,7 @@ import {
   AgentChatResetResponseSchema, ReadAgentChatRequestSchema, ReadAgentChatResponseSchema,
   type AgentChatContext, type SendAgentChatMessageRequest,
 } from '@foreman-code/contracts/agent-chat'
-import { OperatorActivityCursorSchema } from '@foreman-code/contracts'
+import { OperatorActivityCursorSchema, type NodeBrowserSettings } from '@foreman-code/contracts'
 import { apiClient, ApiError, type RequestOptions } from './client'
 
 const path = encodeURIComponent
@@ -56,6 +56,11 @@ export const agentChatApi = {
     const { workspaceId, ...query } = AgentChatContextSchema.parse(context)
     const body = EnsureAgentChatConversationRequestSchema.parse({ context: AgentChatQuerySchema.parse(query), ...(executionId ? { executionId } : {}) })
     return (await apiClient.request(`${agentChatRoot(workspaceId)}/conversation`, AgentChatStateResponseSchema, { ...options, method: 'POST', body })).state
+  },
+  /** The Board's current browser switch for a chat outside any Run; null returns to the saved node setting. */
+  setBrowser(workspaceId: string, conversationId: string, browser: NodeBrowserSettings | null, options?: RequestOptions) {
+    return apiClient.request(`${agentChatConversationPath(workspaceId, conversationId)}/browser`, z.object({ ok: z.literal(true) }),
+      { ...options, method: 'PUT', body: { browser } })
   },
   interrupt(workspaceId: string, conversationId: string, input: z.infer<typeof InterruptAgentChatRequestSchema>, options?: RequestOptions) {
     return apiClient.request(`${agentChatConversationPath(workspaceId, conversationId)}/interrupt`, AgentChatStateResponseSchema,

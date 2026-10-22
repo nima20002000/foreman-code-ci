@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util'
 import { describe, expect, it, vi } from 'vitest'
 import type pg from 'pg'
 import type { HostHarnessOverride, HostHarnessProfileEvidence } from '@foreman-code/contracts/harness-registry'
@@ -120,6 +121,21 @@ describe('exact accepted Claude profile admission', () => {
       original.instanceRevision, { target: original.target })
     f.settings.savedRevision.mockResolvedValue({ ...original, configurationFingerprint: 'another-config' })
     await expect(f.admission.admit('owner', f.selector)).rejects.toMatchObject({ code: 'HARNESS_PROFILE_UNAVAILABLE' })
+  })
+  it('revalidates a requalified installation against the saved selector its owner authorized', async () => {
+    const f = fixture()
+    const original = structuredClone(f.value)
+    f.value.revision = 2
+    f.value.target = { ...f.value.target, installationFingerprint: 'updated' }
+    f.proof.target = f.value.target
+    Object.assign(f.registry, { selection: { ...f.registry.selection, installationFingerprint: 'updated' } })
+    f.settings.savedRevision.mockResolvedValue(original)
+    // A saved Operator configuration authorizes exactly the selector it stored.
+    vi.mocked(f.authority.authorize).mockImplementation(async (_owner, selector) => {
+      if (!isDeepStrictEqual(selector, f.selector)) throw new DomainError('HARNESS_PROFILE_OWNER_CONFLICT', 'The saved selection changed.', 409)
+    })
+    const accepted = await f.admission.admit('owner', f.selector)
+    await expect(f.admission.revalidate('owner', accepted)).resolves.toBeUndefined()
   })
   it('reports the pending automatic check before trying to consume old native proof', async () => {
     const f = fixture()

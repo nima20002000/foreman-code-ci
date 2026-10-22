@@ -63,7 +63,8 @@ export function withWorkflowExecutionChatTools(legacy: readonly OperatorToolDefi
       inputSchema: objectEnvelope(tool.inputSchema as z.ZodType, schema.input),
       outputSchema: tool.outputSchema ? objectEnvelope(tool.outputSchema as z.ZodType, schema.output) : schema.output,
       description: `${tool.description}\nFor Run-owned work, pass the shared exact target directly at the top level. `
-        + 'agent_chat_read also accepts resolve:{workspaceId,workflowId,workflowNodeId,runId?,workflowVersionId?,executionId?,waitingActivationId?}; '
+        + 'agent_chat_read also accepts resolve:{workspaceId,workflowId,workflowNodeId,runId?,workflowVersionId?,executionId?,waitingActivationId?,agentId?}; '
+        + 'with agentId (a saved Agent) a node that is not in a saved workflow version yet resolves to its draft chat (outside_run without workflowVersionId); '
         + 'pass {target,messageId} to read the complete native message when a page reports truncation. '
         + 'choose ambiguous Run/execution identities explicitly. The response preserves the original native history and target, '
         + 'without creating a conversation or Run. Exact-target sends require explicit intent; auto never interrupts. '

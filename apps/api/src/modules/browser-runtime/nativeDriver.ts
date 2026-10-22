@@ -35,7 +35,6 @@ export interface BrowserNativeDriverOptions {
   allocateGeneration(profileId: string): Promise<number>
   onOrigin(profileId: string, origin: string): Promise<void>
   onDisconnected(profileId: string, generation: number): void
-  graphical?: boolean
   downloadDirectory?(profileId: string): string
   onDownload?(event: BrowserNativeDownload): Promise<void>
 }
@@ -119,7 +118,8 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
     await connection.send('Target.setDiscoverTargets', { discover: true })
   }
 
-  private async launch(profileId: string): Promise<{ generation: number }> {
+  /** Agent browsers always start headless; only `openLocal` relaunches a profile with a visible window, reusing its generation. */
+  private async launch(profileId: string, headed = false, reuseGeneration?: number): Promise<{ generation: number }> {
     const { directory } = await this.options.profileDirectory(profileId)
     const previous = await readBrowserProcessIdentity(directory)
     if (previous && browserProcessAlive(previous.pid, previous.birthId)) {
@@ -143,16 +143,21 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
         throw new DomainError('BROWSER_PROCESS_OWNERSHIP', 'An unverified process endpoint exists for this profile.', 503)
       } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
     }
-    const generation = await this.options.allocateGeneration(profileId), token = randomUUID()
-    const desktop = process.platform !== 'linux' || Boolean(process.env.DISPLAY || process.env.WAYLAND_DISPLAY)
-    const headless = this.options.graphical === false || this.options.graphical !== true && !desktop
+    const generation = reuseGeneration ?? await this.options.allocateGeneration(profileId), token = randomUUID()
+    const headless = !headed
     const args = [`--user-data-dir=${directory}`, `--foreman-browser-owner=${token}`, '--enable-automation',
       '--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1', '--no-first-run', '--no-default-browser-check',
       '--disable-background-networking', ...(headless ? ['--headless=new'] : []), 'about:blank']
     // Chromium's own profile lock remains authoritative; no lock removal or sandbox bypass.
     const runtimeDirectory = await createBrowserRuntimeDirectory(this.options.actionDirectory)
-    const processHandle = spawn(this.options.runtime.chromiumExecutable, args, { stdio: 'ignore',
+    const processHandle = spawn(this.options.runtime.chromiumExecutable, args, { stdio: ['ignore', 'ignore', 'pipe'],
       env: { ...process.env, TMPDIR: runtimeDirectory?.temporaryDirectory ?? process.env.TMPDIR } })
+    // Keep only Chromium's last fatal line, so a launch failure names its own cause.
+    let fatal = ''
+    processHandle.stderr?.setEncoding('utf8').on('data', (chunk: string) => {
+      const line = chunk.split('\n').reverse().find(value => value.includes(':FATAL:'))
+      if (line) fatal = line.replace(/^\[[^\]]*\]\s*/, '').slice(0, 400)
+    })
     processHandle.once('exit', () => {
       void removeBrowserRuntimeDirectory(runtimeDirectory).catch(error => console.error('Managed browser runtime directory cleanup failed', error))
     })
@@ -166,7 +171,10 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
       if (!identity.pid) throw new Error('Browser process did not start')
       await writeBrowserProcessIdentity(identity)
       for (let attempt = 0; attempt < 150; attempt++) {
-        if (failed || processHandle.exitCode !== null) throw failed ?? new Error('Browser launch exited')
+        // A crash ends with a signal and leaves exitCode null.
+        if (failed || processHandle.exitCode !== null || processHandle.signalCode !== null) {
+          throw failed ?? new Error(`Browser launch exited${fatal ? `: ${fatal}` : ''}`)
+        }
         try {
           const [port, path] = (await readFile(activePortPath, 'utf8')).trim().split('\n')
           if (port && /^\d+$/.test(port) && path?.startsWith('/devtools/browser/')) {
@@ -188,6 +196,9 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
     } catch (error) {
       connection?.close(); processHandle.kill('SIGTERM')
       if (!processHandle.pid || !browserProcessAlive(identity.pid, identity.birthId)) await removeBrowserRuntimeDirectory(runtimeDirectory)
+      const exited = processHandle.exitCode !== null || processHandle.signalCode !== null
+      if (exited && fatal) throw new DomainError('BROWSER_LAUNCH_FAILED',
+        `The managed browser exited while starting: ${fatal}`, 409, { retryable: false }, { cause: error })
       throw new DomainError('BROWSER_RUNTIME_MISSING', 'The managed browser could not start. Check runtime setup and the profile lock.', 503, undefined, { cause: error })
     }
   }
@@ -243,6 +254,11 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
       profile.pendingPopups.add(pending)
       void pending.finally(() => profile.pendingPopups.delete(pending))
         .catch(() => this.options.onDisconnected(profileId, profile.generation))
+      return
+    }
+    if (event.method === 'Target.targetInfoChanged') {
+      const info = object(event.params.targetInfo), changed = profile.tabs.get(text(info.targetId))
+      if (changed) { changed.title = text(info.title); changed.url = text(info.url) || changed.url }
       return
     }
     const tab = [...profile.tabs.values()].find(value => value.sessionId === event.sessionId)
@@ -493,12 +509,53 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
     } }
   }
 
-  async openLocal(profileId: string, generation: number, targetId: string): Promise<void> {
-    const profile = this.profile(profileId, generation)
-    if (profile.headless) throw new DomainError('BROWSER_NATIVE_INTERACTION_UNAVAILABLE', 'Continue on this computer requires its graphical desktop session.', 409)
+  /** Shows the tab in a visible window. A headless profile is relaunched headed first; the result maps replaced target IDs. */
+  async openLocal(profileId: string, generation: number, targetId: string): Promise<Record<string, string> | undefined> {
+    let profile = this.profile(profileId, generation)
     if (!profile.tabs.has(targetId)) throw new DomainError('BROWSER_TAB_SCOPE', 'This tab is unavailable.', 403)
-    await profile.connection.send('Page.setInterceptFileChooserDialog', { enabled: false }, profile.tabs.get(targetId)!.sessionId)
-    await profile.connection.send('Target.activateTarget', { targetId })
+    const replaced = profile.headless ? await this.relaunchHeaded(profileId, profile) : undefined
+    if (replaced) profile = this.profile(profileId, generation)
+    const visible = replaced?.[targetId] ?? targetId, tab = profile.tabs.get(visible)
+    if (!tab) throw new DomainError('BROWSER_TAB_SCOPE', 'This tab is unavailable.', 403)
+    await profile.connection.send('Page.setInterceptFileChooserDialog', { enabled: false }, tab.sessionId)
+    await profile.connection.send('Target.activateTarget', { targetId: visible })
+    return replaced
+  }
+
+  private relaunchHeaded(profileId: string, profile: NativeProfile): Promise<Record<string, string>> {
+    if (process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
+      throw new DomainError('BROWSER_NATIVE_INTERACTION_UNAVAILABLE', 'Continue on this computer requires its graphical desktop session.', 409)
+    }
+    const task = (async () => {
+      const tabs = [...profile.tabs.values()].map(tab => ({ id: tab.id, url: tab.url }))
+      // Session cookies live only in the running process; carry them over so sign-ins survive the relaunch.
+      const cookies = object(await profile.connection.send('Storage.getCookies')).cookies
+      // Detach first: this deliberate shutdown is neither a disconnect nor closed tabs for the broker.
+      profile.tabs.clear(); this.profiles.delete(profileId)
+      try {
+        // The old process must have exited (releasing Chromium's profile lock) before the headed one starts.
+        await this.shutdown(profile)
+        await this.launch(profileId, true, profile.generation)
+        const next = this.profile(profileId, profile.generation)
+        if (Array.isArray(cookies) && cookies.length) await next.connection.send('Storage.setCookies', { cookies })
+        const listed = object(await next.connection.send('Target.getTargets')).targetInfos
+        const initial = (Array.isArray(listed) ? listed : []).map(object).filter(value => value.type === 'page')
+        const replaced: Record<string, string> = {}
+        for (const tab of tabs) {
+          const id = text(object(await next.connection.send('Target.createTarget', { url: tab.url || 'about:blank' })).targetId)
+          if (!id) throw new DomainError('BROWSER_TAB_FAILED', 'The browser did not create a tab.', 503)
+          await this.attach(next, id, '', tab.url); replaced[tab.id] = id
+        }
+        for (const value of initial) await next.connection.send('Target.closeTarget', { targetId: text(value.targetId) })
+        return replaced
+      } catch (error) {
+        this.options.onDisconnected(profileId, profile.generation); throw error
+      }
+    })()
+    const opened = task.then(() => ({ generation: profile.generation }))
+    this.opening.set(profileId, opened)
+    void opened.then(() => this.opening.delete(profileId), () => this.opening.delete(profileId))
+    return task
   }
 
   onPopup(listener: Parameters<BrowserNativeDriver['onPopup']>[0]): () => void { this.popups.add(listener); return () => this.popups.delete(listener) }
@@ -506,7 +563,8 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
   facts(profileId: string, generation: number, targetId: string): BrowserNativeFacts {
     const tab = this.profile(profileId, generation).tabs.get(targetId)
     if (!tab) throw new DomainError('BROWSER_TAB_SCOPE', 'This tab is no longer owned.', 403)
-    return { dialog: tab.dialog, uploadChooser: tab.chooser ? { selector: `foreman-chooser:${tab.chooser.id}`, multiple: tab.chooser.multiple } : null }
+    return { dialog: tab.dialog, uploadChooser: tab.chooser ? { selector: `foreman-chooser:${tab.chooser.id}`, multiple: tab.chooser.multiple } : null,
+      page: { title: tab.title, url: tab.url } }
   }
 
   private async enterInertOrigin(profile: NativeProfile, tab: AttachedTab, origin: string): Promise<void> {
@@ -589,7 +647,7 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
 
   async importState(profileId: string, directory: string, generation: number, state: BrowserPortableState): Promise<void> {
     // A temporary host uses the exact fresh directory; it is never published to any agent or viewer.
-    const staging = new ManagedBrowserNativeDriver({ ...this.options, graphical: false,
+    const staging = new ManagedBrowserNativeDriver({ ...this.options,
       profileDirectory: async () => ({ directory, generation }), allocateGeneration: async () => generation,
       onOrigin: async () => { /* Staging origins are committed with the verified snapshot. */ },
       onDisconnected: () => { /* The staging importer awaits shutdown before activation. */ } })
@@ -633,12 +691,15 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
       if (identity && !browserProcessAlive(identity.pid, identity.birthId)) await removeBrowserRuntimeDirectory(identity.runtimeDirectory)
       return
     }
+    await this.shutdown(profile)
+    this.profiles.delete(profileId)
+  }
+
+  private async shutdown(profile: NativeProfile): Promise<void> {
     try { await profile.connection.send('Browser.close') } catch { /* ignore: Browser.close may close CDP before responding; process exit below is authoritative. */ }
     for (let attempt = 0; attempt < 100 && browserProcessAlive(profile.identity.pid, profile.identity.birthId); attempt++) await delay(100)
     if (browserProcessAlive(profile.identity.pid, profile.identity.birthId)) throw new DomainError('PROFILE_BUSY', 'The browser has not exited; profile storage cannot be replaced.', 409)
     await removeBrowserRuntimeDirectory(profile.identity.runtimeDirectory)
-    this.profiles.delete(profileId)
-    const { directory } = await this.options.profileDirectory(profileId)
-    await rm(join(directory, 'DevToolsActivePort'), { force: true })
+    await rm(join(profile.identity.directory, 'DevToolsActivePort'), { force: true })
   }
 }

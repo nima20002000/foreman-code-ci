@@ -364,7 +364,19 @@ export class BrowserBroker implements BrowserLifecyclePort {
 
   read(sessionId: string): { session: BrowserSession; control: BrowserControl; tabs: BrowserTabLease[] } {
     const { record } = this.requireSession(sessionId)
+    this.followPages(record)
     return structuredClone({ session: record.session, control: record.control, tabs: record.leases.map(value => value.lease) })
+  }
+
+  /** Leases show the page each tab has now, also when it changed without a Foreman action (a restored profile, links). */
+  private followPages(record: LiveSession['record']) {
+    if (record.session.state === 'closed' || record.session.state === 'recovering') return
+    for (const owned of record.leases) {
+      let page: { title: string; url: string } | undefined
+      try { page = this.options.driver.facts(record.session.profileId, record.session.browserGeneration, owned.targetId).page }
+      catch { /* ignore: a tab that is closing keeps its last known page until the session drops it. */ continue }
+      if (page) { owned.lease.title = page.title; owned.lease.url = page.url }
+    }
   }
 
   list(subject?: AgentSubject): BrowserSession[] {
@@ -420,6 +432,7 @@ export class BrowserBroker implements BrowserLifecyclePort {
       this.assertActor(live, input.actor); this.lease(live, input.tabId, input.actor.browserGeneration)
       const dispatch = this.checkedDispatch(input.sessionId, input.tabId, input.actor, markEffect)
       const result = await this.options.driver.action(input.action, dispatch)
+      if (input.action.kind !== 'dialog') await this.refreshLease(live, input.tabId, dispatch)
       if (input.action.kind === 'dialog' && live.dialogBarrier) {
         if (!await live.gate.settle()) {
           live.record.control.state = 'paused'; live.record.control.reason = 'The dialog closed; the interrupted browser action is still settling.'
@@ -431,6 +444,21 @@ export class BrowserBroker implements BrowserLifecyclePort {
       }
       return { state: 'completed' as const, result }
     })
+  }
+
+  /** Viewers read the tab's page from its lease, so a page action brings the lease's title and address up to date. */
+  private async refreshLease(live: LiveSession, tabId: string, dispatch: BrowserNativeDispatch) {
+    const owned = live.record.leases.find(value => value.lease.tabId === tabId)
+    if (!owned) return
+    try {
+      const observed = await this.options.driver.observe(dispatch)
+      if (owned.lease.title === observed.title && owned.lease.url === observed.url) return
+      owned.lease.title = observed.title; owned.lease.url = observed.url
+      await this.persist(live)
+    } catch (error) {
+      // ignore: the action itself completed; a stale page title only delays the viewer's tab label until the next action.
+      void error
+    }
   }
 
   private controlOperation<T>(sessionId: string, work: () => Promise<T>): Promise<T> {
@@ -689,12 +717,26 @@ export class BrowserBroker implements BrowserLifecyclePort {
       const owned = this.lease(live, input.tabId, input.actor.browserGeneration)
       if (input.actor.kind !== 'viewer') throw new DomainError('BROWSER_CONTROL_REQUIRED', 'Take control before opening this computer’s browser window.', 409)
       markEffect()
-      await this.options.driver.openLocal(live.record.session.profileId, input.actor.browserGeneration, owned.targetId)
+      const replaced = await this.options.driver.openLocal(live.record.session.profileId, input.actor.browserGeneration, owned.targetId)
+      if (replaced) await this.replaceTargets(live.record.session.profileId, input.actor.browserGeneration, replaced)
       await this.disconnectViewer(input.sessionId, input.actor.viewerId!)
       live.record.control.reason = 'Continue on this computer. Return control explicitly when finished.'
       await this.persist(live)
       return structuredClone(live.record.control)
     }))
+  }
+
+  /** A headed relaunch keeps the process generation but gives every tab a new native target. */
+  private async replaceTargets(profileId: string, generation: number, replaced: Record<string, string>): Promise<void> {
+    for (const live of this.sessions.values()) {
+      if (live.record.session.profileId !== profileId || live.record.session.browserGeneration !== generation) continue
+      let changed = false
+      for (const owned of live.record.leases) {
+        const next = replaced[owned.targetId]
+        if (next) { owned.targetId = next; changed = true }
+      }
+      if (changed) await this.persist(live)
+    }
   }
 
   async capture(sessionId: string, tabId: string, generation: number,

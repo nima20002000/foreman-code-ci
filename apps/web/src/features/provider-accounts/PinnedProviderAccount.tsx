@@ -1,7 +1,7 @@
 import type { AcceptedProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
 import { Button } from '../../shared/ui/nocturne'
-import { useProviderAccount } from './providerAccountsQueries'
+import { useProviderAccount, useProviderAccountDetails } from './providerAccountsQueries'
 import './providerAccounts.css'
 
 export function PinnedProviderAccount({ binding, label = 'Saved account' }: {
@@ -10,10 +10,14 @@ export function PinnedProviderAccount({ binding, label = 'Saved account' }: {
   const query = useProviderAccount(binding?.kind === 'slot' ? binding : undefined)
   const denied = useProtectedAccessError(query)
   const account = query.isError || denied ? undefined : query.data
+  // A legacy profile is shown by its account's name, never by its internal profile reference.
+  const legacy = useProviderAccountDetails(binding?.kind === 'legacy-profile' ? binding.accountId : undefined)
+  const legacyName = legacy.isError ? undefined : legacy.data?.name
   if (!binding) return <p className="pinned-provider-account">{label}: not recorded.
     Historical provider identity is unknown.</p>
-  if (binding.kind === 'legacy-profile') return <p className="pinned-provider-account">{label}: legacy {binding.provider} profile.
-    Historical provider identity is unknown.{binding.profileRef ? ` Profile ${binding.profileRef}.` : ''}</p>
+  if (binding.kind === 'legacy-profile') return <p className="pinned-provider-account">{label}: {legacyName
+    ? <><strong>{legacyName}</strong> · {binding.provider}</> : `legacy ${binding.provider} profile`}.
+    Historical provider identity is unknown.</p>
   const target = binding.target
   const unavailable = !account || Boolean(account.removedAt) || account.status === 'unavailable'
   return <section className="pinned-provider-account" aria-label={label}>

@@ -16,7 +16,6 @@ export function RetainedAgentCommands({ commands, onDenied, onReceipt, pending, 
   onReceipt(receipt: ChatDeliveryReceipt): void
 }) {
   return <><section aria-label="Retained commands">
-    <p>{pending ? 'Loading this conversation…' : 'The conversation snapshot is unavailable. Original delivery inputs remain available below.'}</p>
     {commands.map(record => record.command?.kind === 'send' && record.result?.receipt
       ? <RetainedAgentCommand key={record.result.receipt.id} command={record.command} receipt={record.result.receipt}
         onDenied={onDenied} onReceipt={onReceipt} readOnly /> : null)}

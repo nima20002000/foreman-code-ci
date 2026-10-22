@@ -1,15 +1,24 @@
 import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { Icon, IconButton, Tooltip } from '../../../shared/ui/nocturne'
+import { usePanelHeaderSlot } from '../../../shared/ui/panelHeaderSlot'
 
 export function AgentChatHeader({ name, state, detail, controls, onClose }: {
   name: string; state: string; detail?: string; controls?: ReactNode; onClose?: () => void
 }) {
   const chip = <span className="agent-chat-session-label" data-state={state} role="status" aria-label="Agent state"
     tabIndex={detail ? 0 : undefined}>{state}</span>
-  return <header className="agent-chat-header"><nav aria-label={`${name} chat controls`}>
-    <div className="agent-chat-identity"><h2>{name}</h2></div>
+  const slot = usePanelHeaderSlot()
+  const status = <>
     {detail ? <Tooltip content={detail}>{chip}</Tooltip> : chip}
     {controls ? <div className="agent-chat-header-controls">{controls}</div> : null}
+  </>
+  // Inside a floating panel the state and context meter join the panel's own header row, freeing a row for messages.
+  if (slot) return <header className="agent-chat-header agent-chat-header--slotted"><div className="agent-chat-identity"><h2>{name}</h2></div>
+    {createPortal(<div className="agent-chat-header-status"><strong className="agent-chat-header-name">{name}</strong>{status}</div>, slot)}</header>
+  return <header className="agent-chat-header"><nav aria-label={`${name} chat controls`}>
+    <div className="agent-chat-identity"><h2>{name}</h2></div>
+    {status}
     {onClose ? <IconButton className="agent-chat-close" label={`Close ${name}`} variant="ghost" onClick={onClose}>
       <Icon name="close" />
     </IconButton> : null}

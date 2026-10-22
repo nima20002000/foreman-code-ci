@@ -394,11 +394,13 @@ export class WorkerCredentialService {
         failure ??= error
       }
     }
-    // Heal unbound worker principals left by the old non-atomic issuer as well.
+    // Heal unbound worker principals left by the old non-atomic issuer as well. Agent chat credentials are
+    // worker principals bound to their conversation instead, and stay live for the chat's native session.
     await this.pool.query(
       `update management_principals p set revoked_at=now()
        where p.audience='worker' and p.revoked_at is null
-         and not exists (select 1 from worker_credential_bindings b where b.principal_id=p.id)`,
+         and not exists (select 1 from worker_credential_bindings b where b.principal_id=p.id)
+         and not exists (select 1 from agent_conversation_credentials c where c.principal_id=p.id)`,
     )
     if (failure) throw failure
   }

@@ -1,24 +1,17 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import type { ChatDeliveryReceipt, DeliveryTarget } from '@foreman-code/contracts'
-import { Button } from '../../../shared/ui/nocturne'
+import { Button, MessageBubble } from '../../../shared/ui/nocturne'
 import { identityEpoch } from '../../../shared/api/protectedChatStorage'
 import { isApiAccessError } from '../../../shared/api/accessError'
 import { isApiRestartError } from '../../../shared/api/client'
 import { ChatDeliveryReceipts } from './ChatDeliveryReceipts'
-import { chatDeliveryClient, type RetainedInput } from './client'
+import { chatDeliveryClient, type RetainedInput as RetainedInputRecord } from './client'
 
-export type DirectRecovery = { origin: 'direct'; receipt: ChatDeliveryReceipt; input: RetainedInput;
+export type DirectRecovery = { origin: 'direct'; receipt: ChatDeliveryReceipt; input: RetainedInputRecord;
   choice: 'outside_run' | 'historical_follow_up' }
 
-/** Inputs that never reached a native message remain their own immutable, exact-target records. */
-export function RetainedDeliveryInputs({ target, receipts, onDenied, onRecover, onOpenGroup, onCancel, onRefresh, controlsReason, representedCommandIds }: {
-  target: DeliveryTarget; receipts: readonly ChatDeliveryReceipt[]; onDenied(error: Error): void
-  onRecover?(recovery: DirectRecovery): void; onOpenGroup?(postId: string): void
-  onCancel?(receipt: ChatDeliveryReceipt): void; onRefresh(): void
-  controlsReason?: string
-  /** Existing standalone user/queued rows already display these immutable inputs. */
-  representedCommandIds?: readonly string[]
-}) {
+/** Original inputs that never reached a native message, newest page last. Nearly every chat has none. */
+export function useRetainedInputs(target: DeliveryTarget, onDenied: (error: Error) => void, representedCommandIds?: readonly string[]) {
   const inputs = useInfiniteQuery({ queryKey: ['chat-delivery-inputs', identityEpoch(), JSON.stringify(target)],
     maxPages: 4, initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam, signal }) => {
@@ -31,21 +24,48 @@ export function RetainedDeliveryInputs({ target, receipts, onDenied, onRecover, 
   const represented = new Set(representedCommandIds)
   const items = [...(inputs.data?.pages ?? [])].reverse().flatMap(page => page.items)
     .filter(input => !represented.has(input.commandId))
-  // Nearly every chat has none, so nothing shows while they load or while the app restarts.
   const restarting = inputs.isError && isApiRestartError(inputs.error)
-  if (!items.length && !inputs.hasNextPage && (inputs.isPending || restarting || !inputs.isError)) return null
-  return <section aria-label="Original delivery inputs">
-    <h3>Original delivery inputs</h3>
+  return { inputs, items, restarting }
+}
+export type RetainedInputsState = ReturnType<typeof useRetainedInputs>
+type RetainedCardProps = {
+  target: DeliveryTarget; receipts: readonly ChatDeliveryReceipt[]; onDenied(error: Error): void
+  onRecover?(recovery: DirectRecovery): void; onOpenGroup?(postId: string): void
+  onCancel?(receipt: ChatDeliveryReceipt): void; onRefresh(): void
+  controlsReason?: string
+}
+
+/** Loading earlier inputs and read failures, for callers that place the input cards themselves. */
+export function RetainedInputsStatus({ state }: { state: RetainedInputsState }) {
+  const { inputs, restarting } = state
+  return <>
     {inputs.isError && !restarting ? <p role="alert">Original inputs could not be loaded. <Button onClick={() => void inputs.refetch()}>Retry inputs</Button></p> : null}
     {inputs.hasNextPage ? <Button loading={inputs.isFetchingNextPage} onClick={() => void inputs.fetchNextPage()}>Load earlier inputs</Button> : null}
-    {items.map(input => <RetainedInputCard key={input.receiptId} input={input} target={target}
-      receipt={receipts.find(receipt => receipt.id === input.receiptId)} onDenied={onDenied} onRecover={onRecover}
-      onOpenGroup={onOpenGroup} onCancel={onCancel} controlsReason={controlsReason} onRefresh={() => { void inputs.refetch(); onRefresh() }} />)}
+  </>
+}
+
+export function RetainedInput({ input, state, receipts, onRefresh, ...props }: RetainedCardProps & { input: RetainedInputRecord; state: RetainedInputsState }) {
+  return <RetainedInputCard input={input} receipt={receipts.find(receipt => receipt.id === input.receiptId)} {...props}
+    onRefresh={() => { void state.inputs.refetch(); onRefresh() }} />
+}
+
+/** Inputs that never reached a native message remain their own immutable, exact-target records. */
+export function RetainedDeliveryInputs({ representedCommandIds, ...props }: RetainedCardProps & {
+  /** Existing standalone user/queued rows already display these immutable inputs. */
+  representedCommandIds?: readonly string[]
+}) {
+  const state = useRetainedInputs(props.target, props.onDenied, representedCommandIds)
+  const { inputs, items, restarting } = state
+  if (!items.length && !inputs.hasNextPage && (inputs.isPending || restarting || !inputs.isError)) return null
+  return <section aria-label="Original delivery inputs">
+    <h3 className="visually-hidden">Original delivery inputs</h3>
+    <RetainedInputsStatus state={state} />
+    {items.map(input => <RetainedInput key={input.receiptId} input={input} state={state} {...props} />)}
   </section>
 }
 
 function RetainedInputCard({ input, target, receipt, onDenied, onRecover, onOpenGroup, onCancel, onRefresh, controlsReason }: {
-  input: RetainedInput; target: DeliveryTarget; receipt?: ChatDeliveryReceipt; onDenied(error: Error): void
+  input: RetainedInputRecord; target: DeliveryTarget; receipt?: ChatDeliveryReceipt; onDenied(error: Error): void
   onRecover?(recovery: DirectRecovery): void; onOpenGroup?(postId: string): void
   onCancel?(receipt: ChatDeliveryReceipt): void; onRefresh(): void
   controlsReason?: string
@@ -77,8 +97,9 @@ function RetainedInputCard({ input, target, receipt, onDenied, onRecover, onOpen
   const pages = body.data?.pages, content = pages ? pages.map(page => page.content).join('') : input.content
   const incomplete = pages ? !!body.hasNextPage : input.truncated
   const original = { ...input, content, truncated: incomplete, bodyCursor: pages ? pages.at(-1)?.bodyCursor ?? null : input.bodyCursor }
-  return <article className="agent-chat-message" aria-label="Retained input">
-    <p style={{ whiteSpace: 'pre-wrap' }}>{content}</p>
+  // Shown like any message you sent, with its delivery state under it.
+  return <div className="agent-chat-message agent-chat-message--user" aria-label="Retained input"><MessageBubble author="You" role="user">
+    <div className="conversation-message-content">{content}</div>
     {input.attachments.length ? <ul aria-label="Original file revisions">{input.attachments.map(file =>
       <li key={`${file.fileId}:${file.revisionId}`}>File {file.fileId} · Revision {file.revisionId}</li>)}</ul> : null}
     {incomplete ? <Button loading={body.isFetching && !body.isRefetching} onClick={() => void body.fetchNextPage()}>{pages ? 'Load more input' : 'Show full input'}</Button> : null}
@@ -90,8 +111,7 @@ function RetainedInputCard({ input, target, receipt, onDenied, onRecover, onOpen
       : <p role="status">{exactReceipt.isError ? 'Delivery status could not be loaded.' : 'Delivery status is loading.'} <Button onClick={refreshStatus}>Refresh delivery status</Button></p>}
     {currentReceipt && exactReceipt.isError ? <p role="alert">Delivery status could not be refreshed. The last known receipt is shown.
       <Button disabled={exactReceipt.isFetching && !exactReceipt.isRefetching} onClick={refreshStatus}>Retry status</Button></p>
-      : currentReceipt && currentReceipt.state !== 'unknown' ? <Button disabled={exactReceipt.isFetching && !exactReceipt.isRefetching}
-        onClick={refreshStatus}>Refresh delivery status</Button> : null}
+      : null}
     {currentReceipt?.errorCode === 'TARGET_SETTLED' && input.origin === 'direct' ? <p>Recovery opens a direct Agent composer. Your reply stays in direct chat.</p> : null}
-  </article>
+  </MessageBubble></div>
 }

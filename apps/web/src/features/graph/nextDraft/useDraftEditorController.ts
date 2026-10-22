@@ -13,7 +13,9 @@ import { useDraftUnsavedGuard } from './useDraftUnsavedGuard'
 import { deriveDraftEditorStatus } from './draftEditorStatus'
 import { useDraftEditorHistory } from './useDraftEditorHistory'
 import { useDraftAgentPanels } from './useDraftAgentPanels'
+import { useBoardShortcuts } from './useBoardShortcuts'
 import { useScheduleCommand } from '../../schedules/queries'
+import { draftNodeAgent, saveChatAgent } from './draftChatAgent'
 
 export function useDraftEditorController(draftKey: string, edit: NextDraftEdit) {
   const graph = edit.graph
@@ -31,9 +33,12 @@ export function useDraftEditorController(draftKey: string, edit: NextDraftEdit) 
   openPanel.current = core.openPanel
   const registerAuthoringActions = board?.registerAuthoringActions
   useLayoutEffect(() => {
-    registerAuthoringActions?.({ openWorkflowSettings: () => openPanel.current('workflow') })
+    registerAuthoringActions?.({ openWorkflowSettings: () => openPanel.current('workflow'),
+      draftNodeAgentId: nodeId => draftNodeAgent(draftKey, nodeId)?.agentId,
+      draftNodeBrowser: nodeId => { const node = draftNodeAgent(draftKey, nodeId); return node ? node.browser ?? null : undefined },
+      saveChatAgent: nodeId => saveChatAgent(draftKey, nodeId) })
     return () => registerAuthoringActions?.()
-  }, [registerAuthoringActions])
+  }, [registerAuthoringActions, draftKey])
   const startState = useDraftStartState({ draftKey, edit, board })
   const { preflight, pendingStart, changedAgents } = startState
   const saveActions = useDraftEditorSave({ draftKey, edit, editIntent, core, pendingStart })
@@ -61,6 +66,7 @@ export function useDraftEditorController(draftKey: string, edit: NextDraftEdit) 
   const historyAction = useDraftEditorHistory({
     draftKey, undoScope, board, editIntent, core, saveBusy: status.saveBusy, starting, schedule: scheduleWrite,
   })
+  useBoardShortcuts({ draftKey, core, board, disabled: status.saveBusy || starting || reloading || editIntent.locked || !!pendingStart })
   const { openAgent, panels } = useDraftAgentPanels({ draftKey, edit, editIntent, core, board, reloading, agents })
   return {
     graph, context, board, editIntent, undoScope, core, preflight, pendingStart, changedAgents,

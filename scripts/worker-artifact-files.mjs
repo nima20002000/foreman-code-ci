@@ -33,8 +33,8 @@ export function validateWorkerTarget(target) {
 }
 
 export const sharpPackages = Object.freeze({
-  sharp: '0.35.4', '@img/colour': '1.1.0', 'detect-libc': '2.1.2', semver: '7.8.5',
-  '@img/sharp-linux-x64': '0.35.4', '@img/sharp-libvips-linux-x64': '1.3.3',
+  sharp: '0.35.5', '@img/colour': '1.1.0', 'detect-libc': '2.1.2', semver: '7.8.5',
+  '@img/sharp-linux-x64': '0.35.5', '@img/sharp-libvips-linux-x64': '1.3.4',
 });
 export function assertWorkerDependency(path) {
   if (/^(?:pg(?:-|$|\/)|postgres(?:$|\/)|@fastify\/|fastify(?:$|\/)|drizzle-orm(?:$|\/)|kysely(?:$|\/))/.test(path)) {

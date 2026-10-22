@@ -21,6 +21,9 @@ import { BrowserAuthority } from './browserAuthority.js'
 import { MainBrowserPairing } from './browserPairing.js'
 import { MainBrowserRuntime } from './mainBrowserRuntime.js'
 import { createBrowserCanonicalCodecs } from './browserCodecs.js'
+import { prepareOrReconcileSettled } from './settledBrowserPreparation.js'
+import { ChatBrowserSessions } from './chatBrowser.js'
+import { componentLogger } from '../diagnostics/logger.js'
 
 export interface BrowserRemote {
   profiles: BrowserProfileTransport
@@ -61,10 +64,13 @@ export function createProductionBrowser(options: BrowserCompositionOptions) {
       snapshotKey: (binding, transfer, jobId) => profiles.keyService.snapshotKey(binding, transfer, jobId) },
     assertHostOwnership: options.assertHostOwnership, reportFailure: options.reportFailure })
   const localEndpoint = new Proxy({} as BrowserProfileEndpoint, {
-    get: (_target, name: keyof BrowserProfileEndpoint) => {
+    get: (_target, name: string | symbol) => {
+      // Promise.resolve(localEndpoint) probes `then`: the proxy is not a thenable, and unknown members stay undefined.
+      if (name === 'then' || typeof name === 'symbol') return undefined
       if (name === 'status' && !runtime.status().ready) return async () => 'runtime_missing'
       const endpoint = runtime.getHost().profileEndpoint
-      return endpoint[name].bind(endpoint)
+      const member = endpoint[name as keyof BrowserProfileEndpoint]
+      return typeof member === 'function' ? member.bind(endpoint) : member
     },
   })
   const profiles: ReturnType<typeof createBrowserProfiles> = createBrowserProfiles({ pool: options.pool, stateDirectory: options.stateDirectory, pairing,
@@ -99,11 +105,15 @@ export function createProductionBrowser(options: BrowserCompositionOptions) {
       if (details.computerId !== input.computerId || canonicalJson(details.browser) !== canonicalJson(input.browser)) {
         throw new DomainError('BROWSER_SUBJECT_CHANGED', 'The browser launch differs from its saved node and computer.', 409)
       }
+      const run = input.subject.kind !== 'conversation'
+      // A Run wins its profile: chat browsers on it close first.
+      if (run && input.browser.profileId) await chat.yieldToRun(input.browser.profileId, input.computerId)
       const result = input.computerId === identity()
-        ? runtime.status().ready ? await runtime.getHost().broker.prepare(input)
+        ? runtime.status().ready ? await prepareOrReconcileSettled(runtime.getHost().broker, input)
           : { kind: 'unavailable' as const, reason: 'runtime_missing' as const, retryable: true }
         : await remote.prepare(input)
       if (result.kind === 'ready') await locations.save(result.session, (await pairing.current(input.computerId)).installationId)
+      if (run && result.kind === 'ready') chat.runOpened(result.session)
       return result
     },
     async release(input) {
@@ -114,10 +124,23 @@ export function createProductionBrowser(options: BrowserCompositionOptions) {
       await pairing.assertInstallation(saved.session.computerId, saved.installationId)
       const result = await (saved.session.computerId === identity() ? runtime.getHost().broker.release(input) : remote.release(input))
       if (result.state !== 'pending') authority.forget(input.subject)
+      if (result.state !== 'pending') chat.runClosed(input.sessionId)
       return result
     },
   }
-  return { profiles, authority, pairing, sessions, handlers, codecs, lifecycle, runtime, locations,
+  const chat: ChatBrowserSessions = new ChatBrowserSessions({ pool: options.pool, authority, lifecycle,
+    localSessions: async () => runtime.status().ready ? runtime.getHost().broker.list() : [],
+    localControl: sessionId => {
+      if (!runtime.status().ready) return undefined
+      try {
+        const { session, control } = runtime.getHost().broker.read(sessionId)
+        return { browserGeneration: session.browserGeneration, epoch: control.epoch }
+      } catch (error) {
+        componentLogger('lifecycle').debug({ err: error, sessionId }, 'chat browser is not held on this computer')
+        return undefined
+      }
+    } })
+  return { profiles, authority, pairing, sessions, handlers, codecs, lifecycle, runtime, locations, chat,
     target: (principal: ManagementPrincipal, input: unknown) => resolveBrowserTarget(options.pool, authority, principal, input),
     async start(id: string) {
       mainId = id
@@ -127,6 +150,7 @@ export function createProductionBrowser(options: BrowserCompositionOptions) {
         subjectComputer: async (_principal, subject: AgentSubject) => (await authority.details(subject)).computerId,
         media: binding => binding.computerId === id ? localBrowserMediaSource(localService()) : remote.media(binding) })
       profiles.start()
+      chat.start()
     },
     media: { async open(principal: ManagementPrincipal, sessionId: string, viewId: string, changed: () => void) {
       const saved = await locations.session(sessionId)
@@ -138,6 +162,6 @@ export function createProductionBrowser(options: BrowserCompositionOptions) {
       return source.open(principal, sessionId, viewId, changed)
     } },
     stopAdmission: () => runtime.stopAdmission(),
-    async stop() { await profiles.stop(); await runtime.stop() },
+    async stop() { chat.stop(); await profiles.stop(); await runtime.stop() },
   }
 }

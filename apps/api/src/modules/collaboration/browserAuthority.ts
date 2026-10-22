@@ -16,11 +16,11 @@ import { DomainError } from '../errors.js'
 import type { BrowserSessionAuthority } from '../browser-runtime/service.js'
 import type { BrowserSubjectAuthority, BrowserSession } from '../browser-runtime/types.js'
 import type { BrowserProfileRepository } from '../browser-profiles/types.js'
-import { browserAgentTools } from './browserTools.js'
+import { browserAgentTools, chatToolOverride } from './browserTools.js'
 
 export interface BrowserSubjectDetails {
   subject: AgentSubject; browser: NodeBrowserSettings; configuration: AgentConfigurationVersion
-  computerId: string; workflowVersionId: string; readOnly: boolean; active: boolean
+  computerId: string; workflowVersionId: string | null; readOnly: boolean; active: boolean
   tools: string[]
 }
 
@@ -75,10 +75,11 @@ export class BrowserAuthority implements BrowserSubjectAuthority, BrowserSession
     }
   }
 
-  private acceptedPins(raw: AgentSubject, workflowVersionId?: string): Promise<BrowserSubjectDetails> {
+  /** chatBrowser is part of the key: a chat's browser switch changes without a new configuration or version. */
+  private acceptedPins(raw: AgentSubject, workflowVersionId?: string, chatBrowser?: string | null): Promise<BrowserSubjectDetails> {
     const subject = AgentSubjectSchema.parse(raw)
     const subjectKey = canonicalJson(subject)
-    const key = subject.kind === 'conversation' ? canonicalJson([subject, workflowVersionId]) : subjectKey
+    const key = subject.kind === 'conversation' ? canonicalJson([subject, workflowVersionId, chatBrowser ?? null]) : subjectKey
     const cached = this.pins.get(key)
     if (cached) {
       this.pins.delete(key)
@@ -108,7 +109,7 @@ export class BrowserAuthority implements BrowserSubjectAuthority, BrowserSession
     const owner = subject.kind === 'conversation' ? await readConversationBrowserOwner(this.pool, subject) : undefined
     if (subject.kind === 'conversation' && !owner) throw new DomainError('BROWSER_SUBJECT_UNAVAILABLE',
       'The browser conversation is unavailable.', 404)
-    const pins = await this.acceptedPins(subject, owner?.workflowVersionId)
+    const pins = await this.acceptedPins(subject, owner?.workflowVersionId, owner?.chatBrowser)
     const active = owner ? owner.active && (!owner.workerBound || owner.computerId === pins.computerId)
       : await browserOwnerIsActive(this.pool, pins)
     if (!active) this.forget(subject)
@@ -119,7 +120,7 @@ export class BrowserAuthority implements BrowserSubjectAuthority, BrowserSession
     const subject = AgentSubjectSchema.parse(raw)
     let configuration: AgentConfigurationVersion
     let browser: NodeBrowserSettings | undefined
-    let workflowVersionId: string
+    let workflowVersionId: string | null
     let computerId = this.mainId()
     let active: boolean
     let tools: string[]
@@ -135,8 +136,8 @@ export class BrowserAuthority implements BrowserSubjectAuthority, BrowserSession
       const worker = row.worker_conversation_binding ? WorkerConversationBindingSchema.parse(row.worker_conversation_binding) : undefined
       const host = worker?.profile.target.hostRef ?? source?.hostRef ?? configuration.harnessProfileSelection?.target.hostRef
       if (host) computerId = host.kind === 'main' ? host.mainId : host.deviceId
-      tools = effectiveGraphqlTools(subject.agent.productRole, configuration.graphqlTools, context.node.graphqlTools,
-        false, browserAgentTools)
+      tools = effectiveGraphqlTools(subject.agent.productRole, configuration.graphqlTools,
+        chatToolOverride(context.node.graphqlTools, context.node.browser), false, browserAgentTools)
     } else {
       const consultation = subject.kind === 'coordinator_consultation'
         ? await readCoordinatorCredentialAuthority(this.pool, subject.binding) : undefined

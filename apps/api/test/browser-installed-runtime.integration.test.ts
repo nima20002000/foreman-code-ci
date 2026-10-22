@@ -224,7 +224,7 @@ describe('installed managed browser against a deterministic local website', () =
     process.env.HOME = temporary
     process.env.TMPDIR = temporary
     let generations = 0
-    const options = { runtime, actionDirectory: root, graphical: false,
+    const options = { runtime, actionDirectory: root,
       profileDirectory: async () => ({ directory, generation: 1 }),
       allocateGeneration: async () => ++generations,
       onOrigin: async () => undefined, onDisconnected: () => undefined }
@@ -247,6 +247,25 @@ describe('installed managed browser against a deterministic local website', () =
       await driver.closeProfile('deep-profile')
       if (previous.HOME === undefined) delete process.env.HOME; else process.env.HOME = previous.HOME
       if (previous.TMPDIR === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = previous.TMPDIR
+    }
+  }, 30_000)
+
+  it('starts agent browsers headless even when the host has a graphical desktop', async () => {
+    const directory = join(root, 'desktop-host-profile')
+    await mkdir(directory, { recursive: true, mode: 0o700 })
+    const previous = process.env.DISPLAY
+    process.env.DISPLAY = ':foreman-unused-display'
+    const driver = new ManagedBrowserNativeDriver({ runtime, actionDirectory: root,
+      profileDirectory: async () => ({ directory, generation: 1 }), allocateGeneration: async () => 1,
+      onOrigin: async () => undefined, onDisconnected: () => undefined })
+    try {
+      const opened = await driver.openProfile('desktop-host')
+      await driver.createTab('desktop-host', opened.generation)
+      const identity = JSON.parse(await readFile(join(directory, 'foreman-process.json'), 'utf8')) as { pid: number }
+      expect((await readFile(`/proc/${identity.pid}/cmdline`, 'utf8')).split('\0')).toContain('--headless=new')
+    } finally {
+      await driver.closeProfile('desktop-host')
+      if (previous === undefined) delete process.env.DISPLAY; else process.env.DISPLAY = previous
     }
   }, 30_000)
 

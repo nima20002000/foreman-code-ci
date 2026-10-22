@@ -460,6 +460,32 @@ describe('durable per-Run children over SQL and authenticated MCP', () => {
     await backfillRunSubagents(recovering, f.reader.principal, f.input)
     expect(read).toHaveBeenCalledTimes(3)
   })
+  it('reports a failing native child readback once per streak, not on every retry', async () => {
+    const f = await fixture()
+    const report = vi.fn()
+    const recovering = new RunSubagentService(pool, undefined, vi.fn(async () => { throw new Error('native session gone') }), report)
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await backfillRunSubagents(recovering, f.reader.principal, f.input)
+      await pool.query(`update run_subagent_backfill_state set updated_at=clock_timestamp()-interval '2 minutes' where execution_id=$1`, [f.executionId])
+    }
+    expect(report).toHaveBeenCalledExactlyOnceWith({ ...f.input, executionId: f.executionId, code: 'NATIVE_CHILD_READBACK_UNAVAILABLE' })
+  })
+  it('ends native child backfill for a finished attempt whose history owner is gone after a restart', async () => {
+    const f = await fixture()
+    await pool.query(`update harness_executions set record=record || '{"state":"completed"}'::jsonb where id=$1`, [f.executionId])
+    const report = vi.fn()
+    const read = vi.fn(async () => {
+      throw new DomainError('SUBAGENT_HISTORY_UNAVAILABLE', 'The original admitted parent history owner is unavailable.', 409)
+    })
+    const recovering = new RunSubagentService(pool, undefined, read, report)
+    await backfillRunSubagents(recovering, f.reader.principal, f.input)
+    expect((await pool.query('select complete,last_failure from run_subagent_backfill_state where execution_id=$1', [f.executionId])).rows[0])
+      .toEqual({ complete: true, last_failure: 'NATIVE_CHILD_HISTORY_GONE' })
+    await pool.query(`update run_subagent_backfill_state set updated_at=clock_timestamp()-interval '2 hours' where execution_id=$1`, [f.executionId])
+    await backfillRunSubagents(recovering, f.reader.principal, f.input)
+    expect(read).toHaveBeenCalledOnce()
+    expect(report).not.toHaveBeenCalled()
+  })
   it.each(['codex-multi-agent-v2', 'codex-collab'] as const)('controls the owned %s child through HTTP and MCP with persisted receipts', async nativeMode => {
     const f = await fixture('codex')
     if (nativeMode === 'codex-multi-agent-v2') await f.discover()

@@ -68,7 +68,8 @@ export async function cleanupWorkspaceProjectFolders(pool: pg.Pool, principal: M
         }
         await rm(folder.rootPath, { recursive: true, force: true })
       }
-      await client.query('update workspaces set created_project_folder = null where id = $1', [row.id])
+      // Restore recreates the folder from this record.
+      await client.query('update workspaces set removed_project_folder = created_project_folder, created_project_folder = null where id = $1', [row.id])
       await client.query(`insert into management_audit (principal_id, source, action, target_key, outcome, details)
         values ($1, $2, 'workspace.folder.cleanup', $3, 'succeeded', $4::jsonb)`,
       [principal.id, source, `workspace:${row.id}`, JSON.stringify({ commandId })])

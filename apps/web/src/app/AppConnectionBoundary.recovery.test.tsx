@@ -1,5 +1,5 @@
-import { QueryClient, QueryClientProvider, onlineManager, useQuery } from '@tanstack/react-query'
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider, focusManager, onlineManager, useQuery } from '@tanstack/react-query'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { afterEach, expect, it, vi } from 'vitest'
 import { z } from 'zod'
@@ -19,6 +19,7 @@ afterEach(() => {
   cleanup()
   client?.clear()
   onlineManager.setOnline(true)
+  focusManager.setFocused(undefined)
   vi.unstubAllGlobals()
   vi.useRealTimers()
 })
@@ -142,6 +143,63 @@ it('probes a paused connection and resumes queries when the API returns without 
   await waitFor(() => expect(screen.queryByText('Updating — reconnecting…')).not.toBeInTheDocument(),
     { timeout: 5_000 })
   expect(screen.getByRole('textbox', { name: 'Unsaved draft' })).toBe(draft)
+}, 20_000)
+
+// TanStack pauses retries while the tab is hidden; a read paused that way must not wait for the tab to be shown.
+async function pauseReadInHiddenTab() {
+  let available = true
+  server.use(http.get('/api/recovery-page', () => available
+    ? HttpResponse.json({ value: 'Before restart' }) : HttpResponse.error()))
+  client = new QueryClient({ defaultOptions: { queries: { retry: 3, retryDelay: 10, staleTime: Infinity } } })
+  render(<QueryClientProvider client={client}><AppConnectionBoundary><Page /></AppConnectionBoundary></QueryClientProvider>)
+  await screen.findByText('Before restart')
+  act(() => { focusManager.setFocused(false) })
+  available = false
+  server.use(http.get('/api/runtime/identity', () => HttpResponse.error()))
+  await act(async () => { void client.invalidateQueries({ queryKey: ['recovery-page'] }) })
+  expect(await screen.findByText('Updating — reconnecting…')).toBeVisible()
+  await waitFor(() => expect(client.getQueryState(['recovery-page'])?.fetchStatus).toBe('paused'))
+}
+
+it('recovers reads paused in a hidden tab as soon as the API answers again', async () => {
+  await pauseReadInHiddenTab()
+  server.resetHandlers()
+  server.use(http.get('/api/recovery-page', () => HttpResponse.json({ value: 'After restart' })))
+  expect(await screen.findByText('After restart', {}, { timeout: 4_000 })).toBeVisible()
+  await waitFor(() => expect(screen.queryByText('Updating — reconnecting…')).not.toBeInTheDocument(),
+    { timeout: 5_000 })
+}, 20_000)
+
+it('Try again reads every failed read again, including reads paused in a hidden tab', async () => {
+  await pauseReadInHiddenTab()
+  // The reachability probe still fails, so only the button can bring the read back.
+  server.use(http.get('/api/recovery-page', () => HttpResponse.json({ value: 'After restart' })))
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+  expect(await screen.findByText('After restart', {}, { timeout: 2_000 })).toBeVisible()
+})
+
+it('clears the reconnect notice when the API is back while a slow first read still runs', async () => {
+  let available = true
+  const slow = deferred()
+  server.use(http.get('/api/recovery-page', () => available
+    ? HttpResponse.json({ value: 'Before restart' }) : HttpResponse.error()))
+  mount()
+  await screen.findByText('Before restart')
+  available = false
+  await act(async () => { await client.invalidateQueries({ queryKey: ['recovery-page'] }) })
+  expect(await screen.findByText('Updating — reconnecting…')).toBeVisible()
+  server.use(http.get('/api/recovery-page', async () => {
+    await slow.promise
+    return HttpResponse.json({ value: 'After restart' })
+  }))
+  try {
+    await waitFor(() => expect(screen.queryByText('Updating — reconnecting…')).not.toBeInTheDocument(),
+      { timeout: 6_000 })
+    expect(screen.queryByText('After restart')).not.toBeInTheDocument()
+  } finally {
+    slow.resolve()
+  }
+  expect(await screen.findByText('After restart')).toBeVisible()
 }, 20_000)
 
 it('checks the deployed build after recovery and uses the existing guarded app reload', async () => {

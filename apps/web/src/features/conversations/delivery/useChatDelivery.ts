@@ -74,7 +74,9 @@ export function useChatDelivery(target: DeliveryTarget | undefined, enabled: boo
     if (scope.current === attempt.key) {
       setLocal({ key: attempt.key, pending: readPending(attempt.key), feedback: unresolved
         ? 'Delivery is unconfirmed. Your draft is kept; check the original command before sending again.'
-        : ['failed', 'canceled'].includes(receipt.state) ? 'The message was not delivered. Your draft is kept.' : undefined })
+        : receipt.state === 'failed' && receipt.errorCode === 'AGENT_CHAT_DIRECTORY_UNAVAILABLE'
+          ? 'Not delivered: this chat’s workspace folder is missing. Your draft is kept.'
+          : ['failed', 'canceled'].includes(receipt.state) ? 'The message was not delivered. Your draft is kept.' : undefined })
       void refresh()
     }
     void cache.invalidateQueries({ queryKey: ['chat-delivery-inputs', attempt.epoch, JSON.stringify(attempt.request.target)] })

@@ -60,7 +60,8 @@ export function CanonicalAgentComposer({ state, name, draftKey, inputRef, attach
       onClick={delivery.retryControl}>Retry original control</Button></p> : null}
     {delivery.pending ? <p role="status">Delivery is not confirmed. <Button onClick={() => void delivery.reconcile()}>Check status</Button>
       <Button onClick={() => void delivery.reconcile(true)}>Retry original message</Button></p> : null}
-    <ChatDeliveryReceipts receipts={receipts} controlsReason={controlsReason} onCancel={delivery.pendingControl ? undefined : receipt => delivery.cancel(receipt.id)} onRefresh={delivery.refresh} />
+    {/* Only receipts that still need the person (queued, unconfirmed) show; sent and finished ones read from the transcript. */}
+    <ChatDeliveryReceipts receipts={receipts.filter(receipt => receipt.state === 'queued' || receipt.state === 'unknown')} controlsReason={controlsReason} onCancel={delivery.pendingControl ? undefined : receipt => delivery.cancel(receipt.id)} onRefresh={delivery.refresh} />
     {target && !delivery.denied ? <RetainedDeliveryInputs target={target} receipts={receipts} onDenied={delivery.revoke}
       representedCommandIds={[...state.messages.filter(message => message.role === 'user').flatMap(message => message.requestId ? [message.requestId] : []),
         ...state.turns.map(turn => turn.requestId)]}

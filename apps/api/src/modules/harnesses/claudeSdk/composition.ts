@@ -31,7 +31,8 @@ export interface ClaudeNativeAllocationResult {
 export function allocateClaudeNativeHarness(input: ClaudeNativeAllocation): ClaudeNativeAllocationResult {
   if (input.scope.cwd !== input.workingDirectory) throw new HarnessExecutionError('CLAUDE_SCOPE_MISMATCH',
     'Claude allocation requires the exact accepted working directory.')
-  if (['agent-chat', 'diagnostics', 'qualification'].includes(input.role)
+  // Agent chats carry scoped Group credentials for their chat tools (browser, board); only auxiliary roles have none.
+  if (['diagnostics', 'qualification'].includes(input.role)
     && (input.appMcpAccess !== 'none' || input.credentialEnvironmentVariable)) {
     throw new HarnessExecutionError('HARNESS_ROLE_AUTHORITY_INVALID', 'This runtime role has no application MCP credentials.')
   }

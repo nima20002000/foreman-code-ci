@@ -4,7 +4,7 @@ import { HarnessConfigurationCheckResultSchema } from '@foreman-code/contracts/m
 import { CurrentWorkflowSaveResultSchema } from '@foreman-code/contracts/wave25'
 import { currentWorkflowFixture as makeWave25Fixture } from '../mocks/currentWorkflow'
 
-import { ApiError, ApiClient, apiClient } from './client'
+import { ApiError, ApiClient, apiClient, isApiRestartError } from './client'
 import { resetMockFixtures, setMockScenario } from '../mocks/scenarios'
 
 describe('Phase 1 API boundary', () => {
@@ -38,6 +38,11 @@ describe('Phase 1 API boundary', () => {
       status: 503,
     })
     expect(ApiError.is(new ApiError({ code: 'TEST', message: 'test' }))).toBe(true)
+  })
+
+  it('treats work the API canceled while shutting down as a restart', () => {
+    expect(isApiRestartError(new ApiError({ code: 'API_RESTARTING', message: 'The API is restarting.' }, 503))).toBe(true)
+    expect(isApiRestartError(new ApiError({ code: 'HARNESS_QUALIFICATION_FAILED', message: 'failed' }, 503))).toBe(false)
   })
 
   it('serves and revision-checks managed settings in mock mode', async () => {

@@ -29,8 +29,8 @@ beforeAll(async () => { endpoint = await managementEndpoint('second-turn-token')
 afterAll(async () => { await endpoint.app.close() })
 /** Synthetic installed/profile records and redacted SDK frames. Exercises actual
  * admission/domain/factory/manager classes without native or PostgreSQL claims. */
-function fixture(surface: 'workflow' | 'operator' | 'agent' | 'selected-run', sharedFactories?: NativeHarnessFactories) {
-  const kind = surface === 'selected-run' ? 'agent' : surface
+function fixture(surface: 'workflow' | 'operator' | 'agent' | 'agent-chat' | 'selected-run', sharedFactories?: NativeHarnessFactories) {
+  const kind = surface === 'selected-run' || surface === 'agent-chat' ? 'agent' : surface
   const target = { hostRef: { kind: 'main' as const, mainId: '77d29f00-408e-4000-8000-000000000001' },
     applicationInstallationId: '77d29f00-408e-4000-8000-000000000001', harnessInstallationId: 'recorded-cli', installationFingerprint: 'recorded-payload' }
   const harness = { harness: 'claude' as const, model: 'recorded-model', authMode: 'subscription' as const,
@@ -93,6 +93,8 @@ function fixture(surface: 'workflow' | 'operator' | 'agent' | 'selected-run', sh
     : kind === 'operator' ? { kind, conversationId: surface, repository: new PostgresOperatorConversationRepository(pool) }
       : { kind: 'agent', conversationId: surface, workspaceId: 'workspace', repository: new PostgresAgentChatRepository(pool) }
   const start: NativeSessionStart = kind === 'operator' ? { kind: 'operator', correlationId: `${surface}:request-1`, configuration: operator, workingDirectory: '/recorded/work' }
+    : surface === 'agent-chat' ? { kind: 'agent-chat', conversationId: surface, workflowId: 'workflow', workflowNodeId: 'node',
+      correlationId: `${surface}:request-1`, configuration: agent, workingDirectory: '/recorded/work' }
     : { kind: 'workflow', correlationId: `${surface}:request-1`, request: { executionId: 'execution', runId: 'run', workspaceId: 'workspace', workflowNodeId: 'node', workingDirectory: '/recorded/work', runtimeDirectory: '/recorded/runtime', configuration: agent, input: {} } }
   const frames = new ClaudeBoundedQueue<unknown>(64), ready = deferred<AsyncIterator<ClaudeSdkUserMessage>>()
   const setMcpServers = vi.fn(async () => ({ added: ['graphql'], removed: [], errors: {} }))
@@ -110,7 +112,7 @@ function fixture(surface: 'workflow' | 'operator' | 'agent' | 'selected-run', sh
   const result = productionClaudeManager({ pool, factories, registry: { pinOverride: () => binding } as unknown as ProductionHarnessRegistry,
     profiles, selector: { instanceId: override.instanceId, instanceRevision: override.instanceRevision, target }, binding: domain,
     role: kind === 'agent' ? 'agent-chat' : kind, configuration: harness, workingDirectory: '/recorded/work', ownerAgentId: surface,
-    recovery: { root: '/forbidden-native-recovery', owner: surface }, appMcpAccess: kind === 'agent' ? 'none' : 'scoped', mode: 'replay',
+    recovery: { root: '/forbidden-native-recovery', owner: surface }, appMcpAccess: kind === 'agent' && surface !== 'agent-chat' ? 'none' : 'scoped', mode: 'replay',
     inspectionStart: async () => start, loadClient })
   return { ...result, start, profiles, proof, ready, frames, sdkQuery, loadClient, query, factories, setMcpServers, harness, binding, installations, launcher, sdk }
 }
@@ -205,6 +207,23 @@ describe('NEW-CLAUDE F-13 exact resumed query', () => {
       const { start } = await scopedInspection(f)
       await expect(f.manager.attachSession(savedSession, { ...start, correlationId: 'foreign-owner' })).rejects.toThrow('inspected')
       expect(opened).toHaveLength(1)
+    } finally { await f.manager.dispose?.() }
+  })
+})
+
+describe('Agent chat scoped Foreman MCP', () => {
+  it('delivers the chat credential as the Foreman MCP header before a Run follow-up fork takes input', async () => {
+    const f = fixture('agent-chat'), opened = queries(f)
+    try {
+      const start = { ...f.start, environment: { agentId: 'agent', variables: { FOREMAN_CODE_MCP_TOKEN: 'second-turn-token', GRAPHQL_MCP_TOKEN: 'second-turn-token' } } }
+      const forked = await f.manager.forkSession!(savedSession, start)
+      expect(forked.nativeSessionId).toBe('recorded-fork')
+      const resumed = opened.at(-1)!
+      expect(resumed.options.resume).toBe('recorded-fork')
+      expect(resumed.setMcpServers).toHaveBeenCalledExactlyOnceWith({
+        graphql: { ...f.harness.mcpServers.graphql, headers: { Authorization: 'Bearer second-turn-token' } } })
+      expect(resumed.status).toHaveBeenCalledOnce()
+      expect(opened.every(query => query.messages.length === 0)).toBe(true)
     } finally { await f.manager.dispose?.() }
   })
 })

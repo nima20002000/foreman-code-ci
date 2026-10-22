@@ -6,9 +6,10 @@
 .workflow-collaboration-canvas, .workflow-overview-slot { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
 .workflow-collaboration-canvas[hidden] { display: none; }
 .workflow-collaboration-canvas > .run-board-slot, .workflow-collaboration-canvas .run-board-current, .workflow-collaboration-canvas .run-board { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.workflow-collaboration-canvas .run-board .run-board-canvas { flex: 1; height: auto; min-height: 0; }
 .workflow-collaboration-canvas .run-board-current[hidden] { display: none; }
 .workflow-overview-slot { padding: var(--space-4); }
-.workflow-floating-panel { position: fixed; z-index: 40; top: 80px; left: 24px; width: min(420px, calc(100vw - 24px)); height: min(560px, calc(100vh - 24px)); min-width: 280px; min-height: 220px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); resize: both; overflow: hidden; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-lg, 12px); background: var(--surface-raised); box-shadow: var(--shadow-lg, 0 12px 32px rgb(0 0 0 / 0.35)); }
+.workflow-floating-panel { position: fixed; z-index: 40; top: 80px; left: 24px; width: min(480px, calc(100vw - 24px)); height: min(560px, calc(100vh - 24px)); min-width: 280px; min-height: 220px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); resize: both; overflow: hidden; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-lg, 12px); background: var(--surface-raised); box-shadow: var(--shadow-lg, 0 12px 32px rgb(0 0 0 / 0.35)); }
 .workflow-floating-panel[hidden] { display: none; }
 .workflow-floating-panel > header, .workflow-floating-panel > nav { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); padding: var(--space-2); }
 .workflow-floating-panel > header { justify-content: space-between; cursor: move; user-select: none; touch-action: none; border-bottom: 1px solid var(--border); }
@@ -98,8 +99,9 @@
 .board-notices ul { margin: var(--space-1) 0 0; padding-left: var(--space-4); }
 .board-side-panel {
   /* A small floating window (see shared/ui/floatingWindow.ts): dragged by its header, resized from its corner. */
-  position: absolute; top: 72px; right: var(--space-4); width: min(22rem, calc(100% - 2rem)); height: min(32rem, calc(100% - 96px));
-  min-width: 16rem; min-height: 12rem; max-height: calc(100% - 24px); resize: both;
+  /* It ends above the Operator chat button in the bottom-right corner, so that button never covers its controls. */
+  position: absolute; top: 72px; right: var(--space-4); width: min(22rem, calc(100% - 2rem)); height: min(32rem, calc(100% - 144px));
+  min-width: 16rem; min-height: 12rem; max-height: calc(100% - 144px); resize: both;
   display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-lg);
   background: var(--surface-raised); box-shadow: var(--shadow-popover);
 }
@@ -130,7 +132,7 @@
 
 @media (max-width: 900px) {
   .board-topbar { flex-wrap: wrap; }
-  .board-side-panel { top: 120px; }
+  .board-side-panel { top: 120px; max-height: calc(100% - 192px); }
   .board-notices { top: 120px; }
 }
 .agent-settings-panel-embedded .agent-settings-general, .agent-settings-panel-embedded .agent-settings-advanced-view { padding: 0; gap: var(--space-3); }
@@ -193,8 +195,34 @@
 .board-loading .board-control-cluster { display: flex; }
 .workflow-group-chat-dialog .workflow-chat-panel > header > h2 { display: none; }
 /* One tab row for the selected agent plus Browser; the panel body is the only scroller. */
-.workflow-floating-panel > nav.workflow-panel-tabs { gap: 2px; padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--border); }
-.workflow-panel-tabs > .n-button:last-child { margin-left: auto; }
+.workflow-floating-panel > header { flex-wrap: nowrap; padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3); }
+.workflow-floating-panel > header > h2 { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workflow-panel-tabs { display: flex; gap: 2px; margin-left: auto; min-width: 0; overflow-x: auto; scrollbar-width: none; cursor: default; }
+.workflow-panel-tabs > .n-button { min-height: 28px; height: 28px; padding: 0 .5rem; flex: 0 0 auto; }
 .workflow-floating-panel-body .agent-settings-panel-embedded { flex-shrink: 0; max-height: none; }
 .agent-settings-panel-embedded :is(.agent-settings-general, .agent-settings-advanced-view) { overflow: visible; }
 .workflow-panel-tabs > .n-button[aria-pressed='true'] { background: var(--surface-hover); color: var(--text-strong); }
+
+.n-button.board-live-run { color: var(--success, #3ecf8e); }
+.board-live-run > span { display: inline-flex; align-items: center; gap: 6px; }
+.board-live-run-dot {
+  display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor;
+  box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 60%, transparent);
+  animation: board-live-run-pulse 1.6s ease-out infinite;
+}
+@keyframes board-live-run-pulse { to { box-shadow: 0 0 0 6px transparent; } }
+@media (prefers-reduced-motion: reduce) { .board-live-run-dot { animation: none; } }
+
+/* A chat's state and context meter sit in the panel header, between the title and the tabs. */
+.workflow-panel-header-slot { display: flex; align-items: center; gap: var(--space-1); flex: 0 1 auto; min-width: 0; cursor: default; }
+/* The chat names its Agent itself (also before the node is saved), so the generic title steps aside. */
+.workflow-floating-panel > header:has(.workflow-panel-header-slot:not(:empty)) > h2 { display: none; }
+.workflow-panel-header-slot .agent-chat-header-name { flex: 0 0 auto; max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--type-heading); color: var(--text-strong); margin-right: var(--space-1); }
+.workflow-panel-header-slot .agent-chat-session-label { flex: 0 0 auto; }
+.workflow-floating-panel > header .workflow-panel-tabs { flex: 0 0 auto; }
+.workflow-floating-panel > header:has(.workflow-panel-header-slot:not(:empty)) .workflow-panel-tabs > .n-button { padding: 0 .4rem; }
+.workflow-panel-header-slot .agent-chat-session-label { font-size: 11px; }
+.workflow-panel-header-slot:empty { display: none; }
+.workflow-panel-header-slot .agent-chat-header-status { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
+.workflow-panel-header-slot .agent-chat-header-controls .session-context-meter { min-height: 24px; height: 24px; }
+.workflow-floating-panel .agent-chat-header--slotted { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

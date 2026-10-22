@@ -25,7 +25,7 @@ export interface AcceptedChatInput {
   workerProofs: Array<{ method: WorkerConversationRpcRequest['method']; inputHash: string }>
   /** Admission snapshots defaults once; dispatch never reads a later desired value. */
   settings?: AcceptedChatSettings
-  conversationContext?: { subject: Extract<AgentSubject, { kind: 'conversation' }>; workflowVersionId: string; workingDirectory: string }
+  conversationContext?: { subject: Extract<AgentSubject, { kind: 'conversation' }>; workflowVersionId: string | null; workingDirectory: string }
   /** Both variants were preflighted. The existing claim lock chooses one, once. */
   subsequent?: Omit<AcceptedChatInput, 'subsequent'> & { startup: false }
 }

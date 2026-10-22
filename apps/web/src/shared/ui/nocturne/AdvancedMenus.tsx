@@ -5,7 +5,7 @@ import { cx } from './utils'
 
 interface BaseItem { id: string; label: string; description?: string; icon?: IconName; disabled?: boolean; shortcut?: string }
 export type ActionMenuItem =
-  | (BaseItem & { kind?: 'action'; danger?: boolean; onSelect: () => void })
+  | (BaseItem & { kind?: 'action'; danger?: boolean; onSelect: () => void; /** Stay open to repeat the action. */ keepOpen?: boolean })
   | (BaseItem & { kind: 'checkbox'; checked: boolean; onCheckedChange: (checked: boolean) => void })
   | (BaseItem & { kind: 'radio'; checked: boolean; onSelect: () => void })
   | (BaseItem & { kind: 'submenu'; items: readonly ActionMenuItem[] })
@@ -60,6 +60,7 @@ function MenuLevel({ id, label, items, anchor, initial = 'first', onClose, onBac
     if (item.kind === 'separator' || item.disabled) return
     if (item.kind === 'submenu') { submenuAnchor.current = refs.current[index]; setSubmenu(item.id); return }
     if (item.kind === 'checkbox') { item.onCheckedChange(!item.checked); return }
+    if (item.kind !== 'radio' && item.keepOpen) { item.onSelect(); return }
     onClose(); item.onSelect()
   }
   return <div ref={surface} id={id} role="menu" tabIndex={-1} aria-label={label} popover="manual" className="n-theme n-rich-menu" onKeyDown={event => {

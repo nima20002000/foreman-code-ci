@@ -1,5 +1,5 @@
 import { storeEditSnapshot } from '../graph/nextDraft/editIntentStorage'
-import { useId, type ReactNode } from 'react'
+import { useId, useRef, type ReactNode } from 'react'
 import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { usePlacementChoices } from '../node-placement/usePlacementChoices'
 import type { SavedNodePlacement } from '@foreman-code/contracts/node-placement'
@@ -64,6 +64,8 @@ function BoardAgentSettingsVisit({ draftKey, edit, nodeId, close, remove, placem
   const node = edit.graph.nodes.filter(item => item.kind !== 'job').find((item) => item.id === nodeId)
   const agent = node && editorAgents(edit).find((item) => item.id === node.agentId)
   const visit = useId()
+  // The browser switch writes the draft at once; Cancel puts back what the node had when these settings opened.
+  const browserBaseline = useRef(node ? { browser: node.browser, graphqlTools: node.graphqlTools } : undefined)
   const saved = edit.context.savedDraft ?? edit.context.draft
   const savedNode = node && saved.graph.nodes.filter(item => item.kind !== 'job').find((item) => item.id === node.id && item.agentId === node.agentId)
   const savedAgent = savedNode && edit.context.agents.find((item) => item.agent.id === savedNode.agentId)?.agent
@@ -99,12 +101,20 @@ function BoardAgentSettingsVisit({ draftKey, edit, nodeId, close, remove, placem
     onFormChange={(form) => useGraphDraftStore.getState().updateNextDraft(draftKey, (current) => ({ ...current,
       agentForms: { ...current.agentForms, [node.id]: form } }))}
     onDiscardForm={() => useGraphDraftStore.getState().updateNextDraft(draftKey, (current) => {
+      const baseline = browserBaseline.current
+      const graph = !baseline ? current.graph : { ...current.graph, nodes: current.graph.nodes.map(item => {
+        if (item.id !== node.id || item.kind === 'job') return item
+        const restored = { ...item }
+        if (baseline.browser) restored.browser = baseline.browser; else delete restored.browser
+        if (baseline.graphqlTools) restored.graphqlTools = baseline.graphqlTools; else delete restored.graphqlTools
+        return restored
+      }) }
       const agentForms = { ...current.agentForms }; delete agentForms[node.id]
       const workflowForms = { ...current.workflowForms }, workerParents = { ...workflowForms.workerParents }
       delete workerParents[node.id]
       if (Object.keys(workerParents).length) workflowForms.workerParents = workerParents
       else delete workflowForms.workerParents
-      return { ...current, agentForms, workflowForms }
+      return { ...current, graph, agentForms, workflowForms }
     })}
     canResume={() => {
       const current = useGraphDraftStore.getState().nextDrafts[draftKey]
@@ -114,7 +124,10 @@ function BoardAgentSettingsVisit({ draftKey, edit, nodeId, close, remove, placem
     workspaceId={edit.graph.workspaceId} workflowApprovalHandler={edit.graph.approval?.handler}
     designatedOrchestrator={edit.graph.approval?.handler === 'orchestrator' && edit.graph.approval.designatedOrchestratorAgentId === agent.id}
     executionPolicy={edit.graph.executionPolicy} onClose={close} onRemove={remove}
-    onSave={(next, prompt, _policy, graphqlTools, placement, worktree) =>
-      installAgent(draftKey, edit.instanceId, next, node.id, prompt, graphqlTools, placement, worktree)} />
+    onSave={(next, prompt, _policy, graphqlTools, placement, worktree) => {
+      installAgent(draftKey, edit.instanceId, next, node.id, prompt, graphqlTools, placement, worktree)
+      const saved = useGraphDraftStore.getState().nextDrafts[draftKey]?.graph.nodes.find(item => item.id === node.id)
+      if (saved && saved.kind !== 'job') browserBaseline.current = { browser: saved.browser, graphqlTools: saved.graphqlTools }
+    }} />
   </>
 }

@@ -1,13 +1,11 @@
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { PassThrough } from 'node:stream'
 import { expect, it, vi } from 'vitest'
 import * as diagnostics from './logger.js'
 import * as ignored from './ignoredError.js'
 import { fallbackOnError } from './ignoredError.js'
 
-vi.mock('pino-roll', () => ({ default: async () => new PassThrough() }))
 
 it('retains sanitized warning causes, failure counts and age for owner readback', async () => {
   const failure = Object.assign(new Error('secret provider output'), { code: 'EIO' })

@@ -28,6 +28,6 @@ export function ExecutionNativeMessage({ message, target, source, name, onBrowse
     } })
   const visible = detail.data && nativeMessageAtLeastAsNew(detail.data, message) ? detail.data : message
   return <AgentChatMessage message={visible} name={name}
-    status={<span>{message.provenance.kind === 'consultation' ? `Reply ${message.provenance.binding.consultationId}` : `Execution ${message.provenance.execution.executionId}`}</span>}
+    status={<span>{message.provenance.kind === 'consultation' ? 'Reply' : `Attempt ${message.provenance.execution.attempt}`}</span>}
     onExpand={async () => { onBrowse(); await detail.refetch({ throwOnError: true }) }} />
 }

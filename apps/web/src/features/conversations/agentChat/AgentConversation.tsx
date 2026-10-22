@@ -31,6 +31,7 @@ import { useAgentConversationComposer } from './useAgentConversationComposer'
 import { useFirstAttachment } from './useFirstAttachment'
 import { AgentChatSettings } from './AgentChatSettings'
 import { AgentConversationHistory } from './AgentConversationHistory'
+import { MissingChatFolderActions } from './MissingChatFolder'
 import './agentChat.css'
 import '../chatAttachments.css'
 
@@ -78,8 +79,8 @@ function AgentConversationContent({ context, name, activity, runLabel, onClose, 
         label={conversation?.origin.kind === 'run_execution' ? 'Source Run account · saved chat account' : 'Saved chat account'} />
       <SessionContext controls={sessionControls} />
     </>} />
-  if (chat.access.isPending || chat.access.isError || chat.denial || !state && !chat.canRead) return <AgentChatAccessState
-    header={header} pending={chat.access.isPending} error={chat.access.error} denial={chat.denial} draftKey={chat.draftKey}
+  if (chat.access.isPending || chat.access.isError && !chat.access.data || chat.denial || !state && !chat.canRead) return <AgentChatAccessState
+    header={header} pending={chat.access.isPending} error={chat.access.error} denial={chat.denial}
     refresh={() => { void chat.access.refetch(); chat.refresh() }} />
 
   const command = parseSessionCommand(draft)
@@ -136,6 +137,11 @@ function AgentConversationContent({ context, name, activity, runLabel, onClose, 
     attention = 'Original session unavailable'
     if (!conversation?.providerAccountBinding && onNewConversation) attentionAction = <Button size="sm" variant="ghost"
       onClick={onNewConversation}>{context.runId ? 'Start separate chat without this Run' : 'Choose another Agent for a new conversation'}</Button>
+  }
+  const missingFolder = state?.availability.missingFolder
+  if (missingFolder) {
+    attention = state?.availability.message ?? 'This chat’s workspace folder is missing.'
+    attentionAction = <MissingChatFolderActions workspaceId={context.workspaceId} path={missingFolder.path} onRecreated={chat.refresh} />
   }
   if (!attention && compactReason) attention = compactReason
   if (!attention && background) attention = background.label

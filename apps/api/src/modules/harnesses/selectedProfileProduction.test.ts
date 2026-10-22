@@ -8,7 +8,7 @@ import { productionSelectedProfileManager } from './selectedProfileProduction.js
 
 type Input = Parameters<typeof productionSelectedProfileManager>[0]
 
-function fixture(nativeSessionId?: string) {
+function fixture() {
   const session: NativeSessionReference = { harness: 'codex', providerVersion: '1.0.0',
     nativeSessionId: 'original-session' }
   const configuration = DEFAULT_HARNESS_DEFAULTS.codex
@@ -37,14 +37,13 @@ function fixture(nativeSessionId?: string) {
     selector: {} as Input['selector'], binding: {} as Input['binding'], configuration,
     role: 'workflow', workingDirectory: '/project', ownerAgentId: 'agent',
     recovery: {} as Input['recovery'], appMcpAccess: 'scoped',
-    ...(nativeSessionId ? { nativeSessionId } : {}),
   }).manager
   return { manager, native, session, start, admit, allocate }
 }
 
-describe('selected profile admission during original session recovery', () => {
+describe('selected profile admission while its automatic check runs', () => {
   it('waits for automatic qualification before allocating the original session adapter', async () => {
-    const f = fixture('original-session')
+    const f = fixture()
     f.admit.mockRejectedValueOnce(new DomainError('HARNESS_PROFILE_CHECK_PENDING', 'Checking profile', 503))
     try {
       expect(await f.manager.attachSession(f.session, f.start)).toEqual(f.session)
@@ -57,8 +56,8 @@ describe('selected profile admission during original session recovery', () => {
     }
   })
 
-  it.each([undefined, 'original-session'])('keeps permanent admission failures with saved session %s', async id => {
-    const f = fixture(id)
+  it('keeps permanent admission failures', async () => {
+    const f = fixture()
     f.admit.mockRejectedValue(new DomainError('HARNESS_PROFILE_UNAVAILABLE', 'Profile unavailable', 409))
     try {
       await expect(f.manager.attachSession(f.session, f.start))
@@ -70,23 +69,21 @@ describe('selected profile admission during original session recovery', () => {
     }
   })
 
-  it('keeps new session admission pending instead of waiting or allocating', async () => {
+  it('lets a new Run session wait for the in-flight check instead of failing its first start', async () => {
     const f = fixture()
-    f.admit.mockRejectedValue(new DomainError('HARNESS_PROFILE_CHECK_PENDING', 'Checking profile', 503))
+    f.admit.mockRejectedValueOnce(new DomainError('HARNESS_PROFILE_CHECK_PENDING', 'Checking profile', 503))
     try {
-      await expect(f.manager.createSession(f.start)).rejects.toMatchObject({
-        operation: 'session_creation', delivery: 'not_sent',
-        result: { outcome: 'failed', error: { code: 'HARNESS_PROFILE_CHECK_PENDING' } },
-      })
-      expect(f.admit).toHaveBeenCalledTimes(1)
-      expect(f.allocate).not.toHaveBeenCalled()
+      expect(await f.manager.createSession(f.start)).toEqual(f.session)
+      expect(f.admit).toHaveBeenCalledTimes(2)
+      expect(f.allocate).toHaveBeenCalledTimes(1)
+      expect(f.native.createSession).toHaveBeenCalledTimes(1)
     } finally {
       await f.manager.dispose?.()
     }
   })
 
   it('drains a pending recovery on disposal without allocating a native adapter', async () => {
-    const f = fixture('original-session')
+    const f = fixture()
     let attempted!: () => void
     const attempt = new Promise<void>(resolve => { attempted = resolve })
     f.admit.mockImplementation(async () => {

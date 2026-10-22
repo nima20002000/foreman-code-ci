@@ -3,7 +3,7 @@ import { componentLogger } from '../diagnostics/logger.js'
 import { assertOriginalWorkflowTerminal, workflowProviderId } from '../interactions/workflowTerminalSource.js'
 import { isDeepStrictEqual } from 'node:util'
 import { randomUUID } from 'node:crypto'
-import { DurableInteractionSchema, HarnessExecutionSchema, NativeSessionReferenceSchema, isSessionNativeInteraction,
+import { DurableInteractionSchema, HarnessExecutionSchema, NativeSessionReferenceSchema,
   type HarnessExecution, type HarnessNativeEvent } from '@foreman-code/contracts'
 import { canonicalGraphJson, type GraphEvidence, type NativeGraphProjectionKey, type AcceptedWorkflowRunV3 } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../errors.js'
@@ -28,6 +28,7 @@ import { recordWorkerResumption } from '../interactions/wave25/resume.js'
 import type { NativeGraphProjectionGuard } from '../run-graph/records.js'
 import { createRequestLocked } from '../interactions/wave25/decisions.js'
 import { nativeApprovalContext } from '../interactions/nativeApprovalContext.js'
+import { pendingOnLaneTurn } from '../interactions/pendingLaneTurn.js'
 import { appendWorkflowNativeGraphEventLocked, type WorkflowApprovalCorrelation, type WorkflowContinuationProof, type WorkflowNativeLease } from './workflowNativeGraph.js'
 import { normalizeNativeProducerEvent } from '../run-graph/nativeProducerNormalization.js'
 import { selectNativeGraphEvidence } from '../run-graph/nativeEvidence.js'
@@ -286,8 +287,7 @@ export class WorkflowNativeProofServices {
       if (!history.pendingInteractions.length || incoming.result || incoming.finishedAt
         || history.correlationId !== undefined && history.correlationId !== command
         || history.pendingInteractions.some((pending) => !sameRepeatValue(pending.session, capture.session)
-          || !isSessionNativeInteraction(pending)
-            && (!capture.lane!.providerId || pending.turn.nativeTurnId !== capture.lane!.providerId))) return fail('NATIVE_APPROVAL_EVIDENCE_MISMATCH')
+          || !pendingOnLaneTurn(pending, capture.lane!.providerId))) return fail('NATIVE_APPROVAL_EVIDENCE_MISMATCH')
     } else return fail('NATIVE_OBSERVATION_UNSUPPORTED')
   }
 

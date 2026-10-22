@@ -37,15 +37,18 @@ export function useResponsiveGraphViewport<N extends Node = Node, E extends Edge
     if (!element || typeof ResizeObserver === 'undefined') return
     let timer: ReturnType<typeof setTimeout> | undefined
     let last: { w: number; h: number } | undefined
+    // A canvas that mounted hidden (e.g. behind a live Run) was fitted at zero size; it fits again once shown.
+    let shownAfterHidden = false
     const observer = new ResizeObserver((entries) => {
       const box = entries[entries.length - 1]?.contentRect
       if (!box) return
       const w = Math.round(box.width)
       const h = Math.round(box.height)
-      if (w <= 0 || h <= 0) return // hidden: nothing measurable to fit
+      if (w <= 0 || h <= 0) { if (!last) shownAfterHidden = true; return } // hidden: nothing measurable to fit
       const prev = last
       last = { w, h }
-      if (!prev || moved.current || (prev.w === w && prev.h === h)) return
+      const firstShown = !prev && shownAfterHidden
+      if ((!prev && !firstShown) || moved.current || (prev && prev.w === w && prev.h === h)) return
       if (timer) clearTimeout(timer)
       timer = setTimeout(() => {
         timer = undefined

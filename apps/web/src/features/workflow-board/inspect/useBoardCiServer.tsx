@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { CiRunJob } from '@foreman-code/contracts'
 import type { RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
 import { CiServerDialog } from './CiServer'
@@ -7,8 +7,10 @@ import { useCiPlacement } from '../dock/boardObjects'
 
 /** The draft and saved-Run Boards show the same presentation-only CI server as live inspection.
  * Without a Run scope it is idle; with one, its jobs come from the caller's CI read. */
-export function useBoardCiServer({ nodes, names, workflow, scope, jobs, truncated = false, error = false, loading = false }: {
+export function useBoardCiServer({ nodes, names, workflow, scope, jobs, truncated = false, error = false, loading = false, keepPlace = false }: {
   nodes: Parameters<typeof ciServerFlowNode>[0]; names: ReadonlyMap<string, string>
+  /** Keep the server where it first appears, so adding or removing Agents never moves it (the editable Board). */
+  keepPlace?: boolean
   workflow: { workspaceId: string; workflowId: string }; scope?: RepeatGraphScopeV3; jobs?: readonly CiRunJob[] | undefined
   truncated?: boolean; error?: boolean; loading?: boolean
 }) {
@@ -20,6 +22,8 @@ export function useBoardCiServer({ nodes, names, workflow, scope, jobs, truncate
   const { position, closed, close } = place
   const node = useMemo(() => closed ? undefined : ciServerFlowNode(nodes, summary, () => setOpen(true), { position, close }),
     [nodes, summary, position, closed, close])
+  const moved = place.moved, autoSpot = !position && node ? node.position : undefined
+  useEffect(() => { if (keepPlace && autoSpot) moved(autoSpot) }, [keepPlace, autoSpot, moved])
   const dialog = <CiServerDialog open={open} onOpenChange={setOpen} scope={scope} workflow={workflow} jobs={jobs ?? []} names={names}
     truncated={truncated} error={error} loading={loading} />
   return { node, dialog, summary, place }

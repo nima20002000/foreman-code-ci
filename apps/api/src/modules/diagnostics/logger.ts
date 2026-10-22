@@ -7,6 +7,7 @@ export type { LogComponent } from './logComponent.js'
 import pino, { type Level, type Logger, type LevelWithSilent } from 'pino'
 import { recordOperationalFailure } from './operationalFailures.js'
 import { rotatingLogDestination } from './rotatingLogDestination.js'
+import { openAppErrorLog } from './appErrors.js'
 export { readOperationalFailures } from './operationalFailures.js'
 
 // Secrets and model content never reach a log line, wherever they sit in a logged object.
@@ -83,6 +84,11 @@ if (logger.isLevelEnabled('debug')) {
   runtimeTimingChannel.subscribe((message) => {
     logger.debug({ diagnostic: 'runtime-timing', ...(message as RuntimeTimingRecord) }, 'workflow runtime timing')
   })
+}
+
+/** Error and fatal lines also go to `app-errors.jsonl` beside the file logs, grouped by `scripts/app-errors.mjs`. */
+export function enableAppErrorLog(logFile: string, buildId: string): void {
+  streams.add({ level: 'error', stream: openAppErrorLog(join(dirname(logFile), 'app-errors.jsonl'), buildId) })
 }
 
 /** Where file logs go, or undefined when only stdout is wanted. LOG_FILE wins over LOG_DIR. */

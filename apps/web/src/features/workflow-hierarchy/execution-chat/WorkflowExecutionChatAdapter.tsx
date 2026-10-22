@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useInfiniteQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { WorkflowExecutionChatSelectionSchema, WorkflowExecutionChatTargetSchema,
@@ -10,6 +10,7 @@ import { sessionGeneration } from '../../../shared/api/sessionBoundary'
 import { executionChatReadKey, executionChatScopeKey, executionChatSelectionKey, resolveExecutionChat,
   workflowExecutionChatClient, type WorkflowExecutionChatClient } from './client'
 import type { WorkflowExecutionChatSlotSelection, WorkflowExecutionChatViews } from './types'
+import { useWorkflowBoard } from '../../workflow-board/context'
 
 type Resolved=Extract<WorkflowExecutionChatResolution,{kind:'selected'}>
 function isPinned(selection:WorkflowExecutionChatSelection,resolved:Resolved) {
@@ -51,8 +52,11 @@ export function WorkflowExecutionChatAdapter({selection:raw,views}:{
   selection:WorkflowExecutionChatSlotSelection;views:WorkflowExecutionChatViews
 }) {
   const cache=useQueryClient()
+  const board=useWorkflowBoard()
   const {nodeId,onSelectTarget,onSelectRun,...pins}=raw
-  const selection=WorkflowExecutionChatSelectionSchema.parse({...pins,workflowNodeId:nodeId})
+  // A draft node's Agent lets the server open its draft chat before the workflow is saved.
+  const agentId=pins.runId?undefined:board?.draftNodeAgentId?.(nodeId)
+  const selection=WorkflowExecutionChatSelectionSchema.parse({...pins,workflowNodeId:nodeId,...(agentId?{agentId}:{})})
   const query=useInfiniteQuery({queryKey:executionChatSelectionKey(selection),
     initialPageParam:undefined as string|undefined,
     queryFn:({signal,pageParam})=>resolveExecutionChat({...selection,...(pageParam?{cursor:pageParam}:{})},{signal}),
@@ -67,6 +71,32 @@ export function WorkflowExecutionChatAdapter({selection:raw,views}:{
     if(resolved&&!pinned) onSelectTarget(resolved.target,resolved.workflowVersionId)
   },[resolved,pinned,onSelectTarget])
   const client=useMemo(()=>resolved?boundClient(cache,resolved):undefined,[cache,resolved])
+  // A draft-only Agent (never saved) has no configuration to chat with yet: save only that Agent, never the
+  // workflow graph, so chat opens even while an unrelated part of the workflow can't be saved.
+  const saveChatAgent=board?.saveChatAgent
+  const draftOnly=!selection.runId&&first?.kind==='unavailable'&&first.reason!=='NO_EXECUTION'
+  const [saving,setSaving]=useState<'saving'|'done'|{error:string}>()
+  const attempted=useRef(false)
+  const saveAgent=useCallback(()=>{
+    if(!saveChatAgent) return
+    setSaving('saving')
+    void saveChatAgent(nodeId).then(()=>{ setSaving('done'); void query.refetch() },
+      (error:unknown)=>setSaving({error:error instanceof Error?error.message:'The Agent could not be saved.'}))
+  },[saveChatAgent,nodeId,query])
+  useEffect(()=>{
+    if(!draftOnly||!saveChatAgent||attempted.current) return
+    attempted.current=true
+    saveAgent()
+  },[draftOnly,saveChatAgent,saveAgent])
+  // Settings changed on the Board (e.g. browser turned on) reach an open draft chat without saving the workflow:
+  // opening the chat saves only this Agent's pending edits, and its next turn uses them.
+  const outsideRun=!selection.runId&&first?.kind==='outside_run'
+  const synced=useRef(false)
+  useEffect(()=>{
+    if(!outsideRun||!saveChatAgent||synced.current) return
+    synced.current=true
+    void saveChatAgent(nodeId).catch((error:unknown)=>console.error('Saving the Agent settings for chat failed',error))
+  },[outsideRun,saveChatAgent,nodeId])
   const failure=query.error??blocked
   const error=failure instanceof Error?failure.message:'Chat could not refresh. Your selection has been kept.'
   const retry=<button type="button" onClick={()=>void query.refetch()} disabled={query.isFetching && !query.isRefetching}>Retry</button>
@@ -75,13 +105,17 @@ export function WorkflowExecutionChatAdapter({selection:raw,views}:{
   if(resolved) {
     if(!pinned||!client) return <p role="status">Opening the selected Run target…</p>
     const View=views.ExecutionChat
-    return <>{status}<View key={canonicalJson(resolved.target)} selection={selection} resolved={resolved}
+    return <>{status}<p className="workflow-panel-hint" data-testid="agent-chat-scope">{resolved.target.kind==='workflow_execution'
+      ?`Run · attempt ${resolved.target.execution.attempt}`:'Run · coordinator'}</p><View key={canonicalJson(resolved.target)} selection={selection} resolved={resolved}
       client={client} queryKey={executionChatReadKey(resolved.target)} onSelectTarget={onSelectTarget} onSelectRun={onSelectRun}/></>
   }
   if(first.kind==='outside_run') {
     const View=views.OutsideRunChat
     return <>{status}<View selection={selection} resolved={first} onSelectTarget={onSelectTarget} onSelectRun={onSelectRun}/></>
   }
+  if(draftOnly&&saveChatAgent&&(saving==='saving'||saving===undefined)) return <p role="status">Draft chat · saving this Agent so you can chat with it…</p>
+  if(draftOnly&&saveChatAgent&&typeof saving==='object') return <>{status}<p role="alert">This Agent couldn’t be saved for chat: {saving.error}</p>
+    <button type="button" onClick={saveAgent}>Try again</button></>
   if(first.kind==='unavailable') return <>{status}<p role="status">{first.reason==='NO_EXECUTION'
     ?'This saved node has no available execution. Choose a Run to read its history.'
     :first.reason==='NODE_UNAVAILABLE'?'This Agent is not present in the selected saved workflow.':'The selected saved workflow is unavailable.'}</p></>

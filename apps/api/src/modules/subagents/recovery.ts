@@ -1,4 +1,5 @@
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
+import { DomainError } from '../errors.js'
 import { HarnessNativeEventSchema, NativeSessionReferenceSchema } from '@foreman-code/contracts'
 import { appendNativeEvent } from '../runs/nativeEvents.js'
 import type pg from 'pg'
@@ -69,8 +70,10 @@ export async function reconcileSubagentCommand(service: SubagentServicePort, pri
 /** The first response is a SQL snapshot. Native history backfill runs separately, and uses only the original admitted parent on its owning computer. */
 export async function backfillRunSubagents(service: SubagentServicePort, principal: ManagementPrincipal, input: { workspaceId: string; runId: string }) {
   if (!service.nativeRecovery) return
-  const sources = await service.scoped(principal, input, 'runs:read', async scope => (await scope.sql.query<{ id: string; reference: unknown; child_cursor: string | null }>(
-    `select e.id,s.reference,b.child_cursor from harness_executions e join execution_native_sessions s on s.execution_id=e.id
+  const sources = await service.scoped(principal, input, 'runs:read', async scope => (await scope.sql.query<{ id: string; reference: unknown;
+    child_cursor: string | null; last_failure: string | null; finished: boolean }>(
+    `select e.id,s.reference,b.child_cursor,b.last_failure,e.record->>'state'='completed' as finished
+     from harness_executions e join execution_native_sessions s on s.execution_id=e.id
      left join run_subagent_backfill_state b on b.execution_id=e.id where e.run_id=$1 and not coalesce(b.complete,false)
      -- An unavailable provider is retried once a minute while the Run is live, hourly once it has finished
      -- (a finished Main-local session is usually gone; a Worker may still come back), never on every Board poll.
@@ -83,10 +86,18 @@ export async function backfillRunSubagents(service: SubagentServicePort, princip
     try { page = await service.nativeRecovery(source.id, session, source.child_cursor ?? undefined, AbortSignal.timeout(10000)) }
     catch (error) {
       logIgnoredError('harness', 'read native child recovery', error)
-      service.reportRecoveryFailure({ ...input, executionId: source.id, code: 'NATIVE_CHILD_READBACK_UNAVAILABLE' })
+      const code = error instanceof DomainError ? error.code : undefined
+      // A finished attempt's native process is gone for good after a restart: end its backfill with that reason.
+      const gone = source.finished && code === 'SUBAGENT_HISTORY_UNAVAILABLE'
+      // An owner that is not attached yet or is being reconciled is expected after a restart; other failures are
+      // reported once per streak, not on every retry.
+      if (code !== 'SUBAGENT_HISTORY_UNAVAILABLE' && code !== 'RUN_OWNERSHIP_LOST' && source.last_failure === null) {
+        service.reportRecoveryFailure({ ...input, executionId: source.id, code: 'NATIVE_CHILD_READBACK_UNAVAILABLE' })
+      }
       await service.scoped(principal, input, 'runs:read', async scope => {
-        await scope.sql.query(`insert into run_subagent_backfill_state(execution_id,last_failure) values($1,'NATIVE_CHILD_READBACK_UNAVAILABLE')
-          on conflict(execution_id) do update set last_failure=excluded.last_failure,updated_at=clock_timestamp()`, [source.id])
+        await scope.sql.query(`insert into run_subagent_backfill_state(execution_id,last_failure,complete) values($1,$2,$3)
+          on conflict(execution_id) do update set last_failure=excluded.last_failure,complete=excluded.complete,updated_at=clock_timestamp()`,
+        [source.id, gone ? 'NATIVE_CHILD_HISTORY_GONE' : 'NATIVE_CHILD_READBACK_UNAVAILABLE', gone])
       })
       continue
     }

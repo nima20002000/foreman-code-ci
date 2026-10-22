@@ -14,8 +14,8 @@ import { lockWorkspaceFolders } from '../workspaces/folderLocks.js'
 
 function unavailable(message: string): never { throw new DomainError('AGENT_CHAT_DIRECTORY_UNAVAILABLE', message, 409) }
 
-/** Admission holds the saved Main directory until the queued turn commits. */
-export async function assertAgentChatDirectoryAvailable(sql: SqlQuery, conversationId: string) {
+/** The conversation's saved folder and whether it is on a paired computer, which checks its own folder. */
+async function savedChatDirectory(sql: SqlQuery, conversationId: string): Promise<{ path?: string; device: boolean }> {
   const directory = (await sql.query<{
     path: string; host_kind: string; origin_run_id: string | null; workflow_node_id: string
   }>(`
@@ -26,17 +26,36 @@ export async function assertAgentChatDirectoryAvailable(sql: SqlQuery, conversat
     from operator_conversations c
     left join agent_configuration_versions v on v.id=c.agent_configuration_version_id
     where c.id=$1 and c.kind='agent'`, [conversationId])).rows[0]
-  if (!directory?.path) unavailable('The conversation’s saved folder is unavailable.')
+  if (!directory?.path) return { device: false }
   const placement = directory.origin_run_id
     ? await readAcceptedPlacement(sql, directory.origin_run_id, directory.workflow_node_id) : undefined
-  if ((placement?.hostRef.kind ?? directory.host_kind) === 'device') return
-  await lockWorkspaceFolders(sql, [directory.path])
-  try {
-    if ((await stat(directory.path)).isDirectory()) return
-  } catch (error) {
-    if (!['ENOENT', 'ENOTDIR', 'EACCES'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error
+  return { path: directory.path, device: (placement?.hostRef.kind ?? directory.host_kind) === 'device' }
+}
+
+async function folderMissing(path: string): Promise<boolean> {
+  try { return !(await stat(path)).isDirectory() } catch (error) {
+    if (['ENOENT', 'ENOTDIR', 'EACCES'].includes((error as NodeJS.ErrnoException).code ?? '')) return true
+    throw error
   }
-  unavailable('The conversation’s saved folder is unavailable. Restore it before sending another message.')
+}
+
+export function missingChatFolderMessage(path: string): string {
+  return `This chat’s workspace folder “${posix.basename(path)}” is missing (${path}). Recreate it or choose another workspace folder.`
+}
+
+/** The saved Main folder of a conversation when it no longer exists, so the chat can say so before a send fails. */
+export async function missingAgentChatDirectory(sql: SqlQuery, conversationId: string): Promise<string | undefined> {
+  const { path, device } = await savedChatDirectory(sql, conversationId)
+  return path && !device && await folderMissing(path) ? path : undefined
+}
+
+/** Admission holds the saved Main directory until the queued turn commits. */
+export async function assertAgentChatDirectoryAvailable(sql: SqlQuery, conversationId: string) {
+  const { path, device } = await savedChatDirectory(sql, conversationId)
+  if (!path) unavailable('The conversation’s saved folder is unavailable.')
+  if (device) return
+  await lockWorkspaceFolders(sql, [path])
+  if (await folderMissing(path)) unavailable(missingChatFolderMessage(path))
 }
 
 /** The workspace's current folder on the Agent's paired computer, as an implicit project-root node placement. */
@@ -58,7 +77,8 @@ async function deviceWorkspacePlacement(sql: SqlQuery, workspaceId: string,
 export async function resolveAgentChatDirectory(input: {
   sql: SqlQuery
   configuration: AgentConfigurationVersion
-  workflowVersionId: string
+  /** Required with a placement, which only a saved node has. */
+  workflowVersionId?: string
   placement?: SavedNodePlacement
   location?: ExecutionLocation
 }): Promise<{ workingDirectory: string; directoryBinding?: AgentChatDirectoryBinding }> {

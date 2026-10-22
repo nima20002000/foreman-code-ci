@@ -36,6 +36,7 @@ import { registerWorkflowKanbanRoutes } from './routes/workflowKanban.js'
 import { registerWorkflowHierarchyRoutes } from './routes/workflowHierarchy.js'
 import { registerWorkflowExecutionChatRoutes } from './routes/workflowExecutionChat.js'
 import { registerProviderAccountRoutes } from './routes/providerAccounts.js'
+import { registerAppErrorRoutes } from './routes/appErrors.js'
 
 export interface ReadinessDependencies {
   database: { ping(signal?: AbortSignal): Promise<void> }
@@ -164,7 +165,8 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   app.addHook('onResponse', async (request, reply) => {
     const statusCode = reply.statusCode, responseTimeMs = Math.round(reply.elapsedTime)
     // Routine success (the Board polls every 1.5s) is debug; failures and slow calls stay visible.
-    const level = statusCode >= 500 ? 'error' : responseTimeMs >= SLOW_REQUEST_MS ? 'warn' : statusCode >= 400 ? 'info' : 'debug'
+    // While the API shuts down (a deploy), work it cancels answers 503 API_RESTARTING; that is not a fault.
+    const level = statusCode >= 500 ? httpClosing ? 'info' : 'error' : responseTimeMs >= SLOW_REQUEST_MS ? 'warn' : statusCode >= 400 ? 'info' : 'debug'
     // The path without its query string: queries can carry codes and tokens.
     request.log[level]({ method: request.method, path: request.url.split('?')[0], statusCode, responseTimeMs }, 'request completed')
   })
@@ -210,6 +212,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     localHuman: options.localHuman, browserOrigin: options.browserOrigin, runtimeIdentity: options.runtimeIdentity })
   if (options.operator?.services.memoryBoards) registerMemoryBoardRoutes(app, options.operator.services.memoryBoards)
   if (options.operator) registerManagementRoutes(app, options.operator.services)
+  if (options.operator) registerAppErrorRoutes(app)
   if (options.operator?.services.providerAccounts) registerProviderAccountRoutes(app, options.operator.services.providerAccounts)
   if (options.operator?.services.runPlacements) registerRunPlacementRoutes(app, options.operator.services.runPlacements)
   if (options.operator?.services.placementChoices) registerNodePlacementChoicesRoutes(app, options.operator.services.placementChoices)
@@ -241,9 +244,15 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
 
   app.setErrorHandler(async (error, request, reply) => {
     const failure = databaseConnectionFailure(databaseReadFailure(error))
-    const domain = publicRequestError(failure)
-    const failureClass = publicFailureClass(failure)
-    if (domain.status >= 500) request.log.error({ err: error }, domain.message)
+    const failed = publicRequestError(failure)
+    const restarting = httpClosing && failed.status >= 500
+    const domain = restarting ? new DomainError('API_RESTARTING', 'The API is restarting. Try again in a moment.', 503,
+      { retryable: true }) : failed
+    const failureClass = publicFailureClass(domain === failed ? failure : domain)
+    if (restarting) request.log.info({ err: error, method: request.method, path: request.url.split('?')[0] },
+      'request canceled by API shutdown')
+    else if (domain.status >= 500) request.log.error({ err: error, method: request.method,
+      path: request.url.split('?')[0], statusCode: domain.status }, domain.message)
     const mcpRequest = request.url.split('?')[0] === '/mcp'
     if (mcpRequest && domain.status >= 400 && domain.status < 500 && domain.status !== 401) {
       request.log.warn({ code: domain.code, statusCode: domain.status }, 'MCP request rejected')

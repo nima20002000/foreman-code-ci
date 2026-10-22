@@ -143,7 +143,7 @@ export const BrowserOperationResponseSchemas = {
   browser_tab_close: BrowserSessionDetailsSchema,
   browser_state_read: z.object({ title: z.string(), url: z.string(), text: z.string(), dialog: dialog.nullable() }).strict(),
   browser_screenshot: z.object({ sessionId: id, tabId: id, browserGeneration: generation, mimeType: z.literal('image/png'), contentBase64: z.string() }).strict(),
-  browser_action: z.union([z.object({ state: z.literal('completed'), result: z.unknown() }).strict(), BrowserFileSchema, bytes, z.null()]),
+  browser_action: z.union([z.object({ state: z.literal('completed'), result: z.unknown().optional() }).strict(), BrowserFileSchema, bytes, z.null()]),
   browser_view_open: BrowserRuntimeViewSchema,
   browser_view_read: z.object({ view: BrowserRuntimeViewSchema, frame: BrowserFrameSchema.extend({ contentBase64: z.string() }).nullable() }).strict(),
   browser_view_close: z.object({ closed: z.boolean() }).strict(),

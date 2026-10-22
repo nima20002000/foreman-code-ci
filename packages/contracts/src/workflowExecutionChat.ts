@@ -9,6 +9,8 @@ export const WorkflowExecutionChatSelectionSchema = z.object({
   workspaceId: IdSchema, workflowId: IdSchema, workflowNodeId: GraphIdSchema,
   runId: IdSchema.optional(), workflowVersionId: IdSchema.optional(), executionId: IdSchema.optional(),
   waitingActivationId: IdSchema.optional(),
+  /** The node's Agent. Lets a node that is not in a saved workflow version yet open its draft chat. */
+  agentId: IdSchema.optional(),
   cursor: z.string().optional(), limit: z.number().int().min(1).max(100).default(50),
 }).strict().superRefine((selection, context) => {
   if ((selection.executionId || selection.waitingActivationId) && !selection.runId) context.addIssue({ code: 'custom', path: ['runId'],
@@ -36,8 +38,9 @@ export const WorkflowExecutionChatResolutionSchema = z.discriminatedUnion('kind'
   revision: z.number().int().nonnegative() }).strict(),
   z.object({ kind: z.literal('selection_required'), items: z.array(ChoiceSchema).max(100),
     nextCursor: z.string().nullable(), hasMore: z.boolean(), revision: z.number().int().nonnegative() }).strict(),
+  /** Without workflowVersionId this is a draft chat: the node is not in a saved workflow version yet. */
   z.object({ kind: z.literal('outside_run'), agent: AgentNodeRefSchema,
-    workflowVersionId: IdSchema, reason: z.literal('NO_LIVE_RUN') }).strict(),
+    workflowVersionId: IdSchema.optional(), reason: z.literal('NO_LIVE_RUN') }).strict(),
   z.object({ kind: z.literal('unavailable'), reason: z.enum(['NODE_UNAVAILABLE', 'NO_EXECUTION', 'WORKFLOW_UNAVAILABLE']) }).strict(),
 ]);
 export type WorkflowExecutionChatSelection = z.infer<typeof WorkflowExecutionChatSelectionSchema>;

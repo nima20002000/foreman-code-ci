@@ -24,8 +24,6 @@ import { RunLiveNodes, useRunLiveNodes } from './useRunLiveNodes'
 import { projectRunBoard, runBoardCi, READ_ONLY_FLOW_PROPS, type AvailableRunBoardSnapshot, type SavedBoardEdge, type SavedBoardNode } from './model'
 import '@xyflow/react/dist/style.css'
 import './runBoard.css'
-import { HierarchyCanvasControls } from '../workflow-hierarchy/HierarchyCanvasControls'
-import { useCollapsedWorkers } from '../workflow-hierarchy/useCollapsedWorkers'
 import { useWorkflowBoard } from '../workflow-board/context'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
 
@@ -61,7 +59,7 @@ const SavedConnection = memo(function SavedConnection(props: EdgeProps<SavedBoar
   const curve = !loop && floating ? floating : savedEdgeCurve({ ...props, lane, loop })
   return <g>
     <title>{edge.label || (edge.kind === 'approval' ? 'Approval' : 'Handoff')}</title>
-    <SignalEdgeShape id={props.id} curve={curve} kind={edge.kind} reportingParent={props.data?.reportingParent} />
+    <SignalEdgeShape id={props.id} curve={curve} kind={edge.kind} />
   </g>
 })
 const nodeTypes = { savedBoardNode: SavedAgent, ciServer: CiServerNode, boardKanban: BoardKanbanNode }
@@ -77,7 +75,6 @@ export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hier
 }) {
   const board = useWorkflowBoard()
   const displayScope = JSON.stringify(['run', snapshot.workspaceId, snapshot.workflowId, snapshot.runId])
-  const collapsed = useCollapsedWorkers(displayScope, hierarchy?.hierarchy)
   const { containerRef, onInit, onMove, onManualMove, refit } = useResponsiveGraphViewport<SavedBoardNode | CiServerFlowNode | KanbanFlowNode,
     SavedBoardEdge | CiTransferFlowEdge | KanbanActivityFlowEdge>({
     fitViewOptions,
@@ -95,10 +92,8 @@ export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hier
   }, [snapshot, activitySnapshot, inspectable, hierarchy])
   // React Flow reconciles every node it is given; keep these arrays referentially stable between unrelated renders.
   const teamNodeId = board?.teamNodeId
-  const visibleNodes = useMemo(() => nodes.filter(node => !collapsed.has(node.id)).map(node => ({ ...node,
-    selected: teamNodeId === node.id })), [nodes, collapsed, teamNodeId])
-  const visibleEdges = useMemo(() => edges.filter(edge => !collapsed.has(edge.source) && !collapsed.has(edge.target)), [edges, collapsed])
-  const visibleSnapshotNodes = useMemo(() => snapshot.nodes.filter(node => !collapsed.has(node.id)), [snapshot.nodes, collapsed])
+  const visibleNodes = useMemo(() => nodes.map(node => ({ ...node,
+    selected: teamNodeId === node.id })), [nodes, teamNodeId])
   const scope = useMemo(() => ({ workspaceId: snapshot.workspaceId, workflowId: snapshot.workflowId,
     runId: snapshot.runId, workflowVersionId: snapshot.workflowVersionId, executionSemanticsVersion: 3 as const }), [snapshot])
   const active = !activitySnapshot || activitySnapshot.active.length > 0
@@ -140,11 +135,11 @@ export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hier
   const liveNodes = useRunLiveNodes(scope, names, cis, visible && !!board)
   // A light per Agent while its CI request or result travels; no lasting line to the server.
   const transfers = useCiTransfers(ciJobs, useReducedMotion())
-  const ciEdges = useMemo<(SavedBoardEdge | CiTransferFlowEdge)[]>(() => ci.node && transfers.size ? [...visibleEdges,
+  const ciEdges = useMemo<(SavedBoardEdge | CiTransferFlowEdge)[]>(() => ci.node && transfers.size ? [...edges,
     ...[...transfers].filter(([nodeId]) => visibleNodes.some(node => node.id === nodeId)).map(([nodeId, pulses]) => ({
       id: `ci-transfer:${nodeId}`, type: 'ciTransfer' as const, source: nodeId, target: CI_SERVER_NODE_ID,
       sourceHandle: 'right', targetHandle: 'left', selectable: false, focusable: false, deletable: false, data: { pulses } }))]
-    : visibleEdges, [visibleEdges, visibleNodes, transfers, ci.node])
+    : edges, [edges, visibleNodes, transfers, ci.node])
   const flowEdges = useMemo<(SavedBoardEdge | CiTransferFlowEdge | KanbanActivityFlowEdge)[]>(() => kanban.edges.length
     ? [...ciEdges, ...kanban.edges] : ciEdges, [ciEdges, kanban.edges])
   return <div ref={containerRef} className="run-board-canvas" data-testid="run-board-canvas" onKeyDown={(event) => {
@@ -164,14 +159,12 @@ export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hier
         onInit={onInit} onMove={onMove}
         proOptions={proOptions} preventScrolling={false} aria-label="Saved Run graph"
         ariaLabelConfig={{ 'node.a11yDescription.default': 'Saved agent, read only.', 'edge.a11yDescription.default': 'Saved connection, read only.' }}>
-        <RunSubagentsOverlay scope={snapshot} nodes={visibleSnapshotNodes} visible={visible} />
+        <RunSubagentsOverlay scope={snapshot} nodes={snapshot.nodes} visible={visible} />
         <Background color="var(--border)" gap={24} size={1} />
         <Controls showInteractive={false} fitViewOptions={fitViewOptions} aria-label="Run view controls"
           onZoomIn={onManualMove} onZoomOut={onManualMove} />
       </ReactFlow>
     </RunLiveNodes.Provider></ReactFlowProvider>
-    <HierarchyCanvasControls scope={displayScope} hierarchy={hierarchy?.hierarchy}
-      name={nodeId => names.get(nodeId) ?? nodeId} onTeam={board?.selectTeam} />
     {visible ? ci.dialog : null}
     <BoardDock kanban={kanban.dock} ci={ci.node ? undefined : { summary: ci.summary, restore: ci.place.restore }} />
   </div>

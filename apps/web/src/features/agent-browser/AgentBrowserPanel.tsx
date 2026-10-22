@@ -26,6 +26,8 @@ export interface AgentBrowserPanelProps {
   onSelectSession(sessionId: string): void
   onSelectTab(tabId: string): void
   onCleanupError(message: string): void
+  /** The browser sidebar already names the Agent: show only where the browser runs, never raw ids. */
+  compact?: boolean
 }
 
 /** D's one rail owns mounting/navigation. A hidden panel starts no reads or capture. */
@@ -91,8 +93,9 @@ function SelectedBrowser(props: AgentBrowserPanelProps & { keepControlOnTabChang
   const tab = data?.tabs.find(item => item.tabId === props.selection.tabId)
     ?? (props.selection.tabId === null ? data?.tabs.find(item => item.tabId === data.session.selectedTabId) : undefined)
   return <section className="agent-browser-panel" aria-label="Agent browser">
-    <header><h3>{props.selection.subject.agent.displayName} · {props.computerName} · {props.profileName}</h3>
-      <p>{roleLabel(props.selection.subject)} · {subjectLabel(props.selection.subject)}</p></header>
+    {props.compact ? <p className="agent-browser-where">{roleLabel(props.selection.subject)} · {props.computerName} · {props.profileName}</p>
+      : <header><h3>{props.selection.subject.agent.displayName} · {props.computerName} · {props.profileName}</h3>
+        <p>{roleLabel(props.selection.subject)} · {subjectLabel(props.selection.subject)}</p></header>}
     {rejected ? <div role="alert"><p>Browser access is unavailable.</p>
       <Button onClick={() => { void reconnect() }}>Check access</Button></div>
       : error ? <div role="alert"><p>{browserErrorMessage(error)}</p>
@@ -119,15 +122,16 @@ function SelectedBrowser(props: AgentBrowserPanelProps & { keepControlOnTabChang
   </section>
 }
 
-function SessionChoices({ sessions, loading, selection, onSelectSession }: {
+function SessionChoices({ sessions, loading, selection, onSelectSession, compact }: {
   sessions: BrowserSessionRead['session'][] | undefined; loading: boolean; selection: BrowserSelection
-  onSelectSession(sessionId: string): void
+  onSelectSession(sessionId: string): void; compact?: boolean
 }) {
   if (loading) return <p role="status">Loading browser sessions…</p>
   if (!sessions?.length) return <p>{selection.historical ? 'No live browser remains for this historical selection.' : 'No live browser yet.'}</p>
   return <div><p>{sessions.length > 1 ? 'Choose the exact browser session to watch.' : 'Browser session for the selected agent.'}</p>
-    {sessions.map(session => <Button key={session.id} onClick={() => onSelectSession(session.id)}>
-      Open browser · {session.state} · {session.id.slice(0, 8)}
+    {sessions.map((session, index) => <Button key={session.id} onClick={() => onSelectSession(session.id)}>
+      {compact ? `Open browser${sessions.length > 1 ? ` ${index + 1}` : ''} · ${session.state === 'closed' || session.state === 'failed' ? 'ended' : session.state}`
+        : <>Open browser · {session.state} · {session.id.slice(0, 8)}</>}
     </Button>)}</div>
 }
 
@@ -154,6 +158,9 @@ export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
   const lifecycle = useRef({ keepControlOnTabChange: props.keepControlOnTabChange, onCleanupError: props.onCleanupError })
   lifecycle.current = { keepControlOnTabChange: props.keepControlOnTabChange, onCleanupError: props.onCleanupError }
   const [url, setUrl] = useState(props.tab.url)
+  // The address follows the agent's page, except while the person is typing one.
+  const typing = useRef(false)
+  useEffect(() => { if (!typing.current) setUrl(props.tab.url) }, [props.tab.url])
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     effectVisit.current += 1
@@ -226,7 +233,8 @@ export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
     {!props.readOnly ? <form className="agent-browser-address" onSubmit={event => {
       event.preventDefault()
       mutate((epoch, commandId) => props.port.navigate(props.initial.session, props.tab, props.viewerId, epoch, url, commandId))
-    }}><TextField label="Website address" value={url} onChange={event => setUrl(event.currentTarget.value)} disabled={pending} />
+    }}><TextField label="Website address" value={url} onChange={event => setUrl(event.currentTarget.value)} disabled={pending}
+      onFocus={() => { typing.current = true }} onBlur={() => { typing.current = false }} />
       <Button type="submit" disabled={pending || snapshot.stale || !url.trim()}>Go</Button></form> : null}
     {error || mutation.error ? <p role="alert">{error ?? browserErrorMessage(mutation.error)}</p> : null}
     {unresolved ? <Button size="sm" disabled={mutation.isPending} onClick={() => {

@@ -6,7 +6,7 @@ import type { NativeConfigurationService } from '../../modules/harnesses/nativeC
 import type { McpDetectionService } from '../../modules/harnesses/mcpDetection.js'
 import type { WorkspaceLocationService } from '../../modules/workspaces/location.js'
 import { OperatorAgentMutationService } from '../../modules/workspaces/operatorAgents.js'
-import { OperatorLifecycleService } from '../../modules/workspaces/operatorLifecycle.js'
+import { OperatorLifecycleService, type RestoredFolderBinding } from '../../modules/workspaces/operatorLifecycle.js'
 import { OperatorWorkspaceControls } from '../../modules/workspaces/operatorControls.js'
 import { VersionHistoryService } from '../../modules/workflows/historyManagement.js'
 import { SkillCatalogService } from '../../modules/skills/catalog.js'
@@ -21,6 +21,7 @@ export function createOperatorExtensions(input: {
   harnessProfiles?: Pick<HostHarnessOverrideService, 'validateSelection'>;
   accountConfigurations?: ProviderAccountConfigurationService;
   workflows: Pick<CurrentWorkflowAuthoring, 'save'>;
+  rebindRestoredFolder?: RestoredFolderBinding['rebind'];
 }) {
   const agents = new OperatorAgentMutationService(input.pool,input.commands,input.catalog,input.harnessProfiles,
     input.accountConfigurations)
@@ -29,7 +30,8 @@ export function createOperatorExtensions(input: {
     agents,
     skillUsage:new SkillUsageService(input.pool,agents,input.workflows,input.commands),
     history:new VersionHistoryService(input.pool),
-    lifecycle:new OperatorLifecycleService(input.commands),
+    lifecycle:new OperatorLifecycleService(input.commands, input.rebindRestoredFolder
+      ? { runnerId: input.locations.runnerId, rebind: input.rebindRestoredFolder } : undefined),
     workspace:new OperatorWorkspaceControls(input.pool,input.commands,input.locations,input.detection,input.provisioningRoot),
     skills:new SkillCatalogService(input.pool,input.commands),
   }

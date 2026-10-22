@@ -442,7 +442,8 @@ h1 {
 
 .workspace-shell-navigation-collapsed .nav-label,
 .workspace-shell-navigation-collapsed .availability-note,
-.workspace-shell-navigation-collapsed .sidebar-note {
+.workspace-shell-navigation-collapsed .sidebar-note,
+.workspace-shell-navigation-collapsed .shell-navigation .resource-load-more {
   display: none;
 }
 

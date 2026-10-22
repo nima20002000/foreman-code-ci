@@ -10,10 +10,14 @@ minimumReleaseAge: 2880
 minimumReleaseAgeStrict: true
 minimumReleaseAgeIgnoreMissingTime: false
 
+# Transitive hono (via the Claude Agent SDK's MCP SDK) gets the patched release.
+overrides:
+  'hono@<4.12.25': 4.13.13
+
 allowBuilds:
   esbuild: true
   msgpackr-extract: false
-  msw: true
+  msw: false
 
 patchedDependencies:
   '@langchain/langgraph@1.4.15': patches/@langchain__langgraph@1.4.15.patch

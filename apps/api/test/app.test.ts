@@ -60,6 +60,36 @@ describe('operational endpoints', () => {
     await closing
   })
 
+  it('answers work canceled by shutdown as a restart, not a server fault', async () => {
+    let release!: () => void
+    const waiting = new Promise<void>(resolve => { release = resolve })
+    let entered!: () => void
+    const started = new Promise<void>(resolve => { entered = resolve })
+    const app = buildApp({ readiness: {
+      database: { ping: async () => undefined },
+      checkpoints: { ping: async () => undefined },
+    } })
+    apps.push(app)
+    app.get('/api/shutdown-probe', async () => {
+      entered()
+      await waiting
+      throw new Error('Codex session manager is shutting down.')
+    })
+    let stopping!: () => void
+    const shutdownStarted = new Promise<void>(resolve => { stopping = resolve })
+    app.addHook('preClose', async () => { stopping() })
+    const origin = await app.listen({ host: '127.0.0.1', port: 0 })
+    const response = fetch(`${origin}/api/shutdown-probe`).then(async value => ({
+      status: value.status, body: await value.json(),
+    }))
+    await started
+    const closing = app.close()
+    await shutdownStarted
+    release()
+    expect(await response).toMatchObject({ status: 503, body: { error: { code: 'API_RESTARTING' } } })
+    await closing
+  })
+
   it('reports liveness without consulting infrastructure', async () => {
     const app = buildApp({
       readiness: {

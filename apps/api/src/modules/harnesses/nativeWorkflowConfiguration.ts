@@ -46,6 +46,8 @@ export function assertNativeWorkflowConfiguration(
     }
     return
   }
+  // A Claude Agent (always full access) runs its tools without asking when Agents handle approvals themselves.
+  if (configuration.harness === 'claude') return
   if (configuration.harness === 'codex'
     && (configuration.advanced?.approvalPolicy === 'never' || configuration.advanced?.approvalsReviewer === 'auto_review')) return
   throw new DomainError(

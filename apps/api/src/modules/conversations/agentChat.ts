@@ -6,10 +6,10 @@ import type { ReadObservation } from '@foreman-code/contracts'
 import { failedReadObservation, successfulReadObservation } from '../diagnostics/readObservation.js'
 import { DeviceConnectionError } from '../devices/deviceWire.js'
 import { errorMessage } from '../../shared/errorMessage.js'
-import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
+import { RETIRED_OPENCODE_MESSAGE, type NodeBrowserSettings } from '@foreman-code/contracts'
 import type { ChatResponseAcknowledgment } from '@foreman-code/contracts/interaction-activity'
 import { withInteractionResponse, isSessionNativeInteraction } from '@foreman-code/contracts'
-import { resolveAgentChatDirectory, revalidateAgentChatDirectory } from './agentChatDirectory.js'
+import { missingAgentChatDirectory, missingChatFolderMessage, resolveAgentChatDirectory, revalidateAgentChatDirectory } from './agentChatDirectory.js'
 import type { SessionControlRequest } from '@foreman-code/contracts'
 import { pendingSessionControls, type ChatModelCatalog } from '../harnesses/sessionControlDefaults.js'
 import { readRunChatTranscript } from './runChatTranscript.js'
@@ -159,7 +159,7 @@ interface Resolution {
   key?: string
   executionId?: string
   row?: AgentConversationRow
-  blocked?: { reason: AgentChatBlockedReason; message: string }
+  blocked?: { reason: AgentChatBlockedReason; message: string; missingFolder?: { path: string } }
   /** How a first message would create its native session. */
   create?: Omit<NewAgentConversation, 'context'>
   configuration?: AgentConfigurationVersion
@@ -387,8 +387,9 @@ export class AgentChatService {
     let key = agentChatKey(context)
     let row = selectedRun && context.runId && executionId
       ? await findRunChatConversation(sql, context, executionId) : await this.repository.byKey(key, sql)
-    const blocked = (reason: AgentChatBlockedReason, message: string): Resolution => ({ context, key,
-      ...(executionId ? { executionId } : {}), ...(row ? { row } : {}), blocked: { reason, message } })
+    const blocked = (reason: AgentChatBlockedReason, message: string, missingFolder?: string): Resolution => ({ context, key,
+      ...(executionId ? { executionId } : {}), ...(row ? { row } : {}),
+      blocked: { reason, message, ...(missingFolder ? { missingFolder: { path: missingFolder } } : {}) } })
     if (context.runId) {
       const run = read ? read.run : await this.runs.getForWorkspace(context.workspaceId, context.runId)
         .catch(ignoreError('engine', 'load selected run for chat context', { workspaceId: context.workspaceId, runId: context.runId }))
@@ -493,13 +494,16 @@ export class AgentChatService {
         ...(source.systemPrompt ? { systemPrompt: source.systemPrompt } : {}),
       } }
     }
+    // A node that is not in a saved workflow version yet (never-saved workflow or new node) opens a draft chat
+    // on its Agent's own saved configuration; the workflow graph does not have to be saved or valid.
     const version = await workflows.getCurrentSavedVersion(context.workspaceId, context.workflowId)
-    if (!version) return blocked('context_stale', 'The workflow was not found.')
-    const node = version.definition.nodes.find((entry) => entry.id === context.workflowNodeId)
+    const node = version?.definition.nodes.find((entry) => entry.id === context.workflowNodeId)
     if (node?.kind === 'job') return { context, key, blocked: { reason: 'agent_missing', message: 'Jobs do not support Agent chat.' } }
-    if (!node || node.agentId !== context.agentId) {
+    if (node && node.agentId !== context.agentId) {
       return blocked('agent_missing', 'This Agent is no longer part of the saved workflow.')
     }
+    if (!(await sql.query('select 1 from workflows where id=$1 and workspace_id=$2 and archived_at is null',
+      [context.workflowId, context.workspaceId])).rowCount) return blocked('context_stale', 'The workflow was not found.')
     if (row) {
       const configuration = await workflows.getAgentConfiguration(row.agent_configuration_version_id)
       const unavailable = this.sessionUnavailable(row, configuration)
@@ -510,12 +514,15 @@ export class AgentChatService {
           return { ...blocked('context_stale', error.message), configuration }
         }
       }
+      const missingFolder = await missingAgentChatDirectory(sql, row.id)
+      if (missingFolder) return { ...blocked('execution_location_missing', missingChatFolderMessage(missingFolder), missingFolder),
+        ...(configuration ? { configuration } : {}) }
       return { context, row, ...(configuration ? { configuration } : {}), ...(unavailable ? { blocked: unavailable } : {}) }
     }
     const agent = (await sql.query<{ current_configuration_version_id: string | null; archived_at: Date | null }>(
       'select current_configuration_version_id,archived_at from agents where workspace_id=$1 and id=$2', [context.workspaceId, context.agentId])).rows[0]
     if (!agent || agent.archived_at || !agent.current_configuration_version_id) return blocked('agent_missing', 'This Agent has no saved configuration.')
-    const configurationId = node.placement ? version.agentConfigurationVersionIds[context.agentId]
+    const configurationId = node?.placement ? version!.agentConfigurationVersionIds[context.agentId]
       : agent.current_configuration_version_id
     const configuration = configurationId ? await workflows.getAgentConfiguration(configurationId) : undefined
     if (!configuration) return blocked('agent_missing', 'This Agent has no saved configuration.')
@@ -523,8 +530,8 @@ export class AgentChatService {
     const workspace = (await sql.query<{ execution_location: unknown }>('select execution_location from workspaces where id=$1', [context.workspaceId])).rows[0]
     const location = ExecutionLocationSchema.safeParse(workspace?.execution_location)
     let directory
-    try { directory = await resolveAgentChatDirectory({ sql, configuration, workflowVersionId: version.id,
-      ...(node.placement ? { placement: node.placement } : {}), ...(location.success ? { location: location.data } : {}) }) }
+    try { directory = await resolveAgentChatDirectory({ sql, configuration, ...(version ? { workflowVersionId: version.id } : {}),
+      ...(node?.placement ? { placement: node.placement } : {}), ...(location.success ? { location: location.data } : {}) }) }
     catch (error) {
       if (!(error instanceof DomainError) || error.code !== 'AGENT_CHAT_DIRECTORY_UNAVAILABLE') throw error
       return { ...blocked('execution_location_missing', error.message), configuration }
@@ -532,7 +539,7 @@ export class AgentChatService {
     const generation = (await sql.query<{ id: string }>(`select id from operator_conversations
       where kind='agent' and workspace_id=$1 and workflow_id=$2 and workflow_node_id=$3 and agent_id=$4
       order by created_at desc,id desc limit 1`, [context.workspaceId, context.workflowId, context.workflowNodeId, context.agentId])).rows[0]?.id ?? null
-    const candidateId = `agent-chat:${commandInputHash({ context, workflowVersionId: version.id,
+    const candidateId = `agent-chat:${commandInputHash({ context, workflowVersionId: version?.id ?? null,
       configurationVersionId: configuration.id, directory, generation }).slice(7)}`
     return { context, configuration, candidateId, create: {
       id: candidateId,
@@ -617,7 +624,8 @@ export class AgentChatService {
       capabilities.unavailable = { resume: blocked.message, queueNextTurn: blocked.message,
         interruptAndSend: blocked.message, steer: blocked.message }
     }
-    const availability = blocked ? { canSend: false, reason: blocked.reason, message: blocked.message } : { canSend: true, message: 'Chat uses this Agent’s accepted configuration and scoped workflow capabilities.' }
+    const availability = blocked ? { canSend: false, reason: blocked.reason, message: blocked.message,
+      ...(blocked.missingFolder ? { missingFolder: blocked.missingFolder } : {}) } : { canSend: true, message: 'Chat uses this Agent’s accepted configuration and scoped workflow capabilities.' }
     if (!resolution.row) {
       const finalPrincipal = await readLiveManagementPrincipal(this.pool, principal.id)
       this.authorize(finalPrincipal, 'agent_chat:read', context)
@@ -895,6 +903,15 @@ export class AgentChatService {
   }
   async assertReadable(principal: ManagementPrincipal, workspaceId: string, id: string) {
     await this.conversation(workspaceId, id, principal, 'agent_chat:read')
+  }
+
+  /** The Board's current browser switch for a chat outside any Run; null clears it back to the saved node. */
+  async setChatBrowser(principal: ManagementPrincipal, workspaceId: string, id: string, browser: NodeBrowserSettings | null) {
+    const row = await this.conversation(workspaceId, id, principal, 'agent_chat:write')
+    if (row.origin_run_id) throw new DomainError('AGENT_CHAT_RUN_BROWSER', 'A Run chat uses the browser saved with its Run.', 409)
+    await this.pool.query(`update operator_conversations set record=case when $2::jsonb is null then record - 'chatBrowser'
+      else record || jsonb_build_object('chatBrowser',$2::jsonb) end where id=$1 and kind='agent'`,
+    [id, browser ? JSON.stringify(browser) : null])
   }
 
   /** Snapshot-selected read. It never creates, attaches, forks or probes a native session. */
@@ -1674,8 +1691,10 @@ export class AgentChatService {
       || featureContext.workingDirectory !== accepted.input.conversationContext.workingDirectory)) {
       throw new DomainError('CHAT_SUBJECT_CHANGED', 'The accepted conversation feature scope changed before dispatch.', 409)
     }
+    // The browser switch changes the chat's tools without a new subject or version, so it is part of the scope too.
     const featureContextKey = commandInputHash({ subject: featureContext.subject,
-      workflowVersionId: featureContext.workflowVersionId, workingDirectory: featureContext.workingDirectory })
+      workflowVersionId: featureContext.workflowVersionId, workingDirectory: featureContext.workingDirectory,
+      browser: featureContext.node.browser?.enabled ? featureContext.node.browser : null })
     let existing = this.runtimes.get(row.id)
     if (controlPrincipalId) existing?.manager.setSessionControlPrincipal?.(controlPrincipalId)
     if (existing?.session) {
@@ -1826,7 +1845,10 @@ export class AgentChatService {
         defaultSubject: `${row.workspace_id}:${row.agent_id}`, profileKey: row.agent_configuration_version_id,
         ...(selectedMode ? { initialMode: selectedMode } : {}), busyReason: null })
       creatingSession = !row.native_session_id
-      runtime = await this.runtime(row, configuration, correlationId, signal, principalId)
+      // Resuming a bound session sends no input, so its failure proves this message was not delivered.
+      runtime = await this.runtime(row, configuration, correlationId, signal, principalId).catch((error: unknown) => {
+        throw creatingSession ? error : new NativeDeliveryError('turn_submission', 'not_sent', error)
+      })
       // A session-replacing transition retires the prepared frame's session, binding and method. The new owner
       // composes its frame from the exact accepted prompt and settings and still validates its serialized size.
       if (acceptedInput && !applied.replacedSession) restoreAcceptedChatInput(runtime.manager, correlationId, acceptedInput.input)

@@ -68,6 +68,8 @@
 .agent-chat-status > .n-tooltip-anchor:first-child > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conversation-viewport { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .agent-conversation > .conversation-viewport { flex: 1 1 0; }
+.agent-conversation > .execution-chat-follow-up { flex: 0 0 auto; align-self: flex-start; margin: var(--space-2) 0; }
+.agent-conversation > .execution-chat-closed { flex: 0 0 auto; margin: var(--space-2) 0 0; color: var(--text-muted); }
 .conversation-viewport-scroll {
   flex: 1 1 0;
   min-height: 0;
@@ -88,7 +90,7 @@
 }
 .agent-chat-messages {
   display: grid;
-  gap: var(--space-6);
+  gap: var(--space-4);
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -97,16 +99,15 @@
 .agent-chat-messages:empty { display: none; }
 .agent-chat-messages > li { min-width: 0; }
 .agent-chat-message { min-width: 0; max-width: 100%; }
-.agent-chat-message--user {
-  width: fit-content;
-  max-width: 88%;
-  margin-left: auto;
-  padding: var(--space-2) var(--space-3);
-  background: var(--surface-hover);
-  border-radius: var(--radius-lg);
-}
-.agent-chat-message--user .conversation-message-content { white-space: pre-wrap; }
-.agent-chat-message--agent { width: 100%; }
+/* Messages match the Operator chat: avatar + name header, user on the right, replies in a bordered bubble. */
+.agent-chat-message--user .n-message { flex-direction: row-reverse; max-width: 90%; margin-left: auto; }
+.agent-chat-message--user .n-message header { justify-content: flex-end; }
+.agent-chat-message--user .n-message-content { width: fit-content; margin-left: auto; border-radius: var(--radius-lg) var(--radius-sm) var(--radius-lg) var(--radius-lg); }
+.agent-chat-message--agent .n-message { max-width: 96%; margin-right: auto; }
+.agent-chat-message--agent .n-message-content { white-space: normal; color: var(--color-text); }
+.agent-chat-answer { border: 1px solid var(--color-border); background: var(--color-surface-raised); border-radius: var(--radius-sm) var(--radius-lg) var(--radius-lg) var(--radius-lg); padding: .7rem .85rem; }
+.agent-chat-message .n-message time { opacity: 0; }
+.agent-chat-message:hover .n-message time, .agent-chat-message:focus-within .n-message time { opacity: 1; }
 .agent-chat-message--agent .conversation-message-content { white-space: normal; line-height: 1.65; }
 .agent-chat-message--agent .conversation-message-content > * + * { margin-top: var(--space-3); }
 .agent-chat-message--agent :is(h1, h2, h3, h4, h5, h6) { margin: 0; color: var(--text-strong); font: var(--type-heading); }
@@ -120,20 +121,6 @@
   font: var(--type-mono);
 }
 .agent-chat-message--agent blockquote { margin: 0; padding: var(--space-3); background: var(--surface-raised); border-radius: var(--radius-md); }
-.agent-chat-message-meta {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  min-height: var(--space-4);
-  margin-top: var(--space-1);
-  color: var(--text-faint);
-  font: var(--type-caption);
-}
-.agent-chat-message-meta:empty { display: none; }
-.agent-chat-message-meta time { opacity: 0; }
-.agent-chat-message:hover time, .agent-chat-message:focus-within time { opacity: 1; }
 .agent-chat-delivery { display: inline-flex; align-items: center; }
 .agent-chat-delivery[data-delivery='failed'], .agent-chat-delivery[data-delivery='unknown'] { color: var(--danger); }
 .agent-chat-delivery[data-delivery='queued'], .agent-chat-delivery[data-delivery='submitting'] { color: var(--text-muted); }
@@ -226,3 +213,18 @@ body:has(.n-agent-popover[data-panel='chat']) .operator-chat-launcher { visibili
 .agent-chat-input-box > .agent-chat-field { grid-row: 2; grid-column: 2; min-width: 0; }
 .agent-chat-header-controls { display: inline-flex; align-items: center; gap: var(--space-1); flex: 0 0 auto; min-width: 0; }
 .agent-chat-header-controls .session-context-meter { width: auto; min-width: 0; min-height: 28px; height: 28px; padding: 0 .45rem; }
+
+/* Send, stop and the delivery choice sit inside the composer box as icons. */
+.agent-chat-input-box > .chat-delivery-actions { position: absolute; right: var(--space-2); bottom: var(--space-2); display: flex; align-items: center; gap: var(--space-1); }
+.agent-chat-input-box > .chat-delivery-actions .agent-chat-send.n-button { position: static; }
+.agent-chat-input-box > .chat-delivery-actions .n-icon-button:not(.agent-chat-send) { width: 28px; height: 28px; min-height: 28px; padding: 0; border-radius: var(--radius-full); }
+.agent-chat-input-box > .chat-delivery-actions .n-field { gap: 0; }
+.agent-chat-input-box > .chat-delivery-actions .n-field > label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.agent-chat-input-box > .chat-delivery-actions .n-field { flex: none; width: auto; }
+.agent-chat-input-box > .chat-delivery-actions select { width: 7.5rem; height: 28px; min-height: 28px; padding: 0 1.5rem 0 .5rem; font: var(--type-caption); }
+.agent-chat-input-box:has(.chat-delivery-actions select) .n-input { padding-right: 12rem; }
+.chat-delivery-receipts { margin: 0; padding: 0; list-style: none; color: var(--text-muted); font: var(--type-caption); }
+.chat-delivery-receipts p { margin: 0; }
+/* In the Board panel the panel title already names the Agent. */
+.workflow-floating-panel .agent-chat-identity h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.workflow-floating-panel .agent-chat-header > nav { justify-content: flex-end; }

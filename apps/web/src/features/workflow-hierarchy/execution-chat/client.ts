@@ -42,7 +42,7 @@ function assertChoice(input: WorkflowExecutionChatSelection,
 
 export async function resolveExecutionChat(input: ExecutionChatSelectionInput, options?: RequestOptions) {
   const parsed=WorkflowExecutionChatSelectionSchema.parse(input), query=new URLSearchParams({workflowNodeId:parsed.workflowNodeId,limit:String(parsed.limit)})
-  for(const key of ['runId','workflowVersionId','executionId','waitingActivationId','cursor'] as const) {
+  for(const key of ['runId','workflowVersionId','executionId','waitingActivationId','agentId','cursor'] as const) {
     if(parsed[key]) query.set(key,parsed[key])
   }
   const result=await apiClient.request(`${path(parsed)}/target?${query}`,WorkflowExecutionChatResolutionSchema,options)

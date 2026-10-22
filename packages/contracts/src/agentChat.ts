@@ -273,6 +273,8 @@ export const AgentChatStateSchema = z.object({
     canSend: z.boolean(),
     reason: AgentChatBlockedReasonSchema.optional(),
     message: z.string().optional(),
+    /** The chat's saved workspace folder on Main no longer exists; the composer offers to recreate it. */
+    missingFolder: z.object({ path: z.string().min(1) }).strict().optional(),
   }).strict(),
   capabilities: AgentChatCapabilitiesSchema,
   /** The native turn currently running in this conversation, if any. */

@@ -1,11 +1,11 @@
 import { useRef, type PointerEvent } from 'react'
 import { useReactFlow, useStore, useViewport } from '@xyflow/react'
 import type { GraphGeometryChange } from './geometry'
-import { GRAPH_NODE_MIN_WIDTH, GRAPH_NODE_MAX_WIDTH, GRAPH_NODE_MIN_HEIGHT, GRAPH_NODE_MAX_HEIGHT } from './mapper'
+import { GRAPH_NODE_MIN_WIDTH, GRAPH_NODE_MIN_HEIGHT } from './mapper'
 
 const minimum = Math.max(GRAPH_NODE_MIN_WIDTH, GRAPH_NODE_MIN_HEIGHT)
-const maximum = Math.min(GRAPH_NODE_MAX_WIDTH, GRAPH_NODE_MAX_HEIGHT)
-const clamp = (diameter: number) => Math.max(minimum, Math.min(maximum, diameter))
+// No upper bound: how big a node gets is up to the person.
+const clamp = (diameter: number) => Math.max(minimum, diameter)
 type Gesture = {
   pointerId: number; center: { x: number; y: number }; startRadius: number
   diameter: number; original: GraphGeometryChange; last: GraphGeometryChange
@@ -45,7 +45,7 @@ export function CircularNodeResizer({ id, name, width: measuredWidth, height: me
     onResize?.(drag.last)
   }
   return <svg className="board-agent-resize nodrag nopan" role="slider" tabIndex={0}
-    aria-label={`Resize ${name}`} aria-valuemin={minimum} aria-valuemax={maximum} aria-valuenow={diameter}
+    aria-label={`Resize ${name}`} aria-valuemin={minimum} aria-valuenow={diameter}
     aria-valuetext={`${diameter} pixels diameter`}
     aria-description="Drag the circle border to resize. Arrow keys resize; Shift uses larger steps."
     onClick={(event) => event.stopPropagation()}

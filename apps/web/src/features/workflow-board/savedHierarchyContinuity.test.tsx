@@ -33,7 +33,7 @@ beforeEach(() => {
   installFlowLayout()
   ReportSource.instances = []
   vi.stubGlobal('EventSource', ReportSource)
-  useSidePanelPresentation.setState({ collapsedTeams: {}, scroll: {} })
+  useSidePanelPresentation.setState({ scroll: {} })
   clearBoardStopStorage()
   localStorage.clear()
   const commands = new Map<string, Promise<unknown>>()
@@ -99,7 +99,7 @@ async function mount(entry = runsUrl('run-a'), { hasHierarchy = true } = {}) {
   await router.load()
   render(<QueryClientProvider client={cache}><RouterProvider router={router} /></QueryClientProvider>)
   await screen.findByTestId('unified-workflow-board')
-  if (hasHierarchy) await screen.findByRole('button', { name: 'Hide Workers for Y' })
+  if (hasHierarchy) await screen.findByRole('group', { name: 'Z, saved agent, read only' })
   return { cache, router }
 }
 const toolbar = () => within(screen.getByRole('navigation', { name: 'Workflow views' }))
@@ -161,11 +161,8 @@ it('uses saved roles and coordinates, docks one inspector, and navigates teams w
   expect(screen.getAllByRole('complementary', { name: 'Workflow side panel' })).toHaveLength(1)
   expect(within(screen.getByRole('complementary', { name: 'Workflow side panel' }))
     .getByRole('region', { name: 'Run node inspector: Z' })).toBe(inspector)
-  fireEvent.click(screen.getByRole('button', { name: 'Hide Workers for Y' }))
-  expect(screen.queryByRole('button', { name: 'Inspect Z' })).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: 'Show Workers for Y' }))
-  expect(screen.getByRole('group', { name: 'Z, saved agent, read only' }).style.transform).toBe(position)
-  fireEvent.click(within(screen.getByRole('navigation', { name: 'Team visibility' })).getByRole('button', { name: 'View team' }))
+  fireEvent.click(toolbar().getByRole('button', { name: 'Overview' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'View team' }))
   await screen.findByRole('region', { name: 'Selected team' })
   expect(router.state.location.search).toMatchObject({ selectedRunId: 'run-a', boardTeamId: 'node-y', boardView: 'overview' })
   fireEvent.click(screen.getByRole('button', { name: 'All teams' }))
@@ -176,18 +173,11 @@ it('uses saved roles and coordinates, docks one inspector, and navigates teams w
   expect(router.state.location.search.selectedRunId).toBe('run-a')
 })
 
-it('retains native-child text through parent collapse, Memory, Overview and access loss without hidden reads', async () => {
+it('retains native-child text through Memory, Overview and access loss without hidden reads', async () => {
   const wire = install()
   const { cache, router } = await mount()
   fireEvent.click(await screen.findByRole('button', { name: 'Research, Codex, Running' }))
   fireEvent.change(await screen.findByRole('textbox', { name: 'Message to subagent' }), { target: { value: 'Keep this direction' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Hide Workers for Y' }))
-  expect(screen.queryByRole('dialog', { name: 'Research' })).not.toBeInTheDocument()
-  const afterCollapse = wire.requests.filter(path => ['child', 'messages', 'tools'].includes(path)).length
-  await act(async () => { await cache.invalidateQueries({ queryKey: [...subagentsKey(childScope), 'child-1'] }) })
-  expect(wire.requests.filter(path => ['child', 'messages', 'tools'].includes(path))).toHaveLength(afterCollapse)
-  fireEvent.click(screen.getByRole('button', { name: 'Show Workers for Y' }))
-  expect(await screen.findByRole('textbox', { name: 'Message to subagent' })).toHaveValue('Keep this direction')
   await openMemoryBoard(router)
   await screen.findByRole('dialog', { name: 'Memory board' })
   const hiddenReads = wire.requests.length
@@ -269,7 +259,6 @@ it('keeps historical absence separate and restores exact inspector pins and geom
   await screen.findByRole('group', { name: 'X in B, saved agent, read only' })
   expect(router.state.location.search.selectedRunId).toBe('run-b')
   expect(router.state.location.search.boardExecutionId).toBeUndefined()
-  expect(screen.queryByRole('button', { name: 'Hide Workers for Y' })).not.toBeInTheDocument()
   fireEvent.click(toolbar().getByRole('button', { name: 'Overview' }))
   await screen.findByRole('heading', { name: 'No Master in this Run' })
   expect(screen.queryByRole('heading', { name: 'X before rename Master' })).not.toBeInTheDocument()

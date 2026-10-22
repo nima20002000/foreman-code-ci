@@ -37,8 +37,8 @@ export async function browserOwnerIsActive(sql: SqlQuery, pins: BrowserSubjectDe
 export async function readConversationBrowserOwner(sql: SqlQuery,
   subject: Extract<BrowserSubjectDetails['subject'], { kind: 'conversation' }>) {
   const { agent } = subject
-  const result = await sql.query<{ version_id: string; computer_id: string | null; worker_bound: boolean; active: boolean }>(`
-    select coalesce(accepted.version_id,origin.workflow_version_id,w.current_version_id) as version_id,
+  const result = await sql.query<{ version_id: string; computer_id: string | null; worker_bound: boolean; active: boolean; chat_browser: string | null }>(`
+    select c.record->>'chatBrowser' as chat_browser, coalesce(accepted.version_id,origin.workflow_version_id,w.current_version_id) as version_id,
       coalesce(c.worker_conversation_binding#>>'{profile,target,hostRef,deviceId}',
         c.worker_conversation_binding#>>'{profile,target,hostRef,mainId}') as computer_id,
       c.worker_conversation_binding is not null as worker_bound,
@@ -59,5 +59,5 @@ export async function readConversationBrowserOwner(sql: SqlQuery,
     agent.configurationVersionId])
   const row = result.rows[0]
   return row ? { workflowVersionId: row.version_id, computerId: row.computer_id,
-    workerBound: row.worker_bound, active: row.active } : undefined
+    workerBound: row.worker_bound, active: row.active, chatBrowser: row.chat_browser } : undefined
 }

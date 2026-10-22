@@ -1,5 +1,5 @@
 import { AgentMutationResultSchema, StagedAgentSchema, type GraphValidationResultSchema, type AgentCreateInputSchema, type AgentUpdateInput } from '@foreman-code/contracts/management'
-import { SupportedHarnessConfigurationSchema } from '@foreman-code/contracts'
+import { SupportedHarnessConfigurationSchema, type Agent } from '@foreman-code/contracts'
 import {
   GraphEditReadResultV3Schema, GraphEditReadInputV3Schema, GraphEditStageInputV3Schema, GraphEditAdvanceInputV3Schema, GraphEditDiscardInputV3Schema,
   type GraphEditReadInputV3, type GraphEditStageInputV3, type GraphEditAdvanceInputV3, type GraphEditDiscardInputV3, type GraphEditReadResultV3,
@@ -123,6 +123,19 @@ export function createNextDraftApi(client: ApiClient = apiClient) {
     /** Agent configuration references for a complete-definition command. */
     pins: (workspaceId: string, graph: WorkflowDefinitionV3, stagedAgents?: z.infer<typeof StagedAgentSchema>[], displayedAgents?: NextDraftContext['agents']) =>
       expectedPins(workspaceId, graph, stagedAgents, displayedAgents),
+    /** Saves one draft-only Agent and its configuration through the shared Agent service, without the workflow graph. */
+    async createAgent(workspaceId: string, agent: Agent) {
+      if (!agent.productRole) throw new Error('Select an explicit Agent product role.')
+      const result = await client.request(`/api/management/workspaces/${part(workspaceId)}/agents`, AgentMutationResultSchema, { method: 'POST', body: {
+        commandId: `draft-agent:${agent.id}`, agentId: agent.id, name: agent.name, productRole: agent.productRole,
+        configuration: SupportedHarnessConfigurationSchema.parse(agent.harnessConfiguration),
+        ...(agent.harnessProfileSelection ? { harnessProfileSelection: agent.harnessProfileSelection } : {}),
+        prompt: agent.prompt ?? {}, assignedSkills: agent.assignedSkills ?? [],
+        ...(agent.graphqlTools ? { graphqlTools: agent.graphqlTools } : {}), ...(agent.nativeTools ? { nativeTools: agent.nativeTools } : {}),
+        ...(agent.description ? { description: agent.description } : {}), ...(agent.role ? { role: agent.role } : {}),
+      } satisfies Omit<z.input<typeof AgentCreateInputSchema>, 'workspaceId'> })
+      return { agent: result.value.agent, metadataRevision: result.value.metadataRevision }
+    },
     async editRead(raw: GraphEditReadInputV3, options?: RequestOptions) {
       const input = GraphEditReadInputV3Schema.parse(raw)
       const query = new URLSearchParams({ ...(input.draftId ? { draftId: input.draftId } : {}), ...(input.intentId ? { intentId: input.intentId } : {}) })
@@ -238,8 +251,8 @@ export function createNextDraftApi(client: ApiClient = apiClient) {
   }
 }
 export const nextDraftApi = createNextDraftApi()
-export type NextDraftApi = Omit<ReturnType<typeof createNextDraftApi>, 'acceptContext'>
-  & Partial<Pick<ReturnType<typeof createNextDraftApi>, 'acceptContext'>>
+export type NextDraftApi = Omit<ReturnType<typeof createNextDraftApi>, 'acceptContext' | 'createAgent'>
+  & Partial<Pick<ReturnType<typeof createNextDraftApi>, 'acceptContext' | 'createAgent'>>
 
 /** Structural form errors are local. Executability, authorization and all native policy remain server-authoritative. */
 export function assertDraftSubmission(graph: NextDraftContext['draft']['graph'], operations: unknown[]) {

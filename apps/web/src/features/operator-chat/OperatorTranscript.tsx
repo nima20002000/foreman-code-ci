@@ -1,6 +1,6 @@
-import { useLayoutEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, type ComponentProps, type ReactNode } from 'react'
 import type { Message, OperatorActivity } from '@foreman-code/contracts'
-import { Button, Icon } from '../../shared/ui/nocturne'
+import { Button } from '../../shared/ui/nocturne'
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
 import { identityEpoch } from '../../shared/api/protectedChatStorage'
 import { getOperatorActivity, mergeOperatorActivity } from '../../shared/api/operatorActivity'
@@ -44,14 +44,7 @@ export function OperatorTranscript({ messages, partialText, thinkingText = '', h
   const contentRef = useRef<HTMLDivElement>(null)
   const followLatest = useRef(true)
   useRememberedChatScroll(conversationId ? `operator:${conversationId}` : undefined, scrollRef, followLatest)
-  const [hasNewContent, setHasNewContent] = useState(false)
   const onBrowse = () => { followLatest.current = false }
-  const jumpToLatest = () => {
-    const scroll = scrollRef.current
-    if (scroll) scroll.scrollTop = scroll.scrollHeight
-    followLatest.current = true
-    setHasNewContent(false)
-  }
   // Polling can create new arrays/elements with identical contents. Loading old
   // pages is browsing, not new output, so only the recent stream participates.
   const contentRevision = JSON.stringify([
@@ -62,8 +55,7 @@ export function OperatorTranscript({ messages, partialText, thinkingText = '', h
   useLayoutEffect(() => {
     const scroll = scrollRef.current
     if (!scroll) return
-    if (followLatest.current) { scroll.scrollTop = scroll.scrollHeight; setHasNewContent(false) }
-    else setHasNewContent(true)
+    if (followLatest.current) scroll.scrollTop = scroll.scrollHeight
   }, [contentRevision])
   useLayoutEffect(() => {
     if (typeof ResizeObserver === 'undefined' || !contentRef.current) return
@@ -83,7 +75,6 @@ export function OperatorTranscript({ messages, partialText, thinkingText = '', h
       onScroll={(event) => {
         const scroll = event.currentTarget
         followLatest.current = scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop < 48
-        if (followLatest.current) setHasNewContent(false)
       }}>
       <div ref={contentRef}>
         {earlierActivity.data && earlierActivity.data.pageParams[0] !== (activityNextCursor ?? undefined)
@@ -99,6 +90,5 @@ export function OperatorTranscript({ messages, partialText, thinkingText = '', h
         {typeof approval === 'function' ? approval(onBrowse) : approval}
       </div>
     </div>
-    {hasNewContent ? <Button size="sm" variant="secondary" className="operator-chat-jump" leading={<Icon name="down" size={14} />} onClick={jumpToLatest}>New output — Jump to latest</Button> : null}
   </div>
 }

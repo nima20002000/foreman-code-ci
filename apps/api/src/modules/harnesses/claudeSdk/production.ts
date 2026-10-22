@@ -4,13 +4,13 @@ import { createClaudeFileMcpServer, type ClaudeFileSdk } from '../../files/claud
 import type { AgentFileToolService } from '../../files/tools/service.js'
 import { productionClaudeFileAdmission } from './fileProduction.js'
 import type pg from 'pg'
-import { setTimeout as delay } from 'node:timers/promises'
 import type { ClaudeHarnessConfiguration } from '@foreman-code/contracts/claude'
 import type { NativeSessionReference, CoordinatorConsultationBinding } from '@foreman-code/contracts'
 import { APP_MCP_TOKEN_NAMES } from '@foreman-code/contracts/product'
 import { readProductEnvironment } from '@foreman-code/contracts/product-environment'
 import { appMcpServerName, isSupportedAppMcpServerName } from '../appMcpLauncher.js'
 import { DomainError } from '../../errors.js'
+import { admitWhenChecked } from '../instanceSettings/profileCheckWait.js'
 import type { NativeHarnessFactories } from '../runtimeFactory.js'
 import type { NativeProcessRecovery } from '../recovery/processRegistry.js'
 import type { NativeSessionStart } from '../port.js'
@@ -81,21 +81,55 @@ function setControlPrincipal(binding: ClaudeDomainBinding, principalId: string):
   if (binding.kind === 'operator' || binding.kind === 'agent') binding.controlPrincipalId = principalId
 }
 
+/** The conversation's MCP servers with its scoped credential as the Foreman server's HTTP header. */
+function conversationCredentialServers(start: NativeSessionStart) {
+  if ((start.kind !== 'operator' && start.kind !== 'agent-chat') || start.configuration.harness.harness !== 'claude') {
+    throw new DomainError('HARNESS_ROLE_AUTHORITY_INVALID', 'Credential rebinding requires the accepted Claude conversation.', 403)
+  }
+  const servers = start.configuration.harness.mcpServers
+  const serverName = appMcpServerName(servers)
+  const configured = servers[serverName]
+  const token = readProductEnvironment(start.environment?.variables ?? {}, 'MCP_TOKEN')
+  if (configured?.type !== 'http' || !token) {
+    throw new DomainError('OPERATOR_MCP_SETUP_REQUIRED', 'The accepted HTTP credential arrangement is unavailable.', 409)
+  }
+  return { ...servers, [serverName]: { ...configured, headers: { Authorization: `Bearer ${token}` } } }
+}
+
 function bindConversationCredentialRefresh(manager: ClaudeNativeSessionManager) {
   manager.rebindApplicationAccess = async (session, start, signal) => {
-    if ((start.kind !== 'operator' && start.kind !== 'agent-chat') || start.configuration.harness.harness !== 'claude') {
-      throw new DomainError('HARNESS_ROLE_AUTHORITY_INVALID', 'Credential rebinding requires the accepted Claude conversation.', 403)
+    await manager.refreshSessionCredentials(session, start, conversationCredentialServers(start), signal)
+  }
+}
+
+/** An Agent chat's token arrives only in its launch environment, but Claude's HTTP MCP client needs it as a header.
+ * Deliver it on the inspected query before the first native input (fresh, forked Run follow-up or resumed chat);
+ * the resumed query re-applies it and later rollovers keep it. */
+function bindAgentChatCredentialDelivery(manager: ClaudeNativeSessionManager) {
+  let delivered = false
+  const deliver = async (start: NativeSessionStart, signal?: AbortSignal) => {
+    if (delivered) return
+    const servers = conversationCredentialServers(start)
+    await manager.prepareInspection(start, signal)
+    await manager.refreshInspectionCredentials(start, servers, signal)
+    delivered = true
+  }
+  const initial = manager.startInitialTurn.bind(manager)
+  manager.startInitialTurn = async function* (start, input, signal) {
+    await deliver(start, signal)
+    yield* initial(start, input, signal)
+  }
+  const attach = manager.attachSession.bind(manager)
+  manager.attachSession = async (session, start, signal) => {
+    if (!manager.hasResidentSession(session)) await deliver(start, signal)
+    return attach(session, start, signal)
+  }
+  if (manager.forkSession) {
+    const fork = manager.forkSession.bind(manager)
+    manager.forkSession = async (source, start, signal) => {
+      await deliver(start, signal)
+      return fork(source, start, signal)
     }
-    const servers = start.configuration.harness.mcpServers
-    const serverName = appMcpServerName(servers)
-    const configured = servers[serverName]
-    const token = readProductEnvironment(start.environment?.variables ?? {}, 'MCP_TOKEN')
-    if (configured?.type !== 'http' || !token) {
-      throw new DomainError('OPERATOR_MCP_SETUP_REQUIRED', 'The accepted HTTP credential arrangement is unavailable.', 409)
-    }
-    await manager.refreshSessionCredentials(session, start, { ...servers,
-      [serverName]: { ...configured, headers: { Authorization: `Bearer ${token}` } },
-    }, signal)
   }
 }
 
@@ -125,22 +159,6 @@ function bindConsultationAccess(manager: ClaudeNativeSessionManager,
     setStart(start)
   }
 
-}
-
-/** Automatic profile checks end within 240 seconds. A chat message has no retrying caller, so its admission
- * waits for an in-flight check (for example right after a restart). Run launches keep the retryable
- * HARNESS_PROFILE_CHECK_PENDING, which their engine retries as a fresh attempt. */
-export async function admitChatWhenChecked<T>(workflow: boolean, admit: () => Promise<T>, signal: AbortSignal,
-  waitMs = 250_000): Promise<T> {
-  const deadline = Date.now() + waitMs
-  for (;;) {
-    try { return await admit() }
-    catch (error) {
-      if (workflow || !(error instanceof DomainError) || error.code !== 'HARNESS_PROFILE_CHECK_PENDING'
-        || Date.now() >= deadline) throw error
-      await delay(500, undefined, { signal })
-    }
-  }
 }
 
 export function productionClaudeManager(input: ProductionClaudeInput) {
@@ -182,8 +200,7 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
     }
     const apiKey = account?.apiKey ?? input.apiKey
     requireClaudeApiKey(input.configuration, apiKey)
-    const accepted = await admitChatWhenChecked(input.binding.kind === 'workflow',
-      () => input.profiles!.admit(profileOwner, input.selector!), signal)
+    const accepted = await admitWhenChecked(() => input.profiles!.admit(profileOwner, input.selector!), signal)
     assertRuntimeProviderAccountProfile(input.accountBinding, accepted.override.target)
     signal.throwIfAborted()
     const compiled = compileClaudeConfiguration(input.configuration, input.workingDirectory, accepted,
@@ -197,7 +214,11 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
       'A registered-device profile must execute through its authenticated host.', 409)
     const domainBinding = input.binding.kind === 'workflow'
       ? { ...input.binding, ...(input.consultation ? { consultation: structuredClone(input.consultation) } : {}) } : input.binding
-    const domain = createPostgresClaudeInteractionBridge({ database: input.pool, binding: domainBinding,
+    // A workflow whose Agents handle approvals themselves runs this Claude Agent's tools without asking.
+    const handler = input.binding.kind === 'workflow' ? (await input.pool.query<{ handler: string | null }>(
+      `select v.record->'definition'->'approval'->>'handler' as handler from runs r
+        join workflow_versions v on v.id=r.workflow_version_id where r.id=$1`, [input.binding.runId])).rows[0]?.handler : undefined
+    const domain = createPostgresClaudeInteractionBridge({ database: input.pool, binding: domainBinding, autoAllowTools: handler === 'native',
       configuration: compiled.configuration, manager: { nativeCallbackContext: (sessionId, toolUseId) => actual?.nativeCallbackContext(sessionId, toolUseId) } })
     policyBridge = domain.bridge
     let callbackAuthority = await domain.callbackAdmissionIfActive()
@@ -241,6 +262,19 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
         const attached = await attach(session, start, effectSignal)
         sessionStart = structuredClone(start)
         return attached
+      }
+      if (manager.forkSession) {
+        // A Run follow-up chat forks the Run session; its later turns re-attach with the fork's start.
+        const fork = manager.forkSession.bind(manager)
+        manager.forkSession = async (source, start, effectSignal) => {
+          if (input.appMcpAccess === 'none' && APP_MCP_TOKEN_NAMES.some((name) => start.environment?.variables[name])) throw new DomainError('HARNESS_ROLE_AUTHORITY_INVALID',
+            'This Claude owner cannot inherit an application MCP credential.', 403)
+          await domain.callbackAdmissionIfActive()
+          effectSignal?.throwIfAborted()
+          const forked = await fork(source, start, effectSignal)
+          sessionStart = structuredClone(start)
+          return forked
+        }
       }
       const turn = manager.startTurn.bind(manager)
       if (input.binding.kind === 'workflow') bindConsultationAccess(manager, domain,
@@ -337,6 +371,7 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
   result.manager.refreshInspectionCredentials = (start, servers, signal) => refreshOwnedCredentials(start, servers, signal)
   result.manager.refreshSessionCredentials = (session, start, servers, signal) => refreshOwnedCredentials(start, servers, signal, session)
   if ((input.role === 'operator' || input.role === 'agent-chat') && input.appMcpAccess === 'scoped') bindConversationCredentialRefresh(result.manager)
+  if (input.role === 'agent-chat' && input.appMcpAccess === 'scoped') bindAgentChatCredentialDelivery(result.manager)
   const dispose = result.manager.dispose!.bind(result.manager)
   result.manager.dispose = async () => {
     try { await dispose() } finally {

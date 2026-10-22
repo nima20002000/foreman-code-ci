@@ -20,6 +20,7 @@ import { createBrowserDeviceCodecs } from './browserDeviceCodecs.js'
 import { browserHostMediaCodec } from './browserMediaCodecs.js'
 import { BrowserByteTransfers } from './browserByteTransfers.js'
 import { DomainError } from '../errors.js'
+import { prepareOrReconcileSettled } from './settledBrowserPreparation.js'
 
 type Host = Awaited<ReturnType<typeof createBrowserHost>>
 interface Runtime {
@@ -126,7 +127,7 @@ export function createInstalledBrowserComposition(options: {
       case 'command': return { payload: await extension.command(binding, input.envelope) }
       case 'prepare': {
         if (!runtime.getHost()) return { payload: { kind: 'unavailable', reason: 'runtime_missing', retryable: true } }
-        return { payload: await runtime.getHost()!.broker.prepare(input.input) }
+        return { payload: await prepareOrReconcileSettled(runtime.getHost()!.broker, input.input) }
       }
       case 'release': {
         const host = runtime.getHost()

@@ -6,7 +6,7 @@ import type pg from 'pg'
 import { expect, it, vi } from 'vitest'
 import { ApprovedRootAllowlistSchema, WorkspaceRootPolicySchema } from '@foreman-code/contracts/workspace-root-policies'
 import { SavedNodePlacementSchema } from '@foreman-code/contracts/node-placement'
-import { assertAgentChatDirectoryAvailable, resolveAgentChatDirectory, revalidateAgentChatDirectory } from './agentChatDirectory.js'
+import { assertAgentChatDirectoryAvailable, missingAgentChatDirectory, resolveAgentChatDirectory, revalidateAgentChatDirectory } from './agentChatDirectory.js'
 import { freezePlacement } from '../placement/binding.js'
 import { workerConversationFixture } from './workerFixtures.test-support.js'
 
@@ -105,6 +105,15 @@ it('uses the accepted Main placement even when a saved profile selects a Worker'
   const sql = runDirectorySql('codex', 'main', 'device')
   await expect(assertAgentChatDirectoryAvailable(sql, 'conversation'))
     .rejects.toMatchObject({ code: 'AGENT_CHAT_DIRECTORY_UNAVAILABLE' })
+})
+
+it('names a chat\'s missing Main workspace folder before and when a send fails', async () => {
+  const sql = runDirectorySql('codex', 'main', 'main')
+  const path = await missingAgentChatDirectory(sql, 'conversation')
+  expect(path).toMatch(/worker-project$/)
+  await expect(assertAgentChatDirectoryAvailable(sql, 'conversation'))
+    .rejects.toMatchObject({ code: 'AGENT_CHAT_DIRECTORY_UNAVAILABLE', message: expect.stringContaining('“worker-project” is missing') })
+  await expect(missingAgentChatDirectory(runDirectorySql('codex', 'device', 'main'), 'conversation')).resolves.toBeUndefined()
 })
 
 function runDirectorySql(harness: 'codex' | 'claude', hostKind: 'main' | 'device', profileHostKind: 'main' | 'device') {

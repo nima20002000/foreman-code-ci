@@ -46,6 +46,9 @@ const BoardSurfaceSelectionFields = {
   browserSessionId: GraphIdSchema.optional(), browserTabId: GraphIdSchema.optional(),
   groupRunId: GraphIdSchema.optional(), groupPostId: GraphIdSchema.optional(), groupReceiptId: GraphIdSchema.optional(),
   boardMemory: z.union([z.literal(true), z.literal('true').transform(() => true as const)]).optional(),
+  /** The right-hand sidebar of agent browsers, and the Agent node whose browser tab is selected in it. */
+  boardBrowsers: z.union([z.literal(1), z.literal('1').transform(() => 1 as const)]).optional(),
+  browserTab: GraphIdSchema.optional(),
 }
 export function runInspectionKey(selection: WorkspaceBoardExecutionSelection): string | undefined {
   const value = WorkspaceBoardExecutionSelectionSchema.parse(selection)
@@ -173,6 +176,6 @@ function authoringSelection(search: WorkspaceBoardSearch): WorkspaceBoardSearch 
   const value = { ...search }
   for (const key of ['activityKind', 'activityAgentId', 'boardView', 'boardPanel', 'boardAgentTab',
     'browserSessionId', 'browserTabId', 'boardNodeId', 'boardExecutionId', 'boardWaitingActivationId', 'boardTeamId', 'boardMemory',
-    'groupRunId', 'groupPostId', 'groupReceiptId'] as const) delete value[key]
+    'boardBrowsers', 'browserTab', 'groupRunId', 'groupPostId', 'groupReceiptId'] as const) delete value[key]
   return value
 }

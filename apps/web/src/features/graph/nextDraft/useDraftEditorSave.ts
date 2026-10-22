@@ -8,6 +8,7 @@ import { nextDraftApi } from './transport'
 import { readBoardStart } from '../../workflow-board/startOutbox'
 import type { DraftEditorCore } from './useDraftEditorCore'
 import type { useGraphEditIntent } from './useGraphEditIntent'
+import { hierarchyNodes, repairHierarchyRoutes } from '../../workflow-hierarchy/authoring'
 
 /** Save (including Stop-and-save), discard and reload of the shared draft. */
 export function useDraftEditorSave({ draftKey, edit, editIntent, core, pendingStart }: {
@@ -38,6 +39,12 @@ export function useDraftEditorSave({ draftKey, edit, editIntent, core, pendingSt
   const stopAndSave = async (allowStop = false) => {
     if (readBoardStart(draftKey)) throw new Error('Reconcile the exact pending Start before Stop-and-save.')
     canvas.current?.flush(); setLocalError(undefined); setMessage(undefined)
+    // A Master Board whose lines and reporting disagree is repaired from its lines before it is sent.
+    const current = useGraphDraftStore.getState().nextDrafts[draftKey]
+    if (current?.graph.hierarchy && !editIntent.locked) {
+      const roles = new Map(hierarchyNodes(current).map(item => [item.node.id, item.role]))
+      if (repairHierarchyRoutes(current.graph, roles) !== current.graph) core.change(value => repairHierarchyRoutes(value, roles))
+    }
     // Even without a local active Run, graph and shared-Agent changes must be
     // staged together. Only the authoritative saved receipt acknowledges edits.
     const result = allowStop ? await editIntent.advance(true) : await editIntent.save()

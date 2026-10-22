@@ -1,7 +1,6 @@
 import { assertRuntimeProviderAccountProfile } from './providerAccountRuntime.js'
 import type { AcceptedProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
 import { isDeepStrictEqual } from 'node:util'
-import { setTimeout as delay } from 'node:timers/promises'
 import { withAdvancedDefaults, type CodexHarnessConfiguration } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
 import type { NativeHarnessFactories, NativeHarnessAllocation, HarnessRuntimeRole } from './runtimeFactory.js'
@@ -9,6 +8,7 @@ import type { ProductionHarnessRegistry } from './productionRegistry.js'
 import type { NativeProcessRecovery } from './recovery/processRegistry.js'
 import type { AcceptedHarnessProfileAdmission, AcceptedProfileSelector } from './instanceSettings/acceptedProfile.js'
 import type { ClaudeProfileOwner } from './claudeSdk/production.js'
+import { admitWhenChecked } from './instanceSettings/profileCheckWait.js'
 
 /** Exact selected profiles never fall through to unselected local defaults.
  * The existing native adapter still performs its protocol/model/auth checks. */
@@ -23,7 +23,6 @@ export function productionSelectedProfileManager(input: {
   workingDirectory: string
   ownerAgentId: string
   recovery: NativeProcessRecovery
-  nativeSessionId?: string
   accountSourceRecovery?: NativeProcessRecovery
   accountBinding?: AcceptedProviderAccountBinding
   appMcpAccess: 'scoped' | 'none'
@@ -34,7 +33,7 @@ export function productionSelectedProfileManager(input: {
     ...(input.accountBinding ? { accountBinding: structuredClone(input.accountBinding) } : {}) }
   const result = input.factories.allocateAdmitted(input.configuration.harness, async (signal) => {
     const owner = { ...input.binding, admissionSignal: signal }
-    const accepted = await withProfileReady(() => input.profiles.admit(owner, input.selector), signal)
+    const accepted = await admitWhenChecked(() => input.profiles.admit(owner, input.selector), signal)
     assertRuntimeProviderAccountProfile(input.accountBinding, accepted.override.target)
     signal.throwIfAborted()
     if (!isDeepStrictEqual(withAdvancedDefaults(accepted.override.configuration), withAdvancedDefaults(input.configuration))) throw new DomainError('HARNESS_CONFIGURATION_MISMATCH',
@@ -48,25 +47,12 @@ export function productionSelectedProfileManager(input: {
       ...(input.accountBinding ? { accountBinding: input.accountBinding } : {}),
       revalidateSelection: (effectSignal?: AbortSignal) => {
         const currentOwner = { ...owner, admissionSignal: effectSignal ?? signal }
-        return withProfileReady(() => input.profiles.revalidate(currentOwner, accepted), effectSignal ?? signal)
+        return admitWhenChecked(() => input.profiles.revalidate(currentOwner, accepted), effectSignal ?? signal)
       } }
     return { ...common, harness: 'codex',
       ...(input.files ? { chatFiles: input.files } : {}),
       ...(input.nativeOutputs ? { nativeOutputs: input.nativeOutputs } : {}) }
   })
-  async function withProfileReady<T>(read: () => Promise<T>, signal: AbortSignal): Promise<T> {
-    for (;;) {
-      signal.throwIfAborted()
-      try {
-        return await read()
-      }
-      catch (error) {
-        if (!input.nativeSessionId || !(error instanceof DomainError)
-          || error.code !== 'HARNESS_PROFILE_CHECK_PENDING') throw error
-        await delay(100, undefined, { signal })
-      }
-    }
-  }
   result.manager.setSessionControlPrincipal = principalId => {
     if (input.binding.kind === 'operator' || input.binding.kind === 'agent') input.binding.controlPrincipalId = principalId
   }

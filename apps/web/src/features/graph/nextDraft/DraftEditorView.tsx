@@ -3,6 +3,8 @@ import { BoardNotice } from './BoardNotice'
 import { Inbox, Redo2, Save, Undo2 } from 'lucide-react'
 import { ActionMenu, Button, ConfirmDialog, Icon, IconButton, Toolbar } from '../../../shared/ui/nocturne'
 import { nodeTitle, removeRelationship } from './model'
+import { neverAskCodexAgents } from './agentEdits'
+import { useGraphDraftStore } from '../store'
 import { nextDraftDirty, type NextDraftEdit } from './state'
 import { WorkflowSaveError } from './WorkflowSaveError'
 import { EditIntentStatus } from './EditIntentStatus'
@@ -103,6 +105,9 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
       </header>
       <BoardUndoNotice scope={undoScope} />
       <BoardAlerts scope={draftKey} hints={hints} validation={edit.validation} error={editIntent.mutation.error ?? undefined} updateFailures={updateFailures}
+        fixes={{ CODEX_ASKS_FOR_APPROVAL: { label: 'Set these agents to never ask', run: () => {
+          try { useGraphDraftStore.getState().updateNextDraft(draftKey, neverAskCodexAgents) } catch (error) { report(error) }
+        } } }}
         pending={editIntent.mutation.isPending} openField={openSaveField} openIssue={(issue) => {
           if (issue.nodeId) openAgent(issue.nodeId)
           else if (issue.relationshipId) inspect(() => presentation.getState().setFocusedEdgeId(issue.relationshipId))

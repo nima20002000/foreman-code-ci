@@ -1,5 +1,6 @@
 import type { CoordinationResultContext } from '@foreman-code/contracts'
 import { OUTPUT_REFERENCE_KEYWORD } from '@foreman-code/contracts/wave25'
+import { hierarchyChildRoutesPrompt } from './hierarchyWorkPrompt.js'
 
 /** Request-only contract for marked Runs. Historical producers retain their
  * exact existing prompts and output schema behavior. */
@@ -21,6 +22,7 @@ export function workflowCoordinationPrompt(context: CoordinationResultContext): 
     'requestId may be omitted only for a single open received request. An accepted return closes that obligation; needs_changes requests another business round.',
     ...(hierarchy ? [
       'A delegation is {"kind":"delegate","requests":[{"outcome":<saved direct-child route>,"data":<that child\'s distinct task JSON>},...]}.',
+      hierarchyChildRoutesPrompt(context.definition, node.id),
       'Select each direct child at most once. Only selected children run. All selected child obligations settle before your one reserved continuation runs.',
       'A subordinate with an outstanding caller must return to it. A finish never starts downstream hierarchy nodes.',
       'Only the root Master may finish the workflow, and only after every outstanding request has settled.',

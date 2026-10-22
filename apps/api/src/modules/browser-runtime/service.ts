@@ -70,7 +70,8 @@ export class BrowserSessionService<Principal> {
         && (!input.computerId || value.computerId === input.computerId) && (!input.cursor || value.id > input.cursor)).sort((a, b) => a.id.localeCompare(b.id))
     for (const session of candidates) {
       try { await this.authority.session(principal, session, false); visible.push(session) } catch (error) {
-        if (!(error instanceof DomainError) || error.status !== 403) throw error
+        // Hidden: another person's session, or one whose owner ended (e.g. a finished coordinator reply).
+        if (!(error instanceof DomainError) || (error.status !== 403 && error.code !== 'AUTH_REVOKED')) throw error
       }
       if (visible.length > limit) break
     }

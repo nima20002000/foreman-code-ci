@@ -14,7 +14,7 @@ import { messageAttachmentIdentity } from '@foreman-code/contracts/files'
 
 import { validateMessageAttachments, withMessageAttachmentRefs, hydrateMessageAttachments } from './messageAttachments.js'
 
-import { ExecutionResultSchema, MessageSchema, PendingNativeInteractionSchema, type ExecutionResult, type ActivitySourceRevision, type AgentHarness, type RecordedAgentHarness, type Message, type NativeSessionReference, type PendingNativeInteraction, type PromptSettingSnapshot, type ActivityScope } from '@foreman-code/contracts'
+import { ExecutionResultSchema, MessageSchema, PendingNativeInteractionSchema, type ExecutionResult, type ActivitySourceRevision, type AgentHarness, type RecordedAgentHarness, type Message, type NativeSessionReference, type PendingNativeInteraction, type PromptSettingSnapshot, type ActivityScope, type NodeBrowserSettings } from '@foreman-code/contracts'
 import {
   AgentChatTurnSchema, AgentConversationSchema, type AgentChatContext, type AgentChatIntent, type AgentChatOrigin,
   type AgentChatTurn, type AgentConversation, type AgentChatReplayWarning, type SendAgentChatMessageRequest,
@@ -86,6 +86,8 @@ export interface AgentConversationRow {
     sourceConfigurationVersionId?: string
     workerGeneration?: string
     handoffContext?: string
+    /** Browser for a chat outside any Run, taken from the Board's current (possibly unsaved) node setting. */
+    chatBrowser?: NodeBrowserSettings
   }
   created_at: Date
   updated_at: Date

@@ -268,9 +268,10 @@
 @keyframes n-agent-status-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 
 .n-agent-done {
+  /* Centred on the rim at the top-right (45°), so it never covers the status text on a small node. */
   position: absolute;
-  top: 16px;
-  right: 16px;
+  top: calc(14.6% - 11px);
+  right: calc(14.6% - 11px);
   z-index: 2;
   display: grid;
   width: 22px;
@@ -446,6 +447,14 @@
 .board-agent-resize ellipse { fill: none; stroke: transparent; pointer-events: stroke; cursor: nwse-resize; touch-action: none; }
 .board-agent-resize:focus-visible ellipse { stroke: var(--focus); }
 .react-flow__node-pinnedRunNode .n-agent { width: 100%; height: 100%; }
+/* Text and glyph grow with the circle: a large Master reads large, a small Worker keeps the base sizes. */
+:is(.react-flow__node-agent, .react-flow__node-pinnedRunNode) .n-agent { container-type: size; }
+:is(.react-flow__node-agent, .react-flow__node-pinnedRunNode) .n-agent-name { font-size: clamp(15px, 6.5cqmin, 44px); line-height: 1.3; }
+:is(.react-flow__node-agent, .react-flow__node-pinnedRunNode) .n-agent-status { font-size: clamp(11px, 3.6cqmin, 22px); line-height: 1.4; }
+:is(.react-flow__node-agent, .react-flow__node-pinnedRunNode) .n-agent-status i { width: clamp(6px, 1.6cqmin, 11px); height: clamp(6px, 1.6cqmin, 11px); }
+:is(.react-flow__node-agent, .react-flow__node-pinnedRunNode) .n-agent-harness { font-size: clamp(11px, 4cqmin, 24px); line-height: 1.4; }
+:is(.react-flow__node-agent, .react-flow__node-pinnedRunNode) .n-agent-glyph { height: auto; margin: 1.4cqmin 0 .6cqmin; }
+:is(.react-flow__node-agent, .react-flow__node-pinnedRunNode) .n-agent-glyph svg { width: clamp(20px, 8cqmin, 52px); height: clamp(20px, 8cqmin, 52px); }
 .react-flow__node-pinnedRunNode .n-agent-core { justify-content: center; padding: 20px 0; }
 .n-agent:has(.board-agent-resize) .n-agent-actions::before { pointer-events: none; }
 .react-flow__node-pinnedRunNode .n-agent-action--chat { left: 69%; }

@@ -3,7 +3,8 @@ import { SidebarNavigationButton } from '../../shared/ui/SidebarNavigationButton
 import { ArrowDown, ArrowUp } from 'lucide-react'
 import type { ManagedWorkflow } from '@foreman-code/contracts/management'
 
-import { useInteractionsQuery, useWorkflowPages, useManagedWorkflowQuery } from '../../shared/api/query'
+import { useInteractionsQuery, useWorkflowPages, useManagedWorkflowQuery, useWorkspaceDetailsQuery } from '../../shared/api/query'
+import { isActiveRun } from '../workflow-board/runFacts'
 import { usePrefetchWorkflowBoard } from '../workflow-board/prefetch'
 import { LoadMore } from '../../shared/ui/LoadMore'
 import { Badge, Button, IconButton } from '../../shared/ui/nocturne'
@@ -25,6 +26,7 @@ function WorkflowNavigationItem({
   workspaceId,
   active,
   pendingCount,
+  running = false,
   reorder,
   index = 0,
   count = 0,
@@ -34,6 +36,7 @@ function WorkflowNavigationItem({
   workspaceId: string
   active: boolean
   pendingCount: number | undefined
+  running?: boolean
   reorder?: ReorderableNavigation
   index?: number
   count?: number
@@ -60,6 +63,7 @@ function WorkflowNavigationItem({
         onMouseEnter={() => prefetch(workspaceId, workflow.id)}
         onFocus={() => prefetch(workspaceId, workflow.id)}
       >
+        {running ? <span className="workflow-running-dot" role="img" aria-label="Running" title="Running" /> : null}
         <span className="nav-item-label">{workflow.name}</span>
         {item.currentVersionId === null ? <Badge className="workflow-draft-badge">Draft</Badge> : null}
         {pendingCount === undefined ? <span className="visually-hidden">Approval count unavailable</span> : null}
@@ -94,6 +98,10 @@ export function WorkflowNavigation({ workspaceId, activeWorkflowId }: WorkflowNa
 function WorkflowNavigationContent({ workspaceId, activeWorkflowId }: WorkflowNavigationProps) {
   const managedQuery = useWorkflowPages(workspaceId, true)
   const interactionsQuery = useInteractionsQuery({ workspaceId, status: 'pending', limit: 1 }, true)
+  // A running workflow shows a live dot in the list, wherever the owner is in the app.
+  const details = useWorkspaceDetailsQuery(workspaceId, {
+    refetchInterval: query => query.state.data?.runs.some(isActiveRun) ? 3_000 : 10_000 })
+  const running = new Set(details.data?.runs.filter(isActiveRun).map(run => run.workflowId))
 
   const workflows = [...new Map((managedQuery.data?.pages.flatMap(page => page.items) ?? [])
     .map(item => [item.workflow.id, item])).values()]
@@ -126,7 +134,8 @@ function WorkflowNavigationContent({ workspaceId, activeWorkflowId }: WorkflowNa
       <NewWorkflowAction workspaceId={workspaceId} navigation />
       {selected ? <div className="workflow-navigation-selected">
         <ul className="nav-submenu workflow-navigation-list">
-          <WorkflowNavigationItem item={selected} workspaceId={workspaceId} active pendingCount={pendingCount(selected.workflow.id)} />
+          <WorkflowNavigationItem item={selected} workspaceId={workspaceId} active pendingCount={pendingCount(selected.workflow.id)}
+            running={running.has(selected.workflow.id)} />
         </ul>
       </div> : null}
       <p id={`workflow-order-help-${workspaceId}`} className="visually-hidden">
@@ -150,6 +159,7 @@ function WorkflowNavigationContent({ workspaceId, activeWorkflowId }: WorkflowNa
               workspaceId={workspaceId}
               active={active}
               pendingCount={pendingCount(workflow.id)}
+              running={running.has(workflow.id)}
               reorder={reorder}
               index={index}
               count={workflows.length}

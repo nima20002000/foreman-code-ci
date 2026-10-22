@@ -20,6 +20,17 @@
 
 .workflow-navigation-row .workflow-navigation-item { padding-right: 2rem; justify-content: flex-start; gap: 6px; }
 .workflow-navigation-item .nav-item-label { flex: 0 1 auto; }
+.workflow-running-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success, #3ecf8e);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--success, #3ecf8e) 60%, transparent);
+  animation: workflow-running-pulse 1.6s ease-out infinite;
+}
+@keyframes workflow-running-pulse { to { box-shadow: 0 0 0 6px transparent; } }
+@media (prefers-reduced-motion: reduce) { .workflow-running-dot { animation: none; } }
 .workflow-navigation-item .workflow-draft-badge {
   flex-shrink: 0;
   min-height: 0;

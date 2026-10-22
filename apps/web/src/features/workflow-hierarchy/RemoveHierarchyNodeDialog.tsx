@@ -3,12 +3,15 @@ import { useUnsavedChanges } from '../../shared/ui/unsavedChanges'
 import { useGraphDraftStore } from '../graph/store'
 import { nodeTitle } from '../graph/nextDraft/model'
 import type { NextDraftEdit } from '../graph/nextDraft/state'
+import { pinBoardLayout } from '../graph/nextDraft/placement'
+import { useWorkflowBoard } from '../workflow-board/context'
 import { hierarchyNodes, removeHierarchyNode } from './authoring'
 
 export function RemoveHierarchyNodeDialog({ draftKey, edit, pending, report }: {
   draftKey: string; edit: NextDraftEdit; pending: boolean; report(error: unknown): void
 }) {
   const form = edit.workflowForms?.removeNode
+  const board = useWorkflowBoard()
   const node = edit.graph.nodes.find(item => item.id === form?.nodeId)
   const master = form?.nodeId === edit.graph.hierarchy?.masterNodeId
   const workers = !master && form ? edit.graph.hierarchy?.parents.filter(member => member.parentNodeId === form.nodeId) ?? [] : []
@@ -22,15 +25,20 @@ export function RemoveHierarchyNodeDialog({ draftKey, edit, pending, report }: {
     if (!valid || !form) throw new Error('Choose an Orchestrator before removing the team.')
     useGraphDraftStore.getState().updateNextDraft(draftKey, current => {
       if (current.instanceId !== edit.instanceId) throw new Error('The draft changed. Reopen removal.')
-      return removeHierarchyNode(current, form.nodeId, form.destinationParentId)
+      // The remaining nodes stay where they are.
+      return removeHierarchyNode(pinBoardLayout(current), form.nodeId, form.destinationParentId)
     })
+    // The removed agent's panel closes with it.
+    if (board?.sidePanel?.kind === 'agent' && board.sidePanel.nodeId === form.nodeId) board.selectSidePanel?.({ kind: 'none' })
   }
   const leave = useUnsavedChanges({ scope: 'surface', label: 'remove workflow node', dirty: !!form,
     busy: !!form && pending, saveDisabled: !valid, save: apply, discard })
   const incident = edit.graph.edges.filter(edge => edge.source === form?.nodeId || edge.target === form?.nodeId)
-  const named = edit.graph.nodes.filter(item => item.id !== form?.nodeId).flatMap(item => item.choice?.outcomes.flatMap(outcome =>
-    outcome.target.kind === 'edge' && incident.some(edge => outcome.target.kind === 'edge' && edge.id === outcome.target.relationshipId)
-      ? [`${nodeTitle(edit.graph, item.id)} · ${outcome.outcome}`] : []) ?? [])
+  // On a Master Board the routes of removed lines go with them; elsewhere they are named by the agents they connect.
+  const named = edit.graph.hierarchy ? [] : edit.graph.nodes.filter(item => item.id !== form?.nodeId).flatMap(item => item.choice?.outcomes.flatMap(outcome => {
+    const edge = outcome.target.kind === 'edge' ? incident.find(line => outcome.target.kind === 'edge' && line.id === outcome.target.relationshipId) : undefined
+    return edge ? [`${nodeTitle(edit.graph, item.id)}’s route to ${nodeTitle(edit.graph, edge.source === item.id ? edge.target : edge.source)}`] : []
+  }) ?? [])
   const name = node ? nodeTitle(edit.graph, node.id) : 'this agent'
   return <Dialog open={!!form} onOpenChange={open => { if (!open && !pending) void leave(discard) }} size="sm" role="alertdialog"
     title={`Remove ${name}?`} closeLabel="Close removal"
@@ -49,7 +57,7 @@ export function RemoveHierarchyNodeDialog({ draftKey, edit, pending, report }: {
         {!destinations.length ? <p className="next-draft-hint" role="status">Add another Orchestrator first, or remove the workers.</p> : null}
       </> : null}
       {incident.length ? <p className="next-draft-hint">Removes {incident.map(edge => `${nodeTitle(edit.graph, edge.source)} → ${nodeTitle(edit.graph, edge.target)}`).join(', ')}.</p> : null}
-      {named.length ? <p className="next-draft-hint">Give these outcomes a new target before saving: {named.join(', ')}.</p> : null}
+      {named.length ? <p className="next-draft-hint">Give these routes a new target before saving: {named.join(', ')}.</p> : null}
       <div className="n-actions">
         <Button onClick={discard}>Cancel</Button>
         <Button variant="danger" disabled={!valid} onClick={() => { try { apply() } catch (error) { report(error) } }}>Remove</Button>

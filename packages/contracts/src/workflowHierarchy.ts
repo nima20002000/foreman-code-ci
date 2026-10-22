@@ -79,7 +79,9 @@ export const WorkflowHierarchyContextSchema = z.object({
   if (nodes.some((node) => node.workspaceId !== workspaceId || node.workflowId !== workflowId)) fail('Hierarchy members must share the saved workflow scope.');
   if (entryNodeId !== hierarchy.masterNodeId || members.get(hierarchy.masterNodeId)?.productRole !== 'master'
     || nodes.filter((node) => node.productRole === 'master').length !== 1) fail('Hierarchy needs exactly one Master at its entry.');
-  if (parents.size !== nodes.length - 1) fail('Every non-Master graph member needs one parent.');
+  const orphans = nodes.filter((node) => node.workflowNodeId !== hierarchy.masterNodeId && !parents.has(node.workflowNodeId));
+  for (const node of orphans) fail(`${node.displayName} needs ${node.productRole === 'coder' ? 'an Orchestrator' : 'the Master'} to report to.`);
+  if (!orphans.length && parents.size !== nodes.length - 1) fail('Every non-Master graph member needs one parent.');
   for (const [nodeId, parentId] of parents) {
     const node = members.get(nodeId), parent = members.get(parentId);
     if (!node || !parent) fail('Hierarchy parents must reference saved graph members.');

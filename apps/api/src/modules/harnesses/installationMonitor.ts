@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { isDatabasePoolTimeout } from '@foreman-code/contracts/failure'
 import { addAbortListener } from 'node:events'
 import type pg from 'pg'
 import type { CanonicalMachineReference } from '@foreman-code/contracts/device-identity'
@@ -107,8 +108,9 @@ export class HarnessInstallationMonitor {
       const generations = this.generations.get(harnessHostKey(host))
       const pressured = deviceBackpressured(error)
       if (pressured) this.backoff(host, 'qualification')
-      if ((staleQualification(error) || pressured) && generations?.get(driverId) === generation) {
-        // A stale check did not qualify this generation; let the next inventory refresh retry it.
+      if ((staleQualification(error) || pressured || isDatabasePoolTimeout(error)) && generations?.get(driverId) === generation) {
+        // A stale check, or one a busy database could not start, did not qualify this generation; let the next
+        // inventory refresh retry it.
         generations.delete(driverId)
       }
       this.report(error)

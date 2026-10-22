@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -58,5 +58,26 @@ describe('WorkspaceDirectory', () => {
     await user.click(screen.getByRole('button', { name: 'Rename' }))
 
     expect(await screen.findByTestId('workspace-card-workspace-1')).toHaveTextContent('Docs')
+  })
+
+  it('retries a rename that failed transiently with the same command ID', async () => {
+    const commandIds: string[] = []
+    server.use(http.patch('/api/management/workspaces/:workspaceId', async ({ request }) => {
+      commandIds.push((await request.clone().json() as { commandId: string }).commandId)
+      if (commandIds.length === 1) return HttpResponse.json({ error: { code: 'UNAVAILABLE', message: 'Restarting.' } }, { status: 503 })
+      return undefined
+    }))
+    const user = userEvent.setup()
+    renderWithRouter(<WorkspaceDirectory />)
+
+    await user.click(await screen.findByRole('button', { name: 'Open actions for Website' }))
+    await user.clear(screen.getByRole('textbox', { name: 'Name' }))
+    await user.type(screen.getByRole('textbox', { name: 'Name' }), 'Docs')
+    await user.click(screen.getByRole('button', { name: 'Rename' }))
+
+    await waitFor(() => expect(screen.getByTestId('workspace-card-workspace-1')).toHaveTextContent('Docs'), { timeout: 4_000 })
+    expect(commandIds).toHaveLength(2)
+    expect(commandIds[1]).toBe(commandIds[0])
+    expect(screen.queryByText('The last change may have worked.')).not.toBeInTheDocument()
   })
 })

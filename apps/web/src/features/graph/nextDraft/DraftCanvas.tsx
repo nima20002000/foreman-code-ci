@@ -18,6 +18,7 @@ import { SignalEdgeShape } from '../SignalEdgeShape'
 import { RESPONSIVE_FIT_OPTIONS, RESPONSIVE_MIN_ZOOM, useResponsiveGraphViewport } from '../useResponsiveGraphViewport'
 import type { GraphNode, AgentGraphNode, JobGraphNode } from '../types'
 import { nodeTitle, putRelationship, removeRelationship, setWorkConnectionLimit } from './model'
+import { pinGraphLayout } from './placement'
 import { WorkConnectionLimitEditor } from './WorkConnectionLimitEditor'
 import type { EditGraph } from './AuthoringFields'
 import { useWorkflowBoard } from '../../workflow-board/context'
@@ -29,9 +30,8 @@ import { useBoardCiServer } from '../../workflow-board/inspect/useBoardCiServer'
 import { BoardKanbanNode, KanbanActivityEdge, KANBAN_NODE_ID, type KanbanActivityFlowEdge, type KanbanFlowNode } from '../../workflow-board/kanban/BoardKanban'
 import { useBoardKanban } from '../../workflow-board/kanban/useBoardKanban'
 import { BoardDock } from '../../workflow-board/dock/BoardDock'
+import { connectHierarchyMember } from '../../workflow-hierarchy/authoring'
 import { useAgentProximity } from '../useAgentProximity'
-import { HierarchyCanvasControls } from '../../workflow-hierarchy/HierarchyCanvasControls'
-import { useCollapsedWorkers } from '../../workflow-hierarchy/useCollapsedWorkers'
 import '@xyflow/react/dist/style.css'
 
 export type OpenAgentPanel = { nodeId: string; panel: AgentPanel }
@@ -80,7 +80,6 @@ const DraftAgent = memo(function DraftAgent({ id, data, selected, width, height 
 })
 
 type DraftEdge = Edge<{ kind: WorkflowRelationship['kind']; bend: number;
-  reportingParent?: string;
   remove: () => void; removeLabel: string; removalDisabled: boolean;
   workPolicy: boolean; maxWorkHandoffsPerRun?: number; draftChanged: boolean; disabled: boolean;
   onApplyLimit?: (value?: number) => void }>
@@ -96,7 +95,7 @@ const TypedEdge = memo(function TypedEdge({ id, source, target, data, selected }
     onFocus={() => setFocused(true)} onBlur={event => {
       if (!event.currentTarget.contains(event.relatedTarget as globalThis.Node | null)) setFocused(false)
     }}>
-    <SignalEdgeShape id={id} curve={curve} kind={data?.kind} reportingParent={data?.reportingParent} />
+    <SignalEdgeShape id={id} curve={curve} kind={data?.kind} />
     {visible ? <rect className="board-edge-hover-bridge" x={curve.mid.x - 18} y={curve.mid.y - 36}
       width={36} height={48} /> : null}
     <foreignObject data-visible={visible} className="board-edge-remove nodrag nopan" x={curve.mid.x - 18} y={curve.mid.y - 36} width={36} height={36}>
@@ -152,7 +151,6 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
   open, setOpen = () => undefined, panels = () => ({ chat: null, settings: null, info: null }), children }, ref) {
   const board = useWorkflowBoard()
   const selectedRun = board?.run
-  const collapsed = useCollapsedWorkers(draftKey, graph.hierarchy)
   const responsive = useResponsiveGraphViewport<GraphNode | CiServerFlowNode | KanbanFlowNode, DraftEdge | KanbanActivityFlowEdge>({ enabled: !selectedRun })
   const [project] = useState(() => createGraphTopologyProjector())
   const topology = useMemo(() => project(graph, agents), [project, graph, agents])
@@ -160,9 +158,9 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
   const [nodes, setNodes] = useState(topology.nodes)
   const [connecting, setConnecting] = useState(false)
   // Every Board shows the CI server automatically; it is never a workflow node and cannot be added by hand.
-  const ci = useBoardCiServer({ nodes, names: noNames, workflow: { workspaceId: graph.workspaceId, workflowId: graph.id } })
+  const ci = useBoardCiServer({ nodes, names: noNames, workflow: { workspaceId: graph.workspaceId, workflowId: graph.id }, keepPlace: true })
   const teamNodeId = board?.teamNodeId
-  const shownIds = useMemo(() => new Set(nodes.filter(node => !collapsed.has(node.id)).map(node => node.id)), [nodes, collapsed])
+  const shownIds = useMemo(() => new Set(nodes.map(node => node.id)), [nodes])
   const kanban = useBoardKanban({ workspaceId: graph.workspaceId, workflowId: graph.id, nodes, nodeIds: shownIds, enabled: !!board })
   const kanbanShown = !!kanban.node, refit = responsive.refit
   const proximity = useAgentProximity()
@@ -171,9 +169,9 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
     const frame = requestAnimationFrame(refit)
     return () => cancelAnimationFrame(frame)
   }, [kanbanShown, refit])
-  const flowNodes = useMemo<(GraphNode | CiServerFlowNode | KanbanFlowNode)[]>(() => [...nodes.filter(node => !collapsed.has(node.id)).map(node =>
+  const flowNodes = useMemo<(GraphNode | CiServerFlowNode | KanbanFlowNode)[]>(() => [...nodes.map(node =>
     teamNodeId === node.id ? { ...node, selected: true } : node), ...(kanban.node ? [kanban.node] : []), ...(ci.node ? [ci.node] : [])],
-  [nodes, collapsed, teamNodeId, ci.node, kanban.node])
+  [nodes, teamNodeId, ci.node, kanban.node])
   const selectedIds = useGraphPresentation((state) => state.selectedNodeIds)
   const presentation = useGraphPresentationStore()
   useLayoutEffect(() => { setNodes(adapter.reconcile(topology.nodes, selectedIds)) }, [adapter, topology.nodes, selectedIds])
@@ -200,13 +198,16 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
     return relationshipLines(graph.edges).lines.map(({ members, ...edge }) => {
       const pair = JSON.stringify([edge.source, edge.target].sort()), count = counts.get(pair) ?? 0
       counts.set(pair, count + 1)
+      // Before a Master exists, an Orchestrator's line to a Worker is still that Worker's team line.
+      const role = (id: string) => { const node = graph.nodes.find(item => item.id === id)
+        return node && node.kind !== 'job' ? agents.find(agent => agent.id === node.agentId)?.productRole : undefined }
       const reporting = isHierarchyReportingRoute(graph.hierarchy, edge)
+        || !graph.hierarchy && edge.kind === 'execution' && role(edge.source) === 'orchestrator' && role(edge.target) === 'coder'
       const workLabel = reporting ? 'Orchestrates' : 'Handoff'
       const kindLabel = members.length > 1 ? `${workLabel} · approval` : edge.kind === 'approval' ? 'Approval' : workLabel
       return { ...edge, type: 'typed', sourceHandle: 'right', targetHandle: 'left',
         ariaLabel: `${kindLabel} from ${nodeTitle(graph, edge.source)} to ${nodeTitle(graph, edge.target)}${edge.label ? `: ${edge.label}` : ''}`,
         data: { kind: edge.kind, bend: edgeBend(count, edge.source < edge.target),
-          reportingParent: reporting ? nodeTitle(graph, edge.source) : undefined,
           remove: () => change((value) => removeRelationship(value, edge.id)),
           removeLabel: `Remove ${edge.kind === 'approval' ? 'approval' : 'handoff'} from ${nodeTitle(graph, edge.source)} to ${nodeTitle(graph, edge.target)}`,
           removalDisabled, workPolicy: Boolean(graph.handoffs && edge.kind === 'execution'),
@@ -218,9 +219,39 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
             catch (error) { report(error) }
           } } }
     })
-  }, [graph, baseGraph, semanticLocked, change, report, removalDisabled])
-  const visibleEdges = useMemo<(DraftEdge | KanbanActivityFlowEdge)[]>(() => [...edges.filter(edge => !collapsed.has(edge.source)
-    && !collapsed.has(edge.target)), ...kanban.edges], [edges, collapsed, kanban.edges])
+  }, [graph, agents, baseGraph, semanticLocked, change, report, removalDisabled])
+  const visibleEdges = useMemo<(DraftEdge | KanbanActivityFlowEdge)[]>(() => [...edges, ...kanban.edges], [edges, kanban.edges])
+  const roleOf = (nodeId: string) => {
+    const node = graph.nodes.find(item => item.id === nodeId)
+    return node && node.kind !== 'job' ? agents.find(agent => agent.id === node.agentId)?.productRole : undefined
+  }
+  // Who moves along: the members reporting to a node; without a Master, Workers connected to an Orchestrator.
+  const followersOf = (parent: string): string[] => graph.hierarchy
+    ? graph.hierarchy.parents.filter(member => member.parentNodeId === parent).map(member => member.workflowNodeId)
+    : roleOf(parent) !== 'orchestrator' ? [] : graph.edges.filter(edge => edge.kind === 'execution' && (edge.source === parent || edge.target === parent))
+      .map(edge => edge.source === parent ? edge.target : edge.source).filter(id => roleOf(id) === 'coder')
+  /** Moving an Orchestrator (or the Master) moves its team by the same distance, in the same gesture. */
+  const withFollowers = (changes: NodeChange<GraphNode>[]): NodeChange<GraphNode>[] => {
+    const moving = new Set(changes.flatMap(change => change.type === 'position' ? [change.id] : []))
+    const extra: NodeChange<GraphNode>[] = []
+    for (const change of changes) {
+      if (change.type !== 'position') continue
+      const leader = nodes.find(node => node.id === change.id)
+      if (!leader) continue
+      const delta = change.position ? { x: change.position.x - leader.position.x, y: change.position.y - leader.position.y } : undefined
+      const pending = followersOf(change.id), seen = new Set<string>()
+      while (pending.length) {
+        const id = pending.pop()!
+        if (seen.has(id) || moving.has(id)) continue
+        seen.add(id); pending.push(...followersOf(id))
+        const follower = nodes.find(node => node.id === id)
+        if (!follower) continue
+        extra.push({ type: 'position', id, ...(change.dragging === undefined ? {} : { dragging: change.dragging }),
+          ...(delta ? { position: { x: follower.position.x + delta.x, y: follower.position.y + delta.y } } : {}) })
+      }
+    }
+    return extra.length ? [...changes, ...extra] : changes
+  }
   const onNodesChange = (allChanges: NodeChange<GraphNode | CiServerFlowNode | KanbanFlowNode>[]) => {
     kanban.applyChanges(allChanges)
     ci.place.applyChanges(allChanges)
@@ -231,13 +262,24 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
       if (item.selected) nextSelection.add(item.id); else nextSelection.delete(item.id)
     }
     presentation.getState().setSelectedNodeIds(nextSelection)
-    const result = adapter.update(changes)
+    const result = adapter.update(withFollowers(changes))
     setNodes(result.nodes); pending(result.pending)
     if (result.finished) flush()
   }
-  const connectNodes = (source: string, target: string) => {
-    try { change((value) => value.edges.some((edge) => edge.kind === kind && edge.source === source && edge.target === target) ? value
-      : putRelationship(value, WorkflowRelationshipSchema.parse({ id: `relationship-${crypto.randomUUID()}`, kind, source, target }))) }
+  const connectNodes = (first: string, second: string) => {
+    const roles = new Map(graph.nodes.map(node => [node.id, node.kind === 'job' ? undefined
+      : agents.find(agent => agent.id === node.agentId)?.productRole]))
+    // Without a Master yet, a line between an Orchestrator and a Worker still runs from the Orchestrator down.
+    const rank = (id: string) => ({ master: 0, orchestrator: 1, coder: 2 } as Record<string, number>)[roles.get(id) ?? ''] ?? -1
+    const [source, target] = !graph.hierarchy && rank(first) >= 0 && rank(second) >= 0 && rank(second) < rank(first) ? [second, first] : [first, second]
+    try { change((value) => {
+      // A new line never re-lays out the Board: every node keeps the place it is shown at.
+      const base = pinGraphLayout(value, agents)
+      const next = connectHierarchyMember(base, roles, source, target)
+        ?? (base.edges.some((edge) => edge.kind === kind && edge.source === source && edge.target === target) ? base
+          : putRelationship(base, WorkflowRelationshipSchema.parse({ id: `relationship-${crypto.randomUUID()}`, kind, source, target })))
+      return next === base ? value : next
+    }) }
     catch (error) { report(error) }
   }
   const selectNode = (nodeId: string) => inspect(() => {
@@ -296,7 +338,6 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
       {children}
       {selectedRun ? null : <BoardDock kanban={kanban.dock}
         ci={ci.node ? undefined : { summary: ci.summary, restore: ci.place.restore }} />}
-      <HierarchyCanvasControls scope={draftKey} hierarchy={graph.hierarchy} name={nodeId => nodeTitle(graph, nodeId)} onTeam={board?.selectTeam} />
       <WorkflowAgentPanel panels={panels} active={!selectedRun && board?.authoringActive !== false}
         findNode={nodeId => graph.nodes.some(node => node.id === nodeId) ? undefined : false} />
     </div>

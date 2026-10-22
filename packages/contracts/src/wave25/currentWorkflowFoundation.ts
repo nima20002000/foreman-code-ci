@@ -171,11 +171,17 @@ export function validateCurrentWorkflowConfigurations(value: { version: Version 
       workflowApprovalHandler: version.approval.handler, designatedOrchestrator: version.approval.handler === 'orchestrator'
         && configuration.agentId === version.approval.designatedOrchestratorAgentId }).success) {
       const harness = configuration.harness
+      const node = nodes.find(item => item.kind !== 'job' && item.agentId === configuration.agentId)
+      const name = node?.name ?? node?.label ?? `Agent ${configuration.agentId}`
       if (version.approval.handler === 'native' && harness.harness === 'codex'
         && harness.advanced?.approvalPolicy === undefined) {
-        fail(`Agent ${configuration.agentId} is missing saved Codex advanced.approvalPolicy. `
+        fail(`${name} is missing saved Codex advanced.approvalPolicy. `
           + 'Save the Agent with approvalPolicy: "never", or approvalPolicy: "on-request" and approvalsReviewer: "auto_review", '
           + 'then retry with its new configuration version. You can also choose workflow approval handler "user" or "orchestrator".')
+      } else if (version.approval.handler === 'native' && harness.harness === 'codex') {
+        fail(`${name} asks you for approval, but in this workflow Agents handle approvals themselves `
+          + '(approval handler "native"). Set the Agent to never ask, or to Codex automatic review, '
+          + 'or choose workflow approval handler "user" (You, the Operator).')
       } else {
         fail('pinned native configuration conflicts with approval authority')
       }
