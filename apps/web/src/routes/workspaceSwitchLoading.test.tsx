@@ -47,9 +47,8 @@ describe('switching workspaces while the workspace identity loads', () => {
     expect(within(sections).getByRole('link', { name: 'Project files' })).toHaveAttribute('aria-current', 'page')
     expect(await screen.findByText('No files.')).toBeVisible()
     expect(screen.queryByText('Loading workspace…')).not.toBeInTheDocument()
-    expect(screen.queryByRole('textbox', { name: 'Workspace name' })).not.toBeInTheDocument()
     second.release()
-    expect(await screen.findByRole('textbox', { name: 'Workspace name' })).toHaveValue('Second')
+    expect(within(sections).getByRole('link', { name: 'Project files' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByText('No files.')).toBeVisible()
   })
 

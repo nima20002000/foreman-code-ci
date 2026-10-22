@@ -146,7 +146,7 @@ it.each(['codex', 'claude'] as const)('keeps the selected %s target and draft pi
   await waitFor(() => expect(picker).toBeEnabled())
   await user.selectOptions(picker, otherAccountId)
   await waitFor(() => expect(edits).toHaveLength(1))
-  expect(await screen.findByText('Changed Operator settings apply to a new chat. This draft stays with the selected conversation.')).toBeVisible()
+  expect(await screen.findByText('Your Operator settings changed. They apply to a new chat.')).toBeVisible()
   const composer = within(screen.getByRole('form', { name: 'Conversation composer' }))
   fireEvent.change(composer.getByRole('textbox', { name: 'Message' }), { target: { value: 'Continue here' } })
   expect(composer.getByRole('button', { name: 'Send message' })).toBeDisabled()

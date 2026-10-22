@@ -47,8 +47,8 @@ export function OperatorChatControls({ conversation, retired, settings, preferen
     {attachmentReceiptPending && !pending.command ? <Button size="sm" onClick={attachmentReceipts.reconcile}>Check previous message</Button> : null}
     {pendingHandoff ? <p className="operator-chat-handoff" role="status">Your Operator settings changed. They apply to a new chat.
       <Button size="sm" variant="ghost" onClick={() => void createConversation()}>New chat</Button></p> : null}
-    {/* With saved settings still loaded, a failed background refresh changes nothing the user can act on. */}
-    {preferences.query.isError && !preferences.query.data ? <Alert tone={preferencesDenied ? 'danger' : 'warning'} title={preferencesDenied ? 'Operator settings access unavailable' : 'Could not refresh Operator settings'}
+    {/* With saved settings still loaded, a failed background refresh changes nothing the user can act on; a denial always says why settings are gone. */}
+    {preferences.query.isError && (preferencesDenied || !preferences.query.data) ? <Alert tone={preferencesDenied ? 'danger' : 'warning'} title={preferencesDenied ? 'Operator settings access unavailable' : 'Could not refresh Operator settings'}
       action={<Button size="sm" onClick={() => void preferences.query.refetch()}>Retry settings</Button>}>
       {preferencesDenied ? 'Check your browser enrollment and permissions.' : preferences.query.data ? 'Last saved settings are still available.' : preferences.query.error.message}
     </Alert> : null}

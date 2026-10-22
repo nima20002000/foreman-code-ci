@@ -45,7 +45,7 @@ describe('Operator access in agent settings', () => {
 it('moves access guidance into a hint while keeping save failures visible', async () => {
   render(<OperatorAccessPicker value={DEFAULT_HARNESS_DEFAULTS.codex} disabled={false}
     saveError="Read back this save first" onChange={vi.fn()} />)
-  const guidance = 'Access changes apply to new chats and harness handoffs. Existing chats keep their accepted access policy.'
+  const guidance = 'Access changes apply to new chats. Existing chats keep their access.'
   expect(screen.queryByText(guidance)).not.toBeInTheDocument()
   fireEvent.focus(screen.getByRole('button', { name: 'About Operator access' }))
   expect(screen.getByRole('tooltip')).toHaveTextContent(guidance)

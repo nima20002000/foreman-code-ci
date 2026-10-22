@@ -61,5 +61,8 @@ export function OperatorChatNotices({ handoffNotice, setHandoffNotice, recovered
       action={<Button variant="primary" leading={<Icon name="plus" size={15} />} onClick={() => void createConversation({ retry: create.isError })}
         disabled={create.isPending || Boolean(reconnect)} loading={create.isPending} loadingLabel="Starting…">Start chat</Button>} /></div> : null}
     {!reconnect && selectedId && !conversation && selected.isPending && !accessDenied ? <LoadingState label="Loading conversation…" rows={4} /> : null}
+    {!reconnect && selectedId && !conversation && selected.isError && !accessDenied && !missingSelection
+      ? <Alert live tone="danger" title="This chat could not be loaded"
+        action={<Button size="sm" loading={selected.isFetching} onClick={() => void selected.refetch()}>Try again</Button>}>Your draft is kept.</Alert> : null}
   </>
 }

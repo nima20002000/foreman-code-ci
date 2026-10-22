@@ -9,7 +9,7 @@ import { installCanonicalOperatorFixture } from './canonicalOperator.test-suppor
 import { useOperatorChatStore } from './operatorChatStore'
 
 const api = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), create: vi.fn(), clearDraft: vi.fn() }))
-vi.mock('../../shared/api/client', async (original) => ({ ApiError: (await original<typeof import('../../shared/api/client')>()).ApiError, getOperatorConversation: api.get, createOperatorConversation: api.create, sendOperatorMessage: vi.fn(), cancelOperatorTurn: vi.fn(), respondOperatorInteraction: vi.fn() }))
+vi.mock('../../shared/api/client', async (original) => ({ ApiError: (await original<typeof import('../../shared/api/client')>()).ApiError, isApiRestartError: (await original<typeof import('../../shared/api/client')>()).isApiRestartError, getOperatorConversation: api.get, createOperatorConversation: api.create, sendOperatorMessage: vi.fn(), cancelOperatorTurn: vi.fn(), respondOperatorInteraction: vi.fn() }))
 vi.mock('../../shared/api/operatorChatSummaries', () => ({ listOperatorConversationSummaries: api.list }))
 vi.mock('../../shared/api/operatorChatStream', () => ({ subscribeOperatorChat: () => () => {} }))
 vi.mock('../../shared/api/sessionBoundary', async (original) => ({ ...(await original<typeof import('../../shared/api/sessionBoundary')>()), sessionGeneration: () => 1, sessionIsSwitching: () => false }))
@@ -56,23 +56,21 @@ describe('Operator chat recovery', () => {
     api.list.mockRejectedValue(new Error('offline'))
     mount()
     await act(async () => { await client.invalidateQueries({ queryKey: listKey }) })
-    expect(await screen.findByText(/Previously loaded conversations are still shown/)).toBeInTheDocument()
+    expect(await screen.findByText('History could not refresh.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^Deployment investigation/ })).toBeInTheDocument()
     api.list.mockResolvedValue({ conversations: [summary] })
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Retry history' }))
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Retry' }))
     expect(api.list).toHaveBeenCalledTimes(2)
   })
-  it('keeps messages available after a failed refresh and offers conversation retry', async () => {
+  it('keeps messages available after a failed refresh without replacing them with an error', async () => {
     useOperatorChatStore.setState({ selectedConversationId: 'c1' })
     client.setQueryData(detailKey, state)
     api.get.mockRejectedValue(new Error('offline'))
     mount()
     await act(async () => { await client.invalidateQueries({ queryKey: detailKey }) })
-    expect(await screen.findByText(/Previously loaded messages are still shown/)).toBeInTheDocument()
+    expect(api.get).toHaveBeenCalledTimes(1)
     expect(screen.getByText('Previously loaded context')).toBeInTheDocument()
-    api.get.mockResolvedValue(state)
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Retry conversation' }))
-    expect(api.get).toHaveBeenCalledTimes(2)
+    expect(screen.queryByText('This chat could not be loaded')).not.toBeInTheDocument()
   })
   it('identifies the conversation and switches through the history sidebar', async () => {
     const second = { ...state, conversation: { ...state.conversation, id: 'c2', title: 'Release plan' }, messages: [] }

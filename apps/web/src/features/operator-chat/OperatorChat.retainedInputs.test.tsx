@@ -136,15 +136,16 @@ it('labels a failed status refresh while retaining the last receipt and retries 
   expect(sends).toBe(0)
 })
 
-it('keeps the selected local draft editable when its initial snapshot cannot be read', async () => {
+it('keeps the selected local draft when its initial snapshot cannot be read and offers it again once the chat loads', async () => {
   useConversationDraftStore.getState().setDraft(id, 'Persisted local draft')
   api.get.mockRejectedValue(new Error('Offline'))
   mount()
-  const input = await screen.findByRole('textbox', { name: 'Message' })
-  expect(input).toHaveValue('Persisted local draft')
-  await screen.findByText('The selected chat could not be read. Your draft is kept; refresh its target before sending.')
-  fireEvent.change(input, { target: { value: 'Edited without changing target' } })
-  expect(input).toHaveValue('Edited without changing target')
-  expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled()
+  const alert = await screen.findByRole('alert')
+  expect(alert).toHaveTextContent('This chat could not be loaded')
+  expect(screen.queryByRole('textbox', { name: 'Message' })).not.toBeInTheDocument()
+  expect(useConversationDraftStore.getState().drafts[id]).toBe('Persisted local draft')
+  api.get.mockImplementation(async () => state)
+  fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }))
+  expect(await screen.findByRole('textbox', { name: 'Message' })).toHaveValue('Persisted local draft')
   expect(sends).toBe(0); expect(api.create).not.toHaveBeenCalled()
 })

@@ -144,14 +144,15 @@ describe('Operator chat UX', () => {
     expect(useOperatorChatStore.getState().selectedConversationId).toBeUndefined()
   })
 
-  it('keeps saved settings usable on refresh failure and hides them after access is denied', async () => {
+  it('keeps saved settings usable and quiet on a failed refresh and hides them after access is denied', async () => {
     chat()
     const input = await screen.findByRole('textbox', { name: 'Message' })
     fireEvent.change(input, { target: { value: 'Hello' } })
     await waitFor(() => expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled())
     server.use(http.get('/api/management/settings/agents', () => HttpResponse.json({ code: 'UNAVAILABLE', message: 'Offline' }, { status: 503 })))
     await client.invalidateQueries({ queryKey: queryKeys.agentDefaults })
-    expect(await screen.findByText('Could not refresh Operator settings')).toBeVisible()
+    await waitFor(() => expect(client.getQueryState(queryKeys.agentDefaults)?.status).toBe('error'))
+    expect(screen.queryByText('Could not refresh Operator settings')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled()
     server.use(http.get('/api/management/settings/agents', () => HttpResponse.json({ code: 'ACCESS_DENIED', message: 'Denied' }, { status: 403 })))
     await client.invalidateQueries({ queryKey: queryKeys.agentDefaults })
@@ -188,7 +189,6 @@ describe('Operator chat UX', () => {
     api.send.mockResolvedValue({ state: pinned, replayed: false })
     chat()
     fireEvent.click(await screen.findByRole('button', { name: /Agent settings:/ }))
-    expect(screen.getByText('These settings apply to new chats. The selected chat keeps its current settings.')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: /Choose model/ }))
     fireEvent.click(screen.getByRole('button', { name: /Model A/ }))
     await waitFor(async () => expect((await getManagedAgentDefaults()).value.operator.harness.model).toBe('model-a'))
@@ -346,7 +346,7 @@ describe('Operator chat UX', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Agent settings:/ }))
     const user = userEvent.setup()
     const access = within(screen.getByRole('group', { name: 'Operator access' }))
-    const guidance = 'Access changes apply to new chats and harness handoffs. Existing chats keep their accepted access policy.'
+    const guidance = 'Access changes apply to new chats. Existing chats keep their access.'
     expect(screen.queryByText(guidance)).not.toBeInTheDocument()
     const accessHint = access.getByRole('button', { name: 'About Operator access' })
     await user.hover(accessHint)
@@ -379,7 +379,7 @@ describe('Operator chat UX', () => {
       conversation: { ...source.conversation, id }, settings: operatorChatSettings(savedClaudeConfiguration),
       messages: [], turnState: 'idle', activeRequestId: null }))
     chat()
-    expect(await screen.findByText('Changed Operator settings apply to a new chat. This draft stays with the selected conversation.')).toBeVisible()
+    expect(await screen.findByText('Your Operator settings changed. They apply to a new chat.')).toBeVisible()
     const input = screen.getByRole('textbox', { name: 'Message' })
     fireEvent.change(input, { target: { value: 'Continue here' } })
     expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled()
