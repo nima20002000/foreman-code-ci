@@ -235,12 +235,13 @@ export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
       {!props.readOnly ? <IconButton label="New tab" variant="ghost" size="sm" disabled={busy} onClick={() => { mutate((epoch, commandId) =>
         props.port.createTab(props.initial.session, props.viewerId, epoch, commandId), undefined, true) }}><Icon name="plus" size={14} /></IconButton> : null}
     </div>
-    {props.setup && !props.readOnly ? <form className="agent-browser-address" onSubmit={event => {
+    {!props.readOnly ? <form className="agent-browser-address" onSubmit={event => {
       event.preventDefault()
-      mutate((epoch, commandId) => props.port.navigate(props.initial.session, props.tab, props.viewerId, epoch, url, commandId))
-    }}><TextField label="Website address" value={url} onChange={event => setUrl(event.currentTarget.value)} disabled={pending}
+      const target = addressUrl(url)
+      mutate((epoch, commandId) => props.port.navigate(props.initial.session, props.tab, props.viewerId, epoch, target, commandId))
+    }}><TextField label="Website address" placeholder="Search or type a URL" value={url} onChange={event => setUrl(event.currentTarget.value)} disabled={pending}
       onFocus={() => { typing.current = true }} onBlur={() => { typing.current = false }} />
-      <Button type="submit" disabled={busy || !url.trim()}>Go</Button></form> : null}
+      {props.setup ? <Button type="submit" disabled={busy || !url.trim()}>Go</Button> : null}</form> : null}
     {error || mutation.error || snapshot.error ? <p role="alert">{error ?? (mutation.error ? browserErrorMessage(mutation.error) : snapshot.error)}</p> : null}
     {unresolved ? <Button size="sm" disabled={mutation.isPending} onClick={() => {
       if (mutation.variables) mutation.mutate(mutation.variables)
@@ -261,4 +262,12 @@ export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
       }} onRespond={(accept, prompt) => mutate((epoch, commandId) =>
         props.port.respondDialog(props.initial.session, props.tab, props.viewerId, epoch, accept, prompt, commandId))} />
   </div>
+}
+
+/** Like Chrome's address bar: a URL as typed, a bare domain over https, anything else as a web search. */
+function addressUrl(input: string): string {
+  const text = input.trim()
+  if (/^[a-z][a-z0-9+.-]*:/i.test(text)) return text
+  if (!/\s/.test(text) && /^[^/]+\.[a-z]{2,}(?:[:/?#]|$)/i.test(text)) return `https://${text}`
+  return `https://www.google.com/search?q=${encodeURIComponent(text)}`
 }

@@ -153,8 +153,8 @@ it('uses saved roles and coordinates, docks one inspector, and navigates teams w
   const { router } = await mount()
   const master = screen.getByRole('group', { name: 'X before rename, saved agent, read only' })
   const worker = screen.getByRole('group', { name: 'Z, saved agent, read only' })
-  expect(master).toHaveTextContent('Master')
-  expect(worker).toHaveTextContent('Worker · Reports to Y')
+  await waitFor(() => expect(master).toHaveTextContent('Master'))
+  await waitFor(() => expect(worker).toHaveTextContent('Worker · Reports to Y'))
   const position = worker.style.transform
   fireEvent.click(screen.getByRole('button', { name: 'Inspect Z' }))
   const inspector = await screen.findByRole('region', { name: 'Run node inspector: Z' })

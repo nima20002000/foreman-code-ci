@@ -147,7 +147,8 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
     const headless = !headed
     const args = [`--user-data-dir=${directory}`, `--foreman-browser-owner=${token}`, '--enable-automation',
       '--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1', '--no-first-run', '--no-default-browser-check',
-      '--disable-background-networking', ...(headless ? ['--headless=new'] : []), 'about:blank']
+      // Headless Chromium otherwise starts at 800x600, which sites treat as a tablet or phone.
+      '--disable-background-networking', ...(headless ? ['--headless=new', '--window-size=1440,900'] : []), 'about:blank']
     // Chromium's own profile lock remains authoritative; no lock removal or sandbox bypass.
     const runtimeDirectory = await createBrowserRuntimeDirectory(this.options.actionDirectory)
     const processHandle = spawn(this.options.runtime.chromiumExecutable, args, { stdio: ['ignore', 'ignore', 'pipe'],

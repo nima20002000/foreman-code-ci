@@ -24,3 +24,6 @@
 .agent-browser-keyboard { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; inset: 0 auto auto 0; }
 .browser-settings-fields { display: grid; gap: .65rem; }
 .browser-settings-fields p { margin: 0; font-size: .8rem; color: var(--n-muted); }
+.agent-browser-tabs + .agent-browser-address { margin-top: -0.4rem; padding: 4px 0; }
+.agent-browser-address .n-input { height: 30px; min-height: 30px; border-radius: 999px; padding-inline: 12px; font-size: .8rem; }
+.agent-browser-address .n-field > label, .agent-browser-address .n-field-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
