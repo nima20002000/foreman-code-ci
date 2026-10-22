@@ -2,11 +2,11 @@ import { memo, type ReactNode } from 'react'
 import Markdown from 'react-markdown'
 import type { Components } from 'react-markdown'
 import type { Message } from '@foreman-code/contracts'
-import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { useMutation } from '@tanstack/react-query'
 import { errorMessage } from '../../../shared/errorMessage'
 import { Button, CodeBlock, MessageBubble } from '../../../shared/ui/nocturne'
 import { TextTruncationNotice } from '../TextTruncationNotice'
+import { structuredResult } from './structuredResult'
 
 const markdownComponents: Components = {
   pre({ node }) {
@@ -79,32 +79,4 @@ function AgentContent({ content }: { content: string }) {
     <details className="agent-chat-tool"><summary>Result details</summary>
       <CodeBlock code={JSON.stringify(result.value, null, 2)} label="Result details" /></details>
   </>
-}
-
-/** True when both messages carry the same structured turn result; Claude can repeat its final result as a second message. */
-export function sameStructuredResult(left: string, right: string): boolean {
-  const first = structuredResult(left), second = structuredResult(right)
-  return !!first && !!second && canonicalJson(first.value) === canonicalJson(second.value)
-}
-
-const summaryKeys = ['summary', 'body', 'message', 'reason', 'text'] as const
-function structuredResult(content: string): { value: unknown; summary: string | undefined } | undefined {
-  const text = content.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/, '$1')
-  if (!text.startsWith('{')) return undefined
-  let value: unknown
-  try { value = JSON.parse(text) } catch { return undefined } // ignore: plain text that merely starts with a brace
-  if (!value || typeof value !== 'object' || !('routing' in value || 'board' in value || 'result' in value)) return undefined
-  return { value, summary: findSummary(value, 0) }
-}
-function findSummary(value: unknown, depth: number): string | undefined {
-  if (depth > 6 || !value || typeof value !== 'object') return undefined
-  for (const key of summaryKeys) {
-    const field = (value as Record<string, unknown>)[key]
-    if (typeof field === 'string' && field.trim()) return field
-  }
-  for (const child of Object.values(value)) {
-    const found = findSummary(child, depth + 1)
-    if (found) return found
-  }
-  return undefined
 }

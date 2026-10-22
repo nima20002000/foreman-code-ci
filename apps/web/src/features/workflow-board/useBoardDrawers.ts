@@ -13,7 +13,7 @@ export function useBoardDrawers({ workspaceId, workflowId, current, currentRef, 
   const locationOpen = useInspectionPresentation((state) => !!state.open[locationKey])
   const setLocationOpen = useCallback((open: boolean) => {
     if (!open || currentRef.current) useInspectionPresentation.getState().setOpen(locationKey, open)
-  }, [locationKey])
+  }, [locationKey, currentRef])
   const runsKey = JSON.stringify(['board-run-drawer', workspaceId, workflowId])
   const runsOpen = useInspectionPresentation((state) => !!state.open[runsKey])
   const toolbar = useRef<HTMLDivElement>(null)
@@ -26,7 +26,7 @@ export function useBoardDrawers({ workspaceId, workflowId, current, currentRef, 
         findActivitiesButton()?.focus()
       }
     }, 0)
-  }, [runsKey, findActivitiesButton])
+  }, [runsKey, findActivitiesButton, currentRef])
   useEffect(() => {
     if (!current && !detailsScope) setRunsOpen(false)
   }, [current, detailsScope, setRunsOpen])
@@ -45,6 +45,6 @@ export function useBoardDrawers({ workspaceId, workflowId, current, currentRef, 
     }
     window.addEventListener('keydown', shortcut, true)
     return () => window.removeEventListener('keydown', shortcut, true)
-  }, [])
+  }, [currentRef])
   return { toolbar, locationOpen, setLocationOpen, runsOpen, setRunsOpen, findActivitiesButton }
 }

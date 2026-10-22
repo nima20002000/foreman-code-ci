@@ -6,7 +6,11 @@ import { PostgresAgentChatRepository } from '../src/modules/conversations/agentC
 import { conversationFeatureContext } from '../src/modules/conversations/conversationFeatureSubject.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { Wave25WorkerCredentialService } from '../src/modules/interactions/wave25/credentials.js'
+import { withTransaction } from '../src/infrastructure/transaction.js'
 import { workerCredentialBudgetFixture } from './helpers/workerCredentialBudgetFixture.js'
+
+/** Thrown to roll the lock-holding transaction back once the busy-row checks are done. */
+class ReleaseLock extends Error {}
 
 const fixture = workerCredentialBudgetFixture()
 let schema: typeof fixture.schema
@@ -27,33 +31,31 @@ for (const lockedRow of ['run', 'execution', 'principal', 'binding'] as const) {
     const sweepPool = new pg.Pool({ connectionString,
       options: `-c search_path=${schema} -c statement_timeout=500` })
     const reconciler = new Wave25WorkerCredentialService(sweepPool, new PostgresAccessService(sweepPool))
-    const blocker = await pool.connect()
     const revoked = async () => (await pool.query(`select p.revoked_at is not null as principal_revoked,
       b.revoked_at is not null as binding_revoked from management_principals p
       join worker_credential_bindings b on b.principal_id=p.id where p.id=$1`, [issued.principalId])).rows[0]
     try {
-      await blocker.query('begin')
-      if (lockedRow === 'run') {
-        await blocker.query('select id from runs where id=$1 for update', [execution.runId])
-      } else if (lockedRow === 'execution') {
-        await blocker.query('select id from harness_executions where id=$1 for update', [execution.id])
-      } else if (lockedRow === 'principal') {
-        await blocker.query('select id from management_principals where id=$1 for update', [issued.principalId])
-      } else {
-        await blocker.query('select principal_id from worker_credential_bindings where principal_id=$1 for update',
-          [issued.principalId])
-      }
-      await expect(reconciler.reconcileTerminalCredentials()).resolves.toBeUndefined()
-      expect(await revoked()).toEqual({ principal_revoked: false, binding_revoked: false })
-      // Deferral never makes a stopped execution's token usable.
-      await expect(access.authenticate(issued.environment.variables.GRAPHQL_MCP_TOKEN!, 'worker'))
-        .rejects.toMatchObject({ code: 'AUTH_REVOKED' })
-      await blocker.query('rollback')
+      await withTransaction(pool, async blocker => {
+        if (lockedRow === 'run') {
+          await blocker.query('select id from runs where id=$1 for update', [execution.runId])
+        } else if (lockedRow === 'execution') {
+          await blocker.query('select id from harness_executions where id=$1 for update', [execution.id])
+        } else if (lockedRow === 'principal') {
+          await blocker.query('select id from management_principals where id=$1 for update', [issued.principalId])
+        } else {
+          await blocker.query('select principal_id from worker_credential_bindings where principal_id=$1 for update',
+            [issued.principalId])
+        }
+        await expect(reconciler.reconcileTerminalCredentials()).resolves.toBeUndefined()
+        expect(await revoked()).toEqual({ principal_revoked: false, binding_revoked: false })
+        // Deferral never makes a stopped execution's token usable.
+        await expect(access.authenticate(issued.environment.variables.GRAPHQL_MCP_TOKEN!, 'worker'))
+          .rejects.toMatchObject({ code: 'AUTH_REVOKED' })
+        throw new ReleaseLock()
+      }).catch((error: unknown) => { if (!(error instanceof ReleaseLock)) throw error })
       await reconciler.reconcileTerminalCredentials()
       expect(await revoked()).toEqual({ principal_revoked: true, binding_revoked: true })
     } finally {
-      await blocker.query('rollback')
-      blocker.release()
       await sweepPool.end()
     }
   })
