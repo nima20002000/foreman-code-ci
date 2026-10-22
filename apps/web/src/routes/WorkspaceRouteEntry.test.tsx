@@ -227,7 +227,7 @@ describe('WorkspaceRouteEntry integration', () => {
     const rail = await screen.findByRole('complementary', { name: 'Workflow side panel' })
     expect(rail).toBeVisible()
     expect(within(rail).getByRole('textbox', { name: 'Name' })).toHaveValue(agent.name)
-    expect(await within(rail).findByText('Computer choices are unavailable.')).toBeVisible()
+    expect(await within(rail).findByText('Computers can’t be checked right now. Try again shortly.')).toBeVisible()
   }, 15_000)
 
   it('opens the accepted new workflow while workspace details still serve the old list', async () => {

@@ -199,7 +199,7 @@ it('keeps unrelated Agent edits when placement choices are denied for a saved pl
   await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'Renamed')
   expect(useGraphDraftStore.getState().nextDrafts[key]?.agentForms?.['node-0']?.name).toBe('Renamed')
   await act(async () => { deny() })
-  await screen.findByText('Computer choices are unavailable.')
+  await screen.findByText('Computers can’t be checked right now. Try again shortly.')
   expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Renamed')
   await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), '!')
   const form = useGraphDraftStore.getState().nextDrafts[key]?.agentForms?.['node-0']
@@ -223,7 +223,7 @@ it.each([403, 404, 503])('retains and clears a saved placement after choices dis
   const query = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const view = render(<QueryClientProvider client={query}><Board /></QueryClientProvider>)
   try {
-    await screen.findByText('Computer choices are unavailable.')
+    await screen.findByText('Computers can’t be checked right now. Try again shortly.')
     const computer = screen.getByRole('combobox', { name: 'Computer' })
     expect(computer).toHaveValue('retained')
     expect(screen.getByText(placement.projectRoot)).toBeInTheDocument()
