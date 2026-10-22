@@ -14,13 +14,13 @@ export function conversationReplySource(receipts: PostgresChatDeliveryRepository
     if (command?.request.target.kind !== 'agent_conversation') return runReplies.read(tx, fact)
     const id = command.request.target.conversationId
     const rows = (await tx.query<{ content: string; record: { requestId?: string; nativeMessageComplete?: boolean;
-      nativeParentMessageId?: string; truncation?: unknown; activityChannel?: string };
+      nativeParentMessageId?: string; truncation?: { truncated?: boolean }; activityChannel?: string };
       text_provenance: { sessionId: string; turnId?: string; final: boolean; channel: string } | null }>(`
       select content,record,text_provenance from operator_conversation_messages
       where conversation_id=$1 and role='assistant' and record->>'requestId'=$2
         and (native_message_id=$3 or record->>'nativeParentMessageId'=$3) order by sequence`,
     [id, fact.commandId, fact.nativeMessageId])).rows
-    if (!rows.length || rows.some(row => row.record.nativeMessageComplete === false || row.record.truncation
+    if (!rows.length || rows.some(row => row.record.nativeMessageComplete === false || row.record.truncation?.truncated
       || row.record.activityChannel && row.record.activityChannel !== 'assistant'
       || row.text_provenance && (!row.text_provenance.final || row.text_provenance.channel !== 'assistant'
         || row.text_provenance.sessionId !== fact.nativeSessionId || row.text_provenance.turnId !== fact.nativeTurnId))) return undefined

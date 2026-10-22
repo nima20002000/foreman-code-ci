@@ -1,5 +1,6 @@
 import { InfoHint } from '../../../shared/ui/InfoHint'
 import { useFloatingSurface } from '../../../shared/ui/nocturne/useFloatingSurface'
+import { useDismissableSurface } from '../../../shared/ui/useDismissableSurface'
 import { useEffect, useId, useRef, useState } from 'react'
 import { compactionBlocksSend, type SessionPreferences } from '@foreman-code/contracts'
 import { Button, TextField, Select } from '../../../shared/ui/nocturne'
@@ -22,20 +23,11 @@ export function SessionContext({ controls }: { controls: ComposerSessionControls
   const surface = useRef<HTMLDivElement>(null)
   useFloatingSurface(open, anchor, surface, 320, 'end')
   useEffect(() => { setOpen(false) }, [budgetOwner])
-  useEffect(() => {
-    if (!open) return
-    const outside = (event: PointerEvent) => {
-      if (event.target instanceof Node && !surface.current?.contains(event.target) && !anchor.current?.contains(event.target)) {
-        setOpen(false)
-      }
-    }
-    document.addEventListener('pointerdown', outside)
-    return () => document.removeEventListener('pointerdown', outside)
-  }, [open])
   const close = () => {
     setOpen(false)
     anchor.current?.focus()
   }
+  useDismissableSurface({ open, onDismiss: (reason) => reason === 'escape' ? close() : setOpen(false), surfaceRef: surface, triggerRef: anchor })
   if (!state) return null
   const context = state.context
   // Before the first turn nothing is used yet; the window is whatever the model advertises.
@@ -52,7 +44,10 @@ export function SessionContext({ controls }: { controls: ComposerSessionControls
   // A window or usage that is not known yet shows nothing rather than an "unknown" meter.
   if (percentage === null) return null
   const meterLabel = `${percentagePrefix}${percentage}% context${context?.stale ? ' · stale' : ''}`
-  return <div className="session-context">
+  // Escape stays with the popover so the chat window around it keeps open.
+  return <div className="session-context" onKeyDown={event => {
+    if (event.key === 'Escape' && open) { event.preventDefault(); event.stopPropagation(); close() }
+  }}>
       <Button ref={anchor} size="sm" variant="ghost" className="session-context-meter" aria-label={meterLabel} title={meterLabel}
         aria-expanded={open} aria-controls={`${id}-context`} data-stale={context?.stale ? 'true' : undefined}
         onClick={() => setOpen(value => !value)}>
@@ -64,9 +59,7 @@ export function SessionContext({ controls }: { controls: ComposerSessionControls
         <span aria-hidden="true">{context ? `${percentage}%`
           : `${capacity!.toLocaleString()} of ${capacity!.toLocaleString()} left`}</span>
       </Button>
-      {open ? <div ref={surface} popover="manual" id={`${id}-context`} className="session-context-popover" onKeyDown={event => {
-        if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() }
-      }}>
+      {open ? <div ref={surface} popover="manual" id={`${id}-context`} className="session-context-popover">
         <h3 className="session-context-title">Context</h3>
         <div className="session-context-bar" aria-hidden="true"><span style={{ width: `${Math.min(100, percentage)}%` }} /></div>
         <div className="session-context-facts">
@@ -123,7 +116,7 @@ export function SessionContext({ controls }: { controls: ComposerSessionControls
           <Button size="sm" disabled={pending || !!compactReason} title={compactReason ?? undefined}
             onClick={() => { void controls.change({ kind: 'compact' }).catch(ignoreRejection) }}>Compact context</Button>
           <Button size="sm" variant="ghost" onClick={() => { void controls.query.refetch() }}>Refresh status</Button>
-          <Button size="sm" variant="ghost" onClick={close}>Close context details</Button>
+          <Button size="sm" variant="ghost" aria-label="Close context details" onClick={close}>Close</Button>
         </div>
       </div> : null}
     </div>

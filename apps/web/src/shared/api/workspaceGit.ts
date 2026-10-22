@@ -50,7 +50,7 @@ export async function addWorkspaceRepository(raw: WorkspaceRepositoryAddInput, o
 export function repositoryReadOptions(workspaceId: string, commandId?: string) {
   const generation = sessionGeneration()
   return {
-    queryKey: workspaceGitKeys.read(workspaceId, commandId), retry: false as const,
+    queryKey: workspaceGitKeys.read(workspaceId, commandId),
     queryFn: async ({ signal }: { signal: AbortSignal }) => {
       const result = await readWorkspaceRepository({ workspaceId, ...(commandId ? { commandId } : {}) }, { signal })
       assertSession(generation)

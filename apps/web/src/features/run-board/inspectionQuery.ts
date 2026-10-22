@@ -27,7 +27,7 @@ export function useRunNodeRead<T>(selection: SelectedRunState, key: readonly unk
     queryFn: ({ signal }) => readForRunVisit(selection, signal, () => read(signal)),
     enabled: selection.active && !selection.invalid && selection.isCurrent(selection.generation)
       && !sessionIsSwitching(),
-    retry: false, staleTime: 0, gcTime: 0, placeholderData: () => undefined,
+    staleTime: 0, gcTime: 0, placeholderData: () => undefined,
     refetchInterval: query => isRunAccessError(query.state.error) ? false : 3000,
   })
 }

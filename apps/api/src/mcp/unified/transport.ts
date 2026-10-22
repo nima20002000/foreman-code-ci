@@ -31,6 +31,8 @@ import { unavailableRunHistoryToolCall } from '../operator/tools/runHistory.js'
 import type { OperatorServices } from '../operator/types.js'
 import type { McpRole } from './roles.js'
 import { createGraphqlMcpServer, roleDeniedToolCall, type McpRequestRegistration } from './server.js'
+import { operatorToolCatalog } from '../operator/server.js'
+import { dispatchToolRun } from '../operator/discovery.js'
 import { McpRequestCancellation } from '../shared/cancellation.js'
 import { withDatabaseReadRetry } from '../../infrastructure/databaseReadRetry.js'
 
@@ -93,6 +95,16 @@ export function registerGraphqlMcp(app: FastifyInstance, services: GraphqlMcpSer
     if (cancelled.success) {
       cancellations.cancel(principal.id, cancelled.data.params.requestId)
       return reply.code(202).send()
+    }
+    if (principal.audience === 'operator' && services.operator) {
+      // tool_run/tool_run_read become the direct call of their target before every check below.
+      const catalog = operatorToolCatalog(services.operator)
+      const dispatched = dispatchToolRun(request.body, name => {
+        const tool = catalog.find(candidate => candidate.name === name)
+        return tool ? tool.annotations : null
+      })
+      if ('failure' in dispatched) return reply.send(dispatched.failure)
+      request.body = dispatched.body
     }
     const call = CancellableRequestSchema.safeParse(request.body)
     const operation = call.success ? cancellations.track(principal.id, call.data.id) : undefined

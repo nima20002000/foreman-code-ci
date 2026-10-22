@@ -1,4 +1,3 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import { useEffect, useRef, useState } from 'react'
 import type { ProviderAccount, ProviderAccountAuthenticationOperation } from '@foreman-code/contracts/provider-accounts'
 import { CommandAttempt } from '../../shared/api/commandAttempt'
@@ -112,66 +111,66 @@ export function ProviderAccountAuthentication({ account, revision, open, canMana
   const records = discovery.data ? [discovery.data.currentOperation, ...discovery.data.operations]
     .filter((item): item is ProviderAccountAuthenticationOperation => item !== null)
     .filter((item, index, all) => all.findIndex(other => other.id === item.id) === index) : []
-  return <Dialog open={open} title={`Authentication for ${account.name}`} busy={busy}
-    headerLeading={<InfoHint label="Authentication progress">Authentication continues on the owning computer when you hide this progress.</InfoHint>}
-    onOpenChange={next => { if (!next && !busy && !uncertain) onClose() }}
-    footer={<Button disabled={busy || uncertain} onClick={onClose}>Hide progress</Button>}>
+  const failure = denied || query.isError || write.isError && (uncertain || !selectedId)
+    || discovery.isError || access.eligibility.isError
+  return <Dialog open={open} title={`Sign-in · ${account.name}`} busy={busy} size="sm"
+    description="Sign-in keeps going on its computer if you close this."
+    onOpenChange={next => { if (!next && !busy && !uncertain) onClose() }}>
     <div className="provider-account-form">
-      {records.length ? <Select label="Authentication operation" value={selectedId ?? ''} disabled={busy || uncertain}
-        options={[...(!selectedId ? [{ value: '', label: 'New authentication action' }] : []),
-          ...records.map(item => ({ value: item.id, label: `${stateLabels[item.state]} · ${item.createdAt}` })),
+      {records.length > 1 || (records.length && !selectedId) ? <Select label="Attempt" value={selectedId ?? ''} disabled={busy || uncertain}
+        options={[...(!selectedId ? [{ value: '', label: 'New attempt' }] : []),
+          ...records.map(item => ({ value: item.id, label: `${stateLabels[item.state]} · ${new Date(item.createdAt).toLocaleString()}` })),
           ...(selectedId && !records.some(item => item.id === selectedId)
-            ? [{ value: selectedId, label: 'Saved operation' }] : [])]}
+            ? [{ value: selectedId, label: 'Earlier attempt' }] : [])]}
         onChange={event => {
           if (!event.target.value) return
           setChoosingAction(false)
           onOperation(event.target.value)
         }} /> : null}
       {selectedId ? <>
-        {query.isPending ? <p role="status">Reading authentication progress…</p> : null}
+        {query.isPending ? <p role="status" className="provider-account-note">Loading…</p> : null}
         {operation ? <>
-          <p role="status">{stateLabels[operation.state]}</p>
-          <p>Last checked <time dateTime={operation.updatedAt}>{new Date(operation.updatedAt).toLocaleString()}</time></p>
-          {operation.cancelRequested && !operation.nativeClosed ? <Alert tone="warning"
-            title="Cancel requested. The provider has not confirmed closure." /> : null}
-          {operation.nativeClosed ? <p>The provider operation is closed.</p> : null}
+          <dl className="provider-account-facts">
+            <div><dt>Status</dt><dd role="status">{stateLabels[operation.state]}</dd></div>
+            <div><dt>Checked</dt><dd><time dateTime={operation.updatedAt}>{new Date(operation.updatedAt).toLocaleString()}</time></dd></div>
+          </dl>
+          {operation.cancelRequested && !operation.nativeClosed ? <Alert tone="warning" title="Cancel requested. Waiting for the provider to confirm." /> : null}
           {waitingForHuman ?
             <p>{operation.binding.target.hostRef.kind === 'device'
-              ? 'Complete sign-in in the owning Worker’s browser. Open this account’s progress on that computer.'
-              : 'Complete sign-in through the installed provider on this computer.'}</p> : null}
+              ? 'Finish sign-in in the browser on that computer.'
+              : 'Finish sign-in in the provider app on this computer.'}</p> : null}
           {open && canHandoff && operation.binding.target.hostRef.kind === 'main' ?
             <ProviderAccountHumanHandoff key={`${epoch}:${operation.id}:${operation.revision}`} operation={operation} /> : null}
-          {operation.state === 'outcome-unknown' ? <p>Recheck this operation to find its result.</p> : null}
+          {operation.state === 'outcome-unknown' ? <p>Check again to see how it ended.</p> : null}
           {['expired', 'failed'].includes(operation.state) && !operation.nativeClosed ?
-            <p>The provider may still be running. Recheck or cancel this operation before starting another.</p> : null}
-          {operation.state === 'completed' ? <p>Refresh the account to read its sign-in and readiness.</p> : null}
-          {!operation.nativeClosed ? <Button disabled={!manage || busy || prepareAttempt.unresolved}
-            onClick={() => void cancel()}>{cancelAttempt.unresolved ? 'Retry original cancel' : 'Cancel authentication'}</Button> : null}
-          {operation.nativeClosed ? <Button disabled={!canPrepare || busy || uncertain}
-            onClick={() => setChoosingAction(true)}>Choose another authentication action</Button> : null}
+            <p>The provider may still be running. Check again or cancel before starting another.</p> : null}
+          {operation.state === 'completed' ? <p>Refresh the account to see its new status.</p> : null}
         </> : null}
-        <Button disabled={query.isFetching || busy} onClick={() => void query.refetch()}>Recheck original operation</Button>
       </> : <>
-        {discovery.isPending ? <p role="status">Finding saved authentication operations…</p> : null}
-        <div className="provider-account-actions">
-          <Button disabled={!manage || busy || uncertain || !capability?.actions.includes('sign-in')}
+        {discovery.isPending ? <p role="status" className="provider-account-note">Loading…</p> : <div className="provider-account-intent" role="group" aria-label="Action">
+          <Button size="sm" variant={intent === 'sign-in' ? 'primary' : 'ghost'} disabled={!manage || busy || uncertain || !capability?.actions.includes('sign-in')}
             aria-pressed={intent === 'sign-in'} onClick={() => setIntent('sign-in')}>Sign in</Button>
-          <Button disabled={!manage || busy || uncertain || !capability?.actions.includes('sign-out')}
+          <Button size="sm" variant={intent === 'sign-out' ? 'primary' : 'ghost'} disabled={!manage || busy || uncertain || !capability?.actions.includes('sign-out')}
             aria-pressed={intent === 'sign-out'} onClick={() => setIntent('sign-out')}>Sign out</Button>
-        </div>
-        {!prepareAttempt.unresolved ? <Button variant="primary" disabled={!canPrepare || busy || cancelAttempt.unresolved}
-          onClick={() => void prepare()}>Prepare authentication</Button> : null}
-        {!canPrepare ? <p>{access.eligibility.data?.reason
-          ?? 'Authentication requires manage access and qualified native support for this account.'}</p> : null}
+        </div>}
+        {!canPrepare && discovery.isSuccess ? <p className="provider-account-note">{access.eligibility.data?.reason ?? 'Sign-in isn\u2019t available for this account here.'}</p> : null}
       </>}
-      {prepareAttempt.unresolved ? <Button disabled={!manage || busy || cancelAttempt.unresolved}
-        onClick={() => void prepare()}>Retry original authentication</Button> : null}
-      <Button disabled={discovery.isFetching || busy} onClick={() => void discovery.refetch()}>Find saved operations</Button>
-      {uncertain ? <Alert tone="warning" title="The request is unconfirmed. Retry or find the original operation before leaving." /> : null}
-      {denied || query.isError || write.isError && (uncertain || !selectedId)
-        || discovery.isError || access.eligibility.isError ? <Alert live tone="danger"
+      {uncertain ? <Alert tone="warning" title="Not confirmed yet. Retry, or refresh to find it." /> : null}
+      {failure ? <Alert live tone="danger"
         title={(denied ?? write.error ?? query.error ?? discovery.error ?? access.eligibility.error)?.message
-          ?? 'Authentication status is unavailable.'} /> : null}
+          ?? 'Sign-in status is unavailable.'} /> : null}
+      <div className="provider-account-dialog-actions">
+        <Button variant="ghost" disabled={discovery.isFetching || query.isFetching || busy}
+          onClick={() => { void discovery.refetch(); if (selectedId) void query.refetch() }}>Refresh</Button>
+        {selectedId && operation && !operation.nativeClosed ? <Button disabled={!manage || busy || prepareAttempt.unresolved}
+          onClick={() => void cancel()}>{cancelAttempt.unresolved ? 'Retry cancel' : 'Cancel sign-in'}</Button> : null}
+        {selectedId && operation?.nativeClosed ? <Button disabled={!canPrepare || busy || uncertain}
+          onClick={() => setChoosingAction(true)}>Start another</Button> : null}
+        {prepareAttempt.unresolved ? <Button variant="primary" disabled={!manage || busy || cancelAttempt.unresolved}
+          onClick={() => void prepare()}>Retry</Button>
+          : !selectedId ? <Button variant="primary" disabled={!canPrepare || busy || cancelAttempt.unresolved} loading={busy}
+            onClick={() => void prepare()}>Start</Button> : null}
+      </div>
     </div>
   </Dialog>
 }

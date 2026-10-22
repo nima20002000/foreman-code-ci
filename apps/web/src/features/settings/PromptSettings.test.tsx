@@ -82,11 +82,9 @@ describe('Prompt settings', () => {
     await user.click(screen.getByRole('button', { name: page.saveLabel }))
     expect(await screen.findByText('Prompt saved')).toBeVisible()
     expect(screen.queryByText(/The (system|initial) prompt is saved/)).not.toBeInTheDocument()
-    await user.hover(screen.getByRole('button', { name: `About ${page.label}` }))
-    expect(screen.getByRole('tooltip')).toHaveTextContent(page.page === 'system-prompt'
-      ? 'Newly started Agent sessions will use this revision.' : 'New Operator conversations will use this revision.')
-    await user.unhover(screen.getByRole('button', { name: `About ${page.label}` }))
-    expect(screen.getByText('Saved revision: 4')).toBeVisible()
+    expect(screen.getByText(page.page === 'system-prompt'
+      ? 'Newly started agent sessions use this prompt.' : 'New Operator conversations start with this prompt.')).toBeVisible()
+    expect(screen.queryByText(/Saved revision/)).not.toBeInTheDocument()
     expect(writes).toHaveLength(1)
     expect(writes[0]).toMatchObject({ expectedRevision: 3,
       value: { text: 'Instructions for new sessions\nPreserve this line.' } })
@@ -98,7 +96,6 @@ describe('Prompt settings', () => {
     mount(page.page)
     expect(await screen.findByRole('textbox', { name: page.label }))
       .toHaveValue('Instructions for new sessions\nPreserve this line.')
-    expect(screen.getByText('Saved revision: 4')).toBeVisible()
   })
 
   it.each(pages)('clears $page and reads the empty saved prompt after reopening', async (page) => {
@@ -126,7 +123,6 @@ describe('Prompt settings', () => {
     clearRevisionedFormPersistence()
     mount(page.page)
     expect(await screen.findByRole('textbox', { name: page.label })).toHaveValue('')
-    expect(screen.getByText('Saved revision: 4')).toBeVisible()
     expect(screen.getByRole('button', { name: page.saveLabel })).toBeDisabled()
   })
 
@@ -154,8 +150,8 @@ describe('Prompt settings', () => {
     expect(save).toBeDisabled()
     expect(save).toHaveTextContent('Saving…')
     expect(editor).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Discard changes' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Refresh saved prompt' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Discard' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Refresh saved prompt' })).not.toBeInTheDocument()
     await user.click(save)
     expect(writes).toBe(1)
 
@@ -163,7 +159,6 @@ describe('Prompt settings', () => {
     expect(await screen.findByText('Prompt saved')).toBeVisible()
     expect(editor).toBeEnabled()
     expect(editor).toHaveValue('Original instructions\nAdded instructions')
-    expect(screen.getByText('Saved revision: 4')).toBeVisible()
   })
 
   it.each(pages)('preserves $page edits after a definitive rejection and allows a corrected save', async (page) => {
@@ -252,7 +247,6 @@ describe('Prompt settings', () => {
     expect(await screen.findByText('Prompt saved')).toBeVisible()
     expect(writes[1]).toMatchObject({ expectedRevision: 4, value: { text: 'My instructions' } })
     expect(writes[1]?.commandId).not.toBe(writes[0]?.commandId)
-    expect(screen.getByText('Saved revision: 5')).toBeVisible()
   })
 
   it('locks uncertain edits and retries the original Operator prompt save without changing its command', async () => {
@@ -279,7 +273,7 @@ describe('Prompt settings', () => {
     await user.click(screen.getByRole('button', { name: 'Save initial prompt' }))
     expect(await screen.findByText('Save not confirmed')).toBeVisible()
     expect(editor).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Discard changes' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Discard' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Save initial prompt' }))
     expect(await screen.findByText('Prompt saved')).toBeVisible()
     expect(writes).toHaveLength(2)

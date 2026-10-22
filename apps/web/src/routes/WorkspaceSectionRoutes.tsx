@@ -1,4 +1,3 @@
-import { PRODUCT_NAME } from '@foreman-code/contracts/product'
 import { useCallback, useEffect, type ReactNode } from 'react'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 
@@ -91,7 +90,6 @@ export function ComingSoonRouteEntry({ section, label }: { section: WorkspaceSec
       slots={{
         main: (
           <div className="coming-soon-page" data-testid="coming-soon">
-            <p className="n-eyebrow">{PRODUCT_NAME}</p>
             <EmptyState
               icon="clock"
               title={label}
@@ -118,7 +116,6 @@ export function GlobalComingSoonRouteEntry({
       slots={{
         main: (
           <div className="coming-soon-page" data-testid="coming-soon">
-            <p className="n-eyebrow">{PRODUCT_NAME}</p>
             <EmptyState
               icon="clock"
               title={label}
@@ -168,31 +165,20 @@ export function WorkspaceMemoryRouteEntry() {
   }} />
 }
 
-function SettingsCardBody({ icon, title }: {
+function SettingsCardBody({ icon, title, description }: {
   icon: IconName
   title: string
+  description?: string
 }) {
   return (
     <>
       <span className="settings-card-icon"><Icon name={icon} size={16} /></span>
       <span className="settings-card-copy">
         <strong>{title}</strong>
+        {description ? <small>{description}</small> : null}
       </span>
       <Icon className="settings-card-chevron" name="chevron" size={16} />
     </>
-  )
-}
-
-function SettingsDetailPage({ eyebrow = PRODUCT_NAME, title, children }: {
-  eyebrow?: string
-  title: string
-  children: ReactNode
-}) {
-  return (
-    <div className="settings-page workspace-detail">
-      <PageHeader eyebrow={eyebrow} title={title} />
-      {children}
-    </div>
   )
 }
 
@@ -206,30 +192,27 @@ export function GlobalSettingsRouteEntry() {
       slots={{
         main: (
           <div className="settings-page settings-hub">
-            <PageHeader
-              eyebrow={PRODUCT_NAME}
-              title="Settings"
-            />
+            <PageHeader title="Settings" />
             <h2 className="settings-group-heading" id="settings-preferences-heading">Preferences</h2>
             <ul className="settings-card-list" aria-labelledby="settings-preferences-heading">
               <li>
                 <Card className="settings-card">
                   <Link to="/settings/general" className="settings-card-open">
-                    <SettingsCardBody icon="settings" title="General" />
+                    <SettingsCardBody icon="settings" title="General" description="Theme, chat files and file sync" />
                   </Link>
                 </Card>
               </li>
               <li>
                 <Card className="settings-card">
                   <Link to="/settings/bugs" className="settings-card-open">
-                    <SettingsCardBody icon="warning" title="Bugs" />
+                    <SettingsCardBody icon="warning" title="Bugs" description="Reported problems and their fixes" />
                   </Link>
                 </Card>
               </li>
               <li>
                 <Card className="settings-card">
                   <Link to="/settings/system-prompt" className="settings-card-open">
-                    <SettingsCardBody icon="bot" title="System prompt" />
+                    <SettingsCardBody icon="bot" title="System prompt" description="What every Agent is told first" />
                   </Link>
                 </Card>
               </li>
@@ -239,45 +222,50 @@ export function GlobalSettingsRouteEntry() {
               <li>
                 <Card className="settings-card">
                   <Link to="/settings/workspaces" className="settings-card-open">
-                    <SettingsCardBody icon="folder" title="Workspaces" />
+                    <SettingsCardBody icon="folder" title="Workspaces" description="Where new workspaces are created" />
                   </Link>
                 </Card>
               </li>
               <li>
                 <Card className="settings-card">
                   <Link to="/settings/harnesses" className="settings-card-open">
-                    <SettingsCardBody icon="settings" title="Harnesses" />
+                    <SettingsCardBody icon="settings" title="Harnesses" description="Codex and Claude, accounts, Operator default" />
                   </Link>
                 </Card>
               </li>
               <li>
                 <Card className="settings-card">
                   <Link to="/settings/agents" className="settings-card-open">
-                    <SettingsCardBody icon="bot" title="Agents" />
+                    <SettingsCardBody icon="bot" title="Agents" description="Defaults for new Agents and the Operator" />
                   </Link>
                 </Card>
               </li>
               <li>
                 <Card className="settings-card">
                   <Link to="/settings/workflows" className="settings-card-open">
-                    <SettingsCardBody icon="workflow" title="Workflows" />
+                    <SettingsCardBody icon="workflow" title="Workflows" description="Defaults for new workflows" />
+                  </Link>
+                </Card>
+              </li>
+              <li>
+                <Card className="settings-card">
+                  <Link to="/settings/skills" className="settings-card-open">
+                    <SettingsCardBody icon="code" title="Skills" description="Reusable instructions for Agents" />
                   </Link>
                 </Card>
               </li>
             </ul>
             <h2 className="settings-group-heading" id="settings-computers-heading">Computers</h2>
-            <Link to="/settings/browser-profiles" className="settings-card-open"><SettingsCardBody icon="settings" title="Browser profiles" /></Link>
-            <ComputerSummaryCards />
-            <h2 className="settings-group-heading" id="settings-library-heading">Library</h2>
-            <ul className="settings-card-list" aria-labelledby="settings-library-heading">
+            <ul className="settings-card-list" aria-label="Browser profiles">
               <li>
                 <Card className="settings-card">
-                  <Link to="/settings/skills" className="settings-card-open">
-                    <SettingsCardBody icon="code" title="Skills" />
+                  <Link to="/settings/browser-profiles" className="settings-card-open">
+                    <SettingsCardBody icon="settings" title="Browser profiles" description="Signed-in browsers Agents can use" />
                   </Link>
                 </Card>
               </li>
             </ul>
+            <ComputerSummaryCards />
           </div>
         ),
       }}
@@ -292,11 +280,9 @@ export function WorkflowSettingsRouteEntry() {
       activeGlobalSection="settings"
       slots={{
         main: (
-          <SettingsDetailPage
-            title="Workflows"
-          >
+          <div className="settings-page settings-experience">
             <WorkflowDefaultsSettings />
-          </SettingsDetailPage>
+          </div>
         ),
       }}
     />

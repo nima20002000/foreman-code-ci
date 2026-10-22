@@ -18,7 +18,7 @@ export function useCurrentRunQuery(scope?: RepeatGraphScopeV3, live = true, clie
       assertSession(generation)
       assertRepeatCurrentProgress(cache.getQueryData<RepeatGraphCurrentV3>(key), value)
       return value
-    }, retry: false, staleTime: 1000, refetchOnReconnect: 'always', refetchOnWindowFocus: live,
+    }, staleTime: 1000, refetchOnReconnect: 'always', refetchOnWindowFocus: live,
     // Reopening a workflow after a while shows Loading, not node states from the last visit.
     gcTime: 10_000,
     refetchInterval: (state) => {

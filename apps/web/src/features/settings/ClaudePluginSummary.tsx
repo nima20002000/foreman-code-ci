@@ -41,7 +41,7 @@ export function ClaudePluginSummary({ onClose, accessUnavailable = false }: {
         <Button size="sm" aria-pressed={view === 'available'} variant={view === 'available' ? 'primary' : 'ghost'}
           onClick={() => move({ pluginView: 'available', pluginOffset: 0 })}>Discover</Button>
       </div>
-      <Button size="sm" disabled={accessUnavailable || list.isFetching} onClick={() => {
+      <Button size="sm" disabled={accessUnavailable || (list.isFetching && !list.isRefetching)} onClick={() => {
         if (!accessUnavailable) void list.refresh()
       }}>Refresh</Button>
     </div>
@@ -67,10 +67,10 @@ export function ClaudePluginSummary({ onClose, accessUnavailable = false }: {
         </button>
       </li>)}</ul> : <p className="harness-empty">{query ? 'No plugins match this search.' : 'No plugins found.'}</p>}
       {catalog.total > 24 ? <div className="codex-plugins-pages">
-        <Button size="sm" disabled={offset === 0 || list.isFetching}
+        <Button size="sm" disabled={offset === 0 || (list.isFetching && !list.isRefetching)}
           onClick={() => move({ pluginOffset: Math.max(0, offset - 24) })}>Previous</Button>
         <span>{offset + 1}–{Math.min(offset + 24, catalog.total)} of {catalog.total}</span>
-        <Button size="sm" disabled={catalog.nextOffset === null || list.isFetching}
+        <Button size="sm" disabled={catalog.nextOffset === null || (list.isFetching && !list.isRefetching)}
           onClick={() => move({ pluginOffset: catalog.nextOffset ?? offset })}>Next</Button>
       </div> : null}
     </> : null}

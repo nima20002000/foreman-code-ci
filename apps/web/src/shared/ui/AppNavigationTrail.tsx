@@ -15,7 +15,7 @@ const sectionNames: Record<string, string> = {
   tasks: 'Tasks', runs: 'Runs', terminal: 'Terminal', approvals: 'Approvals', location: 'Location',
   harnesses: 'Harnesses', computers: 'Computers', skills: 'Skills', workspaces: 'Workspaces', general: 'General',
   bugs: 'Bugs',
-  'system-prompt': 'System prompt',
+  'system-prompt': 'System prompt', 'browser-profiles': 'Browser profiles',
 }
 
 function BreadcrumbLink({ crumb }: { crumb: Crumb }) {

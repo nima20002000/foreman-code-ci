@@ -39,7 +39,7 @@ export function HarnessMcpPolicies({ editor, onChange }: { editor: HarnessEditor
     onChange({ ...editor, configuration: { ...value, advanced: { ...value.advanced!, mcpServers: next } }, mcpText: JSON.stringify(next, null, 2) })
   }
   return <section className="harness-mcp-policies" aria-label="Pinned MCP policy requirements"><div className="harness-section-heading"><h4>Pinned tool requirements <InfoHint label="MCP server policies">Session admission checks these against native configuration; this does not rewrite connection settings.</InfoHint></h4>
-    <Button size="sm" onClick={() => void servers.refetch()} disabled={servers.isFetching}>Refresh servers</Button></div>
+    <Button size="sm" onClick={() => void servers.refetch()} disabled={servers.isFetching && !servers.isRefetching}>Refresh servers</Button></div>
     {servers.isPending ? <p role="status">Discovering configured servers…</p> : null}
     {servers.isError ? <p className="harness-muted">{servers.error.message}</p> : null}
     {!names.length && !servers.isPending ? <p className="harness-muted">No server overrides. <InfoHint label="Server overrides">Native configuration is inherited.</InfoHint></p> : null}

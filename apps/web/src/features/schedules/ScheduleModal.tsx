@@ -1,8 +1,7 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import { useEffect, useId, useRef, type RefObject } from 'react'
 import { useStore } from 'zustand'
 import type { ScheduleGetInput } from '@foreman-code/contracts/schedules'
-import { Button, Dialog, Select, Switch, TextField } from '../../shared/ui/nocturne'
+import { Button, Dialog, LoadingState, Select, Switch, TextField } from '../../shared/ui/nocturne'
 import { useUnsavedChanges } from '../../shared/ui/unsavedChanges'
 import {
   buildScheduleCommand, draftIdentity, weeklyCalendarChanged,
@@ -103,7 +102,7 @@ export function ScheduleModal({ scope, store, returnFocusRef }: {
     : write.error && write.command?.input.expectedRevision === state.expectedRevision ? 'Not saved.' : null
 
   return <Dialog open={state.open} onOpenChange={(open) => { if (!open) close() }} title="Schedule" size="sm"
-    headerLeading={<InfoHint label="Schedule">Runs latest saved workflow</InfoHint>}
+    description="Runs the latest saved version of this workflow." 
     className="schedule-dialog" closeLabel="Close schedule" busy={write.pending} dismissible={!write.unconfirmed}
     closeOnOutsideClick returnFocusRef={returnFocusRef}
     footer={<>
@@ -112,9 +111,9 @@ export function ScheduleModal({ scope, store, returnFocusRef }: {
         disabled={!write.unconfirmed && (!draft || conflict)}>{write.unconfirmed ? 'Retry' : 'Save'}</Button>
     </>}>
     <form id={`${id}-form`} ref={form} className="schedule-form" noValidate onSubmit={(event) => { event.preventDefault(); void save() }}>
-      {state.open && !draft && query.isFetching && <p role="status" className="schedule-note">Loading…</p>}
-      {state.open && !draft && query.isError && <div className="schedule-feedback"><p role="alert">Could not load.</p>
-        <Button size="sm" onClick={() => { void query.refetch() }}>Retry load</Button></div>}
+      {state.open && !draft && query.isPending && <LoadingState label="Loading schedule…" rows={3} />}
+      {state.open && !draft && query.isError && <div className="schedule-feedback"><p role="alert">Couldn’t load the schedule.</p>
+        <Button size="sm" onClick={() => { void query.refetch() }}>Try again</Button></div>}
       {draft && <fieldset className="schedule-fields" disabled={locked}>
         <legend className="schedule-sr-only">Schedule settings</legend>
         <div role="tablist" aria-label="Schedule mode" className="schedule-tabs">
@@ -166,10 +165,11 @@ export function ScheduleModal({ scope, store, returnFocusRef }: {
         {state.errors.timezone && <p role="alert" className="n-field-error">{state.errors.timezone}</p>}
         <Switch label="Enabled" checked={draft.enabled} onChange={(event) => state.edit({ enabled: event.currentTarget.checked })} />
       </fieldset>}
-      <p className="schedule-next" role="status">Next {query.isError ? 'unavailable' : nextAt
-        ? <time dateTime={nextAt} title={nextLabel ?? undefined}>{nextLabel}</time>
-        : query.isFetching && !query.data ? '…' : '—'}</p>
-      <ScheduleLastAttempt scope={scope} open={state.open} />
+      {draft ? <>
+        <p className="schedule-next" role="status">Next run {query.isError ? 'unavailable' : nextAt
+          ? <time dateTime={nextAt} title={nextLabel ?? undefined}>{nextLabel}</time> : 'not scheduled'}</p>
+        <ScheduleLastAttempt scope={scope} open={state.open} />
+      </> : null}
       {(failure || state.errors.form) && <div className="schedule-feedback"><p role="alert">{state.errors.form ?? failure}</p>
         {conflict && <Button size="sm" onClick={reload}>Reload</Button>}</div>}
     </form>

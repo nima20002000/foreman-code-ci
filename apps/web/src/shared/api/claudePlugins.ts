@@ -17,7 +17,7 @@ export function useClaudePlugins(input: ClaudePluginListInput, enabled = true) {
   const client = useQueryClient()
   const queryKey = ['harness-settings', sessionGeneration(), 'claude-plugins', input]
   const result = useQuery({
-    queryKey, enabled: enabled && !sessionIsSwitching(), retry: false, refetchOnWindowFocus: false,
+    queryKey, enabled: enabled && !sessionIsSwitching(), refetchOnWindowFocus: false,
     queryFn: ({ signal }) => readPlugins(input, signal),
   })
   const refresh = () => client.fetchQuery({

@@ -106,8 +106,8 @@ export function MasterOverview({ workspaceId, workflowId, runId, teamNodeId, vis
   const team = teamNodeId ? childrenOf(master.workflowNodeId).find(agent => agent.workflowNodeId === teamNodeId) : undefined
   return <section className="master-overview" aria-label="Master Overview">
     {refreshWarning}
-    <header><h2>{master.displayName} <small>Master</small></h2>
-      <p>{runId ? `Selected Run · ${runId}` : 'Current saved workflow · No run selected'}</p>
+    <header><h2>{master.displayName}{master.displayName === 'Master' ? null : <> <small>Master</small></>}</h2>
+      <p>{runId ? 'Selected run' : 'Current saved workflow · No run selected'}</p>
       <Button onClick={() => saved.run?.coordination?.direction
         ? actions.onChat(master.workflowNodeId, saved.run.coordination.direction.execution)
         : actions.onChat(master.workflowNodeId)}>Ask master</Button>

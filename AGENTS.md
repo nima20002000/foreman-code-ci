@@ -32,15 +32,22 @@ satisfy a review finding or a test. See
 [`docs/adr/prototype-permission-model.md`](docs/adr/prototype-permission-model.md)
 for the removed list and the real boundaries that stay.
 
-## Operator MCP parity
+## Operator MCP tools (keep them few and small)
 
-Every critical product capability added or changed in the app must ship with equivalent Operator MCP support in the same change. This includes workspace and workflow creation, edits, execution locations, global defaults, workspace settings, and workflow settings.
+Every tool's definition is sent to the model on every turn. The old "every capability ships an MCP tool" rule grew the
+Operator MCP to 309 tools (~213k tokens), which overflowed Claude's context and made the Operator unusable. Do not
+add an MCP tool just because the UI gained a feature.
 
-- Keep the UI and MCP on shared contracts and domain services. Update tool schemas, descriptions, capability discovery, and permission requirements when behavior changes.
-- The Operator must be able to perform the complete supported workflow through MCP, including reading defaults, creating configured objects, editing settings, and reading back persisted results. A listed tool that fails solely because the caller is MCP is not parity.
-- Preserve explicit grants, scope checks, validation, revision conflicts, idempotent retries, and audit records. MCP parity never grants a read-only agent write access or bypasses harness security.
-- Test the changed workflow through the authenticated MCP endpoint, including a denied caller and persisted readback. UI-only tests are not sufficient.
-- If a capability intentionally remains human-only, document the reason and expose that limit clearly rather than implying Operator support.
+- Add or change a tool only when the Operator needs it for real work the owner asks of it: creating and editing
+  workspaces, workflows and Agents, running and inspecting work, and the settings the Operator manages. UI-only
+  features (layout, views, display preferences, maintenance screens) get no tool.
+- Prefer extending an existing tool over adding a new one; merge or remove tools nobody uses.
+- Keep each tool small: a one- or two-sentence description and an input schema with only what a caller types. Never
+  inline internal records (receipts, recovery closures, full configurations) as inputs; take an ID instead.
+- Rarely used tools stay reachable through the discovery tools rather than the always-loaded core list. Watch the
+  core list's size when adding to it.
+- UI and MCP share contracts and domain services. A tool keeps grants, scope checks, validation, revision conflicts
+  and idempotent retries, and never gives a read-only Agent write access.
 
 ## State and data ownership
 

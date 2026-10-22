@@ -134,7 +134,6 @@ export function createAttachmentDrafts(queryClient: QueryClient, client: Attachm
     const mutation = queryClient.getMutationCache().build<FileWithRevision, Error, UploadVariables, unknown>(queryClient, {
       mutationKey: uploadKey,
       gcTime: Infinity,
-      retry: false,
       networkMode: 'always',
       mutationFn: async (variables) => {
         const result = await client.upload(variables.input)

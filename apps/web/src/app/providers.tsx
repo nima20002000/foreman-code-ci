@@ -1,11 +1,13 @@
 import type { PropsWithChildren } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { retryTransientRead, transientRetryDelay } from '../shared/api/queryRetry'
 import { ToastProvider } from '../shared/ui/nocturne'
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: false,
+      retry: retryTransientRead,
+      retryDelay: transientRetryDelay,
       staleTime: 30_000,
     },
   },

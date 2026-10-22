@@ -1,4 +1,3 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import { useRef, useState } from 'react'
 import {
   ProviderAccountApiKeyInputSchema, type AccountProvider, type ProviderAccount,
@@ -55,7 +54,7 @@ export function ProviderAccountEditor({ provider, account, revision, onClose, sc
     const commonInput = { name: name.trim(), expectedRevision: revision,
       ...(scope.target ? { target: scope.target } : {}) }
     if (!accountId && !nameAttempt.unresolved && (existingProfile ? !profile || !canRegister : !canCreate)) {
-      setValidation('Choose a currently qualified profile or a supported fresh account.')
+      setValidation('Choose a profile.')
       return
     }
     let draft: NameInput = { ...commonInput, provider, authMode }
@@ -105,7 +104,6 @@ export function ProviderAccountEditor({ provider, account, revision, onClose, sc
   }
   const configureTitle = accountId ? `Configure ${account?.name ?? 'saved account'}` : undefined
   return <Dialog open title={configureTitle ?? `Add ${provider === 'codex' ? 'Codex' : 'Claude'} account`}
-    headerLeading={accountId ? <InfoHint label="Account settings">Changes apply to this account on its owning computer.</InfoHint> : undefined}
     busy={write.isPending} onOpenChange={open => { if (!open) close() }} size="sm"
     footer={<>
       <Button disabled={write.isPending || uncertain} onClick={close}>Cancel</Button>
@@ -118,38 +116,37 @@ export function ProviderAccountEditor({ provider, account, revision, onClose, sc
     <div className="provider-account-form">
       <TextField label="Account name" value={name} maxLength={100} disabled={locked}
         onChange={event => { setName(event.target.value); setValidation(undefined) }} />
-      {!accountId ? <Select label="Account setup" labelHint={<InfoHint label="Account setup">Add a fresh isolated account on the selected computer. Adding it does not sign in or qualify its profile.</InfoHint>} value={setup} disabled={locked}
-        options={[{ value: 'fresh', label: 'Fresh isolated account', disabled: !canCreate },
-          { value: 'existing-profile', label: 'Existing qualified profile', disabled: !canRegister }]}
+      {!accountId ? <Select label="Account setup" value={setup} disabled={locked}
+        options={[{ value: 'fresh', label: 'New account', disabled: !canCreate },
+          { value: 'existing-profile', label: 'Existing sign-in on this computer', disabled: !canRegister }]}
         onChange={event => { setSetup(event.target.value); setValidation(undefined) }} /> : null}
       {!accountId && existingProfile ? <>
-        <Select label="Qualified profile" value={profileRef} disabled={locked || profiles.isPending}
-          options={[{ value: '', label: 'Choose a qualified profile', disabled: true },
+        <Select label="Profile" value={profileRef} disabled={locked || profiles.isPending}
+          options={[{ value: '', label: 'Choose a profile', disabled: true },
             ...choices.map(item => ({ value: item.profileRef, label: item.label })),
-            ...(profileRef && !profile ? [{ value: profileRef, label: 'Selected profile · unavailable', disabled: true }] : [])]}
+            ...(profileRef && !profile ? [{ value: profileRef, label: 'No longer available', disabled: true }] : [])]}
           onChange={event => { setProfileRef(event.target.value); setValidation(undefined) }} />
-        {profiles.isPending ? <p role="status">Loading qualified profiles…</p> : null}
-        {profiles.isError ? <Alert tone="danger" title={profiles.error.message}
-          action={<Button onClick={() => void profiles.refetch()}>Retry profiles</Button>} /> : null}
-        {profiles.isSuccess && !choices.length ? <p>No qualified subscription profiles are available on this computer.</p> : null}
+        {profiles.isPending ? <p role="status" className="provider-account-note">Loading profiles…</p> : null}
+        {profiles.isError ? <Alert tone="danger" title="Couldn't load profiles."
+          action={<Button size="sm" onClick={() => void profiles.refetch()}>Retry</Button>} /> : null}
+        {profiles.isSuccess && !choices.length ? <p className="provider-account-note">No profiles found on this computer.</p> : null}
       </> : <Select label="Authentication" value={authMode} disabled={Boolean(accountId) || locked}
         options={provider === 'codex' || scope.target?.hostRef.kind !== 'main' ? [{ value: 'subscription', label:
           provider === 'codex' ? 'ChatGPT subscription login' : 'Claude subscription login' },
-          ...(account?.authMode === 'api-key' ? [{ value: 'api-key', label: 'Saved API key · unavailable here', disabled: true }] : [])] : [
-          { value: 'subscription', label: 'Claude subscription login' }, { value: 'api-key', label: 'API key · separate billing' },
-        ]} labelHint={accountId ? <InfoHint label="Authentication">Authentication is chosen when the account is added.</InfoHint> : undefined}
-        onChange={event => setAuthMode(event.target.value as ProviderAccountAuthMode)} />}
+          ...(account?.authMode === 'api-key' ? [{ value: 'api-key', label: 'API key', disabled: true }] : [])] : [
+          { value: 'subscription', label: 'Claude subscription login' }, { value: 'api-key', label: 'API key (billed separately)' },
+        ]}         onChange={event => setAuthMode(event.target.value as ProviderAccountAuthMode)} />}
       {account && authMode === 'api-key' && scope.target?.hostRef.kind === 'main' ? <>
         <TextField ref={keyField} label="New API key" type="password" value={apiKey} autoComplete="off" spellCheck={false}
-          disabled={locked} maxLength={4096} labelHint={<InfoHint label="New API key">Write-only. The saved key is never shown or returned.</InfoHint>}
+          disabled={locked} maxLength={4096} hint="The saved key is never shown."
           onChange={event => { setApiKey(event.target.value); setValidation(undefined) }} />
         <Button disabled={!canManage || !access.canManage || write.isPending || nameAttempt.unresolved || !apiKey.trim()}
-          onClick={() => void saveKey()}>{keyAttempt.unresolved ? 'Retry original key save' : 'Save API key'}</Button>
+          onClick={() => void saveKey()}>{keyAttempt.unresolved ? 'Retry' : 'Save API key'}</Button>
       </> : null}
-      {missingAccount ? <p role="alert">The saved account is unavailable. Your input is kept; restore account access before saving.</p> : null}
-      {!accountId && !existingProfile && authMode === 'api-key' ? <p>Add the account, then configure its API key.</p> : null}
-      {account?.authMode === 'subscription' ? <p>Use Authentication progress on the account row to prepare or recheck provider sign-in.</p> : null}
-      {uncertain && !write.isPending ? <Alert tone="warning" title="The previous save is unconfirmed. Retry it before editing or leaving." /> : null}
+      {missingAccount ? <p role="alert" className="provider-account-note">This account is no longer available.</p> : null}
+      {!accountId && !existingProfile && authMode === 'api-key' ? <p className="provider-account-note">Add the account, then set its API key.</p> : null}
+      {account?.authMode === 'subscription' ? <p className="provider-account-note">Use Sign-in on the account to sign in or out.</p> : null}
+      {uncertain && !write.isPending ? <Alert tone="warning" title="Not confirmed yet. Retry before leaving." /> : null}
       {error ? <Alert live tone="danger" title={error} /> : null}
     </div>
   </Dialog>

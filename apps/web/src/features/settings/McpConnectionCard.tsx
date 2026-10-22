@@ -1,4 +1,5 @@
 import { useEffect, useId, type ReactNode } from 'react'
+import { useManualRefetch } from '../../shared/api/useManualRefetch'
 import { Link } from '@tanstack/react-router'
 import type { AgentHarness, ExecutionLocation, McpDetection } from '@foreman-code/contracts'
 import type { ApiError } from '../../shared/api/client'
@@ -44,6 +45,7 @@ function SupportedMcpConnectionCard({ workspaceId, harness, location }: {
   const mismatched = Boolean(query.data && (query.data.runnerId !== location.runnerId
     || query.data.workingDirectory !== location.rootPath || query.data.detection.harness !== harness))
   const { refetch } = query
+  const manual = useManualRefetch(() => refetch({ cancelRefetch: false }))
   // The existing query key is workspace/provider scoped. Never present cached evidence
   // from an old execution folder as a healthy connection to the new one.
   useEffect(() => {
@@ -61,9 +63,9 @@ function SupportedMcpConnectionCard({ workspaceId, harness, location }: {
       : mismatched ? query.isError ? 'Couldn’t check the new folder. Try again.'
         : query.isFetching ? 'Checking the updated workspace folder.' : 'This report doesn’t match the workspace. Check again.'
         : state?.hint ?? (!result && query.isError ? 'Couldn’t check this connection. Try again.' : undefined)
-  const check = <Button size="sm" className="mcp-check-button" loading={query.isFetching} loadingLabel="Checking…"
+  const check = <Button size="sm" className="mcp-check-button" loading={manual.pending} loadingLabel="Checking…"
     aria-label={`Check setup for ${name}`} leading={<Icon name="refresh" size={15} />}
-    onClick={() => void refetch({ cancelRefetch: false })}>Check setup</Button>
+    onClick={() => void manual.refetch()}>Check setup</Button>
 
   return <article className="mcp-connection-card" aria-labelledby={headingId}>
     <div className="mcp-provider-heading">

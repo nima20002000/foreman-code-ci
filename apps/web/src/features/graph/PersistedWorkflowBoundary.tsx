@@ -33,7 +33,7 @@ function AuthoringBoundary({ workspaceId, workflowId, updateFailures = [] }: { w
   const source = useQuery({ queryKey: boardDraftContextKey(workspaceId, workflowId),
     queryFn: ({ signal }) => nextDraftApi.context(workspaceId, workflowId, { signal }),
     enabled: authoringActive, staleTime: 3000, refetchInterval: authoringActive ? 3000 : false,
-    refetchOnWindowFocus: authoringActive, retry: false,
+    refetchOnWindowFocus: authoringActive,
   })
   const [updatesUnavailable, setUpdatesUnavailable] = useState(false)
   useEffect(() => {
@@ -53,7 +53,7 @@ function AuthoringBoundary({ workspaceId, workflowId, updateFailures = [] }: { w
       {changed ? <p role="status">The shared draft changed elsewhere. Your local edits and original revision are retained; reload explicitly before overwriting anything.</p> : null}
       <NextDraftEditor key={key} workspaceId={workspaceId} workflowId={workflowId} initialContext={source.data}
         updateFailures={[...updateFailures, ...(source.isError && updatesUnavailable ? [{ id: 'DRAFT_UPDATES_UNAVAILABLE',
-          message: 'Draft updates unavailable. Running requires a fresh saved read.', pending: source.isFetching, retry: () => void source.refetch() }] : [])]} />
+          message: 'Draft updates unavailable. Running requires a fresh saved read.', pending: source.isFetching && !source.isRefetching, retry: () => void source.refetch() }] : [])]} />
     </>
   }
   if (source.isPending) return <BoardLoading />

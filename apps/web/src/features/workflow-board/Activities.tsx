@@ -2,8 +2,8 @@ import { InfoHint } from '../../shared/ui/InfoHint'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { defaultStringifySearch, useLocation, useRouter } from '@tanstack/react-router'
-import type { RepeatGraphScopeV3, RunActivityPublic } from '@foreman-code/contracts/wave25'
-import { Alert, Button, Select } from '../../shared/ui/nocturne'
+import type { RepeatGraphScopeV3, RunActivityPublic, RunDirectionWait } from '@foreman-code/contracts/wave25'
+import { Alert, Button, Icon, IconButton, Select } from '../../shared/ui/nocturne'
 import { ApiError } from '../../shared/api/client'
 import type { SelectedRunState } from '../runs-selector/useSelectedRun'
 import { RunsSelectorSearchSchema } from '../runs-selector/search'
@@ -12,6 +12,8 @@ import { createChatVisit } from '../conversations/agentChat/selectedRunChatModel
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
 import { readRunActivities, readRunActivityFeed, mergeOlderRunActivities, isTransientRunActivityError,
   runActivitiesKey, runActivitiesRefetchInterval, type RunActivityFeed, type RunActivityScope } from './runActivitiesQuery'
+import { useManualRefetch } from '../../shared/api/useManualRefetch'
+import { useRunDirectionWait } from './actions/directionWait'
 import './activities.css'
 
 /** focusAgentId pins the feed to one Agent: its filter controls and per-row Agent names are dropped. */
@@ -55,6 +57,7 @@ function ActivityFeed({ scope, selection, address, focusAgentId }: { scope: RunA
   const visit = useMemo(() => createChatVisit(() => !isSelected || !ticket || isSelected(ticket)), [isSelected, ticket])
   useEffect(() => visit.mount(), [visit])
   const list = useRef<HTMLOListElement>(null)
+  const direction = useRunDirectionWait(scope)
   const lastSequence = useRef<string | undefined>(undefined)
   const refreshGeneration = useRef(0)
   const olderRequest = useRef<OlderActivityRequest | undefined>(undefined)
@@ -162,6 +165,7 @@ function ActivityFeed({ scope, selection, address, focusAgentId }: { scope: RunA
       if (visit.isCurrent()) await cache.refetchQueries({ queryKey: key, exact: true })
     }
   }
+  const manualRefresh = useManualRefetch(refresh)
   const loadOlder = () => {
     const cursor = feed.data?.olderCursor
     if (!visit.isCurrent() || !cursor || cache.getQueryState(key)?.fetchStatus === 'fetching'
@@ -197,9 +201,20 @@ function ActivityFeed({ scope, selection, address, focusAgentId }: { scope: RunA
   const visible = items?.filter((item) => (!kind || item.kind === kind)
     && (!agentId || item.actor && 'agentId' in item.actor && item.actor.agentId === agentId
       || item.subject && 'agentId' in item.subject && item.subject.agentId === agentId))
+  const waiting = direction && !kind && (!agentId || agentId === direction.agentId) ? direction : undefined
   return <section className="board-activities" aria-label="Activities" data-run-id={scope.runId}>
-    <header><h3>Activities<InfoHint label="Activities">Recorded actions for this Run, in server order. Pending approvals stay in the approval inbox. Latest 1,000 public events at most; earlier events may have expired.</InfoHint></h3><Button size="sm" variant="ghost" disabled={feed.isFetching && !older.isPending}
-      onClick={refresh} aria-label="Refresh Activities">{selection ? 'Refresh' : 'Refresh Activities'}</Button></header>
+    <header><h3>Activities<InfoHint label="Activities">Recorded actions for this Run, in server order. Pending approvals stay in the approval inbox. Latest 1,000 public events at most; earlier events may have expired.</InfoHint></h3>
+      {items && !focusAgentId ? <div className="board-activities-filters">
+        <Select label="Activity kind" value={kind} onChange={(event) => setFilter('activityKind', event.currentTarget.value)}
+          options={[{ value: '', label: 'All actions' }, ...[...new Set(items.map((item) => item.kind))].sort()
+            .map((value) => ({ value, label: value.replaceAll('_', ' ') })),
+          ...(kind && !items.some((item) => item.kind === kind) ? [{ value: kind, label: `${kind.replaceAll('_', ' ')} (outside loaded history)` }] : [])]} />
+        <Select label="Agent" value={agentId} onChange={(event) => setFilter('activityAgentId', event.currentTarget.value)}
+          options={[{ value: '', label: 'All agents' }, ...agents.map((agent) => ({ value: agent.agentId, label: agent.agentName })),
+            ...(agentId && !agents.some((agent) => agent.agentId === agentId) ? [{ value: agentId, label: 'Selected Agent (outside loaded history)' }] : [])]} />
+      </div> : null}
+      <IconButton size="sm" variant="ghost" label="Refresh Activities" disabled={manualRefresh.pending}
+        onClick={() => void manualRefresh.refetch()}><Icon name="refresh" size={14} /></IconButton></header>
     {denied ? <Alert tone="warning" title="Activities access was withdrawn." /> : error ?
       <Alert tone="warning" title={errorTitle}>
         {errorHint}
@@ -209,20 +224,12 @@ function ActivityFeed({ scope, selection, address, focusAgentId }: { scope: RunA
       </Alert> : null}
     {!error && !denied && !items ? <p role="status">{feed.isPaused ? 'Activities refresh is offline or paused.' : 'Loading Activities…'}</p> : null}
     {items ? <>
-      {!focusAgentId ? <div className="board-activities-filters">
-        <Select label="Activity kind" value={kind} onChange={(event) => setFilter('activityKind', event.currentTarget.value)}
-          options={[{ value: '', label: 'All actions' }, ...[...new Set(items.map((item) => item.kind))].sort()
-            .map((value) => ({ value, label: value.replaceAll('_', ' ') })),
-          ...(kind && !items.some((item) => item.kind === kind) ? [{ value: kind, label: `${kind.replaceAll('_', ' ')} (outside loaded history)` }] : [])]} />
-        <Select label="Agent" value={agentId} onChange={(event) => setFilter('activityAgentId', event.currentTarget.value)}
-          options={[{ value: '', label: 'All agents' }, ...agents.map((agent) => ({ value: agent.agentId, label: agent.agentName })),
-            ...(agentId && !agents.some((agent) => agent.agentId === agentId) ? [{ value: agentId, label: 'Selected Agent (outside loaded history)' }] : [])]} />
-      </div> : null}
       {newCount ? <Button size="sm" onClick={() => { list.current?.scrollTo({ top: list.current.scrollHeight }); setNewCount(0) }}>
         {newCount} new {newCount === 1 ? 'activity' : 'activities'}</Button> : null}
-      {!visible?.length ? <p>{selection ? 'No activities' : items.length ? 'No Activities match these filters.' : 'No public activities have been recorded for this Run.'}</p> :
-        <ol className="board-activities-list" ref={list}>{groupRepeats(visible).map(({ item, count }) =>
-          <ActivityRow key={item.id} item={item} count={count} showActor={!focusAgentId} />)}</ol>}
+      {!visible?.length && !waiting ? <p>{selection ? 'No activities' : items.length ? 'No Activities match these filters.' : 'No public activities have been recorded for this Run.'}</p> :
+        <ol className="board-activities-list" ref={list}>{groupRepeats(visible ?? []).map(({ item, count }) =>
+          <ActivityRow key={item.id} item={item} count={count} showActor={!focusAgentId} />)}
+          {waiting ? <DirectionWaitRow direction={waiting} showActor={!focusAgentId} /> : null}</ol>}
       {feed.data?.olderCursor ? <Button size="sm" disabled={feed.isFetching || older.isPending} onClick={() => void loadOlder()}>
         {older.isPending ? 'Loading…' : selection ? 'More' : 'Load older Activities'}</Button> : null}
     </> : null}
@@ -247,6 +254,18 @@ const clock = (value: string) => {
   return today ? date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' }) : date.toLocaleString()
 }
 
+/** Not a recorded event: the Run's live wait for the user, shown last until a direction is sent. */
+function DirectionWaitRow({ direction, showActor }: { direction: RunDirectionWait; showActor: boolean }) {
+  const detail = direction.findings[0] ?? direction.summary
+  return <li data-severity="warning" data-status="waiting"><span className="board-activity-dot" aria-hidden="true" />
+    <time dateTime={direction.since} title={new Date(direction.since).toLocaleString()}>{clock(direction.since)}</time>
+    <div>{showActor ? <strong>{direction.agentName}</strong> : null}
+      <div className="board-activity-line"><p>Waiting for your direction</p>
+        <span className="board-activity-status is-warning">waiting</span></div>
+      {detail ? <p className="board-activity-detail">{detail}</p> : null}
+    </div></li>
+}
+
 function ActivityRow({ item, count = 1, showActor = true }: { item: RunActivityPublic; count?: number; showActor?: boolean }) {
   const participant = item.actor ?? item.subject
   const label = participant ? 'agentId' in participant ? participant.agentName : `Job · ${participant.nodeName}` : 'Workflow'
@@ -254,7 +273,7 @@ function ActivityRow({ item, count = 1, showActor = true }: { item: RunActivityP
     <time dateTime={item.occurredAt} title={new Date(item.occurredAt).toLocaleString()}>{clock(item.occurredAt)}</time>
     <div>{showActor ? <strong>{label}</strong> : null}
       <div className="board-activity-line"><p>{item.summary}{count > 1 ? <span className="board-activity-count"> ×{count}</span> : null}</p>
-        <span className={`board-activity-status is-${item.severity}`}>{item.status.replaceAll('_', ' ')}</span></div>
+        {item.status !== 'unknown' ? <span className={`board-activity-status is-${item.severity}`}>{item.status.replaceAll('_', ' ')}</span> : null}</div>
       {item.detail ? <p className="board-activity-detail">{item.detail}</p> : null}
       {item.ci ? <p className="board-activity-detail">
         {item.ci.part ? `${item.ci.part} · ` : ''}

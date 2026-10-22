@@ -24,7 +24,7 @@ function SelectedWorkflowBrowser(props: Selection & { nodeId: string }) {
   const input = BrowserTargetSelectionSchema.parse({ workspaceId: props.workspaceId, workflowId: props.workflowId,
     workflowNodeId: props.nodeId, runId: props.runId, workflowVersionId: props.workflowVersionId,
     executionId: props.executionId, waitingActivationId: props.waitingActivationId, cursor })
-  const query = useQuery({ queryKey: ['browser-target', browserAuthBoundary(), input], retry: false,
+  const query = useQuery({ queryKey: ['browser-target', browserAuthBoundary(), input],
     queryFn: ({ signal }) => apiClient.request(`/api/browser/target?${new URLSearchParams({ input: JSON.stringify(input) })}`, BrowserTargetResultSchema, { signal }) })
   const catalog = useBrowserProfiles(browserProfileClient, browserAuthBoundary(), true), facts = useBrowserComputers()
   const update = (sessionId?: string, tabId?: string) => board?.selectSidePanel?.({ ...props, kind: 'browser', sessionId, tabId })

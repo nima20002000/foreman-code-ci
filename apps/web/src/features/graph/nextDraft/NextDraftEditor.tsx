@@ -42,7 +42,7 @@ function DraftLoader({ draftKey, workspaceId, workflowId, initialContext, update
   }, [])
   const source = useQuery({ queryKey: boardDraftContextKey(workspaceId, workflowId),
     queryFn: ({ signal }) => nextDraftApi.context(workspaceId, workflowId, { signal }),
-    initialData: initialContext, enabled: !edit && !storageError, retry: false,
+    initialData: initialContext, enabled: !edit && !storageError,
   })
   useEffect(() => {
     if (!ownershipReady || useGraphDraftStore.getState().nextDrafts[draftKey]) return

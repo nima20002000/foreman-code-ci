@@ -8,6 +8,7 @@ import { useCurrentRunQuery } from '../workflow-board/currentRunQuery'
 import { useRunChoreography } from '../workflow-board/inspect/runChoreography'
 import { runningIntervalChecks } from '../workflow-board/inspect/pinnedTopology'
 import { interactionWaits, isActiveCi, liveNodeView } from '../workflow-board/inspect/runLiveStatus'
+import { useRunDirectionWait, withDirectionWait } from '../workflow-board/actions/directionWait'
 import { ciNodePresentation } from './ciPresentation'
 
 export type RunLiveNodeView = { state: AgentNodeState; label: string; transition?: AgentNodeTransition; transitionKey?: number }
@@ -24,8 +25,9 @@ export function useRunLiveNodes(scope: RepeatGraphScopeV3, names: ReadonlyMap<st
   const live = Boolean(visible && record && record.state.run.executionState !== 'completed')
   // The same pending-request read as the approval inbox; this Run's requests name why its Agents wait.
   const pending = useInteractionsQuery({ workspaceId: scope.workspaceId, workflowId: scope.workflowId, status: 'pending', limit: 100 }, live)
-  const waits = useMemo(() => interactionWaits(record, pending.isError ? [] : pending.data?.items ?? [], names),
-    [record, pending.data, pending.isError, names])
+  const direction = useRunDirectionWait(live ? scope : undefined)
+  const waits = useMemo(() => withDirectionWait(interactionWaits(record, pending.isError ? [] : pending.data?.items ?? [], names), direction),
+    [record, pending.data, pending.isError, names, direction])
   const checking = useMemo(() => live ? runningIntervalChecks(record) : new Map<string, { check: number; queued: boolean }>(), [record, live])
   const choreography = useRunChoreography(record, undefined)
   const views: [string, RunLiveNodeView][] = []

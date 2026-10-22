@@ -6,6 +6,7 @@ import { useManagedWorkspacesQuery, useManagedWorkspaceQuery } from '../../share
 import { useHarnessSessionEpoch } from '../../shared/api/harnessSettings'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
 import { WorkspaceExecutionLocationSettings } from './WorkspaceExecutionLocationSettings'
+import { useManualRefetch } from '../../shared/api/useManualRefetch'
 import { McpAccessNotice, McpConnectionCard } from './McpConnectionCard'
 import './mcpConnections.css'
 
@@ -16,8 +17,9 @@ function WorkspaceEvidence({ workspaceId, harness }: Props & { workspaceId: stri
   const query = useManagedWorkspaceQuery(workspaceId)
   const accessError = useProtectedAccessError(query)
   const current = query.data?.workspace.id === workspaceId ? query.data : undefined
-  const retry = <Button size="sm" loading={query.isFetching} leading={<Icon name="refresh" size={16} />}
-    onClick={() => void query.refetch({ cancelRefetch: false })}>Try again</Button>
+  const manual = useManualRefetch(() => query.refetch({ cancelRefetch: false }))
+  const retry = <Button size="sm" loading={manual.pending} leading={<Icon name="refresh" size={16} />}
+    onClick={() => void manual.refetch()}>Try again</Button>
 
   if (accessError) return <McpAccessNotice error={accessError} retry={retry} />
   if (!current) return query.isError
@@ -50,7 +52,8 @@ function WorkspaceSelector({ harness }: { harness?: AgentHarness }) {
   const [selected, setSelected] = useState('')
   const query = useManagedWorkspacesQuery()
   const accessError = useProtectedAccessError(query)
-  const retry = <Button size="sm" loading={query.isFetching} onClick={() => void query.refetch({ cancelRefetch: false })}>Try again</Button>
+  const manual = useManualRefetch(() => query.refetch({ cancelRefetch: false }))
+  const retry = <Button size="sm" loading={manual.pending} onClick={() => void manual.refetch()}>Try again</Button>
   if (accessError) return <McpAccessNotice error={accessError} retry={retry} />
   if (!query.data) return query.isError
     ? <Alert live tone="danger" title="Couldn't load workspaces" action={retry}>{query.error.message}</Alert>

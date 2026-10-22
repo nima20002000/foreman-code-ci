@@ -1,11 +1,11 @@
 import { retiredHarnessLabel } from './settingsPresentation'
 import { useEffect, useRef, useState } from 'react'
-import { AgentHarnessSchema, DEFAULT_HARNESS_DEFAULTS, type HarnessConfiguration, type HarnessDefaults } from '@foreman-code/contracts'
+import { AgentHarnessSchema, type HarnessConfiguration, type HarnessDefaults } from '@foreman-code/contracts'
 import type { HarnessSettingsSection } from '@foreman-code/contracts/management'
-import { Alert, Button, ConfirmDialog, Select } from '../../shared/ui/nocturne'
+import { Alert, Button, Select } from '../../shared/ui/nocturne'
 import { useHarnessDefaultsQuery } from '../../shared/api/query'
 import { useAutomaticHarnessCheck, useRefreshNativeHarness } from '../../shared/api/harnessSettings'
-import { prepareHarnessEditor, resetHarnessEditor, switchHarnessEditor, type HarnessEditor } from './harnessEditor'
+import { prepareHarnessEditor, switchHarnessEditor, type HarnessEditor } from './harnessEditor'
 import { focusFirstInvalid, type FieldIssue } from './fieldValidation'
 import { HarnessSectionFields } from './HarnessSectionFields'
 import { harnessNames, harnessSections, sectionForHarnessIssue } from './settingsPresentation'
@@ -22,13 +22,11 @@ function EditableHarnessConfigurationFields({ editor, onChange, routedApproval =
   section?: HarnessSettingsSection; onSectionChange?(section: HarnessSettingsSection): void; frameless?: boolean;
 }) {
   const value = editor.configuration
-  const harness = AgentHarnessSchema.parse(value.harness)
   const [localSection, setLocalSection] = useState<HarnessSettingsSection>(advancedOnly ? 'permissions' : 'model')
   const section = selectedSection ?? localSection
   const root = useRef<HTMLDivElement>(null)
   const sectionChange = useRef(onSectionChange)
   sectionChange.current = onSectionChange
-  const [resetChoice, setResetChoice] = useState<'saved' | 'builtin'>()
   const presetsQuery = useHarnessDefaultsQuery({ enabled: allowHarnessChange && !harnessDefaults })
   const presets = harnessDefaults ?? presetsQuery.data?.defaults
   const refresh = useRefreshNativeHarness(value.harness)
@@ -72,15 +70,7 @@ function EditableHarnessConfigurationFields({ editor, onChange, routedApproval =
     {issues.length ? <p className="n-field-error" role="alert">{[...new Set(issues.map((issue) => issue.message))].join(' ')}</p> : null}
     {configurationSection ? <div className="settings-check-row"><span role="status" className={status === 'Ready' ? 'harness-success' : 'harness-muted'}>{status}</span>
       <Button size="sm" variant="ghost" disabled={refresh.isPending} onClick={() => refresh.mutate()}>{refresh.isPending ? 'Checking…' : 'Refresh checks'}</Button>
-      {allowHarnessChange && section === 'model' && presets?.[harness] ? <Button size="sm" variant="ghost" onClick={() => setResetChoice('saved')}>Use provider preset</Button> : null}
-      {allowHarnessChange && section === 'model' && DEFAULT_HARNESS_DEFAULTS[harness] ? <Button size="sm" variant="ghost" onClick={() => setResetChoice('builtin')}>Use built-in defaults</Button> : null}
     </div> : null}
-    <ConfirmDialog open={Boolean(resetChoice)} onOpenChange={(open) => { if (!open) setResetChoice(undefined) }} title={resetChoice === 'builtin' ? 'Use built-in defaults?' : 'Use the provider preset?'} description="This replaces only the selected harness draft. Other harness drafts are kept."
-      confirmLabel="Use preset" onConfirm={() => {
-        const preset = resetChoice === 'builtin' ? DEFAULT_HARNESS_DEFAULTS[harness] : presets?.[harness]
-        if (preset) onChange(resetHarnessEditor(editor, preset))
-        setResetChoice(undefined)
-      }} />
   </div>
 }
 

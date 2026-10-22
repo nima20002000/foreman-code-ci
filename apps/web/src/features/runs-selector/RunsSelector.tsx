@@ -29,7 +29,9 @@ export function RunsSelector({ selection, className = '', triggerLabel = 'Runs' 
     && history.data?.pages.at(-1)?.pageInfo.nextCursor !== null
   const brokenCursor = !capped && !history.hasNextPage && history.data?.pages.at(-1)?.pageInfo.nextCursor != null
   const selectedMessage = selection.invalid ? 'Invalid Run' : identity.runId === null ? null
-    : selected.isError ? runReadErrorLabel(selected.error) : selected.isPending ? 'Loading…' : null
+    // A missing or forbidden Run is explained once, by the Run board body.
+    // While the last read is still shown, a failed refresh is reported once, by the Run board.
+    : selected.isError ? isRunAccessError(selected.error) || selected.snapshot ? null : runReadErrorLabel(selected.error) : selected.isPending ? 'Loading…' : null
 
   const geometryScope = JSON.stringify([sessionGeneration(), identity.workspaceId, identity.workflowId])
   function buttons() {
@@ -100,7 +102,7 @@ export function RunsSelector({ selection, className = '', triggerLabel = 'Runs' 
       <div ref={surface} role="menu" tabIndex={-1} aria-label="Runs" className="n-menu-list runs-selector-menu"
       aria-busy={history.isPending || history.isFetchingNextPage} onKeyDown={keyboard}>
       {rows.length > 0 && <div className="runs-selector-head" aria-hidden="true">
-        <span /><span>Status</span><span>Started</span><span>Trigger</span><span>Run</span>
+        <span /><span>Status</span><span>Started</span><span>Trigger</span>
       </div>}
       <button type="button" role="menuitemradio" aria-label="New run"
         aria-checked={identity.runId === null && !selection.invalid} tabIndex={-1}
@@ -108,14 +110,14 @@ export function RunsSelector({ selection, className = '', triggerLabel = 'Runs' 
         <span className="runs-selector-mark" aria-hidden="true">{identity.runId === null && !selection.invalid ? '✓' : ''}</span>
         <span style={{ gridColumn: '2 / -1' }}>New run</span>
       </button>
-      {rows.map(({ run, time, status, label }) => <button key={run.runId} type="button" role="menuitemradio"
+      {rows.map(({ run, time, status, label, showShortId }) => <button key={run.runId} type="button" role="menuitemradio"
         aria-label={label} aria-checked={identity.runId === run.runId} tabIndex={-1} className="runs-selector-option"
         data-run-id={run.runId} data-status={run.status} onClick={() => choose(run.runId)}>
         <span className="runs-selector-mark" aria-hidden="true">{identity.runId === run.runId ? '✓' : ''}</span>
         <span className="runs-selector-status"><span className="runs-selector-dot" aria-hidden="true" />{status}</span>
-        <span className="runs-selector-time">{time}</span>
+        {/* The short id only tells apart runs started the same day; otherwise the time says enough. */}
+        <span className="runs-selector-time">{time}{showShortId ? <code> · {run.shortId}</code> : null}</span>
         <span className="runs-selector-trigger-cell">{run.trigger === 'schedule' ? 'Scheduled' : 'Manual'}</span>
-        <code title={run.runId}>{run.shortId}</code>
       </button>)}
       {history.isPending && <p role="status" className="runs-selector-state">Loading…</p>}
       {history.isError && <p role="status" className="runs-selector-state">{runReadErrorLabel(history.error, 'list')}</p>}
@@ -123,10 +125,10 @@ export function RunsSelector({ selection, className = '', triggerLabel = 'Runs' 
       {!denied && selected.snapshot && identity.runId !== null && !rows.some(({ run }) => run.runId === identity.runId)
         && <p role="status" className="runs-selector-state">Selected Run outside page</p>}
       {history.isError && !history.isFetchNextPageError && !denied && <button type="button" role="menuitem" tabIndex={-1}
-        aria-disabled={history.isFetching} onClick={() => { if (!history.isFetching) void history.refetch() }}>Retry</button>}
+        aria-disabled={history.isFetching && !history.isRefetching} onClick={() => { if (!history.isFetching) void history.refetch() }}>Retry</button>}
       {!denied && (history.hasNextPage || (history.data?.pages.length ?? 0) > 1 || brokenCursor) && <button
         type="button" role="menuitem" tabIndex={-1} className="runs-selector-more"
-        aria-disabled={!history.hasNextPage || history.isFetching}
+        aria-disabled={!history.hasNextPage || (history.isFetching && !history.isRefetching)}
         onClick={() => { if (history.hasNextPage && !history.isFetching) void history.fetchNextPage({ cancelRefetch: false }) }}>
         {history.isFetchingNextPage ? 'Loading…' : capped ? 'Limit reached' : brokenCursor ? 'More unavailable'
           : history.isFetchNextPageError ? 'Retry more' : history.hasNextPage ? 'More' : 'No more'}

@@ -7,7 +7,7 @@ export function useUserInteractionQuery(interactionId: string) {
   return useQuery({
     queryKey: ['user-approval', interactionId],
     queryFn: ({ signal }) => apiClient.getUserInteraction(interactionId, { signal }),
-    retry: false, gcTime: 0, staleTime: 0, refetchInterval: 5_000,
+    gcTime: 0, staleTime: 0, refetchInterval: 5_000,
   })
 }
 

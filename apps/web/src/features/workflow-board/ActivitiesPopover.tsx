@@ -71,7 +71,7 @@ function PopoverSurface({ onClose, findAnchor, children }: { onClose(): void; fi
     onPointerDownCapture={() => raiseFloating(STACK_ID)} onFocusCapture={() => raiseFloating(STACK_ID)}>
     <header className="board-activities-popover-header">
       <h2>Activities</h2>
-      <IconButton label="Close Activities" onClick={() => { close.current(); find.current()?.focus() }}><Icon name="close" size={14} /></IconButton>
+      <IconButton label="Close Activities" variant="ghost" onClick={() => { close.current(); find.current()?.focus() }}><Icon name="close" size={14} /></IconButton>
     </header>
     <div className="board-activities-popover-body">{children}</div>
   </section>

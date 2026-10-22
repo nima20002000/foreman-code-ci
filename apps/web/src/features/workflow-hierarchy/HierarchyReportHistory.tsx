@@ -21,17 +21,18 @@ export function HierarchyReportHistory({ scope, agent, initialReport, close, sho
   }
   const reports = [...byId.values()].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
   const failure = history.error ?? history.refresh.error
-  const refresh = <Button disabled={history.isFetching || history.refresh.isPending}
+  const refresh = <Button size="sm" variant="ghost" disabled={history.isFetching || history.refresh.isPending}
     onClick={() => history.refresh.mutate()}>Refresh reports</Button>
   return <Dialog open={visible} onOpenChange={open => { if (!open) close() }} title={`${agent.displayName} · Report history`} closeLabel="Close report history">
     {denied ? <Alert tone="warning" title="Report history is no longer available with your access.">{refresh}</Alert> : <>
-      <p>Selected Run · {scope.runId}. Each report keeps its original business request, execution and attempt.</p>
-      {refresh}
+      <div className="hierarchy-report-history-bar"><p>Every report from this run, newest first.</p>{refresh}</div>
       {history.isLoading ? <p role="status">Loading report history…</p> : null}
       {failure ? <Alert tone="warning" title="Couldn’t refresh report history.">{failure.message}</Alert> : null}
       <ol className="hierarchy-report-history-rounds" aria-label="Report rounds">{reports.map(report => <li key={report.id}>
-        <Button size="sm" aria-pressed={selected?.id === report.id} onClick={() => setSelected(report)}>
-          {report.state} · {new Date(report.updatedAt).toLocaleString()} · {report.parentRequestId} · attempt {report.execution.attempt}
+        {/* The request id stays in the accessible name only, to tell apart rounds with the same time. */}
+        <Button size="sm" aria-pressed={selected?.id === report.id} onClick={() => setSelected(report)}
+          aria-label={`${report.state} · ${new Date(report.updatedAt).toLocaleString()} · attempt ${report.execution.attempt} · ${report.parentRequestId}`}>
+          {report.state.charAt(0).toUpperCase() + report.state.slice(1).replaceAll('_', ' ')} · {new Date(report.updatedAt).toLocaleString()} · attempt {report.execution.attempt}
         </Button><p>{report.summary}</p>
       </li>)}</ol>
       {history.isSuccess && !reports.length ? <p>No reports yet</p> : null}

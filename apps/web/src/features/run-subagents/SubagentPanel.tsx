@@ -1,3 +1,4 @@
+import { useManualRefetch } from '../../shared/api/useManualRefetch'
 import { InfoHint } from '../../shared/ui/InfoHint'
 import { useMemo, useState, type RefObject } from 'react'
 import { useMutation, useMutationState, useQueryClient } from '@tanstack/react-query'
@@ -93,6 +94,7 @@ export function SubagentPanel({ scope, subagentId, anchor, onClose, visible = tr
     const fresh = await detail.refetch()
     if (fresh.isSuccess && lastCommand) { queryClient.getMutationCache().remove(lastCommand.mutation); command.reset() }
   }
+  const manualRefresh = useManualRefetch(refresh)
   const provider = child ? providerNames[child.provider] : 'Provider'
   const status = child ? subagentStatus(child.status) : undefined
   const messageItems = messagesBlocked ? [] : messages.data?.pages.flatMap((page) => page.items) ?? []
@@ -110,7 +112,7 @@ export function SubagentPanel({ scope, subagentId, anchor, onClose, visible = tr
           : commandError ? <span role="alert">Couldn't confirm delivery.</span>
           : receipt ? <span data-state={receipt.state}>{receiptText(receipt)}</span> : null}
       </div>
-      {revisionConflict ? <Button size="sm" loading={detail.isFetching} onClick={() => void refresh()}>Refresh</Button>
+      {revisionConflict ? <Button size="sm" loading={manualRefresh.pending} onClick={() => void manualRefresh.refetch()}>Refresh</Button>
         : unsettled && lastCommand?.variables ? <Button size="sm" disabled={pending} onClick={recheck}>Check again</Button> : null}
       {canInterrupt && <Button variant="danger"
         disabled={detail.isError || pending || unsettled}

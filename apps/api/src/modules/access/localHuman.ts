@@ -24,6 +24,16 @@ export class PostgresLocalHumanAccess implements LocalHumanAccess {
     )
     const id = result.rows[0]?.principal_id
     if (!id) throw new Error('The implicit local human principal has not been migrated.')
+    const principal = await this.access.currentOperator(id)
+    if (holdsEveryAction(principal)) return principal
+    // The stored grant lists the actions that existed when it was written. The local human may do everything,
+    // so an action added later is granted here instead of failing as ACCESS_DENIED.
+    await this.pool.query('update management_principals set grants=$2::jsonb where id=$1', [id, JSON.stringify(localHumanPrincipal.grants)])
     return this.access.currentOperator(id)
   }
+}
+
+function holdsEveryAction(principal: ManagementPrincipal): boolean {
+  return ManagementActionSchema.options.every(action => principal.grants.some(grant =>
+    grant.actions.includes(action) && Object.values(grant.scope).every(ids => !ids)))
 }

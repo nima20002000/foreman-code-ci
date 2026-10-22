@@ -28,7 +28,7 @@ export function CurrentRunDetails({ scope, runActions }: RunDetailsProps) {
   const canonical = useCurrentRunQuery(scope, false), cache = useQueryClient(), generation = sessionGeneration()
   const access = useLocalHumanAccessQuery(), outbox = useBoardStopOutbox(scope)
   const identity = JSON.stringify([generation, scope]), detailsKey = ['workbench', 'pinned-v3-run-details', generation, scope.workspaceId, scope.workflowId, scope.runId, scope.workflowVersionId]
-  const run = useQuery({ queryKey: detailsKey, queryFn: ({ signal }) => readPinnedRun(scope, { signal }), retry: false,
+  const run = useQuery({ queryKey: detailsKey, queryFn: ({ signal }) => readPinnedRun(scope, { signal }),
     staleTime: Infinity, refetchOnMount: 'always', refetchOnReconnect: false, refetchOnWindowFocus: false })
   const runDenied = useProtectedAccessError(run), canonicalDenied = useProtectedAccessError(canonical)
   const detail = run.isError || runDenied || canonicalDenied ? undefined : run.data
@@ -42,7 +42,7 @@ export function CurrentRunDetails({ scope, runActions }: RunDetailsProps) {
   const pinnedDenied = useProtectedAccessError(pinned)
   const version = pinned.isError || pinnedDenied || runDenied || canonicalDenied ? undefined : pinned.data?.version
   const accountSnapshot = useQuery({
-    queryKey: ['provider-accounts', generation, 'run', scope], retry: false,
+    queryKey: ['provider-accounts', generation, 'run', scope],
     enabled: !runDenied && !canonicalDenied,
     queryFn: async ({ signal }) => {
       const result = await runsSelectorApi.snapshot({ workspaceId: scope.workspaceId, workflowId: scope.workflowId,
@@ -125,7 +125,7 @@ export function CurrentRunDetails({ scope, runActions }: RunDetailsProps) {
     {accountSnapshot.isError && !denied ? <p role="status">Saved Run accounts are unavailable.</p> : null}
     {run.isPending ? <p role="status">Reading accepted Run facts…</p> : null}
     {detail ? <p>
-      <Button size="sm" variant="ghost" disabled={run.isFetching} onClick={() => void refetchRun()}>Refresh accepted Run facts</Button></p> : null}
+      <Button size="sm" variant="ghost" disabled={run.isFetching && !run.isRefetching} onClick={() => void refetchRun()}>Refresh accepted Run facts</Button></p> : null}
     {run.isError ? <Alert tone="warning" title="Private Run details are unavailable."><Button size="sm" onClick={() => void refetchRun()}>Retry pinned details</Button></Alert> : null}
     <div data-testid="run-details-actions-slot">{denied ? null : runActions !== undefined ? runActions : <>
     {canNeedStop ? <div className="n-actions"><Button variant="danger" disabled={!permitted || !snapshot || stop.isPending || !!outbox.error}

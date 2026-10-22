@@ -4,16 +4,19 @@ import { createSseWriter } from '../../routes/sseWriter.js'
 import type { MemoryBoardService } from './service.js'
 
 export async function streamMemoryBoard(request: FastifyRequest, reply: FastifyReply, service: Pick<MemoryBoardService,'changes'|'listen'>,
-  principal: ManagementPrincipal, boardId: string, afterSequence?: number): Promise<void> {
+  principal: ManagementPrincipal, boardId: string, afterSequence?: number,
+  /** Open streams, so the server can end them on shutdown instead of waiting for the browser to leave. */
+  open?: Set<() => void>): Promise<void> {
   let stopped=false, running=false, dirty=false, opened=false, cursor=afterSequence
   let unsubscribe: (()=>void) | undefined
   let heartbeat: ReturnType<typeof setInterval> | undefined
   const stop = () => {
     if (stopped) return
-    stopped=true;unsubscribe?.();writer.close();clearInterval(heartbeat)
+    stopped=true;open?.delete(stop);unsubscribe?.();writer.close();clearInterval(heartbeat)
     if(opened && !reply.raw.destroyed)reply.raw.end()
   }
   const writer=createSseWriter(reply.raw,()=>!stopped,stop,{frameBytes:131072,queuedBytes:262144,queuedFrames:128,drainTimeoutMs:15000})
+  open?.add(stop)
   reply.raw.once('close',stop)
   request.raw.once('aborted',stop)
   if(reply.raw.destroyed || request.raw.aborted)stop()

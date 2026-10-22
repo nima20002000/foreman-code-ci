@@ -4,6 +4,7 @@ import { createClaudeFileMcpServer, type ClaudeFileSdk } from '../../files/claud
 import type { AgentFileToolService } from '../../files/tools/service.js'
 import { productionClaudeFileAdmission } from './fileProduction.js'
 import type pg from 'pg'
+import { setTimeout as delay } from 'node:timers/promises'
 import type { ClaudeHarnessConfiguration } from '@foreman-code/contracts/claude'
 import type { NativeSessionReference, CoordinatorConsultationBinding } from '@foreman-code/contracts'
 import { APP_MCP_TOKEN_NAMES } from '@foreman-code/contracts/product'
@@ -126,6 +127,22 @@ function bindConsultationAccess(manager: ClaudeNativeSessionManager,
 
 }
 
+/** Automatic profile checks end within 240 seconds. A chat message has no retrying caller, so its admission
+ * waits for an in-flight check (for example right after a restart). Run launches keep the retryable
+ * HARNESS_PROFILE_CHECK_PENDING, which their engine retries as a fresh attempt. */
+export async function admitChatWhenChecked<T>(workflow: boolean, admit: () => Promise<T>, signal: AbortSignal,
+  waitMs = 250_000): Promise<T> {
+  const deadline = Date.now() + waitMs
+  for (;;) {
+    try { return await admit() }
+    catch (error) {
+      if (workflow || !(error instanceof DomainError) || error.code !== 'HARNESS_PROFILE_CHECK_PENDING'
+        || Date.now() >= deadline) throw error
+      await delay(500, undefined, { signal })
+    }
+  }
+}
+
 export function productionClaudeManager(input: ProductionClaudeInput) {
   input = ownedClaudeInput(input)
   let actual: ClaudeNativeSessionManager | undefined
@@ -165,7 +182,8 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
     }
     const apiKey = account?.apiKey ?? input.apiKey
     requireClaudeApiKey(input.configuration, apiKey)
-    const accepted = await input.profiles.admit(profileOwner, input.selector)
+    const accepted = await admitChatWhenChecked(input.binding.kind === 'workflow',
+      () => input.profiles!.admit(profileOwner, input.selector!), signal)
     assertRuntimeProviderAccountProfile(input.accountBinding, accepted.override.target)
     signal.throwIfAborted()
     const compiled = compileClaudeConfiguration(input.configuration, input.workingDirectory, accepted,

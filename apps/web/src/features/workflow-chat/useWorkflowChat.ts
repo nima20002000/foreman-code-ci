@@ -65,7 +65,7 @@ export function useWorkflowChat(scope: WorkflowChatScope, runId?: string, client
     }
   }, [cache, epoch, stableScope])
   const [connection, setConnection] = useState<'connected' | 'reconnecting' | 'unavailable'>('reconnecting')
-  const query = useQuery({ queryKey: key, enabled: false, retry: false, queryFn: async ({ signal }) => {
+  const query = useQuery({ queryKey: key, enabled: false, queryFn: async ({ signal }) => {
     try {
       const [posts, receipts] = await Promise.all([client.read(stableScope, { runId, limit: 50 }, { signal }),
         client.deliveries(stableScope, { runId, limit: 100 }, { signal })])

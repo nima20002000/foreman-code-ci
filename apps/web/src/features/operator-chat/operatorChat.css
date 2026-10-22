@@ -10,7 +10,8 @@
 @keyframes operator-chat-close { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(8px) scale(.98); } }
 .operator-chat svg { flex: 0 0 auto; }
 .operator-chat-navigation { position: absolute; z-index: 4; top: .4rem; left: .5rem; right: .5rem; height: 2rem; display: flex; gap: var(--space-1); pointer-events: none; }
-.operator-chat-navigation button { pointer-events: auto; width: 2rem; height: 2rem; min-height: 2rem; padding: .35rem; }
+/* Only the header's own icon buttons; buttons inside its popovers keep their normal size. */
+.operator-chat-navigation > button { pointer-events: auto; width: 2rem; height: 2rem; min-height: 2rem; padding: .35rem; }
 .operator-chat-navigation .operator-chat-move { flex: 1; width: auto; border: 0; background: transparent; cursor: grab; touch-action: none; }
 .operator-chat-move:active { cursor: grabbing; }
 .operator-chat-move span { display: block; width: 2rem; height: 3px; margin: auto; border-radius: var(--radius-sm); background: var(--color-border-strong); }
@@ -28,10 +29,13 @@
 .operator-chat-title-clip > span { display: block; width: max-content; min-width: 100%; white-space: nowrap; font-size: 12px; font-weight: 400; }
 .operator-chat-row:is(:hover, :focus-within) .operator-chat-title-clip > span { animation: operator-title-reveal 5s ease-in-out .5s infinite alternate; }
 @keyframes operator-title-reveal { 0%, 15% { transform: translateX(0); } 85%, 100% { transform: translateX(min(0px, calc(100cqw - 100%))); } }
-.operator-chat-row-menu { position: absolute; right: .15rem; opacity: 0; }
+.operator-chat-row .operator-chat-row-menu { position: absolute; right: .15rem; opacity: 0; }
 .operator-chat-row:is(:hover, :focus-within) .operator-chat-row-menu { opacity: 1; }
 .operator-chat-row-menu > button { color: var(--color-text-muted); width: 1.8rem; height: 1.8rem; min-height: 1.8rem; padding: .3rem; border: 0; background: transparent; }
-.operator-chat-row .operator-chat-row-select { padding-right: 2.1rem; }
+/* The row menu only shows on hover, so the title uses that room and fades under the menu instead of a cut letter. */
+.operator-chat-row .operator-chat-row-select { padding-right: .6rem; }
+.operator-chat-title-clip { mask-image: linear-gradient(to right, #000 calc(100% - .75rem), transparent); }
+.operator-chat-row:is(:hover, :focus-within) .operator-chat-title-clip { mask-image: linear-gradient(to right, #000 calc(100% - 1.6rem), transparent calc(100% - .9rem)); }
 .operator-chat-state-dot { width: .3rem; height: .3rem; flex: 0 0 auto; border-radius: var(--radius-full); background: var(--color-border-strong); }
 .operator-chat-state-dot.needs-attention { background: var(--color-warning-text); }
 .operator-chat-row:is(:hover, :focus-within) .operator-chat-state-dot { visibility: hidden; }
@@ -104,7 +108,7 @@
 .operator-composer-options { display: flex; padding: .25rem .25rem 0; flex-wrap: wrap; align-items: center; gap: .25rem; min-width: 0; }
 .operator-chat-navigation .session-context, .operator-chat-navigation .session-context-popover { pointer-events: auto; }
 .operator-chat-navigation .session-context-meter { width: auto; min-width: 0; height: 28px; min-height: 28px; padding: 0 .45rem; align-self: center; }
-.operator-chat-navigation .provider-account-chip { align-self: center; }
+.operator-chat-navigation .provider-account-chip { align-self: center; pointer-events: auto; }
 .operator-chat-navigation .provider-account-chip > .n-button { width: auto; height: 28px; min-height: 28px; padding: 0 .45rem; }
 .operator-composer-model { display: flex; align-items: center; min-width: 0; }
 .operator-composer-model:empty { display: none; }
@@ -124,7 +128,7 @@
 .operator-agent-trigger small { text-transform: capitalize; color: var(--color-accent); }
 .operator-agent-panel .n-segmented { display: flex; }
 .operator-agent-panel .n-segmented > label { flex: 1; justify-content: center; }
-.operator-agent-panel { margin: 0; color: var(--color-text); overflow: auto; display: grid; gap: var(--space-3); border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); padding: .85rem; background: var(--color-surface-raised); box-shadow: var(--shadow-popover); }
+.operator-agent-panel { margin: 0; color: var(--color-text); overflow: auto; display: grid; gap: var(--space-2); border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); padding: .85rem; background: var(--color-surface-raised); box-shadow: var(--shadow-popover); }
 .operator-access-inline { display: grid; gap: var(--space-2); font-size: 12px; }
 .operator-access-inline p { margin: 0; color: var(--color-text-muted); line-height: 1.45; }
 .operator-agent-toggles { display: flex; align-items: center; gap: var(--space-3); }
@@ -167,7 +171,7 @@
   .operator-chat aside { position: absolute; inset: 0; z-index: 2; width: 100%; border: 0; background: var(--color-surface); }
   .operator-chat-history-open .operator-chat-main { display: none; }
   .operator-chat-main { padding: 3rem .5rem .5rem; }
-  .operator-chat-row-menu { opacity: 1; }
+  .operator-chat-row .operator-chat-row-menu { opacity: 1; }
   .operator-chat-row .operator-chat-row-select { padding-right: 2.1rem; }
   .operator-agent-trigger > span { max-width: 9rem; }
   .operator-access-rule { grid-template-columns: minmax(0, 1fr) 5rem; }
@@ -255,3 +259,7 @@
 
 .operator-chat .operator-chat-row-menu > button { border-radius: var(--radius-sm); }
 .operator-chat .operator-chat-row-menu > button:is(:hover, :focus-visible) { background: var(--color-surface-raised); }
+.operator-history-error { display: flex; align-items: center; justify-content: space-between; gap: var(--space-1); padding: .2rem .25rem .2rem .5rem; border-radius: var(--radius-md); border: 1px solid var(--color-error-border); color: var(--color-error-text); font-size: 11px; }
+/* The settings fit without scrolling; the shared floating surface caps menus lower than this panel needs. */
+.operator-agent-panel { max-height: min(34rem, calc(100dvh - 24px)) !important; }
+.operator-agent-error { display: flex; align-items: center; justify-content: space-between; gap: var(--space-1); margin: 0; color: var(--color-text-muted); font-size: 12px; }

@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useMemo } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef } from 'react'
 import type { Agent, DurableInteraction } from '@foreman-code/contracts'
 import { useInfiniteInteractionsQuery, useWorkspaceDetailsQuery } from '../../shared/api/query'
 import { useUserInteractionResponse } from '../../shared/api/userApprovals'
@@ -9,7 +9,7 @@ import { usePresence } from '../../shared/ui/usePresence'
 import { raiseFloating, useFloatingZ } from '../../shared/ui/floatingStack'
 import { interactionMatchesScope } from './approvalState'
 import { summarizeApprovalRequest } from './approvalPresentation'
-import { approvalResizeEdges, useApprovalInboxResize } from './useApprovalInboxResize'
+import { useMovableWindow, windowResizeEdges } from '../../shared/ui/useMovableWindow'
 import { APPROVAL_INBOX_STACK_ID, useApprovalInboxStore } from './approvalInboxStore'
 import './approvals.css'
 
@@ -87,19 +87,23 @@ function RequestRow({ interaction, agent, onChanged }: {
 function ApprovalInboxPanel({ open, exiting, resize }: {
   open: boolean
   exiting: boolean
-  resize: ReturnType<typeof useApprovalInboxResize>
+  resize: ReturnType<typeof useMovableWindow>
 }) {
   const workspaceId = useApprovalInboxStore((state) => state.workspaceId)
   const workflowId = useApprovalInboxStore((state) => state.workflowId)
   const closeInbox = useApprovalInboxStore((state) => state.closeInbox)
   const anchor = useApprovalInboxStore((state) => state.anchor)
-  const { panelRef, style, moveGrip, grip, placeBeside } = resize
+  const { panelRef, style, moveGrip, grip, placeBelow } = resize
+  const closeRef = useRef<HTMLButtonElement>(null)
+  // The inbox opens from a toolbar button: below it, so the toolbar stays usable.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- place once per open, from the button that opened it
-  useLayoutEffect(() => { if (open && anchor) placeBeside(anchor) }, [open, anchor])
+  useLayoutEffect(() => { if (open && anchor) placeBelow(anchor) }, [open, anchor])
+  // Focus moves into the window so Escape closes it right away.
+  useEffect(() => { if (open) closeRef.current?.focus() }, [open])
   const zIndex = useFloatingZ(APPROVAL_INBOX_STACK_ID, !exiting)
   const scope = { workspaceId: workspaceId || undefined, workflowId, limit: 100 }
   const queue = useInfiniteInteractionsQuery({ ...scope, status: 'pending' }, open && Boolean(workspaceId))
-  const workspace = useWorkspaceDetailsQuery(workspaceId, { enabled: open && Boolean(workspaceId), retry: false })
+  const workspace = useWorkspaceDetailsQuery(workspaceId, { enabled: open && Boolean(workspaceId) })
   const interactions = useMemo(() => {
     const byId = new Map<string, DurableInteraction>()
     for (const page of queue.data?.pages ?? []) for (const item of page.items) {
@@ -116,14 +120,15 @@ function ApprovalInboxPanel({ open, exiting, resize }: {
     <section ref={panelRef} style={style} className="approval-inbox-panel" data-state={exiting ? 'closing' : 'open'} role="dialog" aria-modal="false" aria-label="Human approval inbox"
       aria-hidden={exiting} inert={exiting}
       onKeyDown={(event) => { if (event.key === 'Escape') closeInbox() }}>
-      {approvalResizeEdges.map((edge) => <button key={edge} type="button" className={`approval-inbox-resize approval-inbox-resize-${edge}`} {...grip(edge)} />)}
+      {windowResizeEdges.map((edge) => <button key={edge} type="button" className={`approval-inbox-resize approval-inbox-resize-${edge}`} {...grip(edge)} />)}
       <button type="button" className="approval-inbox-move" title="Drag to move approval inbox" {...moveGrip} />
+      <h2 className="approval-inbox-title">Approvals</h2>
       <div className="approval-inbox-controls">
-        <IconButton label="Close approval inbox" variant="ghost" onClick={closeInbox}><Icon name="close" /></IconButton>
+        <IconButton ref={closeRef} label="Close approval inbox" variant="ghost" onClick={closeInbox}><Icon name="close" /></IconButton>
       </div>
       <div className="approval-inbox-body">
         <main>
-          {queue.isError ? <ErrorState title="Requests unavailable" description={queue.error.message} onRetry={refetch} retrying={queue.isFetching} /> : null}
+          {queue.isError ? <ErrorState title="Requests unavailable" description="Approval requests could not load." onRetry={refetch} retrying={queue.isFetching} /> : null}
           {queue.isPending ? <LoadingState label="Loading human approvals…" rows={4} /> : null}
           {!queue.isPending && !queue.isError && interactions.length === 0 ? <p className="approval-empty">No requests yet.</p> : null}
           {interactions.length ? <ol className="approval-request-list">{interactions.map((interaction) => <RequestRow key={interaction.id} interaction={interaction}
@@ -136,9 +141,11 @@ function ApprovalInboxPanel({ open, exiting, resize }: {
   </div>
 }
 
+const narrowInbox = () => typeof window !== 'undefined' && window.matchMedia?.('(max-width: 640px)').matches === true
+
 export function ApprovalInbox() {
   const open = useApprovalInboxStore((state) => state.open)
   const presence = usePresence(open)
-  const resize = useApprovalInboxResize()
+  const resize = useMovableWindow({ name: 'approval inbox', minWidth: 280, minHeight: 180, narrow: narrowInbox })
   return presence.mounted ? <ApprovalInboxPanel open={open} exiting={presence.exiting} resize={resize} /> : null
 }

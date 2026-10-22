@@ -26,7 +26,7 @@ export function useAgentChatHistory(context: AgentChatContext, state: AgentChatS
         throw error
       }
     }, initialPageParam: undefined as string | undefined, getNextPageParam: page => page.nextCursor ?? undefined,
-    enabled: false, retry: false,
+    enabled: false,
   })
   const historyRevision = useRef<{ identity: string; revision: number } | undefined>(undefined)
   const { data, refetch } = history

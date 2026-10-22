@@ -1,5 +1,5 @@
 import { queryOptions, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ComputerActivityListSchema, ComputerRenameInputSchema, ComputerRenameResultSchema } from '@foreman-code/contracts/computer-activity'
+import { ComputerActivityListSchema, ComputerRenameInputSchema, ComputerRenameResultSchema, type ComputerActivityList } from '@foreman-code/contracts/computer-activity'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import { TELEMETRY_LIMITS, TelemetrySelectorResultSchema } from '@foreman-code/contracts/resource-telemetry'
 import { apiClient, ApiError } from './client'
@@ -23,11 +23,26 @@ export async function readComputerNames(signal?: AbortSignal): Promise<ReadonlyM
     return new Map()
   }
 }
+/** A remote computer's link can drop for a few seconds and reconnect (a relayed network path does this every
+ * few minutes). Within this window a computer that was online stays shown as online, so every surface keeps its
+ * last state instead of flipping between online and offline layouts. */
+const RECONNECT_GRACE_MS = 60_000
+const lastOnlineAt = new Map<string, number>()
+function withReconnectGrace(activity: ComputerActivityList): ComputerActivityList {
+  const now = Date.now()
+  return { ...activity, computers: activity.computers.map(computer => {
+    const key = computerKey(computer.target)
+    if (computer.online) { lastOnlineAt.set(key, now); return computer }
+    const seen = lastOnlineAt.get(key)
+    return seen !== undefined && now - seen < RECONNECT_GRACE_MS ? { ...computer, online: true } : computer
+  }) }
+}
 export function useComputerActivity() {
   useHarnessSessionEpoch()
   return useQuery({ queryKey: ['computer-activity', sessionGeneration()], enabled: !sessionIsSwitching(),
-    retry: false, refetchInterval: 5_000,
-    queryFn: ({ signal }) => apiClient.request('/api/management/computers/activity', ComputerActivityListSchema, { signal }) })
+    refetchInterval: 5_000,
+    queryFn: async ({ signal }) => withReconnectGrace(
+      await apiClient.request('/api/management/computers/activity', ComputerActivityListSchema, { signal })) })
 }
 /** Saves a computer's name; every list refreshes from the activity readback. */
 export function useRenameComputer() {
@@ -40,7 +55,7 @@ export function useRenameComputer() {
 }
 function computerUtilizationOptions(target: DeviceProvisioningTarget, online: boolean) {
   return queryOptions({ queryKey: ['computer-utilization', sessionGeneration(), target],
-    enabled: online && !sessionIsSwitching(), retry: false, gcTime: 0, refetchInterval: TELEMETRY_LIMITS.intervalMs,
+    enabled: online && !sessionIsSwitching(), gcTime: 0, refetchInterval: TELEMETRY_LIMITS.intervalMs,
     queryFn: async ({ signal }) => {
       const resolved = await apiClient.request('/api/management/resource-telemetry/selector',
         TelemetrySelectorResultSchema, { method: 'POST', signal,

@@ -6,7 +6,7 @@ import type { apiClient } from '../../shared/api/client'
 import { CommandAttempt } from '../../shared/api/commandAttempt'
 import { assertSession, sessionGeneration } from '../../shared/api/sessionBoundary'
 import { queryKeys, useArchiveManagedWorkflowMutation } from '../../shared/api/query'
-import { Alert, Button, Dialog, Icon, IconButton } from '../../shared/ui/nocturne'
+import { ConfirmDialog, Icon, IconButton } from '../../shared/ui/nocturne'
 import { useGraphDraftStore } from '../graph/store'
 import { nextDraftKey } from '../graph/nextDraft/state'
 
@@ -16,7 +16,6 @@ export function RemoveWorkflowButton({ workspaceId, workflowId, name, revision, 
 }) {
   const [open, setOpen] = useState(false)
   const [baseRevision, setBaseRevision] = useState(revision)
-  const cancel = useRef<HTMLButtonElement>(null)
   const mutation = useArchiveManagedWorkflowMutation()
   const client = useQueryClient()
   const router = useRouter()
@@ -52,13 +51,12 @@ export function RemoveWorkflowButton({ workspaceId, workflowId, name, revision, 
       className="workflow-navigation-remove" disabled={mutation.isPending} onClick={() => void remove()}>
       <Icon name="trash" size={14} />
     </IconButton>}
-    {renderTrigger ? <Dialog open={open} title={`Remove ${name}?`} size="sm" initialFocusRef={cancel}
-      description="This workflow will be removed from the workspace. Workflow and run history is retained. Workflows with active runs cannot be removed."
-      busy={mutation.isPending || attempt.current.unresolved} onOpenChange={(next) => { if (!next && !mutation.isPending && !attempt.current.unresolved) { setOpen(false); mutation.reset() } }}
-      footer={<><Button ref={cancel} disabled={mutation.isPending || attempt.current.unresolved} onClick={() => setOpen(false)}>Cancel</Button>
-        <Button variant="danger" disabled={mutation.isPending} onClick={() => void remove()}>{mutation.isPending ? 'Removing…' : attempt.current.unresolved ? 'Retry removal' : 'Remove workflow'}</Button></>}>
-      {mutation.isError ? <Alert tone="danger" live title={mutation.error.message} /> : null}
-      {attempt.current.unresolved && !mutation.isPending ? <p role="status">The request may have succeeded. Retry removal to confirm its outcome.</p> : null}
-    </Dialog> : mutation.isError ? <p className="workflow-navigation-remove-error" role="alert">{mutation.error.message}</p> : null}
+    {renderTrigger ? <ConfirmDialog open={open} title={`Remove ${name}?`}
+      description="It leaves this workspace. Run history stays. A workflow with active runs can’t be removed."
+      pending={mutation.isPending} confirmLabel={attempt.current.unresolved ? 'Retry removal' : 'Remove workflow'}
+      error={mutation.isError ? mutation.error.message : attempt.current.unresolved && !mutation.isPending
+        ? 'It may already be removed. Retry to check.' : undefined}
+      onOpenChange={(next) => { if (!next && !mutation.isPending && !attempt.current.unresolved) { setOpen(false); mutation.reset() } }}
+      onConfirm={() => void remove()} /> : mutation.isError ? <p className="workflow-navigation-remove-error" role="alert">{mutation.error.message}</p> : null}
   </>
 }

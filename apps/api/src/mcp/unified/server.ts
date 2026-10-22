@@ -18,6 +18,7 @@ import type { BugReportService } from '../../modules/bug-reports/service.js'
 import type { PostgresCommandCoordinator } from '../../modules/commands/postgres.js'
 import { createMemoryBoardTools } from '../operator/tools/memoryBoards.js'
 import { OPERATOR_TOOLS } from '../operator/catalog.js'
+import { OPERATOR_CATALOG_TOOLS, registerOperatorDiscoveryTools } from '../operator/discovery.js'
 import { registerAppTools } from '../app/server.js'
 import { registerCiTools } from '../shared/ciTools.js'
 import { operatorRequestTools, operatorToolCatalog } from '../operator/server.js'
@@ -152,7 +153,7 @@ export async function createGraphqlMcpServer(context: GraphqlMcpContext, request
   registration: McpRequestRegistration = {}): Promise<McpServer> {
   const call = ToolCall.safeParse(requestBody)
   const requestedTool = call.success && call.data.params.name !== 'operator_tool_schema_get'
-    && call.data.params.name !== 'operator_get_capabilities'
+    && call.data.params.name !== 'operator_get_capabilities' && !OPERATOR_CATALOG_TOOLS.has(call.data.params.name)
     ? call.data.params.name : undefined
   const server = new McpServer({ name: PRODUCT_SLUG, title: MCP_DISPLAY_NAME, version: '1.0.0' }, { instructions: roleInstructions(context.role) })
   cacheToolSchemaConversions(server, 'unified')
@@ -167,6 +168,7 @@ export async function createGraphqlMcpServer(context: GraphqlMcpContext, request
       for (const tool of registered.tools) {
         if (!selected || tool.name === requestedTool) tool.register(server)
       }
+      if (!selected) registerOperatorDiscoveryTools(server, () => registered.catalog)
     }
   } else if (context.interactions) {
     const definitions = await collectTools(async collector => {

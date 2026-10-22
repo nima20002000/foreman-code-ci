@@ -1,5 +1,5 @@
 import type { ScheduleGetInput, ScheduleOccurrence } from '@foreman-code/contracts/schedules'
-import { Button } from '../../shared/ui/nocturne'
+import { Button, Skeleton } from '../../shared/ui/nocturne'
 import { useLatestScheduleOccurrence } from './queries'
 
 const rejectionMessages = new Map([
@@ -36,8 +36,8 @@ export function ScheduleLastAttempt({ scope, open }: { scope: ScheduleGetInput; 
   let content = <p>No attempts yet.</p>
   if (query.isError) {
     content = <>
-      <p>Could not load last attempt.</p>
-      <Button size="sm" onClick={() => { void query.refetch() }}>Retry history</Button>
+      <p>Couldn’t load the last attempt.</p>
+      <Button size="sm" variant="ghost" onClick={() => { void query.refetch() }}>Try again</Button>
     </>
   } else if (occurrence) {
     content = <>
@@ -51,7 +51,7 @@ export function ScheduleLastAttempt({ scope, open }: { scope: ScheduleGetInput; 
         target="_blank" rel="noopener noreferrer" aria-label="View Run (opens in a new tab)">View Run</a>}
     </>
   } else if (query.isPending) {
-    content = <p>Loading…</p>
+    content = <Skeleton width="60%" />
   }
   return <section className="schedule-last-attempt" aria-label="Last attempt" aria-live="polite">
     <h3>Last attempt</h3>

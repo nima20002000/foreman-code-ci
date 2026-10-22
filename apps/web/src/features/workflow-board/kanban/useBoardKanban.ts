@@ -6,13 +6,15 @@ import { errorMessage } from '../../memory-boards/presentation'
 import { KANBAN_NODE_ID, type KanbanActivityFlowEdge, type KanbanFlowNode } from './BoardKanban'
 import { kanbanScope, useKanbanActivity } from './kanbanActivity'
 import { useKanbanLayout } from './kanbanLayout'
+import { CI_SERVER_SIZE } from '../inspect/ciServer'
 
 type Placed = { position: { x: number; y: number }; width?: number | undefined; height?: number | undefined }
 const DEFAULT_SIZE = { width: 760, height: 460 }
 
-/** First placement: beside the Agents, to the right of the rightmost one. */
+/** First placement: beside the Agents, to the right of the rightmost one. With no Agents yet, right of the
+ * CI server, which then sits centered on the origin. */
 export function defaultKanbanFrame(nodes: readonly Placed[]): WorkflowKanbanFrame {
-  if (!nodes.length) return { x: 0, y: 0, ...DEFAULT_SIZE }
+  if (!nodes.length) return { x: CI_SERVER_SIZE.width / 2 + 160, y: 0, ...DEFAULT_SIZE }
   const right = Math.max(...nodes.map((node) => node.position.x + (node.width ?? 212)))
   return { x: right + 160, y: Math.min(...nodes.map((node) => node.position.y)), ...DEFAULT_SIZE }
 }
@@ -24,7 +26,7 @@ const rounded = (frame: WorkflowKanbanFrame): WorkflowKanbanFrame =>
 export function useBoardKanban({ workspaceId, workflowId, nodes, nodeIds, enabled = true }: {
   workspaceId: string; workflowId: string; nodes: readonly Placed[]; nodeIds: ReadonlySet<string>; enabled?: boolean
 }) {
-  const { layout, save, saveError } = useKanbanLayout(workspaceId, workflowId, enabled)
+  const { layout, read, save, saveError } = useKanbanLayout(workspaceId, workflowId, enabled)
   // A drag or resize in progress over this exact saved layout; any newer layout replaces it.
   const [moving, setMoving] = useState<{ base?: WorkflowKanbanLayout; frame: WorkflowKanbanFrame }>()
   const placed = useMemo(() => layout?.frame ?? defaultKanbanFrame(nodes), [layout?.frame, nodes])
@@ -32,8 +34,8 @@ export function useBoardKanban({ workspaceId, workflowId, nodes, nodeIds, enable
   const actions = useMemo(() => ({
     store: (next: WorkflowKanbanFrame) => save({ visible: true, frame: rounded(next) }),
   }), [save])
-  // The Kanban is always on the Board, empty or not.
-  const visible = enabled
+  // The Kanban is always on the Board, empty or not; it appears once its saved place is known, so it never jumps.
+  const visible = enabled && read
   const error = saveError ? errorMessage(saveError) : undefined
   const node = useMemo<KanbanFlowNode | undefined>(() => visible ? {
     id: KANBAN_NODE_ID, type: 'boardKanban', position: { x: frame.x, y: frame.y }, width: frame.width, height: frame.height,

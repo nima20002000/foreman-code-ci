@@ -31,6 +31,7 @@
 .n-stack { display: grid; gap: 16px; min-width: 0; }
 .n-between { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; }
 .n-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.n-dialog[role='alertdialog'] .n-dialog-body > .n-stack > .n-actions { justify-content: flex-end; }
 .n-eyebrow { color: var(--n-faint); font-size: 11px; font-weight: 600; letter-spacing: .11em; text-transform: uppercase; }
 .n-divider { border: 0; height: 1px; background: var(--n-border); margin: 20px 0; }
 .n-kbd, .n-theme kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 22px; padding: 0 5px; border: 1px solid var(--n-border-strong); border-radius: var(--radius-sm); background: var(--n-raised); color: var(--n-muted); font: 11px var(--n-mono); }
@@ -41,23 +42,27 @@
 [data-tone='danger'] { --n-tone: var(--n-danger); --n-tone-bg: var(--n-danger-subtle); }
 [data-tone='info'] { --n-tone: var(--n-info); --n-tone-bg: var(--n-info-subtle); }
 /* Actions */
-.n-button { display: inline-flex; min-height: 36px; min-width: 36px; align-items: center; justify-content: center; gap: 8px; padding: 7px 13px; border: 1px solid var(--n-border-strong); border-radius: var(--n-radius-sm); background: var(--n-raised); color: var(--n-text); font: 500 12px/1.5 var(--n-font); text-decoration: none; cursor: pointer; transition: background var(--n-fast), border-color var(--n-fast), box-shadow var(--n-fast); white-space: normal; }
-.n-button:hover:not(:disabled) { background: var(--n-hover); border-color: var(--n-control-border); }
-.n-button:active:not(:disabled) { box-shadow: inset 0 2px 3px #0004; }
-.n-button--primary { background: linear-gradient(135deg, var(--n-accent-hover), var(--n-accent) 55%, color-mix(in srgb, var(--n-accent) 70%, var(--info))); color: var(--n-accent-ink); border-color: var(--n-accent); font-weight: 600;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--n-accent) 30%, transparent), 0 4px 14px color-mix(in srgb, var(--n-accent) 28%, transparent); }
-.n-button--primary:hover:not(:disabled) { background: var(--n-accent-hover); border-color: var(--n-accent-hover);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--n-accent) 40%, transparent), 0 6px 20px color-mix(in srgb, var(--n-accent) 38%, transparent); }
+/* Buttons are flat: one solid fill per variant, no gradients or glows. Only colors transition, so a hover never
+   passes through a transparent frame (a gradient-to-color swap flashed the page background through the button). */
+.n-button { display: inline-flex; min-height: 34px; min-width: 34px; align-items: center; justify-content: center; gap: 7px; padding: 6px 13px;
+  border: 1px solid var(--n-border-strong); border-radius: 8px; background: var(--n-raised); color: var(--n-text);
+  font: 500 12.5px/1.4 var(--n-font); text-decoration: none; cursor: pointer; white-space: normal;
+  transition: background-color var(--n-fast), border-color var(--n-fast), color var(--n-fast); }
+.n-button:hover:not(:disabled) { background-color: var(--n-hover); border-color: var(--n-control-border); }
+.n-button:active:not(:disabled) { transform: translateY(.5px); }
+.n-button--primary { background: var(--n-accent); border-color: transparent; color: var(--n-accent-ink); font-weight: 600;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 18%, transparent); }
+.n-button--primary:hover:not(:disabled) { background-color: var(--n-accent-hover); border-color: transparent; }
 .n-button--ghost { border-color: transparent; background: transparent; color: var(--n-muted); }
-.n-button--ghost:hover:not(:disabled) { border-color: transparent; color: var(--n-text); }
+.n-button--ghost:hover:not(:disabled) { border-color: transparent; background-color: color-mix(in srgb, var(--n-text) 7%, transparent); color: var(--n-text); }
 .n-button--danger { color: var(--n-danger); background: var(--n-danger-subtle); border-color: var(--danger-border); }
-.n-button--danger:hover:not(:disabled) { background: var(--danger-subtle); border-color: var(--danger); }
-.n-button--sm { min-height: 32px; padding: 5px 10px; font-size: 11px; }
+.n-button--danger:hover:not(:disabled) { background-color: var(--danger-subtle); border-color: var(--danger); }
+.n-button--sm { min-height: 30px; padding: 4px 10px; font-size: 12px; border-radius: 7px; }
 .n-button--lg { min-height: 44px; padding: 10px 18px; font-size: 13px; }
 .n-button:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
-.n-icon-button { width: 36px; height: 36px; padding: 7px; flex-shrink: 0; }
+.n-icon-button { width: 34px; height: 34px; padding: 6px; flex-shrink: 0; }
 .n-icon-button > span { display: inline-flex; align-items: center; justify-content: center; }
-.n-icon-button.n-button--sm { width: 32px; height: 32px; min-width: 32px; }
+.n-icon-button.n-button--sm { width: 30px; height: 30px; min-width: 30px; }
 .n-icon-button.n-button--lg { width: 44px; height: 44px; }
 /* Inputs */
 .n-field { display: grid; gap: 7px; min-width: 0; }
@@ -333,7 +338,7 @@ button.n-node:disabled { opacity: .5; cursor: not-allowed; }
 .n-setting-row { display: flex; justify-content: space-between; align-items: start; gap: 28px; }
 .n-setting-row h3 { font-size: 12px; font-weight: 500; }
 .n-setting-row p { margin-top: 6px; font-size: 11px; color: var(--n-faint); max-width: 340px; }
-.n-setting-control { min-width: 180px; max-width: 340px; flex: 0 1 45%; }
+.n-setting-control { display: flex; flex-direction: column; align-items: flex-end; min-width: 180px; max-width: 340px; flex: 0 1 45%; }
 .n-inherited { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--n-faint); font-size: 11px; flex-wrap: wrap; }
 .n-inherited > button { font-size: 11px; padding: 3px 6px; min-height: 28px; color: var(--n-accent); }
 .n-save-bar { position: sticky; bottom: 16px; z-index: 10; display: grid; gap: 8px; margin-top: 22px; padding: 13px 16px; border: 1px solid var(--n-border-strong); border-radius: var(--radius-md); background: var(--n-raised); box-shadow: var(--n-shadow); }
@@ -353,7 +358,7 @@ button.n-node:disabled { opacity: .5; cursor: not-allowed; }
 @media (max-width: 540px) {
   .n-page-header { align-items: start; flex-direction: column; gap: 16px; }
   .n-setting-row { flex-direction: column; gap: 12px; }
-  .n-setting-control { width: 100%; max-width: none; }
+  .n-setting-control { width: 100%; max-width: none; align-items: stretch; }
   .n-save-bar-row { flex-direction: column; align-items: stretch; gap: 12px; }
   .n-save-bar-row .n-actions { justify-content: flex-end; }
   .n-alert { flex-wrap: wrap; }

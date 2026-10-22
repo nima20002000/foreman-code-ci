@@ -59,7 +59,7 @@ export function useHierarchyReportHistory(scope: WorkflowHierarchyReadInput, wor
       workflowId, runId: runId!, workflowNodeId, limit: 20,
       ...(pageParam ? { cursor: pageParam } : {}) }, { signal }),
     getNextPageParam: (_page, pages, _param, params) => nextHistoryCursor(pages, params),
-    retry: false, staleTime: Infinity, refetchOnWindowFocus: false, refetchOnReconnect: false,
+    staleTime: Infinity, refetchOnWindowFocus: false, refetchOnReconnect: false,
     refetchOnMount: false, maxPages: historyPageLimit,
   })
   const refresh = useMutation({
@@ -76,7 +76,7 @@ export function useHierarchyReportHistory(scope: WorkflowHierarchyReadInput, wor
 export function useHierarchy(scope: WorkflowHierarchyReadInput, { enabled = true } = {}) {
   const current = !scope.runId && !scope.workflowVersionId
   return useQuery({ queryKey: hierarchyKey(scope), enabled, queryFn: ({ signal }) => readHierarchy(scope, { signal }),
-    retry: false, staleTime: current ? 30_000 : Infinity, refetchOnMount: 'always', refetchOnWindowFocus: current,
+    staleTime: current ? 30_000 : Infinity, refetchOnMount: 'always', refetchOnWindowFocus: current,
     refetchInterval: query => {
       if (!enabled || !current || query.state.error && !isTransientReadError(query.state.error)) return false
       return 30_000
@@ -87,7 +87,7 @@ export function useHierarchyReports(scope: WorkflowHierarchyReadInput, parentNod
     initialPageParam: undefined as string | undefined,
     queryFn: ({ signal, pageParam }) => readHierarchyReports({ workspaceId: scope.workspaceId,
       workflowId: scope.workflowId, runId: scope.runId!, parentNodeId, limit: 50, ...(pageParam ? { cursor: pageParam } : {}) }, { signal }),
-    getNextPageParam: page => page.nextCursor ?? undefined, retry: false, staleTime: Infinity,
+    getNextPageParam: page => page.nextCursor ?? undefined, staleTime: Infinity,
     refetchOnWindowFocus: false, refetchOnMount: 'always', maxPages: 20,
   })
 }

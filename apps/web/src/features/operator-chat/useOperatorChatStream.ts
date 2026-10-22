@@ -45,7 +45,7 @@ export function useOperatorChatStream({ enabled, open, selectedId, accessDenied,
       recover: async () => {
         await queryClient.cancelQueries({ queryKey: detailKey(selectedId), exact: true })
         if (disposed) throw new DOMException('Conversation changed.', 'AbortError')
-        const state = await queryClient.fetchQuery({ queryKey: detailKey(selectedId), retry: false, staleTime: 0,
+        const state = await queryClient.fetchQuery({ queryKey: detailKey(selectedId), staleTime: 0,
           queryFn: async ({ signal }) => {
             const incoming = await getOperatorConversation(selectedId, { signal })
             signal.throwIfAborted()

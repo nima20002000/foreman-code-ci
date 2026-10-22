@@ -23,7 +23,7 @@ export async function readRunHandoffs(scope: RepeatGraphScopeV3, options?: Reque
 
 export function useRunHandoffsQuery(scope: RepeatGraphScopeV3, enabled: boolean) {
   return useQuery({ queryKey: runHandoffsKey(scope), enabled,
-    queryFn: ({ signal }) => readRunHandoffs(scope, { signal }), retry: false,
+    queryFn: ({ signal }) => readRunHandoffs(scope, { signal }),
     staleTime: 1000, gcTime: 60_000, refetchOnWindowFocus: enabled,
     refetchInterval: (state) => {
       const error = state.state.error

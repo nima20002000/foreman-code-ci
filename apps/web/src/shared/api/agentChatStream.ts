@@ -1,11 +1,12 @@
 import { AgentChatStateSchema, AgentChatStreamEventSchema, type AgentChatState, type AgentChatStreamEvent } from '@foreman-code/contracts/agent-chat'
 import { agentChatConversationPath } from './agentChat'
 import { assertSession, sessionGeneration, sessionIsSwitching, sessionSignal } from './sessionBoundary'
+import { whileVisible } from './whileVisible'
 
 export type AgentChatConnection = 'connecting' | 'connected' | 'reconnecting' | 'offline' | 'unavailable'
 
 /** Connection-owned event ids are NOT conversation revisions or native turn ids. */
-export function subscribeAgentChat(workspaceId: string, conversationId: string, listeners: {
+function subscribeAgentChatNow(workspaceId: string, conversationId: string, listeners: {
   snapshot(state: AgentChatState): void
   event(event: AgentChatStreamEvent): void
   refetch(): void
@@ -95,3 +96,5 @@ export function subscribeAgentChat(workspaceId: string, conversationId: string, 
   if (signal.aborted) close(); else connect()
   return close
 }
+
+export const subscribeAgentChat: typeof subscribeAgentChatNow = (...args) => whileVisible(() => subscribeAgentChatNow(...args))

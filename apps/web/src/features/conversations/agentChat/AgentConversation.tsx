@@ -1,4 +1,3 @@
-import { InfoHint } from '../../../shared/ui/InfoHint'
 import { errorMessage } from '../../../shared/errorMessage'
 import { useSessionControls } from '../sessionControls/useSessionControls'
 import { compactionBlocksSend, parseSessionCommand } from '@foreman-code/contracts'
@@ -8,8 +7,9 @@ import type { SelectedRunChatExecution } from '@foreman-code/contracts/selected-
 import { ChatAttachmentControl, useConversationAttachments } from '../../attachments'
 import { ChatAttachmentBoundary } from '../ChatAttachmentBoundary'
 
-import { Button, CodeBlock, Dialog, IconButton, Select, Tooltip } from '../../../shared/ui/nocturne'
-import { createFileCardHttpClient, MessageFileCards } from '../../file-cards'
+import { Button, IconButton, Tooltip } from '../../../shared/ui/nocturne'
+import { createFileCardHttpClient } from '../../file-cards'
+import { SendAgainDialog } from './SendAgainDialog'
 import { ApiError } from '../../../shared/api/client'
 import { identityEpoch } from '../../../shared/api/protectedChatStorage'
 import { useFileDrop } from '../../../shared/ui/useFileDrop'
@@ -160,7 +160,7 @@ function AgentConversationContent({ context, name, activity, runLabel, onClose, 
       conversationId={conversation.previousConversationId} name={name} /> : null}
     <ProviderAccountProblem binding={conversation?.providerAccountBinding} />
     <AgentChatStatus>{attention ? <><Tooltip content={attention}><span tabIndex={0}>{attention}</span></Tooltip><Tooltip content="Read the latest conversation status">
-      <IconButton size="sm" variant="ghost" label="Refresh chat" disabled={chat.query.isFetching} onClick={chat.refresh}>
+      <IconButton size="sm" variant="ghost" label="Refresh chat" disabled={chat.query.isFetching && !chat.query.isRefetching} onClick={chat.refresh}>
         <RotateCcw size={12} aria-hidden="true" />
       </IconButton>
     </Tooltip>{attentionAction}</> : null}</AgentChatStatus>
@@ -194,44 +194,7 @@ function AgentConversationContent({ context, name, activity, runLabel, onClose, 
         </> : undefined} />
     </div> : null}
     <div className="n-sr-only" aria-live="polite" aria-atomic="true">{latestReply ? `New reply from ${name}: ${latestReply.content}` : ''}</div>
-    <Dialog open={sendAgain !== undefined} onOpenChange={(open) => { if (!open) setSendAgain(undefined) }}
-      title={resendControl ? 'Apply session command?' : 'Send again as a new message?'}
-      description={resendControl ? undefined
-        : 'The original message may already have been accepted. This creates a new message and can repeat work. It is not a retry or a resume.'}
-      dismissible={!resendPending} busy={resendPending} role="alertdialog" size="sm">
-      {sendAgain ? <div className="n-stack">
-        <CodeBlock label="Original message text" code={sendAgain.content} />
-        {resendCommand.kind === 'message' ? <>
-          {!sendAgain.sessionMode ? <p>The original mode is unavailable. Choose the mode for this new message.</p> : null}
-          <Select label="Mode for new message" value={sendAgain.sessionMode ?? ''} options={[{ value: '', label: 'Choose a mode', disabled: true },
-            { value: 'regular', label: 'Regular' }, { value: 'plan', label: 'Plan' }]}
-            onChange={event => {
-              if (event.target.value === 'regular' || event.target.value === 'plan') {
-                setSendAgain({ ...sendAgain, sessionMode: event.target.value })
-              }
-            }} />
-        </> : null}
-        {resendCommand.kind === 'plan-task' ? <p>Mode: Plan</p> : null}
-        {resendControl ? <p>Attached files will not be sent.</p> : <>
-          <p>Only the original file pins below will be sent. Displayed output files are excluded.</p>
-          {sendAgain.attachments?.length ? <>
-          <CodeBlock label="Original file pins" language="json" code={JSON.stringify(sendAgain.attachments, null, 2)} />
-          {resendFileClient ? <MessageFileCards attachments={sendAgain.attachments} files={resendFiles} client={resendFileClient} /> : null}
-          </> : <p>No original files.</p>}
-        </>}
-        {resendReason ? <p className="n-field-error" role="alert">{resendReason}</p> : null}
-        <div className="n-actions"><Button disabled={resendPending} onClick={() => setSendAgain(undefined)}>Keep it</Button>
-          <Button variant="danger" loading={resendPending}
-            disabled={resendPending || !!resendReason || !sendAgain.sessionMode && resendCommand.kind === 'message'}
-            onClick={() => {
-              void submit('next_turn', sendAgain.content, sendAgain.sessionMode, {
-                attachments: sendAgain.attachments,
-              }).then(sent => {
-                if (sent) setSendAgain(draft => draft === sendAgain ? undefined : draft)
-              })
-          }}>{resendControl ? 'Apply session command' : 'Send as new message'}</Button>
-          {resendControl && <InfoHint label="Apply session command">This applies the displayed command to this chat’s native session. This command uses native session controls.</InfoHint>}</div>
-      </div> : null}
-    </Dialog>
+    <SendAgainDialog composer={{ sendAgain, setSendAgain, resendCommand, resendControl, resendPending, submit }}
+      reason={resendReason} fileClient={resendFileClient} files={resendFiles} />
   </div>
 }

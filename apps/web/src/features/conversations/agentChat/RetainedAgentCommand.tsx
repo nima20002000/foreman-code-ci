@@ -32,7 +32,7 @@ export function RetainedAgentCommand({ command, receipt, onDenied, onReceipt, on
 }) {
   const cache = useQueryClient(), [denied, setDenied] = useState(false)
   const queryKey = ['chat-delivery-receipt', identityEpoch(), JSON.stringify(receipt.target), receipt.id]
-  const query = useQuery({ queryKey, initialData: receipt, retry: false, enabled: !denied,
+  const query = useQuery({ queryKey, initialData: receipt, enabled: !denied,
     queryFn: async ({ signal }) => {
       try {
         const response = await chatDeliveryClient.receiptById(receipt.target, receipt.id, { signal })
@@ -57,7 +57,7 @@ export function RetainedAgentCommand({ command, receipt, onDenied, onReceipt, on
     {command.input.attachments?.length ? <ul aria-label="Original file revisions">{command.input.attachments.map(pin =>
       <li key={`${pin.fileId}:${pin.revisionId}`}>File {pin.fileId} · Revision {pin.revisionId}</li>)}</ul> : null}
     <ChatDeliveryReceipts receipts={[current]} onRefresh={() => void query.refetch()} />
-    {!query.isError && current.state !== 'unknown' ? <Button disabled={query.isFetching}
+    {!query.isError && current.state !== 'unknown' ? <Button disabled={query.isFetching && !query.isRefetching}
       onClick={() => void query.refetch()}>Refresh delivery status</Button> : null}
     {query.isError ? <p role="alert">Delivery status could not be refreshed. <Button onClick={() => void query.refetch()}>Retry status</Button></p> : null}
     {!readOnly && onSendAgain && ['failed', 'unknown'].includes(current.state) ? <Button disabled={!!resendReason} title={resendReason}

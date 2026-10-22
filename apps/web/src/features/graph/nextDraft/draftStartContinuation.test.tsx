@@ -54,7 +54,7 @@ function setup() {
   const workflow = mock.managed('workflow')
   const displayed = mock.drafts.get('workflow')!
   const facts: startPreflight.BoardStartPreflight = {
-    workflow, capabilities: mock.capabilities(), version: mock.versions.get(workflow.currentVersionId!)!,
+    workflow, capabilities: mock.capabilities(), version: mock.versions.get(workflow.currentVersionId!)!, agents: [],
     workspace: ManagedWorkspaceSchema.parse({ workspace: { id: 'workspace', name: 'Workspace', agentIds: [], workflowIds: ['workflow'] },
       revision: 1, archivedAt: null, locationRevision: 1, executionLocation: { runnerId: 'runner', rootPath: '/workspace' },
       locationValidation: { status: 'ready', checkedAt: '2026-10-01T00:00:00Z' } }),

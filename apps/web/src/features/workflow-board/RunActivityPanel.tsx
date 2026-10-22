@@ -1,11 +1,10 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import { preferRunSummary } from '@foreman-code/contracts/run-snapshots'
 import { RunActions } from './actions'
 import { useEffect, useRef } from 'react'
 import { useInfiniteQuery, useMutation, useQueryClient, type InfiniteData, type QueryClient } from '@tanstack/react-query'
 import type { WorkflowRunSummary } from '@foreman-code/contracts'
 import { sameCanonicalGraphScope } from '@foreman-code/contracts/wave25'
-import { Alert, Button, EmptyState, Icon, LoadingState, StatusBadge } from '../../shared/ui/nocturne'
+import { Button, EmptyState, Icon, IconButton, LoadingState, StatusBadge } from '../../shared/ui/nocturne'
 import { Activities } from './Activities'
 import { isActiveRun, runLabel, runTone, shortRunId, when } from './runFacts'
 import { assertSession, sessionGeneration } from '../../shared/api/sessionBoundary'
@@ -65,7 +64,7 @@ export function RunActivityPanel({ summaries, summariesReadAt = 0 }: {
     queryFn: ({ pageParam, signal }) => readBoardRuns(workspaceId, workflowId, pageParam, { signal }),
     getNextPageParam: (page, _pages, _param, params) => page.pageInfo.nextCursor && !params.includes(page.pageInfo.nextCursor) ? page.pageInfo.nextCursor : undefined,
     maxPages: 5, staleTime: Infinity, refetchOnMount: false,
-    refetchOnWindowFocus: false, refetchOnReconnect: false, retry: false,
+    refetchOnWindowFocus: false, refetchOnReconnect: false,
   })
   useEffect(() => {
     const key = boardRunListKey(workspaceId, workflowId)
@@ -85,44 +84,46 @@ export function RunActivityPanel({ summaries, summariesReadAt = 0 }: {
   }, [summaryRuns, client, denied, workspaceId, workflowId])
   const inspect = (runId: string) => discovery.mutate({ runId, generation: sessionGeneration(), ticket: ++request.current })
   const listedIds = new Set(listed.map((item) => item.id))
+  const refreshing = runs.isFetching && !runs.isRefetching
+  const refreshRuns = () => void refreshFirstInspectionPage(client, boardRunListKey(workspaceId, workflowId))
+  const pendingSummaries = workspaceSummaries.filter((run) => !listedIds.has(run.id))
+  const empty = !runs.isPending && !listed.length && !workspaceSummaries.length && !denied && !runs.isError
   const runParts = <>
-    <h3>Current and past Runs<InfoHint label="Current and past Runs">Select a Run to show its own immutable topology, even when repeat was added or removed in a later saved version. The five most recently loaded pages are retained. Refresh starts at the first page.</InfoHint></h3>
-    {error ? <Alert tone="danger" live title="That run couldn’t be opened.">{error}</Alert> : null}
-    {denied ? <Alert tone="warning" title="You don’t have access to this workflow’s runs." /> : runs.isError ? <Alert tone="danger" title="Runs couldn’t be loaded."
-      action={<Button size="sm" onClick={() => void refreshFirstInspectionPage(client, boardRunListKey(workspaceId, workflowId))}>Try again</Button>} /> : null}
+    <header className="board-run-list-header"><h3>Runs</h3>
+      {!denied ? <IconButton size="sm" variant="ghost" label="Refresh runs" disabled={refreshing} onClick={refreshRuns}>
+        <Icon name="refresh" size={14} /></IconButton> : null}</header>
+    {error ? <p className="board-run-note" role="alert">Couldn’t open that run. {error}</p> : null}
+    {denied ? <p className="board-run-note">You can’t see this workflow’s runs.</p> : runs.isError && !listed.length
+      ? <p className="board-run-note" role="alert">Couldn’t load runs.<Button size="sm" variant="ghost" onClick={refreshRuns}>Try again</Button></p> : null}
     {runs.isPending && !denied ? <LoadingState label="Loading runs…" rows={3} /> : null}
-    {!runs.isPending && !listed.length && !workspaceSummaries.length && !denied && !runs.isError ? <EmptyState icon="history" title="No runs yet" description="Start a run from the board." /> : null}
-    <ul className="board-run-list">
-      {workspaceSummaries.filter((run) => !listedIds.has(run.id)).map((run) => <li key={run.id}>
+    {empty ? <EmptyState icon="history" title="No runs yet" description="Runs show up here after you start one." /> : null}
+    {listed.length || pendingSummaries.length ? <ul className="board-run-list">
+      {pendingSummaries.map((run) => <li key={run.id}>
         <button type="button" className="board-run-row" disabled={reading === run.id} onClick={() => void inspect(run.id)} aria-label={`Inspect ${run.id}`}>
           <StatusBadge label={runLabel(run.executionState, run.outcome)} tone={runTone(run.executionState, run.outcome)} busy={run.executionState === 'running'} />
-          <code>{shortRunId(run.id)}</code><span>{run.cleanupPending ? 'Cleaning up' : when(run.startedAt)}</span>
+          <span>Run {shortRunId(run.id)}</span><span>{run.cleanupPending ? 'Cleaning up' : when(run.startedAt)}</span>
         </button></li>)}
       {listed.map((run) => {
         const facts = preferRunSummary(summariesById.get(run.id), run, summariesReadAt, runs.dataUpdatedAt)
         let scope: ReturnType<typeof scopeForBoardRun>
-        try { scope = scopeForBoardRun(run) } catch {
-          return <li key={run.id}><p className="next-draft-hint">Run {shortRunId(run.id)} can’t be shown on this board.</p></li>
+        try { scope = scopeForBoardRun(run) } catch (cause) {
+          console.warn('Run cannot be shown on this board', cause)
+          return <li key={run.id}><p className="board-run-note">Run {shortRunId(run.id)} can’t be shown on this board.</p></li>
         }
         const current = !!selected && sameCanonicalGraphScope(scope, selected)
         return <li key={run.id}><button type="button" className="board-run-row" aria-pressed={current}
           aria-label={`Open Run ${run.id} · ${facts.executionState} · ${facts.outcome}`}
           onClick={() => { ++request.current; resetDiscovery(); selectRun(current ? undefined : scope) }}>
           <StatusBadge label={runLabel(facts.executionState, facts.outcome)} tone={runTone(facts.executionState, facts.outcome)} busy={facts.executionState === 'running'} />
-          <code>{shortRunId(run.id)}</code><span>{when(facts.startedAt)}</span>
-          <span>{facts.executionState === 'completed' ? 'Past Run' : 'Current Run'} · saved version <code>{run.workflowVersionId}</code></span>
+          <span>Run {shortRunId(run.id)}</span><span>{when(facts.startedAt)}</span>
         </button></li>
       })}
-    </ul>
-    <div className="n-actions">
-      {runs.hasNextPage && !denied && !runs.isError ? <Button size="sm" disabled={runs.isFetching} onClick={() => void runs.fetchNextPage()}>Load more Runs</Button> : null}
-      <Button size="sm" variant="ghost" leading={<Icon name="refresh" size={14} />} disabled={runs.isFetching} onClick={() => void refreshFirstInspectionPage(client, boardRunListKey(workspaceId, workflowId))}>Refresh Runs</Button>
-    </div>
-    {!selected ? <section className="board-activities" aria-label="Activities"><h3>Activities</h3>
-      <p>Select a Run to see its recorded Agent actions, outcomes and notices.</p></section> : null}
+    </ul> : null}
+    {listed.length && !selected ? <p className="board-run-note">Open a run to see its activity.</p> : null}
+    {runs.hasNextPage && !denied && !runs.isError ? <Button size="sm" variant="ghost" disabled={refreshing} onClick={() => void runs.fetchNextPage()}>Show older runs</Button> : null}
     {selected ? <section className="board-run-detail" aria-label="Selected run">
       <header><h3>Run {shortRunId(selected.runId)}</h3>
-        <Button size="sm" variant="ghost" onClick={() => { ++request.current; resetDiscovery(); selectRun() }}>Clear Run selection</Button></header>
+        <Button size="sm" variant="ghost" onClick={() => { ++request.current; resetDiscovery(); selectRun() }}>Back to draft</Button></header>
       <CurrentRunDetails key={JSON.stringify(selected)} scope={selected}
         runActions={<RunActions workspaceId={selected.workspaceId} workflowId={selected.workflowId} runId={selected.runId} />} />
     </section> : null}
@@ -131,7 +132,7 @@ export function RunActivityPanel({ summaries, summariesReadAt = 0 }: {
     <BoardChanges scope={boardScope(workspaceId, workflowId)} />
     {selected ? <>
       <Activities key={JSON.stringify(selected)} scope={selected} />
-      <details className="board-run-more"><summary>Runs and Run details</summary>{runParts}</details>
+      <details className="board-run-more"><summary>Run details and other runs</summary>{runParts}</details>
     </> : runParts}
   </div>
 }

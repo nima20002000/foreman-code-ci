@@ -100,7 +100,7 @@ describe('workspace section routes', () => {
 
   it('keeps the workspace Memory board out of the sidebar while its route still opens it', async () => {
     const workspaceMemoryBoard = vi.fn(({ workspaceId }: { workspaceId: string }) => <div data-testid="workspace-memory-body">Memory for {workspaceId}</div>)
-    const workflow = vi.fn(() => ({ memoryBoard: () => <p>Workflow-only modal</p> })), browserProfiles = vi.fn(() => <p>Profile manager</p>)
+    const workflow = vi.fn(() => ({ overview: () => <p>Workflow-only overview</p> })), browserProfiles = vi.fn(() => <p>Profile manager</p>)
     const { queryClient, unmount } = renderRoute('/workspaces/workspace-1/memory', { workspaceMemoryBoard, workflow, browserProfiles })
     expect(await screen.findByTestId('workspace-memory-body')).toHaveTextContent('workspace-1')
     const sidebar = within(screen.getByRole('complementary', { name: 'Primary navigation' }))

@@ -1,10 +1,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import type { McpServer } from '@modelcontextprotocol/server'
+import type { McpServer, ToolAnnotations } from '@modelcontextprotocol/server'
 
 export interface BoundTool<Context> {
   name: string
   description: string
+  annotations?: ToolAnnotations | undefined
   register(server: McpServer, context: Context): void
 }
 
@@ -23,8 +24,9 @@ export function collectBoundTools<Context extends { principal: ManagementPrincip
     get: (_target, key) => Reflect.get(current(), key),
   })
   const tools: BoundTool<Context>[] = []
-  const collector = { registerTool(name: string, config: { description?: string }, callback: (...args: unknown[]) => unknown) {
-    tools.push({ name, description: config.description ?? '', register(server, request) {
+  const collector = { registerTool(name: string, config: { description?: string; annotations?: ToolAnnotations },
+    callback: (...args: unknown[]) => unknown) {
+    tools.push({ name, description: config.description ?? '', annotations: config.annotations, register(server, request) {
       Reflect.apply(server.registerTool, server, [name, config,
         (...args: unknown[]) => requests.run(request, () => callback(...args))])
     } })

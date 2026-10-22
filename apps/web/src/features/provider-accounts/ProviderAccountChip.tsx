@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { UserRound } from 'lucide-react'
 import type { AcceptedProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
 import { Button } from '../../shared/ui/nocturne'
 import { useFloatingSurface } from '../../shared/ui/nocturne/useFloatingSurface'
+import { useDismissableSurface } from '../../shared/ui/useDismissableSurface'
 import { ChatNotice } from '../conversations/ChatNotice'
 import { PinnedProviderAccount } from './PinnedProviderAccount'
 import { useProviderAccount } from './providerAccountsQueries'
@@ -32,17 +33,11 @@ export function ProviderAccountChip({ binding, label = 'Saved account' }: {
   const surface = useRef<HTMLDivElement>(null)
   const summary = useAccountSummary(binding)
   useFloatingSurface(open, anchor, surface, 300, 'end')
-  useEffect(() => {
-    if (!open) return
-    const outside = (event: PointerEvent) => {
-      if (event.target instanceof Node && !surface.current?.contains(event.target) && !anchor.current?.contains(event.target)) setOpen(false)
-    }
-    document.addEventListener('pointerdown', outside)
-    return () => document.removeEventListener('pointerdown', outside)
-  }, [open])
+  const close = (reason: 'escape' | 'outside' | 'exclusive') => { setOpen(false); if (reason === 'escape') anchor.current?.focus() }
+  useDismissableSurface({ open, onDismiss: close, surfaceRef: surface, triggerRef: anchor })
   if (!binding || binding.kind === 'legacy-profile') return null
   return <span className="provider-account-chip" onKeyDown={event => {
-    if (event.key === 'Escape' && open) { event.preventDefault(); event.stopPropagation(); setOpen(false); anchor.current?.focus() }
+    if (event.key === 'Escape' && open) { event.preventDefault(); event.stopPropagation(); close('escape') }
   }}>
     <Button ref={anchor} size="sm" variant="ghost" aria-label="Saved account details" title={`${label}: ${summary.short}`}
       aria-expanded={open} data-problem={summary.problem ? 'true' : undefined} onClick={() => setOpen(value => !value)}>

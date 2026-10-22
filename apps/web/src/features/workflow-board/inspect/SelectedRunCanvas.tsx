@@ -5,11 +5,9 @@ import { createContext, useCallback, useContext, memo, useLayoutEffect, useMemo,
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { Background, ReactFlow, ReactFlowProvider, useNodesInitialized, useReactFlow, type Edge, type EdgeProps, type Node, type NodeChange, type NodeProps } from '@xyflow/react'
 import type { RepeatGraphScopeV3, WorkflowNodeV3, WorkflowRelationship } from '@foreman-code/contracts/wave25'
-import { AgentNodeView, AgentPopover, Dialog, Alert, Button, useReducedMotion, type AgentNodeState, type AgentNodeTransition } from '../../../shared/ui/nocturne'
+import { AgentNodeView, Alert, Button, useReducedMotion, type AgentNodeState, type AgentNodeTransition } from '../../../shared/ui/nocturne'
 import { useProtectedAccessError } from '../../../shared/api/useProtectedAccessError'
 import type { AgentPanelRenderer, OpenAgentPanel } from '../../graph/nextDraft/DraftCanvas'
-import { AgentChatWindowLayer } from '../../conversations/agentChat/AgentChatWindows'
-import { useChatWindowsStore } from '../../conversations/agentChat/agentChatWindows'
 import { CircularNodeResizer } from '../../graph/CircularNodeResizer'
 import { createGraphGeometryAdapter, type GraphGeometryChange } from '../../graph/geometry'
 import { AgentHandles } from '../../graph/AgentHandles'
@@ -38,11 +36,12 @@ import { useCiTransfers } from './useCiTransfers'
 import { CI_SERVER_NODE_ID, ciNodeActivities, ciServerFlowNode, ciServerSummary, ciJobRefreshing, runCiApi } from './ciServer'
 import { useInspectionPresentation } from './presentation'
 import type { SubagentLayoutNode } from '../../run-subagents/layout'
+import { useRunDirectionWait, withDirectionWait } from '../actions/directionWait'
 import './inspection.css'
 
 const RunAgentPanels = createContext<{
   panels?: AgentPanelRenderer; open?: OpenAgentPanel; setOpen(value?: OpenAgentPanel): void
-  chatScope: string; openChat(nodeId: string): void
+  openChat(nodeId: string): void
   beginResize?: () => void
   resize?: (change: GraphGeometryChange) => void; finishResize?: (change: GraphGeometryChange) => void
 } | null>(null)
@@ -55,27 +54,19 @@ type RunNode = Node<ReturnType<typeof pinnedTopology>['nodes'][number] & {
 }, 'pinnedRunNode'>
 /** Run identity is pinned; its circle uses the workflow's editable presentation. */
 const PinnedRunNode = memo(function PinnedRunNode({ id, data, selected, width, height }: NodeProps<RunNode>) {
-  const board = useWorkflowBoard()
-  const ui = useContext(RunAgentPanels), anchor = useRef<HTMLButtonElement>(null)
-  const chatOpen = useChatWindowsStore((state) => Boolean(ui && state.open[ui.chatScope]?.includes(id)))
+  const ui = useContext(RunAgentPanels)
   const panel = ui?.open?.nodeId === id ? ui.open.panel : undefined
   const meta = [...(data.blockId ? [{ label: 'Repeat', value: data.blockId }] : []),
     ...(data.kind === 'agent' && data.intervalSeconds ? [{ label: 'Loop', value: intervalLabel(data.intervalSeconds) }] : []),
     ...data.facts.meta].slice(0, 2)
-  return <><AgentNodeView ref={anchor} className="pinned-run-node" name={data.label} harness={data.facts.harness} harnessLabel={data.facts.harnessLabel}
+  return <AgentNodeView className="pinned-run-node" name={data.label} harness={data.facts.harness} harnessLabel={data.facts.harnessLabel}
     model={data.facts.model} icon={data.facts.icon} statusLabel={data.status} state={data.state} transition={data.transition} transitionKey={data.transitionKey} meta={meta}
-    entry={data.entry} selected={selected} ariaLabel={`Inspect Run node ${data.label}`} onSelect={()=>{if(data.kind==='job'){data.inspect();ui?.setOpen({nodeId:id,panel:'info'})}}} openPanel={panel ?? (chatOpen ? 'chat' : undefined)}
+    entry={data.entry} selected={selected} ariaLabel={`Inspect Run node ${data.label}`} onSelect={()=>{if(data.kind==='job'){data.inspect();ui?.setOpen({nodeId:id,panel:'info'})}}} openPanel={panel}
     onAction={ui?.panels && data.kind==='agent' ? (next) => next === 'chat' ? ui.openChat(id) : ui.setOpen(panel === next ? undefined : { nodeId: id, panel: next }) : undefined}>
     <AgentHandles name={data.label} connectable={false} />
     {data.kind === 'agent' && data.resizable ? <CircularNodeResizer id={id} name={data.label}
       width={width ?? GRAPH_NODE_DEFAULT_SIZE} height={height ?? GRAPH_NODE_DEFAULT_SIZE} onStart={ui?.beginResize} onResize={ui?.resize} onFinish={ui?.finishResize} /> : null}
   </AgentNodeView>
-    {panel && ui?.panels && data.kind==='job' && !board?.selectSidePanel?<Dialog open className="job-dialog" title={data.label} description={`Selected Run · ${data.recorded}`} onOpenChange={value=>{if(!value)ui.setOpen(undefined)}}>{ui.panels(id,{kind:'job',jobDefinitionId:data.jobDefinitionId,jobDefinitionRevision:data.jobDefinitionRevision,jobDefinitionVersionId:data.jobDefinitionVersionId,name:data.label,workflowExecution:data.workflowExecution}).info}</Dialog>:null}
-    {panel && panel !== 'chat' && ui?.panels && data.kind==='agent' && !board?.selectSidePanel ? <AgentPopover open anchor={anchor} title={data.label} subtitle={`Selected Run · ${data.recorded}`}
-      harness={data.facts.harness} icon={data.facts.icon} panel={panel}
-      onClose={() => ui.setOpen(undefined)}
-      {...ui.panels(id,{agentId:data.agentId,name:data.label,role:data.facts.roleLabel,runLabel:data.status})} /> : null}
-  </>
 })
 // Pulses and traces are timed once per canvas, so an edge remount never replays a handoff.
 type LineMotion = { pulses: Map<string, EdgePulse[]> }
@@ -118,23 +109,17 @@ const fitViewOptions = { padding: 0.25, minZoom: 0.3, maxZoom: 1 }
 const proOptions = { hideAttribution: true }
 const unknownFacts: Facts = { harnessLabel: 'Pinned settings unavailable', icon: 'bot', roleLabel: 'Agent', meta: [] }
 
-function useRunAgentPanels(scope: RepeatGraphScopeV3, board: NonNullable<ReturnType<typeof useWorkflowBoard>>) {
-  const [localOpen, setLocalOpen] = useState<OpenAgentPanel>()
+/** Agent chat, settings and details open in the Board side panel. */
+function useRunAgentPanels(board: NonNullable<ReturnType<typeof useWorkflowBoard>>) {
   const docked = board.sidePanel?.kind === 'agent' ? board.sidePanel : undefined
-  const open = board.selectSidePanel ? docked && { nodeId: docked.nodeId, panel: docked.tab === 'details' ? 'info' as const : docked.tab } : localOpen
-  const setOpen = (next?: OpenAgentPanel) => {
-    if (board.selectSidePanel) board.selectSidePanel(next
-      ? { kind: 'agent', nodeId: next.nodeId, tab: next.panel === 'info' ? 'details' : next.panel } : { kind: 'none' })
-    else setLocalOpen(next)
-  }
-  // Each Run keeps its own floating chat windows; they never mix with the draft's.
-  const chatScope = `run:${scope.workflowId}:${scope.runId}`
+  const open = docked && { nodeId: docked.nodeId, panel: docked.tab === 'details' ? 'info' as const : docked.tab }
   const selectSidePanel = board.selectSidePanel
+  const setOpen = (next?: OpenAgentPanel) => selectSidePanel?.(next
+    ? { kind: 'agent', nodeId: next.nodeId, tab: next.panel === 'info' ? 'details' : next.panel } : { kind: 'none' })
   const openChat = useCallback((nodeId: string) => {
-    if (selectSidePanel) selectSidePanel({ kind: 'agent', nodeId, tab: 'chat' })
-    else useChatWindowsStore.getState().openWindow(chatScope, nodeId)
-  }, [selectSidePanel, chatScope])
-  return { open, setOpen, chatScope, openChat }
+    selectSidePanel?.({ kind: 'agent', nodeId, tab: 'chat' })
+  }, [selectSidePanel])
+  return { open, setOpen, openChat }
 }
 
 /** The editor stays mounted beside this canvas. Only geometry is shared with
@@ -144,7 +129,7 @@ export function SelectedRunCanvas({ scope, panels: suppliedPanels, layout, geome
   layout?: readonly Pick<WorkflowNodeV3, 'id' | 'position' | 'width' | 'height'>[]; geometry?: (changes: GraphGeometryChange[]) => void
 }) {
   const board = useWorkflowBoard()!
-  const { open, setOpen, chatScope, openChat } = useRunAgentPanels(scope, board)
+  const { open, setOpen, openChat } = useRunAgentPanels(board)
   const query = useRunVersionQuery(scope)
   const denied = useProtectedAccessError(query)
   // Observe (never fetch) the canonical Run read: its confirmed denial hides the pinned topology too.
@@ -168,7 +153,7 @@ export function SelectedRunCanvas({ scope, panels: suppliedPanels, layout, geome
     queryKey: [...runInspectionQueryKey(scope), 'board-activity'],
     queryFn: ({ signal }) => runsSelectorApi.snapshot({ workspaceId: scope.workspaceId,
       workflowId: scope.workflowId, runId: scope.runId }, { signal }),
-    enabled: Boolean(version && record && !canonicalDenied), retry: false, staleTime: 0,
+    enabled: Boolean(version && record && !canonicalDenied), staleTime: 0,
     refetchInterval: query => isRunAccessError(query.state.error) ? false : 1500,
   })
   const checks = useMemo(() => new Map((snapshotQuery.isError ? undefined : snapshotQuery.data)?.intervalChecks
@@ -181,7 +166,7 @@ export function SelectedRunCanvas({ scope, panels: suppliedPanels, layout, geome
   const ciList = useQuery({
     queryKey: [...runInspectionQueryKey(scope), 'ci-jobs'],
     queryFn: ({ signal }) => runCiApi.list({ workspaceId: scope.workspaceId, runId: scope.runId }, { signal }),
-    enabled: Boolean(version && !canonicalDenied), retry: false, staleTime: 0,
+    enabled: Boolean(version && !canonicalDenied), staleTime: 0,
     refetchInterval: (query) => isRunAccessError(query.state.error) ? false
       : live || query.state.data?.jobs.some(ciJobRefreshing) ? 1500 : false,
   })
@@ -205,8 +190,9 @@ export function SelectedRunCanvas({ scope, panels: suppliedPanels, layout, geome
   // The same pending-request read as the approval inbox; this Run's requests name why its Agents wait.
   const pending = useInteractionsQuery({ workspaceId: scope.workspaceId, workflowId: scope.workflowId, status: 'pending', limit: 100 }, live)
   const names = useMemo(() => new Map(topology?.nodes.map((node) => [node.id, node.label])), [topology])
-  const waits = useMemo(() => interactionWaits(record, pending.isError ? [] : pending.data?.items ?? [], names),
-    [record, pending.data, pending.isError, names])
+  const direction = useRunDirectionWait(live ? scope : undefined)
+  const waits = useMemo(() => withDirectionWait(interactionWaits(record, pending.isError ? [] : pending.data?.items ?? [], names), direction),
+    [record, pending.data, pending.isError, names, direction])
   const states = useMemo(() => pinnedNodeStates(record), [record])
   const checking = useMemo(() => live ? runningIntervalChecks(record) : new Map<string, { check: number; queued: boolean }>(), [record, live])
   const choreography = useRunChoreography(record, topology?.edges)
@@ -227,7 +213,7 @@ export function SelectedRunCanvas({ scope, panels: suppliedPanels, layout, geome
   const configurations = useQueries({ queries: pins.map(([versionId, agentId]) => ({
     queryKey: [...runInspectionQueryKey(scope), 'agent-version', agentId, versionId],
     queryFn: ({ signal }: { signal: AbortSignal }) => readPinnedAgentVersion(scope.workspaceId, agentId, versionId, { signal }),
-    retry: false, staleTime: Infinity, gcTime: 60_000, refetchOnWindowFocus: false,
+    staleTime: Infinity, gcTime: 60_000, refetchOnWindowFocus: false,
   })), combine: (results) => results.map((result) => result.data) })
   const facts = useMemo(() => new Map(configurations.flatMap((configuration) => configuration
     ? [[configuration.id, agentNodeFacts({ harnessConfiguration: configuration.harness, productRole: configuration.productRole })] as const] : [])),
@@ -316,7 +302,7 @@ export function SelectedRunCanvas({ scope, panels: suppliedPanels, layout, geome
       <Button size="sm" onClick={() => board.selectInspection({})}>Clear missing node selection</Button>
     </Alert> : null}
     {version ? <div className="pinned-run-flow">
-      <ReactFlowProvider><RunAgentPanels.Provider value={{ panels, open, setOpen, chatScope, openChat, beginResize, resize, finishResize }}><Choreography.Provider value={motion}><ReactFlow<RunNode | CiServerFlowNode, RunEdge | CiTransferFlowEdge> nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
+      <ReactFlowProvider><RunAgentPanels.Provider value={{ panels, open, setOpen, openChat, beginResize, resize, finishResize }}><Choreography.Provider value={motion}><ReactFlow<RunNode | CiServerFlowNode, RunEdge | CiTransferFlowEdge> nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
         onNodesChange={onNodesChange} nodesDraggable={Boolean(geometry)} nodesConnectable={false} nodesFocusable edgesFocusable
         elementsSelectable deleteKeyCode={null} onlyRenderVisibleElements
         fitView fitViewOptions={fitViewOptions} proOptions={proOptions} minZoom={0.1} maxZoom={1.6}
@@ -325,13 +311,7 @@ export function SelectedRunCanvas({ scope, panels: suppliedPanels, layout, geome
         <Background color="var(--border)" gap={24} size={1} />
       </ReactFlow></Choreography.Provider></RunAgentPanels.Provider></ReactFlowProvider>
     </div> : null}
-    {panels && !board.selectSidePanel ? <AgentChatWindowLayer scope={chatScope} content={(nodeId) => {
-      const node = presentedNodes.find((item) => item.id === nodeId)
-      if (!node || node.data.kind !== 'agent') return undefined
-      const { chat, chatHasHeader } = panels(nodeId, { agentId: node.data.agentId, name: node.data.label, role: node.data.facts.roleLabel, runLabel: node.data.status })
-      return chat ? { name: node.data.label, harness: node.data.facts.harness, chat, chatHasHeader } : undefined
-    }} /> : null}
-    {panels ? <RunRailAgentPanel panels={panels} chatScope={chatScope} nodes={presentedNodes} /> : null}
+    {panels ? <RunRailAgentPanel panels={panels} nodes={presentedNodes} /> : null}
     <CiServerDialog open={ciDialogOpen} onOpenChange={setCiDialogOpen} scope={scope} workflow={{ workspaceId: scope.workspaceId, workflowId: scope.workflowId }} jobs={ciRunJobs ?? []} names={names}
       truncated={!ciDenied && (ciList.data?.truncated ?? false)} error={Boolean(ciDenied || ciList.isError)} loading={ciList.isPending} />
   </section>
@@ -373,9 +353,8 @@ function usePinnedRunEdges(lines: ReturnType<typeof relationshipLines<WorkflowRe
   }, [lines, selectedId, version, handoffs?.connections])
 }
 
-function RunRailAgentPanel({ panels, chatScope, nodes }: { panels: AgentPanelRenderer; chatScope: string; nodes: RunNode[] }) {
-  return <WorkflowAgentPanel panels={panels} chatScope={chatScope}
-    nodes={nodes.map(node => ({ id: node.id, name: node.data.label }))} findNode={nodeId => {
+function RunRailAgentPanel({ panels, nodes }: { panels: AgentPanelRenderer; nodes: RunNode[] }) {
+  return <WorkflowAgentPanel panels={panels} findNode={nodeId => {
       const node = nodes.find(item => item.id === nodeId)
       return node?.data.kind === 'agent' ? { agentId: node.data.agentId, name: node.data.label,
         role: node.data.facts.roleLabel, runLabel: node.data.status } : node?.data.kind === 'job'

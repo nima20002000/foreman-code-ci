@@ -233,6 +233,11 @@ export class McpDetectionService {
         'Foreman Code MCP inspection timed out before credentials could be injected. Retry after the provider finishes starting.',
         409, { inspectionCodes: result.nativeFilters.diagnostics })
     }
+    // A signed-out harness fails the inspection itself; say that instead of a generic "check_failed" refusal.
+    if (result.nativeFilters.diagnostics?.includes('CODEX_APP_SERVER_AUTH_UNQUALIFIED')) {
+      throw new DomainError('APP_MCP_PREFLIGHT_FAILED', 'Codex is signed out on this computer. Sign it in, then start again.',
+        409, { inspectionCodes: result.nativeFilters.diagnostics })
+    }
     // A correctly configured bearer endpoint may require the not-yet-issued
     // token. This does NOT accept broken connections or relax config checks.
     if (!['connected', 'status_unavailable', 'authentication_required'].includes(result.detection.state)) {

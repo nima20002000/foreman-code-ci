@@ -151,7 +151,7 @@ describe.each(forms)('%s Board recovery', (form) => {
     await user.click(action('Stop this Run'))
     const scope = f.mock.currents.get(run.id)!.scope
     await waitFor(() => expect(readBoardStop(scope)?.receipt?.status).toBe('accepted'))
-    expect(actionRegion()).toHaveTextContent('Stop accepted is not cleanup settled.')
+    expect(actionRegion()).toHaveTextContent('Cleanup isn’t confirmed yet.')
     expect(f.mock.controls.stopCalls).toBe(1)
     expect(f.mock.runs.size).toBe(1)
     expect(readBoardStop(scope)?.request.runId).toBe(run.id)

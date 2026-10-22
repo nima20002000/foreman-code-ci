@@ -26,7 +26,7 @@
 }
 /* One row per Run; columns line up with the header. */
 .runs-selector-head, .runs-selector-menu .runs-selector-option {
-  display: grid; grid-template-columns: 14px 104px minmax(0, 1fr) 72px 76px; align-items: center; gap: 10px;
+  display: grid; grid-template-columns: 14px 104px minmax(0, 1fr) 72px; align-items: center; gap: 10px;
   width: 100%; min-width: 0; box-sizing: border-box; padding-inline: 12px; text-align: start;
 }
 .runs-selector-head {

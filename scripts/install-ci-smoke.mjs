@@ -58,8 +58,15 @@ export async function runInstallCiSmoke({ origin, workspaceId, commit, token,
   let admissionCount = 0
   const probes = async () => {
     try {
+      // The API is busy right after a restart: only three consecutive failed probes mean it is down.
+      let failures = 0
       do {
-        await request('/health/live', { step: 'health probe' })
+        try {
+          await request('/health/live', { step: 'health probe' })
+          failures = 0
+        } catch (error) {
+          if (signal.aborted || ++failures >= 3) throw error
+        }
         if (!ciFinished) await delay(pollMs, undefined, { signal })
       } while (!ciFinished)
     } catch (error) {

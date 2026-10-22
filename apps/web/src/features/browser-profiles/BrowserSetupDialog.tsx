@@ -31,7 +31,7 @@ function SetupBrowser(props: BrowserSetupDialogProps) {
   const lifetime = useRef(0)
   const [cleanupError, setCleanupError] = useState<string | null>(null)
   const recoveryCommand = useRef<string | null>(null)
-  const read = useQuery({ queryKey: key, enabled: !denied, retry: false, refetchOnWindowFocus: false,
+  const read = useQuery({ queryKey: key, enabled: !denied, refetchOnWindowFocus: false,
     queryFn: async ({ signal }) => {
       const result = validateBrowserRead(await props.port.readSession(props.session.id, signal))
       if (result.session.id !== props.session.id || result.session.setupForProfileId !== props.session.setupForProfileId
@@ -93,10 +93,10 @@ function SetupBrowser(props: BrowserSetupDialogProps) {
   const accessDenied = denied || browserAccessDenied(read.error)
   return <Dialog open size="xl" title={`Set up ${props.profileName} · ${props.computerName}`} busy={close.isPending}
     onOpenChange={open => { if (!open) close.mutate() }} closeLabel="Close setup browser"
-    footer={<div className="browser-profile-actions"><Button disabled={close.isPending} onClick={() => close.mutate()}>
-      {close.isPending ? 'Closing setup browser…' : close.data === 'pending' || close.isError ? 'End setup' : 'Done'}</Button></div>}>
-    {accessDenied ? <p role="alert">Browser access is unavailable.</p>
-      : read.isPending ? <p role="status">Loading setup browser…</p>
+    footer={<Button variant="primary" loading={close.isPending} onClick={() => close.mutate()}>
+      {close.data === 'pending' || close.isError ? 'End setup' : 'Done'}</Button>}>
+    {accessDenied ? <p role="alert" className="browser-profile-note">The browser is unavailable right now.</p>
+      : read.isPending ? <p role="status" className="browser-profile-note">Opening the browser…</p>
         : read.error ? <p role="alert">{browserErrorMessage(read.error)}</p>
           : read.data && tab ? <BrowserSessionPanel key={`${tab.tabId}:${connection}`} port={props.port} files={props.files} initial={read.data}
             tab={tab} viewerId={viewerId} readOnly={false} computerName={props.computerName} setup
@@ -104,12 +104,12 @@ function SetupBrowser(props: BrowserSetupDialogProps) {
             onRefresh={() => { if (mounted.current) void read.refetch() }}
             onCleanupError={message => { if (active.current) props.onCleanupError(message) }}
             onDenied={() => { setDenied(true); queryClient.removeQueries({ queryKey: key }) }}
-            onReconnect={reconnect} /> : <p>No setup browser tab is available.</p>}
+            onReconnect={reconnect} /> : <p className="browser-profile-note">No browser tab is open.</p>}
     {read.data && !accessDenied ? <OriginConfirmation profileId={props.session.profileId} computerId={props.session.computerId}
       profiles={props.profiles} /> : null}
     {cleanupError || close.error ? <p role="alert">{cleanupError ?? browserErrorMessage(close.error)}</p> : null}
     {recovery.error && !accessDenied ? <p role="alert">{browserErrorMessage(recovery.error)}
-      <Button disabled={recovery.isPending} onClick={reconnect}>Check original reconnect</Button></p> : null}
+      <Button disabled={recovery.isPending} onClick={reconnect}>Retry reconnect</Button></p> : null}
   </Dialog>
 }
 
@@ -119,20 +119,19 @@ function OriginConfirmation({ profileId, computerId, profiles }: { profileId: st
   const confirmation = useMutation({ mutationFn: (request: { origin: string; state: 'signed_in' | 'sign_in_required'; commandId: string }) =>
     profiles.confirmLogin(profileId, computerId, request.origin, request.state, request.commandId), retry: false })
   const uncertain = confirmation.isError && browserRequestUncertain(confirmation.error)
-  return <form className="browser-profile-form" onSubmit={event => {
+  return <form className="browser-profile-origin" aria-label="Check a website sign-in" onSubmit={event => {
     event.preventDefault()
     if (!uncertain && !confirmation.isPending) confirmation.mutate({ origin, state, commandId: crypto.randomUUID() })
   }}>
-    <TextField label="Website origin to confirm" value={origin} type="url" placeholder="https://example.com" required
+    <TextField label="Website" value={origin} type="url" placeholder="https://example.com" required
       onChange={event => setOrigin(event.currentTarget.value)} />
-    <Select label="What you observed on this computer" value={state}
-      options={[{ value: 'signed_in', label: 'I am signed in' }, { value: 'sign_in_required', label: 'Sign-in is required' }]}
+    <Select label="Status" value={state}
+      options={[{ value: 'signed_in', label: 'Signed in' }, { value: 'sign_in_required', label: 'Needs sign-in' }]}
       onChange={event => setState(event.currentTarget.value === 'signed_in' ? 'signed_in' : 'sign_in_required')} />
-    <Button type="submit" disabled={confirmation.isPending || uncertain}>Record sign-in check</Button>
-    {confirmation.isSuccess ? <p role="status">Sign-in observation saved for this website on this computer.</p> : null}
-    {confirmation.error ? <p role="alert">{browserErrorMessage(confirmation.error)}</p> : null}
     {uncertain ? <Button disabled={confirmation.isPending} onClick={() => {
       if (confirmation.variables) confirmation.mutate(confirmation.variables)
-    }}>Check original sign-in observation</Button> : null}
+    }}>Retry</Button> : <Button type="submit" loading={confirmation.isPending}>Save</Button>}
+    {confirmation.isSuccess ? <p role="status" className="browser-profile-note">Saved.</p> : null}
+    {confirmation.error ? <p role="alert" className="browser-profile-note">{browserErrorMessage(confirmation.error)}</p> : null}
   </form>
 }

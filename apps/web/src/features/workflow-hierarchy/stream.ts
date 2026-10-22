@@ -1,8 +1,9 @@
 import { WorkflowHierarchyChangeSchema } from '@foreman-code/contracts'
 import { assertSession, sessionGeneration, sessionSignal, sessionIsSwitching } from '../../shared/api/sessionBoundary'
 import { hierarchyPath } from './client'
+import { whileVisible } from '../../shared/api/whileVisible'
 
-export function subscribeHierarchy(scope: { workspaceId: string; workflowId: string; runId: string },
+function subscribeHierarchyNow(scope: { workspaceId: string; workflowId: string; runId: string },
   listeners: { changed(): void; unavailable(): void; connection(connected: boolean): void }): () => void {
   if (sessionIsSwitching() || typeof EventSource === 'undefined') return () => {}
   const generation = sessionGeneration(), signal = sessionSignal()
@@ -32,3 +33,5 @@ export function subscribeHierarchy(scope: { workspaceId: string; workflowId: str
   if (signal.aborted) close()
   return close
 }
+
+export const subscribeHierarchy: typeof subscribeHierarchyNow = (...args) => whileVisible(() => subscribeHierarchyNow(...args))

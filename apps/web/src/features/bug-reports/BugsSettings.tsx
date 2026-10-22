@@ -9,7 +9,7 @@ import {
 import { useRef } from 'react'
 import { useAccessFailureLatch } from '../../shared/api/useAccessFailureLatch'
 import { LoadMore } from '../../shared/ui/LoadMore'
-import { Alert, Button, EmptyState, Icon, LoadingState, Select } from '../../shared/ui/nocturne'
+import { Alert, Button, EmptyState, Select } from '../../shared/ui/nocturne'
 import { BugReportDialog } from './BugReportDialog'
 import { useBugReports } from './bugReportQueries'
 import {
@@ -18,24 +18,20 @@ import {
 import '../settings/settingsExperience.css'
 import './bugsSettings.css'
 
-function ReportCard({ report, onSelect }: { report: BugReport; onSelect(): void }) {
-  return <li className="settings-choice">
-    <button className="settings-choice-open" type="button" onClick={onSelect} aria-label={`Read ${report.title}`}>
-      <span className="settings-choice-heading">
-        <span className="settings-choice-icon"><Icon name="warning" size={21} /></span>
-        <span><strong>{report.title}</strong><small>{report.tried.feature}</small></span>
-        <Icon name="chevron" size={17} />
-      </span>
-      <span className="settings-choice-summary">
-        <span className="settings-summary-row"><span>Status</span><strong>{statusLabels[report.status]}</strong></span>
-        <span className="settings-summary-row"><span>Severity</span><strong>{severityLabels[report.severity]}</strong></span>
-        <span className="settings-summary-row"><span>Reporter</span><strong>{report.reporter.name}</strong></span>
-        <span className="settings-summary-row"><span>Reported</span><strong><time dateTime={report.createdAt}>
-          {new Date(report.createdAt).toLocaleString()}</time></strong></span>
-        {report.resolution && <span className="settings-summary-row"><span>Closed</span><strong>
-          <time dateTime={report.resolution.closedAt}>{new Date(report.resolution.closedAt).toLocaleString()}</time>
-        </strong></span>}
-      </span>
+function relativeDay(iso: string) {
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000)
+  return days <= 0 ? 'Today' : days === 1 ? 'Yesterday' : `${days} days ago`
+}
+
+/** One row per report: what broke, where, how bad, and when. */
+function ReportRow({ report, onSelect }: { report: BugReport; onSelect(): void }) {
+  return <li>
+    <button className="bug-row" type="button" onClick={onSelect} aria-label={`Read ${report.title}`}>
+      <span className="bug-row-title"><strong>{report.title}</strong><small>{report.tried.feature}</small></span>
+      <span className="bug-row-severity" data-severity={report.severity}>{severityLabels[report.severity]}</span>
+      <span className="bug-row-status">{statusLabels[report.status]}</span>
+      <time className="bug-row-date" dateTime={report.createdAt} title={new Date(report.createdAt).toLocaleString()}>
+        {relativeDay(report.resolution?.closedAt ?? report.createdAt)}</time>
     </button>
   </li>
 }
@@ -80,13 +76,14 @@ export function BugsSettings({ search, onSearchChange }: {
           onSearchChange(next)
         }} />
     </div>
-    {reports.isPending && <LoadingState label="Reading bug reports…" />}
+    {reports.isPending && <ul className="bug-list" aria-busy="true" aria-label="Loading bug reports">
+      {[0, 1, 2, 3].map(index => <li key={index} className="bug-row-skeleton" />)}</ul>}
     {reports.isError && <Alert live tone="danger" title={reports.error.message}
-      action={<Button disabled={reports.isFetching} onClick={() => void reports.refetch()}>Refresh bug reports</Button>} />}
+      action={<Button disabled={reports.isFetching && !reports.isRefetching} onClick={() => void reports.refetch()}>Refresh bug reports</Button>} />}
     {!reports.isPending && !reports.isError && !items.length && <EmptyState
       title={history ? 'No closed bug reports' : 'No active bug reports'} />}
-    {items.length > 0 && <ul className="settings-choice-grid bug-report-list" aria-label="Bug reports, newest first">
-      {items.map(report => <ReportCard key={report.id} report={report}
+    {items.length > 0 && <ul className="bug-list" aria-label="Bug reports, newest first">
+      {items.map(report => <ReportRow key={report.id} report={report}
         onSelect={() => onSearchChange({ ...filters, reportId: report.id })} />)}
     </ul>}
     {!denied && <LoadMore label="bug reports" query={reports} />}

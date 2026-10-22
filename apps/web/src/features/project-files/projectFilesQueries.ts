@@ -36,7 +36,6 @@ export function useProjectFilesQuery(workspaceId: string) {
     },
     placeholderData: () => undefined, // Do not inherit an app-level keepPreviousData across workspaces.
     staleTime: 0,
-    retry: false,
     refetchInterval: query => {
       if (query.state.error && !isTransientReadError(query.state.error)) return false
       return query.state.data?.pages.some(page => page.items.some(row => row.file.state === 'pending'))

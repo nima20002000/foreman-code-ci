@@ -10,9 +10,9 @@ export function ExecutionReadinessNotice({ harness, configurationVersionId }: { 
   const epoch = useHarnessSessionEpoch()
   const query = useQuery({ queryKey: ['workbench', 'management', 'operator-readiness', epoch, harness, configurationVersionId],
     enabled: !sessionIsSwitching(), queryFn: ({ signal }) => getExecutionReadiness(harness, signal, 'operator-configuration', configurationVersionId),
-    retry: false, staleTime: 30_000 })
+    staleTime: 30_000 })
   if (query.isPending) return null
-  const check = <Button size="sm" disabled={query.isFetching} onClick={() => void query.refetch()}>Check again</Button>
+  const check = <Button size="sm" disabled={query.isFetching && !query.isRefetching} onClick={() => void query.refetch()}>Check again</Button>
   if (query.isError) return <ChatNotice title="Execution eligibility is unverified" action={check}>
     MCP installation alone does not confirm that agents can run. You can continue browsing.
   </ChatNotice>

@@ -30,7 +30,7 @@ export function sameRootSelection(left: WorkspaceRootSelection | undefined, righ
 function invalid(message: string): never { throw new ApiError({ code: 'INVALID_RESPONSE', message }) }
 export function useWorkspaceRootChoices(workspaceId: string, enabled = true) {
   useHarnessSessionEpoch()
-  return useQuery({ queryKey: boundLocationKeys.choices(workspaceId), enabled: enabled && !sessionIsSwitching(), retry: false,
+  return useQuery({ queryKey: boundLocationKeys.choices(workspaceId), enabled: enabled && !sessionIsSwitching(),
     queryFn: async ({ signal }) => {
       const result = await apiClient.request(`${path(workspaceId)}/root-policies`, WorkspaceRootListResultSchema, { signal })
       if (result.workspaceId !== workspaceId || result.policies.some(value => value.workspaceId !== workspaceId)) invalid('Root choices belong to another workspace.')
@@ -39,7 +39,7 @@ export function useWorkspaceRootChoices(workspaceId: string, enabled = true) {
 }
 export function useBoundWorkspaceLocation(workspaceId: string, enabled = true) {
   useHarnessSessionEpoch()
-  return useQuery({ queryKey: boundLocationKeys.read(workspaceId), enabled: enabled && !sessionIsSwitching(), retry: false,
+  return useQuery({ queryKey: boundLocationKeys.read(workspaceId), enabled: enabled && !sessionIsSwitching(),
     structuralSharing: (previous, incoming) => {
       const before = previous as WorkspaceBoundLocationReadback | undefined, next = incoming as WorkspaceBoundLocationReadback
       return before && before.locationRevision > next.locationRevision ? before : next
@@ -71,7 +71,7 @@ export function useBrowseBoundWorkspaceLocation(workspaceId: string) {
 export function useBoundFolderDirectories(binding: BoundFolderBrowser | undefined, location: { rootId?: string; path?: string; cursor?: string }, enabled: boolean) {
   useHarnessSessionEpoch()
   return useQuery({ queryKey: [...boundLocationKeys.scope(binding?.input.workspaceId ?? ''), 'folders', binding, location],
-    enabled: enabled && Boolean(binding) && !sessionIsSwitching(), retry: false,
+    enabled: enabled && Boolean(binding) && !sessionIsSwitching(),
     queryFn: async ({ signal }) => {
       if (!binding || binding.input.hostRef.kind !== 'main') throw new ApiError({ code: 'INVALID_REQUEST', message: 'The folder browser requires an approved Main location.' })
       const base = binding.expectedHost.bases.find(base => base.baseId === binding.input.allowedBaseId)

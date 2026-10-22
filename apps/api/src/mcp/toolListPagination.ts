@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { McpServer, ProtocolError, ProtocolErrorCode, type ListToolsRequest,
   type ListToolsResult, type ServerContext } from '@modelcontextprotocol/server'
 import { z } from 'zod'
+import { compactJsonSchema } from './shared/schemaCompaction.js'
 
 const pageBytes = 400 * 1024
 const Cursor = z.object({ catalog: z.string().regex(/^[a-f0-9]{64}$/), offset: z.number().int().positive() }).strict()
@@ -38,14 +39,19 @@ function page(result: ListToolsResult, request: ListToolsRequest): ListToolsResu
   return { ...result, tools, ...(nextCursor ? { nextCursor } : {}) }
 }
 
-/** Retains the SDK's schema conversion and grant-filtered definitions. */
+function compacted(result: ListToolsResult): ListToolsResult {
+  return { ...result, tools: result.tools.map(tool => ({ ...tool, inputSchema: compactJsonSchema(tool.inputSchema),
+    ...(tool.outputSchema ? { outputSchema: compactJsonSchema(tool.outputSchema) } : {}) })) }
+}
+
+/** Retains the SDK's schema conversion and grant-filtered definitions; emitted schemas are compacted. */
 export function paginateToolLists(server: McpServer): void {
   const protocol = server.server
   protocol.setRequestHandler = new Proxy(protocol.setRequestHandler, {
     apply(register, target, arguments_) {
       if (arguments_[0] === 'tools/list') {
         const list = arguments_[1] as ListHandler
-        const handler: ListHandler = async (request, context) => page(await list(request, context), request)
+        const handler: ListHandler = async (request, context) => page(compacted(await list(request, context)), request)
         return Reflect.apply(register, target, ['tools/list', handler])
       }
       return Reflect.apply(register, target, arguments_)

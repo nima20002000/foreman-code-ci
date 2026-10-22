@@ -35,7 +35,7 @@ export function useDraftEditorController(draftKey: string, edit: NextDraftEdit) 
     return () => registerAuthoringActions?.()
   }, [registerAuthoringActions])
   const startState = useDraftStartState({ draftKey, edit, board })
-  const { preflight, pendingStart } = startState
+  const { preflight, pendingStart, changedAgents } = startState
   const saveActions = useDraftEditorSave({ draftKey, edit, editIntent, core, pendingStart })
   const { reloading, stopAndSave, discardChanges, reload, inspectLatest } = saveActions
   const { startMutation, starting, start, recoverStart } = useDraftStartMutation({
@@ -63,7 +63,7 @@ export function useDraftEditorController(draftKey: string, edit: NextDraftEdit) 
   })
   const { openAgent, panels } = useDraftAgentPanels({ draftKey, edit, editIntent, core, board, reloading, agents })
   return {
-    graph, context, board, editIntent, undoScope, core, preflight, pendingStart,
+    graph, context, board, editIntent, undoScope, core, preflight, pendingStart, changedAgents,
     reloading, stopAndSave, discardChanges, reload, inspectLatest, startMutation, starting, start, recoverStart,
     workspace, managedWorkflow, pendingApprovals, agents, hints, status, requestSave, historyAction, openAgent, panels,
     scheduleWrite, historyPending,

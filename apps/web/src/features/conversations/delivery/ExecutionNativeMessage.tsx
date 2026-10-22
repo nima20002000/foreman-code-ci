@@ -13,7 +13,7 @@ export function ExecutionNativeMessage({ message, target, source, name, onBrowse
 }) {
   const latest = useRef(message); latest.current = message
   const detail = useQuery({ queryKey: ['execution-chat-message', identityEpoch(), JSON.stringify(target), message.id],
-    enabled: false, retry: false, gcTime: 0,
+    enabled: false, gcTime: 0,
     queryFn: async ({ signal }) => {
       try {
         const full = EngineChatMessageSchema.parse(await source.readMessage(target, latest.current, { signal }))

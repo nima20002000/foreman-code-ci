@@ -20,7 +20,7 @@ export function NotesStrip({ client, board, canWrite, onAdd, onEdit, onArchive, 
     </div></div>
     {query.isPending && <p role="status">Loading notes…</p>}
     {query.isError && <p role="alert">Couldn’t load notes. {errorMessage(query.error)} <Button size="sm" onClick={() => void query.restart()}>Retry</Button></p>}
-    {query.isSuccess && !notes.length && <p>{archived ? 'No archived notes.' : 'Keep facts agents should remember'}</p>}
+    {query.isSuccess && !notes.length && <p className="memory-notes-empty">{archived ? 'No archived notes.' : 'Keep facts agents should remember'}</p>}
     <div className="memory-notes-list">{notes.map((note) => <article key={note.id} className="memory-note">
       <NoteText text={note.text} />
       <div className="n-actions"><Button size="sm" disabled={!canWrite} onClick={() => onEdit(note)}>Edit note</Button>

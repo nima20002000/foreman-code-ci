@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Button, ConfirmDialog, Select } from '../../shared/ui/nocturne'
+import { InfoHint } from '../../shared/ui/InfoHint'
 import { useUnsavedChanges } from '../../shared/ui/unsavedChanges'
 import { useGraphDraftStore } from '../graph/store'
 import { nodeTitle } from '../graph/nextDraft/model'
@@ -54,11 +55,11 @@ function HierarchyEditorVisit({ draftKey, edit, report }: Props) {
   useUnsavedChanges({ scope: 'surface', label: 'Master hierarchy form', dirty: !!edit.workflowForms?.hierarchy,
     busy: edit.busy || !!edit.pending, saveDisabled: !masterNodeId || missingParent || missingPreviousChoice, save: apply, discard })
   return <section className="next-draft-section" aria-label="Master hierarchy">
-    <h3>Master hierarchy</h3>
-    <p className="next-draft-hint">The Master starts the workflow and delegates to Orchestrators. Each Worker reports to one Orchestrator.</p>
+    <h3>Master hierarchy<InfoHint label="Master hierarchy">The Master starts the workflow and delegates to Orchestrators.
+      Each Worker reports to one Orchestrator. Add a Master from Add agent, or pick an existing agent here.</InfoHint></h3>
     <Select data-save-field="hierarchy" label="Master" value={masterNodeId}
       onChange={event => attempt(() => changeForm({ masterNodeId: event.target.value }))} options={[
-        { value: '', label: 'Choose an Agent' },
+        { value: '', label: 'None' },
         ...eligibleMasters.map(({ node }) => ({ value: node.id, label: nodeTitle(edit.graph, node.id) })),
       ]} />
     {masterNodeId ? <>
@@ -75,23 +76,23 @@ function HierarchyEditorVisit({ draftKey, edit, report }: Props) {
         }))]} onChange={event => { const parentNodeId = event.target.value; attempt(() => changeForm({
           parents: { ...parents, ...Object.fromEntries(movingWorkers.map(item => [item.node.id, parentNodeId])) },
         })) }} /> : null}
-      {coordinators.length ? <p>Reports to Master: {coordinators.map(({ node }) => nodeTitle(edit.graph, node.id)).join(', ')}.</p>
+      {coordinators.length ? <p className="next-draft-hint">Reports to Master: {coordinators.map(({ node }) => nodeTitle(edit.graph, node.id)).join(', ')}.</p>
         : <p className="next-draft-hint">Add an Orchestrator to delegate work.</p>}
       {workers.map(({ node }) => <Select key={node.id} label={`${nodeTitle(edit.graph, node.id)} reports to`}
         value={parents[node.id] ?? ''} onChange={event => attempt(() => changeForm({ parents: { ...parents, [node.id]: event.target.value } }))}
         options={[{ value: '', label: 'Choose an Orchestrator' }, ...coordinators.map(item => ({
           value: item.node.id, label: nodeTitle(edit.graph, item.node.id),
         }))]} />)}
-      {missingParent ? <p role="status">Choose a reporting Orchestrator for every Worker before applying.</p> : null}
-      {missingPreviousChoice ? <p role="status">Choose whether to keep or remove the previous Master before applying.</p> : null}
-      <Button size="sm" disabled={missingParent || missingPreviousChoice} onClick={() => attempt(apply)}>
-        Apply hierarchy</Button>
-    </> : <p className="next-draft-hint">Create a Master from Add Agent, or explicitly select an existing Agent here.</p>}
-    {edit.graph.hierarchy ? <Button size="sm" variant="danger" onClick={() => setConfirmRemoval(true)}>Remove Master hierarchy</Button> : null}
+      {missingParent ? <p className="next-draft-hint" role="status">Choose who each Worker reports to.</p> : null}
+      {missingPreviousChoice ? <p className="next-draft-hint" role="status">Choose what happens to the previous Master.</p> : null}
+    </> : null}
+    {masterNodeId || edit.graph.hierarchy || edit.workflowForms?.hierarchy ? <div className="n-actions">
+      {masterNodeId ? <Button size="sm" disabled={missingParent || missingPreviousChoice} onClick={() => attempt(apply)}>Apply hierarchy</Button> : null}
+        {edit.graph.hierarchy ? <Button size="sm" variant="ghost" className="workflow-settings-danger" onClick={() => setConfirmRemoval(true)}>Remove hierarchy</Button> : null}
+    </div> : null}
     <ConfirmDialog open={confirmRemoval} onOpenChange={setConfirmRemoval} title="Remove the Master hierarchy?"
-      description="The former Master becomes an Orchestrator in this draft. Connections and the starting node stay in place. Save checks affected Runs before publishing the new Agent configuration."
+      description="The Master becomes an Orchestrator in this draft. Connections and the starting agent stay. Nothing changes until you save."
       confirmLabel="Remove hierarchy" onConfirm={() => { setConfirmRemoval(false); attempt(() => update(removeMasterHierarchy, true)) }} />
-    {edit.workflowForms?.hierarchy ? <Button size="sm" variant="ghost" onClick={() => attempt(discard)}>Discard changes</Button> : null}
     {changedConnections.length || reorientedConnections.length || formerParentConnections.length ? <section aria-label="Changed connections">
       <h4>Changed connections · Unsaved</h4><ul>
         {changedConnections.map(edge => <li key={edge.id}>Added: {nodeTitle(edit.graph, edge.source)} → {nodeTitle(edit.graph, edge.target)}</li>)}

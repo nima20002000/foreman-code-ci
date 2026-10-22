@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { AccountProvider } from '@foreman-code/contracts/provider-accounts'
 import { sameDeviceProvisioningTarget, type DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
+import { computerKey, useComputerActivity } from '../../shared/api/computerActivity'
 import { Alert, Button, ErrorState, LoadingState, Select } from '../../shared/ui/nocturne'
 import { ProviderAccountEditor } from './ProviderAccountEditor'
 import { ProviderAccountRow } from './ProviderAccountRow'
@@ -24,6 +25,8 @@ export function ProviderAccountsSettings({ provider, selection, onSelect, target
   const scope = useProviderAccountScope({ ...(provider ? { provider } : {}), includeRemoved: true,
     ...(requestedTarget ? { target: requestedTarget } : {}) })
   const access = useProviderAccountAccess(scope.target)
+  const activity = useComputerActivity()
+  const names = new Map(activity.data?.computers.map(computer => [computerKey(computer.target), computer.name]) ?? [])
   const readable = Boolean(access.target?.canRead)
   const query = useProviderAccounts(readable, scope)
   const denied = useProtectedAccessError(query)
@@ -45,7 +48,7 @@ export function ProviderAccountsSettings({ provider, selection, onSelect, target
   const authAccount = listedAuthAccount ?? (!authDetail.isError && !authDetailDenied ? authDetail.data : undefined)
   const providers = provider ? [provider] : ['codex', 'claude'] as const
   const targetChoices = access.discovery.data?.targets.map(item => ({ value: JSON.stringify(item.target),
-    label: `${item.label} · ${item.target.applicationInstallationId}${item.connected ? '' : ' · offline'}`,
+    label: `${names.get(computerKey(item.target)) ?? item.label}${item.connected ? '' : ' · offline'}`,
     disabled: !item.canRead })) ?? []
   const selectedTarget = scope.target ? JSON.stringify(scope.target) : ''
   if (scope.target && !access.discovery.data?.targets.some(item => sameDeviceProvisioningTarget(item.target, scope.target!))) {
@@ -60,9 +63,6 @@ export function ProviderAccountsSettings({ provider, selection, onSelect, target
         const selected = access.discovery.data?.targets.find(item => JSON.stringify(item.target) === event.target.value)
         if (selected) onTargetChange(selected.target)
       }} /> : null}
-    {scope.target ? <p className="provider-account-note">{access.target?.label ?? 'Saved computer'} · {
-      scope.target.hostRef.kind === 'main' ? scope.target.hostRef.mainId : scope.target.hostRef.deviceId}
-      {' · Installation '}{scope.target.applicationInstallationId}</p> : null}
     {denied || query.isError && !query.data || access.discovery.isError || access.discovery.isSuccess && !readable ?
       <ErrorState title="Accounts are unavailable"
       description={denied?.message ?? query.error?.message ?? access.discovery.error?.message
@@ -78,8 +78,8 @@ export function ProviderAccountsSettings({ provider, selection, onSelect, target
         return <section key={item} aria-label={provider ? undefined : `${item === 'codex' ? 'Codex' : 'Claude'} accounts`}>
         <div className="provider-accounts-heading">
           {!provider ? <h4>{item === 'codex' ? 'Codex' : 'Claude'}</h4> : null}
-          <Button size="sm" disabled={!canAdd || Boolean(edit)}
-            onClick={() => setEditing({ scopeKey, provider: item })}>Add {item === 'codex' ? 'Codex' : 'Claude'} account</Button>
+          {capability && !capability.qualified ? null : <Button size="sm" disabled={!canAdd || Boolean(edit)}
+            onClick={() => setEditing({ scopeKey, provider: item })}>Add {item === 'codex' ? 'Codex' : 'Claude'} account</Button>}
         </div>
         <div className="provider-accounts-rows">{accounts.filter(value => value.provider === item).map(value =>
           <ProviderAccountRow key={`${scopeKey}:${value.id}:${value.binding?.bindingRevision ?? 0}`}
@@ -92,8 +92,10 @@ export function ProviderAccountsSettings({ provider, selection, onSelect, target
               onSelect?.({ provider: item, accountId: value.id, ...(scope.target ? { target: scope.target } : {}),
                 ...(auth?.accountId === value.id && auth.operationId ? { operationId: auth.operationId } : {}) })
             }} />)}</div>
-        {!accounts.some(value => value.provider === item) ? <p>No accounts added.</p> : null}
-        {capability?.reason ? <p>{capability.reason}</p> : null}
+        {!accounts.some(value => value.provider === item) ? <p className="provider-account-note">No accounts added.</p> : null}
+        {capability && !capability.qualified
+          ? <p className="provider-account-note" title={capability.reason ?? undefined}>Separate accounts aren't available on this computer yet.</p>
+          : capability?.reason ? <p className="provider-account-note">{capability.reason}</p> : null}
       </section>})}
     </>}
     {edit && !denied && query.data ? <ProviderAccountEditor key={`${scopeKey}:${edit.accountId ?? edit.provider}`}

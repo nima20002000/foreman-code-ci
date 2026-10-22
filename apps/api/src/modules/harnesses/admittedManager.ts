@@ -43,6 +43,11 @@ export function createAdmittedNativeManager<T extends NativeHarnessSessionManage
         }
       }
       return result
+    }, (error: unknown) => {
+      // Admission failed before any native allocation (for example while its profile check ran). Callers keep
+      // this manager, so the next use must admit again against current profile state, not replay this failure.
+      opening = undefined
+      throw error
     })
     const result = await opening
     signal?.throwIfAborted(); lifetime.signal.throwIfAborted()

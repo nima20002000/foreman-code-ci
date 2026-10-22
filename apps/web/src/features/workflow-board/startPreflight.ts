@@ -15,10 +15,11 @@ export function createBoardPreflightClient(client: ApiClient = apiClient) {
     const { workspaceId, workflowId } = displayed
     const workflowPath = `/api/management/workspaces/${part(workspaceId)}/workflows/${part(workflowId)}`
     // The Board draft is local; Start pins come only from saved server reads.
-    const [workflow, workspace, capabilities] = await Promise.all([
+    const [workflow, workspace, capabilities, agents] = await Promise.all([
       client.request(workflowPath, CurrentManagedWorkflowSchema, options),
       client.request(`/api/management/workspaces/${part(workspaceId)}`, ManagedWorkspaceSchema, options),
       client.request(CURRENT_WORKFLOW_ROUTES.capabilities, CurrentWorkflowCapabilitiesSchema, options),
+      client.listManagedAgents(workspaceId, options),
     ])
     if (workflow.workflow.id !== workflowId || workflow.workflow.workspaceId !== workspaceId || workspace.workspace.id !== workspaceId) {
       throw mismatch('Saved Start readback belongs to a different scope.')
@@ -29,7 +30,7 @@ export function createBoardPreflightClient(client: ApiClient = apiClient) {
     if (version && (version.id !== workflow.currentVersionId || version.workspaceId !== workspaceId || version.workflowId !== workflowId)) {
       throw mismatch('Immutable workflow readback returned a different saved version.')
     }
-    return { workflow, workspace, capabilities, version }
+    return { workflow, workspace, capabilities, version, agents: agents.items }
   }
 }
 export const readBoardStartPreflight = createBoardPreflightClient()
@@ -64,6 +65,12 @@ export function boardStartPins(displayed: GraphDraftV3, facts: BoardStartPreflig
   return { workflowVersionId: version.id, expectedWorkflowRevision: workflow.revision,
     expectedAgentConfigurationVersionIds: version.agentConfigurationVersionIds, expectedLocationRevision: workspace.locationRevision }
 }
+/** Agents whose current configuration is newer than the one the saved version pins. Saving re-pins them. */
+export function changedAgentIds(facts: BoardStartPreflight): string[] {
+  const pins = facts.version?.agentConfigurationVersionIds ?? {}
+  return facts.agents.filter(({ agent }) => agent.id in pins && !!agent.configurationVersionId
+    && agent.configurationVersionId !== pins[agent.id]).map(({ agent }) => agent.id)
+}
 export function sameBoardStartPins(a: BoardStartPins, b: BoardStartPins) { return sameWorkflowValue(a, b) }
 export function currentBoardStartRequest(displayed: GraphDraftV3, facts: BoardStartPreflight, commandId: string): RunStartV3Input {
   return RunStartV3InputSchema.parse({ executionSemanticsVersion: 3, workspaceId: displayed.workspaceId,
@@ -73,7 +80,7 @@ export function useBoardStartPreflight(draft: GraphDraftV3, options: { enabled: 
   return useQuery({ queryKey: ['workbench', 'board-start-preflight', sessionGeneration(), draft.workspaceId, draft.workflowId,
     draft.id, draft.revision, draft.baseWorkflowVersionId],
     queryFn: ({ signal }) => readBoardStartPreflight(draft, { signal }), enabled: options.enabled,
-    retry: false, staleTime: 1000,
+    staleTime: 1000,
     refetchOnReconnect: 'always', refetchOnWindowFocus: true,
     refetchInterval: (state) => !options.enabled
       || ApiError.is(state.state.error) && [401, 403, 404].includes(state.state.error.status ?? 0) ? false : 3000,

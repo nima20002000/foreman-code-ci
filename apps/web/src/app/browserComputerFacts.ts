@@ -3,6 +3,7 @@ import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-re
 import { useSelectedMainQuery, useRegisteredComputersQuery } from '../shared/api/computerSettings'
 import { useComputerMaintenance } from '../shared/api/computerMaintenance'
 import { sessionGeneration } from '../shared/api/sessionBoundary'
+import { computerKey, useComputerActivity } from '../shared/api/computerActivity'
 
 export const browserAuthBoundary = () => String(sessionGeneration())
 export function useBrowserComputers() {
@@ -15,9 +16,11 @@ export function useBrowserComputers() {
       keyRevision: device.keyRevision, authorizationRevision: device.authorizationRevision })) ?? []),
   ] : []
   const maintenance = useComputerMaintenance(targets)
+  const activity = useComputerActivity()
+  const names = new Map(activity.data?.computers.map(computer => [computerKey(computer.target), computer.name]) ?? [])
   const computers = targets.map((target, index) => ({
     id: target.hostRef.kind === 'main' ? target.hostRef.mainId : target.hostRef.deviceId,
-    name: computerDisplayName(target.hostRef), online: target.hostRef.kind === 'main' || maintenance[index]?.data?.status != null,
+    name: names.get(computerKey(target)) ?? computerDisplayName(target.hostRef), online: target.hostRef.kind === 'main' || maintenance[index]?.data?.status != null,
     runtimeReady: maintenance[index]?.data?.status?.browserRuntime?.ready === true, lastSeenAt: null,
   }))
   return { mainId, targets, computers, error: main.error ?? registrations.error ?? maintenance.find(query => query.error)?.error }

@@ -1,5 +1,7 @@
 /* Settings use Nocturne tokens and existing field controls. No global resets. */
 .settings-page.settings-experience { width: 100%; max-width: 1180px; margin-inline: auto; padding: clamp(18px, 3vw, 36px); }
+/* Every settings page shares one centered column, so resizing the sidebar never leaves a gap on one side. */
+.settings-page.settings-experience > * { width: 100%; max-width: 72rem; margin-inline: auto; }
 .settings-overview, .settings-editor-page { display: grid; gap: var(--space-6); min-width: 0; }
 .settings-experience-heading { display: grid; gap: var(--space-2); justify-items: start; min-width: 0; }
 .settings-experience-heading h1 { margin: 0; font: var(--type-title); }
@@ -83,3 +85,22 @@
 .settings-choice-footer small { color: var(--n-muted); }
 .settings-choice-footer .operator-mcp-error { flex-basis: 100%; color: var(--n-danger, var(--n-text)); overflow-wrap: anywhere; }
 .settings-choice-links { display: inline-flex; gap: .25rem; }
+/* Harness cards: one control row (Operator default, Operator MCP, links), then the accounts block full width. */
+.harness-card-controls { display: flex; flex: 1 1 100%; flex-wrap: wrap; align-items: center; gap: .5rem 1.25rem; min-height: 2.25rem; }
+.harness-card-controls .settings-choice-links { flex-basis: 100%; margin-left: -.6rem; }
+.settings-choice-footer > .provider-accounts-settings { flex: 1 1 100%; display: grid; gap: .6rem; padding-top: .75rem; border-top: 1px solid var(--n-border); }
+.settings-choice-footer > .provider-accounts-settings .provider-accounts-heading { margin-bottom: 0; }
+.settings-choice-footer > .provider-accounts-settings h3 { font-size: 13px; font-weight: 600; }
+.settings-saved-note { margin: 0; color: var(--n-muted); font-size: 12.5px; }
+.settings-inline-field > label, .settings-inline-field > .n-field-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.settings-inline-field { min-width: 14rem; }
+.settings-note { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0; color: var(--n-muted); font-size: 13px; }
+.settings-editor-page > .settings-save-actions { justify-content: flex-end; }
+.settings-wide-field { width: min(26rem, 100%); }
+.settings-editor-page .n-setting-control { min-width: 0; }
+.prompt-settings .settings-experience-heading p { margin: 6px 0 0; color: var(--n-muted); font-size: 13px; }
+.prompt-settings-field > label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.prompt-settings-field textarea { min-height: 18rem; font-family: var(--n-font-mono, ui-monospace, monospace); font-size: 13px; line-height: 1.55; }
+.prompt-settings-saved { max-height: 12rem; overflow: auto; white-space: pre-wrap; }
+.prompt-settings-footer { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+.prompt-settings-footer > .settings-saved-note { margin-inline-end: auto; }

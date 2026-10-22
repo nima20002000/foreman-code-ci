@@ -1,5 +1,7 @@
 import { InfoHint } from '../../shared/ui/InfoHint'
 import type { DeviceRegistration } from '@foreman-code/contracts/device-identity'
+import { Button } from '../../shared/ui/nocturne'
+import { askOperator } from '../operator-chat/operatorChatStore'
 
 /** Static guidance shown before a request code exists. It never installs, logs in or changes a network. */
 export function DeviceSetupGuide() {
@@ -8,7 +10,7 @@ export function DeviceSetupGuide() {
     <ol className="computer-steps">
       <li><strong>Install the companion on the remote computer first.</strong> <InfoHint label="Computer request code">Its request code only exists after the companion is installed and opened there.</InfoHint>
         <InfoHint label="Pairing">Pairing lets the computer connect and send heartbeats to this main. Pairing authorizes connection changes; connection readiness is checked separately.</InfoHint></li>
-      <li><strong>Configure the connection through the Operator.</strong> Pairing authorizes connection changes. The Operator can use device_connection_configure with settings:update for the selected operating-system user.</li>
+      <li><strong>Set up the connection with the Operator.</strong> Once paired, ask the Operator to configure the connection and choose which user it runs as.</li>
       <li><strong>Check connection readiness.</strong> <InfoHint label="Connection readiness">Readiness comes from a verified connection, not from registration or inventory.</InfoHint></li>
     </ol>
     <details className="computer-details"><summary>Network prerequisites</summary>
@@ -26,11 +28,11 @@ export function DeviceSetupGuide() {
 export function ConnectionSetupStatus({ registration }: { registration: DeviceRegistration }) {
   const state = registration.status === 'revoked' ? 'blocked' : registration.status === 'paired' ? 'unverified' : 'needs-pairing'
   return <section className="device-setup-status" aria-label="Remote command connection" data-state={state}>
-    <h3>Remote command connection</h3>
     <p role="status">{registration.status === 'revoked'
-      ? <><strong>Blocked.</strong> This computer’s registration is revoked, so no connection can be set up.</>
+      ? <><strong>Blocked.</strong> This computer\u2019s registration is revoked, so no connection can be set up.</>
       : registration.status === 'paired'
-        ? <><strong>Connection status unverified.</strong> This computer is paired. Ask the Operator to read and configure its connection, then check readiness with device_connection_read, device_connection_configure and device_connection_check.</>
+        ? <><strong>Connection status unverified.</strong> This computer is paired. Ask the Operator to read and configure its connection, then check readiness.</>
         : <><strong>Pairing needed.</strong> Pair this computer before any connection can be set up.</>}</p>
+    {registration.status === 'paired' ? <Button size="sm" onClick={() => askOperator('Set up and check the connection to this computer: ', { send: false })}>Ask Operator</Button> : null}
   </section>
 }

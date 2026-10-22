@@ -1,27 +1,28 @@
 import { MemoryBoardSurface } from './MemoryBoardSurface'
-import { InfoHint } from '../../shared/ui/InfoHint'
 import { activeRunCandidates } from '@foreman-code/contracts/run-snapshots'
 import { MasterOverview } from '../workflow-hierarchy/MasterOverview'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type SyntheticEvent } from 'react'
 import { useLocation, useRouter } from '@tanstack/react-router'
 import type { ExecutionRef, WorkflowRunSummary } from '@foreman-code/contracts'
 import type { RepeatGraphScopeV3, WorkspaceBoardInspection } from '@foreman-code/contracts/wave25'
-import { Alert, Button, Dialog, Icon, IconButton } from '../../shared/ui/nocturne'
+import { Alert, Button, Icon, IconButton } from '../../shared/ui/nocturne'
 import { WorkspaceExecutionLocationSettings } from '../settings/WorkspaceExecutionLocationSettings'
 import { RunBoardSlot } from '../run-board'
 import { useRunSummaries, useSelectedRun, useSelectedRunSnapshot } from '../runs-selector'
+import { isRunAccessError } from '../runs-selector/query'
 import { BoardNavigationControls } from './BoardNavigationControls'
 import { WorkflowBoardContext, type WorkflowAuthoringActions } from './context'
 import { ActivitiesPopover } from './ActivitiesPopover'
 import { RunActivityPanel } from './RunActivityPanel'
 import { useInspectionPresentation } from './inspect/presentation'
 import { useWorkflowSidePanel } from './useWorkflowSidePanel'
-import { WorkflowMemoryDialog, WorkflowSidePanel, type WorkflowCollaborationSlots } from './WorkflowSidePanel'
+import { WorkflowSidePanel, type WorkflowCollaborationSlots } from './WorkflowSidePanel'
 import { useBrowserPanelRelease } from './useBrowserPanelRelease'
 import { useCollaborationUISlots } from '../../shared/ui/collaborationSlots'
 import { createWorkflowExecutionChatSlot } from '../workflow-hierarchy/execution-chat/createWorkflowExecutionChatSlot'
 import { SelectedRunControls } from './actions/SelectedRunControls'
 import { GroupChatPanel } from './GroupChatPanel'
+import { DirectionWaitNotice, mentionInGroupChat, useRunDirectionWait } from './actions/directionWait'
 import './workflowBoard.css'
 
 /** This component is keyed by workspace/workflow only, NEVER by selected Run. */
@@ -72,7 +73,10 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   // Canonical and legacy links both render the immutable RunBoardSlot.
   const legacyRun = requestedRun?.workspaceId === workspaceId && requestedRun.workflowId === workflowId
     && !location.search.selectedRunId ? requestedRun : undefined
-  const picked = useSelectedRunSnapshot(selectedRun).snapshot
+  const pickedQuery = useSelectedRunSnapshot(selectedRun)
+  const picked = pickedQuery.snapshot
+  // A missing or forbidden Run has nothing to stop or inspect; the Run board explains it once.
+  const runUnreadable = isRunAccessError(pickedQuery.error) && !picked
   const pickedRunId = location.search.selectedRunId
   // Background Run facts update the counter; only explicit navigation selects a Run.
   const listed = useRunSummaries({ workspaceId, workflowId }, !requestedRun && !pickedRunId)
@@ -153,6 +157,10 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   const showExecution = (nodeId: string, execution: ExecutionRef) => {
     side.selectExecution({ ...execution, nodeId })
   }
+  const runControlsScope = boardSelection.active && !boardSelection.invalid && boardSelection.identity.runId && !runUnreadable
+    ? { workspaceId, workflowId, runId: boardSelection.identity.runId,
+      ...(picked?.kind === 'available' ? { workflowVersionId: picked.workflowVersionId } : {}) } : undefined
+  const direction = useRunDirectionWait(runControlsScope)
   const suppliedOverview = collaborationSlots?.overview
   const overviewContent = side.memoryOpen ? null : suppliedOverview?.()
   return <WorkflowBoardContext.Provider value={value}>
@@ -166,16 +174,20 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
         {browserRelease.error} Use the retained browser recovery controls to reconcile the original release.</Alert> : null}
       {collaborationSlots?.browserRecovery?.()}
       {!current || side.view === 'overview' ? <header className="board-topbar" aria-label="Board toolbar"
-        style={{ position: 'static', flex: '0 0 auto', flexWrap: 'wrap', justifyContent: 'flex-end', padding: 'var(--space-2)', boxSizing: 'border-box', minWidth: 0 }}>
+        style={{ position: 'relative', inset: 'auto', zIndex: 10, flex: '0 0 auto', flexWrap: 'wrap', justifyContent: 'flex-end', padding: 'var(--space-2)', boxSizing: 'border-box', minWidth: 0 }}>
+        {direction && !side.memoryOpen ? <DirectionWaitNotice direction={direction} onAnswer={() => {
+          mentionInGroupChat({ workspaceId, workflowId }, direction)
+          side.selectPanel({ kind: 'group_chat' })
+        }} /> : null}
         <BoardNavigationControls workspaceId={workspaceId} workflowId={workflowId} selection={navigationSelection}
           runsLabel={current && side.view === 'overview' ? 'Choose run' : undefined} />
-        {detailsScope ? <IconButton label="Activities" onClick={() => setRunsOpen(true)}><Icon name="history" size={16} /></IconButton> : null}
+        {detailsScope && !runUnreadable ? <IconButton label="Activities" onClick={() => setRunsOpen(true)}><Icon name="history" size={16} /></IconButton> : null}
         <IconButton label="Group chat" onClick={() => side.selectPanel({ kind: 'group_chat' })}><Icon name="chat" size={16} /></IconButton>
-        {boardSelection.active && !boardSelection.invalid && boardSelection.identity.runId ?
+        {runControlsScope ?
           <SelectedRunControls key={JSON.stringify(boardSelection.identity)} visible={!side.memoryOpen}
-            scope={{ workspaceId, workflowId, runId: boardSelection.identity.runId,
-              ...(picked?.kind === 'available' ? { workflowVersionId: picked.workflowVersionId } : {}) }} /> : null}
+            scope={runControlsScope} /> : null}
       </header> : null}
+
       <div className="workflow-collaboration-layout">
       <div className="workflow-collaboration-canvas" hidden={side.view !== 'graph'} inert={side.view !== 'graph'}>
       <RunBoardSlot selection={boardSelection}>
@@ -184,10 +196,8 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
           <ActivitiesPopover open={current && runsOpen} onClose={() => setRunsOpen(false)} findAnchor={findActivitiesButton}>
             {current ? <RunActivityPanel summaries={summaries} summariesReadAt={summariesReadAt} /> : null}
           </ActivitiesPopover>
-          <Dialog open={current && locationOpen} onOpenChange={setLocationOpen} title="Execution folder" closeLabel="Close execution folder"
-            headerLeading={<InfoHint label="Execution folder">Where agents work on files. It applies to future runs; runs already started keep their folder.</InfoHint>}>
-            <WorkspaceExecutionLocationSettings workspaceId={workspaceId} presentation="field" />
-          </Dialog>
+          {current && locationOpen ? <WorkspaceExecutionLocationSettings workspaceId={workspaceId} presentation="dialog"
+            open onOpenChange={setLocationOpen} onSaved={() => setLocationOpen(false)} /> : null}
         </div>
       </RunBoardSlot>
       </div>
@@ -218,9 +228,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
         modalOpen={side.memoryOpen} slots={{ ...collaborationSlots, groupChat: collaborationSlots?.groupChat ?? (() =>
           <GroupChatPanel workspaceId={workspaceId} workflowId={workflowId} runId={legacyRun?.runId ?? pickedRunId} onSelect={side.selectPanel} />) }} />
       </div>
-      {collaborationSlots?.memoryBoard
-        ? <WorkflowMemoryDialog open={side.memoryOpen} onOpenChange={side.setMemoryOpen} slots={collaborationSlots} />
-        : side.memoryOpen && <MemoryBoardSurface scope={{ kind: 'workflow', workspaceId, workflowId }}
+      {side.memoryOpen && <MemoryBoardSurface scope={{ kind: 'workflow', workspaceId, workflowId }}
           scopeName="Workflow" dialog={{ open: true, onOpenChange: side.setMemoryOpen, historicalRun: Boolean(legacyRun || pickedRunId) }} />}
     </div>
   </WorkflowBoardContext.Provider>

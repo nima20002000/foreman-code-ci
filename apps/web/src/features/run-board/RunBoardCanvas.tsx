@@ -1,4 +1,4 @@
-import { memo, useContext, useMemo, useRef } from 'react'
+import { memo, useContext, useEffect, useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Background, Controls, Handle, Position, ReactFlow, ReactFlowProvider, type EdgeProps, type NodeProps } from '@xyflow/react'
 import { AgentNodeView } from '../../shared/ui/nocturne/Canvas'
@@ -40,10 +40,11 @@ const SavedAgent = memo(function SavedAgent({ id, data }: NodeProps<SavedBoardNo
       <AgentNodeView className="run-board-agent" name={data.snapshot.name} harnessLabel=""
         statusLabel={presentation.label} state={presentation.state} transition={live?.transition} transitionKey={live?.transitionKey} />
     </div>
+    {/* The whole node is the Inspect target, so no button covers the node's face. */}
     {data.inspect ? <button type="button" className="run-board-inspect nodrag nopan"
-      aria-label={`Inspect ${data.snapshot.name}`} onClick={data.inspect}>Inspect</button> : null}
+      aria-label={`Inspect ${data.snapshot.name}`} title={`Inspect ${data.snapshot.name}`} onClick={data.inspect} /> : null}
     {ci ? <span role="status">{ciNodePresentation(ci).label}</span> : null}
-    {data.snapshot.kind !== 'job' ? <p>{data.role ?? 'Role unavailable'}{data.reportingParent ? ` · Reports to ${data.reportingParent}` : ''}</p> : null}
+    {data.snapshot.kind !== 'job' && data.role ? <p className="run-board-node-caption">{data.role}{data.reportingParent ? ` · Reports to ${data.reportingParent}` : ''}</p> : null}
     {/* Unlike the authoring AgentHandles, every saved target side must resolve. */}
     {sides.flatMap((side) => (['source', 'target'] as const).map((type) =>
       <Handle key={`${type}:${side}`} id={side} type={type} position={side} isConnectable={false}
@@ -76,7 +77,7 @@ export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hier
   const board = useWorkflowBoard()
   const displayScope = JSON.stringify(['run', snapshot.workspaceId, snapshot.workflowId, snapshot.runId])
   const collapsed = useCollapsedWorkers(displayScope, hierarchy?.hierarchy)
-  const { containerRef, onInit, onMove, onManualMove } = useResponsiveGraphViewport<SavedBoardNode | CiServerFlowNode | KanbanFlowNode,
+  const { containerRef, onInit, onMove, onManualMove, refit } = useResponsiveGraphViewport<SavedBoardNode | CiServerFlowNode | KanbanFlowNode,
     SavedBoardEdge | CiTransferFlowEdge | KanbanActivityFlowEdge>({
     fitViewOptions,
   })
@@ -105,7 +106,7 @@ export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hier
     queryKey: [...runInspectionQueryKey(scope), 'ci-jobs'],
     enabled: visible,
     queryFn: ({ signal }) => runCiApi.list({ workspaceId: scope.workspaceId, runId: scope.runId }, { signal }),
-    retry: false, refetchInterval: (query) => {
+    refetchInterval: (query) => {
       if (!visible || isRunAccessError(query.state.error)) return false
       return active || query.state.data?.jobs.some(ciJobRefreshing) ? 1500 : false
     },
@@ -121,6 +122,13 @@ export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hier
   const shownIds = useMemo(() => new Set(visibleNodes.map(node => node.id)), [visibleNodes])
   const kanban = useBoardKanban({ workspaceId: snapshot.workspaceId, workflowId: snapshot.workflowId, nodes: towerNodes,
     nodeIds: shownIds, enabled: !!board })
+  // The Kanban arrives after the first fit; fit once more so it is not left off-screen (as on the draft Board).
+  const kanbanShown = !!kanban.node
+  useEffect(() => {
+    if (!kanbanShown) return
+    const frame = requestAnimationFrame(refit)
+    return () => cancelAnimationFrame(frame)
+  }, [kanbanShown, refit])
   const flowNodes = useMemo<(SavedBoardNode | CiServerFlowNode | KanbanFlowNode)[]>(() =>
     [...visibleNodes, ci.node, ...(kanban.node ? [kanban.node] : [])], [visibleNodes, ci.node, kanban.node])
   const ciJobs = !ciDenied && !ciList.isError && ciList.data?.runId === scope.runId ? ciList.data.jobs : undefined

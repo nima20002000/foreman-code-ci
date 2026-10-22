@@ -91,7 +91,7 @@ export function useArchiveSkillMutation() {
 
 /** Agents still on an older version of this skill, and the workflows that use them. */
 export function useSkillUsageQuery(workspaceId: string, skillId: string) {
-  return useQuery({ queryKey: skillKeys.usage(workspaceId, skillId), retry: false,
+  return useQuery({ queryKey: skillKeys.usage(workspaceId, skillId),
     queryFn: ({ signal }) => apiClient.request(`${skillPath(workspaceId, skillId)}/usage`, SkillUsageSchema, { signal }) })
 }
 export function useUpdateSkillUsersMutation(workspaceId: string, skillId: string) {

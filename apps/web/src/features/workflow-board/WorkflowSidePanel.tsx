@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefCallback, type RefObject } from 'react'
 import type { BoardSidePanel } from '@foreman-code/contracts/wave25'
 import type { HierarchyReport } from '@foreman-code/contracts'
-import { Button, Dialog, Icon, IconButton } from '../../shared/ui/nocturne'
+import { Button, Icon, IconButton } from '../../shared/ui/nocturne'
 import { placeBeside } from '../../shared/ui/floatingWindow'
+import { useManagedWorkflowQuery } from '../../shared/api/query'
 import { useSidePanelScroll } from './sidePanelPresentation'
 import type { CollaborationFieldSlots } from '../graph/collaborationFields'
 import type { WorkflowExecutionChatSlotSelection } from '../workflow-hierarchy/execution-chat/types'
@@ -18,7 +19,6 @@ export interface WorkflowCollaborationSlots extends CollaborationFieldSlots {
   beforeBrowserHide?(): void | Promise<void>
   browserRecovery?(): ReactNode
   overview?(): ReactNode
-  memoryBoard?(): ReactNode
   reportCard?(cardId: string, report: HierarchyReport): void
 }
 
@@ -39,13 +39,33 @@ export interface WorkflowSidePanelProps {
   slots?: WorkflowCollaborationSlots
 }
 
-const destinations = [['agent', 'Agent'], ['browser', 'Browser']] as const
+const tabs = [['chat', 'Chat'], ['settings', 'Settings'], ['details', 'Details']] as const
+
+/** Beside the node that opened it; below the toolbar when a toolbar button opened it, so the toolbar stays usable. */
+function placeNear(width: number, height: number, opener: HTMLElement | null) {
+  const rect = opener?.getBoundingClientRect()
+  const gap = 8
+  if (!rect) {
+    // Reopened from a link (no opener): top right, but below the Board toolbar so it never covers it.
+    // The toolbar may not have rendered yet, so fall back to the views bar plus one toolbar row.
+    const bar = [...document.querySelectorAll<HTMLElement>('.unified-workflow-board [role="toolbar"]')]
+      .find(element => element.offsetParent !== null)?.getBoundingClientRect()
+    const views = document.querySelector('.workflow-collaboration-toolbar')?.getBoundingClientRect()
+    const below = bar ? bar.bottom : views ? views.bottom + 56 : undefined
+    if (below !== undefined) return { left: Math.max(gap, window.innerWidth - width - 24),
+      top: Math.max(gap, Math.min(below + gap, window.innerHeight - height - gap)) }
+  }
+  if (!rect || !opener?.closest('.board-topbar, [role="toolbar"]')) return placeBeside(width, height, rect)
+  return { left: Math.max(gap, Math.min(rect.right - width, window.innerWidth - width - gap)),
+    top: Math.max(gap, Math.min(rect.bottom + gap, window.innerHeight - height - gap)) }
+}
 
 /** Floating, draggable, resizable window opened next to the selected node. Only the selected body mounts;
  * the portal host preserves existing conversation/store ownership. */
 export function WorkflowSidePanel({ scope, workspaceId, workflowId, runId, workflowVersionId,
   opener, selection, agentSelection, onSelect, onSelectTarget, onSelectRun, bodyRef, modalOpen, slots }: WorkflowSidePanelProps) {
   const panelRef = useRef<HTMLElement>(null)
+  const workflow = useManagedWorkflowQuery(workspaceId, workflowId)
   const heldFocus = useRef(false)
   const [host, setHost] = useState<HTMLDivElement | null>(null)
   const attach = useCallback((element: HTMLDivElement | null) => { setHost(element); bodyRef(element) }, [bodyRef])
@@ -58,7 +78,7 @@ export function WorkflowSidePanel({ scope, workspaceId, workflowId, runId, workf
     if (!active || modalOpen || !panel) return
     if (!panel.contains(document.activeElement)) panel.focus({ preventScroll: true })
     if (panel.dataset.placed) return
-    const { left, top } = placeBeside(panel.offsetWidth, panel.offsetHeight, opener.current?.getBoundingClientRect())
+    const { left, top } = placeNear(panel.offsetWidth, panel.offsetHeight, opener.current)
     panel.style.left = `${left}px`
     panel.style.top = `${top}px`
     panel.dataset.placed = 'true'
@@ -126,34 +146,22 @@ export function WorkflowSidePanel({ scope, workspaceId, workflowId, runId, workf
           ...(selection.waitingActivationId ? { waitingActivationId: selection.waitingActivationId } : {}) })
           ?? (selection.executionId || selection.waitingActivationId ? <p role="status">Chat for this selected execution is not available yet. Your execution selection is kept.</p> : null)
         : null
+  const agentName = agentSelection ? workflow.data?.workflow.nodes.find(node => node.id === agentSelection.nodeId) : undefined
+  const title = groupChat ? 'Group chat' : selection.kind === 'browser' ? 'Browser'
+    : agentName ? agentName.name ?? agentName.label ?? 'Agent' : 'Agent'
   return <aside ref={panelRef} tabIndex={-1} className="workflow-floating-panel" aria-label="Workflow side panel"
     hidden={!active || modalOpen} inert={!active || modalOpen}>
     <header onPointerDown={drag}>
-      <h2>{groupChat ? 'Group chat' : selection.kind === 'browser' ? 'Browser' : 'Agent'}</h2>
+      <h2>{title}</h2>
       <IconButton label={groupChat ? 'Close group chat' : 'Back to Board'} variant="ghost" onClick={() => onSelect({ kind: 'none' })}><Icon name="close" size={16} /></IconButton>
     </header>
-    {groupChat ? null : <><nav aria-label="Workflow panel destination">
-      {destinations.map(([kind, label]) => <Button key={kind} size="sm" variant="ghost"
-        aria-pressed={selection.kind === kind} disabled={kind === 'agent' && !agentSelection}
-        onClick={() => {
-          if (kind === 'agent') { if (agentSelection) onSelect(agentSelection) }
-          else onSelect({ kind })
-        }}>{label}</Button>)}
-    </nav>
-    {!agentSelection ? <p className="workflow-panel-hint">Select a node on the Board to open Agent chat or settings.</p> : null}</>}
-    {selection.kind === 'agent' ? <nav aria-label="Agent panel view">
-      {(['chat', 'settings', 'details'] as const).map(tab => <Button key={tab} size="sm" variant="ghost"
-        aria-pressed={selection.tab === tab} onClick={() => onSelect({ ...selection, tab })}>
-        {tab === 'chat' ? 'Chat' : tab === 'settings' ? 'Settings' : 'Details'}</Button>)}
-    </nav> : null}
+    {groupChat ? null : <nav className="workflow-panel-tabs" aria-label="Workflow panel view">
+      {tabs.map(([tab, label]) => <Button key={tab} size="sm" variant="ghost" disabled={!agentSelection}
+        aria-pressed={selection.kind === 'agent' && selection.tab === tab}
+        onClick={() => { if (agentSelection) onSelect({ ...agentSelection, tab }) }}>{label}</Button>)}
+      <Button size="sm" variant="ghost" aria-pressed={selection.kind === 'browser'} onClick={() => onSelect({ kind: 'browser' })}>Browser</Button>
+    </nav>}
+    {!groupChat && !agentSelection ? <p className="workflow-panel-hint">Select an agent on the Board to see its chat and settings.</p> : null}
     <div className="workflow-floating-panel-body" ref={attach}>{modalOpen ? null : content}</div>
   </aside>
-}
-
-export function WorkflowMemoryDialog({ open, onOpenChange, slots }: {
-  open: boolean; onOpenChange(open: boolean): void; slots?: WorkflowCollaborationSlots
-}) {
-  return <Dialog open={open} onOpenChange={onOpenChange} title="Memory board" closeLabel="Close Memory board">
-    {open ? slots?.memoryBoard?.() ?? <p role="status">Memory board is not available yet.</p> : null}
-  </Dialog>
 }

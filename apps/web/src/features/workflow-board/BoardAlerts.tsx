@@ -7,6 +7,12 @@ import type { AuthoringIssue } from '../graph/nextDraft/model'
 import type { NextDraftEdit } from '../graph/nextDraft/state'
 import { useInspectionPresentation } from './inspect/presentation'
 
+/** The saved-workflow field each local authoring hint is about. */
+const hintField: Record<string, string> = {
+  EXECUTION_LIMITS_REQUIRED: 'executionPolicy', EXECUTION_LIMIT_TOO_LOW: 'executionPolicy',
+  ENTRY_REQUIRED: 'entryNodeId', APPROVAL_MODE_REQUIRED: 'approval',
+}
+
 export type BoardUpdateFailure = { id: string; message: string; pending: boolean; retry(): void }
 
 export function BoardAlerts({ scope, hints, validation, error, pending, updateFailures = [], openIssue, openField }: {
@@ -28,8 +34,12 @@ export function BoardAlerts({ scope, hints, validation, error, pending, updateFa
     ...(error && !saveIssues.length ? [{ issue: { code: 'SAVE_ERROR', message: error.message }, tone: 'danger' as const, path: undefined }] : []),
     ...updateFailures.map((recovery) => ({ issue: { code: recovery.id, message: recovery.message }, tone: 'warning' as const, recovery })),
   ]
+  // A save issue on a field replaces the local hint for that same field.
+  const savedFields = new Set(saveIssues.map((issue) => String(issue.path[0])))
+  const shadowed = (row: (typeof rows)[number]) => row.tone === 'warning' && !row.recovery
+    && savedFields.has(hintField[row.issue.code] ?? '')
   // Local hints and the last validation can report the same finding.
-  const alerts = [...new Map(rows.map((row) => [JSON.stringify([row.issue.code, row.issue.message,
+  const alerts = [...new Map(rows.filter((row) => !shadowed(row)).map((row) => [JSON.stringify([row.issue.code, row.issue.message,
     'nodeId' in row.issue ? row.issue.nodeId : undefined, 'relationshipId' in row.issue ? row.issue.relationshipId : undefined,
     row.path?.length ? row.path : undefined]), row])).values()]
   useEffect(() => {

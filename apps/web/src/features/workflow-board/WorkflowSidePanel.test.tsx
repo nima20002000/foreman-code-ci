@@ -1,15 +1,17 @@
 // @vitest-environment jsdom
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, Outlet, RouterProvider, useMatch } from '@tanstack/react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EngineChatReadbackSchema, collaborationContractFixtures } from '@foreman-code/contracts'
-import { Button, Textarea } from '../../shared/ui/nocturne'
+import { Button, Dialog, Textarea } from '../../shared/ui/nocturne'
 import { resolveRunsSelectorBoardLocation, RunsSelectorSearchSchema } from '../runs-selector/search'
 import { useWorkflowSidePanel } from './useWorkflowSidePanel'
-import { WorkflowMemoryDialog, WorkflowSidePanel, type WorkflowCollaborationSlots } from './WorkflowSidePanel'
+import { WorkflowSidePanel, type WorkflowCollaborationSlots as PanelSlots } from './WorkflowSidePanel'
+
+type WorkflowCollaborationSlots = PanelSlots & { memoryBoard?(): ReactNode }
 import { useSelectedRun } from '../runs-selector/useSelectedRun'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
@@ -60,7 +62,9 @@ function ShellFixture({ slots, captureNavigation }: { slots?: WorkflowCollaborat
         {actionAvailable ? <Button onClick={() => setActionAvailable(false)}>Finish panel action</Button> : null}
         <Button onKeyDown={event => { if (event.key === 'Escape') event.preventDefault() }}>Nested control</Button>
       </div>, host) : null}
-    <WorkflowMemoryDialog open={side.memoryOpen} onOpenChange={side.setMemoryOpen} slots={slots} />
+    <Dialog open={side.memoryOpen} onOpenChange={side.setMemoryOpen} title="Memory board" closeLabel="Close Memory board">
+      {side.memoryOpen ? slots?.memoryBoard?.() : null}
+    </Dialog>
   </>
 }
 

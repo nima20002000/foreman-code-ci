@@ -36,8 +36,9 @@ export class ProviderAccountConfigurationService {
         return { configuration, selection: undefined }
       }
     })
-    if (prepared.configuration.harness === 'claude' && prepared.configuration.accountId && !prepared.selection) {
-      prepared.selection = await this.profiles!.prepareOperatorConfiguration(input.principal, input.source,
+    // Claude launches only through an accepted host profile, with or without a managed account.
+    if (prepared.configuration.harness === 'claude' && !prepared.selection && this.profiles) {
+      prepared.selection = await this.profiles.prepareOperatorConfiguration(input.principal, input.source,
         prepared.configuration, input.commandId)
     }
     return prepared
@@ -45,7 +46,12 @@ export class ProviderAccountConfigurationService {
 
   async profile(input: { principal: ManagementPrincipal; source: 'http' | 'mcp'; configuration: HarnessConfiguration;
     selection?: HarnessProfileSelection | undefined; commandId: string; client: pg.PoolClient; check?: boolean }): Promise<HarnessProfileSelection | undefined> {
-    if (input.configuration.harness !== 'claude' || !input.configuration.accountId) return input.selection
+    if (input.configuration.harness !== 'claude') return input.selection
+    if (!input.configuration.accountId) {
+      // A local Claude configuration reuses an exact qualified saved profile when it has none.
+      if (input.selection || !this.profiles) return input.selection
+      return this.profiles.selectionForConfiguration(input.principal, input.configuration, input.client)
+    }
     if (!this.profiles) throw new DomainError('HARNESS_PROFILE_SELECTION_UNAVAILABLE',
       'Managed Claude accounts require local harness profile setup.', 503)
     if (input.selection?.target.hostRef.kind === 'device') {

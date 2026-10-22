@@ -90,7 +90,7 @@ export function HarnessSandboxField({ value, onChange, issues = [] }: {
           else onChange(changeCodexSandbox(value, event.target.value as typeof value.sandbox))
         }} />
       {value.sandbox === 'danger-full-access' ? <span className="harness-access-warning">Commands are not restricted by the Codex sandbox.</span> : null}
-    <ConfirmDialog open={fullAccess} onOpenChange={setFullAccess} title="Allow full access?" description="Codex commands will run without its filesystem or network sandbox. This does not change approval routing."
+    <ConfirmDialog open={fullAccess} onOpenChange={setFullAccess} title="Allow full access?" description="Codex commands will run with no file or network sandbox."
       confirmation="full access" confirmLabel="Use full access" onConfirm={() => {
         if (value.harness === 'codex') onChange(changeCodexSandbox(value, 'danger-full-access'))
         setFullAccess(false)

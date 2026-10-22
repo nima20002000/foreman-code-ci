@@ -29,20 +29,20 @@ export function BrowserProfileComputerRows({ profiles, replicas, presentReplicas
       const present = presentReplicas.some(copy => copy.profileId === profile.id && copy.computerId === computer.id)
       const pending = pendingReplicas.find(copy => copy.profileId === profile.id && copy.computerId === computer.id)
       return <li key={profile.id}>
-        <h4>{profile.name}</h4>
-        <p>{source ? 'Source on this computer' : `Source: ${computerNames.get(profile.sourceComputerId) ?? 'Unavailable computer'}`}
-          {profile.distribution === 'local_only' ? ' · Local-only profile' : ''}</p>
-        <p>{pending ? pending.operation === 'remove' ? 'Removal queued — waiting for browser/computer'
+        <div className="browser-profile-row-heading"><h4>{profile.name}</h4>
+          <small>{source ? 'Source here' : `From ${computerNames.get(profile.sourceComputerId) ?? 'another computer'}`}
+            {profile.distribution === 'local_only' ? ' · This computer only' : ''}</small></div>
+        <p className="browser-profile-note">{pending ? pending.operation === 'remove' ? 'Removal queued — waiting for browser/computer'
           : pending.operation === 'create' ? 'Adding profile — waiting for computer' : 'Waiting to apply source snapshot'
           : !present ? 'Not added here' : source && replica?.transfer === 'missing'
           ? profile.publishedRevision === 0 ? 'No source snapshot published yet' : 'Source snapshot needs publication'
           : profile.distribution === 'shared' && !source && replica && !replica.localOverride && replica.transfer === 'local_only'
             ? 'Source updates enabled — sync to apply'
           : replicaTransferLabel(replica)}</p>
-        {replica?.reason ? <p>{replica.reason}</p> : null}
+        {replica?.reason ? <p className="browser-profile-note">{replica.reason}</p> : null}
         <LoginEvidence replica={replica} />
         <div className="browser-profile-actions">
-          <Button size="sm" disabled={disabled || !computer.online || !computer.runtimeReady || !present || pending?.operation === 'remove'}
+          <Button size="sm" variant="primary" disabled={disabled || !computer.online || !computer.runtimeReady || !present || pending?.operation === 'remove'}
             onClick={() => onOpen(profile)}>Open browser</Button>
           <Button size="sm" variant="ghost" disabled={disabled} onClick={() => onEdit(profile)}>Edit profile</Button>
           {!source && replica && profile.distribution === 'shared' ? <Button size="sm" variant="ghost" disabled={disabled}
@@ -53,20 +53,17 @@ export function BrowserProfileComputerRows({ profiles, replicas, presentReplicas
             onClick={() => onRemove(profile)}>Remove from this computer</Button> : null}
           <Button size="sm" variant="ghost" onClick={() => onDownloads(profile)}>Downloads</Button>
         </div>
-        {!source && profile.distribution === 'shared' && !replica?.localOverride ? <small>
-          Opening the browser does not change sync policy. Choose Keep local sign-in to exclude this computer from source updates.
-        </small> : null}
       </li>
     })}
   </ul>
 }
 
 function LoginEvidence({ replica }: { replica: BrowserProfileReplica | undefined }) {
-  if (!replica?.loginEvidence.length) return <p>Website sign-in: not checked on this computer.</p>
+  if (!replica?.loginEvidence.length) return null
   const labels = { not_checked: 'Not checked', signed_in: 'Signed in when checked', sign_in_required: 'Sign-in required', unknown: 'Could not verify sign-in' }
   return <ul className="browser-login-evidence" aria-label="Website sign-in checks">{replica.loginEvidence.map(evidence =>
     <li key={evidence.origin}>{evidence.origin} · {labels[evidence.state]}
-      {evidence.checkedAt ? <> · <time dateTime={evidence.checkedAt}>{evidence.checkedAt}</time></> : null}
+      {evidence.checkedAt ? <> · <time dateTime={evidence.checkedAt}>{new Date(evidence.checkedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</time></> : null}
       {evidence.evidence === 'user_confirmed' ? ' · Confirmed by you' : null}
       {evidence.reason ? <small>{evidence.reason}</small> : null}
     </li>)}</ul>

@@ -8,7 +8,7 @@ function ExecutionReport({ scope, row }: { scope: RepeatGraphScopeV3; row: RunEx
   const [open, setOpen] = useDisclosure()
   const detail = useQuery({ queryKey: actionKey(scope, 'report', row.executionId), enabled: open,
     queryFn: ({ signal }) => runActionsClient.execution(scope, row.executionId, { signal }, row),
-    retry: false, gcTime: 0, refetchOnWindowFocus: false, refetchOnReconnect: false })
+    gcTime: 0, refetchOnWindowFocus: false, refetchOnReconnect: false })
   const value = detail.isError ? undefined : detail.data
   return <li><details onToggle={(event) => setOpen(event.currentTarget.open)}>
     <summary>Execution {row.executionId} · {row.workflowNodeId} · attempt {row.attempt} · {row.state}</summary>
@@ -18,7 +18,7 @@ function ExecutionReport({ scope, row }: { scope: RepeatGraphScopeV3; row: RunEx
       <p>Configuration <code>{row.kind==='job'?row.jobDefinitionVersionId:row.agentConfigurationVersionId}</code> · saved version <code>{scope.workflowVersionId}</code>.</p>
       {detail.isPending ? <p role="status">Reading the exact execution report…</p> : null}
       {detail.isError ? <p role="alert">Exact report is unavailable: {detail.error.message}</p> : null}
-      <button type="button" disabled={detail.isFetching} onClick={() => void detail.refetch()}>Refresh exact report</button>
+      <button type="button" disabled={detail.isFetching && !detail.isRefetching} onClick={() => void detail.refetch()}>Refresh exact report</button>
       {value ? <>
         <p>Recorded state: {value.execution.state}.</p>
         {value.reportedResult ? <>
@@ -38,7 +38,7 @@ function ExecutionReport({ scope, row }: { scope: RepeatGraphScopeV3; row: RunEx
 function RunResultReport({ scope }: { scope: RepeatGraphScopeV3 }) {
   const [open, setOpen] = useDisclosure()
   const report = useQuery({ queryKey: actionKey(scope, 'run-result'), enabled: open,
-    queryFn: ({ signal }) => runActionsClient.runResult(scope, { signal }), retry: false, gcTime: 0,
+    queryFn: ({ signal }) => runActionsClient.runResult(scope, { signal }), gcTime: 0,
     refetchOnWindowFocus: false, refetchOnReconnect: false })
   const value = report.isError ? undefined : report.data
   return <details onToggle={(event) => setOpen(event.currentTarget.open)}>
@@ -49,7 +49,7 @@ function RunResultReport({ scope }: { scope: RepeatGraphScopeV3 }) {
       {value ? <><p>Recorded {value.executionState} · {value.outcome}. Run-level failure can exist even when individual executions succeeded.</p>
         {value.result ? <pre tabIndex={0} aria-label="Exact recorded Run result">{JSON.stringify(value.result, null, 2)}</pre>
           : <p>No terminal Run result is recorded.</p>}</> : null}
-      <button type="button" disabled={report.isFetching} onClick={() => void report.refetch()}>Refresh recorded Run result</button>
+      <button type="button" disabled={report.isFetching && !report.isRefetching} onClick={() => void report.refetch()}>Refresh recorded Run result</button>
     </div> : null}
   </details>
 }
@@ -60,7 +60,7 @@ export function FailureDetails({ scope }: { scope: RepeatGraphScopeV3 }) {
     initialPageParam: null as string | null,
     queryFn: ({ signal, pageParam }) => runActionsClient.executions(scope, pageParam, 10, { signal }),
     getNextPageParam: (value) => value.pageInfo.nextCursor ?? undefined,
-    maxPages: 1, retry: false, gcTime: 0, refetchOnWindowFocus: false, refetchOnReconnect: false })
+    maxPages: 1, gcTime: 0, refetchOnWindowFocus: false, refetchOnReconnect: false })
   const rows = page.isError ? [] : page.data?.pages[0]?.items ?? []
   return <details onToggle={(event) => setOpen(event.currentTarget.open)}>
     <summary>Failure details and execution reports</summary>
@@ -69,12 +69,12 @@ export function FailureDetails({ scope }: { scope: RepeatGraphScopeV3 }) {
       <p>Read exact recorded failures, cancellations and results by execution. This API pages all executions; this is not a complete failure count or a node-retry control.</p>
       {page.isPending ? <p role="status">Loading one bounded execution page…</p> : null}
       {page.isError ? <p role="alert">Execution reports are unavailable: {page.error.message}</p> : null}
-      <button type="button" disabled={page.isFetching} onClick={() => void page.refetch()}>Refresh execution page</button>
+      <button type="button" disabled={page.isFetching && !page.isRefetching} onClick={() => void page.refetch()}>Refresh execution page</button>
       <RunResultReport scope={scope} />
       <ol>{rows.map((row) => <ExecutionReport key={row.executionId} scope={scope} row={row} />)}</ol>
       {!page.isPending && !page.isError && !rows.length ? <p>No executions are recorded on this page.</p> : null}
-      {page.hasNextPage ? <button type="button" disabled={page.isFetching} onClick={() => void page.fetchNextPage().then(() => pageHeading.current?.focus())}>Next execution page</button> : null}
-      {page.data?.pageParams[0] !== null && page.data?.pageParams[0] !== undefined ? <button type="button" disabled={page.isFetching}
+      {page.hasNextPage ? <button type="button" disabled={page.isFetching && !page.isRefetching} onClick={() => void page.fetchNextPage().then(() => pageHeading.current?.focus())}>Next execution page</button> : null}
+      {page.data?.pageParams[0] !== null && page.data?.pageParams[0] !== undefined ? <button type="button" disabled={page.isFetching && !page.isRefetching}
         onClick={() => void cache.resetQueries({ queryKey: actionKey(scope, 'reports'), exact: true }).then(() => pageHeading.current?.focus())}>First execution page</button> : null}
       <p>Up to 10 summaries are retained for this panel. Inputs and reports are never fetched by the current-state polling loop.</p>
     </section> : null}
@@ -84,7 +84,7 @@ export function FailureDetails({ scope }: { scope: RepeatGraphScopeV3 }) {
 export function SavedRepeatPolicy({ scope }: { scope: RepeatGraphScopeV3 }) {
   const [open, setOpen] = useDisclosure()
   const pinned = useQuery({ queryKey: actionKey(scope, 'repeat-policy'), enabled: open,
-    queryFn: ({ signal }) => runActionsClient.version(scope, { signal }), retry: false, gcTime: 0,
+    queryFn: ({ signal }) => runActionsClient.version(scope, { signal }), gcTime: 0,
     refetchOnWindowFocus: false, refetchOnReconnect: false })
   const version = pinned.isError ? undefined : pinned.data?.version
   return <details onToggle={(event) => setOpen(event.currentTarget.open)}>

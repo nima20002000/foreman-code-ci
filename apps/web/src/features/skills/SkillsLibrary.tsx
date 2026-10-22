@@ -14,8 +14,8 @@ export interface SkillLibrarySearch { workspace?: string | undefined; q?: string
 
 function SkillRow({ skill, workspace }: { skill: SkillSummary; workspace: string }) {
   const { query, agents } = useSkillAssignments(skill.workspaceId, skill.skillId)
-  let assignments = agents.map((agent) => agent.name).join(', ') || 'No Agents'
-  if (query.isPending) assignments = 'Loading assignments…'
+  let assignments = agents.map((agent) => agent.name).join(', ') || 'Not assigned'
+  if (query.isPending) assignments = '…'
   if (query.isError) assignments = 'Assignments unavailable'
   return <li className="skill-list-item">
     <Link to="/settings/skills/$workspaceId/$skillId" params={{ workspaceId: skill.workspaceId, skillId: skill.skillId }} className="skill-row">
@@ -25,13 +25,13 @@ function SkillRow({ skill, workspace }: { skill: SkillSummary; workspace: string
         <span className="skill-row-workspace">{workspace}</span>
       </span>
       <span className="skill-row-status">
-        {skill.archived ? <Badge tone="warning">Archived · v{skill.version}</Badge> : `Active · v${skill.version}`}
+        {skill.archived ? <Badge tone="warning">Archived · v{skill.version}</Badge> : `v${skill.version}`}
       </span>
       <span className="skill-row-users" aria-label="Assigned Agents">
         {assignments}
       </span>
     </Link>
-    {query.isError ? <Button size="sm" variant="ghost" disabled={query.isFetching}
+    {query.isError ? <Button size="sm" variant="ghost" disabled={query.isFetching && !query.isRefetching}
       onClick={() => void query.refetch()}>Retry assignments</Button> : null}
   </li>
 }
@@ -68,14 +68,14 @@ export function SkillsLibrary({ search, onSearchChange }: { search: SkillLibrary
     <div className="skills-toolbar" role="search">
       <SearchField label="Search skills" value={text} placeholder="Search by name or description" maxLength={200}
         onChange={(event) => setText(event.target.value)} />
-      <Select label="Workspace" value={search.workspace ?? ''} disabled={workspaces.isPending}
+      <Select label="Workspace" className="skills-workspace-filter" value={search.workspace ?? ''} disabled={workspaces.isPending}
         options={[{ value: '', label: 'All workspaces' }, ...options]}
         onChange={(event) => onSearchChange({ ...search, workspace: event.target.value || undefined })} />
       <Switch label="Show archived" checked={Boolean(search.archived)} onChange={(event) => onSearchChange({ ...search, archived: event.target.checked || undefined })} />
     </div>
     {accessError ? <ProtectedAccessError error={accessError} />
       : pages.isPending ? <LoadingState label="Loading skills…" />
-        : pages.isError && !pages.data ? <ErrorState title="Skills could not be loaded" description={pages.error.message} retrying={pages.isFetching} onRetry={() => void pages.refetch()} />
+        : pages.isError && !pages.data ? <ErrorState title="Skills could not be loaded" description="Try again in a moment." retrying={pages.isFetching} onRetry={() => void pages.refetch()} />
           : <div className="skills-results" aria-busy={pages.isFetching && pages.isPlaceholderData}>
             {pages.isError ? <p role="alert" className="skills-inline-error">Could not refresh skills. Showing the last loaded list. <Button size="sm" onClick={() => void pages.refetch()}>Retry</Button></p> : null}
             {items.length === 0 ? filtered
@@ -85,7 +85,7 @@ export function SkillsLibrary({ search, onSearchChange }: { search: SkillLibrary
               : <ul className="skills-list" aria-label="Skills">{items.map((skill) =>
                 <SkillRow key={`${skill.workspaceId}:${skill.skillId}`} skill={skill} workspace={name(skill.workspaceId)} />)}</ul>}
             <LoadMore label="skills" query={pages} />
-            <p className="n-sr-only" role="status">{pages.isFetching ? 'Loading skills' : `${items.length} skills shown`}</p>
+            <p className="n-sr-only" role="status">{pages.isFetching ? 'Loading skills' : `${items.length} ${items.length === 1 ? 'skill' : 'skills'} shown`}</p>
           </div>}
   </section>
 }

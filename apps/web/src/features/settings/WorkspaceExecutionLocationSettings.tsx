@@ -24,8 +24,10 @@ import { useRuntimeIdentityQuery } from '../../shared/api/runtimeIdentity'
 import { useWorkspaceCreationDefaultsQuery } from '../../shared/api/settingsExperience'
 import './computerSettings.css'
 
-type Props = { workspaceId: string; presentation?: 'field' | 'card' | 'tile' | 'compact'; onSaved?: () => void; triggerRef?: RefObject<HTMLButtonElement | null> }
-function hostLabel(host: WorkspaceRootSelection['hostRef']) { return host.kind === 'main' ? `Main · ${host.mainId}` : `Worker · ${host.deviceId}` }
+type Props = { workspaceId: string; presentation?: 'field' | 'card' | 'tile' | 'compact' | 'dialog'; onSaved?: () => void; triggerRef?: RefObject<HTMLButtonElement | null>
+  /** With presentation "dialog", only the folder picker dialog renders and its parent opens and closes it. */
+  open?: boolean; onOpenChange?(open: boolean): void }
+function hostLabel(host: WorkspaceRootSelection['hostRef']) { return host.kind === 'main' ? 'Main computer' : `Worker computer ${host.deviceId.slice(0, 8)}` }
 function revision(value: string | undefined) {
   const result = Number(value ?? 0)
   if (!Number.isSafeInteger(result) || result < 0) throw new Error('This root policy revision cannot be represented by the location API.')
@@ -182,7 +184,7 @@ function useLocationSettings({ workspaceId, presentation = 'field', onSaved }: P
   }
 }
 
-function LocationSettings({ workspaceId, presentation = 'field', onSaved, triggerRef }: Props) {
+function LocationSettings({ workspaceId, presentation = 'field', onSaved, triggerRef, open: dialogOpen, onOpenChange }: Props) {
   const {
     scope, toasts, workspace, identity, defaults, current, saved, choices, browse, validate, save, operation,
     busy, picker, update, records, chosen, candidate, selection, locked, setPickerOpen, archived, conflict,
@@ -192,12 +194,20 @@ function LocationSettings({ workspaceId, presentation = 'field', onSaved, trigge
   })
   const guard = <UnsavedEditorGuard editor={{ label: 'execution folder command', dirty: operation.attempt.unresolved, busy, uncertain: operation.attempt.unresolved,
     save: submit, discard: () => { if (!operation.attempt.unresolved) update(scope, () => empty()) }, error: save.error?.message }} />
-  const recovery = operation.attempt.unresolved ? <><Alert tone="warning" title="A submitted folder command has an unknown outcome. Its original selection is retained." />
-    <Button disabled={busy} onClick={() => void submit()}>Reconcile original selection</Button></> : null
-  if (!current) return <section aria-label="Project folder">{guard}{recovery}{workspace.isError ? <Alert tone="danger" title="Execution workspace could not be loaded." /> : <LoadingState label="Loading execution workspace…" />}</section>
-  if (current.locationValidation.status === 'restricted') return <>{guard}{recovery}<Alert tone="danger" title="You do not have permission to read this workspace’s execution location." /></>
-  if (saved.isError || choices.isError) return <section aria-label="Project folder">{guard}{recovery}{archived ? <Alert tone="warning" title="This workspace is archived. Its execution location cannot be edited." /> : null}<Alert tone="danger" title="Project folder or computer roots could not be loaded." /><Button onClick={() => void reload()}>Retry location readback</Button></section>
-  if (!saved.isSuccess || !choices.isSuccess) return <>{guard}{recovery}<LoadingState label="Loading saved execution computer and approved roots…" /></>
+  const recovery = operation.attempt.unresolved ? <Alert tone="warning" title="Not sure the last save went through. Your choice is kept."
+    action={<Button size="sm" disabled={busy} onClick={() => void submit()}>Retry save</Button>} /> : null
+  const state = !current ? workspace.isError ? <Alert tone="danger" title="This workspace couldn’t be loaded." /> : <LoadingState label="Loading…" rows={2} />
+    : current.locationValidation.status === 'restricted' ? <Alert tone="danger" title="You can’t read this workspace’s folder." />
+      : saved.isError || choices.isError ? <>{archived ? <Alert tone="warning" title="This workspace is archived. Its folder can’t be changed." /> : null}
+        <Alert tone="danger" title="Couldn’t load the folder or the computers." action={<Button size="sm" onClick={() => void reload()}>Try again</Button>} /></>
+        : !saved.isSuccess || !choices.isSuccess ? <LoadingState label="Loading folders…" rows={2} /> : null
+  const closeDialog = (open: boolean) => { if (!open && locked) return; if (!open) setPickerOpen(false); onOpenChange?.(open) }
+  if (presentation === 'dialog' && state) return <>{guard}<Dialog open={!!dialogOpen} onOpenChange={closeDialog} title="Execution folder" busy={locked}>
+    {recovery}{state}</Dialog></>
+  if (!current) return <section aria-label="Project folder">{guard}{recovery}{state}</section>
+  if (current.locationValidation.status === 'restricted') return <>{guard}{recovery}{state}</>
+  if (saved.isError || choices.isError) return <section aria-label="Project folder">{guard}{recovery}{state}</section>
+  if (!saved.isSuccess || !choices.isSuccess) return <>{guard}{recovery}{state}</>
   const savedPath = saved.data.executionLocation?.rootPath ?? ''
   const browsingCurrent = sameRootSelection(browse.data?.selection, selection)
   const validationCurrent = sameRootSelection(validate.data?.selection, selection)
@@ -222,12 +232,45 @@ function LocationSettings({ workspaceId, presentation = 'field', onSaved, trigge
     </section>
   }
   const savedFacts = saved.data.evidence === 'bound' ? <dl className="computer-facts">
-    <div><dt>Saved execution computer</dt><dd>{hostLabel(saved.data.binding.hostRef)}</dd></div>
-    <div><dt>Application installation</dt><dd>{saved.data.binding.applicationInstallationId}</dd></div>
-    <div><dt>Location / root policy revision</dt><dd>{saved.data.locationRevision} / {saved.data.binding.rootPolicyRevision}</dd></div>
-  </dl> : saved.data.evidence === 'legacy_missing' ? null : <p>No execution folder has been configured.</p>
+    <div><dt>Runs on</dt><dd>{hostLabel(saved.data.binding.hostRef)}</dd></div>
+  </dl> : saved.data.evidence === 'legacy_missing' ? null : <p>No execution folder yet.</p>
   const locationLabel = { field: 'Project folder', card: 'Choose workspace folder',
-    tile: 'Execution location', compact: 'Execution location' }[presentation]
+    tile: 'Execution location', compact: 'Execution location', dialog: 'Execution folder' }[presentation]
+  const pickerOpen = presentation === 'dialog' ? !!dialogOpen : picker.open
+  const pickerDialog = <Dialog open={pickerOpen} onOpenChange={presentation === 'dialog' ? closeDialog : setPickerOpen} title="Execution folder" busy={locked}
+      description="Pick a computer and a folder on it. Nothing changes until you save." footer={<>
+        <Button disabled={locked} onClick={() => presentation === 'dialog' ? closeDialog(false) : setPickerOpen(false)}>Cancel</Button>
+        <Button variant="primary" disabled={archived || busy || validate.isPending || browse.isPending
+          || (!operation.attempt.unresolved && (!selection || conflict))} onClick={() => void submit()}>
+          {busy ? 'Saving…' : operation.attempt.unresolved ? 'Retry save' : 'Use this folder'}
+        </Button></>}>
+      {recovery}
+      <Select label="Computer and folder" value={picker.selected ?? ''} disabled={locked || archived}
+        options={[{ value: '', label: 'Choose a computer' }, ...records.map(record => ({ value: record.key, label: `${hostLabel(record.host.hostRef)} · ${record.base.canonicalPath}` }))]}
+        onChange={event => choose(event.target.value)} />
+      {!records.length ? <Alert tone="warning" title="No approved folders yet. Approve a folder on a computer first." /> : null}
+      {chosen && candidate ? <>
+        <ComputerPresenceReadback key={chosen.key} host={chosen.host.hostRef} applicationInstallationId={chosen.host.applicationInstallationId} />
+        <TextField label="Subfolder" value={candidate.relativePath} maxLength={1024} disabled={locked || archived} placeholder="Leave empty to use the folder itself"
+          onChange={event => changeCandidate({ relativePath: event.target.value })} />
+        <Select label="Access" value={candidate.accessMode} disabled={locked || archived} options={chosen.base.accessModes.map(mode => ({ value: mode, label: mode === 'read-write' ? 'Read and write' : mode === 'read-only' ? 'Read only' : mode }))}
+          onChange={event => changeCandidate({ accessMode: event.target.value as Candidate['accessMode'] })} />
+        <div className="computer-actions">
+          <Button size="sm" disabled={locked || browse.isPending || conflict || archived} onClick={() => void runBrowse()}>Browse</Button>
+          <Button size="sm" disabled={locked || validate.isPending || conflict || archived} onClick={() => void runValidate()}>Check folder</Button>
+        </div>
+      </> : null}
+      {browsingCurrent ? <><ul className="computer-instance-list">{browse.data!.browse.directories.map(directory => <li key={directory.relativePath}>
+        <Button size="sm" variant="ghost" disabled={locked} onClick={() => changeCandidate({ relativePath: directory.relativePath })}>{directory.name}</Button></li>)}</ul>
+        {browse.data!.browse.truncated ? <p>Only the first folders are listed. Type the subfolder to use another.</p> : null}</> : null}
+      {validationCurrent ? <p role="status">Folder checked on {hostLabel(validate.data!.attestation.hostRef)}. Not saved yet.</p> : null}
+      {browse.isError && sameRootSelection(browse.variables?.input, selection) ? <p role="alert">{browse.error.message}</p> : null}
+      {validate.isError && sameRootSelection(validate.variables?.input, selection) ? <p role="alert">{validate.error.message}</p> : null}
+      {conflict && !operation.attempt.unresolved ? <Alert tone="warning" title="The saved folder changed. Reload before saving."
+        action={<Button size="sm" disabled={locked} onClick={() => void reload()}>Reload</Button>} /> : null}
+      {picker.notice ? <p role="status">{picker.notice}</p> : null}
+    </Dialog>
+  if (presentation === 'dialog') return <>{guard}{pickerDialog}</>
   return <section className="workspace-location-form" aria-label="Project folder">
     {guard}
     {archived ? <Alert tone="warning" title="This workspace is archived. Its execution location cannot be edited." /> : null}
@@ -240,42 +283,7 @@ function LocationSettings({ workspaceId, presentation = 'field', onSaved, trigge
       } : undefined} />
     {presentation !== 'compact' ? savedFacts : null}
     {picker.notice ? <p role="status">{picker.notice}</p> : null}
-    <Dialog open={picker.open} onOpenChange={setPickerOpen} title="Execution folder" busy={locked}
-      description="Browsing and validation run on the selected computer. The workspace changes only when the save is confirmed." footer={<>
-        <Button disabled={locked} onClick={() => setPickerOpen(false)}>Cancel</Button>
-        <Button disabled={archived || busy || validate.isPending || browse.isPending
-          || (!operation.attempt.unresolved && (!selection || conflict))} onClick={() => void submit()}>
-          {busy ? 'Saving…' : operation.attempt.unresolved ? 'Reconcile original selection' : 'Select location'}
-        </Button></>}>
-      <Select label="Computer and approved base folder" value={picker.selected ?? ''} disabled={locked || archived}
-        options={[{ value: '', label: 'Choose a computer and approved root' }, ...records.map(record => ({ value: record.key, label: `${hostLabel(record.host.hostRef)} · ${record.base.canonicalPath}` }))]}
-        onChange={event => choose(event.target.value)} />
-      {!records.length ? <Alert tone="warning" title="No approved folders are available for this workspace. A person must approve a computer folder before it can be chosen." /> : null}
-      {chosen && candidate ? <>
-        <dl className="computer-facts"><div><dt>Approved base</dt><dd>{chosen.base.canonicalPath}</dd></div></dl>
-        <details className="computer-details"><summary>Computer installation</summary>
-          <dl className="computer-facts"><div><dt>Candidate application installation</dt><dd>{chosen.host.applicationInstallationId}</dd></div></dl></details>
-        <ComputerPresenceReadback key={chosen.key} host={chosen.host.hostRef} applicationInstallationId={chosen.host.applicationInstallationId} />
-        <TextField label="Relative folder on this computer" value={candidate.relativePath} maxLength={1024} disabled={locked || archived} placeholder="Empty selects the approved base"
-          onChange={event => changeCandidate({ relativePath: event.target.value })} />
-        <Select label="Folder access" value={candidate.accessMode} disabled={locked || archived} options={chosen.base.accessModes.map(mode => ({ value: mode, label: mode }))}
-          onChange={event => changeCandidate({ accessMode: event.target.value as Candidate['accessMode'] })} />
-        <div className="computer-actions">
-          <Button disabled={locked || browse.isPending || conflict || archived} onClick={() => void runBrowse()}>Browse this computer</Button>
-          <Button disabled={locked || validate.isPending || conflict || archived} onClick={() => void runValidate()}>Validate candidate folder</Button>
-        </div>
-      </> : null}
-      {browsingCurrent ? <><ul className="computer-instance-list">{browse.data!.browse.directories.map(directory => <li key={directory.relativePath}>
-        <Button disabled={locked} onClick={() => changeCandidate({ relativePath: directory.relativePath })}>{directory.name}</Button></li>)}</ul>
-        {browse.data!.browse.truncated ? <p>Directory listing is truncated. Enter an exact relative folder to validate.</p> : null}</> : null}
-      {validationCurrent ? <p role="status">Candidate verified on {hostLabel(validate.data!.attestation.hostRef)}: {validate.data!.attestation.canonicalProjectRoot}. Not saved yet.</p> : null}
-      {browse.isError && sameRootSelection(browse.variables?.input, selection) ? <p role="alert">{browse.error.message}</p> : null}
-      {validate.isError && sameRootSelection(validate.variables?.input, selection) ? <p role="alert">{validate.error.message}</p> : null}
-      {operation.attempt.unresolved && !busy ? <Alert tone="warning" title="The save outcome is unknown. Reconcile the original computer and folder selection before making another choice." /> : null}
-      {conflict && !operation.attempt.unresolved ? <Alert tone="warning" title="The saved location or root policy changed. Reload before saving this candidate." /> : null}
-      {conflict && !operation.attempt.unresolved ? <Button disabled={locked} onClick={() => void reload()}>Reload saved location</Button> : null}
-      {picker.notice ? <p role="status">{picker.notice}</p> : null}
-    </Dialog>
+    {pickerDialog}
   </section>
 }
 export function WorkspaceExecutionLocationSettings(props: Props) {

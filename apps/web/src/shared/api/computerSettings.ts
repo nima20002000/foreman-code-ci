@@ -18,12 +18,12 @@ export const computerSettingsKeys = {
 }
 export function useSelectedMainQuery() {
   useHarnessSessionEpoch()
-  return useQuery({ queryKey: computerSettingsKeys.main(), enabled: !sessionIsSwitching(), retry: false,
+  return useQuery({ queryKey: computerSettingsKeys.main(), enabled: !sessionIsSwitching(),
     queryFn: ({ signal }) => apiClient.request('/api/devices/main', MainDeviceIdentityPublicSchema, { signal }) })
 }
 export function useRegisteredComputersQuery(mainId: string | undefined) {
   useHarnessSessionEpoch()
-  return useQuery({ queryKey: computerSettingsKeys.devices(mainId ?? ''), refetchInterval: 5_000, enabled: Boolean(mainId) && !sessionIsSwitching(), retry: false,
+  return useQuery({ queryKey: computerSettingsKeys.devices(mainId ?? ''), refetchInterval: 5_000, enabled: Boolean(mainId) && !sessionIsSwitching(),
     queryFn: async ({ signal }) => {
       const result = await apiClient.request('/api/devices', DeviceListResultSchema, { signal })
       if (result.devices.some(value => value.mainId !== mainId)) throw new Error('Computer readback belongs to a different main installation.')
@@ -34,7 +34,7 @@ export function useHostHarnessRegistryQuery(host: CanonicalMachineReference | un
   options?: { refetchInterval?: number }) {
   useHarnessSessionEpoch()
   return useQuery({ queryKey: host ? computerSettingsKeys.inventory(host, applicationInstallationId) : [...computerSettingsKeys.root, sessionGeneration(), 'unselected'],
-    enabled: Boolean(host) && !sessionIsSwitching(), retry: false, staleTime: 30_000,
+    enabled: Boolean(host) && !sessionIsSwitching(), staleTime: 30_000,
     refetchInterval: options?.refetchInterval ?? false,
     queryFn: async ({ signal }) => {
       const value = HarnessHostReferenceSchema.parse(host)
@@ -62,7 +62,7 @@ export function useCreateComputerPairingGrant(mainId: string) {
 /** The device endpoint is server-configured; it is never derived from the browser address. */
 export function useComputerSetupOptionsQuery(mainId: string) {
   useHarnessSessionEpoch()
-  return useQuery({ queryKey: computerSettingsKeys.setupOptions(mainId), enabled: !sessionIsSwitching(), retry: false,
+  return useQuery({ queryKey: computerSettingsKeys.setupOptions(mainId), enabled: !sessionIsSwitching(),
     queryFn: ({ signal }) => apiClient.request('/api/devices/setup-options', DeviceSetupOptionsSchema, { signal }) })
 }
 /** The result carries a private enrollment code; keep it in the mutation result only. */

@@ -32,7 +32,6 @@ export function ComputerSummaryCards() {
       const online = fresh && computer.online
       const labels = <>
         <Badge tone={online ? 'success' : 'neutral'} dot>{!fresh ? 'Status stale' : online ? 'Online' : 'Offline'}</Badge>
-        <Badge>Agent host</Badge>
         {ci ? <Badge>CI</Badge> : null}
         {computer.agents.length ? <Badge>{agentCount(computer.agents.length)}</Badge> : null}
       </>

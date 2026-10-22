@@ -247,7 +247,7 @@ describe('ENG-05 contextual Run actions on current S3 contracts', () => {
     await user.click(screen.getByRole('button', { name: 'Refresh / reconnect client state' }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Verify cleanup settlement' })).toBeEnabled())
     await user.click(screen.getByRole('button', { name: 'Verify cleanup settlement' }))
-    await screen.findByText(/Authenticated readback confirms this Run is terminal and cleanup-settled/)
+    await screen.findByText(/Cleanup confirmed. This run has fully stopped/)
     expect(readBoardStop(mock.f.scope)).toBeUndefined()
   })
   it('keeps the exact accepted Stop receipt visible when the following current-state read fails', async () => {
@@ -262,7 +262,7 @@ describe('ENG-05 contextual Run actions on current S3 contracts', () => {
   it('does not clear a not-owner Stop or label it native settlement', async () => {
     const mock = fixture(), user = userEvent.setup(); mock.state.stopStatus = 'not_owner'
     await mount(mock); await user.click(screen.getByRole('button', { name: 'Stop this Run' }))
-    await screen.findByText(/This backend did not prove ownership/)
+    await screen.findByText(/Another app instance runs this/)
     expect(readBoardStop(mock.f.scope)?.receipt?.status).toBe('not_owner')
     expect(screen.queryByRole('button', { name: 'Verify cleanup settlement' })).not.toBeInTheDocument()
   })

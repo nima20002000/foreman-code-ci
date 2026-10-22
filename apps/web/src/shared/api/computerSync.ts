@@ -14,7 +14,7 @@ export function useComputerSync(target: DeviceProvisioningTarget) {
   const queryKey = ['computer-sync', generation, target] as const
   const cache = useQueryClient()
   const unconfirmed = useRef(false)
-  const status = useQuery({ queryKey, retry: false, refetchInterval: 10_000,
+  const status = useQuery({ queryKey, refetchInterval: 10_000,
     enabled: !sessionIsSwitching(),
     queryFn: async ({ signal }) => {
       const result = await apiClient.request('/api/management/computers/sync/status', ComputerSyncStatusSchema,

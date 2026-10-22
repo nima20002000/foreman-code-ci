@@ -3,7 +3,14 @@
   border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
 .runtime-card h1, .runtime-card p { margin: 0; }
 .access-message { padding: var(--space-8); }
+/* A quiet pill at the bottom edge: it never covers the breadcrumb or page headings while the API restarts. */
 .runtime-reconnecting { display: flex; align-items: center; gap: var(--space-3);
-  position: fixed; top: var(--space-4); left: 50%; transform: translateX(-50%);
-  z-index: 1000; padding: var(--space-2) var(--space-4); border: 1px solid var(--border);
-  border-radius: var(--radius-lg); background: var(--surface); }
+  position: fixed; bottom: var(--space-4); left: 50%; transform: translateX(-50%);
+  z-index: 1000; padding: 6px 6px 6px 14px; border: 1px solid var(--border);
+  border-radius: 999px; background: var(--surface); color: var(--text-muted); font-size: 12.5px;
+  box-shadow: 0 6px 24px color-mix(in srgb, black 25%, transparent); }
+.runtime-reconnecting::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--warning, #d9a441);
+  animation: runtime-pulse 1.2s ease-in-out infinite; }
+.runtime-reconnecting .n-button { border-radius: 999px; }
+@keyframes runtime-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .runtime-reconnecting::before { animation: none; } }

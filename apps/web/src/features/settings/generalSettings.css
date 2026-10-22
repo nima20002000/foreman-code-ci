@@ -1,0 +1,10 @@
+.general-settings .chat-retention { padding-block: 0; max-width: 26rem; }
+.general-settings .chat-retention-heading { display: none; }
+.general-sync-row { display: grid; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--n-border); }
+.general-sync-row:last-child { border-bottom: 0; }
+.general-sync-name { display: flex; align-items: center; gap: 8px; }
+.general-sync-name strong { font-size: 13px; font-weight: 550; }
+.general-sync-name small { color: var(--n-faint); font-size: 12px; }
+.general-sync-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--n-faint); }
+.general-sync-dot[data-online='true'] { background: var(--success); }
+.general-note { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--n-muted); font-size: 13px; }

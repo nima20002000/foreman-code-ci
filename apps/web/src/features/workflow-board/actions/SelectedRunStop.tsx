@@ -20,18 +20,21 @@ export function SelectedRunStop({ scope }: {
   const read = live && !!principal && canUseBoardAction(principal.grants, 'runs:read', scope)
   const stop = live && !!principal && canUseBoardAction(principal.grants, 'runs:stop', scope)
   const status = useQuery({ queryKey: actionKey(scope, 'status', scope.workflowVersionId ?? null), enabled: read,
-    queryFn: ({ signal }) => runActionsClient.status(scope, { signal }), retry: false, staleTime: 1000, gcTime: 0,
+    queryFn: ({ signal }) => runActionsClient.status(scope, { signal }), staleTime: 1000, gcTime: 0,
     refetchOnWindowFocus: true, refetchOnReconnect: true,
     refetchInterval: query => query.state.error ? false : query.state.data && needsRunRefresh(query.state.data) ? 5000 : false,
     refetchIntervalInBackground: false })
   const capability = useQuery({ queryKey: actionKey(scope, 'capabilities'), enabled: read,
-    queryFn: ({ signal }) => runActionsClient.capabilities({ signal }), retry: false, staleTime: 30_000, gcTime: 0 })
+    queryFn: ({ signal }) => runActionsClient.capabilities({ signal }), staleTime: 30_000, gcTime: 0 })
   const denied = useProtectedAccessError(status)
   const refresh = () => {
     void access.refetch(); void status.refetch(); void capability.refetch()
     void cache.invalidateQueries({ queryKey: hierarchyKey({ workspaceId: scope.workspaceId,
       workflowId: scope.workflowId, runId: scope.runId }), exact: true })
   }
+  // A failed access read is a connection problem, not missing access.
+  if (access.isPending) return <p role="status">Reading Run controls…</p>
+  if (access.isError) return <p role="status">Couldn’t load Run controls. <Button size="sm" variant="ghost" onClick={refresh}>Try again</Button></p>
   if (!read || denied) return <p role="status">Run controls are unavailable with your current access.</p>
   if (status.isPending) return <p role="status">Reading Run controls…</p>
   if (status.error || !status.data) return <Alert tone="warning" title="Run controls could not be refreshed.">

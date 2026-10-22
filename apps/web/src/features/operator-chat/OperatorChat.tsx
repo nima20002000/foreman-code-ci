@@ -31,7 +31,7 @@ import { OperatorChatLauncher } from './OperatorChatLauncher'
 import { OperatorChatNotices } from './OperatorChatNotices'
 import { OperatorConversationTranscript } from './OperatorConversationTranscript'
 import { OperatorDecisionArea } from './OperatorDecisionArea'
-import { operatorResizeEdges, useOperatorChatResize } from './useOperatorChatResize'
+import { useMovableWindow, windowResizeEdges } from '../../shared/ui/useMovableWindow'
 import './operatorChat.css'
 
 export function OperatorChat(props: { settingsWarning?: string } = {}) {
@@ -41,7 +41,7 @@ export function OperatorChat(props: { settingsWarning?: string } = {}) {
 function OperatorChatContent({ settingsWarning }: { settingsWarning?: string }) {
   const enabled = useOperatorChatVisibility()
   const attachmentReceipts = useOperatorAttachmentReceipts()
-  const { panelRef, size, grip, moveGrip } = useOperatorChatResize()
+  const { panelRef, style: size, grip, moveGrip } = useMovableWindow({ name: 'Operator chat', minWidth: 420, minHeight: 320, narrow: isNarrowOperatorChat })
   const [removed, setRemoved] = useState<{ id: string; title: string }>()
   const [handoffNotice, setHandoffNotice] = useState<{ id: string; epoch: string }>()
   const [closing, setClosing] = useState(false)
@@ -69,6 +69,8 @@ function OperatorChatContent({ settingsWarning }: { settingsWarning?: string }) 
   const [preparingId, setPreparingId] = useState<string>()
   const [deniedConversation, setDeniedConversation] = useState<string>()
   const { list, selected, accessDenied, acceptState, invalidate, loadOlderChats, deletedRevisions, readGeneration } = useOperatorChatReadback(enabled, open, selectedId, !!selectedId && deniedConversation === selectedId)
+  // App restarts already show the global reconnect banner; only a real history failure earns a warning here.
+  const listFailed = list.isError && !isApiRestartError(list.error)
   const { attachments, attachmentReceiptPending } = useOperatorChatAttachments({ enabled: enabled && open, selectedId, accessDenied, selectedData: selected.data, attachmentReceipts })
   const { pending, setup, shownSetup, missingSelection, recoveredSelection } = useOperatorSetupState({
     enabled, open, selectedId, accessDenied, selectedError: selected.error, preferences, preferencesDenied })
@@ -123,12 +125,11 @@ function OperatorChatContent({ settingsWarning }: { settingsWarning?: string }) 
         if (historyOpen && isNarrowOperatorChat()) showHistory(false)
         else close()
       }}>
-      {operatorResizeEdges.map((edge) => <button key={edge} type="button" className={`operator-chat-resize operator-chat-resize-${edge}`} {...grip(edge)} />)}
-      {settingsWarning ? <details><summary>Operator settings refresh failed</summary>{settingsWarning}</details> : null}
+      {windowResizeEdges.map((edge) => <button key={edge} type="button" className={`operator-chat-resize operator-chat-resize-${edge}`} {...grip(edge)} />)}
       {accessDenied ? <Alert live tone="danger" title="Operator access unavailable"
         action={<Button size="sm" onClick={() => { setDeniedConversation(undefined); void list.refetch(); void selected.refetch() }}>Refresh access</Button>}>Check your browser enrollment and permissions.</Alert> : null}
       <OperatorChatHeader historyOpen={historyOpen} historyId={historyId} historyTriggerRef={historyTriggerRef} closeRef={closeRef}
-        historyFailed={list.isError} moveGrip={moveGrip}
+        historyFailed={listFailed} moveGrip={moveGrip}
         sessionControls={conversation ? sessionControls : undefined} accountBinding={conversation && !retired ? conversation.providerAccountBinding : undefined} onToggleHistory={() => showHistory(!historyOpen)} onClose={close} />
       <div className={`operator-chat-body${historyOpen ? ' operator-chat-history-open' : ''}`}>
         <OperatorChatHistory historyOpen={historyOpen} historyId={historyId} historyRef={historyRef} historyTriggerRef={historyTriggerRef}
@@ -160,6 +161,6 @@ function OperatorChatContent({ settingsWarning }: { settingsWarning?: string }) 
           navigationGeneration: useOperatorChatStore.getState().beginNavigation() })}>Undo</Button></div> : null}
     </section> : null}
     <OperatorChatLauncher launcherRef={launcherRef} open={open} closing={closing} panelId={panelId} attention={attention}
-      settingsWarning={settingsWarning} listFailed={list.isError} />
+      settingsWarning={settingsWarning} listFailed={listFailed} />
   </div>
 }

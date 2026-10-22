@@ -61,7 +61,7 @@ export function useOperatorChatReadback(enabled: boolean, open: boolean, selecte
         updateObservedOperatorActivity(previous, updates))
       return newer(queryClient.getQueryData<OperatorConversationState>(detailKey(id)),
         { ...state, activities: mergeOperatorActivity(state.activities ?? [], updates) }, 'read')
-    }, retry: false })
+    } })
   const selectedDenied = useAccessFailureLatch(selected)
   const accessDenied = listDenied || selectedDenied || externalDenial
   const acceptState = useCallback((id: string, state: OperatorConversationState) => {
@@ -90,7 +90,7 @@ export function useOperatorChatReadback(enabled: boolean, open: boolean, selecte
   function loadOlderChats() {
     if (!list.data?.hasMore || list.isFetching || accessDenied) return
     historyLimit.current += 10
-    void list.refetch()
+    return list.refetch()
   }
   return { list, selected, accessDenied, acceptState, invalidate, loadOlderChats, deletedRevisions, readGeneration }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '../../shared/ui/nocturne'
 import { browserAccessDenied, browserErrorMessage, browserRequestUncertain } from '../agent-browser/errors'
@@ -25,6 +25,8 @@ export interface BrowserProfilesSettingsProps {
   onOpenSetup(session: BrowserSession): void
   /** Shell retains a cleanup notice/End setup action when this page has already retired. */
   onSetupCleanupPending(session: BrowserSession, message: string): void
+  /** Extra per-computer control, such as Repair browser, shown beside the computer's name. */
+  computerAction?(computer: BrowserComputerLabel): ReactNode
 }
 
 export function BrowserProfilesSettings(props: BrowserProfilesSettingsProps) {
@@ -32,7 +34,7 @@ export function BrowserProfilesSettings(props: BrowserProfilesSettingsProps) {
   return <VisibleBrowserProfiles key={props.authBoundary} {...props} />
 }
 
-function VisibleBrowserProfiles({ authBoundary, computers, currentComputerId, port, sessionPort, files, onOpenSetup, onSetupCleanupPending }: BrowserProfilesSettingsProps) {
+function VisibleBrowserProfiles({ authBoundary, computers, currentComputerId, port, sessionPort, files, onOpenSetup, onSetupCleanupPending, computerAction }: BrowserProfilesSettingsProps) {
   const queryClient = useQueryClient()
   const [denied, setDenied] = useState(false)
   const catalog = useBrowserProfiles(port, authBoundary, !denied)
@@ -67,25 +69,27 @@ function VisibleBrowserProfiles({ authBoundary, computers, currentComputerId, po
   const profileNames = new Map(catalog.data?.profiles.map(profile => [profile.id, profile.name]) ?? [])
   const accessDenied = denied || browserAccessDenied(catalog.error)
   return <section className="browser-profiles-settings" aria-label="Browser profiles">
-    <header><h2>Browser profiles</h2>
-      <p>Keep website sign-ins in managed profiles. Agents sharing a profile share its sign-ins and sign-outs.</p></header>
-    {accessDenied ? <p role="alert">Browser access is unavailable. Restore access and reopen this page.</p> : <>
-      <div className="browser-profile-actions">
-        <Button disabled={busy || !catalog.data} onClick={() => setEditor({ profile: null, computerId: currentComputerId })}>Add profile</Button>
-        <Button disabled={busy || !catalog.data?.profiles.length} onClick={() => sync()}>Sync profiles to all computers</Button>
+    {accessDenied ? <p role="alert" className="browser-profile-note">Browser profiles are unavailable right now.</p> : <>
+      <div className="browser-profile-toolbar">
+        <Button variant="primary" disabled={busy || !catalog.data} onClick={() => setEditor({ profile: null, computerId: currentComputerId })}>Add profile</Button>
+        <Button variant="ghost" disabled={busy || !catalog.data?.profiles.length} onClick={() => sync()}>Sync profiles to all computers</Button>
       </div>
-      {catalog.isPending ? <p role="status">Loading browser profiles…</p> : null}
-      {catalog.error ? <p role="alert">{browserErrorMessage(catalog.error)} <Button size="sm" onClick={() => { void catalog.refetch() }}>Retry</Button></p> : null}
-      {notice ? <p role="status">{notice}</p> : null}
-      {mutation.error && !editor ? <div role="alert"><p>{browserErrorMessage(mutation.error)} No new operation is confirmed.</p>
-        <Button disabled={mutation.isPending} onClick={retry}>Check original request</Button></div> : null}
-      {catalog.data?.profiles.length === 0 ? <p>No browser profiles yet. Add one to keep website sign-ins for your agents.</p> : null}
+      {catalog.isPending ? <div className="browser-profile-computers" aria-busy="true">{[0, 1].map(index => <div key={index} className="browser-profile-computer browser-profile-skeleton" />)}</div> : null}
+      {catalog.error ? <p role="alert" className="browser-profile-note">{browserErrorMessage(catalog.error)} <Button size="sm" variant="ghost" onClick={() => { void catalog.refetch() }}>Retry</Button></p> : null}
+      {notice ? <p role="status" className="browser-profile-note">{notice}</p> : null}
+      {mutation.error && !editor ? <div role="alert" className="browser-profile-note">{browserErrorMessage(mutation.error)} No new operation is confirmed.
+        <Button size="sm" disabled={mutation.isPending} onClick={retry}>Check original request</Button></div> : null}
       {catalog.data ? <div className="browser-profile-computers">{computers.map(computer => <section key={computer.id}
         aria-label={`Browser profiles on ${computer.name}`} className="browser-profile-computer">
-        <header><h3>{computer.name}</h3><p>{computer.online ? 'Online' : 'Offline'}
-          {!computer.online && computer.lastSeenAt ? <> · Last seen <time dateTime={computer.lastSeenAt}>{computer.lastSeenAt}</time></> : null}
-          {computer.runtimeReady ? ' · Browser ready' : ' · Browser setup needed'}</p></header>
-        <Button size="sm" disabled={busy} onClick={() => setEditor({ profile: null, computerId: computer.id })}>Add profile here</Button>
+        <header className="browser-profile-computer-heading">
+          <div><h3><span className="browser-profile-dot" data-online={computer.online} aria-hidden="true" />{computer.name}</h3>
+            <small>{computer.online ? 'Online' : 'Offline'}{computer.runtimeReady ? ' · Browser ready' : ' · Browser setup needed'}</small></div>
+          <div className="browser-profile-actions">
+            {computerAction?.(computer)}
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => setEditor({ profile: null, computerId: computer.id })}>Add profile here</Button>
+          </div>
+        </header>
+        {catalog.data!.profiles.length === 0 ? <p className="browser-profile-note">No profiles yet.</p> : null}
         <BrowserProfileComputerRows profiles={catalog.data!.profiles} replicas={catalog.data!.replicas}
           presentReplicas={catalog.data!.presentReplicas}
           pendingReplicas={catalog.data!.pendingReplicas}

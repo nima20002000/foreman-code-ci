@@ -21,9 +21,10 @@ export function deriveDraftEditorStatus({ edit, editIntent, agents, startState, 
   panel: Panel
 }) {
   const graph = edit.graph, context = edit.context
-  const { preflight, canStart, startOutbox, storageFailed, pendingStart } = startState
+  const { preflight, canStart, startOutbox, storageFailed, pendingStart, changedAgents } = startState
   const dirty = nextDraftDirty(edit)
-  const needsSave = dirty || !context.draft.baseWorkflowVersionId
+  const settingsChanged = changedAgents.length > 0
+  const needsSave = dirty || !context.draft.baseWorkflowVersionId || settingsChanged
   const canUndo = canUndoNextDraft(edit) || !!undoAction
   const canRedo = (edit.future?.length ?? 0) > 0 || redoCount > 0
   const startReloadRequired = !!edit.startCanceled
@@ -39,7 +40,8 @@ export function deriveDraftEditorStatus({ edit, editIntent, agents, startState, 
   const startDisabled = retiredHarness || !canStart || storageFailed || starting || reloading || (!pendingStart && (!graph.nodes.length || (!needsSave && !!preflightReason) || startReloadRequired || editIntent.locked
     || edit.busy || !!edit.pending))
   const startReason = retiredHarness ? 'Retired harness (OpenCode): read-only' : !canStart ? 'Start permission is unavailable for this workflow' : pendingStart ? 'Reconcile the exact earlier Start command' : startReloadRequired ? 'Reload after the saved version was rejected'
-    : !graph.nodes.length ? 'Add an agent before saving and running' : needsSave ? 'Save and run' : preflightReason ?? 'Run the saved workflow'
+    : !graph.nodes.length ? 'Add an agent before saving and running'
+    : needsSave ? (dirty || !settingsChanged ? 'Save and run' : 'Agent settings changed. Save and run to use them.') : preflightReason ?? 'Run the saved workflow'
   const saveBusy = edit.busy || reloading || !!edit.pending || !!pendingStart || editIntent.mutation.isPending
   // Workflow-local Run summaries cannot describe blockers of a shared-Agent edit.
   // Stage/reconcile first; ask for Stop only for that exact authoritative set.
@@ -54,7 +56,7 @@ export function deriveDraftEditorStatus({ edit, editIntent, agents, startState, 
   if (locationValidation?.status === 'restricted') locationMessage = 'Execution folder access is restricted.'
   else if (locationValidation?.status === 'unavailable') locationMessage = locationValidation.error.message
   const panelTitle = panel === 'workflow' ? 'Workflow settings' : ''
-  return { dirty, needsSave, canUndo, canRedo, startReloadRequired, startDisabled, startReason, saveBusy, affectedRuns, affectedWorkflows,
+  return { dirty, needsSave, settingsChanged, canUndo, canRedo, startReloadRequired, startDisabled, startReason, saveBusy, affectedRuns, affectedWorkflows,
     stopBlocked, errorText, locationMessage, panelTitle }
 }
 export type DraftEditorStatus = ReturnType<typeof deriveDraftEditorStatus>

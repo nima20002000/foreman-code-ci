@@ -22,7 +22,7 @@ export function SelectedNodePlacement({ selection, nodeId }: { selection: Select
       return result
     },
     enabled: selection.active && !selection.invalid && identity.runId !== null && !sessionIsSwitching(),
-    retry: false, staleTime: 0, gcTime: 0, placeholderData: () => undefined,
+    staleTime: 0, gcTime: 0, placeholderData: () => undefined,
     refetchInterval: query => isRunAccessError(query.state.error) ? false : 3000,
   })
   const blocked = useBlockingReadError(query)

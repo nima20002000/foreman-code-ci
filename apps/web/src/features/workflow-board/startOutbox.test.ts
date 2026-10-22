@@ -63,10 +63,10 @@ describe('one durable journal for exact current V3 Start replay', () => {
     await expect(reserveBoardStart(key, v3())).rejects.toThrow(/cross-tab/)
     expect(readBoardStart(key)).toBeUndefined()
   })
-  it('retains V3 across denial, stale pins and uncertain server errors', async () => {
+  it('retains V3 across denial, a busy Start and uncertain server errors', async () => {
     const request = await reserveBoardStart(key, v3())
     for (const error of [new ApiError({ code: 'FORBIDDEN', message: 'denied' }, 403),
-      new ApiError({ code: 'REVISION_CONFLICT', message: 'stale' }, 409),
+      new ApiError({ code: 'RUN_START_BUSY', message: 'busy' }, 409),
       new ApiError({ code: 'WORKFLOW_VERSION_UNSUPPORTED', message: 'uncertain server failure' }, 500)]) {
       expect(await rejectBoardStart(key, request, error)).toBe(false)
       expect(readBoardStart(key)).toEqual(request)
@@ -75,6 +75,11 @@ describe('one durable journal for exact current V3 Start replay', () => {
   it('releases only the exact explicitly rejected current command', async () => {
     const request = await reserveBoardStart(key, previousPins())
     expect(await rejectBoardStart(key, request, new ApiError({ code: 'WORKFLOW_VERSION_UNSUPPORTED', message: 'unsupported' }, 409))).toBe(true)
+    expect(readBoardStart(key)).toBeUndefined()
+  })
+  it('releases a definite stale-configuration rejection so Save and run can follow', async () => {
+    const request = await reserveBoardStart(key, v3())
+    expect(await rejectBoardStart(key, request, new ApiError({ code: 'WORKFLOW_CONFIGURATION_STALE', message: 'stale' }, 409))).toBe(true)
     expect(readBoardStart(key)).toBeUndefined()
   })
 })

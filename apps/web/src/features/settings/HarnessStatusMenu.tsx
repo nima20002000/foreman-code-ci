@@ -11,18 +11,24 @@ import { SidebarHoverCardHeader } from '../../shared/ui/SidebarHoverCardHeader'
 import { useSidebarHoverCard } from '../../shared/ui/useSidebarHoverCard'
 import './harnessStatusMenu.css'
 
+/** A short local time instead of a raw timestamp. */
+function checkedAt(at: string) {
+  const date = new Date(at)
+  return Number.isNaN(date.getTime()) ? 'recently' : `at ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+}
+
 function installationStatus(installation: HostHarnessInstallationDto | undefined,
   read: { failed: boolean; pending: boolean }) {
   const { failed, pending } = read
   if (failed) {
     return { state: 'unverified', label: 'Unverified', detail: installation?.installed
-      ? `Last inventory confirmed installation at ${installation.launcher.checkedAt}. Could not refresh installation status.`
+      ? `Could not refresh. Installed at the last check, ${checkedAt(installation.launcher.checkedAt)}.`
       : 'Could not read installation status.' }
   }
   if (installation) {
     return { state: installation.installed ? 'installed' : 'missing',
       label: installation.installed ? 'Installed' : 'Not installed',
-      detail: `Main computer inventory checked at ${installation.launcher.checkedAt}.` }
+      detail: `Checked on the Main computer ${checkedAt(installation.launcher.checkedAt)}.` }
   }
   if (pending) return { state: 'checking', label: 'Checking', detail: 'Reading Main computer inventory.' }
   return { state: 'unverified', label: 'Unverified', detail: 'No installation inventory has been reported.' }

@@ -41,7 +41,7 @@ export function useSessionControls(conversationId: string | undefined, {
     },
     structuralSharing: (previous, incoming) => mergeSnapshot(previous as SessionControlState | undefined,
       incoming as SessionControlState),
-    retry: false, refetchInterval: 3000 })
+    refetchInterval: 3000 })
   useEffect(() => {
     if (query.data) void recoverPendingControl(scope, query.data).catch(error => console.error('Control recovery failed', error))
   }, [scope, query.data])

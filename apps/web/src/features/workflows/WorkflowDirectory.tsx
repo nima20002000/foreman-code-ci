@@ -14,7 +14,7 @@ import {
   useUpdateManagedWorkflowMutation,
 } from '../../shared/api/query'
 import {
-  ActionMenu, Alert, Button, Dialog, EmptyState, ErrorState, LoadingState, PageHeader, TextField,
+  ActionMenu, Button, ConfirmDialog, EmptyState, ErrorState, PageHeader, TextField,
 } from '../../shared/ui/nocturne'
 import { ResourceActionsMenu, ResourceCard } from '../../shared/ui/ResourceCard'
 import { NewWorkflowAction } from './NewWorkflowAction'
@@ -35,17 +35,8 @@ function WorkflowCardActions({ name, onRename, onRemove }: {
 
   return (
     <ResourceActionsMenu name={name} open={open} onOpenChange={setOpen}>
-      <TextField
-        ref={nameInputRef}
-        label="Name"
-        value={nextName}
-        error={nameError}
-        onChange={(event) => {
-          setNextName(event.target.value)
-          if (nameError) setNameError(undefined)
-        }}
-      />
-      <Button onClick={() => {
+      <form className="resource-card-menu-rename" onSubmit={(event) => {
+        event.preventDefault()
         const value = nextName.trim()
         if (!value) {
           setNameError('Enter a workflow name.')
@@ -54,9 +45,20 @@ function WorkflowCardActions({ name, onRename, onRemove }: {
         }
         onRename(value)
         setOpen(false)
-      }}>Rename</Button>
+      }}>
+        <TextField
+          ref={nameInputRef}
+          label="Name"
+          value={nextName}
+          error={nameError}
+          onChange={(event) => {
+            setNextName(event.target.value)
+            if (nameError) setNameError(undefined)
+          }}
+        />
+        <Button type="submit" disabled={nextName.trim() === name}>Rename</Button>
+      </form>
       <Button variant="danger" onClick={onRemove}>Remove workflow</Button>
-      <Button variant="ghost" onClick={() => setOpen(false)}>Close</Button>
     </ResourceActionsMenu>
   )
 }
@@ -76,7 +78,6 @@ function WorkflowDirectoryContent({ workspaceId, headingLevel, hideHeading }: { 
   const attempt = useRef(new CommandAttempt<Omit<WorkflowBatchArchiveInput, 'commandId'>>())
   const inFlight = useRef(false)
   const selectRef = useRef<HTMLButtonElement>(null)
-  const cancelRef = useRef<HTMLButtonElement>(null)
   const wasSelecting = useRef(false)
   useEffect(() => {
     if (wasSelecting.current && !selection.selecting) selectRef.current?.focus()
@@ -146,7 +147,7 @@ function WorkflowDirectoryContent({ workspaceId, headingLevel, hideHeading }: { 
               data-testid={`workflow-card-${workflow.id}`}
               key={workflow.id}
             >
-              <ResourceCard name={workflow.name} icon="workflow"
+              <ResourceCard name={workflow.name} icon="workflow" className="workflow-row"
                 selection={selection.selecting ? {
                   'aria-label': `Select ${workflow.name}`, checked: workflow.id in selection.selected,
                   disabled: locked || (count >= 100 && !(workflow.id in selection.selected)),
@@ -173,12 +174,18 @@ function WorkflowDirectoryContent({ workspaceId, headingLevel, hideHeading }: { 
                       onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.managedWorkflows(workspaceId) }),
                     })
                   }}
-                />} />
+                />}>
+                <span className="workflow-row-status" data-state={managedById.get(workflow.id)?.currentVersionId ? 'saved' : 'draft'}>
+                  {managedById.get(workflow.id)?.currentVersionId ? 'Saved' : 'Draft'}
+                </span>
+              </ResourceCard>
             </li>
           ))}
         </ul>
       ) : managedQuery.isPending ? (
-        <LoadingState label="Loading workflows…" />
+        <ul className="workflow-card-list resource-card-list" aria-busy="true" aria-label="Loading workflows">
+          {[0, 1, 2].map((index) => <li key={index} className="workflow-row-skeleton" />)}
+        </ul>
       ) : managedQuery.isError ? (
         <ErrorState title="Workflows unavailable" description="The workflow list could not be loaded." onRetry={() => void managedQuery.refetch()} />
       ) : (
@@ -191,19 +198,12 @@ function WorkflowDirectoryContent({ workspaceId, headingLevel, hideHeading }: { 
         </div>
       )}
       <LoadMore loadAll label="workflows" query={managedQuery} />
-      <Dialog open={selection.confirming} onOpenChange={(open) => { if (!open) closeConfirmation() }}
+      <ConfirmDialog open={selection.confirming} onOpenChange={(open) => { if (!open) closeConfirmation() }}
         title={`Delete ${count} ${count === 1 ? 'workflow' : 'workflows'}?`}
-        description="Selected workflows will be removed from the list. Saved versions and run history are retained. Workflows with active runs cannot be deleted."
-        busy={locked} initialFocusRef={cancelRef} size="sm"
-        footer={<>
-          <Button ref={cancelRef} disabled={locked} onClick={closeConfirmation}>Cancel</Button>
-          <Button variant="danger" disabled={batch.isPending} onClick={() => void deleteSelected()}>
-            {batch.isPending ? 'Deleting…' : attempt.current.unresolved ? 'Retry deletion' : `Delete ${count} ${count === 1 ? 'workflow' : 'workflows'}`}
-          </Button>
-        </>}>
-        {batch.isError ? <Alert tone="danger" live title={batch.error.message} /> : null}
-        {attempt.current.unresolved && !batch.isPending ? <p role="status">The request may have succeeded. Retry deletion to check its outcome safely.</p> : null}
-      </Dialog>
+        description="They leave this workspace. Saved versions and run history stay. Workflows with active runs can’t be deleted."
+        pending={batch.isPending} confirmLabel={attempt.current.unresolved ? 'Retry' : 'Delete'}
+        error={batch.isError ? batch.error.message : attempt.current.unresolved && !batch.isPending ? 'It may already be done. Retry to check.' : undefined}
+        onConfirm={() => void deleteSelected()} />
     </section>
   )
 }

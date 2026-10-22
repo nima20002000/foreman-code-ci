@@ -90,7 +90,7 @@ async function mount(entry = runsUrl('run-a'), { hasHierarchy = true } = {}) {
   const root = createRootRoute({ component: Outlet })
   const route = createRoute({ getParentRoute: () => root, path: '/workspaces/$workspaceId', validateSearch: RunsSelectorSearchSchema,
     component: () => <WorkflowBoard {...scope} inspection={{}} selectInspection={() => undefined}
-      selectRun={() => undefined} summaries={[]} collaborationSlots={{ memoryBoard: () => <p>Workflow memory content</p> }}>
+      selectRun={() => undefined} summaries={[]}>
       <p>Draft editor</p>
     </WorkflowBoard> })
   const router = createRouter({ routeTree: root.addChildren([route]),
@@ -144,7 +144,7 @@ it.each(['graph', 'overview'])('stops an ordinary selected Run from %s and keeps
   await screen.findByText(/Stop receipt: accepted/)
   expect(stops).toHaveLength(2)
   expect(stops[1]).toEqual(stops[0])
-  expect(screen.getByRole('region', { name: 'Stop and cleanup' })).toHaveTextContent('version-b')
+  expect(screen.getByRole('region', { name: 'Stop and cleanup' })).toHaveTextContent('Stop receipt: accepted')
 })
 
 it('uses saved roles and coordinates, docks one inspector, and navigates teams without changing the Run', async () => {

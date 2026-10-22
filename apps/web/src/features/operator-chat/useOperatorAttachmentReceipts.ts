@@ -64,7 +64,7 @@ export function useOperatorAttachmentReceipts() {
       // Query owns/deduplicates the read, including simultaneous storage/focus events.
       void client.fetchQuery({
         queryKey: ['operator-chat', 'attachment-receipt', attempt.generation, attempt.epoch, attempt.id, attempt.command.requestId],
-        retry: false, staleTime: 0, gcTime: 0,
+        staleTime: 0, gcTime: 0,
         queryFn: async ({ signal }) => {
           if (!current(attempt)) throw new SessionChangedError()
           const result = await sendOperatorMessage(attempt.id, { ...attempt.command, recovery: 'receipt' }, { signal })

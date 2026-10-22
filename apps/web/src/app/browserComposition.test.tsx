@@ -26,5 +26,5 @@ it('mounts the browser profile manager in production Settings', async () => {
   await router.load()
   render(<QueryClientProvider client={newBoardQueryClient()}><RouterProvider router={router} /></QueryClientProvider>)
   expect(await screen.findByRole('button', { name: 'Add profile here' })).toBeVisible()
-  expect(screen.queryByText('Browser profile management is not available yet.')).not.toBeInTheDocument()
+  expect(screen.queryByText('Browser profiles aren’t available here.')).not.toBeInTheDocument()
 })

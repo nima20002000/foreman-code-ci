@@ -71,12 +71,17 @@ export class ClaudeInteractionBridge {
     }
     this.mcpManifests = structuredClone(manifests)
   }
+  /** Built-ins need the accepted tools list. MCP tools need the bound manifest: the server's own grant- and
+   * workflow-filtered tools/list, which is where MCP tool limits live. Explicit mcp__ names still narrow it. */
   private toolAllowed(toolName: string, identity: ClaudeCallbackIdentity): boolean {
-    if (!this.configuration.tools.includes(toolName)) return false
-    if (!toolName.startsWith('mcp__')) return true
+    if (!toolName.startsWith('mcp__')) return this.configuration.tools.includes(toolName)
+    if (this.configuration.tools.some(tool => tool.startsWith('mcp__')) && !this.configuration.tools.includes(toolName)) return false
     return this.mcpManifests.some(manifest => identity.mcpServer?.name === manifest.serverName
       && identity.mcpServer.source === (manifest.source.kind === 'sdk' ? 'sdk' : 'dynamic')
       && manifest.tools.some(tool => toolName === `mcp__${manifest.serverName}__${tool}`))
+  }
+  private hasRule(toolName: string, effect: 'allow' | 'ask' | 'deny'): boolean {
+    return this.configuration.permissionRules.some(rule => rule.tool === toolName && rule.effect === effect)
   }
   async observeToolResult(identity: ClaudeCallbackIdentity, toolName: string, outcome: 'executed' | 'failed' | 'permission_denied'): Promise<void> {
     const matches = (candidate: ClaudeCallbackIdentity) => candidate.nativeSessionId === identity.nativeSessionId
@@ -252,9 +257,7 @@ export class ClaudeInteractionBridge {
     try { await this.authority.validate(identity, toolName, input) }
     catch { return { permissionDecision: 'deny', permissionDecisionReason: 'The current app authority does not authorize this tool call.' } }
     if (this.controller.signal.aborted) return { permissionDecision: 'deny', permissionDecisionReason: 'The native callback was aborted.' }
-    return toolName.startsWith('mcp__')
-      && !this.configuration.permissionRules.some(rule => rule.tool === toolName && rule.effect === 'allow')
-      || toolName === 'AskUserQuestion' || this.configuration.permissionRules.some((rule) => rule.tool === toolName && rule.effect === 'ask')
+    return toolName === 'AskUserQuestion' || this.hasRule(toolName, 'ask')
       ? { permissionDecision: 'ask', permissionDecisionReason: 'The accepted configuration routes this interaction through the app.' } : {}
   }
 
@@ -292,8 +295,9 @@ export class ClaudeInteractionBridge {
     if (this.requests.size >= 256) {
       return { behavior: 'deny', message: 'The pending permission callback window is full.' }
     }
-    if (toolName !== 'AskUserQuestion' && this.configuration.permissionRules.some(rule => rule.tool === toolName && rule.effect === 'allow')
-      && !this.configuration.permissionRules.some(rule => rule.tool === toolName && rule.effect === 'ask')) {
+    // Bound app MCP tools need no approval (prototype permission model); an explicit ask rule still routes through the app.
+    if (toolName !== 'AskUserQuestion' && (this.hasRule(toolName, 'allow') || toolName.startsWith('mcp__'))
+      && !this.hasRule(toolName, 'ask')) {
       return { behavior: 'allow', updatedInput: structuredClone(input) }
     }
     const cancellation = new AbortController()

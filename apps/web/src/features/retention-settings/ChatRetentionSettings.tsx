@@ -1,7 +1,7 @@
 import { useId } from 'react'
 import { MAX_FILE_RETENTION_SECONDS, MIN_FILE_RETENTION_SECONDS } from '@foreman-code/contracts/files'
 import { secondsPerUnit } from './retentionDraft'
-import { Button, Checkbox, Dialog, Icon, IconButton, Select, TextField, Tooltip } from '../../shared/ui/nocturne'
+import { Button, Checkbox, ConfirmDialog, Icon, IconButton, Select, TextField, Tooltip } from '../../shared/ui/nocturne'
 import { ApiError } from '../../shared/api/client'
 import { useChatRetentionSettings } from './useChatRetentionSettings'
 import './retentionSettings.css'
@@ -43,15 +43,9 @@ export function ChatRetentionSettings() {
       {preview.isError && !form.conflicted && <p role="alert">Could not check existing files.</p>}
       {query.isError && <p role="alert">Could not refresh. <Button size="sm" onClick={() => void settings.refresh()}>Retry</Button></p>}
       {form.savedRevision !== undefined && !query.isError && <p role="status">Saved.</p>}
-      <Dialog open={Boolean(confirmation)} onOpenChange={(open) => { if (!open) settings.dismissPreview() }}
-        title="Apply to existing?" role="alertdialog" size="sm" busy={busy}
-        description={`${confirmation?.expireNowCount ?? 0} ${confirmation?.expireNowCount === 1 ? 'file would' : 'files would'} expire now.`}
-        footer={<><Button size="sm" disabled={busy} onClick={settings.dismissPreview}>Cancel</Button>
-          <Button size="sm" variant="danger" disabled={busy || query.isFetching || query.isError} onClick={settings.confirm}>Apply and save</Button></>}>
-        <Tooltip content="This count is a preview, not a reservation. The count may change before saving.">
-          <IconButton label="About this preview" size="sm" variant="ghost"><Icon name="info" size={16} /></IconButton>
-        </Tooltip>
-      </Dialog>
+      <ConfirmDialog open={Boolean(confirmation)} onOpenChange={(open) => { if (!open) settings.dismissPreview() }}
+        title="Apply to existing files?" pending={busy} confirmLabel="Apply and save" onConfirm={settings.confirm}
+        description={`${confirmation?.expireNowCount ?? 0} ${confirmation?.expireNowCount === 1 ? 'file' : 'files'} would expire now. The count can change before saving.`} />
     </>}
   </section>
 }

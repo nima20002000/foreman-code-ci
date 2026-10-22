@@ -51,7 +51,7 @@ function startFacts(context: AuthoringContext, read: GraphEditReadResultV3): Boa
       executionLocation: { runnerId: 'main', rootPath: '/tmp/project' },
       locationValidation: { status: 'ready', checkedAt: '2026-10-08T00:00:00Z' } }),
     capabilities: createCurrentBoardMock({ workspaceId: draft.workspaceId, allowSimulatedStart: true }).capabilities(),
-    version: read.intent?.result?.version,
+    version: read.intent?.result?.version, agents: [],
   }
 }
 

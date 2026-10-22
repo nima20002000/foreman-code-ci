@@ -27,7 +27,6 @@ export function useBugReports(search: BugsSettingsSearch) {
     queryKey: ['bug-reports', generation, search.view, search.status, search.severity],
     initialPageParam: undefined as string | undefined,
     enabled: !sessionIsSwitching(),
-    retry: false,
     queryFn: ({ signal, pageParam }) => {
       assertSession(generation)
       return bugReportClient.list({
@@ -45,7 +44,6 @@ export function useBugReport(reportId: string) {
   const report = useQuery({
     queryKey,
     enabled: !sessionIsSwitching(),
-    retry: false,
     structuralSharing: keepLatest,
     queryFn: ({ signal }) => {
       assertSession(generation)

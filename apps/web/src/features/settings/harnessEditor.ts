@@ -39,14 +39,6 @@ export function switchHarnessEditor(editor: HarnessEditor, next: Harness, preset
   } }
 }
 
-export function resetHarnessEditor(editor: HarnessEditor, preset: HarnessConfiguration): HarnessEditor {
-  if (preset.harness !== editor.configuration.harness) return editor
-  const drafts = { ...editor.drafts }
-  if (preset.harness === 'opencode') throw new Error('A retired harness is read-only.')
-  delete drafts[preset.harness]
-  return { ...createHarnessEditor(preset), ...(Object.keys(drafts).length ? { drafts } : {}) }
-}
-
 function json(text: string, field: string, path: string[]): unknown {
   try { return JSON.parse(text) } catch { throw new FieldValidationError([{ path, message: `${field} must contain valid JSON.` }]) }
 }

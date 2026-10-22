@@ -89,7 +89,7 @@ export function ExecutionInspector({ scope, version }: { scope: RepeatGraphScope
         <ExecutionBranch execution={execution} />
       </li>)}</ol>
       <div className="n-actions">
-        {pages.hasNextPage && !pages.isError && !denied ? <Button size="sm" disabled={pages.isFetching}
+        {pages.hasNextPage && !pages.isError && !denied ? <Button size="sm" disabled={pages.isFetching && !pages.isRefetching}
           onClick={() => void pages.fetchNextPage()}>Load more executions</Button> : null}
         <Button size="sm" variant="ghost" disabled={pages.isFetching || !!denied}
           onClick={() => void refreshFirstInspectionPage(cache, executionPagesKey(scope, filters))}>Refresh executions</Button>
@@ -145,7 +145,7 @@ function ExactExecution({ scope, version, executionId, nodeId, occurrenceId, rel
     </> : <p>No accepted result is recorded for this exact execution. <InfoHint label="Accepted result">A native terminal report is not an accepted predecessor result.</InfoHint></p>}
     {checked.reportedResult ? <JsonDisclosure disclosureKey={JSON.stringify([scope, executionId, 'native-report'])}
       summary="Recorded execution result (not proof of acceptance)" label={`Reported result ${executionId}`} value={checked.reportedResult} /> : null}
-    <Button size="sm" variant="ghost" disabled={query.isFetching} onClick={() => void query.refetch()}>Refresh exact execution</Button>
+    <Button size="sm" variant="ghost" disabled={query.isFetching && !query.isRefetching} onClick={() => void query.refetch()}>Refresh exact execution</Button>
     <ExecutionBindings scope={scope} detail={checked} relationshipId={relationshipId} />
   </article>
 }
@@ -170,7 +170,7 @@ function ExecutionBindings({ scope, detail, relationshipId }: { scope: RepeatGra
       <ol>{visible.map((binding) => <li key={binding.bindingId}><p>{binding.kind} · ordinal {binding.ordinal} · <code>{binding.bindingId}</code></p>
         <JsonValue label={`Binding ${binding.bindingId}`} value={binding} /></li>)}</ol>
       {query.data && !query.isError && !denied && !visible.length ? <p>No matching bindings in the loaded pages.</p> : null}
-      {query.hasNextPage && !query.isError && !denied ? <Button size="sm" disabled={query.isFetching}
+      {query.hasNextPage && !query.isError && !denied ? <Button size="sm" disabled={query.isFetching && !query.isRefetching}
         onClick={() => void query.fetchNextPage()}>Load more bindings</Button> : null}
       <Button size="sm" variant="ghost" disabled={query.isFetching || !!denied}
         onClick={() => void refreshFirstInspectionPage(cache, bindingsPagesKey(scope, detail))}>Refresh bindings</Button>

@@ -4,7 +4,6 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 import { installFlowLayout } from '../../run-board/testFlowLayout'
-import { useChatWindowsStore } from '../../conversations/agentChat/agentChatWindows'
 import { GraphPresentationProvider } from '../GraphPresentation'
 import { useGraphDraftStore } from '../store'
 import { fixture } from './core.cases'
@@ -22,7 +21,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals()
-  useGraphDraftStore.getState().clearAllDrafts(); useChatWindowsStore.setState({ open: {}, frames: {}, focus: {} })
+  useGraphDraftStore.getState().clearAllDrafts()
 })
 
 function mount() {

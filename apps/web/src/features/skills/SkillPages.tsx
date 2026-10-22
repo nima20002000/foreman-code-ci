@@ -35,16 +35,16 @@ function VersionHistory({ workspaceId, skillId, current }: { workspaceId: string
       onClick={() => setExpanded(!expanded)}>Version history</Button></h2>
     {/* // InfoHint: Each save creates a version; assigned Agents keep their saved version. */}
     <div id={historyId} hidden={!expanded}>{expanded ? versions.isPending ? <LoadingState label="Loading versions…" rows={2} />
-      : versions.isError ? <ErrorState title="Versions could not be loaded" description={versions.error.message} onRetry={() => void versions.refetch()} />
+      : versions.isError ? <ErrorState title="Couldn't load versions." description="Try again in a moment." onRetry={() => void versions.refetch()} />
         : <ol className="skill-history-list">{versions.data.items.map((item) => <li key={item.version}>
           <span><strong>Version {item.version}</strong>{item.version === current ? <Badge tone="success">Current</Badge> : null}</span>
           <span className="skill-history-meta">{item.name} · <time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString()}</time></span>
           <Button size="sm" variant="ghost" aria-label={`View version ${item.version}`} onClick={() => setOpen(item.version)}>View</Button>
         </li>)}</ol> : null}</div>
     <Dialog open={Boolean(open)} onOpenChange={(value) => { if (!value) setOpen(undefined) }} size="lg" title={`Version ${open ?? ''}`}
-      description={exact.data ? `${exact.data.version.name} · saved ${new Date(exact.data.version.createdAt).toLocaleString()}` : undefined}>
+      description={exact.data ? `${exact.data.version.name} · saved ${new Date(exact.data.version.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}` : undefined}>
       {exact.isPending ? <LoadingState label="Loading version…" rows={3} />
-        : exact.isError ? <ErrorState title="This version could not be loaded" description={exact.error.message} onRetry={() => void exact.refetch()} />
+        : exact.isError ? <ErrorState title="Couldn't load this version." description="Try again in a moment." onRetry={() => void exact.refetch()} />
           : <SkillTextPreview text={exact.data.version.instructions} />}
     </Dialog>
   </section>
@@ -91,7 +91,7 @@ export function SkillDetailPage({ workspaceId, skillId, onCancel }: { workspaceI
     <VersionHistory workspaceId={workspaceId} skillId={skillId} current={skill.version} />
     <ConfirmDialog open={confirm} onOpenChange={setConfirm} pending={archive.isPending} error={archiveError}
       title={skill.archived ? `Restore ${skill.name}?` : `Archive ${skill.name}?`}
-      description={skill.archived ? 'Available in picker' : 'Hidden from picker · Existing assignments kept'}
+      description={skill.archived ? 'It can be assigned to agents again.' : 'It can no longer be assigned. Agents that use it keep it.'}
       confirmLabel={skill.archived ? 'Restore' : 'Archive'} onConfirm={() => void toggleArchive()} />
   </section>
 }
@@ -101,7 +101,7 @@ function SkillUsers({ workspaceId, skillId }: { workspaceId: string; skillId: st
   let assignments = <p className="n-field-hint">No Agents</p>
   if (query.isError) {
     assignments = <p className="skills-inline-error" role="alert">Assignments unavailable
-      <Button size="sm" disabled={query.isFetching} onClick={() => void query.refetch()}>Retry assignments</Button></p>
+      <Button size="sm" disabled={query.isFetching && !query.isRefetching} onClick={() => void query.refetch()}>Retry assignments</Button></p>
   } else if (query.isPending) {
     assignments = <LoadingState label="Loading assignments…" rows={1} />
   } else if (agents.length) {
@@ -123,7 +123,7 @@ function SkillUsersBanner({ workspaceId, skillId }: { workspaceId: string; skill
   const commandId = useRef(crypto.randomUUID())
   const failed = update.data?.failed ?? []
   if (usage.isError) return <Alert tone="warning" title="Skill usage could not be loaded."
-    action={<Button size="sm" disabled={usage.isFetching} onClick={() => void usage.refetch()}>Try again</Button>}>
+    action={<Button size="sm" disabled={usage.isFetching && !usage.isRefetching} onClick={() => void usage.refetch()}>Try again</Button>}>
     {usage.error.message}
   </Alert>
   if (!usage.data || (!usage.data.agents.length && !usage.data.workflows.length && !failed.length)) return null

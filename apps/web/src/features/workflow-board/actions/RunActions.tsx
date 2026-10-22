@@ -38,7 +38,7 @@ function SelectedRunActions({ selection, access }: {
         if (board.run) assertActionScope(value, board.run)
       }
       return value
-    }, retry: false, gcTime: 0, staleTime: 1000, refetchOnWindowFocus: true, refetchOnReconnect: 'always',
+    }, gcTime: 0, staleTime: 1000, refetchOnWindowFocus: true, refetchOnReconnect: 'always',
     // Contextual status owns bounded polling and explicit client refreshes.
     meta: { refetchOnApiReconnect: false },
     refetchInterval: (query) => {
@@ -52,7 +52,7 @@ function SelectedRunActions({ selection, access }: {
     },
     refetchIntervalInBackground: false })
   const capability = useQuery({ queryKey: actionKey(selection, 'capabilities'), enabled: allowed('runs:read'),
-    queryFn: ({ signal }) => runActionsClient.capabilities({ signal }), retry: false, gcTime: 0,
+    queryFn: ({ signal }) => runActionsClient.capabilities({ signal }), gcTime: 0,
     staleTime: 30_000, refetchOnWindowFocus: false, refetchOnReconnect: false })
   const run = !allowed('runs:read') || status.isError ? undefined : status.data
   const { workspaceId, workflowId, runId } = selection

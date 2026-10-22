@@ -29,9 +29,11 @@ export function registerMemoryBoardRoutes(app: FastifyInstance, service: MemoryB
     reply.header('cache-control','no-store')
     return service.changes(requirePrincipal(request),MemoryChangesInputSchema.parse({...queryFields(request.query),boardId:request.params.boardId}))
   })
+  const streams=new Set<()=>void>()
+  app.addHook('preClose',async()=>{for(const stop of [...streams])stop()})
   app.get<{Params:Params}>('/api/memory-boards/:boardId/events',async(request,reply)=>{
     const input=MemoryChangesInputSchema.parse({...queryFields(request.query),boardId:request.params.boardId})
-    return streamMemoryBoard(request,reply,service,requirePrincipal(request),input.boardId,input.afterSequence)
+    return streamMemoryBoard(request,reply,service,requirePrincipal(request),input.boardId,input.afterSequence,streams)
   })
   const operations=[['POST','cards','card_create'],['PATCH','cards/:cardId','card_update'],
     ['POST','notes','note_create'],['PATCH','notes/:noteId','note_update'],['POST','notes/:noteId/archive','note_archive']] as const

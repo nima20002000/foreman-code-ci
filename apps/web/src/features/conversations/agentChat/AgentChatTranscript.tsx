@@ -105,11 +105,11 @@ export function AgentChatTranscript({
     </>
   }
   return <ConversationViewport revision={revision} storageKey={`${agentChatContextKey(state.context)}:${id ?? 'native'}`}>{onBrowse => <>
-    {history.hasGap ? <HistoryWindowNotice pending={history.isFetching}
+    {history.hasGap ? <HistoryWindowNotice pending={history.isFetching && !history.isRefetching}
       onReload={() => { onBrowse(); void history.reloadNearer() }} /> : null}
     {id && (state.hasEarlierMessages && !history.data || history.hasNextPage) ? <Button size="sm" variant="ghost"
-      disabled={history.isFetching} onClick={() => { onBrowse(); void history.fetchNextPage() }}>Load earlier messages</Button> : null}
-    {history.isError ? <p role="alert">History unavailable. <Button size="sm" disabled={history.isFetching}
+      disabled={history.isFetching && !history.isRefetching} onClick={() => { onBrowse(); void history.fetchNextPage() }}>Load earlier messages</Button> : null}
+    {history.isError ? <p role="alert">History unavailable. <Button size="sm" disabled={history.isFetching && !history.isRefetching}
       onClick={() => { onBrowse(); void history.fetchNextPage() }}>Retry history</Button></p> : null}
     {state.context.runId ? <RunTranscript feed={feed} name={name} onBrowse={onBrowse} /> : null}
     {(!state.sourceTranscript || state.conversation) ? <ol className="agent-chat-messages" aria-label="Conversation history">

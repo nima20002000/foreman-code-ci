@@ -1,6 +1,7 @@
-import type { AgentHarness, HarnessDefaults } from '@foreman-code/contracts'
+import { operatorChatSettings, type AgentHarness, type HarnessDefaults } from '@foreman-code/contracts'
 import type { HarnessSettingsSection } from '@foreman-code/contracts/management'
-import { Alert, Button, Dialog, ErrorState, LoadingState } from '../../shared/ui/nocturne'
+import { Alert, Button, Dialog, ErrorState, LoadingState, Switch } from '../../shared/ui/nocturne'
+import { useOperatorSettings } from '../operator-chat/useOperatorSettings'
 import { useManagedHarnessCatalogQuery } from '../../shared/api/query'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
 import { askOperator } from '../operator-chat/operatorChatStore'
@@ -28,8 +29,9 @@ function useProviderDefaults() {
 }
 
 function ProviderCard({ harness, value, revision, readiness, onOpen, accountSelection, onAccountSelect,
-  accountTarget, onAccountTargetChange }: {
+  accountTarget, onAccountTargetChange, operator }: {
   harness: Harness; value?: HarnessDefaults | undefined; revision?: number | undefined; readiness: string
+  operator: ReturnType<typeof useOperatorSettings>
   onOpen(section: 'connections' | 'plugins'): void
   accountSelection?: ProviderAccountNavigation | undefined
   onAccountSelect?: ((selection: ProviderAccountNavigation | undefined) => void) | undefined
@@ -43,6 +45,10 @@ function ProviderCard({ harness, value, revision, readiness, onOpen, accountSele
   return <SettingsChoice icon="settings" title={name} summary={summary}
     onSelect={() => askOperator(`Change the ${name} preset: `, { send: false })}
     footer={<>
+      <div className="harness-card-controls">
+      <Switch label="Operator default" checked={operator.harness?.harness === harness}
+        disabled={!preset || !operator.settings || operator.harness?.harness === harness || operator.form.isSaving || operator.form.uncertain}
+        onChange={(event) => { if (event.target.checked && preset) operator.change(operatorChatSettings(preset, operator.settings?.showThinking ?? false)) }} />
       {value && revision !== undefined ? <OperatorMcpStatus harness={harness} defaults={value} revision={revision} /> : null}
       <span className="settings-choice-links">
         {harness === 'codex' ? <>
@@ -50,6 +56,7 @@ function ProviderCard({ harness, value, revision, readiness, onOpen, accountSele
         </> : null}
         <Button size="sm" variant="ghost" onClick={() => onOpen('plugins')}>Plugins</Button>
       </span>
+      </div>
       <ProviderAccountsSettings provider={harness} selection={accountSelection} onSelect={onAccountSelect}
         target={accountTarget} onTargetChange={onAccountTargetChange} />
     </>} />
@@ -66,6 +73,7 @@ export function HarnessDefaultsSettings({ selectedHarness, section, onOpen, acco
   onOpen?(next: { harness: Harness; section: 'connections' | 'plugins' } | undefined): void
 }) {
   const { incoming, query } = useProviderDefaults()
+  const operator = useOperatorSettings(true)
   const accessError = useProtectedAccessError(query)
   let dialog: 'plugins' | 'connections' | undefined
   if (section === 'plugins' && (selectedHarness === 'codex' || selectedHarness === 'claude')) dialog = 'plugins'
@@ -73,7 +81,9 @@ export function HarnessDefaultsSettings({ selectedHarness, section, onOpen, acco
   const dialogName = selectedHarness === 'claude' ? 'Claude' : 'Codex'
   const readiness = (harness: Harness) => {
     const entry = query.data?.find((item) => item.harness === harness)
-    return !entry ? 'Not configured' : entry.discoveryError ? entry.discoveryError.message : entry.capability ? 'Ready' : 'Checking…'
+    // The full discovery message stays in the value's tooltip; the card shows the state in a word or two.
+    if (entry?.discoveryError) return /sign/i.test(entry.discoveryError.message) ? 'Signed out' : 'Unavailable'
+    return !entry ? 'Not configured' : entry.capability ? 'Ready' : 'Checking…'
   }
   let overview
   if (accessError || (!incoming && (query.isError || query.isSuccess))) {
@@ -89,7 +99,7 @@ export function HarnessDefaultsSettings({ selectedHarness, section, onOpen, acco
   return <>
     {overview}
     <SettingsOverview title="Harnesses">
-      {HARNESSES.map(harness => <ProviderCard key={harness} harness={harness} value={incoming?.value}
+      {HARNESSES.map(harness => <ProviderCard key={harness} harness={harness} value={incoming?.value} operator={operator}
         revision={incoming?.revision} readiness={readiness(harness)} accountSelection={accountSelection}
         accountTarget={accountTarget} onAccountTargetChange={onAccountTargetChange}
         onAccountSelect={onAccountSelect} onOpen={next => onOpen?.({ harness, section: next })} />)}

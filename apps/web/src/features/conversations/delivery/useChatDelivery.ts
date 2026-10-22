@@ -47,7 +47,7 @@ export function useChatDelivery(target: DeliveryTarget | undefined, enabled: boo
       void cache.cancelQueries({ queryKey: protectedQuery }); cache.removeQueries({ queryKey: protectedQuery })
     }
   }
-  const query = useQuery({ queryKey, enabled: enabled && !!selected && denial !== key, retry: false,
+  const query = useQuery({ queryKey, enabled: enabled && !!selected && denial !== key,
     queryFn: async ({ signal }) => {
       try {
         const result = await chatDeliveryClient.read(selected!, { signal }); signal.throwIfAborted(); assertSession(generation)

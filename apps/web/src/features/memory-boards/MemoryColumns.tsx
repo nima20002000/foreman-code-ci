@@ -20,7 +20,7 @@ export function MemoryColumns({ client, board, nodes, filters, onFiltersChange, 
   }, [search, filters, onFiltersChange])
   return <section aria-label="Cards" className="n-stack">
     <div className="memory-filter-row">
-      <SearchField label="Find cards" hint="Title starts with…" maxLength={240} value={search} onChange={(event) => setSearch(event.currentTarget.value)} />
+      <SearchField label="Find cards" placeholder="Title starts with…" maxLength={240} value={search} onChange={(event) => setSearch(event.currentTarget.value)} />
       {search && <Button onClick={() => { setSearch(''); onFiltersChange({ ...filters, query: '' }) }}>Clear search</Button>}
       <Select label="Status" value={filters.status ?? ''} options={[{ value: '', label: 'All statuses' }, ...Object.entries(statusLabels).map(([value, label]) => ({ value, label }))]}
         onChange={(event) => onFiltersChange({ ...filters, status: event.currentTarget.value as Card['status'] || undefined,

@@ -40,5 +40,6 @@ export function compactRunDetails(details: SavedRunDetails) {
     activitiesOmitted: activities.length - recent.length,
     activitiesHasMore: activities.length > recent.length || details.activitySnapshot?.page.hasMore === true,
     ...(details.cleanupPending === undefined ? {} : { cleanupPending: details.cleanupPending }),
+    ...(details.directionWait ? { directionWait: details.directionWait } : {}),
   })
 }

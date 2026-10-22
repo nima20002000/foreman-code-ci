@@ -40,7 +40,7 @@ export function WorkflowChatComposer({ scope, participants, participantsLoading,
   const results = useQueries({ queries: agents.map((agent, index) => ({
     queryKey: ['workflow-chat-targets', epoch, scope.workspaceId, scope.workflowId, mentioned[index], agent?.configurationVersionId,
       draft.recovery?.receiptId, draft.recovery?.choice],
-    enabled: !!agent, retry: false,
+    enabled: !!agent,
     queryFn: async ({ signal }: { signal: AbortSignal }) => {
       const options = await resolveTargets(agent!, { signal, recovery: draft.recovery?.choice, sourceTarget: draft.recovery?.sourceTarget })
       return options.filter(option => option.target.kind !== 'operator_conversation'
@@ -89,11 +89,31 @@ export function WorkflowChatComposer({ scope, participants, participantsLoading,
       cardIds: [], ...(draft.replyToPostId ? { replyToPostId: draft.replyToPostId } : {}) })
   }
   const master = participants.find(agent => agent.productRole === 'master')
+  const tooLarge = bytes > 16 * 1024
+  const note = issue ?? (tooLarge ? 'Too long. Messages can be up to 16 KB.' : !online ? 'You’re offline. Your draft is kept.'
+    : draft.body.trim() && !mentioned.length ? 'No agent mentioned. This only posts to the chat.' : undefined)
   return <form className="workflow-chat-composer" aria-label="Workflow message composer"
     onSubmit={event => { event.preventDefault(); submit() }}>
-    {draft.recovery ? <p role="status">Reply will appear in Group chat. Recovering one recipient from post {draft.recovery.sourcePostId}.</p> : null}
-    {draft.replyToPostId && !draft.recovery ? <p>Reply to post {draft.replyToPostId}</p> : null}
-    <Textarea ref={input} label="Message this workflow" value={draft.body} rows={3} id={id}
+    {draft.recovery ? <p className="workflow-chat-notice" role="status">Sending again to one recipient.</p> : null}
+    {draft.replyToPostId && !draft.recovery ? <p className="workflow-chat-notice">Replying to a message</p> : null}
+    {mentioned.map((nodeId, index) => {
+      const agent = agents[index]
+      const remove = () => save({ ...draft, mentions: draft.mentions.filter(mention => mention.workflowNodeId !== nodeId),
+        deliveries: draft.deliveries.filter(delivery => delivery.workflowNodeId !== nodeId) })
+      return agent ? <RecipientTargetPicker key={nodeId} agent={agent} result={results[index]!}
+        selection={draft.deliveries.find(delivery => delivery.workflowNodeId === nodeId)} onSelect={option => chooseTarget(nodeId, option)}
+        onIntent={intent => save({ ...draft, deliveries: draft.deliveries.map(delivery => delivery.workflowNodeId === nodeId ? { ...delivery, intent } : delivery) })}
+        onRemove={remove} /> : <p key={nodeId} className="workflow-chat-notice">A mentioned agent is no longer in this workflow.
+        <Button size="sm" variant="ghost" onClick={remove}>Remove</Button></p>
+    })}
+    {query ? <div id={`${id}-mentions`} role="listbox" aria-label="Mention an agent">
+      {participantsLoading ? <p>Loading agents…</p> : participantsError ? <p>Couldn’t load agents. <Button size="sm" variant="ghost" onClick={retryParticipants}>Retry</Button></p>
+        : suggestions.length ? suggestions.map((agent, index) => <div role="option" tabIndex={-1} id={`${id}-option-${index}`}
+          aria-selected={highlight === index} key={agent.workflowNodeId} onMouseDown={event => event.preventDefault()}
+          onClick={() => add(agent)}>{agentLabel(agent)}</div>) : <p>No matching agents.</p>}
+    </div> : null}
+    <Textarea ref={input} className="workflow-chat-field" label="Message this workflow" value={draft.body} rows={2} id={id}
+      placeholder="Message the workflow. Type @ to mention an agent."
       role="combobox" aria-expanded={!!query} aria-controls={`${id}-mentions`} aria-autocomplete="list"
       aria-activedescendant={query && suggestions[highlight] ? `${id}-option-${highlight}` : undefined}
       onChange={event => edit(event.target.value, event.target.selectionStart)}
@@ -109,26 +129,10 @@ export function WorkflowChatComposer({ scope, participants, participantsLoading,
         }
         if (event.key === 'Enter' && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) { event.preventDefault(); submit() }
       }} />
-    {query ? <div id={`${id}-mentions`} role="listbox" aria-label="Mention an agent">
-      {participantsLoading ? <p>Loading targets…</p> : participantsError ? <p>Could not load targets. <Button onClick={retryParticipants}>Retry</Button></p>
-        : suggestions.length ? suggestions.map((agent, index) => <div role="option" tabIndex={-1} id={`${id}-option-${index}`}
-          aria-selected={highlight === index} key={agent.workflowNodeId} onMouseDown={event => event.preventDefault()}
-          onClick={() => add(agent)}>{agentLabel(agent)}</div>) : <p>No matching agents.</p>}
-    </div> : null}
-    <p>Mention an agent to ask it to act. Posts without a resolved mention do not start work.</p>
-    {master ? <Button size="sm" type="button" onClick={() => add(master, false)}>Ask master</Button> : null}
-    {mentioned.map((nodeId, index) => {
-      const agent = agents[index]
-      const remove = () => save({ ...draft, mentions: draft.mentions.filter(mention => mention.workflowNodeId !== nodeId),
-        deliveries: draft.deliveries.filter(delivery => delivery.workflowNodeId !== nodeId) })
-      return agent ? <RecipientTargetPicker key={nodeId} agent={agent} result={results[index]!}
-        selection={draft.deliveries.find(delivery => delivery.workflowNodeId === nodeId)} onSelect={option => chooseTarget(nodeId, option)}
-        onIntent={intent => save({ ...draft, deliveries: draft.deliveries.map(delivery => delivery.workflowNodeId === nodeId ? { ...delivery, intent } : delivery) })}
-        onRemove={remove} /> : <p key={nodeId}>Agent {nodeId} is unavailable. <Button onClick={remove}>Remove recipient</Button></p>
-    })}
-    {issue ? <p role="status">{issue}</p> : null}
-    {bytes > 16 * 1024 ? <p role="alert">Message is too large. The limit is 16 KiB of UTF-8 text.</p> : null}
-    {!online ? <p role="status">You are offline. Your draft is kept.</p> : null}
-    <Button type="submit" variant="primary" loading={pending} disabled={pending || !!issue || !draft.body.trim() || bytes > 16 * 1024 || !online}>Post</Button>
+    <div className="workflow-chat-composer-bar">
+      {master && !mentioned.includes(master.workflowNodeId) ? <Button size="sm" variant="ghost" type="button" onClick={() => add(master, false)}>@ Ask Master</Button> : null}
+      <span className="workflow-chat-composer-note" role="status" data-tone={tooLarge || issue ? 'warning' : undefined}>{note}</span>
+      <Button type="submit" size="sm" variant="primary" loading={pending} disabled={pending || !!issue || !draft.body.trim() || tooLarge || !online}>Post</Button>
+    </div>
   </form>
 }

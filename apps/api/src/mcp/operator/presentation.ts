@@ -2,6 +2,8 @@ import type {
   CallToolRequest, CallToolResult, ListToolsRequest, ListToolsResult, McpServer, ServerContext,
 } from '@modelcontextprotocol/server'
 import { TEXT_MIRROR_BYTES } from '../shared/results.js'
+import { firstSentence } from '../shared/schemaCompaction.js'
+import { OPERATOR_DISCOVERY_TOOLS, operatorListedTool } from './discovery.js'
 
 type ListHandler = (request: ListToolsRequest, context: ServerContext) => ListToolsResult | Promise<ListToolsResult>
 type CallHandler = (request: CallToolRequest, context: ServerContext) => CallToolResult | Promise<CallToolResult>
@@ -19,7 +21,7 @@ function singlePayloadResult(result: CallToolResult, name: string): CallToolResu
   return { ...envelope, content: [{ type: 'text', text: json }, ...content] }
 }
 
-/** Runs after the SDK validates outputs, and before catalog pagination. */
+/** Runs after the SDK validates outputs, and before catalog pagination. tools/list carries the core set only. */
 export function installOperatorPresentation(server: McpServer): OperatorCatalog {
   let list: ListHandler | undefined
   const protocol = server.server
@@ -30,7 +32,10 @@ export function installOperatorPresentation(server: McpServer): OperatorCatalog 
         const fullList = list
         const handler: ListHandler = async (request, context) => {
           const result = await fullList(request, context)
-          return { ...result, tools: result.tools.map(({ outputSchema: _outputSchema, ...tool }) => { void _outputSchema; return tool }) }
+          // Only the core and discovery tools are listed; the catalog callback below keeps every tool.
+          return { ...result, tools: result.tools.filter(tool => operatorListedTool(tool.name))
+            .map(({ outputSchema: _outputSchema, ...tool }) => { void _outputSchema
+              return OPERATOR_DISCOVERY_TOOLS.has(tool.name) ? tool : { ...tool, description: firstSentence(tool.description) } }) }
         }
         return Reflect.apply(register, target, ['tools/list', handler])
       }

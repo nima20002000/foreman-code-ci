@@ -6,6 +6,7 @@ import { useProviderHarnessModels } from '../provider-accounts/useProviderHarnes
 import { useHarnessDefaultsQuery } from '../../shared/api/query'
 import { Button, Icon, SearchField, SegmentedControl, Slider, Switch } from '../../shared/ui/nocturne'
 import { useFloatingSurface } from '../../shared/ui/nocturne/useFloatingSurface'
+import { useDismissableSurface } from '../../shared/ui/useDismissableSurface'
 import { harnessNames } from '../settings/settingsPresentation'
 import { supportedEfforts } from '../settings/harnessModelSelection'
 import { ProviderAccountSelect } from '../provider-accounts/ProviderAccountSelect'
@@ -35,12 +36,13 @@ export function OperatorComposerSettings({ value, onChange, disabled, access, hi
   const fastSupported = model?.serviceTiers.includes('priority') === true
   // A native top-layer surface placed from the trigger, so it can never open outside the viewport or be clipped by the chat.
   useFloatingSurface(open, trigger, panel, 288, 'end')
-  useEffect(() => {
-    if (!open) return
-    const close = (event: PointerEvent) => { if (event.target instanceof Node && !root.current?.contains(event.target)) setOpen(false) }
-    document.addEventListener('pointerdown', close)
-    return () => document.removeEventListener('pointerdown', close)
-  }, [open])
+  // Escape steps back from the model list first; presses outside close the whole panel.
+  const dismiss = (reason: 'escape' | 'outside' | 'exclusive') => {
+    if (reason === 'escape' && choosingModel) { setChoosingModel(false); return }
+    setOpen(false)
+    if (reason === 'escape') trigger.current?.focus()
+  }
+  useDismissableSurface({ open, onDismiss: dismiss, surfaceRef: panel, triggerRef: trigger })
   useEffect(() => {
     if (disabled || !restoreFocus.current) return
     if (document.activeElement === document.body && restoreFocus.current.isConnected) restoreFocus.current.focus()
@@ -66,11 +68,10 @@ export function OperatorComposerSettings({ value, onChange, disabled, access, hi
     }
     setChoosingModel(false)
   }
+  // Escape stays with the panel so the chat window around it keeps open.
   return <div className="operator-agent-picker" ref={root} onKeyDown={(event) => {
     if (event.key !== 'Escape' || !open) return
-    event.preventDefault(); event.stopPropagation()
-    if (choosingModel) setChoosingModel(false)
-    else { setOpen(false); trigger.current?.focus() }
+    event.preventDefault(); event.stopPropagation(); dismiss('escape')
   }}>
     <button ref={trigger} type="button" className="operator-agent-trigger" aria-label={`Agent settings: ${modelName}${value.harness === 'claude' && !effort ? '' : `, ${effort || 'default effort'}`}${value.harness === 'codex' && value.serviceTier === 'priority' ? ', Fast' : ''}`}
       aria-expanded={open} aria-controls={open ? id : undefined} aria-haspopup="dialog" disabled={disabled}
@@ -127,7 +128,8 @@ export function OperatorComposerSettings({ value, onChange, disabled, access, hi
           onChange={(event) => { if (value.harness === 'codex') update({ ...value, serviceTier: event.target.checked ? 'priority' : 'standard' }) }} />
         {hideThinking ? null : <Switch label="Show thinking" checked={value.showThinking} disabled={disabled} onChange={(event) => update({ ...value, showThinking: event.target.checked })} />}
         </div>
-        {catalog.isError || defaults.isError ? <Button size="sm" variant="ghost" onClick={() => { void catalog.refetch(); void defaults.refetch() }}>Retry</Button> : null}
+        {catalog.isError || defaults.isError ? <p className="operator-agent-error" role="alert">{catalog.isError ? 'Models could not load.' : 'Harness defaults could not load.'}
+          <Button size="sm" variant="ghost" onClick={() => { void catalog.refetch(); void defaults.refetch() }}>Retry</Button></p> : null}
       </>}
     </div> : null}
   </div>

@@ -94,7 +94,9 @@ export async function discoverLauncher(requested: string, environment: TargetEnv
         fingerprints.push({ path, fingerprint })
       }
       evidence.payloadFingerprints = fingerprints
-      evidence.fingerprint = createHash('sha256').update(JSON.stringify(fingerprints)).digest('hex')
+      // Identity is the installed bytes in launch order, not where they live: the same SDK under another
+      // content-addressed dependency folder is not a new installation.
+      evidence.fingerprint = createHash('sha256').update(JSON.stringify(fingerprints.map(entry => entry.fingerprint))).digest('hex')
       evidence.status = 'installed'
       return evidence
     } catch (error) {

@@ -53,7 +53,7 @@ it('continues the refreshed cursor chain as the 20-window cache evicts older win
   }
   expect(rounds.getAllByRole('listitem')).toHaveLength(20)
   expect(reads).toEqual([null, ...Array.from({ length: 19 }, (_, index) => `older-${19 - index}`)])
-  fireEvent.click(rounds.getByRole('button', { name: /request-10 ·/ }))
+  fireEvent.click(rounds.getByRole('button', { name: /request-10$/ }))
   expect(dialog.getByRole('region', { name: 'Selected immutable report' })).toHaveTextContent('Summary for round 10')
 
   refreshed = true

@@ -37,7 +37,7 @@ export function OperatorTranscript({ messages, partialText, thinkingText = '', h
     queryFn: ({ pageParam, signal }) => getOperatorActivity(conversationId ?? '', pageParam ? { before: pageParam } : {}, { signal }),
     initialPageParam: activityNextCursor ?? undefined,
     getNextPageParam: (page) => page.nextCursor ?? undefined,
-    enabled: false, retry: false,
+    enabled: false,
   })
   const entries = mergeOperatorActivity(...(earlierActivity.data?.pages.map((page) => page.activities) ?? []), activities)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -87,11 +87,11 @@ export function OperatorTranscript({ messages, partialText, thinkingText = '', h
       }}>
       <div ref={contentRef}>
         {earlierActivity.data && earlierActivity.data.pageParams[0] !== (activityNextCursor ?? undefined)
-          ? <HistoryWindowNotice pending={earlierActivity.isFetching} onReload={() => {
+          ? <HistoryWindowNotice pending={earlierActivity.isFetching && !earlierActivity.isRefetching} onReload={() => {
             onBrowse()
             void client.resetQueries({ queryKey: activityKey, exact: true }).then(() => earlierActivity.fetchNextPage())
           }} /> : null}
-        {(activityNextCursor && !earlierActivity.data) || earlierActivity.hasNextPage ? <Button size="sm" variant="ghost" disabled={earlierActivity.isFetching}
+        {(activityNextCursor && !earlierActivity.data) || earlierActivity.hasNextPage ? <Button size="sm" variant="ghost" disabled={earlierActivity.isFetching && !earlierActivity.isRefetching}
           onClick={() => { onBrowse(); void earlierActivity.fetchNextPage() }}>Load earlier activity</Button> : null}
         {earlierActivity.isError ? <p role="alert">Earlier activity could not be loaded. <Button size="sm" onClick={() => { onBrowse(); void earlierActivity.fetchNextPage() }}>Retry activity</Button></p> : null}
         {hasEarlierMessages ? <OperatorHistory conversationId={conversationId} recentMessages={messages} onBrowse={onBrowse}

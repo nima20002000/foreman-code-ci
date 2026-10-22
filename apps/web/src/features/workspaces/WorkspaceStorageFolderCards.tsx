@@ -6,7 +6,7 @@ import { apiClient } from '../../shared/api/client'
 import { CommandAttempt } from '../../shared/api/commandAttempt'
 import { queryKeys } from '../../shared/api/query'
 import { assertSession, sessionGeneration } from '../../shared/api/sessionBoundary'
-import { Alert, Button, Dialog } from '../../shared/ui/nocturne'
+import { Alert, Button, ConfirmDialog } from '../../shared/ui/nocturne'
 import { ResourceActionsMenu, ResourceCard } from '../../shared/ui/ResourceCard'
 import { folderSelectionId, type WorkspaceSelectionTarget } from './workspaceSelection'
 
@@ -22,7 +22,6 @@ export function WorkspaceStorageFolderCard({ folder, selection }: { folder: Work
   const [confirming, setConfirming] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const queryClient = useQueryClient()
-  const cancelRef = useRef<HTMLButtonElement>(null)
   const inFlight = useRef(false)
   const attempt = useRef(new CommandAttempt<Omit<WorkspaceStorageFolderDeleteInput, 'commandId'>>())
   const target = useRef(folder)
@@ -61,21 +60,13 @@ export function WorkspaceStorageFolderCard({ folder, selection }: { folder: Work
       {folder.deletion.status === 'protected' ? <Alert tone="warning" title="This folder is protected.">{folder.deletion.message}</Alert> : null}
       <Button variant="danger" disabled={folder.deletion.status === 'protected'}
         onClick={() => { target.current = folder; setMenuOpen(false); setConfirming(true) }}>Delete folder</Button>
-      <Button variant="ghost" onClick={() => setMenuOpen(false)}>Close</Button>
     </ResourceActionsMenu>}
     protection={folder.deletion.status === 'protected' ? { label: `Protected folder. ${folder.deletion.message}`, reason: folder.deletion.message } : undefined}>
-    <Dialog open={confirming} onOpenChange={(open) => { if (!open) close() }}
-      title={`Delete ${target.current.name}?`} busy={locked} initialFocusRef={cancelRef} size="sm"
-      description="This permanently deletes this workspace folder and all its files and subfolders. It cannot be undone."
-      footer={<>
-        <Button ref={cancelRef} disabled={locked} onClick={close}>Cancel</Button>
-        <Button variant="danger" disabled={removal.isPending} onClick={() => void remove()}>
-          {removal.isPending ? 'Deleting…' : attempt.current.unresolved ? 'Retry deletion' : 'Delete folder and contents'}
-        </Button>
-      </>}>
-      <p dir="ltr">{target.current.path}</p>
-      {removal.isError ? <Alert live tone="danger" title={removal.error.message} /> : null}
-      {attempt.current.unresolved && !removal.isPending ? <p role="status">The request may have succeeded. Retry deletion to check its outcome safely.</p> : null}
-    </Dialog>
+    <ConfirmDialog open={confirming} onOpenChange={(open) => { if (!open) close() }}
+      title={`Delete ${target.current.name}?`}
+      description="This deletes the folder and everything in it. It can’t be undone."
+      pending={removal.isPending} confirmLabel={attempt.current.unresolved ? 'Retry' : 'Delete folder'}
+      error={removal.isError ? removal.error.message : attempt.current.unresolved && !removal.isPending ? 'It may already be deleted. Retry to check.' : undefined}
+      onConfirm={() => void remove()} />
   </ResourceCard>
 }

@@ -268,6 +268,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   })
 
   app.setNotFoundHandler((request, reply) => {
+    // A browser address that is not an API route gets the app shell, which shows its own "Page not found".
+    if (request.method === 'GET' && typeof reply.sendFile === 'function' && request.headers.accept?.includes('text/html')
+      && !/^\/(api|mcp)(\/|$)/.test(request.url)) return reply.code(404).sendFile('index.html')
     const body = ApiErrorResponseSchema.parse({
       error: {
         code: 'NOT_FOUND',

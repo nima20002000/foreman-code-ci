@@ -68,7 +68,7 @@ export function useProviderAccounts(enabled = true, requestedScope: ProviderAcco
   const generation = useHarnessSessionEpoch()
   const scope = useProviderAccountScope(requestedScope)
   return useQuery<ProviderAccountsSnapshot>({
-    queryKey: providerAccountsKey(scope), retry: false, enabled: enabled && Boolean(scope.target) && !sessionIsSwitching(),
+    queryKey: providerAccountsKey(scope), enabled: enabled && Boolean(scope.target) && !sessionIsSwitching(),
     placeholderData: (previous, query) => query?.queryKey[1] === generation
       && JSON.stringify(query.queryKey[2]) === JSON.stringify(scope.target)
       && query.queryKey[3] === (scope.provider ?? null) && query.queryKey[5] === (scope.includeRemoved ?? false)
@@ -92,7 +92,7 @@ export function useProviderAccountDetails(accountId: string | undefined, request
   const generation = useHarnessSessionEpoch()
   const scope = useProviderAccountScope(requestedScope)
   return useQuery({ queryKey: [...providerAccountsKey(scope), 'detail', accountId ?? null],
-    enabled: Boolean(accountId) && !sessionIsSwitching(), retry: false, refetchOnReconnect: 'always',
+    enabled: Boolean(accountId) && !sessionIsSwitching(), refetchOnReconnect: 'always',
     queryFn: async ({ signal }) => {
       const account = await providerAccountsClient.get({ accountId: accountId!, ...(scope.target ? { target: scope.target } : {}) }, { signal })
       assertSession(generation)
@@ -106,7 +106,7 @@ export function useProviderAccountDetails(accountId: string | undefined, request
 export function useProviderAccount(binding?: ProviderAccountBinding) {
   const generation = useHarnessSessionEpoch()
   return useQuery({ queryKey: providerAccountKey(binding), enabled: Boolean(binding) && !sessionIsSwitching(),
-    retry: false, refetchOnReconnect: 'always',
+    refetchOnReconnect: 'always',
     queryFn: async ({ signal }) => {
       const account = await providerAccountsClient.get({ accountId: binding!.accountId, target: binding!.target }, { signal })
       assertSession(generation)
@@ -120,7 +120,7 @@ export function useProviderAccount(binding?: ProviderAccountBinding) {
 export function useProviderAccountModels(binding?: ProviderAccountBinding, observationGeneration?: number, observationSequence?: number) {
   const generation = useHarnessSessionEpoch()
   return useQuery({ queryKey: [...providerAccountKey(binding), 'models', observationGeneration ?? null, observationSequence ?? null],
-    enabled: Boolean(binding) && !sessionIsSwitching(), retry: false, refetchOnReconnect: 'always',
+    enabled: Boolean(binding) && !sessionIsSwitching(), refetchOnReconnect: 'always',
     // A newer observation of the same account reloads the catalog; the previous one stays until it lands.
     placeholderData: (previous: Awaited<ReturnType<typeof providerAccountsClient.models>> | undefined, previousQuery) => previousQuery
       && previousQuery.queryKey.slice(0, -1).join('\u0000') === [...providerAccountKey(binding), 'models', observationGeneration ?? null].join('\u0000')
@@ -145,8 +145,7 @@ export function useProviderAccountModels(binding?: ProviderAccountBinding, obser
 export function useProviderAuthentication(binding?: ProviderAccountBinding, operationId?: string) {
   const generation = useHarnessSessionEpoch()
   return useQuery<ProviderAccountAuthenticationOperation>({ queryKey: providerAuthenticationKey(binding, operationId),
-    enabled: Boolean(binding && operationId) && !sessionIsSwitching(), retry: false,
-    refetchOnReconnect: 'always',
+    enabled: Boolean(binding && operationId) && !sessionIsSwitching(), refetchOnReconnect: 'always',
     refetchInterval: query => query.state.data?.nativeClosed || query.state.error ? false : 3_000,
     queryFn: async ({ signal }) => {
       const operation = await providerAccountsClient.authentication({ operationId: operationId!, target: binding!.target }, { signal })
@@ -164,7 +163,7 @@ export function useProviderAuthenticationOperations(binding?: ProviderAccountBin
   const epoch = useHarnessSessionEpoch()
   const scope = useProviderAccountScope(binding ? { target: binding.target, provider: binding.provider } : {})
   return useQuery({ queryKey: [...providerAccountKey(binding), 'authentication-list', scope.generation ?? null],
-    enabled: Boolean(binding) && !sessionIsSwitching(), retry: false, refetchOnReconnect: 'always',
+    enabled: Boolean(binding) && !sessionIsSwitching(), refetchOnReconnect: 'always',
     queryFn: async ({ signal }) => {
       const page = await providerAccountsClient.authenticationList({ accountId: binding!.accountId,
         target: binding!.target, limit: 100 }, { signal })

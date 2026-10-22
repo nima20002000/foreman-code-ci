@@ -16,10 +16,10 @@ function EditableOperatorAccessPicker({ value, disabled, saving = false, saveErr
   onChange(value: HarnessConfiguration): Promise<boolean>
 }) {
   return <div className="operator-access-inline" role="group" aria-label="Operator access">
-    <div className="n-field-label">Operator access<InfoHint label="Operator access">Access changes apply to new chats and harness handoffs. Existing chats keep their accepted access policy.</InfoHint></div>
     {saving ? <small role="status">Saving Operator access…</small> : null}
     {saveError ? <p role="alert">{saveError}</p> : null}
     {value.harness === 'codex' || value.harness === 'claude' ? <Select label="Sandbox" value={value.sandbox}
+      labelHint={<InfoHint label="Operator access">Access changes apply to new chats. Existing chats keep their access.</InfoHint>}
       options={value.harness === 'claude' ? claudeAccessOptions(value.sandbox) : sandboxChoices} disabled={disabled}
       error={value.harness === 'claude' && value.sandbox !== 'danger-full-access' ? CLAUDE_FULL_ACCESS_REQUIRED : undefined}
       onChange={(event) => {

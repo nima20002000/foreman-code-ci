@@ -29,6 +29,4 @@
 .workflow-files-status { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
 .workflow-files-status p { margin: 0; }
 .workflow-files-error { color: var(--n-danger, #f99a9a); font-size: 12px; margin: 6px 0; }
-.workflow-files-confirm-name { overflow-wrap: anywhere; margin: 0; }
-.workflow-files-confirm { box-sizing: border-box; max-width: calc(100vw - 24px); }
 .workflow-files-popover :focus-visible { outline: 2px solid var(--n-focus, #a7b6ff); outline-offset: 2px; }

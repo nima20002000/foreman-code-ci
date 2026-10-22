@@ -23,7 +23,7 @@ export function WorkflowChatMessage({ scope, post, receipts, truncated, receipts
   controlsReason?: string
 }) {
   const body = useInfiniteQuery({ queryKey: ['workflow-chat-body', identityEpoch(), scope.workspaceId, scope.workflowId, post.id],
-    enabled: false, retry: false, initialPageParam: undefined as string | undefined,
+    enabled: false, initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam, signal }) => {
       try { return await workflowChatClient.body(scope, post.id, pageParam, { signal }) }
       catch (error) { if (isApiAccessError(error)) onDenied(); throw error }
@@ -35,19 +35,21 @@ export function WorkflowChatMessage({ scope, post, receipts, truncated, receipts
   const text = pages && samePost ? pages.map(page => page.body).join('') : post.body
   const author = post.author.kind === 'agent' ? agentLabel(post.author.agent)
     : post.author.kind === 'system' ? 'Recorded by Foreman' : post.author.displayName
-  return <article id={`workflow-post-${post.id}`} className="workflow-chat-message" tabIndex={-1}>
-    <header><strong>{author}</strong> · <time dateTime={post.createdAt}>{new Date(post.createdAt).toLocaleTimeString()}</time>
-      {post.kind !== 'message' ? <span> · {post.kind.replaceAll('_', ' ')}</span> : null}</header>
-    {post.execution ? <p>Run {post.execution.runId} · Attempt {post.execution.attempt}</p> : null}
-    {post.replyToPostId ? <Button size="sm" variant="ghost" onClick={() => onOpenPost(post.replyToPostId!)}>Reply to original post</Button> : null}
+  return <article id={`workflow-post-${post.id}`} className="workflow-chat-message" data-author={post.author.kind} tabIndex={-1}>
+    <header><strong>{author}</strong>
+      <time dateTime={post.createdAt}>{new Date(post.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time>
+      {post.kind !== 'message' ? <span>{post.kind.replaceAll('_', ' ')}</span> : null}
+      {post.execution ? <span>Run · attempt {post.execution.attempt}</span> : null}
+      {onOpenAgent && (post.author.kind === 'agent' || post.execution) ? <Button size="sm" variant="ghost"
+        onClick={() => onOpenAgent(post)}>Open chat</Button> : null}</header>
+    {post.replyToPostId ? <Button size="sm" variant="ghost" onClick={() => onOpenPost(post.replyToPostId!)}>In reply to a message</Button> : null}
     <p className="workflow-chat-body">{text}</p>
-    {truncated && !pages ? <Button size="sm" loading={body.isFetching} onClick={() => void body.fetchNextPage()}>Show full message</Button> : null}
-    {pages && body.hasNextPage ? <Button size="sm" loading={body.isFetching} onClick={() => void body.fetchNextPage()}>Load more of this message</Button> : null}
-    {body.isError || !samePost ? <p role="alert">Could not load the full message. <Button size="sm" onClick={() => void body.refetch()}>Retry</Button></p> : null}
-    {!post.mentions.length ? <p>Posted to group chat</p> : receiptsIncomplete ? <p role="status">Some delivery status is still loading. <Button size="sm" onClick={onRefresh}>Load delivery status</Button></p> : null}
+    {truncated && !pages ? <Button size="sm" loading={body.isFetching && !body.isRefetching} onClick={() => void body.fetchNextPage()}>Show full message</Button> : null}
+    {pages && body.hasNextPage ? <Button size="sm" loading={body.isFetching && !body.isRefetching} onClick={() => void body.fetchNextPage()}>Load more of this message</Button> : null}
+    {body.isError || !samePost ? <p className="workflow-chat-notice" role="alert">Couldn’t load the full message. <Button size="sm" variant="ghost" onClick={() => void body.refetch()}>Retry</Button></p> : null}
+    {post.mentions.length && receiptsIncomplete ? <p className="workflow-chat-notice" role="status">Some delivery status is still loading.
+      <Button size="sm" variant="ghost" onClick={onRefresh}>Load</Button></p> : null}
     <ChatDeliveryReceipts receipts={receipts} controlsReason={controlsReason} onCancel={onCancel} onRefresh={onRefresh} onOpenPost={onOpenPost}
       onRecover={onRecover} onOpenContinuation={receipt => onOpenAgent?.(post, receipt)} />
-    {onOpenAgent && (post.author.kind === 'agent' || post.execution) ? <Button size="sm"
-      onClick={() => onOpenAgent(post)}>Open agent chat</Button> : null}
   </article>
 }

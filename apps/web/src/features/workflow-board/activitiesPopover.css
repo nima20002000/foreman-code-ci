@@ -18,3 +18,20 @@
 .board-activities-popover .board-run-more { font: var(--type-caption); }
 .board-activities-popover .board-run-more > summary { cursor: pointer; padding: 4px 0; color: var(--n-muted); }
 @media (prefers-reduced-motion: reduce) { .board-activities-popover { animation: none; } }
+.board-run-list-header { display: flex; align-items: center; justify-content: space-between; min-height: 24px; }
+.board-run-list-header h3 { margin: 0; color: var(--text-faint); font: var(--type-caption); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.board-run-note { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); margin: 0; color: var(--text-muted); font: var(--type-caption); }
+.board-run-note[role='alert'] { color: var(--danger); }
+.board-activities-popover .board-run-row { min-height: 34px; padding: var(--space-1) var(--space-2); }
+.board-activities-popover .n-empty { padding: var(--space-6) var(--space-3); }
+.board-activities-popover .board-run-detail { padding-top: var(--space-3); }
+.board-activities-popover .board-run-detail h3 { font: var(--type-body-strong); }
+/* Run Activities: filters and refresh share one compact row; the popover is the only scroller. */
+.board-activities-popover { scrollbar-width: thin; }
+.board-activities-popover .board-activities > header { flex-wrap: nowrap; gap: 6px; }
+.board-activities-popover .board-activities-filters { display: flex; flex: 1; min-width: 0; gap: 6px; }
+.board-activities-popover .board-activities-filters > .n-field { flex: 1 1 0; min-width: 0; gap: 0; }
+.board-activities-popover .board-activities-filters .n-field > label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.board-activities-popover .board-activities-filters select { height: 30px; min-height: 30px; padding-block: 0; font: var(--type-caption); }
+.board-activities-popover .board-activities > header > .n-icon-button { margin-left: auto; }
+.board-activities-popover .board-activities-filters .n-select-wrap svg { top: 50%; transform: translateY(-50%); inset-inline-end: 8px; }

@@ -193,8 +193,8 @@ describe('Chat retention through the real HTTP client and MSW', () => {
     const user = await setDuration('1', 'hours')
     await user.click(screen.getByRole('checkbox', { name: 'Apply to existing' }))
     await save(user)
-    const dialog = await screen.findByRole('alertdialog', { name: 'Apply to existing?' })
-    expect(within(dialog).getByText('3 files would expire now.')).toBeVisible()
+    const dialog = await screen.findByRole('alertdialog', { name: 'Apply to existing files?' })
+    expect(within(dialog).getByText('3 files would expire now. The count can change before saving.')).toBeVisible()
     expect(previews).toEqual([3_600])
     expect(saves).toHaveLength(0)
     await user.click(within(dialog).getByRole('button', { name: 'Apply and save' }))
@@ -210,7 +210,7 @@ describe('Chat retention through the real HTTP client and MSW', () => {
     const user = await setDuration('1', 'hours')
     await user.click(screen.getByRole('checkbox', { name: 'Apply to existing' }))
     await save(user)
-    const dialog = await screen.findByRole('alertdialog', { name: 'Apply to existing?' })
+    const dialog = await screen.findByRole('alertdialog', { name: 'Apply to existing files?' })
     fireEvent.pointerDown(dialog)
     fireEvent.click(dialog)
     await waitFor(() => expect(dialog).not.toHaveAttribute('open'))
@@ -218,9 +218,9 @@ describe('Chat retention through the real HTTP client and MSW', () => {
     await setDuration('2', 'hours')
     expireNowCount = 1
     await save(user)
-    expect(await screen.findByText('1 file would expire now.')).toBeVisible()
+    expect(await screen.findByText('1 file would expire now. The count can change before saving.')).toBeVisible()
     expect(previews).toEqual([3_600, 7_200])
-    await user.click(screen.getByRole('button', { name: /^Cancel$/ }))
+    await user.click(screen.getByRole('button', { name: 'Keep it' }))
     expect(saves).toHaveLength(0)
   })
 
@@ -231,7 +231,7 @@ describe('Chat retention through the real HTTP client and MSW', () => {
     const user = await setDuration('2', 'hours')
     await user.click(screen.getByRole('checkbox', { name: 'Apply to existing' }))
     await save(user)
-    expect(await screen.findByText('4 files would expire now.')).toBeVisible()
+    expect(await screen.findByText('4 files would expire now. The count can change before saving.')).toBeVisible()
     expect(saves).toHaveLength(0)
   })
 
@@ -277,7 +277,7 @@ describe('Chat retention through the real HTTP client and MSW', () => {
     const user = await setDuration('1', 'hours')
     await user.click(screen.getByRole('checkbox', { name: 'Apply to existing' }))
     await save(user)
-    const dialog = await screen.findByRole('alertdialog', { name: 'Apply to existing?' })
+    const dialog = await screen.findByRole('alertdialog', { name: 'Apply to existing files?' })
     preference = { ...preference, revision: 1, durationSeconds: 864_000 }
     await act(async () => {
       await view.client.refetchQueries({ queryKey: retentionQueryKey(sessionGeneration()) })

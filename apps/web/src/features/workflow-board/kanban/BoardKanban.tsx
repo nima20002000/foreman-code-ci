@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Handle, NodeResizer, Position, type Edge, type EdgeProps, type Node, type NodeProps } from '@xyflow/react'
 import { MemoryBoardWireSchemas, type MemoryBoardScope, type MemoryCard as Card, type WorkflowKanbanFrame } from '@foreman-code/contracts'
 import { Button, Icon } from '../../../shared/ui/nocturne'
@@ -55,23 +55,45 @@ function KanbanColumns({ workspaceId, workflowId }: { workspaceId: string; workf
   const view = live.snapshot.data, error = live.identity.error ?? live.snapshot.error
   const activity = useKanbanActivity((state) => state.items[activityScope])
   const byCard = useMemo(() => new Map((activity ?? []).map((item) => [item.cardId, item])), [activity])
-  if (!view) return error ? <p role="alert">Couldn’t load the Kanban. {errorMessage(error)}
-    <Button size="sm" onClick={() => void live.retry()}>Retry</Button></p> : <p role="status">Loading Kanban…</p>
+  // One message and one retry for every column that failed to read, instead of one per column.
+  const [failed, setFailed] = useState<Partial<Record<Card['status'], () => void>>>({})
+  const reportFailure = useCallback((status: Card['status'], retry?: () => void) => setFailed((previous) => {
+    if (!!previous[status] === !!retry) return previous
+    const next = { ...previous }
+    if (retry) next[status] = retry
+    else delete next[status]
+    return next
+  }), [])
+  const retries = Object.values(failed)
+  // While loading or after a failed read the columns keep their shape, so the Kanban never collapses or jumps.
+  if (!view) return <div className="board-kanban-columns" role="region" aria-label="Kanban columns" aria-busy={!error}>
+    {(Object.keys(statusLabels) as Card['status'][]).map((status, index) => <section key={status} className="board-kanban-column is-placeholder"
+      data-status={status} aria-label={statusLabels[status]}>
+      <h3>{statusLabels[status]} <small className="board-kanban-count-pending" aria-hidden="true" /></h3>
+      {index === 0 && error ? <p className="board-kanban-error" role="alert">Couldn’t load cards. {errorMessage(error)}
+        <Button size="sm" variant="ghost" onClick={() => void live.retry()}>Retry</Button></p> : null}
+    </section>)}
+  </div>
   return <div className="board-kanban-columns" role="region" aria-label="Kanban columns">
-    {(Object.keys(statusLabels) as Card['status'][]).map((status) => <KanbanColumn key={status} view={view}
-      status={status} nodes={nodes} activity={byCard} onOpen={(cardId) => board?.openMemoryCard?.(cardId)} />)}
+    {(Object.keys(statusLabels) as Card['status'][]).map((status, index) => <KanbanColumn key={status} view={view}
+      status={status} nodes={nodes} activity={byCard} onOpen={(cardId) => board?.openMemoryCard?.(cardId)} onFailure={reportFailure}
+      notice={index === 0 && retries.length ? <p className="board-kanban-error" role="alert">Couldn’t load cards.
+        <Button size="sm" variant="ghost" onClick={() => retries.forEach((retry) => retry())}>Retry</Button></p> : null} />)}
   </div>
 }
 
-function KanbanColumn({ view, status, nodes, activity, onOpen }: {
+function KanbanColumn({ view, status, nodes, activity, onOpen, onFailure, notice }: {
   view: MemoryBoardView; status: Card['status']; nodes: readonly MemoryNodeOption[]
   activity: ReadonlyMap<string, KanbanCardActivity>; onOpen(cardId: string): void
+  onFailure(status: Card['status'], retry?: () => void): void; notice: ReactNode
 }) {
   const query = useMemoryCards(client, view, { status }, true)
   const cards = mergedMemoryItems(query.data?.pages)
+  const restart = query.restart
+  useEffect(() => { onFailure(status, query.isError ? () => void restart() : undefined) }, [query.isError, restart, onFailure, status])
   return <section className="board-kanban-column" data-status={status} aria-label={statusLabels[status]}>
     <h3>{statusLabels[status]} <small>{view.counts[status]}</small></h3>
-    {query.isError ? <p role="alert">Couldn’t load cards. <Button size="sm" onClick={() => void query.restart()}>Retry</Button></p> : null}
+    {notice}
     {cards.map((card) => {
       const changed = activity.get(card.id)
       return <div key={card.id} className="board-kanban-card" data-card-id={card.id} data-updated={changed ? '' : undefined}>

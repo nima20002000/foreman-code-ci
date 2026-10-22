@@ -58,7 +58,6 @@ export function RuntimeInstanceBoundary({ children }: { children: ReactNode }) {
     </main>
   }
   return <>
-    {reconnecting && <div className="runtime-reconnecting" role="status">Reconnecting…</div>}
     {updated && <div className="runtime-reconnecting" role="status">App updated. Your pending changes are kept until it can reload.</div>}
     {children}
   </>

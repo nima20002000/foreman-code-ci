@@ -1,9 +1,8 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { Button, Dialog, TextField } from '../../shared/ui/nocturne'
 
 export interface WorkflowNameHandle { begin(): void }
-/** Editing the name never applies it silently: leaving the field asks to rename or discard. */
+/** Enter renames (an undoable draft edit). Leaving the field with a changed name asks to rename or discard. */
 export function WorkflowName({ name, disabled, onRename, ref }: { name: string; disabled: boolean; onRename(name: string): void;
   ref?: Ref<WorkflowNameHandle> }) {
   const [editing, setEditing] = useState(false)
@@ -22,7 +21,10 @@ export function WorkflowName({ name, disabled, onRename, ref }: { name: string; 
     active.current = false
     restoreFocus.current = keyboard
     const next = value.trim()
-    if (save && !disabled && next && next !== name) setConfirming(next)
+    if (save && !disabled && next && next !== name) {
+      if (keyboard) onRename(next)
+      else setConfirming(next)
+    }
     setEditing(false)
   }
   const decide = (rename: boolean) => {
@@ -40,9 +42,8 @@ export function WorkflowName({ name, disabled, onRename, ref }: { name: string; 
       }
     }} /> : <button ref={title} className="board-name-button" title="Rename workflow" disabled={disabled}
       onClick={begin}>{name}</button>}</h2>
-    {confirming !== undefined ? <Dialog open title="Rename workflow?" closeLabel="Discard new name" returnFocusRef={title}
-      description={`Rename “${name}” to “${confirming}”?`}
-      headerLeading={<InfoHint label="Rename">You can undo it with Ctrl+Z; Save keeps it.</InfoHint>}
+    {confirming !== undefined ? <Dialog open title={`Rename to “${confirming}”?`} closeLabel="Discard new name" returnFocusRef={title} size="sm"
+      description="You can undo it with Ctrl+Z. Save keeps it."
       onOpenChange={(open) => { if (!open) decide(false) }}>
       <div className="n-actions">
         <Button onClick={() => decide(false)}>Discard</Button>

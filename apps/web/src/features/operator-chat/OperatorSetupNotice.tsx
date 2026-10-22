@@ -2,15 +2,17 @@ import type { OperatorChatSetup } from '@foreman-code/contracts'
 import { ExecutionReadinessNotice } from './ExecutionReadinessNotice'
 import { Button } from '../../shared/ui/nocturne'
 import { ChatNotice } from '../conversations/ChatNotice'
+import { ApiError } from '../../shared/api/client'
 
-export function OperatorSetupNotice({ data, checking, failed, onRetry }: {
-  data?: OperatorChatSetup; checking: boolean; failed: boolean; onRetry(): void;
+export function OperatorSetupNotice({ data, checking, failed, error, onRetry }: {
+  data?: OperatorChatSetup; checking: boolean; failed: boolean; error?: unknown; onRetry(): void;
 }) {
+  // A profile that is still being checked is not a failure; the setup read retries by itself.
+  if (failed && ApiError.is(error) && error.code === 'HARNESS_PROFILE_CHECK_PENDING') return <ChatNotice tone="info" title="Checking the Operator’s tools…" />
   // A failed check stays visible while it retries, so background retries do not make it flicker.
-  if (failed) return <ChatNotice title="Tool connection check failed"
+  if (failed) return <ChatNotice title="Operator tools unavailable"
     action={<Button size="sm" onClick={onRetry}>Check again</Button>}>
-    {data?.status === 'configured' ? 'The connection was configured at the last successful check.'
-      : 'Check the tool connection before sending a message.'}
+    The Operator could not reach its tools. It retries by itself.
   </ChatNotice>
   if (!data) return null
   if (data.harness === 'opencode') return <ChatNotice title="Retired harness (OpenCode): read-only" tone="info" />

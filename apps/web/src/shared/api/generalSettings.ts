@@ -16,7 +16,7 @@ export function useGeneralSettings() {
     const current = cache.getQueryData<ManagedGeneralSettings>(queryKey)
     return current && current.revision > value.revision ? current : value
   }
-  const settings = useQuery({ queryKey, retry: false, refetchInterval: 10_000,
+  const settings = useQuery({ queryKey, refetchInterval: 10_000,
     enabled: !sessionIsSwitching(),
     queryFn: async ({ signal }) => keepLatest(await apiClient.request(
       '/api/management/settings/general', ManagedGeneralSettingsSchema, { signal })),

@@ -6,6 +6,7 @@ import { agentChatApi } from '../../shared/api/agentChat'
 import { selectedRunChatApi } from '../conversations/agentChat/selectedRunChatClient'
 import type { RecipientTargetOption, WorkflowTargetResolver } from '../workflow-chat/RecipientTargetPicker'
 import { readPinnedAgentVersion } from './runDetailsClient'
+import { readExecutionChat, resolveExecutionChat } from '../workflow-hierarchy/execution-chat/client'
 
 export async function readGroupParticipants(workspaceId: string, workflowId: string, runId: string | undefined,
   options: RequestOptions): Promise<AgentIdentity[]> {
@@ -53,9 +54,23 @@ export function groupTargetResolver(runId?: string): WorkflowTargetResolver {
     const context = { workspaceId: agent.workspaceId, workflowId: agent.workflowId,
       workflowNodeId: agent.workflowNodeId, agentId: agent.agentId }
     if (!selectedRun) return option(await agentChatApi.read(context, { signal: input.signal }), 'Outside run')
+    if (!executionId) {
+      // Live work in the selected Run takes input through its execution chat.
+      const resolution = await resolveExecutionChat({ workspaceId: agent.workspaceId, workflowId: agent.workflowId,
+        workflowNodeId: agent.workflowNodeId, runId: selectedRun }, { signal: input.signal })
+      const live = (resolution.kind === 'selected' ? [resolution] : resolution.kind === 'selection_required' ? resolution.items : [])
+        .filter(choice => choice.state !== 'idle')
+      if (live.length) return Promise.all(live.map(async choice => {
+        const read = await readExecutionChat({ target: choice.target, limit: 1 }, { signal: input.signal })
+        return { target: choice.target, label: 'This run', presentation: { state: read.state,
+          capabilities: read.capabilities, ...(read.nativeTurnId ? { nativeTurnId: read.nativeTurnId } : {}) } }
+      }))
+      // A settled Run accepts no more input; its Agents answer outside it.
+      return option(await agentChatApi.read(context, { signal: input.signal }), 'Outside run')
+    }
     const selection = { ...context, runId: selectedRun, ...(executionId ? { executionId } : {}) }
     const result = await selectedRunChatApi.read(selection, { signal: input.signal })
-    if (result.kind === 'selected') return option(result.state, `Run ${selectedRun}`)
+    if (result.kind === 'selected') return option(result.state, 'This run')
     if (result.kind === 'unavailable') throw new ApiError({ code: 'CHAT_TARGET_UNAVAILABLE', message: 'Chat is unavailable for this selected Run node.' }, 409)
     const choices = await Promise.all(result.executions.map(async execution => {
       const exact = await selectedRunChatApi.read({ ...selection, executionId: execution.executionId }, { signal: input.signal })

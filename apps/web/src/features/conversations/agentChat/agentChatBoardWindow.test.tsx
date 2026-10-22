@@ -14,12 +14,10 @@ import { providerFixture } from './f7.testSupport'
 import { installChatSource } from './testSupport'
 import { outsideRunTargetHandler } from './outsideRunTarget.testSupport'
 import { findLoadedComposer } from '../loadedComposer.test-support'
-import { useChatWindowsStore } from './agentChatWindows'
 
 installBoardTestLifecycle()
 afterEach(() => {
   useConversationDraftStore.getState().clearAllDrafts()
-  useChatWindowsStore.setState({ open: {}, frames: {}, focus: {} })
 })
 
 /** Actual Board route/editor/canvas/chat rail with MSW. JSDOM has no layout engine: the viewport

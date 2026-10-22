@@ -24,7 +24,7 @@ import { ClaudeSetupOptionsSchema } from '@foreman-code/contracts/claude'
 
 export function useClaudeSetupOptions(enabled = true) {
   useHarnessSessionEpoch()
-  return useQuery({ queryKey: [...harnessSettingsKeys.root, sessionGeneration(), 'claude', 'setup-options'], retry: false,
+  return useQuery({ queryKey: [...harnessSettingsKeys.root, sessionGeneration(), 'claude', 'setup-options'],
     enabled: enabled && !sessionIsSwitching(), queryFn: ({ signal }) => apiClient.request('/api/management/harnesses/claude/setup-options', ClaudeSetupOptionsSchema, { signal }) })
 }
 
@@ -67,7 +67,7 @@ export function useCodexPlugins(input: CodexPluginListInput, enabled = true) {
     if (options.refresh || input.refresh) query.set('refresh', 'true')
     return apiClient.request(`/api/management/harnesses/codex/plugins?${query}`, CodexPluginListResultSchema, { signal })
   }
-  const result = useQuery({ queryKey, enabled: enabled && !sessionIsSwitching(), retry: false,
+  const result = useQuery({ queryKey, enabled: enabled && !sessionIsSwitching(),
     refetchOnWindowFocus: false, queryFn: ({ signal }) => read(signal) })
   const refresh = () => client.fetchQuery({ queryKey, staleTime: 0,
     queryFn: ({ signal }) => read(signal, { refresh: true }) })
@@ -75,7 +75,7 @@ export function useCodexPlugins(input: CodexPluginListInput, enabled = true) {
 }
 export function useCodexPlugin(pluginId: string | undefined) {
   useHarnessSessionEpoch()
-  return useQuery({ queryKey: harnessSettingsKeys.plugin(pluginId ?? ''), enabled: Boolean(pluginId) && !sessionIsSwitching(), retry: false,
+  return useQuery({ queryKey: harnessSettingsKeys.plugin(pluginId ?? ''), enabled: Boolean(pluginId) && !sessionIsSwitching(),
     queryFn: ({ signal }) => apiClient.request(`/api/management/harnesses/codex/plugins/${encodeURIComponent(pluginId!)}`,
       CodexPluginDetailResultSchema, { signal }) })
 }
@@ -88,7 +88,7 @@ export function useChangeCodexPlugin() {
   type State = { operation: PluginOperation | null; settled: string[] }
   const saved = useQuery<State>({ queryKey: key, queryFn: () => ({ operation: null, settled: [] }),
     enabled: false, initialData: { operation: null, settled: [] }, staleTime: Infinity, gcTime: Infinity })
-  const operations = useQuery({ queryKey: operationsKey, enabled: !sessionIsSwitching(), retry: false,
+  const operations = useQuery({ queryKey: operationsKey, enabled: !sessionIsSwitching(),
     refetchOnWindowFocus: false,
     queryFn: ({ signal }) => apiClient.request('/api/management/harnesses/codex/plugins/operations', CodexPluginOperationsResultSchema, { signal }) })
   const currentSession = () => epoch === sessionGeneration() && !sessionIsSwitching()
@@ -175,7 +175,7 @@ export function useChangeCodexPlugin() {
 
 export function useNativeHarnessOptions(harness: Harness, enabled = true, hostRef?: DeviceProvisioningTarget['hostRef']) {
   useHarnessSessionEpoch()
-  return useQuery({ queryKey: harnessSettingsKeys.options(harness, hostRef), enabled: enabled && !sessionIsSwitching(), staleTime: 300_000, retry: false,
+  return useQuery({ queryKey: harnessSettingsKeys.options(harness, hostRef), enabled: enabled && !sessionIsSwitching(), staleTime: 300_000,
     refetchOnWindowFocus: true,
     queryFn: ({ signal }) => {
       const query = hostRef ? `?${new URLSearchParams({ hostRef: JSON.stringify(hostRef) })}` : ''
@@ -194,7 +194,7 @@ export function useAutomaticHarnessCheck(configuration: HarnessConfiguration | u
     return () => clearTimeout(timer)
   }, [snapshot])
   const result = useQuery({ queryKey: harnessSettingsKeys.check(settled),
-    enabled: !sessionIsSwitching() && Boolean(settled) && snapshot === settled, staleTime: 300_000, retry: false,
+    enabled: !sessionIsSwitching() && Boolean(settled) && snapshot === settled, staleTime: 300_000,
     refetchOnWindowFocus: false,
     queryFn: ({ signal }) => apiClient.request('/api/management/harnesses/validate', HarnessConfigurationCheckResultSchema,
       { method: 'POST', body: { configuration: JSON.parse(settled) as HarnessConfiguration }, signal }),
@@ -227,14 +227,14 @@ export function useRefreshNativeHarness(harness: Harness, refresh: 'catalog' | '
 
 export function useNativeMcpServers(harness: Harness, enabled = true) {
   useHarnessSessionEpoch()
-  return useQuery({ queryKey: harnessSettingsKeys.mcp(harness), enabled: enabled && !sessionIsSwitching(), staleTime: 30_000, retry: false,
+  return useQuery({ queryKey: harnessSettingsKeys.mcp(harness), enabled: enabled && !sessionIsSwitching(), staleTime: 30_000,
     refetchOnWindowFocus: false, refetchInterval: enabled ? 10_000 : false,
     queryFn: ({ signal }) => apiClient.request(`/api/management/harnesses/${harness}/mcp`, HarnessMcpListResultSchema, { signal }),
   })
 }
 export function useNativeMcpPlans(harness: Harness, enabled = true) {
   useHarnessSessionEpoch()
-  return useQuery({ queryKey: harnessSettingsKeys.plans(harness), enabled: enabled && !sessionIsSwitching(), retry: false,
+  return useQuery({ queryKey: harnessSettingsKeys.plans(harness), enabled: enabled && !sessionIsSwitching(),
     refetchInterval: enabled ? 10_000 : false,
     queryFn: ({ signal }) => apiClient.request(`/api/management/harnesses/${harness}/mcp/plans`, HarnessMcpPlansResultSchema, { signal }),
   })
@@ -355,7 +355,7 @@ export function useReconcileNativeMcpChange() {
 }
 export function useHarnessDirectories(input: { rootId?: string; path?: string; cursor?: string }, enabled: boolean) {
   useHarnessSessionEpoch()
-  return useQuery({ queryKey: [...harnessSettingsKeys.root, sessionGeneration(), 'directories', input], enabled: enabled && !sessionIsSwitching(), retry: false,
+  return useQuery({ queryKey: [...harnessSettingsKeys.root, sessionGeneration(), 'directories', input], enabled: enabled && !sessionIsSwitching(),
     queryFn: ({ signal }) => {
       const query = new URLSearchParams()
       for (const [key, value] of Object.entries(input)) if (value !== undefined) query.set(key, value)

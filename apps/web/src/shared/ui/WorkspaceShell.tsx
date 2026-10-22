@@ -28,6 +28,7 @@ import {
   type WorkspaceSection,
   useNavigationUiStore,
 } from '../../features/workspaces'
+import './sidebarRefresh.css'
 
 export type { WorkspaceSection } from '../../features/workspaces'
 

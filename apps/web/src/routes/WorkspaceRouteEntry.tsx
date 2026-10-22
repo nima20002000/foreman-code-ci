@@ -128,9 +128,9 @@ function WorkspaceBoardRoute({ selection }: { selection: WorkflowBoardLocation }
   if (workspace.isPending && !details) return <WorkspaceSelection workspaceId={workspaceId} state="loading" slots={{ graph: <BoardLoading /> }} />
   if (!details) {
     const notFound = ApiError.is(workspace.error) && workspace.error.status === 404
-    return <WorkspaceSelection workspaceId={workspaceId} state={notFound ? 'not-found' : 'error'}
-      stateMessage="This workspace cannot be opened with the current access.">
-      <Button variant="secondary" onClick={() => void workspace.refetch()}>Retry workspace request</Button>
+    if (notFound) return <WorkspaceSelection workspaceId={workspaceId} state="not-found" />
+    return <WorkspaceSelection workspaceId={workspaceId} state="error" stateMessage={workspace.error?.message}>
+      <Button variant="secondary" onClick={() => void workspace.refetch()}>Try again</Button>
     </WorkspaceSelection>
   }
   return <WorkspaceSelection workspaceId={workspaceId} selectedAgentId={search.agentId} activeWorkflowId={workflowId}
@@ -143,7 +143,7 @@ function WorkspaceBoardRoute({ selection }: { selection: WorkflowBoardLocation }
           inspection={{ runNodeId: search.runNodeId, runRelationshipId: search.runRelationshipId, runExchangeKey: search.runExchangeKey }}>
           <PersistedWorkflowBoundary workspaceId={workspaceId} workflowId={workflowId} workflow={workflow}
             updateFailures={workspace.isError ? [{ id: 'WORKSPACE_UPDATES_UNAVAILABLE', message: 'Workspace updates unavailable. Local edits are kept.',
-              pending: workspace.isFetching, retry: () => void workspace.refetch() }] : []} />
+              pending: workspace.isFetching && !workspace.isRefetching, retry: () => void workspace.refetch() }] : []} />
         </WorkflowBoard>
       </BoardHistoryNavigationBoundary>
     ) : undefined }} />

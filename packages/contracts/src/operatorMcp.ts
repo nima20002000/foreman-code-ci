@@ -7,7 +7,7 @@ import {
   WorkspaceListInputSchema, WorkflowListInputSchema,
   AgentListInputSchema, RunListInputSchema, RunGetInputSchema,
 } from './management/index.js'
-import { SavedManagedWorkflowSchema, SavedRunDetailsSchema, WorkflowRunV3Schema } from './wave25/saved.js'
+import { RunDirectionWaitSchema, SavedManagedWorkflowSchema, SavedRunDetailsSchema, WorkflowRunV3Schema } from './wave25/saved.js'
 import { ExecutionResultSchema, HarnessExecutionSchema } from './index.js'
 import { SourceListInputSchema, SourceListResultSchema, ApprovedSourceSchema } from './sourceAdmission.js'
 import { SourceManifestSchema } from './sourceMaterialization.js'
@@ -52,6 +52,7 @@ export const OperatorRunCompactSchema = z.object({
   executionsOmitted: z.number().int().nonnegative(), activitiesOmitted: z.number().int().nonnegative(),
   activitiesHasMore: z.boolean(),
   cleanupPending: z.boolean().optional(),
+  directionWait: RunDirectionWaitSchema.optional(),
 }).strict()
 export const OperatorRunGetResultSchema = z.union([OperatorRunCompactSchema, SavedRunDetailsSchema])
 

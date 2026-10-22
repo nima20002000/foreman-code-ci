@@ -25,7 +25,7 @@ function needsFrequentRefresh(value: MaintenanceStatus | null | undefined, targe
 export function useComputerMaintenance(targets: readonly DeviceProvisioningTarget[]) {
   useHarnessSessionEpoch()
   return useQueries({ queries: targets.map(target => ({
-    queryKey: [...key(), target], enabled: !sessionIsSwitching(), retry: false, staleTime: 15_000,
+    queryKey: [...key(), target], enabled: !sessionIsSwitching(), staleTime: 15_000,
     refetchInterval: (query: { state: { data: ComputerMaintenanceList['computers'][number] | undefined } }) =>
       query.state.data?.workerPublication?.state === 'pending'
         || needsFrequentRefresh(query.state.data?.status, target) ? 5_000 : 60_000,

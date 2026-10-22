@@ -39,8 +39,8 @@ export function AgentDefaultsSettings({ selectedRole, onOpen }: {
       const memoryLabel = !memory.length ? 'None' : memory.length === memoryBoardTools('write').length ? 'Write'
         : memory.length === memoryBoardTools('read').length && memoryBoardTools('read').every(tool => memory.includes(tool)) ? 'Read' : 'Custom'
       const summary = [...harnessSummary(template.harness),
-        { label: 'Native tools', value: nativeToolsSummary(template.nativeTools) }, ...(role === 'operator' ? [] : [{ label: 'New Agent memory access', value: memoryLabel }]), ...(role === 'master' && !value.master
-          ? [{ label: 'Defaults', value: 'Uses Orchestrator settings until configured' }] : []), ...(role === 'operator' ? [
+        { label: 'Tools', value: nativeToolsSummary(template.nativeTools) }, ...(role === 'operator' ? [] : [{ label: 'Memory', value: memoryLabel }]), ...(role === 'master' && !value.master
+          ? [{ label: 'Settings', value: 'Same as Orchestrator' }] : []), ...(role === 'operator' ? [
         { label: 'Skills', value: String(value.operator.assignedSkills?.length ?? 0) },
         ...(value.operator.harness.harness === 'codex' ? [{ label: 'Thinking', value: value.operator.showThinking ? 'Shown' : 'Hidden' }] : []),
       ] : [])]

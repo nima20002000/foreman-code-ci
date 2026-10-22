@@ -259,7 +259,7 @@ describe('Operator chat UX', () => {
     const nativeDefault: HarnessConfiguration = { ...harness, model: 'claude-haiku-4-5-20251001' }
     delete nativeDefault.effort
     expect(saved.value.operator.harness).toEqual(nativeDefault)
-    expect(screen.queryByText('Changes were not saved')).not.toBeInTheDocument()
+    expect(screen.queryByText('Couldn’t save')).not.toBeInTheDocument()
     await waitFor(() => expect(screen.getByRole('button', { name: 'Agent settings: Haiku 4.5' })).toBeEnabled())
     expect(screen.queryByRole('slider', { name: 'Effort' })).not.toBeInTheDocument()
     await waitFor(() => expect(screen.getByRole('button', { name: /Choose model/ })).toBeEnabled())
@@ -310,8 +310,8 @@ describe('Operator chat UX', () => {
       http.get('/api/operator/setup', () => HttpResponse.json(configuredOperatorSetup('claude'))),
     )
     chat()
-    if (action === 'retry a frozen request') expect(await screen.findByText(/The previous save may have committed/)).toBeVisible()
-    else expect(await screen.findByText('Changes were not saved')).toBeVisible()
+    if (action === 'retry a frozen request') expect(await screen.findByText(/Save not confirmed/)).toBeVisible()
+    else expect(await screen.findByText('Couldn’t save')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Agent settings: Haiku 4.5, medium' })).toBeVisible()
     if (action !== 'select a supported model') fireEvent.click(screen.getByRole('button', { name: 'Retry settings save' }))
     else {
@@ -324,7 +324,7 @@ describe('Operator chat UX', () => {
       expect(requests[0]).toEqual(frozenRequest)
       expect(requests[0]!.value.operator.harness).toMatchObject({ model: 'claude-haiku-4-5-20251001', effort: 'medium' })
       expect(saved.revision).toBe(6)
-      expect(await screen.findByText('Changes were not saved')).toBeVisible()
+      expect(await screen.findByText('Couldn’t save')).toBeVisible()
       expect(api.send).not.toHaveBeenCalled()
       return
     }
@@ -333,7 +333,7 @@ describe('Operator chat UX', () => {
     expect(requests[0]!.expectedRevision).toBe(6)
     expect(requests[0]!.value.operator.harness).toMatchObject({ model: action === 'retry settings' ? 'claude-haiku-4-5-20251001' : harness.model, sandbox: harness.sandbox,
       tools: harness.tools, instructions: harness.instructions })
-    await waitFor(() => expect(screen.queryByText('Changes were not saved')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByText('Couldn’t save')).not.toBeInTheDocument())
     expect(screen.getByRole('button', { name: action === 'retry settings' ? 'Agent settings: Haiku 4.5' : 'Agent settings: Sonnet 5.5, medium' })).toBeVisible()
     expect(api.send).not.toHaveBeenCalled()
   })

@@ -147,7 +147,8 @@ function HoverRow({ level, label, name, status, link, card, runningCount }: {
   level: ComputerLoadLevel; label: string; name: string; link: RowLink; card: ReactNode; runningCount: number
   status?: string | undefined
 }) {
-  const hover = useSidebarHoverCard()
+  // A row lives inside its group's card, so its own card opens beside that card.
+  const hover = useSidebarHoverCard({ side: 'inline' })
   const countLabel = `${runningCount} running ${runningCount === 1 ? 'Agent or CI job' : 'Agents and CI jobs'}`
   return <li data-load={level}>
     <SidebarNavigationButton {...hover.anchorProps} {...link} className="sidebar-compute-row"

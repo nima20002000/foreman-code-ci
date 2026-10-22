@@ -22,6 +22,7 @@ import type { GraphTransactionSql } from '../run-graph/connection.js'
 import { canonicalRepeatEffectReceipt } from '../run-graph/repeatPublication.js'
 import { assertRepeatCanonicalReceiptLocked } from '../run-graph/repeatReceipts.js'
 import { withCurrentRunRead } from './currentRead.js'
+import { readRunDirectionWaitLocked } from './directionWaitRead.js'
 import { readRecordedRepeatRunSnapshot, type AcceptedRepeatRunSnapshot } from './repeatStartRead.js'
 import {
   readRecordedExecutionResultLocked, readRepeatDecision, readRepeatExecutionLocked,
@@ -236,7 +237,9 @@ export class RunInspectionService {
       const rows = (await sql.query<ExecutionRow>(query.text, query.values)).rows
       const summaries = rows.map((row) => inspectionExecutionRowSummary(row, snapshot))
       const last = rows[Math.min(rows.length, input.limit) - 1]
-      return bounded(RunExecutionsPageSchema.parse({ run: runSummary(snapshot), items: summaries.slice(0, input.limit),
+      const directionWait = await readRunDirectionWaitLocked(sql, snapshot)
+      return bounded(RunExecutionsPageSchema.parse({ run: { ...runSummary(snapshot), ...(directionWait ? { directionWait } : {}) },
+        items: summaries.slice(0, input.limit),
         pageInfo: { nextCursor: rows.length > input.limit && last ? encodeExecutionPageCursor(cursorScope,
           { createdAt: last.page_created_at, executionId: last.id }) : null } }))
     })

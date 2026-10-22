@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { AgentIdentity, ChatDeliveryReceipt, WorkflowChatPost, WorkflowChatPostResponse } from '@foreman-code/contracts'
-import { Alert, Button, LoadingState, Select } from '../../shared/ui/nocturne'
+import { Button, EmptyState, Icon, LoadingState, SegmentedControl } from '../../shared/ui/nocturne'
 import { identityEpoch } from '../../shared/api/protectedChatStorage'
 import { isApiAccessError } from '../../shared/api/accessError'
 import { useRememberedChatScroll } from '../conversations/chatScrollStore'
@@ -43,6 +43,7 @@ function WorkflowChatContent(props: WorkflowChatPanelProps) {
   const [recoveryKey, setRecoveryKey] = useState<string>()
   const [unread, setUnread] = useState(false)
   const [olderWindow, setOlderWindow] = useState(false)
+  const connectedOnce = useRef(false)
   const selected = useWorkflowSelection(props, selection, !chat.denied, chat.revoke)
   const { focused, postId } = selected
   const update = () => { cancel.reset(); earlier.reset(); moreReceipts.reset(); exactReceipts.reset(); chat.refresh();
@@ -104,34 +105,42 @@ function WorkflowChatContent(props: WorkflowChatPanelProps) {
       onOpenPost={openPost} onCancel={receipt => cancel.mutate(receipt)} onRefresh={() => exactReceipts.mutate(post)} onDenied={chat.revoke}
       onRecover={(receipt, choice) => recover(post, receipt, choice)} onOpenAgent={props.onOpenAgent} />
   }
-  if (denied) return <Alert tone="warning" title="Chat access unavailable"><Button onClick={update}>Refresh access</Button></Alert>
+  if (denied) return <div className="workflow-chat-state"><EmptyState icon="lock" title="Chat isn’t available"
+    description="You can’t read this group chat right now." action={<Button size="sm" onClick={update}>Try again</Button>} /></div>
+  const posts = chat.data?.posts.items.filter(post => post.id !== postId) ?? []
+  // The stream starts out "reconnecting" before its first open; only a lost connection is news.
+  if (chat.connection === 'connected') connectedOnce.current = true
+  const actionError = cancel.error ?? earlier.error ?? moreReceipts.error
   return <section className="workflow-chat-panel" aria-label="Group chat">
-    <header><h2>Group chat</h2><Select label="Message history" value={selection.runId ?? ''}
-      options={[{ value: '', label: 'All runs' }, ...(currentRunId ? [{ value: currentRunId, label: 'This run' }] : [])]}
-      onChange={event => onSelectionChange({ ...selection, runId: event.target.value || undefined })} /></header>
-    {chat.query.isPending ? <LoadingState label="Loading group chat…" rows={2} /> : null}
-    {chat.query.isError ? <Alert tone="warning" title={chat.data ? 'Showing saved messages. Reconnecting…' : 'Could not load group chat'}
-      action={<Button onClick={chat.refresh}>Retry</Button>} /> : null}
-    {chat.connection !== 'connected' && chat.data ? <p role="status">Live updates are reconnecting.</p> : null}
-    {selection.postId || selection.receiptId ? <aside aria-label="Selected post">
-      {selected.mismatch ? <p role="alert">This delivery belongs to a different post.
-        {selected.receiptPostId ? <Button onClick={() => openPost(selected.receiptPostId!)}>Open original post</Button> : null}</p>
-        : selection.receiptId && selected.receipt.isPending || postId && focused.isPending ? <LoadingState label="Loading selected post…" rows={1} /> : focused.data?.posts.items[0] ? row(focused.data.posts.items[0], true)
-        : <p role="status">{focused.isError || selected.receipt.isError ? 'Could not load this post.' : 'This post is unavailable.'}
-          <Button onClick={() => { if (postId) void focused.refetch(); else void selected.receipt.refetch() }}>Retry</Button></p>}
-      <Button onClick={() => onSelectionChange({ runId: selection.runId })}>Back to history</Button>
+    {currentRunId ? <SegmentedControl label="Message history" value={selection.runId ?? ''}
+      options={[{ value: '', label: 'All runs' }, { value: currentRunId, label: 'This run' }]}
+      onValueChange={value => onSelectionChange({ ...selection, runId: value || undefined })} /> : null}
+    {chat.query.isError ? <p className="workflow-chat-notice" role="status">
+      {chat.data ? 'Showing saved messages. Reconnecting…' : 'Couldn’t load group chat.'}
+      <Button size="sm" variant="ghost" onClick={chat.refresh}>Retry</Button></p>
+      : chat.connection !== 'connected' && connectedOnce.current && chat.data ? <p className="workflow-chat-notice" role="status">Reconnecting…</p> : null}
+    {selection.postId || selection.receiptId ? <aside className="workflow-chat-selected" aria-label="Selected post">
+      <header><span>Selected message</span>
+        <Button size="sm" variant="ghost" onClick={() => onSelectionChange({ runId: selection.runId })}>Back to all</Button></header>
+      {selected.mismatch ? <p role="alert">This delivery belongs to a different message.
+        {selected.receiptPostId ? <Button size="sm" variant="ghost" onClick={() => openPost(selected.receiptPostId!)}>Open that message</Button> : null}</p>
+        : selection.receiptId && selected.receipt.isPending || postId && focused.isPending ? <LoadingState label="Loading message…" rows={1} /> : focused.data?.posts.items[0] ? row(focused.data.posts.items[0], true)
+        : <p role="status">{focused.isError || selected.receipt.isError ? 'Couldn’t load this message.' : 'This message is no longer available.'}
+          <Button size="sm" variant="ghost" onClick={() => { if (postId) void focused.refetch(); else void selected.receipt.refetch() }}>Retry</Button></p>}
     </aside> : null}
     <div ref={scroll} className="workflow-chat-transcript" role="region" aria-label="Workflow messages" tabIndex={0}
       onScroll={event => { const box = event.currentTarget; following.current = box.scrollHeight - box.scrollTop - box.clientHeight < 48 }}>
-      {chat.data?.posts.hasMore ? <Button loading={earlier.isPending} onClick={() => { following.current = false; earlier.mutate() }}>Load earlier messages</Button> : null}
-      {chat.data?.posts.items.length === 0 ? <p>No messages yet. Mention an agent to start a conversation.</p> : null}
-      {chat.data?.posts.items.filter(post => post.id !== postId).map(post => row(post))}
+      {chat.data?.posts.hasMore ? <Button size="sm" variant="ghost" loading={earlier.isPending} onClick={() => { following.current = false; earlier.mutate() }}>Load earlier messages</Button> : null}
+      {chat.query.isPending ? <LoadingState label="Loading group chat…" rows={3} />
+        : chat.data && !posts.length && !postId ? <EmptyState icon="chat" title="No messages yet"
+          description="Type @ to ask an agent in this workflow to act." /> : null}
+      {posts.map(post => row(post))}
+      {chat.data?.receipts.hasMore ? <Button size="sm" variant="ghost" loading={moreReceipts.isPending} onClick={() => moreReceipts.mutate()}>Load more delivery status</Button> : null}
     </div>
-    {unread || olderWindow ? <Button onClick={() => { following.current = true; setOlderWindow(false); chat.refresh();
-      if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight; setUnread(false) }}>Jump to latest</Button> : null}
-    {chat.data?.receipts.hasMore ? <Button loading={moreReceipts.isPending} onClick={() => moreReceipts.mutate()}>Load more delivery status</Button> : null}
-    {cancel.isError || earlier.isError || moreReceipts.isError ? <p role="alert">{String((cancel.error ?? earlier.error ?? moreReceipts.error)?.message)}</p> : null}
-    {recoveryKey ? <Button onClick={() => setRecoveryKey(undefined)}>Back to saved draft</Button> : null}
+    {unread || olderWindow ? <Button className="workflow-chat-latest" size="sm" leading={<Icon name="down" size={14} />} onClick={() => { following.current = true; setOlderWindow(false); chat.refresh();
+      if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight; setUnread(false) }}>Latest</Button> : null}
+    {actionError ? <p className="workflow-chat-notice" role="alert">{actionError.message}</p> : null}
+    {recoveryKey ? <Button size="sm" variant="ghost" onClick={() => setRecoveryKey(undefined)}>Back to my draft</Button> : null}
     <WorkflowPostComposer key={recoveryKey ?? draftKey} {...props} draftKey={recoveryKey ?? draftKey}
       onDenied={chat.revoke} onPosted={result => { update(); openPost(result.post.id) }} />
   </section>
@@ -143,10 +152,10 @@ function WorkflowPostComposer(props: WorkflowChatPanelProps & { draftKey: string
   const onDenied = props.onDenied
   useEffect(() => { if (accessError) onDenied() }, [accessError, onDenied])
   return <>
-    {post.feedback ? <p role="alert">{post.feedback}</p> : null}
-    {post.pending ? <div role="status">Posting is not yet confirmed.
-      <Button onClick={() => void post.reconcile()}>Check status</Button>
-      <Button disabled={post.mutation.isPending} onClick={() => void post.reconcile(true)}>Retry original message</Button>
+    {post.feedback ? <p className="workflow-chat-notice" role="alert">{post.feedback}</p> : null}
+    {post.pending ? <div className="workflow-chat-notice" role="status">Not sure your last message was posted.
+      <Button size="sm" variant="ghost" onClick={() => void post.reconcile()}>Check</Button>
+      <Button size="sm" variant="ghost" disabled={post.mutation.isPending} onClick={() => void post.reconcile(true)}>Post again</Button>
     </div> : null}
     <WorkflowChatComposer scope={props} participants={props.participants} participantsLoading={props.participantsLoading}
       participantsError={props.participantsError} retryParticipants={props.retryParticipants} resolveTargets={props.resolveTargets}

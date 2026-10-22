@@ -1,4 +1,3 @@
-import { InfoHint } from '../../shared/ui/InfoHint'
 import {
   BugReportActiveStatusSchema,
   BugReportClosedStatusSchema,
@@ -7,45 +6,47 @@ import {
 } from '@foreman-code/contracts/management'
 import { useState, type RefObject } from 'react'
 import { isAccessFailure } from '../../shared/api/accessErrors'
+import { ApiError } from '../../shared/api/client'
 import { sessionIsSwitching } from '../../shared/api/sessionBoundary'
-import { Alert, Badge, Button, Dialog, LoadingState, Select, TextField } from '../../shared/ui/nocturne'
+import { Link } from '@tanstack/react-router'
+import { useWorkspaceDetailsQuery } from '../../shared/api/query'
+import { Alert, Button, Dialog, LoadingState, Select, TextField } from '../../shared/ui/nocturne'
 import { useUnsavedChanges } from '../../shared/ui/unsavedChanges'
 import { useBugReport, type BugReportChange } from './bugReportQueries'
 import {
   activeStatusOptions, closedStatusOptions, severityLabels, statusLabels,
 } from './bugReportPresentation'
 
+const reporterLabel = (reporter: BugReport['reporter']) => reporter.audience === 'worker' ? 'Workflow agent'
+  : reporter.audience === 'operator' ? 'Operator' : reporter.name
+const when = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+
 function ReportContent({ report }: { report: BugReport }) {
+  const details = useWorkspaceDetailsQuery(report.workspaceId)
+  const workspace = details.data?.workspace.name
+  const workflow = report.workflowId ? details.data?.workflows.find(item => item.id === report.workflowId)?.name : undefined
   return <div className="bug-report-content">
-    <div className="bug-report-badges">
-      <Badge>{severityLabels[report.severity]} severity</Badge>
-      <Badge>{statusLabels[report.status]}</Badge>
+    <div className="bug-report-meta">
+      <span className="bug-row-severity" data-severity={report.severity}>{severityLabels[report.severity]}</span>
+      <span>{statusLabels[report.status]}</span>
+      <span>{report.occurrenceCount === 1 ? 'Reported once' : `Reported ${report.occurrenceCount} times`}</span>
+      <span>Last <time dateTime={report.lastReportedAt}>{when(report.lastReportedAt)}</time></span>
     </div>
-    <section><h3>What they tried</h3><p><strong>{report.tried.feature}</strong></p>
-      <p>{report.tried.inputsSummary}</p></section>
-    <section><h3>What happened</h3>
-      {report.happened.errorCode && <p><code>{report.happened.errorCode}</code></p>}
-      <p>{report.happened.message}</p></section>
-    <section><h3>Expected behavior</h3><p>{report.expected}</p></section>
+    <section><h3>Tried</h3><p><strong>{report.tried.feature}.</strong> {report.tried.inputsSummary}</p></section>
+    <section><h3>Happened</h3><p>{report.happened.message}</p>
+      {report.happened.errorCode ? <small className="bug-report-code">{report.happened.errorCode}</small> : null}</section>
+    <section><h3>Expected</h3><p>{report.expected}</p></section>
     <dl className="bug-report-facts">
-      <div><dt>Reporter</dt><dd>{report.reporter.name} ({report.reporter.audience})</dd></div>
-      <div><dt>Workspace</dt><dd>{report.workspaceId}</dd></div>
-      <div><dt>Harness</dt><dd>{report.harness ?? 'Not recorded'}</dd></div>
-      <div><dt>First reported</dt><dd><time dateTime={report.createdAt}>
-        {new Date(report.createdAt).toLocaleString()}</time></dd></div>
-      <div><dt>Last reported</dt><dd><time dateTime={report.lastReportedAt}>
-        {new Date(report.lastReportedAt).toLocaleString()}</time></dd></div>
-      <div><dt>Occurrences</dt><dd>{report.occurrenceCount}</dd></div>
-      {report.workflowId && <div><dt>Workflow</dt><dd>{report.workflowId}</dd></div>}
-      {report.runId && <div><dt>Run</dt><dd>{report.runId}</dd></div>}
-      {report.resolution && <>
-        <div><dt>{report.status === report.resolution.status ? 'Closed as' : 'Previously closed as'}</dt>
-          <dd>{statusLabels[report.resolution.status]}{' '}
-            (<time dateTime={report.resolution.closedAt}>{new Date(report.resolution.closedAt).toLocaleString()}</time>)
-          </dd></div>
-        {report.resolution.duplicateOfId && <div><dt>Duplicate of</dt><dd>{report.resolution.duplicateOfId}</dd></div>}
-        {report.resolution.note && <div><dt>Closing note</dt><dd>{report.resolution.note}</dd></div>}
-      </>}
+      <div><dt>From</dt><dd>{reporterLabel(report.reporter)}{report.harness ? ` · ${report.harness === 'codex' ? 'Codex' : report.harness === 'claude' ? 'Claude' : report.harness}` : ''}</dd></div>
+      <div><dt>Workspace</dt><dd>{workspace ?? (details.isPending ? '…' : 'Removed workspace')}</dd></div>
+      {report.workflowId ? <div><dt>Workflow</dt><dd><Link to="/workspaces/$workspaceId" params={{ workspaceId: report.workspaceId }}
+        search={{ workflowId: report.workflowId, ...(report.runId ? { selectedRunId: report.runId } : {}) }}>
+        {workflow ?? 'Open workflow'}{report.runId ? ' · open run' : ''}</Link></dd></div> : null}
+      <div><dt>First seen</dt><dd><time dateTime={report.createdAt}>{when(report.createdAt)}</time></dd></div>
+      {report.resolution ? <div><dt>{report.status === report.resolution.status ? 'Closed' : 'Was closed'}</dt>
+        <dd>{statusLabels[report.resolution.status]}, <time dateTime={report.resolution.closedAt}>{when(report.resolution.closedAt)}</time>
+</dd></div> : null}
+      {report.resolution?.note ? <div><dt>Note</dt><dd>{report.resolution.note}</dd></div> : null}
     </dl>
   </div>
 }
@@ -100,18 +101,13 @@ export function BugReportDialog({ reportId, returnFocusRef, onClose }: {
     onSuccess: () => { if (next.kind === 'close') clearCloseDraft() },
   })
   return <Dialog open title={value?.title ?? 'Bug report'} size="lg" busy={update.isPending}
-    returnFocusRef={returnFocusRef}
+    returnFocusRef={returnFocusRef} className="bug-report-dialog"
     dismissible={!uncertain} onOpenChange={open => { if (!open) requestClose() }}
-    footer={<Button disabled={locked} onClick={requestClose}>Close report</Button>}>
-    {report.isPending && <LoadingState label="Reading bug report…" />}
-    {report.isError && <Alert live tone="danger" title={report.error.message}
-      action={<Button disabled={update.isPending} onClick={() => void refresh()}>Refresh report</Button>} />}
-    {value && <>
-      <ReportContent report={value} />
-      <Select label="Report status"
-        labelHint={active ? <InfoHint label="Report status">Status changes save immediately.</InfoHint> : undefined}
-        hint={active ? undefined : 'Choose Open or Triaged to reopen this report.'}
-        value={value.status}
+    footer={value ? <form className="bug-report-actions" aria-label="Report status" onSubmit={event => {
+      event.preventDefault()
+      if (active) change(closingChange(value))
+    }}>
+      <Select label="Status" value={value.status}
         options={active ? activeStatusOptions
           : [{ value: value.status, label: statusLabels[value.status], disabled: true }, ...activeStatusOptions]}
         disabled={editDisabled}
@@ -121,32 +117,24 @@ export function BugReportDialog({ reportId, returnFocusRef, onClose }: {
           expectedRevision: value.revision,
           status: BugReportActiveStatusSchema.parse(event.target.value),
         } })} />
-      {active && <form className="bug-report-close" aria-label="Close and archive report" onSubmit={event => {
-        event.preventDefault()
-        change(closingChange(value))
-      }}>
+      {active ? <>
         <Select label="Close as" value={closeAs} options={closedStatusOptions} disabled={editDisabled}
           onChange={event => setCloseAs(BugReportClosedStatusSchema.parse(event.target.value))} />
-        {closeAs === 'duplicate' && <TextField label="Duplicate of report ID" required value={duplicateOfId}
-          disabled={editDisabled} onChange={event => setDuplicateOfId(event.target.value)} />}
-        <TextField label="Closing note" labelHint={<InfoHint label="Closing note">Optional, such as the release or commit.</InfoHint>} maxLength={1000}
+        {closeAs === 'duplicate' ? <TextField label="Duplicate of" placeholder="Report ID" required value={duplicateOfId}
+          disabled={editDisabled} onChange={event => setDuplicateOfId(event.target.value)} /> : null}
+        <TextField label="Note" placeholder="Optional, e.g. the release" maxLength={1000}
           value={note} disabled={editDisabled} onChange={event => setNote(event.target.value)} />
-        <Button type="submit" disabled={editDisabled || invalidDuplicate}>
-          Close and archive
-        </Button>
-      </form>}
-    </>}
-    {update.isPending && <p role="status">Saving status…</p>}
-    {update.isSuccess && !report.isError && <p role="status">
-      {update.variables?.kind === 'close' ? 'Report closed and archived.' : 'Status saved.'}</p>}
-    {update.isError && <Alert live tone="danger" title={update.error.message}>
-      {updateDenied && <p>Your access does not allow status changes.</p>}
-      {uncertain ? <>
-        <p>The save is unconfirmed. Retry the same change before leaving.</p>
-        <Button disabled={denied || updateDenied} onClick={() => update.variables && change(update.variables)}>
-          Retry status save
-        </Button>
-      </> : <Button disabled={report.isFetching} onClick={() => void refresh()}>Refresh report</Button>}
-    </Alert>}
+        <Button type="submit" variant="primary" disabled={editDisabled || invalidDuplicate} loading={update.isPending && update.variables?.kind === 'close'}>Mark closed</Button>
+      </> : null}
+    </form> : undefined}>
+    {report.isPending ? <LoadingState label="Loading report…" rows={3} /> : null}
+    {report.isError ? <Alert live tone="danger" title={ApiError.is(report.error) && report.error.status === 404 ? 'This report no longer exists.' : 'Couldn\u2019t load this report.'}
+      action={<Button size="sm" disabled={update.isPending} onClick={() => void refresh()}>Retry</Button>} /> : null}
+    {value ? <ReportContent report={value} /> : null}
+    {update.isSuccess && !report.isError ? <p role="status" className="bug-report-saved">
+      {update.variables?.kind === 'close' ? 'Report closed.' : 'Status saved.'}</p> : null}
+    {update.isError ? <Alert live tone="danger" title={updateDenied ? 'You can\u2019t change this report.' : uncertain ? 'Not confirmed yet.' : 'Couldn\u2019t save.'}
+      action={uncertain ? <Button size="sm" disabled={denied || updateDenied} onClick={() => update.variables && change(update.variables)}>Retry</Button>
+        : <Button size="sm" disabled={report.isFetching && !report.isRefetching} onClick={() => void refresh()}>Refresh</Button>} /> : null}
   </Dialog>
 }

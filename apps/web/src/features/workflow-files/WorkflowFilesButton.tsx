@@ -4,7 +4,7 @@ import { useStore } from 'zustand'
 import { Download, Files } from 'lucide-react'
 import type { FileWithRevision, PermanentFileScope } from '@foreman-code/contracts/files'
 import { Button, IconButton } from '../../shared/ui/nocturne/Button'
-import { Dialog, Tooltip } from '../../shared/ui/nocturne/Overlays'
+import { ConfirmDialog, Tooltip } from '../../shared/ui/nocturne/Overlays'
 import { Icon } from '../../shared/ui/nocturne/Icon'
 import { TextField } from '../../shared/ui/nocturne/Fields'
 import { TrashIconButton } from '../../shared/ui/ResourceCard'
@@ -39,7 +39,6 @@ function ScopedWorkflowFilesButton({ workspaceId, workflowId, readOnly = false, 
   const trigger = useRef<HTMLButtonElement>(null)
   const surface = useRef<HTMLDivElement>(null)
   const picker = useRef<HTMLInputElement>(null)
-  const cancelRemoval = useRef<HTMLButtonElement>(null)
   const id = useId()
   useFloatingSurface(open, trigger, surface, 340, 'end')
 
@@ -124,19 +123,16 @@ function ScopedWorkflowFilesButton({ workspaceId, workflowId, readOnly = false, 
         </section>}
       {files.download.isError && <p className="workflow-files-error" role="alert" title={errorDetail(files.download.error)}>Download failed</p>}
     </div>}
-    {removal && <Dialog open onOpenChange={(next) => { if (!next) setRemoval(null) }} title="Remove file?"
-      role="alertdialog" size="sm" busy={files.remove.isPending} initialFocusRef={cancelRemoval} returnFocusRef={trigger}
-      className="workflow-files-confirm" footer={<>
-        <Button ref={cancelRemoval} size="sm" disabled={files.remove.isPending} onClick={() => setRemoval(null)}>Cancel</Button>
-        <Button size="sm" variant="danger" loading={files.remove.isPending} disabled={readOnly} onClick={() => {
-          files.remove.mutate({ commandId: removal.commandId,
-            ref: { fileId: removal.row.file.fileId, revisionId: removal.row.revision.revisionId } },
-          { onSuccess: () => setRemoval(null) })
-        }}>Remove</Button>
-      </>}>
-      <p className="workflow-files-confirm-name">{removal.row.revision.filename}</p>
-      {files.remove.isError && <p className="workflow-files-error" role="alert" title={errorDetail(files.remove.error)}>Remove failed</p>}
-    </Dialog>}
+    {removal && <ConfirmDialog open onOpenChange={(next) => { if (!next) setRemoval(null) }}
+      title={`Remove ${removal.row.revision.filename}?`} description="It’s removed from this workflow’s files."
+      pending={files.remove.isPending} confirmLabel="Remove"
+      error={readOnly ? 'Files can’t be changed while you view a run.' : files.remove.isError ? 'Couldn’t remove the file.' : undefined}
+      onConfirm={() => {
+        if (readOnly) return
+        files.remove.mutate({ commandId: removal.commandId,
+          ref: { fileId: removal.row.file.fileId, revisionId: removal.row.revision.revisionId } },
+        { onSuccess: () => setRemoval(null) })
+      }} />}
   </div>
 }
 
@@ -152,7 +148,7 @@ function FileGroup({ query, scope, files, label, emptyLabel = 'No files', onRemo
   return <>
     {query.isPending && <p className="workflow-files-status" role="status">Loading…</p>}
     {query.isError && <div className="workflow-files-status"><p role="alert">Couldn’t load</p>
-      <IconButton size="sm" variant="ghost" label={`Retry ${label} files`} disabled={query.isFetching}
+      <IconButton size="sm" variant="ghost" label={`Retry ${label} files`} disabled={query.isFetching && !query.isRefetching}
         onClick={() => { void query.refetch() }}><Icon name="refresh" size={16} /></IconButton>
     </div>}
     {!query.isPending && !query.isError && rows.length === 0 && !files.upload.isPending && <p className="workflow-files-status workflow-files-empty">{emptyLabel}</p>}
@@ -175,7 +171,7 @@ function FileGroup({ query, scope, files, label, emptyLabel = 'No files', onRemo
       })}
     </ul>
     {query.hasNextPage && <Button size="sm" variant="ghost" aria-label={`More ${label} files`}
-      loading={query.isFetchingNextPage} disabled={query.isFetching}
+      loading={query.isFetchingNextPage} disabled={query.isFetching && !query.isRefetching}
       onClick={() => { void query.fetchNextPage() }}>More</Button>}
   </>
 }

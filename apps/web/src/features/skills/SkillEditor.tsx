@@ -183,8 +183,8 @@ export function SkillEditor({ saved, workspaceOptions, initialWorkspace, onSaved
         leading={<Icon name="check" size={14} />}>{uncertain ? 'Retry save' : base ? 'Save new version' : 'Create skill'}</Button>
     </footer>}
     <Dialog open={Boolean(imported)} onOpenChange={(open) => { if (!open) setImported(undefined) }} title="Use imported instructions?" size="lg"
-      // InfoHint: Imported text replaces the draft; save separately to publish it.
-      footer={<div className="n-actions"><Button onClick={() => setImported(undefined)}>Cancel</Button>
+      description="This replaces the instructions in your draft. Nothing is saved until you save."
+      footer={<div className="n-actions"><Button variant="ghost" onClick={() => setImported(undefined)}>Cancel</Button>
         <Button variant="primary" onClick={() => {
           if (imported) change({ instructions: imported.text, ...(draft.name.trim() ? {} : { name: imported.name }) })
           setImported(undefined); setView('write')

@@ -38,8 +38,9 @@ export function projectRunBoard(snapshot: AvailableRunBoardSnapshot, activity?: 
     initialWidth: size.width, initialHeight: size.height,
     style: { ...size }, data: { snapshot: node,
       ...(identities.has(node.id) ? { role: agentProductRoleLabel(identities.get(node.id)!.productRole) } : {}),
-      ...(saved?.hierarchy ? { reportingParent: node.id === saved.hierarchy.masterNodeId ? 'None (Master)'
-        : names.get(saved.hierarchy.parents.find(member => member.workflowNodeId === node.id)?.parentNodeId ?? '') ?? 'Unavailable' } : {}),
+      // The Master reports to no one, so it gets no "Reports to" caption.
+      ...(saved?.hierarchy && node.id !== saved.hierarchy.masterNodeId ? { reportingParent:
+        names.get(saved.hierarchy.parents.find(member => member.workflowNodeId === node.id)?.parentNodeId ?? '') ?? 'Unavailable' } : {}),
       ...(cis.has(node.id) ? { ci: cis.get(node.id)! } : {}) },
     draggable: false, connectable: false, selectable: false, deletable: false, focusable: true,
     ariaRole: 'group', ariaLabel: `${node.name}, saved ${node.kind==='job'?'job':'agent'}, read only`,

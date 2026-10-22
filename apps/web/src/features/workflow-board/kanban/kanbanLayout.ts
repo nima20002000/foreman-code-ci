@@ -16,7 +16,7 @@ export function useKanbanLayout(workspaceId: string, workflowId: string, enabled
   const cache = useQueryClient()
   const queryKey = kanbanLayoutKey(workspaceId, workflowId)
   const mutationKey = ['workflow-kanban-layout-save', workspaceId, workflowId]
-  const query = useQuery({ queryKey, retry: false, enabled,
+  const query = useQuery({ queryKey, enabled,
     queryFn: ({ signal }) => apiClient.request(path(workspaceId, workflowId), WorkflowKanbanLayoutReadSchema, { signal }) })
   const mutation = useMutation({
     mutationKey, scope: { id: mutationKey.join(':') },
@@ -30,5 +30,5 @@ export function useKanbanLayout(workspaceId: string, workflowId: string, enabled
       if (error || cache.isMutating({ mutationKey }) === 1) void cache.invalidateQueries({ queryKey })
     },
   })
-  return { layout: query.data?.layout, readError: query.error, saveError: mutation.error, save: mutation.mutate }
+  return { layout: query.data?.layout, read: query.isSuccess || query.isError, readError: query.error, saveError: mutation.error, save: mutation.mutate }
 }

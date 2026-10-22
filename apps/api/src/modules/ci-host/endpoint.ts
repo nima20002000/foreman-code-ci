@@ -197,7 +197,7 @@ export class ProductionHostCiEndpoint implements HostCiEndpoint {
       const cloud = this.clouds.find(value => value.provider.id === computer.hostRef.provider
         && value.provider.account?.owner.toLowerCase() === computer.hostRef.account?.toLowerCase()
         && (value.provider.circleAccountId ?? 'default') === (computer.hostRef.circleAccountId ?? 'default'))
-      if (!cloud) throw new Error('This cloud CI service is off.')
+      if (!cloud) throw new DomainError('CI_CLOUD_OFF', 'This cloud CI service is off.', 409)
       return cloud.handle(request)
     }
     const devices = this.devices()

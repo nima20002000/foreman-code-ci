@@ -19,6 +19,7 @@ import { useApprovalInboxStore } from '../../approvals'
 import { raiseFloating, useFloatingZ } from '../../../shared/ui/floatingStack'
 import { RepeatEditor } from '../../repeats/RepeatEditor'
 import type { useDraftEditorController } from './useDraftEditorController'
+import { dragByHeader } from '../../../shared/ui/floatingWindow'
 
 const kindName = (kind: 'execution' | 'approval') => kind === 'approval' ? 'Approval' : 'Handoff'
 
@@ -28,13 +29,13 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
   updateFailures?: readonly BoardUpdateFailure[]
   controller: ReturnType<typeof useDraftEditorController>
 }) {
-  const { graph, context, board, editIntent, undoScope, core, preflight, pendingStart,
+  const { graph, context, board, editIntent, undoScope, core, preflight, pendingStart, changedAgents,
     reloading, stopAndSave, discardChanges, reload, inspectLatest, startMutation, starting, start, recoverStart,
     workspace, managedWorkflow, pendingApprovals, agents, hints, requestSave, historyAction, openAgent, panels,
     scheduleWrite, historyPending } = controller
   const { panel, settingsPanel, workflowName, openSaveField, openNode, setOpenNode, confirm, setConfirm, runAfterSave,
     message, setGeometryPending, canvas, presentation, change, geometry, report, inspect, openPanel, prepare } = core
-  const { dirty, needsSave, canUndo, canRedo, startReloadRequired, startDisabled, startReason, saveBusy,
+  const { dirty, needsSave, settingsChanged, canUndo, canRedo, startReloadRequired, startDisabled, startReason, saveBusy,
     affectedRuns, affectedWorkflows, stopBlocked, errorText, locationMessage, panelTitle } = controller.status
   const repeatOpen = panel === 'repeat', settingsOpen = !!panel && panel !== 'repeat'
   const repeatZ = useFloatingZ('board-repeat', repeatOpen), settingsZ = useFloatingZ('board-settings', settingsOpen)
@@ -45,7 +46,7 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
         semanticLocked={edit.busy || reloading || editIntent.locked || starting || !!edit.pending || !!pendingStart}
         change={change} geometry={geometry} pending={setGeometryPending} report={report} inspect={inspect}
         removalDisabled={edit.busy || reloading || editIntent.locked}
-        open={openNode} setOpen={setOpenNode} panels={panels} />
+        open={openNode} setOpen={setOpenNode} panels={panels} changedAgentIds={changedAgents} />
       <header className="board-topbar">
         <div className="board-title">
           <WorkflowName ref={workflowName} name={graph.name} disabled={saveBusy || starting || editIntent.locked}
@@ -128,18 +129,20 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
         {editIntent.mutation.error ? <WorkflowSaveError error={editIntent.mutation.error} pending={editIntent.outboxPending || !!editIntent.intent && !['saved', 'discarded'].includes(editIntent.intent.state)} openField={openSaveField} /> : null}
         {editIntent.locked && !editIntent.sameDisplayedPayload ? <BoardNotice tone="warning" title="You made more edits after saving started.">They stay here and won’t be overwritten.</BoardNotice> : null}
         {editIntent.query.data?.intent && !['saved', 'discarded'].includes(editIntent.query.data.intent.state) ? <EditIntentStatus data={editIntent.query.data} /> : null}
-        {errorText ? <BoardNotice noticeKey={errorText} tone="danger" live title={edit.error?.uncertain ? 'We couldn’t confirm whether that worked.' : 'Something went wrong.'}>
+        {errorText ? <BoardNotice noticeKey={errorText} tone="danger" live title={edit.error?.uncertain ? 'We couldn’t confirm whether that worked.' : 'Something went wrong.'}
+          action={settingsChanged && !pendingStart ? <Button size="sm" disabled={startDisabled}
+            onClick={() => void prepare(() => startMutation.mutateAsync({ saveFirst: true })).catch(report)}>Save and run</Button> : undefined}>
           {errorText}{edit.error?.issues?.length ? <ul>{edit.error.issues.map((issue, i) => <li key={i}>{issue.message}</li>)}</ul> : null}
         </BoardNotice> : null}
       </div>
-      <aside className="board-side-panel" hidden={!repeatOpen} style={repeatOpen ? { zIndex: repeatZ } : { display: 'none' }} aria-label="Business repeats"
+      <aside className="board-side-panel" data-floating-window hidden={!repeatOpen} style={repeatOpen ? { zIndex: repeatZ } : { display: 'none' }} aria-label="Business repeats"
         onPointerDownCapture={() => raiseFloating('board-repeat')} onFocusCapture={() => raiseFloating('board-repeat')}>
-        <header><h2>Business repeats</h2><IconButton variant="ghost" label="Close panel" onClick={() => openPanel(null)}><Icon name="close" size={16} /></IconButton></header>
+        <header onPointerDown={dragByHeader}><h2>Business repeats</h2><IconButton variant="ghost" label="Close panel" onClick={() => openPanel(null)}><Icon name="close" size={16} /></IconButton></header>
         <RepeatEditor graph={graph} change={change} disabled={edit.busy || reloading || editIntent.locked || !!edit.pending || !!pendingStart} />
       </aside>
-      {settingsOpen ? <aside ref={settingsPanel} className="board-side-panel" aria-label={panelTitle || 'Board controls'} style={{ zIndex: settingsZ }}
+      {settingsOpen ? <aside ref={settingsPanel} className="board-side-panel board-settings-panel" data-floating-window aria-label={panelTitle || 'Board controls'} style={{ zIndex: settingsZ }}
         onPointerDownCapture={() => raiseFloating('board-settings')} onFocusCapture={() => raiseFloating('board-settings')}>
-        <header><h2>{panelTitle}</h2><IconButton variant="ghost" label="Close panel" onClick={() => openPanel(null)}><Icon name="close" size={16} /></IconButton></header>
+        <header onPointerDown={dragByHeader}><h2>{panelTitle}</h2><IconButton variant="ghost" label="Close panel" onClick={() => openPanel(null)}><Icon name="close" size={16} /></IconButton></header>
         <fieldset disabled={edit.busy || reloading || editIntent.locked}>
           {panel === 'workflow' ? <WorkflowSettings draftKey={draftKey} edit={edit} change={change} report={report}
             defaultMs={preflight.data?.capabilities.agentActiveTimeBudget.defaultMs}
@@ -171,6 +174,6 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
       description="Your unsaved draft is kept separately for comparison. A fresh editor opens the latest saved workflow."
       confirmLabel="Inspect latest" onConfirm={() => { setConfirm(undefined); void inspectLatest() }} />
     <RemoveHierarchyNodeDialog draftKey={draftKey} edit={edit} pending={reloading || saveBusy || starting || editIntent.locked}
-      report={report} inspectLatest={inspectLatest} />
+      report={report} />
   </section>
 }

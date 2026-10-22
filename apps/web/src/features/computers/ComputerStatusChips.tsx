@@ -5,8 +5,11 @@ import './computerStatusChips.css'
 export function ComputerStatusChips({ chips, computer, onSignIn }: {
   chips: StatusChip[]; computer: string; onSignIn(tool: string): void
 }) {
+  // Unknown states say nothing yet: show one quiet line instead of a chip per tool.
+  const known = chips.filter(chip => chip.state !== 'unknown')
+  if (!known.length) return <p className="computer-status-pending">Checking tools…</p>
   return <ul className="computer-status-chips" aria-label={`Status of ${computer}`}>
-    {chips.map(chip => <li key={chip.id}>
+    {known.map(chip => <li key={chip.id}>
       <Tooltip content={chip.detail}>
         <span className="computer-status-chip" tabIndex={0} role="img" data-state={chip.state} data-chip={chip.id}
           aria-label={`${chip.label}: ${chip.text}`}>

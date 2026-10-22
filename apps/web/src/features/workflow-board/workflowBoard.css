@@ -97,11 +97,13 @@
 .board-notices .n-icon-button.n-button--sm { width: 24px; height: 24px; min-width: 24px; padding: 3px; }
 .board-notices ul { margin: var(--space-1) 0 0; padding-left: var(--space-4); }
 .board-side-panel {
-  position: absolute; top: 72px; right: var(--space-4); bottom: var(--space-4); width: min(24rem, calc(100% - 2rem));
+  /* A small floating window (see shared/ui/floatingWindow.ts): dragged by its header, resized from its corner. */
+  position: absolute; top: 72px; right: var(--space-4); width: min(22rem, calc(100% - 2rem)); height: min(32rem, calc(100% - 96px));
+  min-width: 16rem; min-height: 12rem; max-height: calc(100% - 24px); resize: both;
   display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-lg);
   background: var(--surface-raised); box-shadow: var(--shadow-popover);
 }
-.board-side-panel > header { display: flex; align-items: center; justify-content: space-between; padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); }
+.board-side-panel > header { cursor: move; user-select: none; display: flex; align-items: center; justify-content: space-between; padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); }
 .board-side-panel > header h2 { margin: 0; color: var(--text-strong); font: var(--type-heading); }
 .board-side-panel > fieldset { display: grid; align-content: start; gap: var(--space-6); min-width: 0; margin: 0; padding: var(--space-4); overflow: auto; border: 0; }
 .board-keyboard-list { position: absolute; z-index: 8; bottom: var(--space-4); left: 64px; display: flex; flex-wrap: wrap; gap: var(--space-1);
@@ -190,3 +192,9 @@
 .board-loading .board-loading-nodes { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: var(--space-6); padding-top: 4rem; }
 .board-loading .board-control-cluster { display: flex; }
 .workflow-group-chat-dialog .workflow-chat-panel > header > h2 { display: none; }
+/* One tab row for the selected agent plus Browser; the panel body is the only scroller. */
+.workflow-floating-panel > nav.workflow-panel-tabs { gap: 2px; padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--border); }
+.workflow-panel-tabs > .n-button:last-child { margin-left: auto; }
+.workflow-floating-panel-body .agent-settings-panel-embedded { flex-shrink: 0; max-height: none; }
+.agent-settings-panel-embedded :is(.agent-settings-general, .agent-settings-advanced-view) { overflow: visible; }
+.workflow-panel-tabs > .n-button[aria-pressed='true'] { background: var(--surface-hover); color: var(--text-strong); }

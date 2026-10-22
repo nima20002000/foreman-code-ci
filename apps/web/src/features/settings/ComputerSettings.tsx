@@ -2,13 +2,12 @@ import { create } from 'zustand'
 import { sessionGeneration } from '../../shared/api/sessionBoundary'
 import { ComputerCards } from '../computers/ComputerCards'
 import { useRegisteredComputersQuery, useSelectedMainQuery } from '../../shared/api/computerSettings'
-import { Alert, Button, LoadingState } from '../../shared/ui/nocturne'
+import { Alert, Button, LoadingState, SettingsSection } from '../../shared/ui/nocturne'
 import { ComputerRevokeButton } from './ComputerRevokeButton'
 import { ComputerPairingForm } from './ComputerPairingForm'
 import { ConnectionSetupStatus } from './DeviceSetupGuide'
 import { CircleCiSummaryCard } from './CircleCiSummaryCard'
 import './computerSettings.css'
-import { Link } from '@tanstack/react-router'
 
 /** Which main's Add computer panel is open, keyed by session generation and main so a new session or main starts closed. */
 const useAddPanel = create<{ scope?: string; toggle(scope: string): void }>(set => ({
@@ -25,11 +24,11 @@ export function ComputerSettings({ deviceId, onSelectComputer }: { deviceId?: st
   const addScope = useAddPanel(state => state.scope)
   const toggleAdd = useAddPanel(state => state.toggle)
   const adding = currentMain !== undefined && addScope === `${sessionGeneration()}:${currentMain.mainId}`
-  const readFailure = main.isError ? <><Alert tone="danger" title="Main PC could not be read." />
-    <Button onClick={() => void main.refetch()}>Retry Main PC</Button></>
-    : computers.isError ? <><Alert tone="danger" title="Computers could not be read." />
-      <Button onClick={() => void computers.refetch()}>Retry computers</Button></> : null
-  const loading = !currentMain ? <LoadingState label="Loading Main PC…" /> : computers.isPending ? <LoadingState label="Loading computers…" /> : null
+  const readFailure = main.isError ? <Alert tone="danger" title="Couldn\u2019t read the Main PC."
+    action={<Button size="sm" onClick={() => void main.refetch()}>Retry</Button>} />
+    : computers.isError ? <Alert tone="danger" title="Couldn\u2019t read computers."
+      action={<Button size="sm" onClick={() => void computers.refetch()}>Retry</Button>} /> : null
+  const loading = !currentMain || computers.isPending ? <LoadingState label="Loading computers…" rows={2} /> : null
   return <section className="settings-editor-page computers-page" aria-label={deviceId ? 'Computer details' : 'Computers'}>
     <header className="computers-header"><div className="settings-experience-heading"><h1>{deviceId ? 'Computer details' : 'Computers'}</h1></div>
       {currentMain && !deviceId ? <Button variant="primary" aria-expanded={adding} aria-controls="computer-add-panel" onClick={() => toggleAdd(`${sessionGeneration()}:${currentMain.mainId}`)}>{adding ? 'Close' : 'Add computer'}</Button> : null}</header>
@@ -37,15 +36,14 @@ export function ComputerSettings({ deviceId, onSelectComputer }: { deviceId?: st
     {readFailure ?? loading ?? (deviceId
       ? registration ? <>
         <ComputerCards mainId={currentMain!.mainId} devices={devices} only={registration.deviceId} />
-        {registration.status !== 'revoked' ? <ConnectionSetupStatus registration={registration} /> : null}
-        <section className="computer-action-card" aria-label="Remove this computer">
-          <h2>Remove this computer</h2>
+        {registration.status !== 'revoked' ? <SettingsSection title="Connection" description="How the app sends work to this computer.">
+          <ConnectionSetupStatus registration={registration} />
+        </SettingsSection> : null}
+        <SettingsSection title="Remove" description="Stop this computer from connecting.">
           <ComputerRevokeButton key={`${registration.mainId}:${registration.deviceId}`} registration={registration} />
-        </section>
-      </> : <Alert tone="warning" title="This device is not registered with the selected main." />
+        </SettingsSection>
+      </> : <Alert tone="warning" title="This computer isn't paired with this Main PC." />
       : <ComputerCards mainId={currentMain!.mainId} devices={devices} onSelectComputer={onSelectComputer} />)}
-    {!deviceId && !readFailure && !loading && currentMain
-      ? <Link to="/settings/browser-profiles" search={{ mainId: currentMain.mainId }}>Browser profiles</Link> : null}
     {!deviceId && <CircleCiSummaryCard />}
   </section>
 }

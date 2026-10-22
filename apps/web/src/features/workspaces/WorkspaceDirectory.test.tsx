@@ -41,7 +41,7 @@ describe('WorkspaceDirectory', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Open actions for Website' }))
     await user.click(screen.getByRole('button', { name: 'Remove workspace' }))
-    await user.click(screen.getByRole('button', { name: 'Confirm removal' }))
+    await user.click(screen.getByRole('button', { name: 'Remove' }))
 
     expect(await screen.findByTestId('workspace-directory-empty')).toHaveTextContent(
       'Use New workspace in the navigation',

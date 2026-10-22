@@ -77,7 +77,7 @@ describe('Settings → Skills library', () => {
     await act(async () => { response.resolve(undefined) })
     expect(await screen.findByText('Reviewer')).toBeVisible()
     expect(screen.getByText('Checks diffs')).toBeVisible()
-    expect(screen.getByText('Active · v1')).toBeVisible()
+    expect(screen.getByText('v1')).toBeVisible()
   })
 
   it('separates a true empty library, an empty search, and a load failure with retry', async () => {
@@ -149,7 +149,7 @@ describe('Skills simplified screens', () => {
     wrap(<Library />)
     const row = await screen.findByRole('link', { name: /Review guide/ })
     expect(await within(row).findByText('Reviewer')).toBeVisible()
-    expect(within(row).getByText('Active · v1')).toBeVisible()
+    expect(within(row).getByText('v1')).toBeVisible()
     expect(within(row).queryByText('Writer')).toBeNull()
     expect(row).toHaveAttribute('href', `/settings/skills/workspace-a/${skill.skillId}`)
     expect(screen.getAllByRole('link', { name: 'Add skill' })).toHaveLength(1)
@@ -164,7 +164,7 @@ describe('Skills simplified screens', () => {
     wrap(<Library />)
     const row = await screen.findByRole('listitem')
     expect(await within(row).findByText('Assignments unavailable')).toBeVisible()
-    expect(within(row).queryByText('No Agents')).toBeNull()
+    expect(within(row).queryByText('Not assigned')).toBeNull()
     await user.click(within(row).getByRole('button', { name: 'Retry assignments' }))
     expect(await within(row).findByText('Reviewer')).toBeVisible()
   })

@@ -1,0 +1,51 @@
+/* Sidebar look: a quiet tree. Rows are flat (no boxes or dashed buttons), the active row is marked by an accent
+   bar, add actions read as muted text rows, and hover actions overlay the row instead of reserving its width. */
+.workspace-shell:not(.workspace-shell-navigation-collapsed) .shell-sidebar { gap: 18px; padding: 18px 10px 14px; }
+.workspace-shell .sidebar-brand { padding: 0 8px; }
+.workspace-shell .sidebar-brand-name { font-size: 15px; font-weight: 650; letter-spacing: -0.01em; }
+
+.workspace-shell .shell-sidebar .nav-item {
+  min-height: 30px; padding: 5px 8px; border: 0; border-radius: 6px;
+  color: var(--text-muted); font-size: 13px; font-weight: 450;
+}
+.workspace-shell .shell-sidebar .nav-item:hover:not(:disabled):not(.nav-section-label) { color: var(--text); background: color-mix(in srgb, var(--surface-raised) 70%, transparent); }
+.workspace-shell .shell-sidebar .nav-item-active {
+  color: var(--text-strong); background: var(--surface-selected); box-shadow: inset 2px 0 0 var(--accent); font-weight: 550;
+}
+.workspace-shell .shell-sidebar .nav-item-icon { opacity: .8; }
+.workspace-shell .shell-sidebar .nav-item-label { max-width: none; }
+.workspace-shell .shell-navigation .nav-submenu { padding-left: 12px; }
+.workspace-shell .shell-navigation .nav-submenu::before { left: 7px; background: color-mix(in srgb, var(--color-border) 70%, transparent); }
+
+/* Add actions: text rows, not outlined or dashed buttons. */
+.workspace-shell .shell-navigation .workspace-navigation-add,
+.workspace-shell .shell-navigation .workflow-navigation-add {
+  display: flex; width: 100%; min-height: 28px; justify-content: flex-start; gap: 8px; padding: 4px 8px;
+  border: 0; border-radius: 6px; background: transparent; box-shadow: none;
+  color: var(--text-faint); font-size: 12.5px; font-weight: 500;
+}
+.workspace-shell .shell-navigation .workspace-navigation-add:hover:not(:disabled),
+.workspace-shell .shell-navigation .workflow-navigation-add:hover:not(:disabled) { color: var(--text); background: color-mix(in srgb, var(--surface-raised) 70%, transparent); }
+
+/* Workflow rows use their full width; move/remove controls overlay the right edge on hover. */
+.workspace-shell .workflow-navigation-row .workflow-navigation-item,
+.workspace-shell .workflow-navigation-row-reorderable .workflow-navigation-item { padding-right: 8px; }
+.workspace-shell .workflow-navigation-item .nav-item-label { flex: 1 1 auto; }
+.workspace-shell .workflow-navigation-item .workflow-draft-badge { background: transparent; color: var(--text-faint); font-size: 11px; padding: 0; }
+.workspace-shell .workflow-navigation-move,
+.workspace-shell .workflow-navigation-row .workflow-navigation-remove { top: 50%; transform: translateY(-50%); }
+.workspace-shell .workflow-navigation-row:is(:hover, :focus-within) :is(.workflow-navigation-move, .workflow-navigation-remove) {
+  background: var(--color-sidebar); border-radius: 6px;
+}
+.workspace-shell .workflow-navigation-row:is(:hover, :focus-within) .workflow-navigation-item .workflow-draft-badge { visibility: hidden; }
+
+/* Footer: one calm row of icons above a hairline. */
+.workspace-shell:not(.workspace-shell-navigation-collapsed) .sidebar-footer { padding-top: 12px; border-top: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent); }
+.workspace-shell .sidebar-settings-link, .workspace-shell .sidebar-footer .theme-toggle { width: 2.25rem; height: 2.25rem; flex-basis: 2.25rem; border-radius: 8px; }
+
+/* Only the deepest active item is marked; its ancestors just read as the path. */
+.workspace-shell .shell-navigation li:has(li .nav-item-active) > .nav-item-row > .nav-item-active { box-shadow: none; color: var(--text); font-weight: 500; }
+/* Row controls show on pointer hover or keyboard focus, on the row's own background. */
+.workspace-shell .workflow-navigation-row:not(:hover):not(:has(:focus-visible)) :is(.workflow-navigation-move, .workflow-navigation-remove) { opacity: 0; pointer-events: none; }
+.workspace-shell .workflow-navigation-row:not(:hover):not(:has(:focus-visible)) .workflow-draft-badge { visibility: visible; }
+.workspace-shell .workflow-navigation-row:has(.nav-item-active) :is(.workflow-navigation-move, .workflow-navigation-remove) { background: var(--surface-selected); }

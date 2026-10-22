@@ -60,7 +60,7 @@ export function useApiReconnect(): boolean {
   useQuery({
     queryKey: ['workbench', 'api-reachability', sessionGeneration()],
     enabled: (recovering || !online) && !sessionIsSwitching(),
-    networkMode: 'always', retry: false, staleTime: 0, gcTime: 0,
+    networkMode: 'always', staleTime: 0, gcTime: 0,
     refetchInterval: reconnectIntervalMs, refetchIntervalInBackground: true,
     refetchOnReconnect: false, meta: { refetchOnApiReconnect: false },
     queryFn: async ({ signal }) => {

@@ -190,7 +190,7 @@ function NewWorkspaceControl() {
         initialFocusRef={nameInputRef}
         size="sm"
         footer={<>
-          <Button onClick={closeCreateDialog}>Close</Button>
+          <Button onClick={closeCreateDialog}>Cancel</Button>
           <Button
             variant="primary"
             onClick={() => void createNewWorkspace()}
@@ -225,14 +225,14 @@ function NewWorkspaceControl() {
           <WorkspaceFolderPicker value={parentPath} label="Location" disabled={createManagedWorkspace.isPending || uncertain} onSelect={(path) => {
             touched.current.parentPath = true; setParentPath(path)
           }} />
-          {defaults.isPending ? <p role="status">Loading workspace defaults…</p> : null}
-          {defaults.isError ? <p role="status">Defaults could not be loaded. You can still enter your own values. <Button size="sm" onClick={() => void defaults.refetch()}>Retry defaults</Button></p> : null}
+          {defaults.isPending ? <p role="status" className="n-field-hint">Loading the default location…</p> : null}
+          {defaults.isError ? <p role="status" className="n-field-hint">Couldn’t load the default location. <Button size="sm" variant="ghost" onClick={() => void defaults.refetch()}>Try again</Button></p> : null}
           {nameError ? (
             <p id="new-workspace-name-error" className="workspace-create-error" role="alert">
               {nameError}
             </p>
           ) : null}
-          {uncertain ? <p role="status">The previous request may have succeeded. Retry Create workspace to resolve it without creating a duplicate.</p> : null}
+          {uncertain ? <p role="status" className="n-field-hint">The last attempt may have worked. Create again to check; it won’t make a duplicate.</p> : null}
         </div>
       </Dialog>
     </>
@@ -413,7 +413,8 @@ export function WorkspaceNavigation({
   workflowsContent,
   workspacePagination,
 }: WorkspaceNavigationProps) {
-  const detailsQuery = useManagedWorkspaceQuery(workspaceId)
+  // Global and overview pages pass a placeholder id; only a real workspace page reads its details.
+  const detailsQuery = useManagedWorkspaceQuery(workspaceId, !activeGlobalSection && !workspaceOverviewActive)
   const rememberWorkspace = useNavigationUiStore((state) => state.rememberWorkspace)
   const workspacesExpanded = useNavigationUiStore((state) => state.workspacesExpanded)
   const setWorkspacesExpanded = useNavigationUiStore((state) => state.setWorkspacesExpanded)

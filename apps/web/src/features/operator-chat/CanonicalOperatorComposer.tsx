@@ -38,7 +38,8 @@ export function CanonicalOperatorComposer({ conversation, attachments, sessionCo
   const reason = unavailable ?? (delivery.pendingControl ? 'Confirm the original Stop or queue control before sending.' : !delivery.online ? 'You are offline. Your draft is kept.' : pin.stale ? 'The selected turn changed. Refresh the target to send this draft.' : undefined)
   const action = deliveryAction(presentation, 'auto'), receipts = delivery.state?.receipts ?? []
   // Settled receipts are already visible as transcript messages; only ones needing attention stay listed.
-  const openReceipts = receipts.filter(receipt => receipt.state === 'queued' || receipt.state === 'unknown' || receipt.state === 'failed')
+  // A failed turn is already explained by the turn's error message above; its receipt would repeat it.
+  const openReceipts = receipts.filter(receipt => receipt.state === 'queued' || receipt.state === 'unknown')
   const controlsReason = !delivery.online ? 'You are offline. Controls are unavailable.' : undefined
   return <>
     {pin.stale ? <Button onClick={pin.refresh}>Refresh target</Button> : null}

@@ -18,39 +18,21 @@ interface SettingsFormState {
   reapply(): void
 }
 
-function ChangeList({ title, changes }: { title: string; changes: SettingsChange[] }) {
-  return <details><summary>{title} ({changes.length})</summary>
-    {changes.map((change) => <div key={change.path}><strong>{change.path}</strong>
-      <p>Before</p><pre>{JSON.stringify(change.before, null, 2) ?? '(not set)'}</pre>
-      <p>After</p><pre>{JSON.stringify(change.after, null, 2) ?? '(not set)'}</pre>
-    </div>)}
-  </details>
-}
-
-export function SettingsFormFeedback({ form, savedMessage }: {
-  form: SettingsFormState; savedMessage?: string;
-}) {
+export function SettingsFormFeedback({ form }: { form: SettingsFormState }) {
   return <>
-    {form.conflicted ? <div className="settings-form-feedback settings-defaults-conflict" role="alert">
-      <Alert tone="warning" title="These defaults changed elsewhere. Your edits are preserved.">
-        <ChangeList title="Changes to current defaults" changes={form.serverChanges} />
-        <ChangeList title="Your edits" changes={form.localChanges} />
-        <p>Reapplying keeps your changed fields, including whole permission-rule lists, and loads current defaults for untouched fields. Your choices win where both changed. Review them before saving.</p>
-        <div className="settings-defaults-conflict-actions">
-          <Button disabled={form.isSaving || form.uncertain} onClick={form.reapply}>Reapply my edits to current defaults</Button>
-          <Button disabled={form.isSaving || form.uncertain} onClick={form.reset}>Discard edits and load current defaults</Button>
-        </div>
-      </Alert>
+    {form.conflicted ? <div className="settings-form-feedback" role="alert">
+      <Alert tone="warning" title="These settings changed elsewhere. Your edits are kept."
+        action={<div className="settings-defaults-conflict-actions">
+          <Button size="sm" disabled={form.isSaving || form.uncertain} onClick={form.reapply}>Keep my edits</Button>
+          <Button size="sm" variant="ghost" disabled={form.isSaving || form.uncertain} onClick={form.reset}>Load latest</Button>
+        </div>} />
     </div> : null}
-    {form.uncertain ? <div className="settings-form-feedback"><Alert live tone="warning" title="The previous save may have committed. Retry resolves that exact command; edits made afterward remain unsaved. Discard and reapply are unavailable until its outcome is known." /></div> : null}
-    {form.error && !form.conflicted && !form.uncertain ? <div className="settings-form-feedback"><Alert live tone="danger" title="Changes were not saved">
+    {form.uncertain ? <div className="settings-form-feedback"><Alert live tone="warning" title="Save not confirmed. Retry to check it." /></div> : null}
+    {form.error && !form.conflicted && !form.uncertain ? <div className="settings-form-feedback"><Alert live tone="danger" title="Couldn\u2019t save">
       {form.error} Your edits are still here.
     </Alert></div> : null}
-    {form.savedRevision !== undefined && !form.error && !form.uncertain ? <div className="settings-form-feedback">
-      <Alert live tone={form.isDirty ? 'warning' : 'success'} title={form.isDirty ? 'Earlier changes saved' : 'Changes saved to the server'}>
-        {form.isDirty ? 'Newer edits are still unsaved.' : savedMessage}
-      </Alert>
-    </div> : null}
+    {form.savedRevision !== undefined && !form.error && !form.uncertain ? <p role="status" className="settings-saved-note">
+      {form.isDirty ? 'Earlier changes saved. Newer edits are still unsaved.' : 'Saved.'}</p> : null}
   </>
 }
 
@@ -91,9 +73,9 @@ export function SettingsFormActions({ form, onSave, saveLabel = 'Save defaults',
   if (!canSave) return null
   return <footer className="settings-save-actions">
     {extra ? <div className="settings-footer-options">{extra}</div> : null}
-    {form.isDirty && !form.conflicted ? <Button disabled={!form.isDirty || form.isSaving || form.uncertain} onClick={form.reset}>Discard changes</Button> : null}
-    <Button variant="primary" aria-label={saveLabel} disabled={form.isSaving || (!form.isDirty && !form.uncertain) || (form.conflicted && !form.uncertain)} onClick={save}>
-      {form.isSaving ? 'Saving…' : form.uncertain ? 'Retry original save' : 'Save'}
+    {form.isDirty && !form.conflicted ? <Button variant="ghost" disabled={!form.isDirty || form.isSaving || form.uncertain} onClick={form.reset}>Discard</Button> : null}
+    <Button variant="primary" aria-label={saveLabel} loading={form.isSaving} loadingLabel="Saving…" disabled={(!form.isDirty && !form.uncertain) || (form.conflicted && !form.uncertain)} onClick={save}>
+      {form.uncertain ? 'Retry original save' : 'Save'}
     </Button>
   </footer>
 }

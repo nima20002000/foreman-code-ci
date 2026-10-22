@@ -13,3 +13,26 @@
 .browser-profile-form p { color: var(--n-muted); }
 .browser-profile-sync { padding: 1rem; border: 1px solid var(--n-border); border-radius: var(--n-radius-lg); }
 .browser-profile-sync ul { display: grid; gap: .5rem; padding-inline-start: 1.25rem; }
+.browser-profile-note { margin: 0; color: var(--n-muted); font-size: 13px; }
+.browser-profile-origin { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .75rem; margin-top: .75rem; }
+.browser-profile-origin > .n-field:first-child { flex: 1 1 16rem; }
+.browser-profile-origin > .n-field { flex: 0 1 10rem; min-width: 0; }
+.browser-profile-origin > p { flex-basis: 100%; }
+.browser-profile-toolbar { display: flex; flex-wrap: wrap; gap: .5rem; }
+.browser-profile-computers { grid-template-columns: minmax(0, 1fr); gap: .75rem; }
+.browser-profile-computer { gap: .5rem; padding: 12px 16px; }
+.browser-profile-computer-heading { display: flex !important; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; }
+.browser-profile-computer-heading h3 { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 550; }
+.browser-profile-computer-heading small { display: block; margin-top: 2px; font-size: 12px; }
+.browser-profile-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--n-faint); }
+.browser-profile-dot[data-online='true'] { background: var(--success); }
+.browser-profile-rows > li { gap: .35rem; padding-block: .65rem; }
+.browser-profile-row-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem; }
+.browser-profile-row-heading h4 { font-size: 13px; font-weight: 550; }
+.browser-profile-row-heading small { font-size: 12px; }
+.browser-profile-skeleton { min-height: 5rem; animation: browser-profile-pulse 1.2s ease-in-out infinite alternate; }
+@keyframes browser-profile-pulse { from { opacity: .5; } to { opacity: 1; } }
+.browser-profiles-heading { display: flex !important; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1rem; }
+.browser-profiles-heading > div:first-child { flex: 1 1 18rem; min-width: 0; }
+.browser-profiles-heading p { margin: 6px 0 0; color: var(--n-muted); font-size: 13px; }
+.browser-profiles-filter { flex: 0 0 14rem; min-width: 0; }

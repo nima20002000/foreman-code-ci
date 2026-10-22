@@ -14,7 +14,7 @@ export function editMentionSpans(before: string, after: string, mentions: readon
   })
 }
 
-export function insertMention(body: string, mentions: readonly WorkflowMention[], agent: AgentIdentity,
+export function insertMention(body: string, mentions: readonly WorkflowMention[], agent: Pick<AgentIdentity, 'displayName' | 'workflowNodeId'>,
   start: number, end = start) {
   const token = `@${agent.displayName}`
   const next = body.slice(0, start) + token + ' ' + body.slice(end)
@@ -31,5 +31,6 @@ export function mentionQuery(body: string, caret: number) {
 
 export function agentLabel(agent: AgentIdentity) {
   const role = agent.productRole === 'coder' ? 'Worker' : agent.productRole === 'master' ? 'Master' : 'Orchestrator'
-  return `${agent.displayName} · ${role} · ${agent.workflowNodeId}`
+  // The name, plus the role when the name doesn't already say it. Node IDs are not for people.
+  return agent.displayName === role ? role : `${agent.displayName} · ${role}`
 }

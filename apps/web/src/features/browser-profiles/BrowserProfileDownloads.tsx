@@ -16,7 +16,7 @@ export function BrowserProfileDownloads({ authBoundary, profileId, computerId, p
   const [selected, setSelected] = useState<string | null>(null)
   const [denied, setDenied] = useState(false)
   const queryClient = useQueryClient()
-  const sessions = useQuery({ queryKey: ['browser-downloads', authBoundary, profileId, computerId], retry: false, enabled: !denied,
+  const sessions = useQuery({ queryKey: ['browser-downloads', authBoundary, profileId, computerId], enabled: !denied,
     queryFn: async ({ signal }) => {
       const values = (await port.listSetupSessions(profileId, computerId, signal)).map(value => BrowserSessionSchema.parse(value))
       if (values.some(value => value.subject || value.setupForProfileId !== profileId || value.computerId !== computerId)) {
@@ -25,7 +25,7 @@ export function BrowserProfileDownloads({ authBoundary, profileId, computerId, p
       return values
     } })
   const read = useQuery({ queryKey: ['browser-downloads', authBoundary, profileId, computerId, selected], enabled: selected !== null && !denied,
-    retry: false, queryFn: async ({ signal }) => {
+    queryFn: async ({ signal }) => {
       const value = validateBrowserRead(await port.readSession(selected!, signal))
       if (value.session.id !== selected || value.session.subject || value.session.setupForProfileId !== profileId
         || value.session.computerId !== computerId) throw new Error('The downloads session changed.')
@@ -35,22 +35,25 @@ export function BrowserProfileDownloads({ authBoundary, profileId, computerId, p
   useEffect(() => {
     if (browserAccessDenied(error)) { setDenied(true); queryClient.removeQueries({ queryKey: ['browser-downloads', authBoundary] }) }
   }, [error, queryClient, authBoundary])
-  return <Dialog open title={`Downloads · ${profileName}`} onOpenChange={open => { if (!open) onClose() }}>
-    {denied || browserAccessDenied(error) ? <p role="alert">Browser file access is unavailable. Restore access and reopen this profile.</p> : <>
-    {sessions.isPending ? <p role="status">Loading browser history…</p> : null}
-    {error ? <p role="alert">{browserErrorMessage(error)} <Button onClick={() => {
+  const stateLabel = { starting: 'Starting', ready: 'Open', paused: 'Paused', recovering: 'Reconnecting', closed: 'Closed', failed: 'Failed' } as const
+  const current = selected ?? (sessions.data?.length === 1 ? sessions.data[0]!.id : null)
+  useEffect(() => { if (current && current !== selected) setSelected(current) }, [current, selected])
+  return <Dialog open size="md" title={`Downloads · ${profileName}`} description="Files from setup sessions stay until you delete them."
+    onOpenChange={open => { if (!open) onClose() }}>
+    {denied || browserAccessDenied(error) ? <p role="alert" className="browser-profile-note">Browser files are unavailable right now.</p> : <div className="browser-profile-form">
+    {sessions.isPending ? <p role="status" className="browser-profile-note">Loading…</p> : null}
+    {error ? <p role="alert" className="browser-profile-note">{browserErrorMessage(error)} <Button size="sm" variant="ghost" onClick={() => {
       void (selected ? read.refetch() : sessions.refetch())
-    }}>Retry downloads</Button></p> : null}
-    {sessions.data?.length === 0 ? <p>No setup browser history for this profile on this computer.</p> : null}
-    <div className="browser-profile-actions">{sessions.data?.map(session => <Button key={session.id}
-      aria-pressed={session.id === selected} onClick={() => setSelected(session.id)}>
-      {session.id.slice(0, 8)} · {session.state}
-    </Button>)}</div>
-    {selected && read.isPending ? <p role="status">Loading retained files…</p> : null}
-    {read.data ? <><p>Files remain after setup closes until you delete them.</p>
-      {read.data.files.length ? <BrowserTransfers port={files} session={read.data.session} downloads={read.data.files}
+    }}>Retry</Button></p> : null}
+    {sessions.data?.length === 0 ? <p className="browser-profile-note">No downloads yet. Files appear here after you download them during setup.</p> : null}
+    {sessions.data && sessions.data.length > 1 ? <div className="browser-profile-actions" role="group" aria-label="Setup sessions">{sessions.data.map((session, index) => <Button key={session.id} size="sm"
+      variant={session.id === selected ? 'primary' : 'ghost'} aria-pressed={session.id === selected} onClick={() => setSelected(session.id)}>
+      Setup {index + 1} · {stateLabel[session.state]}
+    </Button>)}</div> : null}
+    {selected && read.isPending ? <p role="status" className="browser-profile-note">Loading files…</p> : null}
+    {read.data ? read.data.files.length ? <BrowserTransfers port={files} session={read.data.session} downloads={read.data.files}
         onDenied={() => { setDenied(true); queryClient.removeQueries({ queryKey: ['browser-downloads', authBoundary] }) }}
-        onChanged={() => { void read.refetch() }} /> : <p>No retained downloads for this session.</p>}</> : null}
-    </>}
+        onChanged={() => { void read.refetch() }} /> : <p className="browser-profile-note">No files in this session.</p> : null}
+    </div>}
   </Dialog>
 }

@@ -36,7 +36,6 @@ function OwnedHistory({ id, epoch, onBrowse, recentMessages, renderMessages }: {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     enabled: open,
-    retry: false,
   })
   useEffect(() => {
     // Immediately discard old-owner pages, including when identity changes in
@@ -59,11 +58,11 @@ function OwnedHistory({ id, epoch, onBrowse, recentMessages, renderMessages }: {
     void history.refetch()
   }
   return <section aria-label="Earlier messages">
-    {history.data && history.data.pageParams[0] !== undefined ? <HistoryWindowNotice pending={history.isFetching}
+    {history.data && history.data.pageParams[0] !== undefined ? <HistoryWindowNotice pending={history.isFetching && !history.isRefetching}
       onReload={reloadNearer} /> : null}
-    {!open || history.hasNextPage ? <Button size="sm" variant="ghost" disabled={open && history.isFetching}
+    {!open || history.hasNextPage ? <Button size="sm" variant="ghost" disabled={open && history.isFetching && !history.isRefetching}
       onClick={() => { onBrowse?.(); if (!open) setOpen(true); else void history.fetchNextPage() }}>
-      {history.isFetching ? 'Loading…' : 'Load earlier messages'}
+      {history.isFetching && !history.isRefetching ? 'Loading…' : 'Load earlier messages'}
     </Button> : null}
     {history.isError ? <p role="alert">Earlier messages could not be loaded. <Button size="sm" onClick={() => void history.refetch()}>Retry history</Button></p> : null}
     {renderMessages ? renderMessages(messages) : messages.length ? <ConversationHistory messages={messages} /> : null}

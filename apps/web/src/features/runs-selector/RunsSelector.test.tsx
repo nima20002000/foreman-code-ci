@@ -230,7 +230,10 @@ describe('Runs window and URL selection (real HTTP boundary + MSW)', () => {
   it.each([[404, 'Run not found'], [403, 'No access']] as const)('retains a %s selected Run rather than falling back', async (status, text) => {
     server.use(http.get(snapshotRoute, () => deniedResponse(status)))
     const { router } = await mount(runsUrl('absent-run'))
-    await screen.findByText(text)
+    // The Run board body explains a missing Run; the selector keeps only its way back.
+    await screen.findByRole('button', { name: 'Return to workflow' })
+    await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument())
+    expect(screen.queryByText(text)).not.toBeInTheDocument()
     expect(screen.getByLabelText('Selected identity')).toHaveTextContent(selectedIdentity('absent-run'))
     expect(screen.getByLabelText('Snapshot identity')).toHaveTextContent('none')
     expect(router.history.location.href).toContain('selectedRunId=absent-run')

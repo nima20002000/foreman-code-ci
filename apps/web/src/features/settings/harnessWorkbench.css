@@ -82,3 +82,9 @@
 }
 @media (prefers-reduced-motion: reduce) { .harness-advanced-content { animation: none; } }
 @media (forced-colors: active) { .harness-config-card, .harness-policy-row, .harness-server-list > li { border: 1px solid CanvasText; } }
+.harness-step-heading { display: flex; align-items: center; gap: var(--space-2); margin-left: -8px; }
+.harness-step-heading h4 { margin: 0; overflow-wrap: anywhere; }
+.harness-step-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-2); }
+.harness-step-actions:empty { display: none; }
+.harness-server-list > li.harness-server-skeleton { min-height: 64px; border-style: dashed; background: color-mix(in srgb,currentColor 3%,transparent); animation: harness-skeleton 1.2s ease-in-out infinite alternate; }
+@keyframes harness-skeleton { from { opacity: .5; } to { opacity: 1; } }

@@ -82,7 +82,7 @@ export function useResourceTelemetryQuery(selector: TelemetrySelector | undefine
   const query = useQuery<ReceivedTelemetry>({
     queryKey: parsed ? resourceTelemetryKeys.read(parsed.key) : [...resourceTelemetryKeys.root, sessionGeneration(), 'unselected'],
     enabled: Boolean(parsed) && (options.enabled ?? true) && !sessionIsSwitching(),
-    retry: false, gcTime: 0, structuralSharing: false, refetchIntervalInBackground: false,
+    gcTime: 0, structuralSharing: false, refetchIntervalInBackground: false,
     refetchInterval: current => {
       const data = current.state.data
       if (data?.result.kind === 'denied') return false

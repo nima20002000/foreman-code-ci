@@ -22,7 +22,7 @@ export function useRunSubagents(scope: SubagentsScope, enabled = true) {
     },
     getNextPageParam: (page, _pages, _cursor, cursors) => page.nextCursor
       && !cursors.includes(page.nextCursor) ? page.nextCursor : undefined,
-    retry: false, staleTime: 1000, gcTime: 60_000,
+    staleTime: 1000, gcTime: 60_000,
     refetchInterval: (query) => enabled ? pollInterval(query.state.error) : false,
   })
 }
@@ -32,7 +32,7 @@ export function useSubagentDetail(scope: SubagentsScope, subagentId: string, ena
       const detail = await subagentsApi.detail({ workspaceId: scope.workspaceId, runId: scope.runId, subagentId }, { signal })
       if (detail.subagent.workflowId !== scope.workflowId) throw new ApiError({ code: 'INVALID_RESPONSE', message: 'Subagent belongs to a different workflow.' })
       return detail
-    }, retry: false, staleTime: 1000, gcTime: 60_000,
+    }, staleTime: 1000, gcTime: 60_000,
     refetchInterval: (query) => enabled ? pollInterval(query.state.error) : false,
   })
 }
@@ -41,7 +41,7 @@ export function useSubagentMessages(scope: SubagentsScope, subagentId: string, e
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) => subagentsApi.messages({ workspaceId: scope.workspaceId, runId: scope.runId, subagentId, cursor: pageParam }, { signal }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
-    retry: false, staleTime: 1000, gcTime: 60_000,
+    staleTime: 1000, gcTime: 60_000,
     refetchInterval: (query) => enabled ? pollInterval(query.state.error) : false,
   })
 }
@@ -50,7 +50,7 @@ export function useSubagentTools(scope: SubagentsScope, subagentId: string, enab
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) => subagentsApi.tools({ workspaceId: scope.workspaceId, runId: scope.runId, subagentId, cursor: pageParam }, { signal }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
-    retry: false, staleTime: 1000, gcTime: 60_000,
+    staleTime: 1000, gcTime: 60_000,
     refetchInterval: (query) => enabled ? pollInterval(query.state.error) : false,
   })
 }

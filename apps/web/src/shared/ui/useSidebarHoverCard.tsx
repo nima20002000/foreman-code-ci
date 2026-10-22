@@ -2,14 +2,19 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { useFloatingSurface } from './nocturne/useFloatingSurface'
 import './sidebarHoverCard.css'
 
-/** A sidebar icon's detail card: opens on hover or focus, stays while the pointer crosses to it, closes on Escape. */
-export function useSidebarHoverCard(options: { label?: string } = {}) {
+/**
+ * A sidebar icon's detail card: opens on hover or focus, stays while the pointer crosses to it, closes on Escape.
+ * Footer icons sit side by side, so their card opens above the icon and never covers a neighbouring icon; in the
+ * collapsed rail (icons stacked) and for rows inside another card it opens to the side.
+ */
+export function useSidebarHoverCard(options: { label?: string; side?: 'auto' | 'inline' } = {}) {
   const id = useId()
   const anchor = useRef<HTMLButtonElement>(null)
   const surface = useRef<HTMLDivElement>(null)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const [open, setOpen] = useState(false)
-  useFloatingSurface(open, anchor, surface, 288, 'start', 'inline')
+  const side = options.side === 'inline' || anchor.current?.closest('.workspace-shell-navigation-collapsed') ? 'inline' : 'block'
+  useFloatingSurface(open, anchor, surface, 288, 'start', side)
   function show(delay: number) { clearTimeout(timer.current); timer.current = setTimeout(() => setOpen(true), delay) }
   function scheduleHide() {
     clearTimeout(timer.current)

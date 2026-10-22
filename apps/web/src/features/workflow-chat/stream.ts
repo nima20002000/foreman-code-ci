@@ -1,7 +1,8 @@
 import { assertSession, sessionGeneration, sessionSignal } from '../../shared/api/sessionBoundary'
 import { workflowChatEventSchema, workflowChatRoot, type WorkflowChatEvent, type WorkflowChatScope } from './client'
+import { whileVisible } from '../../shared/api/whileVisible'
 
-export function subscribeWorkflowChat(scope: WorkflowChatScope, listeners: {
+function subscribeWorkflowChatNow(scope: WorkflowChatScope, listeners: {
   event(event: WorkflowChatEvent): void
   reconnect(): void
   connection(state: 'connected' | 'reconnecting' | 'unavailable'): void
@@ -35,3 +36,5 @@ export function subscribeWorkflowChat(scope: WorkflowChatScope, listeners: {
   if (signal.aborted) close()
   return close
 }
+
+export const subscribeWorkflowChat: typeof subscribeWorkflowChatNow = (...args) => whileVisible(() => subscribeWorkflowChatNow(...args))

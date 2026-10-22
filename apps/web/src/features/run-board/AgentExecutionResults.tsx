@@ -45,7 +45,7 @@ export function AgentExecutionResults({ selection, scope, execution, name, accep
     }),
     getNextPageParam: page => page.nextHistoryCursor ?? undefined,
     enabled: !sessionIsSwitching(),
-    retry: false, staleTime: 0, gcTime: 0, maxPages: 5,
+    staleTime: 0, gcTime: 0, maxPages: 5,
     refetchInterval: query => isRunAccessError(query.state.error) ? false : 3000,
   })
   if (!selection.isCurrent(selection.generation) || sessionIsSwitching()) return null
@@ -63,12 +63,12 @@ export function AgentExecutionResults({ selection, scope, execution, name, accep
         {!ci.isPending && !tickets.size ? <p>No CI requests recorded for this Agent execution.</p> : null}
         {[...tickets.values()].map(ticket => <CiRequest key={ticket.id} ticket={ticket}
           workspaceId={scope.workspaceId} origin={origin} />)}
-        {ci.hasNextPage ? <Button size="sm" disabled={ci.isFetching}
+        {ci.hasNextPage ? <Button size="sm" disabled={ci.isFetching && !ci.isRefetching}
           onClick={() => void ci.fetchNextPage()}>Load older CI requests</Button> : null}
       </>}
-      <Button size="sm" disabled={ci.isFetching} onClick={() => void ci.refetch()}>Refresh CI requests</Button>
+      <Button size="sm" disabled={ci.isFetching && !ci.isRefetching} onClick={() => void ci.refetch()}>Refresh CI requests</Button>
       {(ci.data?.pageParams.length ?? 0) > 1 || ci.data?.pageParams[0] !== undefined
-        ? <Button size="sm" disabled={ci.isFetching}
+        ? <Button size="sm" disabled={ci.isFetching && !ci.isRefetching}
           onClick={() => void client.resetQueries({ queryKey, exact: true })}>Newest CI requests</Button> : null}
     </section>
   </>

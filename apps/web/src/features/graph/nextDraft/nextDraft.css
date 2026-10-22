@@ -41,3 +41,26 @@
   border-radius: var(--radius-full); background: var(--surface-raised); box-shadow: var(--shadow-popover); }
 /* The handoff limit shows only while its edge is hovered or the control has keyboard focus. */
 .work-connection-limit-object[data-visible='false']:not(:focus-within) { opacity: 0; }
+
+/* Workflow settings: a compact property sheet, one row per setting, label left and control right. */
+.board-side-panel.board-settings-panel { height: auto; width: min(23rem, calc(100% - 2rem)); }
+.board-settings-panel > fieldset { gap: var(--space-4); padding: var(--space-3) var(--space-4) var(--space-4); }
+.workflow-settings { display: grid; gap: var(--space-4); min-width: 0; }
+.board-settings-panel .next-draft-section { gap: var(--space-2); }
+.board-settings-panel .next-draft-section + .next-draft-section, .board-settings-panel > fieldset > .next-draft-section { padding-top: var(--space-3); border-top: 1px solid var(--border); }
+.board-settings-panel .next-draft-section > h3 { display: flex; align-items: center; gap: var(--space-1); color: var(--text-faint); font: var(--type-caption); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.board-settings-panel .n-field { grid-template-columns: minmax(0, 1fr) minmax(0, 11.5rem); align-items: center; gap: var(--space-1) var(--space-3); }
+.board-settings-panel .n-field > :is(label, .n-field-label) { color: var(--text); font: var(--type-body); }
+.board-settings-panel .n-field > :is(.n-field-hint, .n-field-error) { grid-column: 1 / -1; }
+.board-settings-panel .n-input { min-height: 30px; padding-block: 4px; }
+.workflow-settings-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-width: 0; color: var(--text); font: var(--type-body); }
+.workflow-settings-row > span { min-width: 0; }
+.workflow-settings-row > .n-field { flex: 1; }
+.workflow-settings-row[data-tone='warning'] > span { color: var(--warning); }
+.board-settings-panel .n-actions { justify-content: flex-start; flex-wrap: wrap; gap: var(--space-2); }
+.board-settings-panel .workflow-settings-danger { margin-left: auto; color: var(--danger); }
+.conflict-recovery-list { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+.conflict-recovery-list .n-actions { gap: 0; }
+.conflict-recovery-table { width: 100%; border-collapse: collapse; table-layout: fixed; font: var(--type-caption); }
+.conflict-recovery-table :is(th, td) { padding: var(--space-1); border-top: 1px solid var(--border); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.conflict-recovery-table th[scope='row'], .conflict-recovery-table thead th { color: var(--text-faint); font-weight: 500; }

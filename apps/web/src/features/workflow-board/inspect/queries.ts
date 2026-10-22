@@ -10,13 +10,13 @@ export const runInspectionQueryKey = (scope: RepeatGraphScopeV3) =>
 
 const explicitHistory = {
   meta: { refetchOnApiReconnect: false },
-  retry: false, staleTime: Infinity, gcTime: 60_000, refetchOnWindowFocus: false,
+  staleTime: Infinity, gcTime: 60_000, refetchOnWindowFocus: false,
   refetchOnReconnect: false, refetchOnMount: false, maxPages: 5,
 } as const
 export function useRunVersionQuery(scope: RepeatGraphScopeV3, enabled = true) {
   return useQuery({ queryKey: [...runInspectionQueryKey(scope), 'version'], enabled,
     queryFn: ({ signal }) => readRunInspectionVersion(scope, { signal }),
-    retry: false, staleTime: Infinity, gcTime: 60_000, refetchOnMount: 'always', refetchOnWindowFocus: false, refetchOnReconnect: false })
+    staleTime: Infinity, gcTime: 60_000, refetchOnMount: 'always', refetchOnWindowFocus: false, refetchOnReconnect: false })
 }
 export function executionPagesKey(scope: RepeatGraphScopeV3, filters: ExecutionFilters) {
   return [...runInspectionQueryKey(scope), 'executions', filters.workflowNodeId ?? null, filters.occurrenceId ?? null] as const
@@ -32,7 +32,7 @@ export function useExecutionPages(scope: RepeatGraphScopeV3, filters: ExecutionF
 export function useExecutionQuery(scope: RepeatGraphScopeV3, executionId?: string, enabled = true) {
   return useQuery({ queryKey: [...runInspectionQueryKey(scope), 'execution', executionId ?? null],
     enabled: enabled && !!executionId, queryFn: ({ signal }) => readRunExecution(scope, executionId!, { signal }),
-    retry: false, staleTime: Infinity, gcTime: 60_000, refetchOnMount: 'always', refetchOnReconnect: false, refetchOnWindowFocus: false })
+    staleTime: Infinity, gcTime: 60_000, refetchOnMount: 'always', refetchOnReconnect: false, refetchOnWindowFocus: false })
 }
 export function bindingsPagesKey(scope: RepeatGraphScopeV3, detail: RunExecutionDetail) {
   return [...runInspectionQueryKey(scope), 'bindings', detail.execution.executionId, detail.acceptedInput.digest] as const

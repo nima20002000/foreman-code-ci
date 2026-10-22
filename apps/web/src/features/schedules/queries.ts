@@ -41,7 +41,7 @@ export function useLatestScheduleOccurrence(scope: ScheduleGetInput, open: boole
       assertSession(generation)
       return scheduleApi.occurrences({ ...scope, limit: 1 }, { signal })
     },
-    enabled: open, staleTime: 0, retry: false,
+    enabled: open, staleTime: 0,
     refetchOnMount: 'always', refetchOnWindowFocus: true, refetchOnReconnect: true,
     refetchInterval: open ? 5_000 : false,
   })
@@ -67,7 +67,7 @@ export function useWorkflowSchedule(scope: ScheduleGetInput, open = true) {
   return useQuery({
     queryKey: scheduleKeys.read(scope, generation),
     queryFn: ({ signal }) => { assertSession(generation); return scheduleApi.get(scope, { signal }) },
-    enabled: open, staleTime: 0, retry: false,
+    enabled: open, staleTime: 0,
     refetchOnMount: 'always', refetchOnWindowFocus: true, refetchOnReconnect: true,
     refetchInterval: open ? 5_000 : false,
   })
@@ -88,7 +88,7 @@ export function scheduleCommandOwner(client: QueryClient, scope: ScheduleGetInpu
       if (previous.state.status !== 'pending') client.getMutationCache().remove(previous)
     }
     const mutation = client.getMutationCache().build<ScheduleSaveResult, unknown, ScheduleCommand, unknown>(client, {
-      mutationKey: key, retry: false, networkMode: 'always', gcTime: Infinity,
+      mutationKey: key, networkMode: 'always', gcTime: Infinity,
       mutationFn: command => {
         assertSession(generation)
         return command.kind === 'save' ? scheduleApi.save(command.input) : scheduleApi.disable(command.input)

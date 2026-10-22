@@ -1,11 +1,12 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import type { ApiError } from '../../../shared/api/client'
 import { readLocalHumanAccess, settingsExperienceKeys, useLocalHumanAccessQuery } from '../../../shared/api/settingsExperience'
 import { assertSession, sessionGeneration } from '../../../shared/api/sessionBoundary'
 import { canUseBoardAction } from '../../workflow-board/permissions'
 import { boardRunListKey } from '../../workflow-board/keys'
 import type { useWorkflowBoard } from '../../workflow-board/context'
-import { boardStartPins, readBoardStartPreflight, sameBoardStartPins, currentBoardStartRequest, useBoardStartPreflight } from '../../workflow-board/startPreflight'
+import { boardStartPins, changedAgentIds, readBoardStartPreflight, sameBoardStartPins, currentBoardStartRequest, useBoardStartPreflight } from '../../workflow-board/startPreflight'
 import { boardStartClient, type BoardStartInput } from '../../workflow-board/startClient'
 import { acknowledgeBoardStart, readBoardStart, rejectBoardStart, reserveBoardStart, useBoardStartOutbox } from '../../workflow-board/startOutbox'
 import { scopeForBoardRun } from '../../workflow-board/client'
@@ -31,7 +32,20 @@ export function useDraftStartState({ draftKey, edit, board }: {
   const startOutbox = useBoardStartOutbox(draftKey)
   const storageFailed = !!startOutbox.error
   const pendingStart = startOutbox.request
-  return { preflight, canStart, startOutbox, storageFailed, pendingStart }
+  const facts = preflight.data
+  const changedAgents = useMemo(() => facts ? changedAgentIds(facts) : [], [facts])
+  useEffect(() => {
+    // Show and pin the Agents' current settings; their changes are already saved on the Agent.
+    if (!facts || !changedAgents.length) return
+    useGraphDraftStore.getState().updateNextDraft(draftKey, (current) => {
+      const fresh = facts.agents.filter(({ agent }) => changedAgents.includes(agent.id) && !current.agentEdits?.[agent.id]
+        && current.context.agents.find((item) => item.agent.id === agent.id)?.agent.configurationVersionId !== agent.configurationVersionId)
+      if (!fresh.length) return current
+      const ids = new Set(fresh.map(({ agent }) => agent.id))
+      return { ...current, context: { ...current.context, agents: [...current.context.agents.filter(({ agent }) => !ids.has(agent.id)), ...fresh] } }
+    })
+  }, [draftKey, facts, changedAgents])
+  return { preflight, canStart, startOutbox, storageFailed, pendingStart, changedAgents }
 }
 export type DraftStartState = ReturnType<typeof useDraftStartState>
 
@@ -128,16 +142,25 @@ export function useDraftStartMutation({ draftKey, edit, editIntent, core, startS
       }
       setMessage('Start acknowledged for the exact saved version. Run status is read separately.')
     } catch (error) {
+      // A definite rejection is shown as one plain message, never as an uncertain earlier Start.
+      let shown = error
       try {
         assertSession(generation)
         if (sent && await rejectBoardStart(draftKey, sent, error)) {
-          const rejectedVersion = sent.workflowVersionId
-          useGraphDraftStore.getState().updateNextDraft(draftKey, (current) => ({ ...current, startRejectedVersionId: rejectedVersion }))
-          setLocalError('This saved version can no longer start. Reload the saved draft before starting another Run.')
-        } else report(error)
+          const code = (error as ApiError).code
+          if (code === 'WORKFLOW_VERSION_UNSUPPORTED' || code === 'EXECUTION_SEMANTICS_UNSUPPORTED') {
+            const rejectedVersion = sent.workflowVersionId
+            useGraphDraftStore.getState().updateNextDraft(draftKey, (current) => ({ ...current, startRejectedVersionId: rejectedVersion }))
+            shown = new Error('This saved version can no longer start. Reload the saved draft before starting another Run.')
+          } else if (code === 'WORKFLOW_CONFIGURATION_STALE') {
+            shown = new Error('Agent settings changed since this workflow was saved. Save and run to use them.')
+            void preflight.refetch()
+          } else shown = new Error((error as ApiError).message)
+        }
+        report(shown)
       } catch (releaseError) { report(releaseError) }
       // Navigation guards must not treat failed/uncertain Start as a successful save.
-      throw error
+      throw shown
     } finally { startLock.current = false }
   } })
   const recovery = useMutation({ retry: false, mutationFn: async () => {

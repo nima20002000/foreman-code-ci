@@ -6,7 +6,7 @@ import {
 import { GraphDigestSchema, GraphExecutionIdentitySchema, extendGraphExecutionIdentitySchema, GraphIdSchema } from './graphPrimitives.js'
 import { AcceptedCurrentNodeResultSchema, CurrentRunScopeSchema } from './currentWorkflowFoundation.js'
 import { RepeatExecutionIdentityV1Schema, RepeatOccurrenceIdentityV1Schema, RepeatOccurrenceV1Schema } from './repeat.js'
-import { WorkflowRunV3Schema, WorkflowVersionV3Schema } from './saved.js'
+import { RunDirectionWaitSchema, WorkflowRunV3Schema, WorkflowVersionV3Schema } from './saved.js'
 import { canonicalGraphJson } from './json.js'
 import { WorkActivationInputSchema } from './handoffs.js'
 import { IntervalCheckAcceptedInputSchema } from './intervalAcceptedInput.js'
@@ -56,6 +56,8 @@ export const RunInspectionRunSchema = CurrentRunScopeSchema.extend({
   createdAt: TimestampSchema, startedAt: TimestampSchema.optional(), finishedAt: TimestampSchema.optional(),
   stopCause: RunStopCauseSchema.optional(), cleanupPending: z.boolean(),
   failure: ExecutionResultSchema.shape.error,
+  /** Present while the Run is open only because a Master waits for a direction. */
+  directionWait: RunDirectionWaitSchema.optional(),
 }).strict()
 export const RunExecutionSummarySchema = extendGraphExecutionIdentitySchema({
   state: HarnessExecutionStateSchema,

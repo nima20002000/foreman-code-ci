@@ -16,7 +16,7 @@ export function assertAccountTarget(actual: DeviceProvisioningTarget | undefined
 }
 export function useProviderAccountTargets() {
   const epoch = useHarnessSessionEpoch()
-  return useQuery({ queryKey: providerTargetsKey(), enabled: !sessionIsSwitching(), retry: false,
+  return useQuery({ queryKey: providerTargetsKey(), enabled: !sessionIsSwitching(),
     refetchOnReconnect: 'always', refetchInterval: 30_000,
     queryFn: async ({ signal }) => {
       const result = await providerAccountsClient.targets({ signal })
@@ -48,7 +48,7 @@ export function useProviderAccountProfiles(requestedScope: ProviderAccountScope,
   const epoch = useHarnessSessionEpoch()
   const scope = useProviderAccountScope(requestedScope)
   return useQuery({ queryKey: [...providerAccountsKey(scope), 'profiles'],
-    enabled: enabled && Boolean(scope.target) && !sessionIsSwitching(), retry: false, refetchOnReconnect: 'always',
+    enabled: enabled && Boolean(scope.target) && !sessionIsSwitching(), refetchOnReconnect: 'always',
     queryFn: async ({ signal }) => {
       const { target, provider } = scope
       const result = await providerAccountsClient.profiles({ ...(target ? { target } : {}),
@@ -65,7 +65,7 @@ export function useProviderAccountEligibility(binding?: ProviderAccountBinding) 
   const epoch = useHarnessSessionEpoch()
   const scope = useProviderAccountScope(binding ? { target: binding.target, provider: binding.provider } : {})
   return useQuery({ queryKey: [...providerAccountKey(binding), 'eligibility', scope.generation ?? null],
-    enabled: Boolean(binding) && !sessionIsSwitching(), retry: false, refetchOnReconnect: 'always',
+    enabled: Boolean(binding) && !sessionIsSwitching(), refetchOnReconnect: 'always',
     queryFn: async ({ signal }) => {
       const result = await providerAccountsClient.eligibility({ accountId: binding!.accountId, target: binding!.target }, { signal })
       assertSession(epoch)

@@ -26,7 +26,7 @@ export function useBrowserSession(port: BrowserUiPort, selection: BrowserSelecti
   return useQuery({ queryKey: browserSessionKey(selection),
     enabled: selection.enabled && selection.sessionId !== null,
     queryFn: async ({ signal }) => validateBrowserRead(await port.readSession(selection.sessionId!, signal), selection),
-    retry: false, staleTime: 0, refetchOnWindowFocus: false,
+    staleTime: 0, refetchOnWindowFocus: false,
     refetchInterval: query => query.state.data && !['closed', 'failed'].includes(query.state.data.session.state) ? 1500 : false,
     refetchIntervalInBackground: false })
 }
@@ -40,5 +40,5 @@ export function useBrowserSessions(port: BrowserUiPort, selection: BrowserSelect
         throw new Error('The browser list contains a different agent session.')
       }
       return sessions
-    }, retry: false, staleTime: 0, refetchOnWindowFocus: false })
+    }, staleTime: 0, refetchOnWindowFocus: false })
 }

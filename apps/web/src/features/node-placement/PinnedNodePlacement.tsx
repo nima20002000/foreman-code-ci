@@ -19,7 +19,7 @@ export function PinnedNodePlacement({ scope, nodeId }: { scope: RepeatGraphScope
       assertSession(session)
       return result
     },
-    enabled: !sessionIsSwitching(), retry: false, staleTime: 0, gcTime: 0, placeholderData: () => undefined,
+    enabled: !sessionIsSwitching(), staleTime: 0, gcTime: 0, placeholderData: () => undefined,
   })
   const blocked = useBlockingReadError(query)
   if (session !== sessionGeneration() || sessionIsSwitching()) return null

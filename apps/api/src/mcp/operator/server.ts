@@ -27,6 +27,7 @@ import { authorizationPrincipal } from '../../modules/access/policy.js'
 import { OPERATOR_TOOL_GROUPS, OPERATOR_TOOLS, type OperatorToolGroup } from './catalog.js'
 import { registerToolDefinition, toolAvailable, type OperatorToolDefinition } from './definition.js'
 import { invokeOperatorTool } from './invoke.js'
+import { registerOperatorDiscoveryTools } from './discovery.js'
 
 export function createOperatorMcpServer(context: OperatorRequestContext): McpServer {
   const server = new McpServer({ name: PRODUCT_SLUG, title: MCP_DISPLAY_NAME, version: '1.0.0' })
@@ -36,6 +37,7 @@ export function createOperatorMcpServer(context: OperatorRequestContext): McpSer
   paginateToolLists(server)
   const catalog = installOperatorPresentation(server)
   registerOperatorTools(server, context, catalog)
+  registerOperatorDiscoveryTools(server, () => catalog)
   return server
 }
 

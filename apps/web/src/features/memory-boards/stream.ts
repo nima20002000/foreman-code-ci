@@ -1,10 +1,11 @@
 import type { z } from 'zod'
 import { assertSession, sessionGeneration, sessionSignal, sessionIsSwitching } from '../../shared/api/sessionBoundary'
 import type { MemoryChange, MemoryStreamListeners } from './ports'
+import { whileVisible } from '../../shared/api/whileVisible'
 
 /** One visible owner, no hidden polling. `ready` permits a bounded snapshot
  * after registration, or an honest offline/reconnecting fallback. */
-export function subscribeMemoryBoard(boardId: string, schema: z.ZodType<MemoryChange>, listeners: MemoryStreamListeners): () => void {
+function subscribeMemoryBoardNow(boardId: string, schema: z.ZodType<MemoryChange>, listeners: MemoryStreamListeners): () => void {
   if (sessionIsSwitching()) return () => undefined
   const generation = sessionGeneration(), signal = sessionSignal()
   let source: EventSource | undefined, timer: ReturnType<typeof setTimeout> | undefined
@@ -63,3 +64,5 @@ export function subscribeMemoryBoard(boardId: string, schema: z.ZodType<MemoryCh
   if (signal.aborted) close(); else connect()
   return close
 }
+
+export const subscribeMemoryBoard: typeof subscribeMemoryBoardNow = (...args) => whileVisible(() => subscribeMemoryBoardNow(...args))

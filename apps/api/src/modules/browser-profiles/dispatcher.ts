@@ -19,13 +19,15 @@ export class BrowserProfileDispatcher {
   private running: Promise<void> | undefined
   private requested = false
   private cursor: string | undefined
+  /** Retry delay while every pending item keeps failing (e.g. the browser runtime is missing): doubles up to 5 min. */
+  private failingRetryMs: number | undefined
   private unsubscribe: (() => void) | undefined
   constructor(readonly options: BrowserProfileDispatcherOptions) {}
 
   start(): void {
     if (this.started) return
     this.started = true
-    this.unsubscribe = this.options.service.onWork(() => this.wake())
+    this.unsubscribe = this.options.service.onWork(() => { this.failingRetryMs = undefined; this.wake() })
     this.wake()
   }
 
@@ -82,8 +84,13 @@ export class BrowserProfileDispatcher {
     const wrapped = this.cursor !== undefined
     this.cursor = undefined
     // Retry only durable pending work. An empty queue owns no recurring timer.
-    const remaining = await this.options.service.repository.read(tx => tx.pendingWork(undefined, 1))
-    if (remaining.length) this.schedule(wrapped && !batch.length ? 0 : this.options.retryMs ?? 5_000)
+    const remaining = await this.options.service.repository.read(tx => tx.pendingWork(undefined, 65))
+    // The same pending items after a full turn means nothing could progress: back off instead of spinning.
+    const retryMs = this.options.retryMs ?? 5_000
+    const unchanged = !wrapped && remaining.length > 0 && remaining.length === page.length
+      && remaining.every((work, index) => work.key === page[index]!.key)
+    this.failingRetryMs = unchanged ? Math.min(300_000, (this.failingRetryMs ?? retryMs / 2) * 2) : undefined
+    if (remaining.length) this.schedule(wrapped && !batch.length ? 0 : this.failingRetryMs ?? retryMs)
   }
 
   async stop(): Promise<void> {

@@ -17,7 +17,6 @@ function preferenceOptions(generation: number) {
       assertSession(generation)
       return retentionClient.get({ signal })
     },
-    retry: false as const,
     staleTime: 0,
     structuralSharing: (previous: unknown, value: unknown) => {
       const incoming = value as FileRetentionGetResult

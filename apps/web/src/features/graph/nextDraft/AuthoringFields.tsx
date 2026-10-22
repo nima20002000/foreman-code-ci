@@ -23,12 +23,12 @@ function changeNode(change: EditGraph, nodeId: string, update: (node: DraftNode)
 export function EntryFields({ graph, context, change, agentEdits }: { graph: WorkflowDefinitionV3; context: NextDraftContext; change: EditGraph; agentEdits?: DraftAgentEdits }) {
   const choices = entryChoices(graph, context, agentEdits), id = useId()
   return <section aria-labelledby={id} className="next-draft-section">
-    <h3 id={id}>Starting node</h3>
+    <h3 id={id}>Start</h3>
     {graph.hierarchy ? <p>The Master starts this workflow: {nodeTitle(graph, graph.hierarchy.masterNodeId)}.</p> :
-    <Select data-save-field="entry" label="Starts the workflow" value={graph.entryNodeId ?? ''} aria-invalid={!choices.valid}
-      labelHint={<InfoHint label="Starts the workflow">{choices.mode === 'master' ? 'The Master starts this workflow.' : choices.mode === 'orchestrator' ? 'Only an Orchestrator can start a workflow that has one.' : 'The first node to run. It can’t receive a dependency.'}</InfoHint>}
+    <Select data-save-field="entry" label="Starts with" value={graph.entryNodeId ?? ''} aria-invalid={!choices.valid}
+      labelHint={<InfoHint label="Starts with">{choices.mode === 'master' ? 'The Master starts this workflow.' : choices.mode === 'orchestrator' ? 'Only an Orchestrator can start a workflow that has one.' : 'The first node to run. It can’t receive a dependency.'}</InfoHint>}
       onChange={(event) => change((value) => ({ ...value, entryNodeId: event.target.value || null }))} options={[
-        { value: '', label: 'Choose a node' },
+        { value: '', label: graph.nodes.length ? 'Choose an agent' : 'No agents yet' },
         ...graph.nodes.map((node) => ({ value: node.id, disabled: !choices.eligible.some((item) => item.id === node.id), label: nodeTitle(graph, node.id) })),
       ]} />}
     {graph.entryNodeId && !graph.nodes.some((node) => node.id === graph.entryNodeId) ? <p role="alert">The starting node was removed. Choose another one.</p> : null}
@@ -38,22 +38,22 @@ export function EntryFields({ graph, context, change, agentEdits }: { graph: Wor
 export function ApprovalFields({ graph, context, change, report, agentEdits }: { graph: WorkflowDefinitionV3; context: NextDraftContext; change: EditGraph; report: (error: unknown) => void; agentEdits?: DraftAgentEdits }) {
   let hint = 'Agents ask you before sensitive actions. Requests appear in the approval inbox.'
   if (graph.approval?.handler === 'orchestrator') {
-    hint = 'The starting Master or Orchestrator reviews requests from agents it has an approval connection to.'
+    hint = 'The starting Master or Orchestrator reviews requests from agents connected to it by an approval line.'
   } else if (graph.approval?.handler === 'native') {
-    hint = 'Each Agent must explicitly use native approval handling. Saved permission rules still apply; requests do not go to the app’s approval inbox.'
+    hint = 'Each harness handles its own approvals. Requests don’t reach the approval inbox.'
   }
   return <section className="next-draft-section" aria-label="Approval handling">
     <h3>Approvals</h3>
-    <Select data-save-field="approval" label="Approval handler" value={graph.approval?.handler ?? ''}
-      labelHint={graph.approval?.handler !== 'orchestrator' ? <InfoHint label="Approval handler">{hint}</InfoHint> : undefined}
+    <Select data-save-field="approval" label="Who approves" value={graph.approval?.handler ?? ''}
+      labelHint={graph.approval?.handler !== 'orchestrator' ? <InfoHint label="Who approves">{hint}</InfoHint> : undefined}
       onChange={(event) => {
       const handler = event.target.value
       if (handler !== 'user' && handler !== 'orchestrator' && handler !== 'native') return
       try { change((value) => changeApprovalHandler(value, handler)) } catch (error) { report(error) }
-    }} options={[{ value: '', label: 'Choose who approves', disabled: true }, { value: 'user', label: 'You, the Operator' },
-      { value: 'orchestrator', label: 'A coordinator agent' }, { value: 'native', label: 'Native harness' }]} />
-    {graph.approval?.handler === 'orchestrator' ? <Select data-save-field="orchestrator" label="Reviewing coordinator" value={graph.approval.designatedOrchestratorAgentId ?? ''}
-      labelHint={<InfoHint label="Reviewing coordinator">{hint}</InfoHint>}
+    }} options={[{ value: '', label: 'Choose who approves', disabled: true }, { value: 'user', label: 'You' },
+      { value: 'orchestrator', label: 'A coordinator' }, { value: 'native', label: 'The harness' }]} />
+    {graph.approval?.handler === 'orchestrator' ? <Select data-save-field="orchestrator" label="Coordinator" value={graph.approval.designatedOrchestratorAgentId ?? ''}
+      labelHint={<InfoHint label="Coordinator">{hint}</InfoHint>}
       onChange={(event) => change((value) => ({ ...value, approval: { handler: 'orchestrator', ...(event.target.value ? { designatedOrchestratorAgentId: event.target.value } : {}) } }))} options={[
         { value: '', label: 'Choose a coordinator' },
         ...graph.nodes.filter((node) => node.kind!=='job').filter((node) => {

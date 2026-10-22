@@ -12,6 +12,7 @@ import { draftOperations, hasLocalChanges, mergeAcknowledgement } from './model'
 import { readBoardStart } from '../../workflow-board/startOutbox'
 import { nextDraftDirty, type NextDraftEdit } from './state'
 import { assertDraftSubmission, nextDraftApi } from './transport'
+import { changedAgentIds, readBoardStartPreflight } from '../../workflow-board/startPreflight'
 import { acknowledgeEditOutbox, acknowledgeEditSubmission, editSnapshotAcknowledged, editSnapshotSubmitted, matchesEditIntent, readEditOutbox, readEditSubmission,
   rejectEditOutbox, reserveEditOutbox, storeEditSnapshot, withEditIntentLock, type EditIntentOutbox } from './editIntentStorage'
 
@@ -112,7 +113,6 @@ export function useGraphEditIntent(draftKey: string, edit: NextDraftEdit) {
   const automaticAttempt = useRef<string | undefined>(undefined)
   const query = useQuery({ queryKey,
     queryFn: ({ signal }) => nextDraftApi.editRead({ action: 'read_edits', workspaceId, workflowId, draftId }, { signal }),
-    retry: false,
     refetchInterval: (state) => activeEditIntent(state.state.data?.intent) ? 1000 : false,
   })
   useEffect(() => {
@@ -221,7 +221,10 @@ export function useGraphEditIntent(draftKey: string, edit: NextDraftEdit) {
     if (data.intent && !activeEditIntent(data.intent)
       && useGraphDraftStore.getState().nextDrafts[draftKey] !== beforeAcknowledgement) return data
     if (action !== 'discard' && !activeEditIntent(data.intent) && !retained) {
-      if (!nextDraftDirty(current) && current.context.draft.baseWorkflowVersionId) { accept(data); return data }
+      // A clean draft still saves when an Agent's settings changed since the saved version: it re-pins them.
+      if (!nextDraftDirty(current) && current.context.draft.baseWorkflowVersionId
+        && !changedAgentIds(await readBoardStartPreflight(current.context.draft)).length) { accept(data); return data }
+      assertSession(generation)
       const operations = draftOperations(current.context, current.graph, current.agentEdits)
       assertDraftSubmission(current.graph, operations)
       const stagedAgents = stageAgentEdits(current)

@@ -7,7 +7,7 @@ import { workflowChatClient, type WorkflowChatScope } from './client'
 export function useWorkflowSelection(scope: WorkflowChatScope, selection: { postId?: string; receiptId?: string },
   enabled: boolean, onDenied: () => void) {
   const receipt = useQuery({ queryKey: ['workflow-chat-receipt', identityEpoch(), scope.workspaceId, scope.workflowId, selection.receiptId],
-    enabled: enabled && !!selection.receiptId, retry: false,
+    enabled: enabled && !!selection.receiptId,
     queryFn: async ({ signal }) => {
       try { return await workflowChatClient.deliveries(scope, { receiptId: selection.receiptId }, { signal }) }
       catch (error) { if (isApiAccessError(error)) onDenied(); throw error }
@@ -15,7 +15,7 @@ export function useWorkflowSelection(scope: WorkflowChatScope, selection: { post
   const selectedReceipt = receipt.data?.items.find(item => item.id === selection.receiptId)
   const postId = selection.postId ?? selectedReceipt?.postId
   const focused = useQuery({ queryKey: ['workflow-chat-post', identityEpoch(), scope.workspaceId, scope.workflowId, postId],
-    enabled: enabled && !!postId, retry: false,
+    enabled: enabled && !!postId,
     queryFn: async ({ signal }) => {
       try {
         const [posts, receipts] = await Promise.all([workflowChatClient.read(scope, { postId }, { signal }),

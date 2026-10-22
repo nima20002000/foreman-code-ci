@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { Link } from '@tanstack/react-router'
 
 import { WorkspaceExecutionLocationSetup } from '../features/settings/WorkspaceExecutionLocationSetup'
 import { NewWorkflowAction } from '../features/workflows/NewWorkflowAction'
@@ -67,9 +68,10 @@ function DefaultGraphSlot({
   if (state === 'not-found') {
     return (
       <div className="n-theme" data-testid="workspace-not-found">
-        <ErrorState
+        <EmptyState
           title="Workspace not found"
-          description={stateMessage ?? `Workspace ${workspaceId} is not available.`}
+          description={stateMessage ?? 'It may have been removed.'}
+          action={<Link to="/workspaces" className="n-button n-button--secondary">Go to workspaces</Link>}
         />
       </div>
     )

@@ -21,12 +21,12 @@ export function ChatDeliveryReceipts({ receipts, onCancel, onRefresh, onOpenPost
 }) {
   if (!receipts.length) return null
   return <ul className="chat-delivery-receipts" aria-label="Delivery receipts">
-    {receipts.map(receipt => <li key={receipt.id}>
+    {receipts.map(receipt => <li key={receipt.id} title={receipt.errorCode && receipt.errorCode !== 'TARGET_SETTLED' ? receipt.errorCode : undefined}>
       <p><strong>{receipt.errorCode === 'TARGET_SETTLED' ? 'Not sent — selected turn ended' : stateLabels[receipt.state]}</strong>
         {' · '}{deliveryTargetLabel(receipt.target)}</p>
-      <p>Requested: {intentLabels[receipt.requestedIntent]} · Applied: {intentLabels[receipt.appliedIntent]}</p>
+      {receipt.requestedIntent !== receipt.appliedIntent && receipt.requestedIntent !== 'auto'
+        ? <p>Requested: {intentLabels[receipt.requestedIntent]} · Applied: {intentLabels[receipt.appliedIntent]}</p> : null}
       {receipt.consultationId ? <p>Reply {receipt.consultationId} · Delegated work continues independently.</p> : null}
-      {receipt.errorCode && receipt.errorCode !== 'TARGET_SETTLED' ? <p>{receipt.errorCode}</p> : null}
       {receipt.continuationId && !receipt.continuationExecution ? <p>Changing direction · Waiting for the continuing execution.</p> : null}
       {receipt.continuationExecution ? <p>Continuing task · A new execution is available.
         {onOpenContinuation ? <Button size="sm" onClick={() => onOpenContinuation(receipt)}>Open continuation</Button> : null}</p> : null}

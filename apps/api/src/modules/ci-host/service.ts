@@ -1311,7 +1311,8 @@ export class HostCiService {
         throw new DomainError('CI_EXECUTOR_CLEANUP_PENDING', 'The executor has not confirmed the run stopped.', 503)
       }
     } catch (error) {
-      if (!(error instanceof DomainError && error.code === 'CI_RUN_UNKNOWN')) throw error
+      // A turned-off cloud service can't confirm anything; retrying the release forever only fills the log.
+      if (!(error instanceof DomainError && (error.code === 'CI_RUN_UNKNOWN' || error.code === 'CI_CLOUD_OFF'))) throw error
     }
     const next = CiRunRecordSchema.parse({ ...run, executorCleanupPending: false,
       deadlineExceeded: { ...run.deadlineExceeded!, executor: 'released' },

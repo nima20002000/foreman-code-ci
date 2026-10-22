@@ -1,6 +1,6 @@
 import type { RefObject } from 'react'
 import { Icon, IconButton } from '../../shared/ui/nocturne'
-import type { useOperatorChatResize } from './useOperatorChatResize'
+import type { useMovableWindow } from '../../shared/ui/useMovableWindow'
 import type { AcceptedProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
 import { SessionContext } from '../conversations/sessionControls/SessionControls'
 import type { ComposerSessionControls } from '../conversations/sessionControls/useSessionControls'
@@ -12,7 +12,7 @@ export function OperatorChatHeader({ historyOpen, historyId, historyTriggerRef, 
   historyTriggerRef: RefObject<HTMLButtonElement | null>
   closeRef: RefObject<HTMLButtonElement | null>
   historyFailed: boolean
-  moveGrip: ReturnType<typeof useOperatorChatResize>['moveGrip']
+  moveGrip: ReturnType<typeof useMovableWindow>['moveGrip']
   sessionControls?: ComposerSessionControls | undefined
   accountBinding?: AcceptedProviderAccountBinding | undefined
   onToggleHistory: () => void

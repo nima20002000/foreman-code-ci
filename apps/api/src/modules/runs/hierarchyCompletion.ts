@@ -40,7 +40,13 @@ export async function hierarchyCompletionLocked(context: HierarchyGroupContext):
   for (const row of rows) {
     if (!row.execution) return repeatConflict('WORK_ACTIVATIONS_UNRESOLVED')
     const execution = HarnessExecutionSchema.parse(row.execution)
-    if (execution.state !== 'completed') return repeatConflict('WORK_ACTIVATIONS_UNRESOLVED')
+    // A launch that failed before any native session records only its cause; the attempt never completes itself,
+    // and its final cause must fail the Run here, as it does for other handoff workflows.
+    const launchFailure = execution.state !== 'completed' && !execution.nativeSessionId && row.failure_result
+      ? ExecutionResultSchema.parse(row.failure_result) : undefined
+    if (execution.state !== 'completed' && (launchFailure?.outcome !== 'failed' || launchFailure.error?.retryable)) {
+      return repeatConflict('WORK_ACTIVATIONS_UNRESOLVED')
+    }
     // A validated logical control failure remains negative even if the original native result raced to success.
     const negative = row.member_failure_result ?? row.refusal_result ?? row.failure_result
       ?? (execution.result?.outcome !== 'succeeded' ? execution.result : undefined)

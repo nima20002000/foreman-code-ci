@@ -43,7 +43,7 @@ export function usePlacementChoices(scope: NodePlacementChoicesInput | undefined
       if (isApiAccessError(query.state.error)) return false
       return query.state.data?.pending ? 5_000 : false
     },
-    enabled, retry: false, staleTime: 0, gcTime: 0, placeholderData: () => undefined,
+    enabled, staleTime: 0, gcTime: 0, placeholderData: () => undefined,
   })
   useEffect(() => {
     if (!enabled) return

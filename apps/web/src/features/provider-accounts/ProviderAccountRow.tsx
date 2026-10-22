@@ -2,8 +2,9 @@ import { InfoHint } from '../../shared/ui/InfoHint'
 import { useRef, useState } from 'react'
 import type { ProviderAccount } from '@foreman-code/contracts/provider-accounts'
 import { CommandAttempt } from '../../shared/api/commandAttempt'
+import { computerKey, useComputerActivity } from '../../shared/api/computerActivity'
 import { useUnsavedChanges } from '../../shared/ui/unsavedChanges'
-import { Button, Dialog } from '../../shared/ui/nocturne'
+import { Button, ConfirmDialog } from '../../shared/ui/nocturne'
 import { useProviderAccountAccess } from './providerAccountAccess'
 import { useProviderAccountWrite, type ProviderAccountScope } from './providerAccountsQueries'
 import type { ProviderAccountAction, ProviderAccountDefaultInput } from './providerAccountsClient'
@@ -46,50 +47,47 @@ export function ProviderAccountRow({ account, revision, defaultRevision, scope, 
     busy: write.isPending, uncertain: attempt.unresolved, error: write.error?.message,
     save: () => original.current ? act(original.current.action) : undefined, discard: () => undefined })
   const target = account.binding?.target
+  const activity = useComputerActivity()
+  const computerNames = new Map(activity.data?.computers.map(computer => [computerKey(computer.target), computer.name]) ?? [])
   const observation = account.observation
   const identity = observation ? observation.identity : account.identity
   return <article className="provider-account-card" aria-label={`${account.name} account`}>
     <div className="provider-account-summary">
       <header><strong>{account.name}</strong>{account.isDefault ? <small>Default for new work</small> : null}</header>
       <dl>
-        <div><dt>Computer</dt><dd>{target ? `${target.hostRef.kind === 'main' ? 'Main' : 'Worker'} · ${
-          target.hostRef.kind === 'main' ? target.hostRef.mainId : target.hostRef.deviceId}` : 'Ownership not recorded'}</dd></div>
-        <div><dt>Installation</dt><dd>{target?.applicationInstallationId ?? 'Unknown'}</dd></div>
+        <div><dt>Computer</dt><dd>{target ? computerNames.get(computerKey(target)) ?? (target.hostRef.kind === 'main' ? 'Main computer' : 'Worker computer') : 'Unknown'}</dd></div>
         <div><dt>Sign-in</dt><dd>{statusLabels[observation?.status ?? account.status]}</dd></div>
-        <div><dt>Identity{!observation?.subject && identity ? <InfoHint label="Identity">Display identity only; provider identity is unproved.</InfoHint> : null}
-          {account.possibleDuplicateAccountIds?.length ? <InfoHint label="Account history">Accounts and their history remain separate.</InfoHint> : null}</dt><dd>{identity ?? 'Unknown'}</dd></div>
+        <div><dt>Identity{!observation?.subject && identity ? <InfoHint label="Identity">As shown by the provider; not verified.</InfoHint> : null}
+          {account.possibleDuplicateAccountIds?.length ? <InfoHint label="Account history">Each account keeps its own history.</InfoHint> : null}</dt><dd>{identity ?? 'Unknown'}</dd></div>
         <div><dt>Readiness</dt><dd>{observation && scope.generation !== undefined
-          && observation.generation !== scope.generation ? 'Awaiting a fresh observation'
+          && observation.generation !== scope.generation ? 'Checking…'
           : readinessLabels[observation?.readiness ?? 'unknown']}</dd></div>
         <div><dt>Last observed</dt><dd>{observation ? <time dateTime={observation.observedAt}>
-          {new Date(observation.observedAt).toLocaleString()}</time> : 'Not observed'}</dd></div>
+          {new Date(observation.observedAt).toLocaleString()}</time> : 'Not yet'}</dd></div>
         <div><dt>Authentication</dt><dd>{account.authMode === 'api-key' ? 'API key' : 'Subscription'}</dd></div>
       </dl>
-      {account.possibleDuplicateAccountIds?.length ? <p role="status">This may be the same provider identity as another account.</p> : null}
-      {account.removedAt ? <p role="status">Removed from selection. <InfoHint label="Removed account">Saved Runs, chats and native history retain this account.</InfoHint></p> : null}
+      {account.possibleDuplicateAccountIds?.length ? <p role="status" className="provider-account-note">This may be the same login as another account.</p> : null}
+      {account.removedAt ? <p role="status" className="provider-account-note">Removed. Saved runs and chats keep it.</p> : null}
     </div>
     <div className="provider-account-actions">
       <Button size="sm" disabled={unavailable} onClick={onConfigure}>Configure</Button>
       {!account.isDefault && !account.removedAt ? <Button size="sm" disabled={unavailable}
         onClick={() => void act('default')}>Make default</Button> : null}
       {account.authMode === 'subscription' && !account.removedAt ? <Button size="sm" disabled={locked}
-        onClick={onAuthenticate}>Authentication progress</Button> : null}
+        onClick={onAuthenticate}>Sign-in</Button> : null}
       <Button size="sm" variant="ghost" disabled={unavailable || !access.target?.connected || !capability?.actions.includes('status')}
         onClick={() => void act('refresh')}>Refresh status</Button>
       {!account.removedAt ? <Button size="sm" variant="ghost" disabled={unavailable}
-        onClick={() => setRemoving(true)}>Remove from selection</Button> : null}
+        onClick={() => setRemoving(true)}>Remove</Button> : null}
       {attempt.unresolved && !write.isPending ? <Button size="sm" disabled={!access.canManage}
-        onClick={() => original.current && void act(original.current.action)}>Retry original action</Button> : null}
+        onClick={() => original.current && void act(original.current.action)}>Retry</Button> : null}
       {write.isPending ? <small role="status">Updating account…</small> : null}
-      {write.error ? <p role="alert">{write.error.message}</p> : null}
+      {write.error ? <p role="alert" className="provider-account-note">{write.error.message}</p> : null}
     </div>
-    {removing ? <Dialog open title={`Remove ${account.name} from selection?`} busy={write.isPending}
-      description="Saved Runs, chats, local credentials and native history are preserved. This clears this account’s default without choosing a replacement."
-      onOpenChange={open => { if (!open && !locked) setRemoving(false) }}
-      footer={<><Button disabled={locked} onClick={() => setRemoving(false)}>Keep account</Button>
-        <Button disabled={!access.canManage || write.isPending} onClick={() => void act('remove')}>
-          {attempt.unresolved ? 'Retry original removal' : 'Remove account'}</Button></>}>
-      {write.error ? <p role="alert">{write.error.message}</p> : null}
-    </Dialog> : null}
+    <ConfirmDialog open={removing} title={`Remove ${account.name}?`} pending={write.isPending}
+      description="It stops being offered for new work. Saved runs, chats and its sign-in stay."
+      confirmLabel={attempt.unresolved ? 'Retry removal' : 'Remove'} onConfirm={() => void act('remove')}
+      {...(write.error ? { error: write.error.message } : {})}
+      onOpenChange={open => { if (!open && !locked) setRemoving(false) }} />
   </article>
 }

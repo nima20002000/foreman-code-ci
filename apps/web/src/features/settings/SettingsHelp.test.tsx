@@ -61,9 +61,8 @@ it('uses one saved confirmation and preserves the warning for newer unsaved edit
   const form = { isDirty: false, isSaving: false, uncertain: false, conflicted: false,
     savedRevision: 2, serverChanges: [], localChanges: [], reset: vi.fn(), reapply: vi.fn() }
   const view = render(<SettingsFormFeedback form={form} />)
-  expect(screen.getByText('Changes saved to the server')).toBeVisible()
+  expect(screen.getByText('Saved.')).toBeVisible()
   expect(screen.queryByText('Changes are saved to the server.')).not.toBeInTheDocument()
   view.rerender(<SettingsFormFeedback form={{ ...form, isDirty: true }} />)
-  expect(screen.getByText('Earlier changes saved')).toBeVisible()
-  expect(screen.getByText('Newer edits are still unsaved.')).toBeVisible()
+  expect(screen.getByText('Earlier changes saved. Newer edits are still unsaved.')).toBeVisible()
 })

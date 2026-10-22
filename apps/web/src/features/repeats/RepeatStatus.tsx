@@ -1,3 +1,4 @@
+import { useManualRefetch } from '../../shared/api/useManualRefetch'
 import { useState } from 'react'
 import type { RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
 import { Alert, Badge, Button } from '../../shared/ui/nocturne'
@@ -18,7 +19,8 @@ export function RepeatStatus({ scope, live = true, client = repeatGraphClient }:
   const [resultsOpen, setResultsOpen] = useState(false)
   const query = useCurrentRunQuery(scope, live, client)
   const denied = useProtectedAccessError(query)
-  const retry = <Button size="sm" disabled={query.isFetching} onClick={() => void query.refetch()}>Retry</Button>
+  const manual = useManualRefetch(query.refetch)
+  const retry = <Button size="sm" disabled={manual.pending} onClick={() => void manual.refetch()}>Retry</Button>
   if (denied || query.isError) return <section className="repeat-status" role="alert" aria-label="Repeat state unavailable">
     <Alert tone="warning" title="Repeat state is unavailable.">
       {denied ? 'Access to this Run is unavailable.' : 'The canonical v3 read could not be verified. It may not be qualified on this deployment.'}
@@ -38,8 +40,7 @@ export function RepeatStatus({ scope, live = true, client = repeatGraphClient }:
       <Badge tone={historical ? 'neutral' : 'warning'} dot>{historical ? 'Historical Run' : 'Current Run'}</Badge></header>
     <p className="repeat-muted">Occurrence numbers count business repetition. A technical attempt is separate and never consumes the repeat cap.</p>
     <p role="status">Recorded Run state: {snapshot.state.run.executionState} · {snapshot.state.run.outcome}.
-      {' '}Complete cut {snapshot.asOfSequence}.{snapshot.state.run.stopRequested ? ' Stop requested; this is not proof of native cleanup.' : ''}
-      {query.isFetching ? ' Refreshing the same Run/version…' : ''}</p>
+      {' '}Complete cut {snapshot.asOfSequence}.{snapshot.state.run.stopRequested ? ' Stop requested; this is not proof of native cleanup.' : ''}</p>
     {!occurrences.length ? <p className="repeat-empty">No durable repeat occurrence has been recorded in this complete cut.</p> : <ol className="repeat-occurrences">
       {occurrences.map((occurrence) => {
         const identity = occurrence.identity, decision = decisions.get(identity.occurrenceId)
@@ -71,6 +72,6 @@ export function RepeatStatus({ scope, live = true, client = repeatGraphClient }:
     <Button size="sm" variant="ghost" aria-expanded={resultsOpen} onClick={() => setResultsOpen((value) => !value)}>
       {resultsOpen ? 'Hide accepted results' : 'Read accepted results'}</Button>
     {resultsOpen ? <RepeatResultDetails snapshot={snapshot} /> : null}
-    <Button size="sm" variant="secondary" disabled={query.isFetching} onClick={() => void query.refetch()}>Refresh repeat state</Button>
+    <Button size="sm" variant="secondary" disabled={manual.pending} onClick={() => void manual.refetch()}>Refresh repeat state</Button>
   </section>
 }

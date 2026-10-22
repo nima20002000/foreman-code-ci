@@ -20,13 +20,15 @@ export function BrowserProfileManager({ computer }: { computer?: DeviceProvision
   const targets = facts.targets.filter(target => !selected || (target.hostRef.kind === 'main' ? target.hostRef.mainId : target.hostRef.deviceId) === selected)
   const computers = facts.computers.filter(item => !selected || item.id === selected)
   return <>
-    {facts.error ? <p role="alert">Computer readiness could not be read: {facts.error.message}</p> : null}
+    {facts.error ? <p role="alert" className="browser-profile-note">Couldn\u2019t check the computers. Some details may be missing.</p> : null}
     <BrowserProfilesSettings visible authBoundary={browserAuthBoundary()} computers={computers}
       currentComputerId={selected ?? facts.mainId ?? ''} port={browserProfileClient} sessionPort={browserSessionClient}
-      files={browserFilesClient} onOpenSetup={useBrowserRecovery.getState().openSetup} onSetupCleanupPending={retainSetupCleanup} />
-    {targets.map((target, index) => <Button key={JSON.stringify(target)} disabled={repair.isPending || repair.unresolved}
-      onClick={() => repair.mutate({ targets: [target], task: { kind: 'repair-browser' } })}>
-      Repair browser on {computers[index]?.name}</Button>)}
+      files={browserFilesClient} onOpenSetup={useBrowserRecovery.getState().openSetup} onSetupCleanupPending={retainSetupCleanup}
+      computerAction={computer => {
+        const target = targets[computers.findIndex(item => item.id === computer.id)]
+        return target && !computer.runtimeReady ? <Button size="sm" variant="ghost" disabled={repair.isPending || repair.unresolved}
+          onClick={() => repair.mutate({ targets: [target], task: { kind: 'repair-browser' } })}>Repair browser</Button> : null
+      }} />
     {repair.error ? <p role="alert">{repair.error.message}<Button onClick={repair.retryOriginal}>Check original repair</Button></p> : null}
   </>
 }

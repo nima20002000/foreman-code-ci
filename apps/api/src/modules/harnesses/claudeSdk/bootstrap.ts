@@ -44,6 +44,13 @@ async function sdkNativeExecutable(entrypoint: string): Promise<string | undefin
   }
   return undefined
 }
+/** The SDK's native binary lives under a per-release dependency folder; its identity is the package path below
+ * node_modules, so releases that install the same package do not record a different installation. */
+export function packageRelativeLauncher(executable: string): string {
+  const marker = '/node_modules/'
+  const offset = executable.lastIndexOf(marker)
+  return offset < 0 ? executable : executable.slice(offset + marker.length)
+}
 function installedSdk(): ClaudeSdkEntrypoint {
   let entrypoint: string
   try { entrypoint = createRequire(import.meta.url).resolve('@anthropic-ai/claude-agent-sdk') }
@@ -67,7 +74,8 @@ export function createClaudeProductionDiscovery(input: {
       signal?.throwIfAborted()
       const sdk = installedSdk(), selectedExecutable = await sdkNativeExecutable(sdk.entrypoint)
       if (!selectedExecutable) return null
-      const harnessInstallationId = commandInputHash({ hostRef: host, driverId: 'claude', launcher: selectedExecutable })
+      const harnessInstallationId = commandInputHash({ hostRef: host, driverId: 'claude',
+        launcher: packageRelativeLauncher(selectedExecutable) })
       return await discoverInstalledClaudeSdk({ ...sdk, selectedExecutable }, { harnessInstallationId, environment }, signal, inventoryPayloadFingerprints)
     } catch { signal?.throwIfAborted(); return null }
   }

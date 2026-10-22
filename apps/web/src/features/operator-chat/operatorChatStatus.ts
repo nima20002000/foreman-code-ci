@@ -39,7 +39,7 @@ export function operatorTurnStatus(state: OperatorConversationState, connection:
     executionLabel = 'Operator is working…'
   } else if (state.turnState === 'error') {
     phase = 'error'
-    executionLabel = 'The turn failed.'
+    executionLabel = '' // the turn's error alert says it
   } else if (background) executionLabel = `${background.label}. ${background.message}`
   else executionLabel = state.lastResult ? '' : 'Ready for your message.'
   const delivery = state.pendingInteraction && state.responseDelivery !== 'offered'

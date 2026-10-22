@@ -2,10 +2,11 @@ import { OperatorConversationStateSchema, OperatorConversationStreamEventSchema,
   type OperatorConversationState, type OperatorConversationStreamEvent } from '@foreman-code/contracts'
 import { ApiError, apiClient } from './client'
 import { assertSession, sessionGeneration, sessionIsSwitching, sessionSignal } from './sessionBoundary'
+import { whileVisible } from './whileVisible'
 
 export type OperatorChatConnection = 'connecting' | 'connected' | 'reconnecting' | 'unavailable'
 
-export function subscribeOperatorChat(id: string, listeners: {
+function subscribeOperatorChatNow(id: string, listeners: {
   snapshot(state: OperatorConversationState): void
   event(event: OperatorConversationStreamEvent): void
   reconnect(): void
@@ -151,3 +152,5 @@ export function subscribeOperatorChat(id: string, listeners: {
   if (signal.aborted) close()
   return close
 }
+
+export const subscribeOperatorChat: typeof subscribeOperatorChatNow = (...args) => whileVisible(() => subscribeOperatorChatNow(...args))

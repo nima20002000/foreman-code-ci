@@ -80,11 +80,17 @@ export function acknowledgeBoardStart(key: string, request: BoardStartInput): Pr
   })
 }
 
-/** Only an explicit unsupported-version terminal rejection clears the exact command.
- * Denial, stale pins and uncertain transport retain it; they cannot prove a lost Start was not admitted. */
+/** Answers that cannot prove a lost earlier send of this command was not admitted. */
+const uncertainStartCodes = ['RUN_START_BUSY', 'COMMAND_ID_CONFLICT', 'RUN_START_RECEIPT_CONFLICT',
+  'RUN_START_RECEIPT_MISSING', 'RUNNER_ADMISSION_UNCERTAIN']
+/** A definite 4xx domain rejection clears the exact command: the server reads the command's receipt before
+ * these checks, so it was not admitted. Denial, rate limits, timeouts, transport and the codes above retain it. */
+export function definiteStartRejection(error: unknown): error is ApiError {
+  return ApiError.is(error) && error.status >= 400 && error.status < 500
+    && ![401, 403, 408, 429].includes(error.status) && !uncertainStartCodes.includes(error.code)
+}
 export async function rejectBoardStart(key: string, request: BoardStartInput, error: unknown): Promise<boolean> {
-  if (!ApiError.is(error) || error.status !== 409
-    || !['WORKFLOW_VERSION_UNSUPPORTED', 'EXECUTION_SEMANTICS_UNSUPPORTED'].includes(error.code)) return false
+  if (!definiteStartRejection(error)) return false
   return locked(key, () => { removeExact(key, request); return true })
 }
 

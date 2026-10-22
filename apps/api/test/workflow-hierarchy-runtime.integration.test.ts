@@ -150,6 +150,28 @@ describe.skipIf(!postgresEnabled)('hierarchy runtime obligations and reservation
     } finally { release.resolve(); await drive; await f.close() }
   }, 90_000)
 
+  it('settles the Run as failed when the Master fails before its native launch', async () => {
+    const f = await checkpointRuntimeFixture(1, 1, { fixture: hierarchyRuntimeFixture(), approvalNodeIds: [],
+      collaborationPorts: {},
+      preparePlacementExecution: async (_owner, _run, execution) => {
+        if (execution.workflowNodeId === 'master') {
+          throw new DomainError('HARNESS_PROFILE_UNAVAILABLE', 'The saved Master profile is unavailable.', 409)
+        }
+        return undefined
+      },
+      outputFor: (nodeId, request) => coordinationOutput(nodeId, request) })
+    try {
+      await f.engine.start(f.f.run.id).catch(() => undefined)
+      await expect.poll(async () => (await f.runs.get(f.f.run.id))?.executionState, { timeout: 15_000 }).toBe('completed')
+      expect(await f.runs.get(f.f.run.id)).toMatchObject({ outcome: 'failed' })
+      const executions = (await f.db.pool.query<{ record: { state: string; result?: { error?: { code?: string } } } }>(
+        'select record from harness_executions where run_id=$1', [f.f.run.id])).rows.map(row => row.record)
+      expect(executions).toEqual([expect.objectContaining({ state: 'completed',
+        result: expect.objectContaining({ error: expect.objectContaining({ code: 'HARNESS_PROFILE_UNAVAILABLE' }) }) })])
+      expect(f.provider.startedNodes).not.toContain('master')
+    } finally { await f.close() }
+  }, 90_000)
+
   it('refuses the entire child set when capacity fits children but omits their parent summary', async () => {
     const saved = hierarchyRuntimeFixture({ maximum: 4 })
     const coordinators = new Set(['master', 'build', 'test', 'bugs'])

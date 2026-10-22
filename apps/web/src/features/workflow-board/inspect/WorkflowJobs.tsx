@@ -53,7 +53,7 @@ export function WorkflowJobs({ workspaceId, workflowId }: { workspaceId: string;
                 <JobQueueFacts ticket={ticket} />
               </section>)}
             </section>}
-            {queue.hasNextPage ? <Button size="sm" variant="ghost" disabled={queue.isFetching}
+            {queue.hasNextPage ? <Button size="sm" variant="ghost" disabled={queue.isFetching && !queue.isRefetching}
               onClick={() => void queue.fetchNextPage()}>Older requests</Button> : null}
             {history.items.length > 0 && <h3>Accepted executions</h3>}
             <ul className="board-job-list" aria-label="Workflow jobs">
@@ -62,7 +62,7 @@ export function WorkflowJobs({ workspaceId, workflowId }: { workspaceId: string;
                   onClick={() => store.getState().select(item.execution)} />
               </li>)}
             </ul>
-            {history.hasNextPage ? <Button size="sm" variant="ghost" disabled={history.isFetching}
+            {history.hasNextPage ? <Button size="sm" variant="ghost" disabled={history.isFetching && !history.isRefetching}
               onClick={() => void history.fetchNextPage()}>Older jobs</Button> : null}
           </>}
         </>}

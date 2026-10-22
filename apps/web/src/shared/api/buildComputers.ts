@@ -18,7 +18,7 @@ function verifyTarget(value: import('@foreman-code/contracts/build-computers').B
 export function buildComputerQuery(target: DeviceProvisioningTarget) {
   const generation = sessionGeneration()
   return { queryKey: buildComputerKeys.computer(target), enabled: !sessionIsSwitching(),
-    retry: false, refetchInterval: 5_000,
+    refetchInterval: 5_000,
     queryFn: async ({ signal }: QueryFunctionContext) => {
       assertSession(generation)
       const result = await apiClient.request('/api/management/settings/build-computers/read',

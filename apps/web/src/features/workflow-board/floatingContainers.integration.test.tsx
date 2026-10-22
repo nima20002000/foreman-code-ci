@@ -7,7 +7,6 @@ import { LocalHumanAccessSchema } from '@foreman-code/contracts/management'
 import type { AgentChatContext } from '@foreman-code/contracts/agent-chat'
 import { server } from '../../mocks/server'
 import { agentChatFixtureFor, agentChatTestActions, createAgentChatMock } from '../../shared/mocks/agentChatHandlers'
-import { useChatWindowsStore } from '../conversations/agentChat/agentChatWindows'
 import { useConversationDraftStore } from '../conversations/conversationDraftStore'
 import { providerFixture } from '../conversations/agentChat/f7.testSupport'
 import { AgentChatTestSource, installChatSource } from '../conversations/agentChat/testSupport'
@@ -20,7 +19,6 @@ import { inspectionBoardFixture } from './inspect/inspectionFixtures'
 installBoardTestLifecycle()
 afterEach(() => {
   useConversationDraftStore.getState().clearAllDrafts()
-  useChatWindowsStore.setState({ open: {}, frames: {}, focus: {} })
   useApprovalInboxStore.setState({ open: false, workspaceId: '', workflowId: undefined })
 })
 

@@ -186,7 +186,7 @@ export function useExecutionActivity(context: AgentChatContext) {
   const client = useQueryClient()
   const key = useMemo(() => ['agent-chat', sessionGeneration(), agentChatContextKey(context), 'execution-activity'] as const, [context])
   const query = useQuery({
-    queryKey: key, enabled: !!context.runId, retry: false, staleTime: 0,
+    queryKey: key, enabled: !!context.runId, staleTime: 0,
     queryFn: async ({ signal }) => {
       const cursor = client.getQueryData<ExecutionActivityFeed>(key)?.cursor
       const page = await agentChatApi.executionActivity(context, cursor ? { cursor } : {}, { signal })

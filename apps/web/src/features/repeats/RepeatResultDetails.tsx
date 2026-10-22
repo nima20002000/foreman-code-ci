@@ -36,7 +36,7 @@ export function RepeatResultDetails({ snapshot }: { snapshot: RepeatGraphCurrent
       return page
     },
     getNextPageParam: (page) => page.pageInfo.nextCursor ?? undefined,
-    retry: false, refetchOnWindowFocus: false,
+    refetchOnWindowFocus: false,
   })
   const denied = useProtectedAccessError(query)
   if (denied || query.isError) return <Alert tone="warning" title="Accepted result details are unavailable.">

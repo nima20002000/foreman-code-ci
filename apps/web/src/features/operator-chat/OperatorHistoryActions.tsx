@@ -19,7 +19,6 @@ export function OperatorHistoryActions({ summary, queryKey, enabled, removing, o
     queryFn: ({ signal }) => getOperatorConversation(summary.conversationId, { signal }),
     select: state => state.settings?.harness,
     staleTime: Infinity,
-    retry: false,
     retryOnMount: false,
   })
   const denied = useAccessFailureLatch(query)

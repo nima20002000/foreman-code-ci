@@ -138,7 +138,7 @@ export function useAgentChat(inputContext: AgentChatContext,
   const [localError, setLocalError] = useState<string>()
   const [deliveryDenial, setDeliveryDenial] = useState<ApiError>()
   const [connection, setConnection] = useState<AgentChatConnection>('connecting')
-  const query = useQuery({ queryKey: key, enabled: canRead && !externalDenial && !deliveryDenial, retry: false, staleTime: 0,
+  const query = useQuery({ queryKey: key, enabled: canRead && !externalDenial && !deliveryDenial, staleTime: 0,
     queryFn: async ({ signal }) => {
       const read = ++readGeneration.current
       const denialAtStart = commandDenial.current

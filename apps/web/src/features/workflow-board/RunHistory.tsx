@@ -22,7 +22,7 @@ export function RunHistory({ scope }: { scope: RepeatGraphScopeV3 }) {
     getNextPageParam: (page, _pages, _param, params) =>
       page.pageInfo.nextCursor && !params.includes(page.pageInfo.nextCursor) ? page.pageInfo.nextCursor : undefined,
     maxPages: 5, staleTime: Infinity, gcTime: 60_000, refetchOnMount: false,
-    refetchOnWindowFocus: false, refetchOnReconnect: false, retry: false,
+    refetchOnWindowFocus: false, refetchOnReconnect: false,
   })
   const denied = useProtectedAccessError(history)
   const items = history.isError || denied ? [] : [...new Map(history.data?.pages.flatMap((page) =>
@@ -39,9 +39,9 @@ export function RunHistory({ scope }: { scope: RepeatGraphScopeV3 }) {
         <JsonDisclosure disclosureKey={`${disclosure}:${item.id}`} summary="Activity details" label={`Activity ${item.id}`} value={item.payload} />
       </li>)}</ol>
       {history.data && !history.isError && !items.length ? <p>No recorded activity in this history.</p> : null}
-      {history.hasNextPage && !history.isError ? <Button size="sm" disabled={history.isFetching}
+      {history.hasNextPage && !history.isError ? <Button size="sm" disabled={history.isFetching && !history.isRefetching}
         onClick={() => void history.fetchNextPage()}>Load more activity</Button> : null}
-      <Button size="sm" variant="ghost" disabled={history.isFetching} onClick={() => void refreshFirstInspectionPage(cache, key)}>Refresh activity</Button>
+      <Button size="sm" variant="ghost" disabled={history.isFetching && !history.isRefetching} onClick={() => void refreshFirstInspectionPage(cache, key)}>Refresh activity</Button>
     </> : null}
   </details>
 }

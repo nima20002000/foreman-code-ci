@@ -25,7 +25,7 @@ export const worktreeChoicesKey = (workspaceId: string) =>
 export function useSourceRoots(workspaceId: string) {
   useHarnessSessionEpoch()
   const generation = sessionGeneration()
-  return useQuery({ queryKey: ['workbench', 'source-roots', generation, workspaceId], retry: false,
+  return useQuery({ queryKey: ['workbench', 'source-roots', generation, workspaceId],
     enabled: !sessionIsSwitching(), queryFn: async ({ signal }) => {
       const result = await apiClient.request(`/api/management/workspaces/${encodeURIComponent(workspaceId)}/source-roots`,
         SourceRootListResultSchema, { signal })
@@ -125,7 +125,7 @@ export async function readWorktreeDetails(workspaceId: string, rootBinding: Sour
 export function useWorktreeChoices(workspaceId: string, enabled = true) {
   useHarnessSessionEpoch()
   const generation = sessionGeneration()
-  return useQuery({ queryKey: worktreeChoicesKey(workspaceId), retry: false, enabled: enabled && !sessionIsSwitching(),
+  return useQuery({ queryKey: worktreeChoicesKey(workspaceId), enabled: enabled && !sessionIsSwitching(),
     queryFn: async ({ signal }) => {
       const result = await readWorktreeChoices(workspaceId, signal)
       assertSession(generation)

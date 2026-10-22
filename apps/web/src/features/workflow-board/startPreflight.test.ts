@@ -90,7 +90,7 @@ function savedFacts(placed: boolean) {
       executionLocation: { runnerId: 'main', rootPath: '/unavailable' },
       locationValidation: { status: 'ready', checkedAt: '2026-10-01T00:00:00Z' } }),
     capabilities: mock.capabilities(),
-    version: mock.versions.get(workflow.currentVersionId!)!,
+    version: mock.versions.get(workflow.currentVersionId!)!, agents: [],
   }
   facts.workspace.locationValidation = { status: 'unavailable', checkedAt: '2026-10-01T00:00:00Z',
     error: { code: 'DIRECTORY_UNAVAILABLE', message: 'The directory is unavailable.' } }

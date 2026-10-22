@@ -21,6 +21,9 @@ function scoped(params: Scope, body: unknown) {
   return { ...value, ...params }
 }
 export function registerWorkflowHierarchyRoutes(app: FastifyInstance, service: WorkflowHierarchyService): void {
+  // Open report streams end on shutdown; otherwise the server waits for every browser to leave before it stops.
+  const streams = new Set<() => void>()
+  app.addHook('preClose', async () => { for (const close of [...streams]) close() })
   app.get<{ Params: Scope; Querystring: unknown }>(WORKFLOW_HIERARCHY_ROUTE, request => {
     const query = z.object({ runId: WorkflowHierarchyReadInputSchema.shape.runId,
       workflowVersionId: WorkflowHierarchyReadInputSchema.shape.workflowVersionId }).strict().parse(request.query)
@@ -38,7 +41,7 @@ export function registerWorkflowHierarchyRoutes(app: FastifyInstance, service: W
     reply.raw.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })
     let closed = false, polling = false, cursor: string | undefined
     const interval: { timer?: ReturnType<typeof setInterval> } = {}
-    const close = () => { closed = true; if (interval.timer) clearInterval(interval.timer); writer.close(); reply.raw.end() }
+    const close = () => { closed = true; streams.delete(close); if (interval.timer) clearInterval(interval.timer); writer.close(); reply.raw.end() }
     const writer = createSseWriter(reply.raw, () => !closed, close)
     const publish = (next: WorkflowHierarchyChange) => {
       if (next.cursor !== cursor) {
@@ -58,6 +61,7 @@ export function registerWorkflowHierarchyRoutes(app: FastifyInstance, service: W
     }
     interval.timer = setInterval(() => { void poll() }, 2000)
     interval.timer.unref()
-    reply.raw.once('close', () => { closed = true; if (interval.timer) clearInterval(interval.timer); writer.close() })
+    streams.add(close)
+    reply.raw.once('close', () => { closed = true; streams.delete(close); if (interval.timer) clearInterval(interval.timer); writer.close() })
   })
 }

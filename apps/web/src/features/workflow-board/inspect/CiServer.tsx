@@ -190,7 +190,7 @@ function CiJobTests({ scope, job, agent, statuses, onStatusesChange }: { scope: 
     queryKey: [...runInspectionQueryKey(scope), 'ci-tests', job.ticketId, selected.join(','), job.ci.state, job.tests],
     queryFn: ({ signal }) => runCiApi.tests({ workspaceId: scope.workspaceId, ticketId: job.ticketId,
       ...(selected.length < STATUSES.length ? { status: selected } : {}) }, { signal }),
-    enabled: selected.length > 0, retry: false,
+    enabled: selected.length > 0,
   })
   const denied = useProtectedAccessError(query)
   const results = !denied && query.data?.ticketId === job.ticketId ? query.data.tests : undefined
@@ -240,7 +240,7 @@ function CiJobLog({ scope, job }: { scope: RepeatGraphScopeV3; job: CiRunJob }) 
   const query = useQuery({
     queryKey: [...runInspectionQueryKey(scope), 'ci-log', job.ticketId, job.ci.state],
     queryFn: ({ signal }) => runCiApi.logTail({ workspaceId: scope.workspaceId, ticketId: job.ticketId }, { signal }),
-    enabled: started, retry: false,
+    enabled: started,
     refetchInterval: state => {
       if (isApiAccessError(state.state.error)) return false
       return ciJobRefreshing(job) ? 3000 : false

@@ -50,7 +50,6 @@ describe('PR17 provider editing recovery', () => {
     mount()
     expect(screen.getByRole('option', { name: 'Claude' })).toBeDisabled()
     expect(screen.getByText('Your draft is kept. Presets were not replaced.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Use built-in defaults/ })).toBeEnabled()
   })
   it('uses structured native MCP controls instead of the legacy JSON field', async () => {
     mount()

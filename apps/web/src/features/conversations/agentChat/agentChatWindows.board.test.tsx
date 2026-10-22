@@ -14,12 +14,10 @@ import { providerFixture } from './f7.testSupport'
 import { installChatSource } from './testSupport'
 import { findLoadedComposer } from '../loadedComposer.test-support'
 import { outsideRunTargetHandler } from './outsideRunTarget.testSupport'
-import { useChatWindowsStore } from './agentChatWindows'
 
 installBoardTestLifecycle()
 afterEach(() => {
   useConversationDraftStore.getState().clearAllDrafts()
-  useChatWindowsStore.setState({ open: {}, frames: {}, focus: {} })
 })
 
 /** The mounted Board route keeps one selected chat body and each Agent's local draft. */

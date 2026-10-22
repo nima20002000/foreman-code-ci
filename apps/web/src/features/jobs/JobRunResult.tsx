@@ -17,7 +17,7 @@ export function JobRunResult({ reference, definitionVersionId }: {
       || ApiError.is(query.state.error) && query.state.error.status === 404) ? 3000 : false,
   })
   if (query.isError) return <Alert title="Run job result unavailable" tone="warning">
-    {jobError(query.error)} <Button size="sm" disabled={query.isFetching}
+    {jobError(query.error)} <Button size="sm" disabled={query.isFetching && !query.isRefetching}
       onClick={() => void query.refetch()}>Retry job result</Button>
   </Alert>
   if (!query.data) return <p role="status">Reading the job accepted for this exact Run execution…</p>

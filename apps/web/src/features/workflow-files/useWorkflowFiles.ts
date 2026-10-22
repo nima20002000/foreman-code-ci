@@ -22,7 +22,6 @@ function useReferencePage(scope: PermanentFileScope, open: boolean, client: Work
     enabled: open,
     // Explicitly override a host's keepPreviousData default. Never show A under B.
     placeholderData: () => undefined,
-    retry: false,
   })
 }
 

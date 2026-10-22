@@ -32,7 +32,7 @@ export function AgentHostCiResults({ selection, scope, execution }: {
       : query.isPending ? <p role="status">Reading Host CI requests…</p>
       : <CiJobsTable jobs={jobs} agent={job => job.requester.nodeName} truncated={!!query.data?.truncated}
         onShow={job => store.setState({ open: true, ticketId: job.ticketId })} run />}
-    <Button size="sm" disabled={query.isFetching} onClick={() => void query.refetch()}>Refresh Host CI</Button>
+    <Button size="sm" disabled={query.isFetching && !query.isRefetching} onClick={() => void query.refetch()}>Refresh Host CI</Button>
     <CiServerDialog open={open && !query.isError} onOpenChange={open => store.setState({ open })}
       scope={scope} jobs={jobs} ticketId={ticketId} names={new Map()} truncated={!!query.data?.truncated}
       error={query.isError} loading={query.isPending} />

@@ -74,20 +74,24 @@ function WorkspaceCardActions({ workspaceId, name, revision = 0, disabled, onCom
       if (!next) close()
       else { setNextName(name); setBaseRevision(revision); setError(undefined); setConfirmingRemove(false); setOpen(true) }
     }}>
-      <TextField label="Name" disabled={pending || uncertain} value={nextName} onChange={(event) => setNextName(event.target.value)} />
+      <form className="resource-card-menu-rename" onSubmit={(event) => {
+        event.preventDefault()
+        if (!uncertain && !confirmingRemove) void submit('rename')
+      }}>
+        <TextField label="Name" disabled={pending || uncertain} value={nextName} onChange={(event) => setNextName(event.target.value)} />
+        {!uncertain && !confirmingRemove ? <Button type="submit" disabled={pending || nextName.trim() === name}>Rename</Button> : null}
+      </form>
       {error ? <Alert live tone="danger" title={error} /> : null}
       {uncertain ? <>
-        <Alert live tone="warning" title="The previous request may have succeeded.">Retry it before making another change.</Alert>
-        <Button onClick={() => void submit(lastCommand.current?.type ?? 'rename')}>Retry previous request</Button>
+        <Alert live tone="warning" title="The last change may have worked.">Try it again before making another change.</Alert>
+        <Button onClick={() => void submit(lastCommand.current?.type ?? 'rename')}>Try again</Button>
       </> : confirmingRemove ? <>
-        <Alert tone="warning" title="Remove this workspace?">App-created project folders and their contents will be deleted. Existing folders you selected are kept. Workflow and run history is retained.</Alert>
-        <Button variant="danger" disabled={pending} onClick={() => void submit('archive')}>Confirm removal</Button>
-        <Button disabled={pending} onClick={() => setConfirmingRemove(false)}>Cancel</Button>
-      </> : <>
-        <Button disabled={pending} onClick={() => void submit('rename')}>Rename</Button>
-        <Button variant="danger" disabled={pending} onClick={() => setConfirmingRemove(true)}>Remove workspace</Button>
-        <Button variant="ghost" disabled={pending} onClick={close}>Close</Button>
-      </>}
+        <Alert tone="warning" title="Remove this workspace?">Folders the app created are deleted. Your own folders and run history stay.</Alert>
+        <div className="n-actions">
+          <Button disabled={pending} onClick={() => setConfirmingRemove(false)}>Cancel</Button>
+          <Button variant="danger" disabled={pending} onClick={() => void submit('archive')}>Remove</Button>
+        </div>
+      </> : <Button variant="danger" disabled={pending} onClick={() => setConfirmingRemove(true)}>Remove workspace</Button>}
     </ResourceActionsMenu>
   )
 }
@@ -255,22 +259,22 @@ export function WorkspaceDirectory() {
           onRetry={() => void folderQuery.refetch()} /> : <LoadMore loadAll label="workspace folders" query={folderQuery} /> : null}
       <Dialog open={selection.confirming} onOpenChange={(open) => { if (!open) closeConfirmation() }}
         title={`Delete ${confirmationLabel}?`}
-        description="App-created project folders and selected disk folders will be permanently deleted with all files and subfolders. Existing folders selected as workspace destinations are kept. Workflow and run history is retained. Active runs block workspace deletion. Folder deletions run one at a time; earlier confirmed deletions remain if a later target fails."
-        busy={locked} initialFocusRef={cancelRef} size="sm"
+        description="Folders the app created and folders you selected here are deleted with everything in them. Folders you picked as a workspace location are kept. Run history stays. Workspaces with active runs can’t be deleted."
+        busy={locked} initialFocusRef={cancelRef} size="sm" role="alertdialog"
         footer={<>
           <Button ref={cancelRef} disabled={locked} onClick={closeConfirmation}>Cancel</Button>
           <Button variant="danger" disabled={batch.isPending || (selectedProtected && !uncertain)} onClick={() => void deleteSelected()}>
             {batch.isPending ? 'Deleting…' : uncertain ? 'Retry deletion' : confirmedDeleted.current ? `Delete remaining (${count})` : `Delete ${confirmationLabel}`}
           </Button>
         </>}>
-        <ul>{confirmationTargets.current.map((target) => <li key={target.kind === 'folder' ? folderSelectionId(target.path) : target.workspaceId}>
-          {target.name}{target.kind === 'folder' ? <span dir="ltr"> — {target.path}</span> : null}
+        <ul className="workspace-delete-targets">{confirmationTargets.current.map((target) => <li key={target.kind === 'folder' ? folderSelectionId(target.path) : target.workspaceId}>
+          {target.name}{target.kind === 'folder' ? <small> · folder</small> : null}
           {!((target.kind === 'folder' ? folderSelectionId(target.path) : target.workspaceId) in selection.selected) ? <small> — Deleted</small> : null}
         </li>)}</ul>
         {confirmedDeleted.current > 0 ? <p role="status">{confirmedDeleted.current} deleted. {count} remaining selections.</p> : null}
         {selectedProtected && !uncertain ? <Alert tone="warning" title="A selected folder is now protected.">Close this confirmation and deselect it to continue.</Alert> : null}
         {batch.isError ? <Alert tone="danger" live title={batch.error.message} /> : null}
-        {uncertain && !batch.isPending ? <p role="status">The request may have succeeded. Retry deletion to check its outcome safely.</p> : null}
+        {uncertain && !batch.isPending ? <p role="status">It may already be done. Retry to check.</p> : null}
       </Dialog>
     </section>
   )

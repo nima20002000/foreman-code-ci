@@ -12,7 +12,8 @@ const EnvironmentName = z.string().regex(/^[A-Z_][A-Z0-9_]{0,127}$/)
   .refine((name) => !/^(?:GRAPHQL_|FOREMAN_CODE_|OPERATOR_|DATABASE_URL$|TEST_DATABASE_URL$|PG|LD_|DYLD_|NODE_OPTIONS$|BASH_ENV$|ENV$)/.test(name),
     'Application credentials and process-control variables cannot be delegated to MCP servers.')
 export const HarnessMcpEndpointSchema = z.string().max(2048).url().superRefine((value, ctx) => {
-  const url = new URL(value)
+  let url: URL
+  try { url = new URL(value) } catch { return } // ignore: .url() already reported the invalid URL.
   if (url.username || url.password || url.search || url.hash) ctx.addIssue({ code: 'custom', message: 'Use an endpoint without credentials, a query string or a fragment.' })
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))) {
     ctx.addIssue({ code: 'custom', message: 'Use HTTPS, or HTTP on loopback for a local server.' })

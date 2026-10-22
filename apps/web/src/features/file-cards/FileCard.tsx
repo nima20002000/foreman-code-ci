@@ -101,7 +101,7 @@ function ReadyFileCard({ file, client, generation }: FileCardProps & { generatio
     queryKey,
     queryFn: ({ signal }) => client.download(file, { signal }),
     enabled: !downloadTerminal && isRasterImage(file.revision.mediaType) && file.revision.byteSize <= MAX_THUMBNAIL_BYTES,
-    gcTime: 0, staleTime: Infinity, retry: false,
+    gcTime: 0, staleTime: Infinity,
     refetchOnWindowFocus: false, refetchOnReconnect: false,
     meta: { persist: false },
   })
@@ -140,7 +140,7 @@ function ValidatedFileCard({ file, client }: FileCardProps) {
     // Share retention-save invalidation with drafts, not their cache or mutable discovery heads.
     queryKey: [...attachmentLifecycleQueryKey, 'message', clientId(client), session.generation, viewId],
     initialData: file.file, initialDataUpdatedAt: Date.parse(file.file.createdAt),
-    staleTime: Infinity, gcTime: 0, retry: false, meta: { persist: false },
+    staleTime: Infinity, gcTime: 0, meta: { persist: false },
     enabled: (query) => !unavailable && scope.kind === 'temporary'
       && (query.state.data ?? file.file).state === 'ready',
     queryFn: async ({ signal }) => {

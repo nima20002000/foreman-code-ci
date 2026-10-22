@@ -29,7 +29,9 @@ export const retiredHarnessLabel = 'Retired harness (OpenCode): read-only'
 export function harnessSummary(value: HarnessConfiguration): { label: string; value: string }[] {
   if (value.harness === 'opencode') return [{ label: 'Harness', value: retiredHarnessLabel }, { label: 'Model', value: value.model }]
   if (value.harness === 'claude') return [{ label: 'Harness', value: 'Claude' }, { label: 'Model', value: value.model },
-    { label: 'Profile', value: value.configDirectory }, { label: 'Authentication', value: value.authMode },
+    // The default profile directory reads as "Default"; a custom one shows its folder name (full path in the tooltip).
+    { label: 'Profile', value: /[\\/]\.claude[\\/]?$/.test(value.configDirectory) ? 'Default' : value.configDirectory.split(/[\\/]/).filter(Boolean).pop() ?? value.configDirectory },
+    { label: 'Sign-in', value: value.authMode === 'subscription' ? 'Subscription' : 'API key' },
     { label: 'Access', value: value.sandbox === 'read-only' ? 'Read only' : 'Workspace write' }]
   return [{ label: 'Harness', value: 'Codex' }, { label: 'Model', value: value.model },
       { label: 'Effort', value: value.reasoningEffort },

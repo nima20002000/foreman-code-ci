@@ -30,8 +30,6 @@
 .project-files-message, .project-file-error { margin: .375rem 0; font-size: .8125rem; overflow-wrap: anywhere; }
 .project-file-error { flex-basis: 100%; }
 .project-files-notice { display: flex; align-items: center; gap: .375rem; }
-.project-files-confirm-name { margin: 0; overflow-wrap: anywhere; }
-.project-files-confirm { max-inline-size: calc(100vw - 2rem); }
 .project-files-columns { display: grid; grid-template-columns: minmax(0, 1fr) 64px 80px 76px; gap: .75rem; padding: .875rem 0; border-bottom: 1px solid var(--n-border); color: var(--n-muted); font-size: 12px; }
 .project-files-columns > :last-child { text-align: end; }
 .project-file { display: grid; grid-template-columns: 20px minmax(0, 1fr) 64px 80px 36px 36px; gap: .375rem; padding-block: .875rem; }

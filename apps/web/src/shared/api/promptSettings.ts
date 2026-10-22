@@ -19,7 +19,6 @@ export function usePromptSettingQuery(page: PromptSettingsPage) {
   return useQuery({
     queryKey: promptSettingsKey(page),
     enabled: !sessionIsSwitching(),
-    retry: false,
     queryFn: ({ signal }) => apiClient.request(
       `/api/management/settings/${page}`, ManagedPromptSettingSchema, { signal },
     ),

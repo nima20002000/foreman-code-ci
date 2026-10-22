@@ -54,16 +54,21 @@
   width: min(17rem, calc(100vw - 3rem));
   max-height: min(30rem, 70dvh);
   overflow-y: auto;
-  padding: .875rem;
-  gap: var(--space-3);
+  padding: .625rem;
+  gap: var(--space-2);
   border: 1px solid var(--n-border-strong);
   border-radius: var(--n-radius);
   color: var(--n-text);
   background: var(--n-raised);
   box-shadow: var(--n-shadow);
 }
-.resource-card-menu .n-button { min-height: 44px; font-size: 13px; }
-.resource-card-menu .n-input { min-height: 44px; font-size: 15px; }
+.resource-card-menu .n-button { min-height: 32px; font-size: 13px; }
+.resource-card-menu .n-input { min-height: 32px; height: 32px; padding-block: 0; font-size: 13px; }
+/* Name and Rename share one row; Enter submits. */
+.resource-card-menu-rename { display: flex; align-items: flex-end; gap: var(--space-2); margin: 0; }
+.resource-card-menu-rename > .n-field { flex: 1 1 auto; min-width: 0; }
+.resource-card-menu-rename > .n-button { flex: none; }
+.resource-card-menu > .n-button--danger { justify-content: flex-start; }
 .resource-trash-control { display: inline-flex; }
 .resource-card-protection { position: absolute; top: 50%; right: 2.25rem; display: flex; transform: translateY(-50%); color: var(--n-muted); }
 .resource-card.is-selecting .resource-card-protection { right: .5rem; }

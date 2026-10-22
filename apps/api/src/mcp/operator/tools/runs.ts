@@ -37,6 +37,8 @@ export const runTools = [
       + 'Includes persisted failure codes (including EXECUTION_ACTIVE_TIMEOUT and WORK_RUN_EXECUTION_BUDGET_EXHAUSTED), '
       + 'failure messages, Stop causes and cleanup status. '
       + 'A Run waiting for approval may still have progressing sibling executions. '
+      + 'directionWait is present while the Run stays open only because its Master finished with remaining findings: it names the Master, its findings and the held executionId. '
+      + 'Send that Master a direction with workflow_chat_post (deliver to that execution) to continue, or stop the Run to end it there. '
       + 'Reads use a committed snapshot without waiting for Run writers; DATABASE_READ_TIMEOUT is retryable.',
     inputSchema: OperatorRunGetInputSchema,
     outputSchema: OperatorRunGetResultSchema,

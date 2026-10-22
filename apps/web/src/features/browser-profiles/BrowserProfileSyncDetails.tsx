@@ -26,6 +26,6 @@ export function BrowserProfileSyncDetails({ port, authBoundary, jobId, computerN
       </li>)}</ul>
       <small>Applying a source snapshot does not verify website sign-ins on another computer.</small>
     </> : null}
-    <Button size="sm" variant="ghost" disabled={query.isFetching} onClick={() => { void query.refetch() }}>Refresh progress</Button>
+    <Button size="sm" variant="ghost" disabled={query.isFetching && !query.isRefetching} onClick={() => { void query.refetch() }}>Refresh progress</Button>
   </section>
 }

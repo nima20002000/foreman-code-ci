@@ -3,7 +3,7 @@ import { readFile, realpath } from 'node:fs/promises'
 import { dirname, isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { ChildProcess } from 'node:child_process'
-import { NativeProcessRegistry, spawnNativeProcess, stopRecoveredChild, type NativeProcessRecovery } from '../recovery/processRegistry.js'
+import { NativeProcessRegistry, prepareNativeProcessRecovery, spawnNativeProcess, stopRecoveredChild, type NativeProcessRecovery } from '../recovery/processRegistry.js'
 import { HarnessExecutionError } from '../errors.js'
 import { createClaudeSdkRunner } from './runner.js'
 import type { Options, SDKUserMessage, McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
@@ -62,8 +62,10 @@ export function ownedClaudeSdkQueries(input: {
   return {
     requiresRuntimeClosure: () => unclosed.size > 0,
     async query({ prompt, options, scope }) {
-      const recovery = input.recovery.launchId && !usedReservation
-        ? input.recovery : await registry.reserveLaunch(input.recovery.owner)
+      // The handed-in launch may already be consumed by an earlier command under the same scope (e.g. a version
+      // probe before model discovery); prepareNativeProcessRecovery reserves a fresh launch in that case.
+      const recovery = !usedReservation
+        ? await prepareNativeProcessRecovery(input.recovery) : await registry.reserveLaunch(input.recovery.owner)
       usedReservation = true
       unclosed.add(recovery)
       const children = new Set<ChildProcess>()

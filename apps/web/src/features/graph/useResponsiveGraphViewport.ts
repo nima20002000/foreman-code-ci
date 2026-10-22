@@ -23,6 +23,10 @@ export function useResponsiveGraphViewport<N extends Node = Node, E extends Edge
   const onMove = useCallback<OnMove>((event) => {
     if (event) onManualMove()
   }, [onManualMove])
+  /** Fits again after late content (such as the Kanban) appears, unless the user has moved the view. */
+  const refit = useCallback(() => {
+    if (enabled && !moved.current) void instance.current?.fitView({ ...fitViewOptions, duration: 0 })
+  }, [enabled, fitViewOptions])
 
   useEffect(() => {
     const element = containerRef.current
@@ -57,5 +61,5 @@ export function useResponsiveGraphViewport<N extends Node = Node, E extends Edge
     }
   }, [enabled, delay, fitViewOptions])
 
-  return { containerRef, onInit, onMove, onManualMove }
+  return { containerRef, onInit, onMove, onManualMove, refit }
 }

@@ -177,7 +177,7 @@ export function WorkspaceRepositoryForm({ workspaceId, revision, repository }: {
     </>}
     {status?.state !== 'ready' && bases.length === 0 && !roots.isPending
       && <p role="status">An approved writable Workspaces location on Main is required.</p>}
-    <RepositoryProjectStatus result={status} loading={project.isPending} />
+    <RepositoryProjectStatus result={status} />
     {project.isError && <Alert tone="warning" title="Project status could not be read."
       action={<Button disabled={form.isSaving} onClick={() => void project.refetch()}>Check project status</Button>} />}
     {conflict && <Alert tone="warning" title="Repository settings changed elsewhere. Your edits are preserved.">
@@ -203,18 +203,11 @@ export function WorkspaceRepositoryForm({ workspaceId, revision, repository }: {
   </section>
 }
 
-function RepositoryProjectStatus({ result, loading }: { result?: WorkspaceRepositoryReadResult; loading: boolean }) {
-  if (!result) return loading ? <p role="status">Reading project status…</p> : null
-  if (result.state === 'unconfigured') return <p role="status">No project has been added.</p>
-  if (result.state === 'metadata-only') return <p role="status">Not prepared yet.</p>
-  if (result.state !== 'ready') return <Alert tone="warning" title={result.state === 'preparing'
-    ? 'Project preparation is incomplete.' : 'Project could not be prepared.'}>
-    <p>Last completed step: {result.operation?.phase ?? 'Unknown'}.</p>
+/** The settings strip shows the project state; only a failed or stuck preparation needs detail here. */
+function RepositoryProjectStatus({ result }: { result?: WorkspaceRepositoryReadResult }) {
+  if (!result || result.state === 'ready' || result.state === 'unconfigured' || result.state === 'metadata-only') return null
+  return <Alert tone="warning" title={result.state === 'preparing' ? 'Project preparation is incomplete.' : 'Project could not be prepared.'}>
     {result.operation?.failure && <p>{result.operation.failure.message}</p>}
     {result.operation?.failure?.newCommandRequired && <p>A new import attempt is required.</p>}
   </Alert>
-  const commit = result.approvedSource?.manifest.git?.commit
-  return <p className="workspace-project-readback" role="status">
-    Ready{commit ? <> at <code>{commit.slice(0, 7)}</code></> : null}
-  </p>
 }

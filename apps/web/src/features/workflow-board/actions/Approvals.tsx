@@ -15,7 +15,7 @@ function Approval({ scope, item, run, permitted, refresh }: {
   const [open, setOpen] = useDisclosure(), life = useActionLifetime(), feedback = useRef<HTMLParagraphElement>(null), cache = useQueryClient()
   const detail = useQuery({ queryKey: actionKey(scope, 'approval', item.id), enabled: open,
     queryFn: ({ signal }) => runActionsClient.approval(scope, item.id, { signal }),
-    retry: false, gcTime: 0, staleTime: 0, refetchOnWindowFocus: false, refetchOnReconnect: false })
+    gcTime: 0, staleTime: 0, refetchOnWindowFocus: false, refetchOnReconnect: false })
   const response = useMutation({ retry: false, gcTime: 0, mutationFn: async (variables: {
     expected: DurableInteraction; input: Parameters<typeof runActionsClient.respond>[2]
   }) => {
@@ -86,7 +86,7 @@ export function Approvals({ scope, run, canRead, canRespond, refresh }: {
     initialPageParam: null as string | null,
     queryFn: ({ signal, pageParam }) => runActionsClient.approvals(scope, pageParam, { signal }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
-    maxPages: 1, retry: false, gcTime: 0, refetchOnWindowFocus: false, refetchOnReconnect: false })
+    maxPages: 1, gcTime: 0, refetchOnWindowFocus: false, refetchOnReconnect: false })
   const rows = queue.isError ? [] : queue.data?.pages[0]?.items ?? []
   return <details onToggle={(event) => setOpen(event.currentTarget.open)}>
     <summary>Human approvals for this Run<InfoHint label="Human approvals for this Run">Only human-handled interactions are listed. App/Orchestrator approvals are not reassigned to a human here.</InfoHint></summary>
@@ -96,11 +96,11 @@ export function Approvals({ scope, run, canRead, canRespond, refresh }: {
       {!canRead ? <p>Human approval read permission is unavailable for this exact Run.</p> : <>
         {queue.isPending ? <p role="status">Loading one bounded approval page…</p> : null}
         {queue.isError ? <p role="alert">Approval inbox is unavailable: {queue.error.message}</p> : null}
-        <button type="button" disabled={queue.isFetching} onClick={() => void queue.refetch()}>Refresh approval page</button>
+        <button type="button" disabled={queue.isFetching && !queue.isRefetching} onClick={() => void queue.refetch()}>Refresh approval page</button>
         {!queue.isPending && !queue.isError && rows.length === 0 ? <p>No human interactions on this page. This is not evidence of native acknowledgement.</p> : null}
         <ol>{rows.map((item) => <Approval key={item.id} scope={scope} item={item} run={run} permitted={canRespond} refresh={refresh} />)}</ol>
-        {queue.hasNextPage ? <button type="button" disabled={queue.isFetching} onClick={() => void queue.fetchNextPage().then(() => pageHeading.current?.focus())}>Next approval page</button> : null}
-        {queue.data?.pageParams[0] !== null && queue.data?.pageParams[0] !== undefined ? <button type="button" disabled={queue.isFetching}
+        {queue.hasNextPage ? <button type="button" disabled={queue.isFetching && !queue.isRefetching} onClick={() => void queue.fetchNextPage().then(() => pageHeading.current?.focus())}>Next approval page</button> : null}
+        {queue.data?.pageParams[0] !== null && queue.data?.pageParams[0] !== undefined ? <button type="button" disabled={queue.isFetching && !queue.isRefetching}
           onClick={() => void cache.resetQueries({ queryKey: actionKey(scope, 'human-approvals'), exact: true }).then(() => pageHeading.current?.focus())}>First approval page</button> : null}
         <p>Up to 10 interactions per explicit page; opening a page does not replay approvals.</p>
       </>}

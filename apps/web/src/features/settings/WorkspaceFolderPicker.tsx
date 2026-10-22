@@ -308,14 +308,14 @@ function FolderPicker({ disabled, onSelect, value, label = 'Project folder', sel
         </div>
         {error && !creating ? <Alert tone="danger" live title={error} /> : null}
         {attempt.current.unresolved && !create.isPending ? <p role="status">Creation could not be confirmed. Retry creation to resolve the same request.</p> : null}
-        {!creating && (query.isFetching ? <LoadingState label="Loading folders…" /> : query.isError
-          ? <Alert tone="danger" live title={query.error.message}
+        {!creating && (query.isFetching && !query.isRefetching ? <LoadingState label="Loading folders…" rows={2} /> : query.isError
+          ? <Alert tone="danger" live title="Couldn't load folders."
               action={<Button disabled={locked || disabled} onClick={() => void query.refetch()}>Retry</Button>} />
           : data?.roots.length === 0
             ? <p className="workspace-folder-empty" role="status">No folders are available to browse.</p>
             : null)}
         <p className="n-sr-only" id={id + '-help'}>Open a folder to browse. {canMutatePath(currentPath, true) ? 'Control-click selects multiple folders; Delete removes selected empty folders. ' : ''}Select location confirms the destination. {newFolder && canMutatePath(newFolder.path) ? 'Control+Z undoes the latest folder creation.' : ''}</p>
-        {(!locationsOpen && creating) || (!query.isError && !query.isFetching && Boolean(entries?.length)) ? <ul className="workspace-folder-entries" aria-label={locationsOpen ? 'Locations' : 'Folders'}>
+        {(!locationsOpen && creating) || (!query.isError && !(query.isFetching && !query.isRefetching) && Boolean(entries?.length)) ? <ul className="workspace-folder-entries" aria-label={locationsOpen ? 'Locations' : 'Folders'}>
           {entries?.map((entry) => <li key={entry.path} className="workspace-folder-entry" data-selected={markedPaths.includes(entry.path) || (creating && namingFolder?.path === entry.path)}>
             {creating && namingFolder?.path === entry.path ? <div className="workspace-folder-name-editor">
               <Icon name="folder" size={16} />

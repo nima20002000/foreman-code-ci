@@ -12,7 +12,7 @@ export function BoardNavigationControls({ workspaceId, workflowId, selection, ru
 }) {
   const board = useWorkflowBoard()
   const saved = useQuery({ queryKey: boardDraftContextKey(workspaceId, workflowId),
-    queryFn: ({ signal }) => nextDraftApi.context(workspaceId, workflowId, { signal }), staleTime: 3000, retry: false })
+    queryFn: ({ signal }) => nextDraftApi.context(workspaceId, workflowId, { signal }), staleTime: 3000 })
   return <Toolbar label="Board controls">
     <RunsSelector selection={selection} triggerLabel={runsLabel} />
     <ScheduleClockButton workspaceId={workspaceId} workflowId={workflowId} isSaved={Boolean(saved.data?.draft.baseWorkflowVersionId)} />

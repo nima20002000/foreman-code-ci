@@ -3,3 +3,4 @@
 .computer-status-chip { display: inline-flex; border-radius: var(--radius-sm); }
 .computer-status-chip:focus-visible, .computer-status-signin:focus-visible { outline: 2px solid var(--n-accent); outline-offset: 2px; }
 .computer-status-signin { padding: 0 .25rem; border: 0; background: none; color: var(--n-accent); font-size: .72rem; cursor: pointer; text-decoration: underline; }
+.computer-status-pending { margin: 0; color: var(--n-faint); font-size: 12.5px; }

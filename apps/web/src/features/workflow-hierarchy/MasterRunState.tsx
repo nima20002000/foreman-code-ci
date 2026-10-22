@@ -13,7 +13,7 @@ export function MasterRunState({ saved, master, onChat, onExecution }: {
   if (!run) return <p>Choose a Run to see team reports and its final answer.</p>
   const coordination = run.coordination, source = coordination?.latestDeliverable?.execution ?? coordination?.sourceExecution
   return <section aria-label="Master Run status">
-    <h3>{coordination ? labels[coordination.state] : `Recorded Run state · ${run.state}`}</h3>
+    <h3>{coordination ? labels[coordination.state] : run.state.charAt(0).toUpperCase() + run.state.slice(1).replaceAll('_', ' ')}</h3>
     {coordination?.summary ? <p>{coordination.summary}</p> : null}
     {coordination?.state === 'waiting_for_direction' && coordination.direction ? <>
       <p>The Master needs your direction. This Run stays open; sending to its queued execution continues the same work.</p>
@@ -21,6 +21,6 @@ export function MasterRunState({ saved, master, onChat, onExecution }: {
     </> : null}
     {source ? <Button onClick={() => onExecution(master, source)}>
       {coordination?.state === 'succeeded' ? 'Read final answer' : 'Read latest deliverable'}</Button> : null}
-    {coordination?.state === 'failed' ? <p>The recorded failure is preserved with the Run. Open Run controls or the related execution for details.</p> : null}
+    {coordination?.state === 'failed' ? <p>This run failed. On the Graph, open the Master’s Details to see each attempt and its error.</p> : null}
   </section>
 }

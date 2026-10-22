@@ -12,12 +12,12 @@ export const settingsExperienceKeys = {
 }
 export function useWorkspaceDefaultsQuery() {
   useHarnessSessionEpoch()
-  return useQuery({ queryKey: settingsExperienceKeys.workspaceDefaults(), enabled: !sessionIsSwitching(), retry: false,
+  return useQuery({ queryKey: settingsExperienceKeys.workspaceDefaults(), enabled: !sessionIsSwitching(),
     queryFn: ({ signal }) => apiClient.request('/api/management/settings/workspaces', ManagedWorkspaceDefaultsSchema, { signal }) })
 }
 export function useWorkspaceCreationDefaultsQuery(enabled: boolean) {
   useHarnessSessionEpoch()
-  return useQuery({ queryKey: settingsExperienceKeys.workspaceCreation(), enabled: enabled && !sessionIsSwitching(), retry: false,
+  return useQuery({ queryKey: settingsExperienceKeys.workspaceCreation(), enabled: enabled && !sessionIsSwitching(),
     queryFn: ({ signal }) => apiClient.request('/api/management/settings/workspaces/creation', WorkspaceDefaultsSchema, { signal }) })
 }
 export function useUpdateWorkspaceDefaultsMutation() {
@@ -37,6 +37,6 @@ export function readLocalHumanAccess(options?: RequestOptions) {
 }
 export function useLocalHumanAccessQuery() {
   useHarnessSessionEpoch()
-  return useQuery({ queryKey: settingsExperienceKeys.access(), enabled: !sessionIsSwitching(), retry: false, staleTime: 0, refetchInterval: 60_000,
+  return useQuery({ queryKey: settingsExperienceKeys.access(), enabled: !sessionIsSwitching(), staleTime: 0, refetchInterval: 60_000,
     queryFn: ({ signal }) => readLocalHumanAccess({ signal }) })
 }

@@ -1,12 +1,10 @@
 import { useHoverControls } from '../../../shared/ui/useHoverControls'
 import type { JobWorkflowAdmissionReference } from '@foreman-code/contracts/job-workflow'
-import { createContext, forwardRef, memo, useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, forwardRef, memo, useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { Background, ConnectionMode, ReactFlow, type Edge, type EdgeProps, type NodeChange, type NodeProps } from '@xyflow/react'
 import { WorkflowRelationshipSchema, type WorkflowDefinitionV3, type WorkflowRelationship } from '@foreman-code/contracts/wave25'
 import { isHierarchyReportingRoute, type Agent } from '@foreman-code/contracts'
-import { AgentNodeView, AgentPopover, Dialog, IconButton, Icon, type AgentPanel } from '../../../shared/ui/nocturne'
-import { AgentChatWindowLayer } from '../../conversations/agentChat/AgentChatWindows'
-import { useChatWindowsStore } from '../../conversations/agentChat/agentChatWindows'
+import { AgentNodeView, IconButton, Icon, type AgentPanel } from '../../../shared/ui/nocturne'
 import { createGraphTopologyProjector } from '../topology'
 import { GRAPH_NODE_DEFAULT_SIZE } from '../mapper'
 import { createGraphGeometryAdapter, type GraphGeometryChange } from '../geometry'
@@ -44,49 +42,39 @@ type Canvas = {
   inspect: (action: () => void) => void
   open?: OpenAgentPanel
   setOpen: (next?: OpenAgentPanel) => void
-  panels: AgentPanelRenderer
   openChat?: (nodeId: string) => void
-  chatScope?: string
   selectNode?: (nodeId: string) => void
   beginResize?: () => void
   resize?: (change: GraphGeometryChange) => void
   finishResize?: (id: string, width: number, height: number, position?: { x: number; y: number }) => void
+  /** Agents whose current settings are newer than the saved workflow's pins. */
+  changedAgentIds?: readonly string[]
 }
-const CanvasContext = createContext<Canvas>({ draftKey: '', inspect: (action) => action(), setOpen: () => undefined,
-  panels: () => ({ chat: null, settings: null, info: null }) })
+const CanvasContext = createContext<Canvas>({ draftKey: '', inspect: (action) => action(), setOpen: () => undefined })
 
 const DraftAgent = memo(function DraftAgent({ id, data, selected, width, height }: NodeProps<AgentGraphNode>) {
-  const { draftKey, inspect, open, setOpen, panels, openChat, chatScope, selectNode, beginResize, resize, finishResize } = useContext(CanvasContext)
+  const { draftKey, inspect, open, setOpen, openChat, selectNode, beginResize, resize, finishResize, changedAgentIds } = useContext(CanvasContext)
   const entry = useGraphDraftStore((state) => state.nextDrafts[draftKey]?.graph.entryNodeId === id)
   const presentation = useGraphPresentationStore()
-  const board = useWorkflowBoard()
-  const runSelected = Boolean(board?.run)
-  const run = { label: 'Draft', state: 'idle' as const }
+  const run = { label: changedAgentIds?.includes(data.agent.id) ? 'Settings changed' : 'Draft', state: 'idle' as const }
   const facts = agentNodeFacts(data.agent)
   const meta = data.intervalSeconds ? [{ label: 'Loop', value: intervalLabel(data.intervalSeconds) }, ...facts.meta].slice(0, 2) : facts.meta
-  const core = useRef<HTMLButtonElement>(null)
-  const chatOpen = useChatWindowsStore((state) => Boolean(chatScope && state.open[chatScope]?.includes(id)))
   const panel = open?.nodeId === id ? open.panel : undefined
   const select = () => inspect(() => { presentation.getState().setFocusedNodeId(id); presentation.getState().setFocusedEdgeId(undefined) })
-  return <>
-    <AgentNodeView ref={core} name={data.label} harness={facts.harness} harnessLabel={facts.harnessLabel} model={facts.model}
-      icon={facts.icon} statusLabel={run.label} state={run.state} meta={meta} entry={entry} selected={selected} openPanel={panel ?? (chatOpen ? 'chat' : undefined)}
-      ariaLabel={`${data.label}, ${facts.roleLabel}${entry ? ', starts the workflow' : ''}, ${facts.harnessLabel}, ${run.label}`}
-      onSelect={(event) => { event.stopPropagation(); if (selectNode) selectNode(id); else select() }}
-      onAction={(next) => inspect(() => {
-        presentation.getState().setFocusedNodeId(id); presentation.getState().setFocusedEdgeId(undefined)
-        if (next === 'chat') openChat?.(id)
-        else setOpen(panel === next ? undefined : { nodeId: id, panel: next })
-      })}>
-      <AgentHandles name={data.label} />
-      <CircularNodeResizer id={id} name={data.label} width={width ?? GRAPH_NODE_DEFAULT_SIZE} height={height ?? GRAPH_NODE_DEFAULT_SIZE}
-        onStart={beginResize} onResize={resize}
-        onFinish={(change) => finishResize?.(id, change.width!, change.height!, change.position)} />
-    </AgentNodeView>
-    {panel && panel !== 'chat' && !runSelected && !board?.selectSidePanel ? <AgentPopover open anchor={core} title={data.label} subtitle={`${facts.roleLabel} · ${facts.harnessLabel}${facts.model ? ` · ${facts.model}` : ''}`}
-      icon={facts.icon} harness={facts.harness} panel={panel}
-      onClose={() => inspect(() => setOpen(undefined))} {...panels(id)} /> : null}
-  </>
+  return <AgentNodeView name={data.label} harness={facts.harness} harnessLabel={facts.harnessLabel} model={facts.model}
+    icon={facts.icon} statusLabel={run.label} state={run.state} meta={meta} entry={entry} selected={selected} openPanel={panel}
+    ariaLabel={`${data.label}, ${facts.roleLabel}${entry ? ', starts the workflow' : ''}, ${facts.harnessLabel}, ${run.label}`}
+    onSelect={(event) => { event.stopPropagation(); if (selectNode) selectNode(id); else select() }}
+    onAction={(next) => inspect(() => {
+      presentation.getState().setFocusedNodeId(id); presentation.getState().setFocusedEdgeId(undefined)
+      if (next === 'chat') openChat?.(id)
+      else setOpen(panel === next ? undefined : { nodeId: id, panel: next })
+    })}>
+    <AgentHandles name={data.label} />
+    <CircularNodeResizer id={id} name={data.label} width={width ?? GRAPH_NODE_DEFAULT_SIZE} height={height ?? GRAPH_NODE_DEFAULT_SIZE}
+      onStart={beginResize} onResize={resize}
+      onFinish={(change) => finishResize?.(id, change.width!, change.height!, change.position)} />
+  </AgentNodeView>
 })
 
 type DraftEdge = Edge<{ kind: WorkflowRelationship['kind']; bend: number;
@@ -131,15 +119,13 @@ const TypedEdge = memo(function TypedEdge({ id, source, target, data, selected }
   </g>
 })
 const DraftJob=memo(function DraftJob({id,data,selected}:NodeProps<JobGraphNode>) {
-  const {draftKey,inspect,open,setOpen,panels,selectNode}=useContext(CanvasContext)
+  const {draftKey,inspect,open,setOpen,selectNode}=useContext(CanvasContext)
   const entry=useGraphDraftStore(state=>state.nextDrafts[draftKey]?.graph.entryNodeId===id)
-  const core=useRef<HTMLButtonElement>(null),panel=open?.nodeId===id?open.panel:undefined
-  const board=useWorkflowBoard()
-  return <><AgentNodeView ref={core} name={data.label} harnessLabel="Job" statusLabel="Saved job" selected={selected} entry={entry} openPanel={panel}
+  const panel=open?.nodeId===id?open.panel:undefined
+  return <AgentNodeView name={data.label} harnessLabel="Job" statusLabel="Saved job" selected={selected} entry={entry} openPanel={panel}
     ariaLabel={`${data.label}, job, saved revision ${data.jobDefinitionRevision}`}
     onSelect={(event)=>{event.stopPropagation();inspect(()=>{selectNode?.(id);setOpen({nodeId:id,panel:'info'})})}}
 ><AgentHandles name={data.label}/></AgentNodeView>
-    {panel&&!board?.selectSidePanel?<Dialog open className="job-dialog" title={data.label} description="Noninteractive job" onOpenChange={value=>{if(!value)inspect(()=>setOpen(undefined))}}>{panels(id).info}{panels(id).settings}</Dialog>:null}</>
 })
 const nodeTypes = { agent: DraftAgent, job: DraftJob, ciServer: CiServerNode, boardKanban: BoardKanbanNode }
 const edgeTypes = { typed: TypedEdge, kanbanActivity: KanbanActivityEdge }
@@ -157,8 +143,9 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
   change: EditGraph; geometry: (changes: GraphGeometryChange[]) => void; pending: (pending: boolean) => void
   report: (error: unknown) => void; inspect?: (action: () => void) => void; removalDisabled?: boolean
   open?: OpenAgentPanel; setOpen?: (next?: OpenAgentPanel) => void; panels?: AgentPanelRenderer
+  changedAgentIds?: readonly string[]
   children?: ReactNode
-}>(function DraftCanvas({ draftKey, graph, agents, kind, baseGraph, semanticLocked = false,
+}>(function DraftCanvas({ draftKey, graph, agents, kind, baseGraph, semanticLocked = false, changedAgentIds,
   change, geometry, pending, report, inspect = (action) => action(), removalDisabled = false,
   open, setOpen = () => undefined, panels = () => ({ chat: null, settings: null, info: null }), children }, ref) {
   const board = useWorkflowBoard()
@@ -175,6 +162,12 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
   const teamNodeId = board?.teamNodeId
   const shownIds = useMemo(() => new Set(nodes.filter(node => !collapsed.has(node.id)).map(node => node.id)), [nodes, collapsed])
   const kanban = useBoardKanban({ workspaceId: graph.workspaceId, workflowId: graph.id, nodes, nodeIds: shownIds, enabled: !!board })
+  const kanbanShown = !!kanban.node, refit = responsive.refit
+  useEffect(() => {
+    if (!kanbanShown) return
+    const frame = requestAnimationFrame(refit)
+    return () => cancelAnimationFrame(frame)
+  }, [kanbanShown, refit])
   const flowNodes = useMemo<(GraphNode | CiServerFlowNode | KanbanFlowNode)[]>(() => [...nodes.filter(node => !collapsed.has(node.id)).map(node =>
     teamNodeId === node.id ? { ...node, selected: true } : node), ci.node, ...(kanban.node ? [kanban.node] : [])],
   [nodes, collapsed, teamNodeId, ci.node, kanban.node])
@@ -256,21 +249,12 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
     setNodes(result.nodes)
     pending(result.pending)
   }
-  // Chat windows live in local interaction state, one list per Board view (this draft here, each Run in its own canvas).
-  const chatScope = `draft:${draftKey}`
   const selectSidePanel = board?.selectSidePanel
   const openChat = useCallback((nodeId: string) => {
-    if (selectSidePanel) selectSidePanel({ kind: 'agent', nodeId, tab: 'chat' })
-    else useChatWindowsStore.getState().openWindow(chatScope, nodeId)
-  }, [selectSidePanel, chatScope])
-  // Other code asks for a node's chat through the single open-panel state; chat itself opens as a window.
+    selectSidePanel?.({ kind: 'agent', nodeId, tab: 'chat' })
+  }, [selectSidePanel])
+  // Other code asks for a node's chat through the single open-panel state; chat opens in the Board side panel.
   useEffect(() => { if (open?.panel === 'chat') { openChat(open.nodeId); setOpen(undefined) } }, [open, openChat, setOpen])
-  const chatWindow = (nodeId: string) => {
-    const node = topology.nodes.find((item) => item.id === nodeId)
-    if (!node || node.type !== 'agent') return undefined
-    const { chat, chatHasHeader }: AgentPanels = panels(nodeId)
-    return chat ? { name: node.data.label, harness: agentNodeFacts(node.data.agent).harness, chat, chatHasHeader } : undefined
-  }
   const docked = board?.sidePanel?.kind === 'agent' ? board.sidePanel : undefined
   const shown = docked ? { nodeId: docked.nodeId, panel: docked.tab === 'details' ? 'info' as const : docked.tab } : undefined
   const setPanel = (next?: OpenAgentPanel) => {
@@ -278,7 +262,7 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
       ? { kind: 'agent', nodeId: next.nodeId, tab: next.panel === 'info' ? 'details' : next.panel } : { kind: 'none' })
     else setOpen(next)
   }
-  const context = { draftKey, inspect, open: board?.selectSidePanel ? shown : open, setOpen: setPanel, panels, openChat, chatScope, selectNode, beginResize, resize, finishResize }
+  const context = { draftKey, inspect, open: board?.selectSidePanel ? shown : open, setOpen: setPanel, openChat, selectNode, beginResize, resize, finishResize, changedAgentIds }
   return <CanvasContext.Provider value={context}>
     <div ref={responsive.containerRef} className={`next-draft-canvas board-draft-canvas${connecting ? ' is-connecting' : ''}`} style={selectedRun ? { display: 'none' } : undefined} aria-hidden={!!selectedRun} inert={!!selectedRun} aria-label="Editable workflow graph">
       {/* While a Run is shown, the draft's data stays mounted but its flow does not: a hidden
@@ -304,9 +288,7 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
       </ReactFlow>}
       {children}
       <HierarchyCanvasControls scope={draftKey} hierarchy={graph.hierarchy} name={nodeId => nodeTitle(graph, nodeId)} onTeam={board?.selectTeam} />
-      {selectedRun || board?.selectSidePanel ? null : <AgentChatWindowLayer scope={chatScope} content={chatWindow} />}
-      <WorkflowAgentPanel panels={panels} chatScope={chatScope} active={!selectedRun && board?.authoringActive !== false}
-        nodes={graph.nodes.map(node => ({ id: node.id, name: nodeTitle(graph, node.id) }))}
+      <WorkflowAgentPanel panels={panels} active={!selectedRun && board?.authoringActive !== false}
         findNode={nodeId => graph.nodes.some(node => node.id === nodeId) ? undefined : false} />
     </div>
     {selectedRun || board?.canvasVisible === false || board?.authoringActive === false || board?.memoryOpen ? null : ci.dialog}

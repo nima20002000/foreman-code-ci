@@ -13,29 +13,25 @@ export function ConflictRecoveryPanel({ draftKey, edit, pending, report }: {
   if (!recoveries.length) return null
   return <section className="next-draft-section" aria-label="Draft conflict recovery">
     <h3>Recovered drafts</h3>
-    <p className="next-draft-hint">Unsaved drafts kept after a reload. Reapply the changes you want, then save.</p>
-    <ul>{recoveries.map(item => <li key={item.id}>
-      <span>Unsaved draft · {new Date(item.recordedAt).toLocaleString()}</span>{' '}
-      <Button size="sm" onClick={() => setSelected(item.id)}>View unsaved draft</Button>{' '}
-      <Button size="sm" variant="ghost" disabled={pending} onClick={() => setDiscard(item)}>Discard recovered draft</Button>
+    <p className="next-draft-hint">Kept after a reload. Reapply what you need, then save.</p>
+    <ul className="conflict-recovery-list">{recoveries.map(item => <li key={item.id} className="workflow-settings-row">
+      <span>{new Date(item.recordedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</span>
+      <span className="n-actions">
+        <Button size="sm" variant="ghost" aria-pressed={selected === item.id} onClick={() => setSelected(selected === item.id ? undefined : item.id)}>
+          {selected === item.id ? 'Hide' : 'Compare'}</Button>
+        <Button size="sm" variant="ghost" disabled={pending} onClick={() => setDiscard(item)}>Discard</Button>
+      </span>
     </li>)}</ul>
-    {recovery ? <section aria-label="Read-only recovered draft">
-      <header><h4>Unsaved draft — read-only</h4><Button size="sm" variant="ghost" onClick={() => setSelected(undefined)}>Close comparison</Button></header>
-      <p>This copy is kept until you explicitly discard it. It is separate from the current edit base.</p>
-      <table><caption>Recovered draft and current editor</caption><thead><tr><th>Field</th><th>Recovered</th><th>Current editor</th></tr></thead>
-        <tbody><tr><th>Workflow</th><td>{recovery.snapshot.graph.name}</td><td>{edit.graph.name}</td></tr>
-          <tr><th>Master node</th><td>{recovery.snapshot.graph.hierarchy ? nodeTitle(recovery.snapshot.graph, recovery.snapshot.graph.hierarchy.masterNodeId) : 'No Master'}</td><td>{edit.graph.hierarchy ? nodeTitle(edit.graph, edit.graph.hierarchy.masterNodeId) : 'No Master'}</td></tr>
-          <tr><th>Nodes / connections</th><td>{recovery.snapshot.graph.nodes.length} / {recovery.snapshot.graph.edges.length}</td><td>{edit.graph.nodes.length} / {edit.graph.edges.length}</td></tr>
-        </tbody></table>
-      <details><summary>All recovered fields</summary><p>Use these retained values for manual comparison. This view cannot save or replace the current draft.</p>
-        <pre tabIndex={0}>{JSON.stringify({ graph: recovery.snapshot.graph,
-          agentEdits: recovery.snapshot.agentEdits ?? {}, unsavedAgentForms: recovery.snapshot.agentForms ?? {},
-          unsavedWorkflowForms: recovery.snapshot.workflowForms ?? {} }, null, 2)}</pre>
-      </details>
-    </section> : null}
+    {recovery ? <table className="conflict-recovery-table" aria-label="Recovered draft compared with the current draft">
+      <thead><tr><th scope="col"></th><th scope="col">Recovered</th><th scope="col">Current</th></tr></thead>
+      <tbody><tr><th scope="row">Name</th><td>{recovery.snapshot.graph.name}</td><td>{edit.graph.name}</td></tr>
+        <tr><th scope="row">Master</th><td>{recovery.snapshot.graph.hierarchy ? nodeTitle(recovery.snapshot.graph, recovery.snapshot.graph.hierarchy.masterNodeId) : 'None'}</td><td>{edit.graph.hierarchy ? nodeTitle(edit.graph, edit.graph.hierarchy.masterNodeId) : 'None'}</td></tr>
+        <tr><th scope="row">Agents</th><td>{recovery.snapshot.graph.nodes.map(node => nodeTitle(recovery.snapshot.graph, node.id)).join(', ') || 'None'}</td><td>{edit.graph.nodes.map(node => nodeTitle(edit.graph, node.id)).join(', ') || 'None'}</td></tr>
+        <tr><th scope="row">Connections</th><td>{recovery.snapshot.graph.edges.length}</td><td>{edit.graph.edges.length}</td></tr>
+      </tbody></table> : null}
     <ConfirmDialog open={!!discard} onOpenChange={open => { if (!open) setDiscard(undefined) }}
-      title="Discard this recovered draft?" description="Only this read-only recovery is removed. Other recoveries and the current editor are kept."
-      confirmLabel="Discard recovered draft" onConfirm={() => {
+      title="Discard this recovered draft?" description="Only this recovered copy is removed. Your current draft stays."
+      confirmLabel="Discard" onConfirm={() => {
         if (!discard) return
         try {
           discardConflictRecovery(draftKey, discard)

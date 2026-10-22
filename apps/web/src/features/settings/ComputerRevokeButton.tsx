@@ -24,14 +24,14 @@ export function ComputerRevokeButton({ registration }: { registration: DeviceReg
       if (!attempt.unresolved) original.current = undefined
     }
   }
-  return <div>
+  return <div className="computer-revoke">
     <UnsavedEditorGuard editor={{ label: 'computer revoke command', dirty: attempt.unresolved, busy: revoke.isPending, uncertain: attempt.unresolved,
       save: submit, discard: () => { if (!attempt.unresolved) revoke.reset() }, error: revoke.error?.message }} />
-    <p>Revoking application access blocks future authenticated connections. It does not prove an unreachable worker process has stopped.</p>
-    <Button disabled={revoke.isPending || (!attempt.unresolved && registration.status === 'revoked')} onClick={() => void submit()}>
+    <p>It can no longer connect. Work already running there may keep going until it finishes.</p>
+    <Button variant="danger" disabled={revoke.isPending || (!attempt.unresolved && registration.status === 'revoked')} onClick={() => void submit()}>
       {revoke.isPending ? 'Revoking…' : attempt.unresolved ? 'Reconcile original revoke command' : 'Revoke worker access'}
     </Button>
-    {revoke.error ? <p role="alert">{revoke.error.message}</p> : null}
-    {revoke.isSuccess ? <p role="status">Application access revoked.</p> : null}
+    {revoke.error ? <p role="alert" className="settings-note">{revoke.error.message}</p> : null}
+    {revoke.isSuccess ? <p role="status" className="settings-note">Access revoked.</p> : null}
   </div>
 }

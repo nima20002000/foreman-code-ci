@@ -68,10 +68,10 @@ function WorktreeEditor({ value, options, optionsState, workspaceProject, disabl
   const leave = useUnsavedChanges({ scope: 'surface', label: 'default worktree', dirty, busy: disabled,
     error, save: apply, discard: close })
   return <Dialog open onOpenChange={open => { if (!open) void leave(close) }} title="Default worktree"
-    closeLabel="Close default worktree" busy={disabled} returnFocusRef={returnFocusRef}
-    headerLeading={<InfoHint label="Worktree">Each Agent gets its own worktree and unique branch at the selected approved commit. Apply changes the Board draft. Save changes persists the setting for a later Run.</InfoHint>}>
+    closeLabel="Close default worktree" busy={disabled} returnFocusRef={returnFocusRef} size="sm"
+    description="Each agent works in its own worktree and branch. Applies to the draft until you save.">
     <div className="worktree-editor">
-    <Select label="Approved source root" value={selection} disabled={disabled}
+    <Select label="Source" value={selection} disabled={disabled}
       options={[
         { value: 'workspace', label: 'Use workspace default' },
         ...(rootBinding && selected < 0 ? [{ value: 'retained', label: 'Configured source — retained', disabled: true }] : []),
@@ -90,20 +90,20 @@ function WorktreeEditor({ value, options, optionsState, workspaceProject, disabl
     {workspaceProject && <Button disabled={disabled || !options.some(option =>
       sameWorkflowValue(option.rootBinding, workspaceProject) && !option.unavailableReason)}
       onClick={() => { setRootBinding(workspaceProject); setError(undefined) }}>Use workspace project</Button>}
-    <TextField label="Agent branch prefix" value={prefix} placeholder="foreman/site"
+    <TextField label="Branch prefix" value={prefix} placeholder="foreman/site"
       disabled={disabled || !rootBinding} onChange={event => { setPrefix(event.target.value); setError(undefined) }}
-      labelHint={<InfoHint label="Agent branch prefix">Optional. A unique suffix is added for every Agent execution.</InfoHint>} />
+      labelHint={<InfoHint label="Branch prefix">Optional. Each agent run adds a unique suffix.</InfoHint>} />
     {current && <dl><dt>Computer</dt><dd>{current.computer}</dd><dt>Repository</dt><dd>{current.repository ?? 'Unavailable'}</dd>
       <dt>Approved commit</dt><dd><code>{current.commit ?? 'Unavailable'}</code></dd>
       <dt>Project root</dt><dd>{current.projectRoot ?? 'Unavailable'}</dd><dt>Access</dt><dd>{current.accessMode}</dd></dl>}
     {rootBinding && (!current || current.unavailableReason) && <Alert tone="warning" title={current?.unavailableReason
       ?? 'The configured source is unavailable. Choose an available approved source to run.'} />}
     {optionsState !== 'ready' && <p role="status">{optionsState === 'loading'
-      ? 'Reading authorized worktree choices…' : 'Authorized worktree choices are unavailable. The saved setting is retained.'}</p>}
+      ? 'Loading sources…' : 'Couldn’t load the sources. Your saved choice is kept.'}</p>}
     {error && <Alert tone="danger" title={error} />}
     <div className="worktree-editor-actions">
       <Button disabled={disabled} onClick={() => void leave(close)}>Cancel</Button>
-      <Button variant="primary" disabled={disabled || !dirty} onClick={apply}>Apply worktree</Button>
+      <Button variant="primary" disabled={disabled || !dirty} onClick={apply}>Apply</Button>
     </div>
     </div>
   </Dialog>

@@ -1,12 +1,12 @@
 import { InfoHint } from '../../shared/ui/InfoHint'
-import { useEffect, useId, useRef, useState, type RefObject } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { createStore, useStore } from 'zustand'
 import { Download, File as FileIcon, RotateCcw, Trash2, Upload } from 'lucide-react'
 import type { FileRow } from '@foreman-code/contracts/files'
 import { CommandAttempt } from '../../shared/api/commandAttempt'
 import { assertSession, sessionGeneration } from '../../shared/api/sessionBoundary'
-import { Button, Dialog, IconButton, TextField } from '../../shared/ui/nocturne'
+import { Button, ConfirmDialog, IconButton, TextField } from '../../shared/ui/nocturne'
 import { useFileDrop } from '../../shared/ui/useFileDrop'
 import { ATTACHMENT_ACCEPT, inspectAttachment } from '../attachments/attachmentFiles'
 import { projectFilesClient, type ProjectFileRemoveInput } from './projectFilesClient'
@@ -70,7 +70,7 @@ function WorkspaceProjectFiles({ workspaceId }: ProjectFilesSectionProps) {
     {query.isPending && <p className="project-files-message" role="status">Loading…</p>}
     {query.isError && <div className="project-files-notice">
       <p className="project-files-message" role="alert">Couldn’t load files.</p>
-      <IconButton label="Retry loading project files" variant="ghost" size="sm" disabled={query.isFetching}
+      <IconButton label="Retry loading project files" variant="ghost" size="sm" disabled={query.isFetching && !query.isRefetching}
         onClick={() => { void (query.isFetchNextPageError ? query.fetchNextPage() : query.refetch()) }}>
         <RotateCcw size={16} aria-hidden="true" />
       </IconButton>
@@ -81,9 +81,9 @@ function WorkspaceProjectFiles({ workspaceId }: ProjectFilesSectionProps) {
         workspaceId={workspaceId} row={row} onRemove={() => uiStore.setState({ removing: row })} />)}
     </ul>}
     {!query.isPending && !query.isError && visibleRows.length === 0 && <p className="project-files-message">No files.</p>}
-    {query.hasNextPage && <Button size="sm" variant="ghost" disabled={query.isFetching}
+    {query.hasNextPage && <Button size="sm" variant="ghost" disabled={query.isFetching && !query.isRefetching}
       onClick={() => { void query.fetchNextPage() }}>More</Button>}
-    {ui.removing && <ProjectFileRemoval workspaceId={workspaceId} row={ui.removing} returnFocusRef={uploadButton}
+    {ui.removing && <ProjectFileRemoval workspaceId={workspaceId} row={ui.removing}
       onClose={() => uiStore.setState({ removing: null })} />}
   </section>
 }
@@ -146,13 +146,12 @@ function ProjectFileItem({ workspaceId, row, onRemove }: ProjectFilesSectionProp
   </li>
 }
 
-function ProjectFileRemoval({ workspaceId, row, onClose, returnFocusRef }: ProjectFilesSectionProps & {
-  row: FileRow; onClose: () => void; returnFocusRef: RefObject<HTMLButtonElement | null>
+function ProjectFileRemoval({ workspaceId, row, onClose }: ProjectFilesSectionProps & {
+  row: FileRow; onClose: () => void
 }) {
   const mutation = useProjectFileRemove(workspaceId)
   const attempt = useRef(new CommandAttempt<Omit<ProjectFileRemoveInput, 'commandId'>>())
   const inFlight = useRef(false)
-  const cancel = useRef<HTMLButtonElement>(null)
   const locked = mutation.isPending || attempt.current.unresolved
   const close = () => { if (!locked) onClose() }
   const remove = async () => {
@@ -168,16 +167,9 @@ function ProjectFileRemoval({ workspaceId, row, onClose, returnFocusRef }: Proje
       attempt.current.failed(error)
     } finally { inFlight.current = false }
   }
-  return <Dialog open title="Remove file?" size="sm" role="alertdialog" busy={locked}
-    initialFocusRef={cancel} returnFocusRef={returnFocusRef} className="project-files-confirm"
-    onOpenChange={(open) => { if (!open) close() }}
-    footer={<>
-      <Button ref={cancel} size="sm" disabled={locked} onClick={close}>Cancel</Button>
-      <Button size="sm" variant="danger" disabled={mutation.isPending} onClick={() => { void remove() }}>
-        {mutation.isPending ? 'Removing…' : mutation.isError ? 'Retry removal' : 'Remove'}
-      </Button>
-    </>}>
-    <p className="project-files-confirm-name">{row.revision.filename}</p>
-    {mutation.isError && <p className="project-files-message" role="alert">Couldn’t remove file.</p>}
-  </Dialog>
+  return <ConfirmDialog open title={`Remove ${row.revision.filename}?`}
+    description="It’s removed from the project files. Runs that already used it keep their copy."
+    pending={mutation.isPending} confirmLabel={mutation.isError ? 'Retry' : 'Remove'}
+    error={mutation.isError ? 'Couldn’t remove the file.' : undefined}
+    onOpenChange={(open) => { if (!open) close() }} onConfirm={() => { void remove() }} />
 }

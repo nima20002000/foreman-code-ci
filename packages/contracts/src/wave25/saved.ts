@@ -23,6 +23,18 @@ export type SavedWorkflowDefinition = z.infer<typeof SavedWorkflowDefinitionSche
 export type SavedWorkflowVersion = z.infer<typeof SavedWorkflowVersionSchema>
 type SavedWorkflowRun = z.infer<typeof SavedWorkflowRunSchema>
 
+/** A Master finished with remaining findings and no work instructions. Its next turn is held
+ * (the Run stays open) until someone sends that Master a direction, e.g. in group chat. */
+export const RunDirectionWaitSchema = z.object({
+  workflowNodeId: GraphIdSchema, agentId: GraphIdSchema, agentName: z.string().min(1).max(200),
+  /** The held next turn; a direction delivered to it releases the Run. */
+  executionId: GraphIdSchema,
+  summary: z.string().max(600).optional(),
+  findings: z.array(z.string().min(1).max(500)).max(10), findingsCount: z.number().int().nonnegative(),
+  since: TimestampSchema,
+}).strict()
+export type RunDirectionWait = z.infer<typeof RunDirectionWaitSchema>
+
 /** Public detail retains existing result authorization/redaction obligations.
  * This is NOT the content-free graph/occurrence metadata contract. A redacted
  * Run may omit location and principal; internal admission uses a stronger schema. */
@@ -32,6 +44,7 @@ export const RunDetailsV3Schema = z.object({ run: WorkflowRunV3Schema,
   executions: z.array(HarnessExecutionSchema), activity: z.array(RunActivitySchema), cleanupPending: z.boolean().optional(),
   liveActivity: RunLiveActivitySchema.optional(),
   activityPageInfo: z.object({ hasEarlier: z.boolean() }).strict().optional(),
+  directionWait: RunDirectionWaitSchema.optional(),
 }).strict()
   .superRefine(({ run, executions, activity }, context) => {
     const ids = new Set<string>()

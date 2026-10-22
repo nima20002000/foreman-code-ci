@@ -43,7 +43,7 @@ it.each(['user', 'native'])('retains %s approval selection, revision checks, and
   expect(screen.getByRole('heading', { name: 'Approval routing' })).toBeVisible()
   await user.selectOptions(handler, selection)
   await user.click(screen.getByRole('button', { name: 'Save workflow defaults' }))
-  expect(await screen.findByText('Changes saved to the server')).toBeVisible()
+  expect(await screen.findByText('Saved.')).toBeVisible()
   expect(handler).toHaveValue(selection)
   view.unmount()
   client.clear()

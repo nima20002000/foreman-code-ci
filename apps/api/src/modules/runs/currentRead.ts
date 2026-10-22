@@ -13,6 +13,7 @@ import { withExclusiveGraphConnection, type GraphTransactionSql } from '../run-g
 import { readAcceptedRepeatRunLocked, readRecordedRepeatRunSnapshot, type AcceptedRepeatRunSnapshot } from './repeatStartRead.js'
 import { readRepeatExecutionsLocked } from './repeatExecutionRead.js'
 import { readExecutionQueueReason } from './executionQueue.js'
+import { readRunDirectionWaitLocked } from './directionWaitRead.js'
 
 const executionReadBatchSize = 16
 
@@ -98,7 +99,9 @@ export function readCurrentRunDetails(pool: pg.Pool, principal: ManagementPrinci
         ...(cleanup?.message ? { message: cleanup.message } : {}),
       }))
     }
-    const detail = { run, ...(worktrees.length ? { worktrees } : {}), executions, activity, activitySnapshot, activityPageInfo: { hasEarlier: activityRows.length > 100 }, cleanupPending: cleanup.pending }
+    const directionWait = await readRunDirectionWaitLocked(sql, snapshot)
+    const detail = { run, ...(worktrees.length ? { worktrees } : {}), executions, activity, activitySnapshot, activityPageInfo: { hasEarlier: activityRows.length > 100 }, cleanupPending: cleanup.pending,
+      ...(directionWait ? { directionWait } : {}) }
     if (graphJsonBytes(detail) > RUN_GRAPH_LIMITS.snapshotBytes) throw new DomainError('RUN_DETAIL_TOO_LARGE', 'Use bounded graph metadata and activity pages for this Run.', 409)
     const parsed = SavedRunDetailsSchema.parse(detail)
     // Redaction uses the live grants in this same snapshot, not the possibly

@@ -181,7 +181,7 @@ function nativeOutputActivity(native: Record<string, unknown>, runId: string): A
   if (tool) kind = 'tool_action'
   let status: RunActivityPublic['status'] = claude?.status ?? toolStatus(native)
   const action = status === 'running' ? 'started' : status
-  let summary = label ? `${label} ${action}` : 'Native activity recorded; details unavailable'
+  let summary = label ? `${label} ${action}` : 'Agent activity'
   if (native.type === 'native.notification') {
     summary = notificationSummaries.get(string(native.nativeMethod) ?? '') ?? summary
   } else if (native.type === 'turn.started' || native.type === 'turn.completed') {
@@ -467,7 +467,8 @@ export function publicRunActivity(row: ActivityReadRow, version: WorkflowVersion
       ({ kind, status, summary } = approvalActivity(row.kind, payload, refs))
       break
     case 'review_job_state': ({ kind, status, summary } = reviewActivity(string(payload.state), refs.reviewJobId)); break
-    default: kind = 'error'; status = 'unknown'; summary = 'Activity details unavailable'
+    // An event kind this view has no wording for yet: show its name plainly instead of an error.
+    default: kind = 'tool_log'; status = 'recorded'; summary = String(row.kind).replaceAll('_', ' ').replace(/^./, c => c.toUpperCase())
   }
   const severity = status === 'failed' || status === 'delivery_failed' ? 'error'
     : ['denied','unknown','needs_direction'].includes(status) ? 'warning' : 'info'

@@ -6,7 +6,7 @@ import { useHarnessSessionEpoch } from '../../shared/api/harnessSettings'
 import { sessionIsSwitching } from '../../shared/api/sessionBoundary'
 import { ApiError } from '../../shared/api/client'
 import { useBlockingReadError } from '../../shared/api/readFailure'
-import { Button } from '../../shared/ui/nocturne'
+import { Button, Icon, IconButton } from '../../shared/ui/nocturne'
 import type { SelectedRunState } from '../runs-selector/useSelectedRun'
 import { isRunAccessError, runReadErrorLabel } from '../runs-selector/query'
 import { PinnedProviderAccount } from '../provider-accounts/PinnedProviderAccount'
@@ -54,7 +54,7 @@ export function RunNodeInspector({ selection, snapshot, nodeId, executionId, onI
     initialPageParam: null as string | null,
     getNextPageParam: (page, _pages, _param, params) => page.pageInfo.nextCursor
       && !params.includes(page.pageInfo.nextCursor) ? page.pageInfo.nextCursor : undefined,
-    enabled: Boolean(node) && !sessionIsSwitching(), retry: false, staleTime: 0, gcTime: 0, maxPages: 5,
+    enabled: Boolean(node) && !sessionIsSwitching(), staleTime: 0, gcTime: 0, maxPages: 5,
     refetchInterval: query => isRunAccessError(query.state.error) ? false : 3000,
   })
   const blocked = useBlockingReadError(pages)
@@ -63,43 +63,49 @@ export function RunNodeInspector({ selection, snapshot, nodeId, executionId, onI
   const invalid = node && items.some(item => !matchesNode(node, item))
   const unavailable = Boolean(blocked) || invalid || pages.isError && !pages.data
   const runFailure = pages.data?.pages[0]?.run.failure
+  const reportsTo = !saved?.hierarchy || saved.hierarchy.masterNodeId === nodeId ? undefined : parent?.name ?? 'Unavailable'
   return <section className="run-execution-inspector" aria-label={`Run node inspector: ${node?.name ?? nodeId}`}>
-    <header><h2>{node?.name ?? nodeId}</h2><span>Read only</span>
-      <Button size="sm" onClick={() => onInspect()}>Close inspector</Button></header>
+    <header className="run-node-inspector-head"><h2 className="n-sr-only">{node?.name ?? nodeId}</h2>
+      {node && node.kind !== 'job' ? <p className="run-node-facts" aria-label="Saved Agent identity">
+        {identity ? agentProductRoleLabel(identity.productRole) : 'Agent'}{reportsTo ? <> · Reports to <strong>{reportsTo}</strong></> : null}
+      </p> : <span />}
+      {node ? <IconButton size="sm" variant="ghost" label="Refresh node executions" disabled={pages.isFetching && !pages.isRefetching}
+        onClick={() => void refreshFirstInspectionPage(client, queryKey)}><Icon name="refresh" size={14} /></IconButton> : null}
+      <IconButton size="sm" variant="ghost" label="Close inspector" onClick={() => onInspect()}><Icon name="close" size={14} /></IconButton>
+    </header>
     {!node ? <p role="status">This node is not in the saved Run.</p> : <>
-      {node.kind !== 'job' ? <dl aria-label="Saved Agent identity">
-        <dt>Role</dt><dd>{identity ? agentProductRoleLabel(identity.productRole) : 'Unavailable in this saved version'}</dd>
-        <dt>Reports to</dt><dd>{!saved ? 'Unavailable in this saved version' : saved.hierarchy ? parent?.name ?? (saved.hierarchy.masterNodeId === nodeId ? 'None (Master)' : 'Unavailable') : 'No Master hierarchy in this saved version'}</dd>
-        <dt>Agent configuration</dt><dd><code>{node.agentConfigurationVersionId}</code></dd>
-        <dt>Run</dt><dd><code>{snapshot.runId}</code></dd><dt>Saved workflow</dt><dd><code>{snapshot.workflowVersionId}</code></dd>
-      </dl> : null}
       {node.kind !== 'job' ? <PinnedProviderAccount binding={snapshot.providerAccountBindings?.[node.id]} label="Saved Run account" /> : null}
       <SelectedNodePlacement selection={selection} nodeId={node.id} />
-      {pages.isError && !unavailable ? <p role="status">Execution refresh failed. Showing the last successful read.</p> : null}
+      {pages.isError && !unavailable ? <p role="status" className="run-node-note">Couldn’t refresh. Showing the last read.</p> : null}
       {unavailable ? <p role="status">{invalid ? 'Execution does not match this saved node.' : runReadErrorLabel(pages.error)}</p> : <>
-        {pages.isPending ? <p role="status">Reading node executions…</p> : null}
-        {runFailure ? <p role="status">Run failed: {runFailure.message} <code>{runFailure.code}</code></p> : null}
-        {!pages.isPending && !items.length ? <p>No execution recorded for this node yet.</p> : null}
-        {pages.data?.pageParams[0] ? <p>Earlier executions are hidden. Refresh to return to the first page.</p> : null}
-        <ol>{items.map(execution => <li key={execution.executionId}>
-          <Button size="sm" aria-pressed={executionId === execution.executionId}
+        {pages.isPending ? <p role="status" className="run-node-note">Reading node executions…</p> : null}
+        {runFailure ? <p role="status" className="run-node-error">Run failed: {runFailure.message}</p> : null}
+        {!pages.isPending && !items.length ? <p className="run-node-note">No execution recorded for this node yet.</p> : null}
+        {pages.data?.pageParams[0] ? <p className="run-node-note">Earlier executions are hidden. Refresh to return to the first page.</p> : null}
+        {items.length ? <ol className="run-node-attempts">{items.map(execution => <li key={execution.executionId}>
+          <button type="button" className="run-node-attempt" aria-pressed={executionId === execution.executionId}
+            aria-label={`Attempt ${execution.attempt} · ${execution.executionId}`} title={execution.executionId}
             onClick={() => onInspect(node.id, execution.executionId)}>
-            Attempt {execution.attempt} · {execution.executionId}
-          </Button>
-          <p>Recorded state: {execution.state}</p>
-          {execution.failure ? <p role="status">Agent failed: {execution.failure.message}
-            {' '}<code>{execution.failure.code}</code></p> : null}
+            <span>Attempt {execution.attempt}</span>
+            <span className="run-node-attempt-state" data-state={execution.failure ? 'failed' : execution.state}>
+              {execution.failure ? 'Failed' : stateLabel(execution.state)}</span>
+          </button>
+          {execution.failure ? <p role="status" className="run-node-error">Agent failed: {execution.failure.message}</p> : null}
           <ExecutionBranch execution={execution} />
-        </li>)}</ol>
-        {pages.hasNextPage ? <Button size="sm" disabled={pages.isFetching}
+        </li>)}</ol> : null}
+        {pages.hasNextPage ? <Button size="sm" variant="ghost" disabled={pages.isFetching && !pages.isRefetching}
           onClick={() => void pages.fetchNextPage()}>Load more executions</Button> : null}
         {executionId ? <NodeExecutionResult key={executionId} selection={selection} scope={scope}
           node={node} executionId={executionId} /> : null}
       </>}
-      <Button size="sm" disabled={pages.isFetching}
-        onClick={() => void refreshFirstInspectionPage(client, queryKey)}>Refresh node executions</Button>
     </>}
   </section>
+}
+
+/** "waiting_for_ci" → "Waiting for ci"; states are plain words, never codes. */
+function stateLabel(state: string) {
+  const words = state.replace(/_/g, ' ')
+  return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
 function NodeExecutionResult({ selection, scope, node, executionId }: {
@@ -109,9 +115,7 @@ function NodeExecutionResult({ selection, scope, node, executionId }: {
   const blocked = useBlockingReadError(query)
   if (!selection.isCurrent(selection.generation) || sessionIsSwitching()) return null
   if (blocked || query.isError && !query.data) return <p role="status">
-    Execution result unavailable. {ApiError.is(query.error)
-      ? <>{query.error.message} <code>{query.error.code}</code></>
-      : runReadErrorLabel(query.error)}
+    Execution result unavailable. {ApiError.is(query.error) ? query.error.message : runReadErrorLabel(query.error)}
   </p>
   if (query.data && !matchesNode(node, query.data.execution)) return <p role="status">
     Execution result unavailable. Execution does not match this saved node.
