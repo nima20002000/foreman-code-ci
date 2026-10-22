@@ -113,7 +113,7 @@ export function ProviderAccountAuthentication({ account, revision, open, canMana
     .filter((item, index, all) => all.findIndex(other => other.id === item.id) === index) : []
   const failure = denied || query.isError || write.isError && (uncertain || !selectedId)
     || discovery.isError || access.eligibility.isError
-  return <Dialog open={open} title={`Sign-in · ${account.name}`} busy={busy} size="sm"
+  return <Dialog open={open} title={`Sign-in · ${account.name}`} busy={busy} dismissible={!uncertain} size="sm"
     description="Sign-in keeps going on its computer if you close this."
     onOpenChange={next => { if (!next && !busy && !uncertain) onClose() }}>
     <div className="provider-account-form">

@@ -1,4 +1,4 @@
-import { vi } from 'vitest'
+import { onTestFinished, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
@@ -6,6 +6,8 @@ import { server } from '../../mocks/server'
 import { getManagedHarnessCatalog } from '../api/client'
 import { getMockHarnessDefaults, updateMockHarnessDefaults } from '../mocks/scenarios'
 import { savedClaudeConfiguration } from '../../features/settings/claudeSettings.fixtures'
+import workspaceStyles from '../../features/workspaces/workspaces.css?inline'
+import workflowStyles from '../../features/workflows/workflows.css?inline'
 
 import { renderWithRouter } from '../../test/renderWithRouter'
 import {
@@ -190,6 +192,11 @@ describe('WorkspaceShell', () => {
   })
 
   it('collapses to an accessible icon rail and expands again', async () => {
+    // The collapsed rail hides its add rows with CSS, so the real sidebar styles are loaded.
+    const styles = document.createElement('style')
+    styles.textContent = workspaceStyles + workflowStyles
+    document.head.append(styles)
+    onTestFinished(() => styles.remove())
     const user = userEvent.setup()
     renderWithRouter(<WorkspaceShell workspaceId="workspace-1" />)
 

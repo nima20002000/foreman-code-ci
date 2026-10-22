@@ -29,7 +29,7 @@ export function ConnectionSetupStatus({ registration }: { registration: DeviceRe
   const state = registration.status === 'revoked' ? 'blocked' : registration.status === 'paired' ? 'unverified' : 'needs-pairing'
   return <section className="device-setup-status" aria-label="Remote command connection" data-state={state}>
     <p role="status">{registration.status === 'revoked'
-      ? <><strong>Blocked.</strong> This computer\u2019s registration is revoked, so no connection can be set up.</>
+      ? <><strong>Blocked.</strong> This computer’s registration is revoked, so no connection can be set up.</>
       : registration.status === 'paired'
         ? <><strong>Connection status unverified.</strong> This computer is paired. Ask the Operator to read and configure its connection, then check readiness.</>
         : <><strong>Pairing needed.</strong> Pair this computer before any connection can be set up.</>}</p>

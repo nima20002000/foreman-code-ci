@@ -38,6 +38,6 @@ export function BrowserProfilesSettings({ search, onSearch }: {
     {mismatch || unknownDevice ? <Alert tone="warning" title="That computer is unavailable. Choose another one." />
       : current && !main.isError && !registrations.isError && (search.computer !== 'device' || target)
         ? slots?.browserProfiles?.({ mainId: current.mainId, ...(target ? { computer: target } : {}) })
-          ?? <p role="status" className="settings-note">Browser profiles aren\u2019t available here.</p> : null}
+          ?? <p role="status" className="settings-note">Browser profiles aren’t available here.</p> : null}
   </section>
 }

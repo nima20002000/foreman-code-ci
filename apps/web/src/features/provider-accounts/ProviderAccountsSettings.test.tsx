@@ -260,7 +260,7 @@ it('keeps a saved selection when its selected computer is not advertised', async
   const picker = screen.getByRole('combobox', { name: 'Account' })
   await waitFor(() => expect(picker).toHaveValue(personalId))
   expect(picker).toBeDisabled()
-  expect(await screen.findByText('Accounts are unavailable on the selected computer. Your saved selection is kept.')).toBeVisible()
+  expect(await screen.findByText('Accounts unavailable on this computer.')).toBeVisible()
 })
 
 it.each(['codex', 'claude'] as const)('keeps an Agent’s %s account when its model changes and saves it', async harness => {
@@ -438,7 +438,9 @@ it('keeps metadata management available when native qualification is unavailable
   await waitFor(() => expect(within(row).getByRole('button', { name: 'Configure' })).toBeEnabled())
   expect(within(row).getByRole('button', { name: 'Remove' })).toBeEnabled()
   expect(within(row).getByRole('button', { name: 'Refresh status' })).toBeDisabled()
-  expect(screen.getByRole('button', { name: 'Add Codex account' })).toBeDisabled()
+  // Without account isolation the computer offers no new accounts and says why.
+  expect(screen.queryByRole('button', { name: 'Add Codex account' })).not.toBeInTheDocument()
+  expect(screen.getAllByText("Separate accounts aren't available on this computer yet.")).toHaveLength(2)
 })
 
 it('discovers a qualified Worker and does not offer API-key creation there', async () => {
@@ -528,7 +530,7 @@ it('retains the saved account name after a temporary list refresh failure', asyn
     error: { code: 'TEMPORARY_FAILURE', message: 'Try again' },
   }, { status: 503 })))
   await act(async () => { await client.invalidateQueries({ queryKey: ['provider-accounts'] }) })
-  expect(await screen.findByText(/Account details could not be refreshed/)).toBeVisible()
+  expect(await screen.findByRole('button', { name: 'Retry accounts' })).toBeVisible()
   expect(screen.getByRole('option', { name: /Personal · signed in · ready/ })).toBeInTheDocument()
   expect(screen.getByRole('combobox', { name: 'Account' })).toHaveValue(personalId)
   expect(screen.getByRole('combobox', { name: 'Account' })).toBeDisabled()
@@ -542,9 +544,9 @@ it('shows sign-in separately from qualification and clears stale display identit
   const row = await screen.findByRole('article', { name: 'Personal account' })
   expect(within(row).getByText('Signed in')).toBeVisible()
   expect(within(row).getByText('Profile qualification required')).toBeVisible()
-  expect(within(row).queryByText('Display identity only; provider identity is unproved.')).not.toBeInTheDocument()
+  expect(within(row).queryByText('As shown by the provider; not verified.')).not.toBeInTheDocument()
   fireEvent.focus(within(row).getByRole('button', { name: 'About Identity' }))
-  expect(screen.getByRole('tooltip')).toHaveTextContent('Display identity only; provider identity is unproved.')
+  expect(screen.getByRole('tooltip')).toHaveTextContent('As shown by the provider; not verified.')
   account.observation = { ...account.observation, sequence: 2, status: 'unavailable', readiness: 'unavailable', identity: null }
   await act(async () => { await client.invalidateQueries({ queryKey: ['provider-accounts'] }) })
   await waitFor(() => expect(within(row).queryByText('personal@example.test')).not.toBeInTheDocument())
@@ -562,13 +564,11 @@ it('keeps account selection help beside the field instead of beneath it', async 
   expect(screen.getByRole('tooltip')).toHaveTextContent('Manage accounts in Settings > Harnesses.')
 })
 
-it('shows account setup and API key explanations on demand without hiding setup instructions', async () => {
+it('explains that a saved API key is never shown, beside its field', async () => {
   fixtures()
   const { user } = mount()
   const card = await screen.findByRole('article', { name: 'API billing account' })
   await user.click(within(card).getByRole('button', { name: 'Configure' }))
   expect(screen.getByRole('textbox', { name: 'Account name' })).toHaveValue('API billing')
-  expect(screen.queryByText('Write-only. The saved key is never shown or returned.')).not.toBeInTheDocument()
-  await user.hover(screen.getByRole('button', { name: 'About New API key' }))
-  expect(screen.getByRole('tooltip')).toHaveTextContent('Write-only. The saved key is never shown or returned.')
+  expect(screen.getByLabelText('New API key')).toHaveAccessibleDescription('The saved key is never shown.')
 })

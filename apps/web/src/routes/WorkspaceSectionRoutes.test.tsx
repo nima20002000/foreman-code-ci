@@ -1,4 +1,4 @@
-import { defaultScheduler, notifyManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, createRouter, RouterProvider } from '@tanstack/react-router'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -169,7 +169,7 @@ describe('workspace section routes', () => {
     const chosenMain = kind === 'different-main' ? '44444444-4444-4444-8444-444444444444' : mainId
     const chosenDevice = kind === 'unknown-device' ? '55555555-5555-4555-8555-555555555555' : deviceId
     const { router, queryClient, unmount } = renderRoute(`/settings/browser-profiles?mainId=${chosenMain}&computer=device&deviceId=${chosenDevice}`, { browserProfiles })
-    await screen.findByText('The selected computer is unavailable. Choose a computer to continue.')
+    await screen.findByText('That computer is unavailable. Choose another one.')
     expect(browserProfiles).not.toHaveBeenCalled()
     expect(router.state.location.search).toMatchObject({ mainId: chosenMain, computer: 'device', deviceId: chosenDevice })
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Computer' }), 'main')
@@ -256,7 +256,7 @@ describe('workspace section routes', () => {
   it('deep-links the supported Project files section under the workspaces menu', async () => {
     renderRoute('/workspaces/workspace-1/files')
 
-    expect(await screen.findByRole('heading', { name: 'Project files', level: 1 })).toBeVisible()
+    expect(await screen.findByRole('region', { name: 'Project files' })).toBeVisible()
     expect(screen.queryByTestId('coming-soon')).not.toBeInTheDocument()
     expect(within(await screen.findByRole('navigation', { name: 'Workspace sections' })).getByRole('link', { name: 'Project files' })).toHaveAttribute('aria-current', 'page')
     expect(screen.queryByRole('button', { name: 'Files' })).not.toBeInTheDocument()
@@ -268,15 +268,15 @@ describe('workspace section routes', () => {
     const { router } = renderRoute('/settings')
 
     expect(await screen.findByRole('heading', { name: 'Settings', level: 1 })).toBeVisible()
-    expect(screen.getByRole('link', { name: 'Bugs' })).toHaveAttribute('href', '/settings/bugs')
-    expect(screen.getByRole('link', { name: 'System prompt' })).toHaveAttribute('href', '/settings/system-prompt')
-    expect(screen.getByRole('link', { name: 'Harnesses' })).toHaveAttribute('href', '/settings/harnesses')
-    expect(screen.getByRole('link', { name: 'Agents' })).toHaveAttribute('href', '/settings/agents')
-    expect(screen.getByRole('link', { name: 'Workflows' })).toHaveAttribute('href', '/settings/workflows')
-    expect(screen.getByRole('link', { name: 'Browser profiles' })).toHaveAttribute('href', '/settings/browser-profiles')
+    expect(screen.getByRole('link', { name: /^Bugs/ })).toHaveAttribute('href', '/settings/bugs')
+    expect(screen.getByRole('link', { name: /^System prompt/ })).toHaveAttribute('href', '/settings/system-prompt')
+    expect(screen.getByRole('link', { name: /^Harnesses/ })).toHaveAttribute('href', '/settings/harnesses')
+    expect(screen.getByRole('link', { name: /^Agents/ })).toHaveAttribute('href', '/settings/agents')
+    expect(screen.getByRole('link', { name: /^Workflows/ })).toHaveAttribute('href', '/settings/workflows')
+    expect(screen.getByRole('link', { name: /^Browser profiles/ })).toHaveAttribute('href', '/settings/browser-profiles')
     expect(screen.queryByRole('link', { name: /Approval/i })).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('link', { name: 'Agents' }))
+    await user.click(screen.getByRole('link', { name: /^Agents/ }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/settings/agents'))
     expect(await screen.findByRole('heading', { name: 'Agents', level: 1 })).toBeVisible()
     expect(screen.queryByRole('heading', { name: 'Settings', level: 1 })).not.toBeInTheDocument()
@@ -307,7 +307,6 @@ describe('workspace section routes', () => {
     expect(mainCard).toHaveAttribute('href', '/settings/computers')
     expect(await within(mainCard).findByText('CI')).toBeVisible()
     expect(within(mainCard).getByText('Online')).toBeVisible()
-    expect(within(mainCard).getByText('Agent host')).toBeVisible()
     expect(within(mainCard).getByText('1 agent running')).toBeVisible()
     const laptopCard = screen.getByRole('link', { name: /Laptop/ })
     expect(laptopCard).toHaveAttribute('href', `/settings/computers/${deviceId}`)
@@ -380,7 +379,7 @@ describe('workspace section routes', () => {
 
   it('omits the approvals shortcut from workspace settings', async () => {
     renderRoute('/workspaces/workspace-1/settings')
-    expect(await screen.findByRole('heading', { name: 'Settings', level: 1 })).toBeVisible()
+    expect(await screen.findByRole('textbox', { name: 'Workspace name' })).toHaveValue('Website')
     expect(screen.queryByTestId('workflow-card-workflow-content-pipeline')).not.toBeInTheDocument()
     expect(within(await screen.findByRole('navigation', { name: 'Workspace sections' })).getByRole('link', { name: 'Settings' })).toHaveAttribute('aria-current', 'page')
     expect(screen.queryByRole('button', { name: /Approvals Review requests in this workspace/ })).not.toBeInTheDocument()
@@ -407,13 +406,13 @@ describe('workspace section routes', () => {
     const user = userEvent.setup()
     const { router } = renderRoute('/workspaces/workspace-1/settings')
     await user.click((await screen.findAllByRole('button', { name: 'Remove workspace' }))[0]!)
-    let dialog = screen.getByRole('dialog', { name: 'Remove Website?' })
-    expect(dialog).toHaveTextContent('App-created project folders and their contents will be deleted. Existing folders you selected are kept. Workflow and run history is retained.')
-    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    let dialog = screen.getByRole('alertdialog', { name: 'Remove Website?' })
+    expect(dialog).toHaveTextContent('Folders the app created are deleted; folders you picked are kept. Run history stays.')
+    await user.click(within(dialog).getByRole('button', { name: 'Keep it' }))
     expect(router.state.location.pathname).toBe('/workspaces/workspace-1/settings')
-    expect(screen.queryByRole('dialog', { name: 'Remove Website?' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('alertdialog', { name: 'Remove Website?' })).not.toBeInTheDocument()
     await user.click(screen.getAllByRole('button', { name: 'Remove workspace' })[0]!)
-    dialog = screen.getByRole('dialog', { name: 'Remove Website?' })
+    dialog = screen.getByRole('alertdialog', { name: 'Remove Website?' })
     await user.click(within(dialog).getByRole('button', { name: 'Remove workspace' }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/workspaces'))
     expect(await screen.findByTestId('workspace-directory-empty')).toBeVisible()
@@ -424,8 +423,8 @@ describe('workspace section routes', () => {
     const user = userEvent.setup()
     renderRoute('/workspaces/workspace-1/settings')
     await user.click(await within(await screen.findByRole('navigation', { name: 'Workspace sections' })).findByRole('link', { name: 'Workflows' }))
-    expect(await screen.findByRole('heading', { name: 'Workflows', level: 1 })).toBeVisible()
-    expect(screen.queryByRole('heading', { name: 'Workflows', level: 2 })).not.toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: 'Workflows' })).toBeVisible()
+    expect(screen.queryByRole('heading', { name: 'Workflows' })).not.toBeInTheDocument()
     const section = within(screen.getByRole('region', { name: 'Workflows' }))
     expect(await section.findByTestId('workflow-card-workflow-content-pipeline')).toBeVisible()
     await user.click(section.getByRole('button', { name: 'Open actions for Research to review' }))
@@ -460,10 +459,10 @@ describe('workspace section routes', () => {
     const user = userEvent.setup()
     const { router } = renderRoute('/workspaces/workspace-1/settings')
 
-    expect(await screen.findByRole('heading', { name: 'Settings', level: 1 })).toBeVisible()
+    expect(await screen.findByRole('textbox', { name: 'Workspace name' })).toHaveValue('Website')
     const executionLocation = await screen.findByLabelText('Execution location', { selector: 'button' })
     expect(executionLocation).toBe(screen.getByRole('button', { name: 'Execution location' }))
-    expect(executionLocation.closest('.workspace-settings-name-row')).toContainElement(screen.getByRole('button', { name: 'Rename workspace Website' }))
+    expect(executionLocation.closest('.ws-settings')).toContainElement(screen.getByRole('textbox', { name: 'Workspace name' }))
     await user.click(executionLocation)
 
     const dialog = await screen.findByRole('dialog', { name: 'Choose folder' })
@@ -479,7 +478,7 @@ describe('workspace section routes', () => {
     const user = userEvent.setup()
     const { router } = renderRoute('/workspaces/workspace-1/settings')
 
-    expect(await screen.findByRole('heading', { name: 'Settings', level: 1 })).toBeVisible()
+    expect(await screen.findByRole('textbox', { name: 'Workspace name' })).toHaveValue('Website')
     const executionLocation = await screen.findByLabelText('Execution location', { selector: 'button' })
     expect(executionLocation).toBe(screen.getByRole('button', { name: 'Execution location' }))
     await user.click(executionLocation)
@@ -494,73 +493,60 @@ describe('workspace section routes', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
 
     expect(screen.queryByRole('dialog', { name: 'Choose folder' })).not.toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible()
-    expect(router.state.location.pathname).toBe('/workspaces/workspace-1/settings')
-    await user.click(screen.getByRole('button', { name: 'Rename workspace Website' }))
-    expect(screen.getByRole('textbox', { name: 'Workspace name' })).toHaveFocus()
     expect(screen.getByRole('textbox', { name: 'Workspace name' })).toHaveValue('Website')
-    await user.clear(screen.getByRole('textbox', { name: 'Workspace name' }))
+    expect(router.state.location.pathname).toBe('/workspaces/workspace-1/settings')
+    const name = screen.getByRole('textbox', { name: 'Workspace name' })
+    await user.clear(name)
     await user.paste('Renamed after folder cancellation')
-    await user.click(screen.getByRole('button', { name: 'Save name' }))
-    expect(await screen.findByRole('button', { name: 'Rename workspace Renamed after folder cancellation' }))
-      .toBeVisible()
+    await user.keyboard('{Enter}')
     await waitFor(() => expect(screen.getByTestId('workspace-entry-workspace-1'))
       .toHaveTextContent('Renamed after folder cancellation'))
+    expect(name).toHaveValue('Renamed after folder cancellation')
   })
 
-  it('uses the same inline rename from the workspace name and settings, with a nearby removal control', async () => {
+  it('renames the workspace in place from its title, with removal in the settings footer', async () => {
     const user = userEvent.setup()
     renderRoute('/workspaces/workspace-1/settings')
-    const rename = await screen.findByRole('button', { name: 'Rename workspace Website' })
-    const header = rename.closest('header')
-    expect(header).not.toBeNull()
-    const identity = within(header!)
-    const actions = within(screen.getByRole('group', { name: 'Workspace actions' }))
-    await user.click(rename)
-    expect(identity.getByRole('textbox', { name: 'Workspace name' })).toHaveFocus()
-    await user.click(identity.getByRole('button', { name: 'Cancel' }))
-    await user.click(actions.getByRole('button', { name: 'Rename workspace' }))
-    await user.clear(identity.getByRole('textbox', { name: 'Workspace name' }))
+    const name = await screen.findByRole('textbox', { name: 'Workspace name' })
+    await user.clear(name)
+    await user.paste('Discarded rename')
+    await user.keyboard('{Escape}')
+    expect(name).toHaveValue('Website')
+    await user.clear(name)
     await user.paste('Workspace header rename')
-    await user.click(identity.getByRole('button', { name: 'Save name' }))
-    expect(await identity.findByRole('button', { name: 'Rename workspace Workspace header rename' })).toBeVisible()
-    expect(within(screen.getByRole('navigation', { name: 'Breadcrumbs' })).getByRole('link', { name: 'Go to Workspace header rename' })).toBeVisible()
-    await user.click(actions.getByRole('button', { name: 'Rename workspace' }))
-    expect(identity.getByRole('textbox', { name: 'Workspace name' })).toHaveValue('Workspace header rename')
-    await user.click(identity.getByRole('button', { name: 'Cancel' }))
-    await user.click(identity.getByRole('button', { name: 'Remove workspace' }))
-    const removal = await screen.findByRole('dialog', { name: 'Remove Workspace header rename?' })
-    expect(removal).toBeVisible()
-    await user.click(within(removal).getByRole('button', { name: 'Cancel' }))
-    expect(identity.getByRole('button', { name: 'Rename workspace Workspace header rename' })).toBeVisible()
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.getByTestId('workspace-entry-workspace-1')).toHaveTextContent('Workspace header rename'))
+    expect(name).toHaveValue('Workspace header rename')
+    await user.click(screen.getByRole('button', { name: 'Remove workspace' }))
+    const removal = await screen.findByRole('alertdialog', { name: 'Remove Workspace header rename?' })
+    await user.click(within(removal).getByRole('button', { name: 'Keep it' }))
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(name).toHaveValue('Workspace header rename')
   })
 
-  it('retains the original rename command and revision when acknowledgement is lost', async () => {
-    const writes: unknown[] = []
+  it('keeps the typed name and shows the failure when a rename is not acknowledged, then saves it on the next try', async () => {
+    const writes: Array<{ name: string; expectedRevision: number }> = []
     server.use(http.patch('/api/management/workspaces/workspace-1', async ({ request }) => {
-      writes.push(await request.clone().json())
+      writes.push(await request.clone().json() as { name: string; expectedRevision: number })
       if (writes.length === 1) return HttpResponse.json({ error: { code: 'INTERNAL', message: 'Rename acknowledgement lost.' } }, { status: 503 })
       return undefined
     }))
     const user = userEvent.setup()
     renderRoute('/workspaces/workspace-1/settings')
-    await user.click(await screen.findByRole('button', { name: 'Rename workspace Website' }))
-    const input = screen.getByRole('textbox', { name: 'Workspace name' })
-    await user.clear(input)
+    const name = await screen.findByRole('textbox', { name: 'Workspace name' })
+    await user.clear(name)
     await user.paste('Confirmed retry rename')
-    await user.click(screen.getByRole('button', { name: 'Save name' }))
+    await user.keyboard('{Enter}')
     expect(await screen.findByText('Rename acknowledgement lost.')).toBeVisible()
-    expect(screen.getByText('The rename may have succeeded. Retry to confirm its outcome.')).toBeVisible()
-    expect(input).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
-    await user.click(screen.getByRole('button', { name: 'Retry rename' }))
-    expect(await screen.findByRole('button', { name: 'Rename workspace Confirmed retry rename' })).toBeVisible()
+    expect(name).toHaveValue('Confirmed retry rename')
+    await user.click(name)
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.getByTestId('workspace-entry-workspace-1')).toHaveTextContent('Confirmed retry rename'))
     expect(writes).toHaveLength(2)
-    expect(writes[1]).toEqual(writes[0])
-    expect(writes[0]).toMatchObject({ workspaceId: 'workspace-1', name: 'Confirmed retry rename', expectedRevision: 1 })
+    expect(writes[1]).toMatchObject({ name: 'Confirmed retry rename', expectedRevision: 1 })
   })
 
-  it.each([false, true])('opens removal at the confirmed revision after saving an inline rename through the unsaved guard (deferred query notifications: %s)', async deferNotifications => {
+  it('removes a renamed workspace at its confirmed revision', async () => {
     const removals: unknown[] = []
     server.use(http.delete('/api/management/workspaces/workspace-1', async ({ request }) => {
       removals.push(await request.clone().json())
@@ -568,28 +554,15 @@ describe('workspace section routes', () => {
     }))
     const user = userEvent.setup()
     renderRoute('/workspaces/workspace-1/settings')
-    await user.click(await screen.findByRole('button', { name: 'Rename workspace Website' }))
-    await user.clear(screen.getByRole('textbox', { name: 'Workspace name' }))
+    const name = await screen.findByRole('textbox', { name: 'Workspace name' })
+    await user.clear(name)
     await user.paste('Name saved before removal')
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.getByTestId('workspace-entry-workspace-1')).toHaveTextContent('Name saved before removal'))
     await user.click(screen.getByRole('button', { name: 'Remove workspace' }))
-    const guard = await screen.findByRole('alertdialog', { name: 'Save changes before leaving?' })
-    const notifications: Array<() => void> = []
-    if (deferNotifications) notifyManager.setScheduler(callback => notifications.push(callback))
-    try {
-      await user.click(within(guard).getByRole('button', { name: 'Save' }))
-      if (deferNotifications) {
-        // The cache accepts the rename before its observers receive their scheduled notifications.
-        await screen.findByRole('dialog', { name: /^Remove / })
-        notifyManager.setScheduler(defaultScheduler)
-        await act(async () => { for (const notify of notifications.splice(0)) notify() })
-      }
-      const confirmation = await screen.findByRole('dialog', { name: 'Remove Name saved before removal?' })
-      await user.click(within(confirmation).getByRole('button', { name: 'Remove workspace' }))
-      await waitFor(() => expect(removals).toHaveLength(1))
-      expect(removals[0]).toMatchObject({ workspaceId: 'workspace-1', expectedRevision: 2 })
-    } finally {
-      notifyManager.setScheduler(defaultScheduler)
-      await act(async () => { for (const notify of notifications.splice(0)) notify() })
-    }
+    const confirmation = await screen.findByRole('alertdialog', { name: 'Remove Name saved before removal?' })
+    await user.click(within(confirmation).getByRole('button', { name: 'Remove workspace' }))
+    await waitFor(() => expect(removals).toHaveLength(1))
+    expect(removals[0]).toMatchObject({ workspaceId: 'workspace-1', expectedRevision: 2 })
   })
 })

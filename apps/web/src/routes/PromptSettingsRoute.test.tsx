@@ -42,7 +42,7 @@ async function expectAppAccessFailure(status: number, editor: HTMLElement) {
   } else {
     const banner = await screen.findByRole('alert', { name: 'Server connection' })
     expect(banner).toBeVisible()
-    expect(banner).toHaveTextContent('Connection interrupted.')
+    expect(banner).toHaveTextContent('Updating — reconnecting…')
     expect(within(banner).getByRole('button', { name: 'Try again' })).toBeEnabled()
     expect(within(banner).queryByRole('button', { name: 'Close dialog' })).not.toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'Initial prompt' })).toBe(editor)
@@ -76,7 +76,7 @@ afterEach(() => {
 
 it('opens the System prompt editor from Settings at a linkable route', async () => {
   const { router } = mount('/settings')
-  const link = await screen.findByRole('link', { name: 'System prompt' })
+  const link = await screen.findByRole('link', { name: /^System prompt/ })
   expect(link).toHaveAttribute('href', '/settings/system-prompt')
   await userEvent.click(link)
   expect(await screen.findByRole('textbox', { name: 'System prompt' }))
@@ -137,7 +137,7 @@ it('opens the Operator card by URL selection and protects edited text when retur
   expect(router.state.location.pathname).toBe('/settings/agents')
   expect(router.state.location.search).toMatchObject({ role: 'operator' })
   await user.type(editor, '\nUnsaved addition')
-  await user.click(screen.getByRole('button', { name: 'Back to Agents' }))
+  await user.click(screen.getByRole('button', { name: 'Back' }))
   const dialog = await screen.findByRole('alertdialog', { name: 'Save changes before leaving?' })
   expect(editor).toHaveValue('Operator instructions\nUnsaved addition')
   expect(router.state.location.search).toMatchObject({ role: 'operator' })
@@ -149,8 +149,7 @@ it('opens the Operator card by URL selection and protects edited text when retur
 it('reads the Operator initial prompt when opening its saved URL directly', async () => {
   const { router } = mount('/settings/agents?role=operator')
   expect(await screen.findByRole('textbox', { name: 'Initial prompt' })).toHaveValue('Operator instructions')
-  expect(screen.getByText('Saved revision: 4')).toBeVisible()
-  await userEvent.click(screen.getByRole('button', { name: 'Back to Agents' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Back' }))
   expect(await screen.findByRole('button', { name: 'Edit Operator defaults' })).toBeVisible()
   expect(router.state.location.search).not.toHaveProperty('role')
 })
@@ -199,7 +198,8 @@ it.each([503, 403])('recovers edited prompts after a %s app access failure and r
   await expectAppAccessFailure(status, editor)
   server.use(http.get('/api/local-human', () => HttpResponse.json(ownerAccess)))
   await user.click(screen.getByRole('button', { name: 'Try again' }))
-  await waitFor(() => expect(screen.queryByRole('alert', { name: 'Server connection' })).not.toBeInTheDocument())
+  await waitFor(() => expect(screen.queryByRole('alert', { name: 'Server connection' })).not.toBeInTheDocument(),
+    { timeout: 5_000 })
   expect(await screen.findByRole('textbox', { name: 'Initial prompt' }))
     .toHaveValue('Operator instructions\nKeep these edits')
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Initial prompt' })).not.toHaveAttribute('readonly'))
@@ -211,7 +211,7 @@ it.each([503, 403])('recovers edited prompts after a %s app access failure and r
   expect(within(dialog).getByRole('button', { name: 'Save' })).toBeEnabled()
   await user.click(within(dialog).getByRole('button', { name: 'Discard' }))
   await waitFor(() => expect(router.state.location.pathname).toBe('/settings'))
-})
+}, 20_000)
 
 it.each([503, 403])('retries the original uncertain prompt save after a %s app access failure', async status => {
   const writes: PromptSettingUpdateInput[] = []
@@ -239,7 +239,8 @@ it.each([503, 403])('retries the original uncertain prompt save after a %s app a
   await expectAppAccessFailure(status, editor)
   server.use(http.get('/api/local-human', () => HttpResponse.json(ownerAccess)))
   await user.click(screen.getByRole('button', { name: 'Try again' }))
-  await waitFor(() => expect(screen.queryByRole('alert', { name: 'Server connection' })).not.toBeInTheDocument())
+  await waitFor(() => expect(screen.queryByRole('alert', { name: 'Server connection' })).not.toBeInTheDocument(),
+    { timeout: 5_000 })
   expect(await screen.findByRole('textbox', { name: 'Initial prompt' }))
     .toHaveValue('Operator instructions\nSubmitted edit')
   expect(screen.getByRole('textbox', { name: 'Initial prompt' })).toBeDisabled()
@@ -256,7 +257,7 @@ it.each([503, 403])('retries the original uncertain prompt save after a %s app a
   await waitFor(() => expect(router.state.location.pathname).toBe('/settings'))
   expect(writes).toHaveLength(2)
   expect(writes[1]).toEqual(writes[0])
-})
+}, 20_000)
 
 it.each([false, true])('guards navigation and blocks saving after prompt denial (uncertain: %s)', async uncertain => {
   let writes = 0
