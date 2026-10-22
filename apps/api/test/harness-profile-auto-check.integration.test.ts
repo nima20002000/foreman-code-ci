@@ -6,7 +6,7 @@ import { NodePlacementChoicesResultSchema } from '@foreman-code/contracts/placem
 import { CurrentWorkflowReadResultSchema, CURRENT_WORKFLOW_TOOLS, ManualRunStartResultSchema }
   from '@foreman-code/contracts/wave25'
 import { remoteReviewProduction, waitForRemoteReview } from './helpers/remoteReviewProduction.js'
-import { profiles } from './helpers/harnessInstallationUpdate.js'
+import { heldCall, profiles } from './helpers/harnessInstallationUpdate.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 
 describe('automatic checks of enabled harness profiles', () => {
@@ -40,18 +40,17 @@ describe('automatic checks of enabled harness profiles', () => {
         expect(choices.choices.find(choice => choice.placement.instanceId === profile.instanceId))
           .toMatchObject({ availability: 'unavailable' })
       }
-      const pending = await fixture.call('run_start', input)
-      expect(decodeMcpToolResult(pending)).toMatchObject({ error: {
-        code: 'HARNESS_PROFILE_CHECK_PENDING', details: { retryable: true },
-      } })
+      // Start waits for the automatic check it triggers instead of failing.
+      const held = heldCall(fixture.call('run_start', input))
       await waitForRemoteReview(() => fixture.provider.calls(), calls =>
         calls.slice(callsBefore).some(call => call.method === 'model/list'), 'automatic profile check from product action')
+      await held.expectWaiting()
       await fixture.provider.releaseModels()
       blocked = false
       await waitForRemoteReview(() => profiles(fixture), values =>
         values.some(value => value.instanceId === profile.instanceId && value.qualification === 'qualified'),
       'refreshed profile qualification')
-      const started = ManualRunStartResultSchema.parse(await fixture.value('run_start', input))
+      const started = ManualRunStartResultSchema.parse(decodeMcpToolResult(await held.call))
       expect((await fixture.details(started.run.id)).run.workflowVersionId).toBe(saved.version.id)
       expect(ManualRunStartResultSchema.parse(await fixture.value('run_start', input)).run.id).toBe(started.run.id)
     } finally {
@@ -130,11 +129,8 @@ describe('automatic checks of enabled harness profiles', () => {
           configuration: original.configuration, enabled: true,
         }, reader.token))
         await expectMcpAccessDenied(fixture.call('run_start', input, reader.token))
-        const pending = await fixture.call('run_start', input)
-        expect(pending.isError).toBe(true)
-        expect(decodeMcpToolResult(pending)).toMatchObject({ error: {
-          code: 'HARNESS_PROFILE_CHECK_PENDING', details: { retryable: true },
-        } })
+        const held = heldCall(fixture.call('run_start', input))
+        await held.expectWaiting()
         const choices = NodePlacementChoicesResultSchema.parse(await fixture.value('workflow_node_placement_choices', {
           ...scope, nodeId: node.id, agentConfigurationVersionId: saved.version.agentConfigurationVersionIds[node.agentId],
         }))
@@ -145,7 +141,7 @@ describe('automatic checks of enabled harness profiles', () => {
         await waitForRemoteReview(() => profiles(fixture, reader.token), values =>
           values.some(profile => profile.instanceId === original.instanceId
             && profile.revision === enabled.value.revision && profile.qualification === 'qualified'), 'automatic qualification')
-        const started = ManualRunStartResultSchema.parse(await fixture.value('run_start', input))
+        const started = ManualRunStartResultSchema.parse(decodeMcpToolResult(await held.call))
         const readback = await fixture.details(started.run.id)
         expect(readback.run.id).toBe(started.run.id)
         expect(readback.run.workflowVersionId).toBe(saved.version.id)

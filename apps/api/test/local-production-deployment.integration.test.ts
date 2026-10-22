@@ -62,8 +62,9 @@ it('keeps source development commands usable after successful and failed product
     const require = createRequire(new URL('../../worker/package.json', import.meta.url))
     const { parse } = require('yaml') as { parse: (text: string) => Record<string, unknown> }
     const lock = parse(await readFile(new URL('../../../pnpm-lock.yaml', import.meta.url), 'utf8'))
-    // This minimal workspace has no patched dependencies.
+    // This minimal workspace has no patched dependencies or overrides.
     delete lock.patchedDependencies
+    delete lock.overrides
     // Offline installation verifies every locked package against the release-age policy, so keep only the
     // development dependency and its own dependency that this minimal workspace installs.
     const kept = new Set(['@types/node@26.5.1', 'undici-types@8.9.0'])

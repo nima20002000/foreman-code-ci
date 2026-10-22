@@ -261,8 +261,11 @@ describe('installed managed browser against a deterministic local website', () =
     try {
       const opened = await driver.openProfile('desktop-host')
       await driver.createTab('desktop-host', opened.generation)
-      const identity = JSON.parse(await readFile(join(directory, 'foreman-process.json'), 'utf8')) as { pid: number }
-      expect((await readFile(`/proc/${identity.pid}/cmdline`, 'utf8')).split('\0')).toContain('--headless=new')
+      const identity = JSON.parse(await readFile(join(directory, 'foreman-process.json'), 'utf8')) as { headless: boolean; endpoint: string }
+      expect(identity.headless).toBe(true)
+      // The browser itself reports headless mode; its command line is not a stable place to read it from.
+      const version = await (await fetch(`http://${new URL(identity.endpoint).host}/json/version`)).json() as { 'User-Agent': string }
+      expect(version['User-Agent']).toContain('HeadlessChrome')
     } finally {
       await driver.closeProfile('desktop-host')
       if (previous === undefined) delete process.env.DISPLAY; else process.env.DISPLAY = previous

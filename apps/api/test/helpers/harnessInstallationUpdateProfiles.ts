@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { HostHarnessOverrideSaveResultSchema, HostHarnessInstanceCheckResultSchema, HostHarnessProfileEvidenceSchema }
   from '@foreman-code/contracts/harness-registry'
 import { waitForRemoteReview } from './remoteReviewProduction.js'
-import { installationUpdateFixture, profiles, latestEvidence, startWhenReady }
+import { installationUpdateFixture, profiles, latestEvidence, startHeldByCheck }
   from './harnessInstallationUpdate.js'
 
 export async function checksProfilesAcrossInstallationUpdate(executionHost: 'main' | 'worker') {
@@ -40,7 +40,7 @@ export async function checksProfilesAcrossInstallationUpdate(executionHost: 'mai
     await waitForRemoteReview(() => profiles(fixture), values =>
       values.length === before.length && values.every(value => value.qualification === 'qualifying'),
     'automatic installation check pending in MCP readback')
-    await expect(fixture.start()).rejects.toThrow('HARNESS_PROFILE_CHECK_PENDING')
+    const heldStart = await startHeldByCheck(fixture)
     expect(process.kill(turn.pid, 0)).toBe(true)
 
     const reader = await fixture.access.issue({ name: 'Installation profile reader', audience: 'operator',
@@ -71,7 +71,7 @@ export async function checksProfilesAcrossInstallationUpdate(executionHost: 'mai
     expect(history.rows.map(row => HostHarnessProfileEvidenceSchema.parse(row.record)))
       .toEqual(oldProofs)
 
-    const next = (await startWhenReady(fixture))!
+    const next = await heldStart.call
     const pins = await fixture.db.pool.query<{ run_id: string; record: { payload: { installationFingerprint: string } } }>(
       'select run_id,record from run_node_placements where run_id=any($1::text[])', [[oldRun.run.id, next.run.id]])
     expect(pins.rows.filter(row => row.run_id === oldRun.run.id)).toHaveLength(fixture.version.definition.nodes.length)

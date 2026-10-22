@@ -1,5 +1,6 @@
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
+import { setTimeout as delay } from 'node:timers/promises'
 import { expect } from 'vitest'
 import { HostHarnessOverrideListSchema, HostHarnessProfileEvidenceSchema } from '@foreman-code/contracts/harness-registry'
 import { remoteReviewProduction, waitForRemoteReview } from './remoteReviewProduction.js'
@@ -25,6 +26,24 @@ export async function latestEvidence(fixture: Fixture) {
   const result = await fixture.db.pool.query<{ record: unknown }>(`select distinct on(instance_id) record
     from harness_instance_profile_evidence order by instance_id,instance_revision desc,created_at desc,check_id desc`)
   return result.rows.map(row => HostHarnessProfileEvidenceSchema.parse(row.record))
+}
+
+/** Start waits for an in-flight profile check instead of failing: the call stays open until the check settles. */
+export function heldCall<T>(call: Promise<T>) {
+  const settled = call.then(() => true, () => true)
+  return {
+    call,
+    async expectWaiting(ms = 2_000) {
+      expect(await Promise.race([settled, delay(ms).then(() => false)]), 'the call waits for the in-flight profile check')
+        .toBe(false)
+    },
+  }
+}
+
+export async function startHeldByCheck(fixture: Fixture, options?: Parameters<Fixture['start']>[0]) {
+  const held = heldCall(fixture.start(options))
+  await held.expectWaiting()
+  return held
 }
 
 export async function startWhenReady(fixture: Fixture) {

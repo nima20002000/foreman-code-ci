@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { HarnessCompatibilityListSchema } from '@foreman-code/contracts'
 import { HarnessQualificationListSchema } from '@foreman-code/contracts/harness-qualification'
-import { installationUpdateFixture, profileReader, pinnedPlacements, startWhenReady, completedRun }
+import { installationUpdateFixture, profileReader, pinnedPlacements, startHeldByCheck, completedRun }
   from './helpers/harnessInstallationUpdate.js'
 import { waitForRemoteReview } from './helpers/remoteReviewProduction.js'
 
@@ -39,7 +39,7 @@ it('automatically restores Main Codex admission after deployment and cold-start 
       report.checkId !== firstCheckId && report.status === 'unavailable'
         && report.reason?.code === 'CHECK_TIMEOUT' && report.installedVersion === null),
     'automatic compatibility retry timeout while version commands remain blocked')
-    await expect(fixture.start()).rejects.toThrow('HARNESS_PROFILE_CHECK_PENDING')
+    const heldStart = await startHeldByCheck(fixture)
     await fixture.provider.releaseVersions()
     versionsBlocked = false
     await waitForRemoteReview(qualifications, result => result.qualifications.some(record =>
@@ -51,7 +51,7 @@ it('automatically restores Main Codex admission after deployment and cold-start 
       report.status === 'probe-passed' && report.installedVersion === original.version),
     'automatic compatibility recovery')
     await profileReader(fixture)
-    const started = (await startWhenReady(fixture))!
+    const started = await heldStart.call
     const placements = await pinnedPlacements(fixture, started.run.id)
     expect(placements.filter(placement => placement.payload.kind === 'agent').map(placement => placement.hostRef))
       .toEqual([fixture.hostRef])

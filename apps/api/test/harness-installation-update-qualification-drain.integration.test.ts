@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { waitForRemoteReview } from './helpers/remoteReviewProduction.js'
-import { installationUpdateFixture, profileReader, profiles, latestEvidence, startWhenReady, completedRun }
+import { installationUpdateFixture, profileReader, profiles, latestEvidence, startHeldByCheck, completedRun }
   from './helpers/harnessInstallationUpdate.js'
 
 describe('installed harness updates', () => {
@@ -22,7 +22,7 @@ describe('installed harness updates', () => {
       const updatedSha = createHash('sha256').update(await readFile(fixture.provider.binary)).digest('hex')
       await waitForRemoteReview(() => profiles(fixture, reader), values =>
         values.every(value => value.qualification === 'qualifying'), 'automatic recovery waiting for the old suite')
-      await expect(fixture.start()).rejects.toThrow('HARNESS_PROFILE_CHECK_PENDING')
+      const heldStart = await startHeldByCheck(fixture)
       expect((await fixture.provider.calls()).slice(previousCalls).filter(call => call.qualificationSuite)).toHaveLength(1)
       await fixture.provider.releaseQualification()
       blocked = false
@@ -38,7 +38,7 @@ describe('installed harness updates', () => {
       const result = await fixture.db.pool.query<{ status: string }>(
         'select status from harness_qualifications where binary_sha256=$1', [updatedSha])
       expect(result.rows.map(row => row.status)).toEqual(['passed'])
-      await completedRun(fixture, (await startWhenReady(fixture))!.run.id)
+      await completedRun(fixture, (await heldStart.call).run.id)
     } finally {
       if (blocked) await fixture.provider.releaseQualification()
       await fixture.close()

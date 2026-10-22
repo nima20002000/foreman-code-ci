@@ -1,6 +1,9 @@
 import { beforeEach, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import pg from 'pg'
+import { AgentConfigurationVersionSchema, canonicalJson } from '@foreman-code/contracts'
+import { PostgresAgentChatRepository } from '../src/modules/conversations/agentChatRepository.js'
+import { conversationFeatureContext } from '../src/modules/conversations/conversationFeatureSubject.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { Wave25WorkerCredentialService } from '../src/modules/interactions/wave25/credentials.js'
 import { workerCredentialBudgetFixture } from './helpers/workerCredentialBudgetFixture.js'
@@ -64,8 +67,13 @@ it('keeps a live Agent chat credential through the terminal credential sweep', a
   await pool.query(`insert into operator_conversations(id,kind,agent_key,workspace_id,workflow_id,workflow_node_id,agent_id,
     agent_configuration_version_id,harness,record) values($1,'agent',$1,'workspace-1','workflow-content-pipeline','node-developer',
     'agent-developer','agent-developer-config-v1','claude','{}'::jsonb)`, [conversationId])
+  const row = (await new PostgresAgentChatRepository(pool).get(conversationId))!
+  const configuration = (await pool.query<{ record: unknown }>('select record from agent_configuration_versions where id=$1',
+    [row.agent_configuration_version_id])).rows[0]!
+  const { subject } = await conversationFeatureContext(pool, row, AgentConfigurationVersionSchema.parse(configuration.record),
+    'workflow-content-pipeline-v1')
   await pool.query(`insert into agent_conversation_credentials(principal_id,conversation_id,subject,workflow_version_id)
-    values($1,$2,'{}'::jsonb,'workflow-content-pipeline-v1')`, [issued.principal.id, conversationId])
+    values($1,$2,$3::jsonb,'workflow-content-pipeline-v1')`, [issued.principal.id, conversationId, canonicalJson(subject)])
   await credentials.reconcileTerminalCredentials()
   await expect(access.authenticate(issued.token, 'worker')).resolves.toMatchObject({ id: issued.principal.id })
 })

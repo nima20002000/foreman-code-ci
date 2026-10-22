@@ -8,7 +8,8 @@ import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema, CurrentWorkflo
   from '@foreman-code/contracts/wave25'
 import { waitForRemoteReview } from './helpers/remoteReviewProduction.js'
 import { modelRequestDirectories } from './helpers/modelRequestDirectories.js'
-import { completedRun, installationUpdateFixture, latestEvidence, pinnedPlacements, profileReader, profiles }
+import { completedRun, heldCall, installationUpdateFixture, latestEvidence, pinnedPlacements, profileReader, profiles,
+  startHeldByCheck }
   from './helpers/harnessInstallationUpdate.js'
 
 describe('profile-scoped Start after a Worker harness installation update', () => {
@@ -86,7 +87,8 @@ describe('profile-scoped Start after a Worker harness installation update', () =
       'two parallel profile checks')
       const directories = modelRequestDirectories(checking.slice(callsBefore), fixture.stateDirectory, providerVersion)
       expect(directories).toHaveLength(2)
-      await expect(fixture.start()).rejects.toThrow('HARNESS_PROFILE_CHECK_PENDING')
+      // Start on the profile being checked waits for that check instead of failing.
+      const heldStart = await startHeldByCheck(fixture)
       await fixture.provider.allowModelDirectories(directories)
       let qualifications: unknown
       const mixed = await waitForRemoteReview(async () => {
@@ -112,6 +114,7 @@ describe('profile-scoped Start after a Worker harness installation update', () =
         })}`, { cause: error })
       })
       const ready = mixed.find(profile => profile.instanceId === configured.instanceId)!
+      const checkedStart = await heldStart.call
       const pending = mixed.find(profile => profile.qualification === 'qualifying')!
       const evidence = await latestEvidence(fixture)
       const refreshed = evidence.filter(proof =>
@@ -141,21 +144,18 @@ describe('profile-scoped Start after a Worker harness installation update', () =
       node.placement.harnessInstallationId = pending.target.harnessInstallationId
       const pendingVersion = await saveGraph(pendingGraph)
       const pendingInput = await startInput(pendingVersion)
-      const refused = await fixture.call('run_start', pendingInput)
-      expect(refused.isError).toBe(true)
-      expect(decodeMcpToolResult(refused)).toMatchObject({ error: {
-        code: 'HARNESS_PROFILE_CHECK_PENDING', details: { retryable: true },
-      } })
-      const response = await fetch(`${fixture.origin()}/api/management/workspaces/${scope.workspaceId}`
+      // Start on a profile whose check is still pending waits for it, over MCP and HTTP alike, and starts no Run meanwhile.
+      const heldPending = heldCall(fixture.call('run_start', pendingInput))
+      const abort = new AbortController()
+      const heldHttp = heldCall(fetch(`${fixture.origin()}/api/management/workspaces/${scope.workspaceId}`
         + `/workflows/${scope.workflowId}/runs`, {
         method: 'POST', headers: { authorization: `Bearer ${fixture.writer.token}`, 'content-type': 'application/json' },
-        body: JSON.stringify(pendingInput),
-      })
-      expect(response.status).toBe(503)
-      expect(await response.json()).toMatchObject({ error: {
-        code: 'HARNESS_PROFILE_CHECK_PENDING', details: { retryable: true },
-      } })
-      expect((await fixture.db.pool.query('select id from runs')).rows).toHaveLength(1)
+        body: JSON.stringify(pendingInput), signal: abort.signal,
+      }))
+      await heldPending.expectWaiting()
+      await heldHttp.expectWaiting()
+      abort.abort()
+      expect((await fixture.db.pool.query('select id from runs')).rows).toHaveLength(2)
       expect((await profiles(fixture, reader)).find(profile => profile.instanceId === pending.instanceId)
         ?.qualification).toBe('qualifying')
 
@@ -192,6 +192,7 @@ describe('profile-scoped Start after a Worker harness installation update', () =
       expect(replay.run.id).toBe(started.run.id)
       // The Run on the checked profile must finish before Main shuts down, or its source preparation races the shutdown.
       await completedRun(fixture, started.run.id)
+      await completedRun(fixture, checkedStart.run.id)
     } finally {
       if (modelsBlocked) await fixture.provider.releaseModels()
       if (turnsBlocked) await fixture.provider.releaseWorkflowTurns()
