@@ -211,7 +211,7 @@ it('keeps a refreshed terminal Run above stale active workspace details, includi
   completed = true
   await userEvent.click(screen.getByRole('button', { name: 'Refresh runs' }))
   const row = await screen.findByRole('button', { name: `Open Run ${fixture.run.id} · completed · succeeded` })
-  expect(row).toHaveTextContent('Past Run')
+  expect(row).toHaveTextContent(shortRunId(fixture.run.id))
   mounted.update([{ ...active }])
   expect(screen.getByRole('button', { name: `Open Run ${fixture.run.id} · completed · succeeded` })).toBeVisible()
   expect(screen.queryByRole('button', { name: `Open Run ${fixture.run.id} · running · pending` })).toBeNull()

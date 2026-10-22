@@ -597,7 +597,10 @@ describe('Project files section through the real HTTP client and MSW', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Remove ready.md' }))
     await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: /^Remove$/ }))
     await screen.findByText('Couldn’t remove the file.')
-    expect(screen.getByRole('button', { name: 'Keep it' })).toBeDisabled()
+    // The unresolved removal keeps the dialog open: dismissing it would drop the command that may have committed.
+    await userEvent.click(screen.getByRole('button', { name: 'Keep it' }))
+    fireEvent.keyDown(screen.getByRole('alertdialog'), { key: 'Escape' })
+    expect(screen.getByRole('alertdialog')).toBeVisible()
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
     expect(commandIds).toHaveLength(2)

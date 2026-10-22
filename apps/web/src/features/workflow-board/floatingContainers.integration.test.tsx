@@ -26,6 +26,10 @@ afterEach(() => {
 async function mountBoard(suffix: string) {
   installChatSource()
   const fixture = await inspectionBoardFixture(suffix), saved = fixture.runs.before.scope
+  // The Kanban is always on the Board and reads the workflow's memory board as soon as it mounts.
+  const memory = createMemoryTestPort({ cards: [memoryTestCard({ title: 'Keep the conversation draft' })],
+    scope: { kind: 'workflow', workspaceId: saved.workspaceId, workflowId: saved.workflowId } })
+  server.use(...createMemoryBoardHandlers(memory.port))
   const [first, second] = fixture.after.definition.nodes.map((node) => node as { id: string; name?: string; agentId: string })
   const contexts = [first!, second!].map((node): AgentChatContext => ({ workspaceId: saved.workspaceId,
     workflowId: saved.workflowId, workflowNodeId: node.id, agentId: node.agentId }))
@@ -87,10 +91,7 @@ describe('Board conversation components share one rail', () => {
 
   it('hides the Agent body beneath Memory board and restores the Board opener after closing', async () => {
     const user = userEvent.setup()
-    const { names, scope, router } = await mountBoard('containers-memory')
-    const memory = createMemoryTestPort({ cards: [memoryTestCard({ title: 'Keep the conversation draft' })],
-      scope: { kind: 'workflow', workspaceId: scope.workspaceId, workflowId: scope.workflowId } })
-    server.use(...createMemoryBoardHandlers(memory.port))
+    const { names, router } = await mountBoard('containers-memory')
     const opener = await screen.findByRole('button', { name: `Open ${names.first} chat` })
     await user.click(opener)
     await user.type(await within(rail()).findByRole('textbox', { name: 'Message' }), 'Retain through modal')
@@ -99,14 +100,11 @@ describe('Board conversation components share one rail', () => {
       const { pathname, search, hash } = router.history.location
       router.history.push(`${pathname}${search}&boardMemory=true${hash}`)
     })
-    expect(await screen.findByRole('dialog', { name: 'Memory board' })).toBeVisible()
-    const stream = await waitFor(() => {
-      const source = AgentChatTestSource.instances.find(item => item.url.startsWith('/api/memory-boards/'))
-      expect(source).toBeDefined()
-      return source!
-    })
-    act(() => stream.open())
-    expect(await screen.findByText('Keep the conversation draft')).toBeVisible()
+    const memoryDialog = await screen.findByRole('dialog', { name: 'Memory board' })
+    expect(memoryDialog).toBeVisible()
+    await waitFor(() => expect(AgentChatTestSource.instances.some(item => item.url.startsWith('/api/memory-boards/'))).toBe(true))
+    act(() => AgentChatTestSource.instances.filter(item => item.url.startsWith('/api/memory-boards/')).forEach(item => item.open()))
+    expect(await within(memoryDialog).findByText('Keep the conversation draft')).toBeVisible()
     expect(screen.queryByRole('complementary', { name: 'Workflow side panel' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Close memory board' }))
     expect(await within(rail()).findByRole('textbox', { name: 'Message' })).toHaveValue('Retain through modal')

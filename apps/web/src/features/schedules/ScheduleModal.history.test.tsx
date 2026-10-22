@@ -152,7 +152,7 @@ describe('schedule Last attempt feedback', () => {
     expect(section).not.toHaveTextContent('Private server detail.')
     server.use(http.get(`${schedulePath(scope)}/occurrences`, () =>
       HttpResponse.json({ items: [], pageInfo: { nextCursor: null } })))
-    await view.user.click(within(section).getByRole('button', { name: 'Retry history' }))
+    await view.user.click(within(section).getByRole('button', { name: 'Try again' }))
     expect(await within(section).findByText('No attempts yet.')).toBeVisible()
   })
 

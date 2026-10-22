@@ -42,6 +42,15 @@ function WorkspaceProjectFiles({ workspaceId }: ProjectFilesSectionProps) {
   const rows = new Map<string, FileRow>()
   for (const page of query.data?.pages ?? []) for (const row of page.items) rows.set(row.file.fileId, row)
   const visibleRows = Array.from(rows.values()).filter((row) => row.file.state !== 'removed')
+  // The removed file's own button disappears with it; focus then goes to Upload instead of being lost to the page.
+  const restoreFocus = useRef(false)
+  useEffect(() => {
+    if (!restoreFocus.current) return
+    const active = document.activeElement
+    if (active && active !== document.body) return
+    restoreFocus.current = false
+    uploadButton.current?.focus()
+  }, [visibleRows.length, ui.removing])
 
   return <section className="project-files" aria-labelledby={heading} {...drop.dropTargetProps}>
     <header className="project-files-header">
@@ -84,7 +93,7 @@ function WorkspaceProjectFiles({ workspaceId }: ProjectFilesSectionProps) {
     {query.hasNextPage && <Button size="sm" variant="ghost" disabled={query.isFetching && !query.isRefetching}
       onClick={() => { void query.fetchNextPage() }}>More</Button>}
     {ui.removing && <ProjectFileRemoval workspaceId={workspaceId} row={ui.removing}
-      onClose={() => uiStore.setState({ removing: null })} />}
+      onClose={() => uiStore.setState({ removing: null })} onRemoved={() => { restoreFocus.current = true }} />}
   </section>
 }
 
@@ -146,8 +155,8 @@ function ProjectFileItem({ workspaceId, row, onRemove }: ProjectFilesSectionProp
   </li>
 }
 
-function ProjectFileRemoval({ workspaceId, row, onClose }: ProjectFilesSectionProps & {
-  row: FileRow; onClose: () => void
+function ProjectFileRemoval({ workspaceId, row, onClose, onRemoved }: ProjectFilesSectionProps & {
+  row: FileRow; onClose: () => void; onRemoved: () => void
 }) {
   const mutation = useProjectFileRemove(workspaceId)
   const attempt = useRef(new CommandAttempt<Omit<ProjectFileRemoveInput, 'commandId'>>())
@@ -162,6 +171,7 @@ function ProjectFileRemoval({ workspaceId, row, onClose }: ProjectFilesSectionPr
       await mutation.mutateAsync({ ...attempt.current.input({ workspaceId, row }), generation })
       assertSession(generation)
       attempt.current.succeeded()
+      onRemoved()
       onClose()
     } catch (error) {
       attempt.current.failed(error)

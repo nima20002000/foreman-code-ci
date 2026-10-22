@@ -118,10 +118,10 @@ describe('mounted Board bounded-history wire budgets', () => {
     restarting = false
     await intervalTick(1000)
     await waitFor(() => expect(snapshotState(cache)).toMatchObject({ status: 'success', fetchStatus: 'idle' }))
-    await waitFor(async () => {
+    try { await waitFor(async () => {
       await intervalTick(1000)
       expect(screen.queryByRole('alert', { name: 'Server connection' })).not.toBeInTheDocument()
-    })
+    }) } catch (e) { throw new Error('DIAG ' + JSON.stringify(cache.getQueryCache().getAll().filter(q => q.state.error || q.state.fetchFailureReason).map(q => ({ key: q.queryKey, err: String(q.state.error), why: String(q.state.fetchFailureReason), active: q.isActive(), status: q.state.status, fs: q.state.fetchStatus })))) }
     await waitFor(() => expect(cache.isFetching()).toBe(0))
     expect(live().length).toBeGreaterThan(currentBefore)
     expect(wire.executions()).toHaveLength(2)

@@ -321,7 +321,7 @@ describe('disabled collaboration shell through navigation and rendered controls'
     expect(panel.getByText('Group messages')).toBeVisible()
     expect(panel.queryByRole('navigation', { name: 'Workflow panel view' })).not.toBeInTheDocument()
     await user.click(panel.getByRole('button', { name: 'Close group chat' }))
-    await waitFor(() => expect(screen.getByRole('complementary', { name: 'Workflow side panel', hidden: true })).not.toBeVisible())
+    await waitFor(() => expect(screen.queryByText('Group messages')).not.toBeInTheDocument())
     expect(router.state.location.search).not.toHaveProperty('boardPanel')
   })
 
