@@ -8,6 +8,7 @@ import { Alert } from '../shared/ui/nocturne'
 import { HarnessDefaultsSettings } from '../features/settings/HarnessDefaultsSettings'
 import { WorkspaceDefaultsSettings } from '../features/settings/WorkspaceDefaultsSettings'
 import { GeneralSettings } from '../features/settings/GeneralSettings'
+import { AppearanceSettings } from '../features/settings/AppearanceSettings'
 import { BugsSettings } from '../features/bug-reports/BugsSettings'
 import { PromptSettings } from '../features/settings/PromptSettings'
 import { WorkspaceShell } from '../shared/ui/WorkspaceShell'
@@ -85,6 +86,9 @@ export function WorkspaceDefaultsSettingsRouteEntry() {
 }
 export function GeneralSettingsRouteEntry() {
   return <SettingsShell><GeneralSettings /></SettingsShell>
+}
+export function AppearanceSettingsRouteEntry() {
+  return <SettingsShell><AppearanceSettings /></SettingsShell>
 }
 export function BugsSettingsRouteEntry() {
   const search = useSearch({ from: '/settings/bugs' })

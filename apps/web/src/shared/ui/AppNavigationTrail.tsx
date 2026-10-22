@@ -13,7 +13,7 @@ type Crumb = { label: string; to: string; search?: Record<string, unknown>; pend
 const sectionNames: Record<string, string> = {
   workflows: 'Workflows', settings: 'Settings', files: 'Project files', agents: 'Agents',
   tasks: 'Tasks', runs: 'Runs', terminal: 'Terminal', approvals: 'Approvals', location: 'Location',
-  harnesses: 'Harnesses', computers: 'Computers', skills: 'Skills', workspaces: 'Workspaces', general: 'General',
+  harnesses: 'Harnesses', computers: 'Computers', skills: 'Skills', workspaces: 'Workspaces', general: 'General', appearance: 'Appearance',
   bugs: 'Bugs',
   'system-prompt': 'System prompt', 'browser-profiles': 'Browser profiles',
 }

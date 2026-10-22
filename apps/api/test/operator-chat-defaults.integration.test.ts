@@ -10,6 +10,7 @@ import { ManagedAgentDefaultsSchema, AgentDefaultsUpdateResultSchema } from '@fo
 import { applyOperatorChatSettings, operatorChatSettings, DEFAULT_AGENT_DEFAULTS, DEFAULT_HARNESS_DEFAULTS, type OperatorConversationState } from '@foreman-code/contracts'
 import { describe, expect, it } from 'vitest'
 import { OperatorChatService } from '../src/modules/conversations/operatorChat.js'
+import { withTransaction } from '../src/infrastructure/transaction.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import { FoundationSettingsManagementService } from '../src/modules/settings/management.js'
@@ -167,13 +168,8 @@ describe.skipIf(!connectionString)('Operator chat persistence and native binding
       mcpServers: { graphql: { type: 'http' as const, url: 'http://127.0.0.1:3050/mcp' } } }
     const saved = await settings.updateAgentDefaults({ ...DEFAULT_AGENT_DEFAULTS,
       operator: { ...DEFAULT_AGENT_DEFAULTS.operator, harness, harnessProfileSelection: selector } }, 0)
-    const connection = await pool.connect()
-    let targetPin: string
-    try {
-      await connection.query('begin')
-      targetPin = (await operators.updateWithClient(connection, harness, sourcePin, false, undefined, selector)).configuration.id
-      await connection.query('commit')
-    } catch (error) { await connection.query('rollback'); throw error } finally { connection.release() }
+    const targetPin = await withTransaction(pool, async connection =>
+      (await operators.updateWithClient(connection, harness, sourcePin, false, undefined, selector)).configuration.id)
     let inspections = 0
     authority.setupConfiguration = async (_principal, configuration) => {
       inspections++

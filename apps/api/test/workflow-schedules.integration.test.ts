@@ -13,6 +13,7 @@ import type { ManagementGrant } from '@foreman-code/contracts/management'
 import { buildApp } from '../src/app.js'
 import { workflowScheduleMigration } from '../src/infrastructure/workflowScheduleMigration.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
+import { withTransaction } from '../src/infrastructure/transaction.js'
 import { ScheduleOperatorCapabilitiesSchema, WORKFLOW_SCHEDULE_TOOLS } from '../src/mcp/operator/tools/workflowSchedules.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
@@ -81,13 +82,7 @@ describe.skipIf(!postgresEnabled)('SCH-03 PostgreSQL persistence and authenticat
       grants: [{ actions, scope: { workspaceIds: [workspaceId] } }] })
   }
   async function transaction<T>(work: (client: pg.PoolClient) => Promise<T>): Promise<T> {
-    const client = await database.pool.connect()
-    try {
-      await client.query('begin')
-      const value = await work(client)
-      await client.query('commit')
-      return value
-    } catch (error) { await client.query('rollback'); throw error } finally { client.release() }
+    return withTransaction(database.pool, work)
   }
   function request(schedule: ScheduleConfiguration = weekly, expectedRevision = 0, commandId = randomUUID()) {
     return { ...scope, schedule, expectedRevision, commandId }
@@ -279,14 +274,13 @@ describe.skipIf(!postgresEnabled)('SCH-03 PostgreSQL persistence and authenticat
 
   it('uses the dispatcher transaction without committing it', async () => {
     await service.save(writer.principal, 'http', request(interval))
-    const client = await database.pool.connect()
     const item = occurrence('2030-01-07T08:00:00.000Z')
-    try {
-      await client.query('begin')
+    const deliberateRollback = new Error('deliberate rollback')
+    await expect(withTransaction(database.pool, async client => {
       await service.repository.recordOccurrence(client, item, now)
       expect((await service.recentOccurrences(reader.principal, scope)).items).toEqual([])
-      await client.query('rollback')
-    } finally { client.release() }
+      throw deliberateRollback
+    })).rejects.toBe(deliberateRollback)
     expect((await service.recentOccurrences(reader.principal, scope)).items).toEqual([])
   })
 

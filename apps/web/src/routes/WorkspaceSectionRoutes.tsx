@@ -198,7 +198,14 @@ export function GlobalSettingsRouteEntry() {
               <li>
                 <Card className="settings-card">
                   <Link to="/settings/general" className="settings-card-open">
-                    <SettingsCardBody icon="settings" title="General" description="Theme, chat files and file sync" />
+                    <SettingsCardBody icon="settings" title="General" description="Chat files and file sync" />
+                  </Link>
+                </Card>
+              </li>
+              <li>
+                <Card className="settings-card">
+                  <Link to="/settings/appearance" className="settings-card-open">
+                    <SettingsCardBody icon="eye" title="Appearance" description="Dark or light theme" />
                   </Link>
                 </Card>
               </li>

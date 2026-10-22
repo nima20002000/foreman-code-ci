@@ -32,6 +32,7 @@ import { productionSubagentControls } from '../src/modules/subagents/productionC
 import type { RunOwnership } from '../src/modules/runs/ownership.js'
 import { NativeResponseJournal } from '../src/modules/harnesses/recovery/responseJournal.js'
 import { join } from 'node:path'
+import { withTransaction } from '../src/infrastructure/transaction.js'
 import { CodexStdioTransport } from '../src/modules/harnesses/codexStdioTransport.js'
 
 // Explicit loopback admin connection and a random OWNED schema. Never read TEST_DATABASE_URL or migrate public.
@@ -331,9 +332,7 @@ describe('durable per-Run children over SQL and authenticated MCP', () => {
   it('does not hold Run SQL locks while the native dispatch callback records evidence', async () => {
     const f = await qualifiedFixture()
     f.send.mockImplementationOnce(async () => {
-      const sql = await pool.connect()
-      try { await sql.query('begin'); await sql.query('select id from runs where id=$1 for update', [f.input.runId]); await sql.query('commit') }
-      finally { sql.release() }
+      await withTransaction(pool, sql => sql.query('select id from runs where id=$1 for update', [f.input.runId]))
     })
     expect((await f.service.input(f.writer.principal, 'mcp', f.command)).state).toBe('acknowledged')
   }, 15000)

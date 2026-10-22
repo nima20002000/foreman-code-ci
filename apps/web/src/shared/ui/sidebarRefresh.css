@@ -41,7 +41,14 @@
 
 /* Footer: one calm row of icons above a hairline. */
 .workspace-shell:not(.workspace-shell-navigation-collapsed) .sidebar-footer { padding-top: 12px; border-top: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent); }
-.workspace-shell .sidebar-settings-link, .workspace-shell .sidebar-footer .theme-toggle { width: 2.25rem; height: 2.25rem; flex-basis: 2.25rem; border-radius: 8px; }
+/* Footer: one quiet row of status icons (computers, cloud CI, harnesses); settings live behind the product name. */
+.workspace-shell:not(.workspace-shell-navigation-collapsed) .sidebar-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; }
+.workspace-shell:not(.workspace-shell-navigation-collapsed) .sidebar-footer > .harness-status-menu { margin-left: auto; }
+.workspace-shell .sidebar-footer .sidebar-computers { padding: 0; }
+/* The product name opens Settings: a flat row that lights up like other nav rows. */
+.workspace-shell .sidebar-brand { width: 100%; justify-content: flex-start; min-height: 34px; border-radius: 8px; color: var(--text-strong); cursor: pointer; }
+.workspace-shell .sidebar-brand:hover, .workspace-shell .sidebar-brand:focus-visible { background: color-mix(in srgb, var(--surface-raised) 70%, transparent); }
+.workspace-shell .sidebar-brand-active { background: var(--surface-selected); }
 
 /* Only the deepest active item is marked; its ancestors just read as the path. */
 .workspace-shell .shell-navigation li:has(li .nav-item-active) > .nav-item-row > .nav-item-active { box-shadow: none; color: var(--text); font-weight: 500; }

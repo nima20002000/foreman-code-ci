@@ -10,7 +10,7 @@ import { ApprovalInboxSearchSchema, UrlSearchSelectionSchema, BrowserProfilesSet
 import { RunsSelectorSearchSchema } from '../features/runs-selector'
 import { RootShell } from './RootShell'
 import { AgentSettingsSearchSchema, BugsSettingsSearchSchema, SkillSettingsSearchSchema } from '@foreman-code/contracts/management'
-import { BugsSettingsRouteEntry, GeneralSettingsRouteEntry, NewSkillRouteEntry, SkillDetailRouteEntry, SkillsSettingsRouteEntry, SystemPromptSettingsRouteEntry, WorkspaceDefaultsSettingsRouteEntry } from '../routes/SettingsExperienceRoutes'
+import { AppearanceSettingsRouteEntry, BugsSettingsRouteEntry, GeneralSettingsRouteEntry, NewSkillRouteEntry, SkillDetailRouteEntry, SkillsSettingsRouteEntry, SystemPromptSettingsRouteEntry, WorkspaceDefaultsSettingsRouteEntry } from '../routes/SettingsExperienceRoutes'
 
 import { ProviderAccountsSettingsSearchSchema } from '../features/provider-accounts/providerAccountsNavigation'
 import { ComputersSettingsRouteEntry, ComputerDetailsSettingsRouteEntry, BrowserProfilesSettingsRouteEntry } from '../routes/SettingsExperienceRoutes'
@@ -164,6 +164,11 @@ const generalSettingsRoute = createRoute({
   path: '/settings/general',
   component: GeneralSettingsRouteEntry,
 })
+const appearanceSettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings/appearance',
+  component: AppearanceSettingsRouteEntry,
+})
 const bugsSettingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings/bugs',
@@ -246,6 +251,7 @@ export const routeTree = rootRoute.addChildren([
   globalSettingsRoute,
   accountRedirectRoute,
   generalSettingsRoute,
+  appearanceSettingsRoute,
   bugsSettingsRoute,
   systemPromptSettingsRoute,
   harnessSettingsRoute,

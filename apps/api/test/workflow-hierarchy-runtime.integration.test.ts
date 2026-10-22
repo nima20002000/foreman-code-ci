@@ -161,7 +161,7 @@ describe.skipIf(!postgresEnabled)('hierarchy runtime obligations and reservation
       },
       outputFor: (nodeId, request) => coordinationOutput(nodeId, request) })
     try {
-      await f.engine.start(f.f.run.id).catch(() => undefined)
+      await f.engine.start(f.f.run.id).catch(() => { /* ignore: the failed Run outcome is asserted below */ })
       await expect.poll(async () => (await f.runs.get(f.f.run.id))?.executionState, { timeout: 15_000 }).toBe('completed')
       expect(await f.runs.get(f.f.run.id)).toMatchObject({ outcome: 'failed' })
       const executions = (await f.db.pool.query<{ record: { state: string; result?: { error?: { code?: string } } } }>(

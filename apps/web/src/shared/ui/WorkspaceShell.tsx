@@ -8,11 +8,9 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react'
-import { Settings } from 'lucide-react'
 import { SidebarNavigationButton } from './SidebarNavigationButton'
 
 import { SidebarComputers } from '../../features/computers/SidebarComputers'
-import { ThemeToggle } from '../../features/theme'
 import { HarnessStatusMenu } from '../../features/settings/HarnessStatusMenu'
 import { useWorkspacePages } from '../api/query'
 import { EmptyState } from './nocturne'
@@ -121,12 +119,16 @@ export function WorkspaceShell({
         />
 
         <nav className="shell-navigation" id="workspace-primary-navigation">
-          <p className="sidebar-brand" data-testid="sidebar-brand" role="img" aria-label={PRODUCT_NAME}>
+          {/* The product name is the way into Settings. */}
+          <SidebarNavigationButton to="/settings" data-testid="sidebar-brand"
+            className={`sidebar-brand${activeGlobalSection === 'settings' ? ' sidebar-brand-active' : ''}`}
+            aria-current={activeGlobalSection === 'settings' ? 'page' : undefined}
+            aria-label="Settings" title="Settings">
             <span aria-hidden="true" className="sidebar-brand-mark">
               F
             </span>
             <span className="sidebar-brand-name">{PRODUCT_NAME}</span>
-          </p>
+          </SidebarNavigationButton>
 
           <WorkspaceNavigation
             workspaceId={navigationWorkspaceId}
@@ -142,19 +144,7 @@ export function WorkspaceShell({
 
         <div className="sidebar-footer">
           <SidebarComputers />
-          <div className="sidebar-preferences-row">
-            <SidebarNavigationButton
-              to="/settings"
-              className={`sidebar-settings-link${activeGlobalSection === 'settings' ? ' sidebar-settings-link-active' : ''}`}
-              aria-current={activeGlobalSection === 'settings' ? 'page' : undefined}
-              aria-label="Settings"
-              title="Settings"
-            >
-              <Settings aria-hidden="true" size={16} />
-            </SidebarNavigationButton>
-            <ThemeToggle />
-            <HarnessStatusMenu />
-          </div>
+          <HarnessStatusMenu />
         </div>
       </aside>
 
