@@ -168,3 +168,10 @@ export function graphRpcValue(result: {
   const text = result?.content?.find((item) => item.type === 'text')?.text
   return text === undefined ? undefined : JSON.parse(text)
 }
+/** Every tool name the caller can use. tools/list shows only the core, so the rest comes from tools_find. */
+export async function graphCatalogNames(app: FastifyInstance, token: string): Promise<string[]> {
+  const listed = await graphRpc(app, token, 'tools/list')
+  const found = await graphRpc(app, token, 'tools/call', { name: 'tools_find', arguments: {} })
+  const discovered = (graphRpcValue(found.result) as { tools?: { name: string }[] } | undefined)?.tools ?? []
+  return [...new Set([...(listed.result?.tools ?? []), ...discovered].map((tool) => tool.name))]
+}

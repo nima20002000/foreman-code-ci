@@ -5,7 +5,7 @@ import { ManagementActionSchema } from '@foreman-code/contracts/management'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { localHumanMigration } from '../src/infrastructure/localHumanMigration.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
-import { PostgresLocalHumanAccess } from '../src/modules/access/localHuman.js'
+import { PostgresLocalHumanAccess, localHumanPrincipal } from '../src/modules/access/localHuman.js'
 import { requireAuthorization } from '../src/modules/access/policy.js'
 import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
 import { approvalDatabase } from './helpers/wave25ApprovalDatabase.js'
@@ -74,16 +74,19 @@ describe.skipIf(!postgresEnabled)('local human migration', { timeout: 60_000 }, 
       await browserOwnerUpgrade(db.pool, owner.principal.id, { ownerMapping: 'empty' })
       const principals = (await db.pool.query('select * from management_principals order by id')).rows
       await applyApplicationMigrations(db.pool)
-      expect(await new PostgresLocalHumanAccess(db.pool, access).current()).toEqual(owner.principal)
-      expect(await access.authenticate(owner.token)).toEqual(owner.principal)
-      expect((await db.pool.query('select * from management_principals order by id')).rows).toEqual(principals)
+      // The local human always holds every management action, so the retained Operator is widened when it is served.
+      const widened = { ...owner.principal, grants: localHumanPrincipal.grants }
+      expect(await new PostgresLocalHumanAccess(db.pool, access).current()).toEqual(widened)
+      expect(await access.authenticate(owner.token)).toEqual(widened)
+      expect((await db.pool.query('select * from management_principals order by id')).rows)
+        .toEqual(principals.map(row => row.id === owner.principal.id ? { ...row, grants: localHumanPrincipal.grants } : row))
       await applyApplicationMigrations(db.pool)
       expect(await new PostgresLocalHumanAccess(db.pool, new PostgresAccessService(db.pool)).current())
-        .toEqual(owner.principal)
+        .toEqual(widened)
     } finally { await db.close() }
   })
 
-  it('drops existing browser accounts and sessions without widening MCP grants or altering audit history', async () => {
+  it('drops existing browser accounts and sessions, keeps MCP grants until the local human is served, and leaves audit history unchanged', async () => {
     const db = await currentDatabase()
     try {
       const access = new PostgresAccessService(db.pool)
@@ -118,10 +121,11 @@ describe.skipIf(!postgresEnabled)('local human migration', { timeout: 60_000 }, 
       expect((await db.pool.query('select * from management_audit order by sequence')).rows).toEqual(audit)
       expect(await access.authenticate(reader.token)).toEqual(reader.principal)
       const human = new PostgresLocalHumanAccess(db.pool, access)
-      expect(await human.current()).toEqual(reader.principal)
+      const widened = { ...reader.principal, grants: localHumanPrincipal.grants }
+      expect(await human.current()).toEqual(widened)
       await applyApplicationMigrations(db.pool)
       expect(await new PostgresLocalHumanAccess(db.pool, new PostgresAccessService(db.pool)).current())
-        .toEqual(reader.principal)
+        .toEqual(widened)
       const app = buildApp({
         readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
         operator: { access, services: { commands: new PostgresCommandCoordinator(db.pool) } as never }, localHuman: human,
@@ -132,16 +136,13 @@ describe.skipIf(!postgresEnabled)('local human migration', { timeout: 60_000 }, 
         for (const headers of [{}, { authorization: `Bearer ${reader.token}` }]) {
           const self = await app.inject({ url: '/api/local-human', headers })
           expect(self.statusCode, self.body).toBe(200)
-          expect(self.json().principal).toMatchObject({ id: reader.principal.id, grants: reader.principal.grants })
-          const allowed = await app.inject({
-            url: '/api/workspaces/existing-workspace/reference-files/permission-probe', headers,
-          })
-          expect(allowed.statusCode, allowed.body).toBe(200)
-          const denied = await app.inject({
-            url: '/api/workspaces/another-workspace/reference-files/permission-probe', headers,
-          })
-          expect(denied.statusCode).toBe(403)
-          expect((await app.inject({ method: 'POST', url: '/api/devices/connection-configure', headers })).statusCode).toBe(403)
+          expect(self.json().principal).toMatchObject({ id: reader.principal.id, grants: localHumanPrincipal.grants })
+          for (const url of ['/api/workspaces/existing-workspace/reference-files/permission-probe',
+            '/api/workspaces/another-workspace/reference-files/permission-probe']) {
+            const allowed = await app.inject({ url, headers })
+            expect(allowed.statusCode, allowed.body).toBe(200)
+          }
+          expect((await app.inject({ method: 'POST', url: '/api/devices/connection-configure', headers })).statusCode).toBe(200)
         }
       } finally { await app.close() }
     } finally { await db.close() }

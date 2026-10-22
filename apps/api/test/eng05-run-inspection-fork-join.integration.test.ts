@@ -1,3 +1,4 @@
+import { compactJsonSchema } from '../src/mcp/shared/schemaCompaction.js'
 import { operatorCatalogNames, operatorCatalog } from './support/operatorCatalog.js'
 import { describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
@@ -34,7 +35,7 @@ describe.skipIf(!postgresEnabled)('PostgreSQL authenticated Run inspection: fork
           name: 'operator_tool_schema_get', arguments: { name, includeOutputSchema: true },
         })))
         expect(schema.name).toBe(name)
-        expect(schema.inputSchema).toEqual(tool?.inputSchema)
+        expect(compactJsonSchema(schema.inputSchema)).toEqual(tool?.inputSchema)
         expect(schema.outputSchema?.type).toBe('object')
         expect(tool?.annotations?.readOnlyHint).toBe(true)
         expect(tool?.description).toBeTruthy()

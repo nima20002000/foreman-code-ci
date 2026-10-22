@@ -431,8 +431,9 @@ describe.skipIf(!postgresEnabled)('FIL-36 permanent reference HTTP + Operator MC
   }
   for (const kind of ['workspace_reference', 'workflow_reference'] as const) it(`MCP ${kind}: denies read-only writes and foreign reads, including direct unlisted tool calls`, async () => {
     const scope = kind === 'workspace_reference' ? workspace : workflow
-    const listed = await rpc(reader.token, 'tools/list', {})
-    const names = listed.result.tools?.map((entry) => entry.name) ?? []
+    const listed = await tool(reader.token, 'tools_find', {})
+    const names = (JSON.parse(listed.result.content?.find((part) => part.type === 'text')?.text ?? '{}').tools as { name: string }[] ?? [])
+      .map((entry) => entry.name)
     assert.ok(names.includes('reference_files_list')); assert.ok(names.includes('reference_file_read'))
     assert.equal(names.includes('reference_file_add'), false); assert.equal(names.includes('reference_file_remove'), false)
     const { row } = await add(scope)

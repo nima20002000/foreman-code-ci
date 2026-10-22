@@ -5,7 +5,7 @@ import { expect, it } from 'vitest'
 import { ManagementPrincipalSchema } from '@foreman-code/contracts/management'
 import { applyApplicationMigrations, migrations } from '../src/infrastructure/migrations.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
-import { PostgresLocalHumanAccess } from '../src/modules/access/localHuman.js'
+import { PostgresLocalHumanAccess, localHumanPrincipal } from '../src/modules/access/localHuman.js'
 import { registerOperatorHttpSecurity } from '../src/modules/access/http.js'
 import { currentOperatorAuthority } from '../src/modules/access/runAuthority.js'
 import { createFixtureSchema, dropFixtureSchema, ownedTestDatabaseUrl } from './helpers/testResources.js'
@@ -91,14 +91,15 @@ it('migrates retired stored grants before serving local human and copied run aut
     const response = await app.inject({ url: '/api/local-human' })
     expect(response.statusCode, response.body).toBe(200)
     expect(response.json().principal).toEqual({
-      id: 'human', name: 'human', expiresAt: '2099-01-01T00:00:00.000Z', grants: validGrants,
+      id: 'human', name: 'human', expiresAt: '2099-01-01T00:00:00.000Z', grants: localHumanPrincipal.grants,
     })
     expect((await access.authenticate(token)).grants).toEqual(validGrants)
     const authority = await currentOperatorAuthority(db.pool, 'run-authority')
     expect(authority.principal.grants).toEqual(validGrants)
-    expect(authority.owner.grants).toEqual(validGrants)
+    // The local human holds every management action, so serving it widened the stored human grants.
+    expect(authority.owner.grants).toEqual(localHumanPrincipal.grants)
     const after = (await db.pool.query('select * from management_principals order by id')).rows
-    expect(after).toEqual(before.map(row => ({ ...row, grants: row.id === 'retired-only' ? [] : validGrants })))
+    expect(after).toEqual(before.map(row => ({ ...row, grants: row.id === 'retired-only' ? [] : row.id === 'human' ? localHumanPrincipal.grants : validGrants })))
     for (const row of after) {
       expect(ManagementPrincipalSchema.shape.grants.parse(row.grants)).toEqual(row.grants)
     }

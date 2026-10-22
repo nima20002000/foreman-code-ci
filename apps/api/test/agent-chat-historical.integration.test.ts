@@ -1,3 +1,4 @@
+import { compactJsonSchema } from '../src/mcp/shared/schemaCompaction.js'
 import { operatorCatalogNames, operatorCatalog } from './support/operatorCatalog.js'
 import { describe, expect, it, vi } from 'vitest'
 import { postgresEnabled } from './helpers/wave25Agent3.js'
@@ -75,7 +76,7 @@ describe.skipIf(!postgresEnabled)('Selected historical Run chat PostgreSQL / HTT
         name: 'operator_tool_schema_get', arguments: { name: 'agent_chat_read', includeOutputSchema: true },
       })))
       expect(schema.name).toBe('agent_chat_read')
-      expect(schema.inputSchema).toEqual(discovery.inputSchema)
+      expect(compactJsonSchema(schema.inputSchema)).toEqual(discovery.inputSchema)
       expect(schema.outputSchema?.type).toBe('object')
       expect(discovery.annotations?.readOnlyHint).toBe(true)
       expect((await read(test, targets[0]!)).kind).toBe('selected')

@@ -1,3 +1,4 @@
+import { operatorCatalog } from './support/operatorCatalog.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'

@@ -1,3 +1,4 @@
+import { operatorCatalog } from './support/operatorCatalog.js'
 import { CiGetOutputSchema, CiRunOutputSchema } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { expect, it } from 'vitest'

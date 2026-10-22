@@ -157,6 +157,8 @@ describe.skipIf(!postgresEnabled)('FIL-40 retention persistence and transport pa
   }
   const call = (owner: Credential, name: string, input: Record<string, unknown> = {}) =>
     mcp(owner, 'tools/call', { name, arguments: input })
+  const catalogNames = async (owner: Credential) =>
+    (success(await call(owner, 'tools_find')) as { tools: { name: string }[] }).tools.map((tool) => tool.name)
   function success(result: McpResult): unknown {
     assert.notEqual(result.isError, true, JSON.stringify(result))
     assert.ok(decodeMcpToolResult(result))
@@ -336,7 +338,7 @@ describe.skipIf(!postgresEnabled)('FIL-40 retention persistence and transport pa
   it('supports authenticated MCP list, preview, save and persisted HTTP/MCP readback', async () => {
     const owner = await newOwner()
     await seed(owner)
-    const names = (await mcp(owner, 'tools/list', {})).tools!.map((tool) => tool.name)
+    const names = await catalogNames(owner)
     for (const name of ['file_retention_get', 'file_retention_preview', 'file_retention_save']) assert.ok(names.includes(name))
     assert.equal(FileRetentionGetResultSchema.parse(success(await call(owner, 'file_retention_get'))).preference.revision, 0)
     const preview = FileRetentionPreviewResultSchema.parse(success(await call(owner, 'file_retention_preview', { durationSeconds: 3600 })))
@@ -386,7 +388,7 @@ describe.skipIf(!postgresEnabled)('FIL-40 retention persistence and transport pa
     const reader = await newOwner([{ actions: ['settings:read'], scope: {} }])
     const scoped = await newOwner([{ actions: ['settings:read', 'settings:update'], scope: { workspaceIds: ['workspace'] } }])
     assert.equal((await get(reader)).revision, 0)
-    const tools = (await mcp(reader, 'tools/list', {})).tools!.map((tool) => tool.name)
+    const tools = await catalogNames(reader)
     assert.ok(tools.includes('file_retention_get'))
     assert.ok(!tools.includes('file_retention_save'))
     for (const caller of [reader, scoped]) {

@@ -1,3 +1,4 @@
+import { compactJsonSchema } from '../src/mcp/shared/schemaCompaction.js'
 import { operatorCatalogNames, operatorCatalog } from './support/operatorCatalog.js'
 import {
   decodeMcpToolResult, OperatorCompactCapabilitiesSchema, OperatorToolSchemaResultSchema,
@@ -215,7 +216,7 @@ describe.skipIf(!postgresEnabled)('SCH-05 immutable Board/history authenticated 
           name: 'operator_tool_schema_get', arguments: { name, includeOutputSchema: true },
         })))
         expect(schema.name).toBe(name)
-        expect(schema.inputSchema).toEqual(tool?.inputSchema)
+        expect(compactJsonSchema(schema.inputSchema)).toEqual(tool?.inputSchema)
         expect(schema.outputSchema?.type).toBe('object')
         expect(schema.permissionRequirements.actions).toEqual(['runs:read'])
       }

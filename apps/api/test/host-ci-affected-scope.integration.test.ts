@@ -260,7 +260,7 @@ it('defaults authenticated Agent MCP to affected scope, reads explicit full scop
   const f = await fixture({ agent: true })
   try {
     const agent = f.agent!
-    const tool = (await operatorCatalog(agent)).find(item => item.name === 'ci_run')!
+    const tool = (await agent.listTools()).tools.find(item => item.name === 'ci_run')!
     expect(tool.inputSchema.properties).toHaveProperty('scope')
     expect(tool.inputSchema.properties).toHaveProperty('files')
     for (const baseCommit of [undefined, 'b'.repeat(40)]) {

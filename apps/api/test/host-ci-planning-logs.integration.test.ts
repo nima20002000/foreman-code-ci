@@ -6,7 +6,7 @@ import { CiGetOutputSchema, CiLogsOutputSchema, CiRunOutputSchema, CiRunRecordSc
   type CiHostRun, type CiHostReply } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import type { ManagementAction } from '@foreman-code/contracts/management'
-import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
@@ -311,10 +311,15 @@ it('retains persisted host capacity through failed cancellation and unavailable 
     expect(await readFile(join(directory, 'src', 'input.txt'), 'utf8')).toBe('live CI input')
     f.control.stopCode = 0
     f.control.code = 0
-    await f.ci.dispatch()
-    await f.ci.drain()
-    await expect.poll(async () => CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: active.id }))
-      .run.state).toBe('canceled')
+    // An unconfirmed executor is asked again only after a growing gap, so move the clock past the longest one.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(Date.now() + 120_000)
+    try {
+      await f.ci.dispatch()
+      await f.ci.drain()
+      await expect.poll(async () => CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: active.id }))
+        .run.state).toBe('canceled')
+    } finally { vi.useRealTimers() }
     const cancellationRead = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: active.id }))
     expect(cancellationRead.run.state).toBe('canceled')
     expect((await database.pool.query('select host_key from ci_runs where id=$1', [active.id]))

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { CiGetOutputSchema, CiRunRecordSchema, type CiHostRun, type CiRunRecord } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
@@ -171,8 +171,11 @@ it('retains an exclusive executor until cancellation is confirmed and retries fa
     expect((await f.read(f.next.id)).run.state).toBe('queued')
     expect(f.canceled).toContain(f.running.id)
     f.control.stopConfirmed = true
+    // An unconfirmed executor is asked again only after a growing gap, so move the clock past the longest one.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(Date.now() + 120_000)
     await f.settle()
     expect((await f.read(f.running.id)).run.state).toBe('canceled')
     expect((await f.read(f.next.id)).run.state).toBe('running')
-  } finally { await f.close() }
+  } finally { vi.useRealTimers(); await f.close() }
 })

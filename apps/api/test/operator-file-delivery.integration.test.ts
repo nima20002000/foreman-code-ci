@@ -1,3 +1,4 @@
+import { operatorCatalog } from './support/operatorCatalog.js'
 import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'
 import { createFixtureSchema, dropFixtureSchema, removeFixtureDirectory } from './helpers/testResources.js'
 import assert from 'node:assert/strict'

@@ -1,3 +1,4 @@
+import { operatorCatalog } from './support/operatorCatalog.js'
 import { randomUUID } from 'node:crypto'
 import { CiCancelOutputSchema, CiGetOutputSchema, CiListOutputSchema, CiLogsOutputSchema,
   CiRunOutputSchema } from '@foreman-code/contracts'

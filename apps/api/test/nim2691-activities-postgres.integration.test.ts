@@ -11,7 +11,7 @@ import { RunManagementService } from '../src/modules/runs/management.js'
 import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema,
   CurrentWorkflowSaveInputSchema, CurrentWorkflowSaveResultSchema,
   RunActivitiesPageSchema, RunHandoffsReadSchema } from '@foreman-code/contracts/wave25'
-import { changeRunState, graphFixture, graphHeaders, graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { changeRunState, graphCatalogNames, graphFixture, graphHeaders, graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
 import { writerFixture } from './eng04-writer-fixtures.js'
 import type { currentDatabase } from './helpers/eng04CurrentDatabase.js'
 import { nim2691TaskDatabase } from './helpers/nim2691Database.js'
@@ -160,23 +160,7 @@ describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('NIM-2691 bounded Activiti
         await app.ready()
         const path = `/api/management/workspaces/${t.scope.workspaceId}/runs/${t.run.id}`
         const args = { workspaceId: t.scope.workspaceId, runId: t.run.id }
-        const listToolNames = async (token: string) => {
-          const names: string[] = []
-          const cursors = new Set<string>()
-          let cursor: string | undefined
-          do {
-            const listed = await graphRpc(app, token, 'tools/list', cursor ? { cursor } : {})
-            expect(listed.error).toBeUndefined()
-            expect(listed.result?.tools).toBeDefined()
-            names.push(...listed.result!.tools!.map(tool => tool.name))
-            cursor = listed.result?.nextCursor
-            if (cursor) {
-              expect(cursors.has(cursor)).toBe(false)
-              cursors.add(cursor)
-            }
-          } while (cursor)
-          return names
-        }
+        const listToolNames = (token: string) => graphCatalogNames(app, token)
         const names = await listToolNames(t.writer.token)
         expect(names).toContain('run_handoffs_get_v1')
         expect(names).toContain('run_activities_get_v1')

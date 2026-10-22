@@ -9,7 +9,7 @@ import { CurrentManagedWorkflowSchema, CurrentWorkflowSaveResultSchema, SavedMan
   type CurrentEditStageInput, type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { postgresEnabled } from './helpers/wave25Agent3.js'
-import { graphHeaders, graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { graphHeaders, graphRpc, graphRpcValue, graphCatalogNames } from './eng04-graph-composition-fixture.js'
 
 type AppFixture = Awaited<ReturnType<typeof currentOperatorIntegration>>
 type SavedWorkflow = ReturnType<typeof CurrentWorkflowSaveResultSchema.parse>['value']
@@ -307,8 +307,7 @@ describe.skipIf(!postgresEnabled)('Master hierarchy authenticated HTTP/MCP parit
       const reader = await issue([{ actions: ['capabilities:read'], scope: {} }, {
         actions: ['workflows:read', 'graph:read'], scope: { workspaceIds: [t.workspaceId], workflowIds: [t.workflowId] },
       }])
-      const list = await graphRpc(f.app, reader.token, 'tools/list')
-      const names = list.result?.tools?.map(tool => tool.name)
+      const names = await graphCatalogNames(f.app, reader.token)
       expect(names).toContain(WORKFLOW_HIERARCHY_TOOLS.get)
       expect(names).not.toContain(WORKFLOW_HIERARCHY_TOOLS.update)
       expect(names).not.toContain(WORKFLOW_HIERARCHY_TOOLS.reports)
@@ -320,7 +319,7 @@ describe.skipIf(!postgresEnabled)('Master hierarchy authenticated HTTP/MCP parit
       const disjoint = await issue([{ actions: ['capabilities:read'], scope: {} }, {
         actions: ['workflows:read', 'graph:read'], scope: { workflowIds: [t.workflowId] },
       }, { actions: ['runs:read'], scope: { workflowIds: ['a-different-workflow'] } }])
-      expect((await graphRpc(f.app, disjoint.token, 'tools/list')).result?.tools?.map(tool => tool.name))
+      expect(await graphCatalogNames(f.app, disjoint.token))
         .not.toContain(WORKFLOW_HIERARCHY_TOOLS.reports)
       const pins = { workspaceId: t.workspaceId, workflowId: t.workflowId,
         workflowVersionId: t.saved.value.currentVersionId, runId: f.f.run.id }

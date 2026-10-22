@@ -1,4 +1,4 @@
-import { operatorCatalogNames } from './support/operatorCatalog.js'
+import { operatorCatalogNames, operatorCatalog } from './support/operatorCatalog.js'
 import { OperatorSourceListResultSchema, decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { createFixtureSchema, dropFixtureSchema, removeFixtureDirectory } from './helpers/testResources.js'
 import { randomUUID } from 'node:crypto'

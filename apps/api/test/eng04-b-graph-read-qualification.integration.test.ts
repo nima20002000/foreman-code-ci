@@ -10,8 +10,7 @@ import { withExclusiveGraphConnection } from '../src/modules/run-graph/connectio
 import { currentDatabase as agent3Database, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
 import {
   graphFixture, graphHeaders, graphRpc, graphRpcValue, changeRunState, ownedGraph,
-  privateCanary, type GraphFixture, type GraphTestDatabase,
-} from './eng04-graph-composition-fixture.js'
+  privateCanary, type GraphFixture, type GraphTestDatabase, graphCatalogNames } from './eng04-graph-composition-fixture.js'
 
 type Kind = 'current' | 'snapshot' | 'events'
 const kinds = ['current', 'snapshot', 'events'] as const
@@ -68,8 +67,7 @@ describe.skipIf(!postgresEnabled)('ENG04-B primary canonical read qualification'
     const remote = await graphRpc(t.app, t.writer.token, 'tools/call', { name: CANONICAL_RUN_GRAPH_MCP_TOOLS.readCapabilities, arguments: {} })
     expect(remote.result?.isError).not.toBe(true)
     expect(graphRpcValue(remote.result)).toEqual(discovery)
-    const list = await graphRpc(t.app, t.writer.token, 'tools/list')
-    expect(list.result?.tools?.map((tool) => tool.name)).toContain(CANONICAL_RUN_GRAPH_MCP_TOOLS.readCapabilities)
+    expect(await graphCatalogNames(t.app, t.writer.token)).toContain(CANONICAL_RUN_GRAPH_MCP_TOOLS.readCapabilities)
     const legacy = await t.app.inject({ method: 'GET', url: CANONICAL_RUN_GRAPH_ROUTES.capabilities, headers: graphHeaders(t.writer.token) })
     expect(CanonicalRunGraphReadCapabilitiesSchema.parse(legacy.json())).toEqual(discovery)
     const repeat = await t.app.inject({ method: 'GET', url: CURRENT_WORKFLOW_ROUTES.capabilities, headers: graphHeaders(t.writer.token) })
@@ -100,9 +98,9 @@ describe.skipIf(!postgresEnabled)('ENG04-B primary canonical read qualification'
       for (const kind of kinds) await equalRead(t, kind, reader.token, kind === 'events' ? '0' : undefined)
     })
     await equalRead(t, 'current', reader.token)
-    const tools = await graphRpc(t.app, reader.token, 'tools/list')
-    expect(tools.result?.tools?.map((tool) => tool.name)).not.toContain('repeat_update')
-    expect(tools.result?.tools?.map((tool) => tool.name)).not.toContain('run_start')
+    const tools = await graphCatalogNames(t.app, reader.token)
+    expect(tools).not.toContain('repeat_update')
+    expect(tools).not.toContain('run_start')
   })
 
   it('checks every Run/workflow/version/semantics pin even for a broadly authorized reader', async () => {
