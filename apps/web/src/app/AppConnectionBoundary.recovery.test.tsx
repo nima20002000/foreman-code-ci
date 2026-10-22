@@ -71,20 +71,12 @@ it('refreshes healthy reads only after a failed read actually recovers, not whil
   </AppConnectionBoundary></QueryClientProvider>)
   try {
     await screen.findByText('Healthy page')
-    await screen.findByText('Read failed')
-    expect(healthyReads).toBe(1)
-    let retry!: Promise<void>
-    await act(async () => {
-      retry = client.refetchQueries({ queryKey: ['retrying-read'], exact: true })
-      await retryStarted.promise
-    })
+    // The failed read is retried by itself every second while the app shows the reconnect banner.
+    await act(async () => { await retryStarted.promise })
     expect(await screen.findByText('Retry read pending')).toBeVisible()
     expect(client.getQueryState(['recovery-page'])).toMatchObject({ isInvalidated: false, fetchStatus: 'idle' })
     expect(healthyReads).toBe(1)
-    await act(async () => {
-      retryResponse.resolve()
-      await retry
-    })
+    await act(async () => { retryResponse.resolve() })
     expect(await screen.findByText('Recovered read')).toBeVisible()
     await waitFor(() => expect(healthyReads).toBe(2))
     healthyResponse.resolve()

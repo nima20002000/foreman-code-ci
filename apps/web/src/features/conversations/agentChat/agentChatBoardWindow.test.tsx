@@ -100,7 +100,8 @@ describe('mounted Board chat rail action area', () => {
     await waitFor(() => expect(chat.getState(context).activeTurn).toBeNull())
     expect(deliveryCalls).toEqual(['stop'])
     expect(chat.calls.filter((call) => call.method === 'POST')).toHaveLength(0)
-    expect(fixture.mock.calls.filter((call) => call.method !== 'GET')).toEqual([])
+    // Opening the chat only returns its browser switch to the saved node setting; it never writes the workflow.
+    expect(fixture.mock.calls.filter((call) => call.method !== 'GET' && !call.path.endsWith('/browser'))).toEqual([])
     expect(screen.getByRole('complementary', { name: 'Workflow side panel' })).toBe(rail)
     await userEvent.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('complementary', { name: 'Workflow side panel' })).not.toBeInTheDocument())

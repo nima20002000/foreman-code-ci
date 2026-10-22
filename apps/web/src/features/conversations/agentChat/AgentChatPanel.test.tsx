@@ -480,7 +480,7 @@ describe('AgentChatPanel live reads and interaction', () => {
     expect(input).toHaveFocus()
   })
 
-  it('does not force-scroll while reading above; Jump to latest restores following', async () => {
+  it('does not force-scroll while reading above; scrolling back to the bottom restores following', async () => {
     const mounted = mountChat(agentChatFixtures.active); await mounted.ready()
     const scroll = screen.getByRole('region', { name: 'Agent conversation transcript' })
     Object.defineProperties(scroll, { scrollHeight: { configurable: true, value: 600 }, clientHeight: { configurable: true, value: 200 } })
@@ -489,7 +489,10 @@ describe('AgentChatPanel live reads and interaction', () => {
     state.messages[1]!.content = 'More public output'; mounted.mock.setState(state)
     await act(() => mounted.refresh())
     expect(scroll.scrollTop).toBe(0)
-    await userEvent.click(await screen.findByRole('button', { name: 'Jump to latest' }))
+    expect(screen.queryByRole('button', { name: 'Jump to latest' })).not.toBeInTheDocument()
+    scroll.scrollTop = 590; fireEvent.scroll(scroll)
+    state.revision++; state.messages[1]!.content = 'Even more public output'; mounted.mock.setState(state)
+    await act(() => mounted.refresh())
     expect(scroll.scrollTop).toBe(600)
   })
 

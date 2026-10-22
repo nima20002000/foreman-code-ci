@@ -31,7 +31,7 @@ export type RetainedInputsState = ReturnType<typeof useRetainedInputs>
 type RetainedCardProps = {
   target: DeliveryTarget; receipts: readonly ChatDeliveryReceipt[]; onDenied(error: Error): void
   onRecover?(recovery: DirectRecovery): void; onOpenGroup?(postId: string): void
-  onCancel?(receipt: ChatDeliveryReceipt): void; onRefresh(): void
+  onCancel?(receipt: ChatDeliveryReceipt): void; onRefresh(): void; onOpenContinuation?(receipt: ChatDeliveryReceipt): void
   controlsReason?: string
 }
 
@@ -64,10 +64,10 @@ export function RetainedDeliveryInputs({ representedCommandIds, ...props }: Reta
   </section>
 }
 
-function RetainedInputCard({ input, target, receipt, onDenied, onRecover, onOpenGroup, onCancel, onRefresh, controlsReason }: {
+function RetainedInputCard({ input, target, receipt, onDenied, onRecover, onOpenGroup, onCancel, onRefresh, onOpenContinuation, controlsReason }: {
   input: RetainedInputRecord; target: DeliveryTarget; receipt?: ChatDeliveryReceipt; onDenied(error: Error): void
   onRecover?(recovery: DirectRecovery): void; onOpenGroup?(postId: string): void
-  onCancel?(receipt: ChatDeliveryReceipt): void; onRefresh(): void
+  onCancel?(receipt: ChatDeliveryReceipt): void; onRefresh(): void; onOpenContinuation?(receipt: ChatDeliveryReceipt): void
   controlsReason?: string
 }) {
   const exactReceipt = useQuery({ queryKey: ['chat-delivery-receipt', identityEpoch(), JSON.stringify(target), input.receiptId],
@@ -106,7 +106,7 @@ function RetainedInputCard({ input, target, receipt, onDenied, onRecover, onOpen
     {body.isError ? <p role="alert">Could not load the full input. <Button onClick={() => void body.refetch()}>Retry full input</Button></p> : null}
     {input.origin === 'group' && input.sourcePostId ? <p>Reply belongs to Group chat.
       {onOpenGroup ? <Button onClick={() => onOpenGroup(input.sourcePostId!)}>Open Group message</Button> : null}</p> : null}
-    {currentReceipt ? <ChatDeliveryReceipts receipts={[currentReceipt]} onCancel={onCancel} controlsReason={controlsReason} onRefresh={refreshStatus}
+    {currentReceipt ? <ChatDeliveryReceipts receipts={[currentReceipt]} onCancel={onCancel} onOpenContinuation={onOpenContinuation} controlsReason={controlsReason} onRefresh={refreshStatus}
       onRecover={input.origin === 'direct' && onRecover && !incomplete ? (failed, choice) => onRecover({ origin: 'direct', receipt: failed, input: original, choice }) : undefined} />
       : <p role="status">{exactReceipt.isError ? 'Delivery status could not be loaded.' : 'Delivery status is loading.'} <Button onClick={refreshStatus}>Refresh delivery status</Button></p>}
     {currentReceipt && exactReceipt.isError ? <p role="alert">Delivery status could not be refreshed. The last known receipt is shown.

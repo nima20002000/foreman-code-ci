@@ -1,7 +1,6 @@
 import { useRef } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { agentChatFixtures, codexChatCapabilities, claudeChatCapabilities, type AgentChatState } from '@foreman-code/contracts/agent-chat'
 import { server } from '../../../mocks/server'
@@ -89,13 +88,6 @@ function disclosure(label: string) {
   return { summary, details }
 }
 
-function jumpButton() {
-  const button = screen.getByText('Jump to latest').closest('button')!
-  expect(button).toHaveAccessibleName('Jump to latest')
-  expect(button).toBeVisible()
-  return button
-}
-
 function openFromKeyboard(summary: HTMLElement) {
   // JSDOM does not implement the browser's summary/Enter default action. Dispatch
   // the keyboard-generated activation click (detail 0), with real DOM focus and
@@ -155,8 +147,8 @@ describe('G6 B2-PF-03 stable activity disclosure identity', () => {
       assertPreserved()
       await mounted.replay(completed)
       assertPreserved()
-      expect(jumpButton()).toBeInTheDocument()
-      await userEvent.click(jumpButton())
+      expect(screen.queryByText('Jump to latest')).not.toBeInTheDocument()
+      scroll.scrollTop = metrics.bottom(); fireEvent.scroll(scroll)
       expect(scroll.scrollTop).toBe(metrics.bottom())
       expect(details).toHaveAttribute('open')
     })
@@ -189,7 +181,7 @@ describe('G6 B2-PF-03 stable activity disclosure identity', () => {
 })
 
 describe('G6 B-R04 activity/reply ordering and bottom-following', () => {
-  it.each([320, 1280])('follows the latest reply, pauses while browsing and resumes only on Jump at modeled width %s', async (width) => {
+  it.each([320, 1280])('follows the latest reply, pauses while browsing and resumes only at the bottom at modeled width %s', async (width) => {
     vi.stubGlobal('innerWidth', width)
     const initial = toolState('codex'), mounted = await mountPopover(initial)
     const scroll = screen.getByRole('region', { name: 'Agent conversation transcript' })
@@ -215,11 +207,12 @@ describe('G6 B-R04 activity/reply ordering and bottom-following', () => {
     expect(scroll.scrollTop).toBe(120)
     await mounted.replay(next)
     expect(scroll.scrollTop).toBe(120)
-    await userEvent.click(jumpButton())
+    scroll.scrollTop = metrics.bottom(); fireEvent.scroll(scroll)
     expect(scroll.scrollTop).toBe(metrics.bottom())
     expect(metrics.rows().at(-1)).toHaveTextContent('G6 later reply')
     expect(history.lastElementChild).toHaveTextContent('G6 later reply')
     await mounted.replay(next)
+    expect(scroll.scrollTop).toBe(metrics.bottom())
     expect(screen.queryByText('Jump to latest')).not.toBeInTheDocument()
   })
 })

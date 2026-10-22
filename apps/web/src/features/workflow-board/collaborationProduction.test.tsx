@@ -40,5 +40,5 @@ it.each(['workflow_execution', 'workflow_coordinator'] as const)('mounts the rea
   const rail = screen.getByRole('complementary', { name: 'Workflow side panel' })
   expect(await within(rail).findByRole('region', { name: 'Selected execution chat' })).toBeVisible()
   expect(screen.getByRole('textbox', { name: 'Message' })).toBeVisible()
-  if (kind === 'workflow_coordinator') expect(screen.getByText('Stops this reply; delegated work continues.')).toBeVisible()
+  expect(screen.queryByText('Stops this reply; delegated work continues.')).not.toBeInTheDocument()
 })

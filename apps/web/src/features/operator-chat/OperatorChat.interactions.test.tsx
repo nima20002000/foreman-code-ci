@@ -187,7 +187,7 @@ describe('Operator chat interactions', () => {
     act(() => useConversationDraftStore.getState().clearDraft('draft-test', 'Previous message'))
     expect(screen.getByRole('textbox', { name: 'Message' })).toHaveValue('New draft')
   })
-  it('preserves a reader position and offers an explicit jump to new output', () => {
+  it('preserves a reader position and resumes following once the reader scrolls back to the bottom', () => {
     const messages: OperatorConversationState['messages'] = operatorState().messages
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     clients.push(client)
@@ -199,7 +199,10 @@ describe('Operator chat interactions', () => {
     fireEvent.scroll(region)
     view.rerender(<QueryClientProvider client={client}><OperatorTranscript messages={messages} partialText="New response" /></QueryClientProvider>)
     expect(region.scrollTop).toBe(100)
-    fireEvent.click(screen.getByRole('button', { name: /Jump to latest/ }))
+    expect(screen.queryByRole('button', { name: /Jump to latest/ })).not.toBeInTheDocument()
+    region.scrollTop = 790
+    fireEvent.scroll(region)
+    view.rerender(<QueryClientProvider client={client}><OperatorTranscript messages={messages} partialText="New response, more" /></QueryClientProvider>)
     expect(region.scrollTop).toBe(1_000)
   })
 })

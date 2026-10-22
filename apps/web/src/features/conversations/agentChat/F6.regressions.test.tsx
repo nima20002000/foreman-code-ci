@@ -247,7 +247,7 @@ function ChatPopover({ client, state }: { client: QueryClient; state: AgentChatS
 }
 
 describe('F6 B-R04 completed replies remain the following target', () => {
-  it.each([320, 1280])('places tool-heavy turns before their replies in the real popover at width %s; follow/jump work without moving a browsing user', async (width) => {
+  it.each([320, 1280])('places tool-heavy turns before their replies in the real popover at width %s; following pauses for a browsing user and resumes at the bottom', async (width) => {
     vi.stubGlobal('innerWidth', width)
     const initial = toolHeavyState(3, false), mock = createAgentChatMock(initial)
     server.use(...mock.handlers)
@@ -286,8 +286,12 @@ describe('F6 B-R04 completed replies remain the following target', () => {
     scroll.scrollTop = 0; fireEvent.scroll(scroll)
     await act(() => refresh(toolHeavyState(4, true)))
     expect(scroll.scrollTop).toBe(0)
-    await userEvent.click(await screen.findByRole('button', { name: 'Jump to latest' }))
+    expect(screen.queryByRole('button', { name: 'Jump to latest' })).not.toBeInTheDocument()
     await within(scroll).findByText('Completed reply 4', { selector: '.conversation-message-content, .conversation-message-content p' })
+    scroll.scrollTop = scroll.scrollHeight; fireEvent.scroll(scroll)
     assertLatestAtBottom('Completed reply 4')
+    await act(() => refresh(toolHeavyState(5, true)))
+    await within(scroll).findByText('Completed reply 5', { selector: '.conversation-message-content, .conversation-message-content p' })
+    assertLatestAtBottom('Completed reply 5')
   })
 })

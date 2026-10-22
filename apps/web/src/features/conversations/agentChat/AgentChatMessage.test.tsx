@@ -33,7 +33,8 @@ it('keeps user input literal and prevents markup or unsafe links from executing'
     content: '<script>alert(1)</script>\n\n[Unsafe](javascript:alert(1))\n\n![Remote image](https://example.com/image.png)',
   }} />)
   expect(screen.getByText('Unsafe')).toHaveAttribute('href', '')
-  expect(screen.queryByRole('img')).not.toBeInTheDocument()
+  expect(screen.queryByRole('img', { name: 'Remote image' })).not.toBeInTheDocument()
+  expect(document.querySelector('img')).toBeNull()
   expect(screen.getByRole('article')).not.toHaveTextContent('alert(1)')
 })
 

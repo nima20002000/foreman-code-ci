@@ -100,7 +100,7 @@ function ExecutionChatContent(props: ExecutionChatPanelProps) {
     return { input, before: reply >= 0 ? reply
       : messages.findIndex(message => !!message.createdAt && message.createdAt > input.createdAt) }
   })
-  const retainedProps = { target, receipts, onDenied: revoke, onRecover: props.onRecover, controlsReason, onOpenGroup: props.onOpenGroup,
+  const retainedProps = { target, receipts, onDenied: revoke, onRecover: props.onRecover, controlsReason, onOpenGroup: props.onOpenGroup, onOpenContinuation: props.onOpenContinuation,
     onCancel: delivery.pendingControl ? undefined : (receipt: ChatDeliveryReceipt) => delivery.cancel(receipt.id), onRefresh: delivery.refresh, state: retained }
   const retainedAt = (index: number) => placed.filter(item => item.before === index).map(({ input }) =>
     <RetainedInput key={input.receiptId} input={input} {...retainedProps} />)

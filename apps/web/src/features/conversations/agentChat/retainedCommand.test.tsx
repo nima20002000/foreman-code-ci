@@ -142,7 +142,8 @@ it('keeps an authorized receipt-only replay readable when the target no longer h
   mount({ handlers: [http.get(root, () => HttpResponse.json({ code: 'CHAT_TARGET_REMOVED', message: 'The target no longer has a snapshot.' }, { status: 404 }))] })
   expect(await screen.findByRole('article', { name: 'Retained input' })).toHaveTextContent('Original retained command')
   await waitFor(() => expect(screen.queryByRole('list', { name: 'Conversation history' })).not.toBeInTheDocument())
-  expect(screen.getByRole('region', { name: 'Retained commands' })).toHaveTextContent('The conversation snapshot is unavailable.')
+  expect(await screen.findByText('Reconnecting…')).toBeVisible()
+  expect(screen.queryByRole('textbox', { name: 'Message' })).not.toBeInTheDocument()
   expect(sends).toBe(1)
 })
 
@@ -164,29 +165,29 @@ it('scopes receipt denial to the old Agent when the public panel changes selecti
   expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled()
 })
 
-it('keeps a persisted draft editable when the first selected-chat read is offline', async () => {
-  useConversationDraftStore.getState().setDraft(agentChatContextKey(initial.context), body)
-  mount({ handlers: [http.get(root, () => HttpResponse.error())] })
-  const input = await screen.findByRole('textbox', { name: 'Message' })
-  expect(input).toHaveValue(body)
-  await screen.findByText('The selected chat could not be read. Your draft is kept; refresh its target before sending.')
-  fireEvent.change(input, { target: { value: 'Edited while unavailable' } })
-  expect(input).toHaveValue('Edited while unavailable')
-  expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled()
-  expect(screen.queryByRole('list', { name: 'Conversation history' })).not.toBeInTheDocument()
-})
+const storedDraft = () => useConversationDraftStore.getState().drafts[agentChatContextKey(initial.context)]
 
-it.each([false, true])('keeps only the local draft editable when first access read fails (live=%s)', async live => {
+it('keeps a persisted draft while the first selected-chat read is offline and returns it with the composer once the read works', async () => {
+  useConversationDraftStore.getState().setDraft(agentChatContextKey(initial.context), body)
+  let offline = true
+  mount({ handlers: [http.get(root, () => offline ? HttpResponse.error() : HttpResponse.json(initial))] })
+  expect(await screen.findByText('Reconnecting…')).toBeVisible()
+  expect(screen.queryByRole('textbox', { name: 'Message' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('list', { name: 'Conversation history' })).not.toBeInTheDocument()
+  expect(storedDraft()).toBe(body)
+  offline = false
+  expect(await screen.findByRole('textbox', { name: 'Message' }, { timeout: 8_000 })).toHaveValue(body)
+}, 20_000)
+
+it.each([false, true])('keeps only the stored draft and a quiet reconnect state when first access read fails (live=%s)', async live => {
   useConversationDraftStore.getState().setDraft(agentChatContextKey(initial.context), body)
   mount({ live, handlers: [http.get('/api/local-human', () => HttpResponse.error())] })
-  await screen.findByText('Chat access could not be checked. Your local draft remains editable.')
-  const input = screen.getByRole('textbox', { name: 'Message' })
-  expect(input).toHaveValue(body)
-  fireEvent.change(input, { target: { value: 'Edited while access is offline' } })
-  expect(input).toHaveValue('Edited while access is offline')
-  expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled()
+  expect(await screen.findByText('Reconnecting…')).toBeVisible()
+  expect(screen.queryByRole('textbox', { name: 'Message' })).not.toBeInTheDocument()
+  expect(screen.queryByText('Agent chat access unavailable')).not.toBeInTheDocument()
   expect(screen.queryByRole('list', { name: 'Conversation history' })).not.toBeInTheDocument()
   expect(screen.queryByRole('article', { name: 'Retained input' })).not.toBeInTheDocument()
+  expect(storedDraft()).toBe(body)
   expect(AgentChatTestSource.instances).toHaveLength(0)
 })
 

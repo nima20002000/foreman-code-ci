@@ -38,14 +38,14 @@ class NativeSource implements ExecutionChatSource {
   message(message: EngineChatMessage, revision: number) { this.subscriptions.at(-1)!.receive({ target, message, revision }) }
 }
 function endpoints(value: EngineChatReadback = structuredClone(initial)) {
-  const state = { value, reads: 0, commands: [] as ChatSendRequest[], stops: [] as ChatStopRequest[], loseStop: false }
+  const state = { value, reads: 0, commands: [] as ChatSendRequest[], stops: [] as ChatStopRequest[], loseStop: false, inputs: [] as unknown[] }
   const receipt = (command: ChatSendRequest): ChatDeliveryReceipt => ({ id: 'delivery-a', commandId: command.commandId!, target: command.target,
     requestedIntent: command.intent, appliedIntent: command.intent === 'auto' ? 'steer' : command.intent,
     state: 'accepted', nativeTurnId: 'native-turn-a', createdAt: date, updatedAt: date })
   server.use(
     http.post(`${root}/read`, async ({ request }) => {
       const input = await request.json() as { deliveryInputs?: unknown; commandId?: string; receiptId?: string }
-      if (input.deliveryInputs) return HttpResponse.json({ target, deliveryInputs: { items: [], nextCursor: null, hasMore: false, revision: state.value.revision } })
+      if (input.deliveryInputs) return HttpResponse.json({ target, deliveryInputs: { items: state.inputs, nextCursor: null, hasMore: false, revision: state.value.revision } })
       if (input.commandId || input.receiptId) return HttpResponse.json({ target, receipts: state.value.receipts })
       state.reads++; return HttpResponse.json(state.value)
     }),
@@ -100,6 +100,8 @@ describe('exact Execution chat public surface', () => {
     state.value.receipts = [{ id: 'previous-delivery', commandId: 'previous-command', target, requestedIntent: 'interrupt_and_send',
       appliedIntent: 'interrupt_and_send', state: 'completed', continuationId: 'continuation-a',
       continuationExecution: { ...target.execution, executionId: 'successor', attempt: 3 }, createdAt: date, updatedAt: date }]
+    state.inputs = [{ commandId: 'previous-command', receiptId: 'previous-delivery', target, origin: 'direct', content: 'Change direction',
+      truncated: false, bodyCursor: null, attachments: [], intent: 'interrupt_and_send', createdAt: date }]
     mount(source, { nativeTurnId: 'native-turn-a', onOpenContinuation: open })
     const input = await screen.findByRole('textbox', { name: 'Message' })
     fireEvent.change(input, { target: { value: '  change direction  ' } })
@@ -209,6 +211,8 @@ describe('exact Execution chat public surface', () => {
       const receipt: ChatDeliveryReceipt = { id: 'unadopted-receipt', commandId: command.commandId!, target,
         requestedIntent: command.intent, appliedIntent: 'next_turn', state: status, createdAt: date, updatedAt: date }
       state.value = { ...state.value, receipts: [receipt] }
+      if (status === 'failed') state.inputs = [{ commandId: command.commandId!, receiptId: receipt.id, target, origin: 'direct',
+        content: command.content, truncated: false, bodyCursor: null, attachments: command.attachments ?? [], intent: command.intent, createdAt: date }]
       return HttpResponse.json(receipt)
     }))
     const view = mount(source, { attachments })
