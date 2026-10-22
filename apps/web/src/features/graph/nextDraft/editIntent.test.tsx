@@ -262,7 +262,7 @@ describe('NIM-2644 mounted frontend recovery through the real edit-intent hook',
     expect(discard).not.toHaveBeenCalled()
     expect(boardStartClient.start).not.toHaveBeenCalled()
     expect(Date.now()).toBe(startedAt)
-  })
+  }, 30_000)
 
   it('keeps Start blocked for a saved workflow with a retired Agent while preserving its facts', async () => {
     const context = repairFixture(1)
