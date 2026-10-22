@@ -9,12 +9,9 @@ import { z } from 'zod'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { requireAuthorization } from '../src/modules/access/policy.js'
 import { DomainError } from '../src/modules/errors.js'
-import { installOperatorPresentation } from '../src/mcp/operator/presentation.js'
-import { registerOperatorTools } from '../src/mcp/operator/server.js'
+import { createOperatorMcpServer } from '../src/mcp/operator/server.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { cacheToolSchemaConversions } from '../src/mcp/shared/schemaCache.js'
-import { stripMcpInputSchemas } from '../src/mcp/shared/inputSchemas.js'
-import { paginateToolLists } from '../src/mcp/toolListPagination.js'
 import { registerGraphqlMcp } from '../src/mcp/unified/transport.js'
 
 it('reuses input and output conversions across servers while preserving defaults and validation', async () => {
@@ -98,11 +95,7 @@ it('keeps authenticated HTTP catalogs, calls and caller scopes fresh after warmi
     return reply.code(error.status).send({ error: { code: error.code } })
   })
   registerGraphqlMcp(app, { access, operator: services })
-  const referenceServer = new McpServer({ name: 'operator-reference', version: '1' })
-  stripMcpInputSchemas(referenceServer)
-  paginateToolLists(referenceServer)
-  const catalog = installOperatorPresentation(referenceServer)
-  registerOperatorTools(referenceServer, { principal, services }, catalog)
+  const referenceServer = createOperatorMcpServer({ principal, services })
   const reference = new Client({ name: 'operator-reference-client', version: '1' })
   async function rpc<Result>(method: string, params?: Record<string, unknown>): Promise<Result> {
     const response = await app.inject({
@@ -116,6 +109,9 @@ it('keeps authenticated HTTP catalogs, calls and caller scopes fresh after warmi
     expect(message.error).toBeUndefined()
     return message.result as Result
   }
+  // tools/list shows only the core tools; the caller's whole catalog is read through tools_find.
+  const catalogNames = async () => decodeMcpToolResult(await rpc<CallToolResult>('tools/call',
+    { name: 'tools_find', arguments: {} })) as { tools: { name: string }[] }
   try {
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     await referenceServer.connect(serverTransport)
@@ -140,16 +136,16 @@ it('keeps authenticated HTTP catalogs, calls and caller scopes fresh after warmi
     expect(JSON.stringify(scopeDenied.content)).toContain('ACCESS_DENIED')
     expect(recordDenied).toHaveBeenCalledWith('reader', 'mcp', 'workspace_get', 'mcp:workspace_get')
     caller = { ...principal, id: 'denied-reader', grants: [{ actions: ['capabilities:read'], scope: {} }] }
-    const deniedCatalog = await rpc<ListToolsResult>('tools/list')
-    expect(deniedCatalog.tools.map(tool => tool.name)).toContain('operator_tool_schema_get')
-    expect(deniedCatalog.tools.map(tool => tool.name)).not.toContain('workspace_get')
+    const deniedCatalog = (await catalogNames()).tools.map(tool => tool.name)
+    expect(deniedCatalog).toContain('operator_tool_schema_get')
+    expect(deniedCatalog).not.toContain('workspace_get')
     caller = { ...principal, id: 'settings-reader', grants: [{ actions: ['settings:read'], scope: {} }] }
-    const settingsCatalog = await rpc<ListToolsResult>('tools/list')
-    expect(settingsCatalog.tools.map(tool => tool.name)).toContain('circle_accounts_list')
-    expect(settingsCatalog.tools.map(tool => tool.name)).not.toContain('circle_account_add')
+    const settingsCatalog = (await catalogNames()).tools.map(tool => tool.name)
+    expect(settingsCatalog).toContain('circle_accounts_list')
+    expect(settingsCatalog).not.toContain('circle_account_add')
     caller = { ...caller, grants: [{ actions: ['settings:read', 'settings:update'], scope: {} }] }
-    const writerCatalog = await rpc<ListToolsResult>('tools/list')
-    expect(writerCatalog.tools.map(tool => tool.name)).toEqual(expect.arrayContaining([
+    const writerCatalog = (await catalogNames()).tools.map(tool => tool.name)
+    expect(writerCatalog).toEqual(expect.arrayContaining([
       'circle_accounts_list', 'circle_account_add', 'circle_account_remove',
     ]))
     caller = { ...caller, grants: [{ actions: ['settings:read', 'settings:update', 'capabilities:read'], scope: {} }] }

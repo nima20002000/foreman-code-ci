@@ -36,14 +36,16 @@ const createdAt = '2026-10-01T00:00:00.000Z'
  * admission/domain/factory/manager classes without native or PostgreSQL claims. */
 export function productionClaudeFixture(surface: 'workflow' | 'operator' | 'agent' | 'selected-run', sharedFactories?: NativeHarnessFactories, endpoint = 'http://127.0.0.1:3000/mcp', fileService?: AgentFileToolService,
   runtime?: { database: pg.Pool; binding: ClaudeDomainBinding; start: NativeSessionStart; sdk: ClaudeSdkClient },
-  workflowOptions?: { coordinator?: boolean; consultation?: CoordinatorConsultationBinding }) {
+  workflowOptions?: { coordinator?: boolean; consultation?: CoordinatorConsultationBinding },
+  /** Bound app MCP tools run without approval; name the tools whose calls should still be routed through the app. */
+  askTools: readonly string[] = []) {
   const kind = surface === 'selected-run' ? 'agent' : surface
   const selection = runtime ? sessionStartConfiguration(runtime.start).harnessProfileSelection : undefined
   const target = selection?.target ?? { hostRef: { kind: 'main' as const, mainId: '77d29f00-408e-4000-8000-000000000001' },
     applicationInstallationId: '77d29f00-408e-4000-8000-000000000001', harnessInstallationId: 'recorded-cli', installationFingerprint: 'recorded-payload' }
   const defaultHarness = { harness: 'claude' as const, model: 'recorded-model', authMode: 'subscription' as const,
     configDirectory: '/recorded/profile', permissionMode: 'default' as const, sandbox: 'danger-full-access' as const,
-    tools: ['mcp__graphql__workspace_list', 'mcp__graphql-files__files.read'], permissionRules: [], instructions: 'Pinned fixture instructions', mcpServers: { graphql: { type: 'http' as const, url: endpoint } } }
+    tools: ['mcp__graphql__workspace_list', 'mcp__graphql-files__files.read'], permissionRules: askTools.map(tool => ({ tool, effect: 'ask' as const })), instructions: 'Pinned fixture instructions', mcpServers: { graphql: { type: 'http' as const, url: endpoint } } }
   const harness = runtime
     ? sessionStartConfiguration(runtime.start).harness
     : defaultHarness

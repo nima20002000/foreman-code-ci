@@ -26,6 +26,10 @@ function fixture() {
     http.get('/api/management/workspaces/workspace-1/root-location', () => HttpResponse.json({
       evidence: 'unconfigured', workspaceId: 'workspace-1', locationRevision: 0, executionLocation: null,
     })),
+    http.get('/api/management/workspaces/workspace-1/repository', () => HttpResponse.json({
+      workspaceId: 'workspace-1', revision: current.revision, repository: current.workspace.repository ?? null,
+      state: current.workspace.repository ? 'metadata-only' : 'unconfigured',
+    })),
     http.get('/api/management/workspaces/workspace-1/root-policies', () => HttpResponse.json({
       workspaceId: 'workspace-1', readiness: 'metadata-only', policies: [], allowlists: [],
     })),
@@ -215,10 +219,12 @@ describe('repository draft', () => {
     const input = await screen.findByRole('textbox', { name: 'GitHub repository' })
     await user.type(screen.getByRole('textbox', { name: 'Base branch' }), '-local')
     let status = 403
-    server.use(http.get('/api/management/workspaces/workspace-1', () => status === 200
-      ? undefined
-      : status === 503 ? new HttpResponse(null, { status })
-        : HttpResponse.json({ error: { code: 'READ_UNAVAILABLE', message: 'Workspace read unavailable.' } }, { status })))
+    let unavailableReads = 0
+    server.use(http.get('/api/management/workspaces/workspace-1', () => {
+      if (status === 200) return undefined
+      if (status === 503) { unavailableReads += 1; return new HttpResponse(null, { status }) }
+      return HttpResponse.json({ error: { code: 'READ_UNAVAILABLE', message: 'Workspace read unavailable.' } }, { status })
+    }))
     await act(async () => {
       await view.queryClient.invalidateQueries({ queryKey: queryKeys.managedWorkspace('workspace-1') })
     })
@@ -226,7 +232,7 @@ describe('repository draft', () => {
     expect(input).not.toBeVisible()
     status = 503
     await user.click(screen.getByRole('button', { name: 'Try again' }))
-    expect(await screen.findByText('Updating — reconnecting…')).toBeVisible()
+    await waitFor(() => expect(unavailableReads).toBe(1))
     expect(input).not.toBeVisible()
     status = 200
     await user.click(screen.getByRole('button', { name: 'Try again' }))
@@ -277,17 +283,17 @@ describe('repository draft', () => {
     expect(state.read().workspace.repository?.defaultBranch).toBe('main-release')
   })
 
-  it('persists removal and refreshes the form to an empty repository', async () => {
+  it('persists disconnecting and offers an empty repository form afterwards', async () => {
     const state = fixture()
     const user = userEvent.setup()
     mount()
-    const input = await screen.findByRole('textbox', { name: 'GitHub repository' })
-    await user.click(screen.getByRole('button', { name: /^Remove$/ }))
+    await screen.findByRole('textbox', { name: 'GitHub repository' })
+    await user.click(screen.getByRole('button', { name: 'Disconnect' }))
     await waitFor(() => expect(state.writes).toHaveLength(1))
     expect(state.writes[0]).toMatchObject({ expectedRevision: 1, repository: null })
-    await waitFor(() => expect(input).toHaveValue(''))
-    expect(input).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^Remove$/ })).not.toBeInTheDocument()
     expect(state.read().workspace.repository).toBeUndefined()
+    await user.click(await screen.findByRole('button', { name: 'Connect GitHub' }))
+    expect(await screen.findByRole('textbox', { name: 'GitHub repository' })).toHaveValue('')
+    expect(screen.queryByRole('button', { name: 'Disconnect' })).not.toBeInTheDocument()
   })
 })

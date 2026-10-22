@@ -13,13 +13,15 @@ const configuration: ClaudeHarnessConfiguration = {
   permissionMode: 'default', sandbox: 'danger-full-access', tools: [tool], permissionRules: [], instructions: '',
   mcpServers: { graphql: { type: 'http', url: 'http://127.0.0.1/mcp' } },
 }
+// Bound app MCP tools run without an approval prompt, so tests of the prompt flow route this tool through the app with an ask rule.
+const asking: ClaudeHarnessConfiguration = { ...configuration, permissionRules: [{ tool, effect: 'ask' }] }
 const session = { harness: 'claude' as const, providerVersion: '2.1.284', nativeSessionId: 'session' }
 const identity: ClaudeCallbackIdentity = {
   ownerPrincipalId: 'owner', nativeSessionId: session.nativeSessionId, nativeMessageId: 'message',
   clientCorrelationId: 'correlation', attemptId: 'request', generation: 'generation', toolUseId: 'tool',
   nativeRequestId: 'permission', nativeRequestType: 'can_use_tool', mcpServer: { name: 'graphql', source: 'dynamic' },
 }
-function fixture(accepted = configuration, callbackJournal = memoryClaudeCallbackJournal()) {
+function fixture(accepted = asking, callbackJournal = memoryClaudeCallbackJournal()) {
   const pending = new EventEmitter()
   const validate = vi.fn(async () => {})
   const persisted = vi.fn(async () => false)
@@ -62,6 +64,15 @@ it.each(['allow', 'ask', 'deny'] as const)('enforces the saved MCP %s effect aft
     }
     expect((await decision).behavior).toBe(effect === 'deny' ? 'deny' : 'allow')
     expect(f.validate).toHaveBeenCalled()
+  } finally { f.bridge.close() }
+})
+
+it('runs a bound app MCP tool without creating an approval', async () => {
+  const f = fixture(configuration)
+  try {
+    expect(await f.bridge.beforeToolUse(identity, tool, {})).toEqual({})
+    expect((await f.bridge.canUseTool(identity, tool, {}, new AbortController().signal)).behavior).toBe('allow')
+    expect(f.bridge.pendingInteractions(session)).toEqual([])
   } finally { f.bridge.close() }
 })
 
@@ -145,7 +156,7 @@ it.each(['submitted', 'uncertain'] as const)('recovers evicted %s callbacks from
     expect(evidence).toHaveLength(state === 'submitted' ? 1 : 0)
     if (state === 'submitted') expect(evidence[0]?.nativeRequestId).toBe(first.nativeRequestId)
     f.bridge.close()
-    const restored = fixture(configuration, f.callbackJournal)
+    const restored = fixture(asking, f.callbackJournal)
     try {
       expect((await restored.bridge.canUseTool(first, tool, { index: 0 }, new AbortController().signal)).behavior).toBe('deny')
       await expect(restored.bridge.canUseTool(first, tool, { index: 1 }, new AbortController().signal))

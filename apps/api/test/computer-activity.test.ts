@@ -22,6 +22,7 @@ import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { CircleStandby } from '../src/modules/ci-host/circleStandby.js'
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 
 const mainId = '11111111-1111-4111-8111-111111111111'
 const deviceId = '22222222-2222-4222-8222-222222222222'
@@ -167,7 +168,7 @@ it('serves authenticated HTTP and MCP activity with persisted readback and permi
   const f = await fixture()
   try {
     const client = await f.connect('owner')
-    expect((await client.listTools()).tools.map(tool => tool.name)).toContain('computer_activity_list')
+    expect(await operatorCatalogNames(client)).toContain('computer_activity_list')
     const capabilities = await client.callTool({ name: 'operator_get_capabilities', arguments: { detail: 'full' } })
     expect(capabilities.isError, JSON.stringify(capabilities)).not.toBe(true)
     expect(decodeMcpToolResult(capabilities)).toMatchObject({ tools: expect.arrayContaining(['computer_activity_list']) })
@@ -248,7 +249,7 @@ it('denies hidden MCP and HTTP calls and filters workspace activity without impl
   const f = await fixture()
   try {
     const reader = await f.connect('denied')
-    expect((await reader.listTools()).tools.map(tool => tool.name)).not.toContain('computer_activity_list')
+    expect(await operatorCatalogNames(reader)).not.toContain('computer_activity_list')
     const deniedCall = await reader.callTool({ name: 'computer_activity_list', arguments: {} })
     expect(deniedCall.isError).toBe(true)
     expect(f.audit).toHaveBeenCalledWith('denied', 'mcp', 'computer_activity_list', 'mcp:computer_activity_list')
@@ -307,7 +308,7 @@ it('reads every computer signed-in account through HTTP and MCP, caching probes 
   const f = await fixture()
   try {
     const client = await f.connect('owner')
-    expect((await client.listTools()).tools.map(tool => tool.name)).toContain('computer_accounts_list')
+    expect(await operatorCatalogNames(client)).toContain('computer_accounts_list')
     const read = ComputerAccountsListSchema.parse(decodeMcpToolResult((await client.callTool({ name: 'computer_accounts_list', arguments: {} }))))
     expect(read.computers.map(computer => computer.accounts?.accounts[0]?.account)).toEqual(['main@example.com', 'laptop@example.com'])
     const http = await f.app.inject({ url: '/api/management/computers/accounts', headers: { authorization: 'Bearer owner' } })
@@ -322,7 +323,7 @@ it('reads every computer signed-in account through HTTP and MCP, caching probes 
       arguments: { refresh: true } }))))
     expect(offline.computers[1]?.accounts).toBeNull()
     const reader = await f.connect('denied')
-    expect((await reader.listTools()).tools.map(tool => tool.name)).not.toContain('computer_accounts_list')
+    expect(await operatorCatalogNames(reader)).not.toContain('computer_accounts_list')
     expect((await reader.callTool({ name: 'computer_accounts_list', arguments: {} })).isError).toBe(true)
     expect((await f.app.inject({ url: '/api/management/computers/accounts',
       headers: { authorization: 'Bearer denied' } })).statusCode).toBe(403)
@@ -348,7 +349,7 @@ it('starts, follows and ends GitHub sign-in on Main and a paired computer, denyi
       arguments: { target: { ...target, authorizationRevision: 2 } } })
     expect(JSON.stringify(stale)).toContain('COMPUTER_NOT_FOUND')
     const reader = await f.connect('settings-reader')
-    expect((await reader.listTools()).tools.map(tool => tool.name)).not.toContain('computer_github_login_start')
+    expect(await operatorCatalogNames(reader)).not.toContain('computer_github_login_start')
     expect((await reader.callTool({ name: 'computer_github_login_start', arguments: { target } })).isError).toBe(true)
     expect(f.githubCalls).toHaveLength(3)
     expect(f.audited.mock.calls.map(call => [call[2], call[4]])).toEqual([
@@ -390,7 +391,7 @@ it('discovers Git setup retry through MCP and preserves write permission checks'
     keyRevision: null, authorizationRevision: null }
   try {
     const client = await f.connect('owner')
-    const tools = (await client.listTools()).tools.map(tool => tool.name)
+    const tools = await operatorCatalogNames(client)
     expect(tools).toContain('computer_github_setup_git')
     const capabilities = await client.callTool({ name: 'operator_get_capabilities', arguments: { detail: 'full' } })
     expect(decodeMcpToolResult(capabilities)).toMatchObject({ tools: expect.arrayContaining(['computer_github_setup_git']) })
@@ -573,7 +574,7 @@ it('renames Main and a paired computer through authenticated MCP and HTTP with p
   const f = await fixture()
   try {
     const client = await f.connect('owner')
-    expect((await client.listTools()).tools.map(tool => tool.name)).toContain('computer_rename')
+    expect(await operatorCatalogNames(client)).toContain('computer_rename')
     const capabilities = await client.callTool({ name: 'operator_get_capabilities', arguments: { detail: 'full' } })
     expect(decodeMcpToolResult(capabilities)).toMatchObject({ requirements: expect.arrayContaining([
       expect.objectContaining({ name: 'computer_rename', actions: ['settings:update'] }),
@@ -599,7 +600,7 @@ it('renames Main and a paired computer through authenticated MCP and HTTP with p
     expect((await client.callTool({ name: 'computer_rename', arguments: { target: otherMain, name: 'Elsewhere' } })).isError).toBe(true)
     expect(await names()).toEqual(['Studio PC', 'Desk laptop'])
     const reader = await f.connect('settings-reader')
-    expect((await reader.listTools()).tools.map(tool => tool.name)).not.toContain('computer_rename')
+    expect(await operatorCatalogNames(reader)).not.toContain('computer_rename')
     const deniedCall = await reader.callTool({ name: 'computer_rename', arguments: { target, name: 'Hijacked' } })
     expect(deniedCall.isError).toBe(true)
     expect(f.audit).toHaveBeenCalledWith('settings-reader', 'mcp', 'computer_rename', 'mcp:computer_rename')

@@ -12,6 +12,7 @@ import { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
 import { PostgresFoundationSettingsRepository } from './foundation.js'
 import { FoundationSettingsManagementService } from './management.js'
+import { operatorCatalogNames } from '../../../test/support/operatorCatalog.js'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => {
@@ -90,7 +91,7 @@ async function fixture() {
 it('saves the CircleCI credit allowance through HTTP and authenticated MCP with persisted readback', async () => {
   const f = await fixture()
   const client = await f.connect(f.owner.id)
-  expect((await client.listTools()).tools.map(tool => tool.name)).toContain('circle_credit_allowance_update')
+  expect(await operatorCatalogNames(client)).toContain('circle_credit_allowance_update')
   const initial = ManagedCircleCreditAllowanceSchema.parse(decodeMcpToolResult(await client.callTool({
     name: 'circle_credit_allowance_get', arguments: {} })))
   expect(initial).toEqual({ value: { defaultMonthlyCredits: 400000, accounts: {} }, revision: 0, versionId: null })
@@ -115,7 +116,7 @@ it('denies read-only and workspace-scoped allowance writes and rejects a stale r
   const input = { value: { defaultMonthlyCredits: 1, accounts: {} }, expectedRevision: 0, commandId: randomUUID() }
   for (const token of [f.reader.id, 'scoped']) {
     const client = await f.connect(token)
-    expect((await client.listTools()).tools.map(tool => tool.name)).not.toContain('circle_credit_allowance_update')
+    expect(await operatorCatalogNames(client)).not.toContain('circle_credit_allowance_update')
     expect((await client.callTool({ name: 'circle_credit_allowance_update', arguments: input })).isError).toBe(true)
     const http = await f.app.inject({ method: 'PUT', url: '/api/management/settings/circle-credits',
       headers: { authorization: `Bearer ${token}` }, payload: input })

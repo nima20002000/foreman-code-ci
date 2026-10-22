@@ -10,6 +10,7 @@ import type { PostgresCommandCoordinator } from '../src/modules/commands/postgre
 import type { PostgresSettingsRepository } from '../src/modules/settings/postgres.js'
 import { DomainError } from '../src/modules/errors.js'
 import { HarnessCatalogService } from '../src/modules/harnesses/catalog.js'
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 
 const principal = ManagementPrincipalSchema.parse({ id: 'reader', name: 'Reader', audience: 'operator',
   expiresAt: '2099-01-01T00:00:00Z', revokedAt: null, grants: [{ actions: ['harnesses:read'], scope: {} }] })
@@ -135,7 +136,7 @@ it('reads the same qualification through authenticated MCP and denies a caller w
   }
   const reader = await connect('reader-token')
   const denied = await connect('denied-token')
-  const discovered = (await reader.listTools()).tools.map(tool => tool.name)
+  const discovered = await operatorCatalogNames(reader)
   expect(discovered).toContain('harness_configuration_check')
   expect(discovered).not.toContain('workspace_location_provision')
   const input = { configuration: DEFAULT_HARNESS_DEFAULTS.codex }
@@ -144,7 +145,7 @@ it('reads the same qualification through authenticated MCP and denies a caller w
   expect(first.qualification.ready).toBe(true)
   expect(HarnessConfigurationCheckResultSchema.parse(decodeMcpToolResult(await read()))).toEqual(first)
   expect(qualify).toHaveBeenCalledTimes(1)
-  expect((await denied.listTools()).tools.map(tool => tool.name)).not.toContain('harness_configuration_check')
+  expect(await operatorCatalogNames(denied)).not.toContain('harness_configuration_check')
   const rejected = await denied.callTool({ name: 'harness_configuration_check', arguments: input })
   expect(rejected).toMatchObject({ isError: true })
   expect(JSON.stringify(rejected.content)).toContain('ACCESS_DENIED')

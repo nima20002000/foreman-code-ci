@@ -7,6 +7,7 @@ import { OperatorConversationStateSchema } from '@foreman-code/contracts'
 import { buildApp } from '../../../app.js'
 import { PostgresAccessService } from '../../../modules/access/postgres.js'
 import type { OperatorServices } from '../types.js'
+import { operatorCatalogNames } from '../../../../test/support/operatorCatalog.js'
 
 it('discovers and invokes owned chat deletion and restoration through authenticated MCP', async () => {
   const owner: ManagementPrincipal = {
@@ -50,14 +51,14 @@ it('discovers and invokes owned chat deletion and restoration through authentica
     const ownerClient = await connect('owner')
     const readerClient = await connect('reader')
     const names = ['operator_chat_delete', 'operator_chat_restore']
-    const tools = (await ownerClient.listTools()).tools
-    expect(tools.map(tool => tool.name)).toEqual(expect.arrayContaining(names))
-    expect(tools.map(tool => tool.name)).toEqual(expect.arrayContaining([
+    const tools = await operatorCatalogNames(ownerClient)
+    expect(tools).toEqual(expect.arrayContaining(names))
+    expect(tools).toEqual(expect.arrayContaining([
       'operator_chat_create', 'operator_chat_list', 'operator_chat_get', 'operator_chat_history_get',
       'operator_chat_activity_get', 'operator_chat_send', 'operator_handoff_history_get',
     ]))
     for (const disabled of ['memory_board_get', 'browser_action', 'workflow_chat_post']) {
-      expect(tools.map(tool => tool.name)).not.toContain(disabled)
+      expect(tools).not.toContain(disabled)
       const rejected = await ownerClient.callTool({ name: disabled, arguments: {} })
         .then(result => result.isError === true, () => true)
       expect(rejected).toBe(true)
@@ -93,7 +94,7 @@ it('discovers and invokes owned chat deletion and restoration through authentica
       expect(setDeleted).toHaveBeenCalledTimes(calls)
       expect(recordDenied).toHaveBeenCalledWith(reader.id, 'mcp', name, `mcp:${name}`)
     }
-    const readerTools = (await readerClient.listTools()).tools.map(tool => tool.name)
+    const readerTools = await operatorCatalogNames(readerClient)
     expect(readerTools).not.toContain('operator_chat_delete')
     expect(readerTools).not.toContain('operator_chat_restore')
   } finally {

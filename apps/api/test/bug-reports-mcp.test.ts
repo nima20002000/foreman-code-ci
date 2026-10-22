@@ -19,6 +19,7 @@ import { BugReportService } from '../src/modules/bug-reports/service.js'
 import { commandInputHash, PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { PostgresAppInteractionService } from '../src/modules/interactions/app.js'
 import { codexApprovalRuntime } from './helpers/codexApprovalRuntime.js'
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 
 async function fixture(options: { agentOnly?: boolean } = {}) {
   const saved = makeCurrentWorkflowFixture(randomUUID())
@@ -128,7 +129,7 @@ it.each(['update-only', 'foreign-scope'] as const)('denies %s closes without dis
       expect(audit.rows).toHaveLength(1)
       expect(audit.rows[0]).toMatchObject({ outcome: 'denied' })
       if (permission === 'update-only') {
-        expect((await caller.client.listTools()).tools.map(tool => tool.name)).not.toContain('bug_reports_close')
+        expect(await operatorCatalogNames(caller.client)).not.toContain('bug_reports_close')
       }
     } finally { await f.close() }
   }, 60_000,
@@ -345,7 +346,7 @@ it('reports from a scoped Agent and lets Operator discover, read and triage pers
     expect(renewedRepeat).toMatchObject({ deduplicated: true })
     expect(renewedRepeat.report).toEqual({ id: first.report.id, status: first.report.status, title: first.report.title })
     const writer = await f.operator(['bug_reports:report', 'bug_reports:read', 'bug_reports:update', 'capabilities:read'])
-    expect((await writer.client.listTools()).tools.map(tool => tool.name))
+    expect(await operatorCatalogNames(writer.client))
       .toEqual(expect.arrayContaining(['bug_report', 'bug_reports_list', 'bug_report_get', 'bug_report_update',
         'bug_reports_close']))
     const capabilities = value(await writer.client.callTool({ name: 'operator_get_capabilities',

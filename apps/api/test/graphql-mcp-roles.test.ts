@@ -8,6 +8,7 @@ import type { AppInteractionService } from '../src/modules/interactions/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { createGraphqlMcpServer, roleDeniedToolCall } from '../src/mcp/unified/server.js'
 import type { McpRole } from '../src/mcp/unified/roles.js'
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 
 const operator: ManagementPrincipal = { id: 'operator-1', name: 'Operator', audience: 'operator',
   expiresAt: '2099-01-01T00:00:00.000Z', revokedAt: null, grants: [{ actions: [...ManagementActionSchema.options], scope: {} }] }
@@ -70,7 +71,8 @@ describe('one Foreman Code MCP server scoped by role', () => {
       connect('operator'), connect('master'), connect('orchestrator'), connect('coder'),
     ])
     const names = async (client: Client) => (await client.listTools()).tools.map((tool) => tool.name).sort()
-    const operatorNames = await names(op)
+    // The Operator lists only core tools; its whole catalog is read through discovery.
+    const operatorNames = await operatorCatalogNames(op)
     expect(operatorNames).toContain('workflow_create')
     expect(operatorNames).toContain('interaction_get')
     expect(operatorNames).not.toContain('context_get')

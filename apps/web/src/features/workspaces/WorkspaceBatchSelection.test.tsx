@@ -42,7 +42,7 @@ it('loads pages only on request, retains selection across pages, and sends one b
   expect(cursors).toEqual([null, 'Alpha'])
   expect(screen.queryByRole('button', { name: 'Show more workspaces' })).not.toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: 'Delete selected (2)' }))
-  const dialog = screen.getByRole('dialog', { name: 'Delete 2 workspaces?' })
+  const dialog = screen.getByRole('alertdialog', { name: 'Delete 2 workspaces?' })
   expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus()
   await user.click(within(dialog).getByRole('button', { name: 'Delete 2 workspaces' }))
   expect(within(dialog).getByRole('button', { name: 'Deleting…' })).toBeDisabled()

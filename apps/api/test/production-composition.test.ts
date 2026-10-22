@@ -145,7 +145,7 @@ it('completes authenticated MCP discovery without delayed socket cleanup errors'
     expect(message).toMatchObject({
       jsonrpc: '2.0',
       id: 1,
-      result: { tools: expect.arrayContaining([expect.objectContaining({ name: 'interaction_get' })]) },
+      result: { tools: expect.arrayContaining([expect.objectContaining({ name: 'interaction_list' })]) },
     })
     // Run deferred response cleanup while this request still belongs to the test.
     await vi.advanceTimersByTimeAsync(1_000)
@@ -172,7 +172,7 @@ it('serves parsed MCP discovery over Node HTTP and rejects an unauthenticated ca
   expect(message).toMatchObject({
     jsonrpc: '2.0',
     id: 'socket-discovery',
-    result: { tools: expect.arrayContaining([expect.objectContaining({ name: 'interaction_get' })]) },
+    result: { tools: expect.arrayContaining([expect.objectContaining({ name: 'interaction_list' })]) },
   })
   const denied = await call('invalid-operator')
   expect(denied.status).toBe(401)
@@ -282,11 +282,12 @@ it('exposes Run-owned chat over authenticated HTTP and MCP in production', async
   principal = operator(['agent_chat:read', 'agent_chat:write', 'agent_chat:cancel'])
   const discovery = await production.app.inject({ method: 'POST', url: '/mcp',
     headers: { authorization: 'Bearer test-operator', accept: 'application/json, text/event-stream' },
-    payload: { jsonrpc: '2.0', id: 'execution-chat-discovery', method: 'tools/list' },
+    payload: { jsonrpc: '2.0', id: 'execution-chat-discovery', method: 'tools/call',
+      params: { name: 'tools_find', arguments: { query: 'agent chat cancel' } } },
   })
   expect(discovery.statusCode, discovery.body).toBe(200)
   const message = JSON.parse(discovery.body.split('\n').find(line => line.startsWith('data: '))!.slice(6))
-  expect(message.result.tools).toEqual(expect.arrayContaining([
+  expect((decodeMcpToolResult(message.result) as { tools: { name: string }[] }).tools).toEqual(expect.arrayContaining([
     expect.objectContaining({ name: 'agent_chat_cancel_all_queued' }),
   ]))
   const target = { kind: 'workflow_execution',

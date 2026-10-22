@@ -12,6 +12,7 @@ import { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
 import { PostgresFoundationSettingsRepository } from './foundation.js'
 import { FoundationSettingsManagementService } from './management.js'
+import { operatorCatalogNames } from '../../../test/support/operatorCatalog.js'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => {
@@ -90,7 +91,7 @@ async function fixture() {
 it('shares HTTP and authenticated MCP preferences with persisted readback after service recreation', async () => {
   const f = await fixture()
   const client = await f.connect(f.owner.id)
-  expect((await client.listTools()).tools.map(tool => tool.name)).toContain('general_settings_update')
+  expect(await operatorCatalogNames(client)).toContain('general_settings_update')
   const initial = ManagedGeneralSettingsSchema.parse(decodeMcpToolResult((await client.callTool({
     name: 'general_settings_get', arguments: {},
   }))))
@@ -112,7 +113,7 @@ it('denies read-only and workspace-scoped writes through MCP and HTTP', async ()
   const f = await fixture()
   for (const token of [f.reader.id, 'scoped']) {
     const client = await f.connect(token)
-    expect((await client.listTools()).tools.map(tool => tool.name)).not.toContain('general_settings_update')
+    expect(await operatorCatalogNames(client)).not.toContain('general_settings_update')
     const input = { value: { theme: 'light' }, expectedRevision: 0, commandId: randomUUID() }
     expect((await client.callTool({ name: 'general_settings_update', arguments: input })).isError).toBe(true)
     const http = await f.app.inject({ method: 'PUT', url: '/api/management/settings/general',

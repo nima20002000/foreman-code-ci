@@ -59,8 +59,17 @@ it('starts with a slow static directory dependency and retries transient startup
   expect((await app.inject('/assets/app.js')).statusCode).toBe(200)
   for (const url of ['/api/missing', '/mcp', '/health/missing', '/assets/missing.js',
     '/assets/%2e%2e/%2e%2e/package.json']) {
+    const response = await app.inject({ url, headers: { accept: 'application/json' } })
+    expect(response.statusCode).toBe(404)
+    expect(response.json()).toMatchObject({ error: { code: 'NOT_FOUND' } })
+  }
+  for (const url of ['/api/missing', '/mcp']) {
     const response = await app.inject({ url, headers: { accept: 'text/html' } })
     expect(response.statusCode).toBe(404)
     expect(response.json()).toMatchObject({ error: { code: 'NOT_FOUND' } })
   }
+  // A browser address gets the app shell with a 404 so the app can show its own page.
+  const browser = await app.inject({ url: '/health/missing', headers: { accept: 'text/html' } })
+  expect(browser.statusCode).toBe(404)
+  expect(browser.body).toContain('<title>Application</title>')
 })

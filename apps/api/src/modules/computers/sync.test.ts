@@ -21,6 +21,7 @@ import { SyncthingComputer, sharedFolderId } from './syncthingComputer.js'
 import { DeviceApplicationError, deviceApplicationFailure } from '../devices/deviceApplicationError.js'
 import type { DeviceApplicationRequestOptions } from '../devices/deviceApplicationChannel.js'
 import { fakeSyncthing, mainSyncId, workerSyncId } from '../../../test/helpers/syncthing.js'
+import { operatorCatalogNames } from '../../../test/support/operatorCatalog.js'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { await Promise.all(cleanups.splice(0).map(close => close())); vi.restoreAllMocks(); vi.useRealTimers() })
@@ -298,8 +299,8 @@ it('supports authenticated MCP discovery, denied callers and persisted readback 
   const writer = await connect('writer')
   const reader = await connect('reader')
   const updateOnly = await connect('update-only')
-  expect((await writer.listTools()).tools.map(tool => tool.name)).toContain('computer_sync_update')
-  expect((await reader.listTools()).tools.map(tool => tool.name)).not.toContain('computer_sync_update')
+  expect(await operatorCatalogNames(writer)).toContain('computer_sync_update')
+  expect(await operatorCatalogNames(reader)).not.toContain('computer_sync_update')
   const input = { target: f.targets[1], workspaceId: 'workspace-a', enabled: false, expectedRevision: 0, commandId: randomUUID() }
   expect((await reader.callTool({ name: 'computer_sync_update', arguments: input })).isError).toBe(true)
   const denied = await app.inject({ method: 'POST', url: '/api/management/computers/sync/update',

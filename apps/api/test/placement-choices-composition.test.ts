@@ -94,9 +94,11 @@ it('serves saved-node choices through production HTTP and authenticated Operator
   expect(result.isError).not.toBe(true)
   expect(decodeMcpToolResult(result)).toEqual(read.json())
   expect(discover).toHaveBeenCalledWith(principal, input, 'mcp')
-  const tools = await rpc('tools/list', {})
-  expect(tools.tools).toContainEqual(expect.objectContaining({ name: 'workflow_node_placement_choices',
-    inputSchema: expect.objectContaining({ required: expect.arrayContaining(Object.keys(input)) }) }))
+  // tools/list shows only core tools; this one is read through discovery.
+  const schema = decodeMcpToolResult(await rpc('tools/call', { name: 'tool_schema',
+    arguments: { name: 'workflow_node_placement_choices' } }))
+  expect(schema).toMatchObject({ name: 'workflow_node_placement_choices',
+    inputSchema: expect.objectContaining({ required: expect.arrayContaining(Object.keys(input)) }) })
   const capabilities = await rpc('tools/call', { name: 'operator_get_capabilities', arguments: { detail: 'full',
     workspaceId: input.workspaceId, workflowId: input.workflowId,
   } })
@@ -135,8 +137,11 @@ it('audits out-of-scope and live-revoked HTTP/MCP callers before returning paths
 })
 
 it('hides the MCP choices tool from a reader without path grants and audits its denied invocation', async () => {
-  const tools = await rpc('tools/list', {}, 'workflow-only')
-  expect(tools.tools).not.toContainEqual(expect.objectContaining({ name: 'workflow_node_placement_choices' }))
+  const found = decodeMcpToolResult(await rpc('tools/call', { name: 'tools_find', arguments: {} }, 'workflow-only')) as
+    { tools: { name: string }[] }
+  expect(found.tools.map(tool => tool.name)).not.toContain('workflow_node_placement_choices')
+  const schema = await rpc('tools/call', { name: 'tool_schema', arguments: { name: 'workflow_node_placement_choices' } }, 'workflow-only')
+  expect(schema.isError).toBe(true)
   const result = await rpc('tools/call', { name: 'workflow_node_placement_choices', arguments: input }, 'workflow-only')
   expect(result.isError).toBe(true)
   expect(denied).toHaveBeenCalledWith(principal.id, 'mcp', 'workflow_node_placement_choices', 'mcp:workflow_node_placement_choices')

@@ -10,6 +10,7 @@ import { toolAvailable } from '../src/mcp/operator/definition.js'
 import type { OperatorRequestContext, OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { DomainError } from '../src/modules/errors.js'
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 
 const principal = (id: string, grants: ManagementPrincipal['grants']): ManagementPrincipal =>
   ({ id, name: id, audience: 'operator', expiresAt: '2099-01-01T00:00:00Z', revokedAt: null, grants })
@@ -65,16 +66,8 @@ async function endpoint(additionalCaller?: ManagementPrincipal) {
   return { composed, recordDenied, connect }
 }
 
-async function listedNames(client: Client): Promise<string[]> {
-  const names: string[] = []
-  let cursor: string | undefined
-  do {
-    const page = await client.listTools(cursor ? { cursor } : {})
-    names.push(...page.tools.map(tool => tool.name))
-    cursor = page.nextCursor
-  } while (cursor)
-  return names
-}
+// tools/list shows only core tools, so the caller's whole catalog is read through discovery.
+const listedNames = operatorCatalogNames
 
 const registryNames = new Set<string>(OPERATOR_TOOLS.map(tool => tool.name))
 const requirementsOf = (name: string) => OPERATOR_TOOLS.find(tool => tool.name === name)!.requires.map(([action]) => action)

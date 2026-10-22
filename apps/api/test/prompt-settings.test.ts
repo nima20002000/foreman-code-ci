@@ -11,6 +11,7 @@ import { buildApp } from '../src/app.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import { FoundationSettingsManagementService } from '../src/modules/settings/management.js'
 import { reviewAuthMcpDatabase } from './helpers/reviewAuthMcpDatabase.js'
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => {
@@ -52,7 +53,7 @@ describe.each(settings)('$label settings', setting => {
     const f = await fixture()
     const owner = await f.connect(f.owner.token)
     const reader = await f.connect(f.reader.token)
-    expect((await owner.listTools()).tools.map(tool => tool.name))
+    expect(await operatorCatalogNames(owner))
       .toEqual(expect.arrayContaining([setting.readTool, setting.updateTool]))
     const capabilities = decodeMcpToolResult(await owner.callTool({
       name: 'operator_get_capabilities', arguments: { detail: 'full' },
@@ -115,7 +116,7 @@ describe.each(settings)('$label settings', setting => {
     expect(unauthenticated.statusCode).toBe(401)
     for (const caller of [f.reader, f.scoped]) {
       const client = await f.connect(caller.token)
-      const tools = (await client.listTools()).tools.map(tool => tool.name)
+      const tools = await operatorCatalogNames(client)
       expect(tools).not.toContain(setting.updateTool)
       const input = { value: { text: 'Denied change' }, expectedRevision: 0, commandId: randomUUID() }
       expect((await client.callTool({ name: setting.updateTool, arguments: input })).isError).toBe(true)
@@ -124,7 +125,7 @@ describe.each(settings)('$label settings', setting => {
       expect(response.statusCode).toBe(403)
     }
     const scoped = await f.connect(f.scoped.token)
-    expect((await scoped.listTools()).tools.map(tool => tool.name)).not.toContain(setting.readTool)
+    expect(await operatorCatalogNames(scoped)).not.toContain(setting.readTool)
     expect((await scoped.callTool({ name: setting.readTool, arguments: {} })).isError).toBe(true)
     const read = await f.app.inject({ method: 'GET', url: setting.path,
       headers: { authorization: `Bearer ${f.scoped.token}` } })

@@ -56,11 +56,23 @@ describe('built web hosting', () => {
   it('preserves API, MCP and missing asset errors and rejects traversal', async () => {
     const app = await fixture()
     expect((await app.inject({ url: '/health/ready' })).json()).toMatchObject({ status: 'ok' })
-    for (const url of ['/api/missing', '/mcp', '/health/missing', '/sign-in', '/setup',
-      '/assets/missing.js', '/assets/%2e%2e/%2e%2e/package.json']) {
+    const missing = ['/api/missing', '/mcp', '/health/missing', '/sign-in', '/setup',
+      '/assets/missing.js', '/assets/%2e%2e/%2e%2e/package.json']
+    for (const url of missing) {
+      const response = await app.inject({ url, headers: { accept: 'application/json' } })
+      expect(response.statusCode).toBe(404)
+      expect(response.json()).toMatchObject({ error: { code: 'NOT_FOUND' } })
+    }
+    // A browser address gets the app shell with a 404 so the app can show its own page; API and MCP addresses keep JSON.
+    for (const url of ['/api/missing', '/mcp']) {
       const response = await app.inject({ url, headers: { accept: 'text/html' } })
       expect(response.statusCode).toBe(404)
       expect(response.json()).toMatchObject({ error: { code: 'NOT_FOUND' } })
+    }
+    for (const url of ['/health/missing', '/sign-in', '/setup', '/assets/missing.js']) {
+      const response = await app.inject({ url, headers: { accept: 'text/html' } })
+      expect(response.statusCode).toBe(404)
+      expect(response.body).toContain('<div id="root">')
     }
     expect((await app.inject({ method: 'POST', url: '/workspaces' })).statusCode).toBe(404)
   })

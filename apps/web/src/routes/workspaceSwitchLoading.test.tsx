@@ -47,13 +47,13 @@ describe('switching workspaces while the workspace identity loads', () => {
     expect(within(sections).getByRole('link', { name: 'Project files' })).toHaveAttribute('aria-current', 'page')
     expect(await screen.findByText('No files.')).toBeVisible()
     expect(screen.queryByText('Loading workspace…')).not.toBeInTheDocument()
-    expect(screen.queryByRole('group', { name: 'Workspace actions' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Workspace name' })).not.toBeInTheDocument()
     second.release()
-    expect(await screen.findByRole('button', { name: 'Rename workspace Second' })).toBeVisible()
+    expect(await screen.findByRole('textbox', { name: 'Workspace name' })).toHaveValue('Second')
     expect(screen.getByText('No files.')).toBeVisible()
   })
 
-  it('keeps the section navigation in place while only the settings actions show their own skeleton', async () => {
+  it('keeps the section navigation in place while the settings wait for the workspace identity', async () => {
     const { router, queryClient } = renderRoute('/workspaces/workspace-1/workflows')
     await waitFor(() => expect(screen.getByTestId('workflow-card-workflow-content-pipeline')).toBeVisible())
     const second = await slowSecondWorkspace()
@@ -62,13 +62,11 @@ describe('switching workspaces while the workspace identity loads', () => {
     await router.navigate({ to: '/workspaces/$workspaceId/settings', params: { workspaceId: second.id } })
 
     const sections = await screen.findByRole('navigation', { name: 'Workspace sections' })
-    const content = sections.parentElement!.querySelector<HTMLElement>('.workspace-detail-content')!
-    const skeleton = await within(content).findByRole('status')
-    expect(skeleton).toHaveTextContent('Loading workspace…')
-    expect(screen.getAllByRole('status').filter((item) => !content.contains(item))
-      .some((item) => item.textContent?.includes('Loading workspace…'))).toBe(false)
+    expect(within(sections).getByRole('link', { name: 'Settings' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.queryByText('Loading workspace…')).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Workspace name' })).not.toBeInTheDocument()
     second.release()
-    expect(await screen.findByRole('group', { name: 'Workspace actions' })).toBeVisible()
+    expect(await screen.findByRole('textbox', { name: 'Workspace name' })).toHaveValue('Second')
     expect(screen.queryByText('Loading workspace…')).not.toBeInTheDocument()
   })
 })

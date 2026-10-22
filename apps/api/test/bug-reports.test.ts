@@ -238,8 +238,10 @@ describe('bug report HTTP persistence', () => {
       }))
       await upgrading.pool.query('update management_principals set grants=$2::jsonb where id=$1',
         [seeded.id, JSON.stringify(previousGrants)])
-      const before = await localHuman.current()
-      expect(before.grants.flatMap(grant => grant.actions)).not.toContain('bug_reports:report')
+      // The local human now regains every missing action on read, so check the stored grant that was written.
+      const stored = await upgrading.pool.query<{ grants: { actions: string[] }[] }>(
+        'select grants from management_principals where id=$1', [seeded.id])
+      expect(stored.rows[0]!.grants.flatMap(grant => grant.actions)).not.toContain('bug_reports:report')
       await applyApplicationMigrations(upgrading.pool)
       await applyApplicationMigrations(upgrading.pool)
       const f = await fixture(upgrading.pool)

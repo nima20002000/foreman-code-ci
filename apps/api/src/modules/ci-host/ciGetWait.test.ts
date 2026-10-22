@@ -67,6 +67,14 @@ function fixture() {
     const line = response.body.split('\n').find(value => value.startsWith('data: '))
     return line ? JSON.parse(line.slice(6)) : response.json()
   }
+  // tools/list shows only core tools; a tool's full description and schema come through tool_schema.
+  const schema = async (name: string) => {
+    const response = await rpc({ jsonrpc: '2.0', id: 'schema', method: 'tools/call',
+      params: { name: 'tool_schema', arguments: { name } } })
+    const line = response.body.split('\n').find(value => value.startsWith('data: '))
+    return decodeMcpToolResult((line ? JSON.parse(line.slice(6)) : response.json()).result) as
+      { description: string; inputSchema: { properties: Record<string, { type?: string }> } }
+  }
   const persist = (changes: Partial<typeof record>) => {
     const before = record
     record = CiRunRecordSchema.parse({ ...record, ...changes })
@@ -75,7 +83,7 @@ function fixture() {
         payload: JSON.stringify({ workspaceId: record.workspaceId, ticketId: record.id, groupId: record.groupId }) })
     }
   }
-  return { app, call, rpc, ci, create, services, caller, pool, client, query, endpoint, persist,
+  return { app, call, rpc, schema, ci, create, services, caller, pool, client, query, endpoint, persist,
     read: () => record, close: async () => { await ci.close(); await app.close() } }
 }
 
@@ -230,15 +238,13 @@ it('releases the wait when the HTTP client aborts its MCP request', async () => 
   } finally { controller.abort(); await f.close() }
 })
 
-it('describes waiting and tail omission in Operator discovery and tools/list', async () => {
+it('describes waiting and tail omission in Operator discovery', async () => {
   const f = fixture()
   try {
     const capabilities = ciCapabilities({ principal: f.caller, services: f.services }, { workspaceId: 'workspace' })
     expect(capabilities.find(tool => tool.name === 'ci_get')?.detail).toContain('waitSeconds')
     expect(capabilities.find(tool => tool.name === 'ci_get')?.detail).toContain('logTail=false')
-    const response = await f.rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
-    const message = JSON.parse(response.body.split('\n').find(line => line.startsWith('data: '))!.slice(6))
-    const tool = message.result.tools.find((entry: { name: string }) => entry.name === 'ci_get')
+    const tool = await f.schema('ci_get')
     expect(tool.inputSchema.properties.waitSeconds).toMatchObject({ minimum: 0, maximum: CI_WAIT_MAX_SECONDS })
     expect(tool.inputSchema.properties.logTail.type).toBe('boolean')
   } finally { await f.close() }
@@ -255,9 +261,7 @@ it('accepts only the group-terminal wait mode for both MCP roles', () => {
 it('advertises the group-terminal wait in the ci_get schema and description', async () => {
   const f = fixture()
   try {
-    const response = await f.rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
-    const message = JSON.parse(response.body.split('\n').find(line => line.startsWith('data: '))!.slice(6))
-    const tool = message.result.tools.find((entry: { name: string }) => entry.name === 'ci_get')
+    const tool = await f.schema('ci_get')
     expect(JSON.stringify(tool.inputSchema.properties.waitUntil)).toContain('group-terminal')
     expect(tool.description).toContain('waitUntil')
   } finally { await f.close() }

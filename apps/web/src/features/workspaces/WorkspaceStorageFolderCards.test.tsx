@@ -37,7 +37,7 @@ it('shows unregistered workspace folders, confirms the exact path, retries safel
   expect(within(folders).queryByText(/Folder on disk/)).not.toBeInTheDocument()
   await user.click(within(folders).getByRole('button', { name: 'Open actions for folder Missing project' }))
   await user.click(within(screen.getByRole('dialog', { name: 'folder Missing project actions' })).getByRole('button', { name: 'Delete folder' }))
-  const confirmation = screen.getByRole('dialog', { name: 'Delete Missing project?' })
+  const confirmation = screen.getByRole('alertdialog', { name: 'Delete Missing project?' })
   expect(within(confirmation).getByText(folder.path)).toBeVisible()
   expect(confirmation).toHaveTextContent('all its files and subfolders')
   await user.click(within(confirmation).getByRole('button', { name: 'Cancel' }))

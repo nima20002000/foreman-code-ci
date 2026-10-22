@@ -53,6 +53,9 @@ function onboardingFixture(metadataOnly = false) {
     setWorkspace: (value: ManagedWorkspace) => { workspace = value }, workspace: () => workspace }
 }
 
+/** The settings strip names the commit the prepared project is at. */
+const READY = `Ready at ${'b'.repeat(7)}`
+
 function mount() {
   return renderWithRouter(<UnsavedChangesProvider>
     <WorkspaceDetailPage workspaceId="workspace-1" section="settings" />
@@ -60,36 +63,24 @@ function mount() {
 }
 
 describe('workspace project preparation', () => {
-  it('adds a project in one action and shows persisted clone, commit and source readiness after reload', async () => {
+  it('adds a project in one action and shows the prepared commit after reload', async () => {
     const fixture = onboardingFixture()
     const user = userEvent.setup()
     const view = mount()
     await user.type(await screen.findByRole('textbox', { name: 'GitHub repository' }), 'octo-owner/website')
     const add = screen.getByRole('button', { name: 'Add project' })
     await waitFor(() => expect(add).toBeEnabled())
-    expect(screen.queryByText(/approves the supported tracked files/)).not.toBeInTheDocument()
-    const projectHint = screen.getByRole('button', { name: 'About Add project' })
-    await user.hover(projectHint)
-    expect(screen.getByRole('tooltip')).toHaveTextContent(
-      'Add project prepares a clone on Main and approves the supported tracked files from this base branch.',
-    )
-    await user.unhover(projectHint)
     await user.click(add)
-    expect(await screen.findByText('Project ready')).toBeVisible()
-    const project = within(screen.getByRole('region', { name: 'GitHub repository' }))
-    expect(project.getByText(fixture.prepared.location.binding.canonicalProjectRoot)).toBeVisible()
-    expect(project.getByText(fixture.prepared.source.manifest.git!.commit)).toBeVisible()
+    expect(await screen.findByText(READY)).toBeVisible()
     expect(fixture.requests).toHaveLength(1)
     expect(fixture.requests[0]).toMatchObject({ expectedRevision: 1, expectedLocationRevision: 0,
       expectedRootPolicyRevision: 0, expectedBindingRevision: 0, allowedBaseId: mainRoot.bases[0]!.baseId,
       repository: fixture.prepared.repository })
     view.unmount()
     mount()
-    expect(await screen.findByText('Project ready')).toBeVisible()
+    expect(await screen.findByText(READY)).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'octo-owner/website' }))
     expect(screen.getByRole('textbox', { name: 'GitHub repository' })).toHaveValue('octo-owner/website')
-    const reloadedProject = within(screen.getByRole('region', { name: 'GitHub repository' }))
-    expect(reloadedProject.getByText(fixture.prepared.location.binding.canonicalProjectRoot)).toBeVisible()
-    expect(reloadedProject.getByText(fixture.prepared.source.manifest.git!.commit)).toBeVisible()
     expect(fixture.requests).toHaveLength(1)
   })
 
@@ -109,9 +100,9 @@ describe('workspace project preparation', () => {
     await user.click(prepare)
     expect(screen.getByRole('textbox', { name: 'GitHub repository' })).toBeDisabled()
     expect(screen.getByRole('textbox', { name: 'Base branch' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Remove' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Disconnect' })).toBeDisabled()
     release()
-    expect(await screen.findByText('Project ready')).toBeVisible()
+    expect(await screen.findByText(READY)).toBeVisible()
   })
 
   it('reads an uncertain attempt and retries its original command and revision inputs', async () => {
@@ -129,13 +120,12 @@ describe('workspace project preparation', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Prepare project' })).toBeEnabled())
     await user.click(screen.getByRole('button', { name: 'Prepare project' }))
     const retry = await screen.findByRole('button', { name: 'Retry project preparation' })
-    await user.click(screen.getByRole('button', { name: 'Check project status' }))
-    expect(await screen.findByText('Last completed step: metadata.')).toBeVisible()
-    expect(screen.queryByText('Project ready')).not.toBeInTheDocument()
+    expect(await screen.findByText('Project preparation is incomplete.')).toBeVisible()
+    expect(screen.queryByText(READY)).not.toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'GitHub repository' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Remove' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Disconnect' })).toBeDisabled()
     await user.click(retry)
-    expect(await screen.findByText('Project ready')).toBeVisible()
+    expect(await screen.findByText(READY)).toBeVisible()
     expect(fixture.requests).toHaveLength(2)
     expect(fixture.requests[1]).toEqual(fixture.requests[0])
   })
@@ -164,7 +154,7 @@ describe('workspace project preparation', () => {
     await waitFor(() => expect(retry).toBeEnabled())
     expect(screen.getByRole('textbox', { name: 'GitHub repository' })).toBeDisabled()
     await user.click(retry)
-    expect(await screen.findByText('Project ready')).toBeVisible()
+    expect(await screen.findByText(READY)).toBeVisible()
     expect(fixture.requests).toHaveLength(2)
     expect(fixture.requests[1]).toEqual(fixture.requests[0])
   })
@@ -197,7 +187,7 @@ describe('workspace project preparation', () => {
     expect(screen.getByRole('textbox', { name: 'GitHub repository' })).toHaveValue('octo-owner/website')
     expect(screen.getByRole('textbox', { name: 'GitHub repository' })).toBeDisabled()
     await user.click(retry)
-    expect(await screen.findByText('Project ready')).toBeVisible()
+    expect(await screen.findByText(READY)).toBeVisible()
     expect(fixture.requests).toHaveLength(2)
     expect(fixture.requests[1]).toEqual(fixture.requests[0])
     expect(fixture.requests[1]?.expectedRevision).toBe(1)
@@ -246,7 +236,7 @@ describe('workspace project preparation', () => {
     await user.click(screen.getByRole('button', { name: 'Prepare project' }))
     await user.click(await screen.findByRole('button', { name: 'Retry project preparation' }))
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'GitHub repository' })).toBeEnabled())
-    expect(screen.getByText('Project ready')).toBeVisible()
+    expect(screen.getByText(READY)).toBeVisible()
     expect(fixture.requests).toHaveLength(1)
   })
 
@@ -269,22 +259,21 @@ describe('workspace project preparation', () => {
     expect(await screen.findByText('A new import attempt is required.')).toBeVisible()
     expect(screen.getByRole('textbox', { name: 'GitHub repository' })).toHaveValue('octo-owner/website')
     expect(screen.getByRole('textbox', { name: 'GitHub repository' })).toBeEnabled()
-    expect(screen.queryByText('Project ready')).not.toBeInTheDocument()
+    expect(screen.queryByText(READY)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Retry project preparation' })).not.toBeInTheDocument()
   })
 
-  it('withdraws persisted project paths after a denied status refresh', async () => {
+  it('withdraws the prepared commit after a denied status refresh', async () => {
     const fixture = onboardingFixture(true)
     fixture.setStatus(fixture.prepared.ready)
     const view = mount()
-    expect(await screen.findByText('Project ready')).toBeVisible()
+    expect(await screen.findByText(READY)).toBeVisible()
     server.use(http.get('/api/management/workspaces/workspace-1/repository', () => HttpResponse.json({
       error: { code: 'FORBIDDEN', message: 'Project read denied.' },
     }, { status: 403 })))
     await act(async () => { await view.queryClient.invalidateQueries({ queryKey: workspaceGitKeys.scope('workspace-1') }) })
     expect(await screen.findByText('Project status could not be read.')).toBeVisible()
-    const project = within(screen.getByRole('region', { name: 'GitHub repository' }))
-    expect(project.queryByText(fixture.prepared.location.binding.canonicalProjectRoot)).not.toBeInTheDocument()
+    expect(screen.queryByText(READY)).not.toBeInTheDocument()
   })
 
   it('preserves an Add draft on revision conflict and uses a new command after reapply', async () => {
@@ -306,7 +295,7 @@ describe('workspace project preparation', () => {
     expect(screen.getByRole('textbox', { name: 'GitHub repository' })).toHaveValue('octo-owner/website')
     await user.click(screen.getByRole('button', { name: 'Reapply my edits' }))
     await user.click(screen.getByRole('button', { name: 'Add project' }))
-    await screen.findByText('Project ready')
+    await screen.findByText(READY)
     expect(fixture.requests.map(input => input.expectedRevision)).toEqual([1, 2])
     expect(fixture.requests[0]?.commandId).not.toBe(fixture.requests[1]?.commandId)
   })

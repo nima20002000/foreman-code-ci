@@ -114,7 +114,7 @@ describe('native Run activity status', () => {
     const activity = publicRunActivity({ ...row, native: {
       type: 'native.notification', nativeMethod, deltaLength: 20, delta: 'private body',
     } }, fixture.version, fixture.run.id, fixture.run.outcome)
-    expect(activity.summary).toBe('Native activity recorded; details unavailable')
+    expect(activity.summary).toBe('Agent activity')
     expect(activity.detail).toBeUndefined()
     expect(JSON.stringify(activity)).not.toContain('private body')
   })

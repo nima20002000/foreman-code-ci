@@ -22,6 +22,7 @@ import { NativeProviderAccountCommands, type AccountCommandInvocation } from './
 import { ProviderAccountsRepository } from './repository.js'
 import { ProviderAccountsService, type ProviderAccountOperationNativePort } from './service.js'
 import { providerAccountEnvironment } from './environment.js'
+import { operatorCatalogNames } from '../../../test/support/operatorCatalog.js'
 
 const schema = `provider_accounts_${randomUUID().replaceAll('-', '')}`
 let pool: pg.Pool
@@ -138,7 +139,7 @@ it('creates and accepts an account with database target reads on a one-slot pool
 it('supports the complete authenticated MCP account workflow with PostgreSQL readback after recreation', async () => {
   const f = await fixture()
   const client = await f.connect(f.owner.token)
-  const names = (await client.listTools()).tools.map(tool => tool.name)
+  const names = await operatorCatalogNames(client)
   expect(names).toContain('provider_account_login')
   const input = { ...command(0), provider: 'codex', authMode: 'subscription', name: 'Personal' }
   const call = async (name: string, arguments_: Record<string, unknown>) =>
@@ -170,7 +171,7 @@ it('supports the complete authenticated MCP account workflow with PostgreSQL rea
 it('denies guessed MCP writes and scoped reads, HTTP writes and revoked live command replay', async () => {
   const f = await fixture()
   const client = await f.connect(f.reader.token)
-  expect((await client.listTools()).tools.map(tool => tool.name)).not.toContain('provider_account_create')
+  expect(await operatorCatalogNames(client)).not.toContain('provider_account_create')
   const input = { ...command(0), provider: 'claude', authMode: 'subscription', name: 'Denied' }
   expect((await client.callTool({ name: 'provider_account_create', arguments: input })).isError).toBe(true)
   const denied = await f.app.inject({ method: 'POST', url: '/api/provider-accounts',
@@ -650,7 +651,7 @@ it('returns full selected-account model metadata through HTTP/MCP and limits no-
   expect(human.statusCode).toBe(200)
   expect(human.headers['cache-control']).toBe('no-store, private')
   expect(contracts.ProviderAccountHumanHandoffSchema.parse(human.json()).operationId).toBe(operation.id)
-  expect((await client.listTools()).tools.map(tool => tool.name)).not.toContain('provider_account_handoff')
+  expect(await operatorCatalogNames(client)).not.toContain('provider_account_handoff')
   const persisted = await f.createService().authenticationList(f.reader.principal, { accountId: account.id })
   expect(persisted.operations).toEqual([operation])
   expect(JSON.stringify(persisted)).not.toContain('Complete sign-in')

@@ -8,6 +8,7 @@ import { buildApp } from '../src/app.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { createGraphqlMcpServer } from '../src/mcp/unified/server.js'
+import { operatorCatalog } from './support/operatorCatalog.js'
 
 type RunStopInput = z.infer<typeof RunStopInputSchema>
 
@@ -40,17 +41,10 @@ it('advertises optional command IDs across the Operator tool catalog', async () 
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     await server.connect(serverTransport)
     await client.connect(clientTransport)
-    const names: string[] = []
-    const required: string[] = []
-    let cursor: string | undefined
-    do {
-      const page = await client.listTools(cursor ? { cursor } : {})
-      for (const tool of page.tools) {
-        names.push(tool.name)
-        if (requiresCommandId(tool.inputSchema)) required.push(tool.name)
-      }
-      cursor = page.nextCursor
-    } while (cursor)
+    // tools/list shows only core tools; every other schema is read through discovery.
+    const catalog = await operatorCatalog(client)
+    const names = catalog.map(tool => tool.name)
+    const required = catalog.filter(tool => requiresCommandId(tool.inputSchema)).map(tool => tool.name)
     expect(names).toEqual(expect.arrayContaining([
       'run_stop', 'operator_chat_create', 'job_runtime_qualification_run', 'device_connection_configure',
       'workflow_save_v3', 'harness_instance_save', 'reference_file_remove',

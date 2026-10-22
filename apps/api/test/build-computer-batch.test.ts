@@ -11,6 +11,7 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { BuildComputerSettings, buildComputerKey } from '../src/modules/settings/buildComputers.js'
 import { deferred } from './helpers/deferred.js'
 import { DomainError } from '../src/modules/errors.js'
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 
 const mainId = '11111111-1111-4111-8111-111111111111'
 const owner: ManagementPrincipal = { id: 'owner', name: 'Owner', audience: 'operator',
@@ -134,7 +135,7 @@ it('saves one order through authenticated MCP, replays it and reads persisted se
     const client = await f.connect('owner')
     const readOnly = await f.connect('reader')
     const command = { commandId: 'save-order', updates: f.updates }
-    expect((await client.listTools()).tools.map(tool => tool.name)).toContain('build_computers_update')
+    expect(await operatorCatalogNames(client)).toContain('build_computers_update')
     const capabilities = await client.callTool({ name: 'operator_get_capabilities', arguments: { detail: 'full' } })
     expect(decodeMcpToolResult(capabilities)).toMatchObject({ requirements: expect.arrayContaining([
       expect.objectContaining({ name: 'build_computers_update', actions: ['settings:update'] }),
@@ -148,7 +149,7 @@ it('saves one order through authenticated MCP, replays it and reads persisted se
     const replay = await client.callTool({ name: 'build_computers_update', arguments: command })
     expect(decodeMcpToolResult(replay)).toEqual(saved)
     expect(f.changed).toHaveBeenCalledTimes(1)
-    expect((await readOnly.listTools()).tools.map(tool => tool.name)).not.toContain('build_computers_update')
+    expect(await operatorCatalogNames(readOnly)).not.toContain('build_computers_update')
     const denied = await readOnly.callTool({ name: 'build_computers_update', arguments: command })
     expect(denied.isError).toBe(true)
     expect(JSON.stringify(denied.content)).toContain('ACCESS_DENIED')

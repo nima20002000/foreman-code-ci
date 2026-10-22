@@ -19,6 +19,7 @@ import { operatorToolAvailable } from '../src/mcp/operator/availability.js'
 import { OPERATOR_TOOL_ACTIONS } from '../src/mcp/operator/catalog.js'
 import type { OperatorRequestContext } from '../src/mcp/operator/types.js'
 import { operatorToolRequirements } from '../src/mcp/operator/availability.js'
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 
 const owner: ManagementPrincipal = {id:'owner',name:'Owner',audience:'operator',expiresAt:'2099-01-01T00:00:00Z',revokedAt:null,
   grants:[{actions:[...ManagementActionSchema.options],scope:{}}]}
@@ -174,18 +175,16 @@ describe('current device and Operator control MCP parity', () => {
         f.connect('owner'), f.connect('reader'), f.connect('scoped'),
       ])
       const names = ['device_main_identity_get', 'device_setup_options_get', 'devices_list', 'device_setup_code_create', 'device_pairing_grant_create', 'device_revoke', 'operator_chat_cancel', 'operator_chat_respond']
-      const [ownerTools, capability, readerTools, scopedTools] = await Promise.all([
-        ownerClient.listTools(),
+      const [ownerNames, capability, readerNames, scopedNames] = await Promise.all([
+        operatorCatalogNames(ownerClient),
         ownerClient.callTool({ name: 'operator_get_capabilities', arguments: { detail: 'full' } }),
-        reader.listTools(),
-        scoped.listTools(),
+        operatorCatalogNames(reader),
+        operatorCatalogNames(scoped),
       ])
-      expect(ownerTools.tools.map(tool => tool.name)).toEqual(expect.arrayContaining(names))
+      expect(ownerNames).toEqual(expect.arrayContaining(names))
       expect(decodeMcpToolResult(capability)).toMatchObject({ tools: expect.arrayContaining(names) })
-      const readerNames = readerTools.tools.map(tool => tool.name)
       expect(readerNames).toContain('devices_list')
       for (const name of names.filter(name => !['device_main_identity_get', 'device_setup_options_get', 'devices_list'].includes(name))) expect(readerNames).not.toContain(name)
-      const scopedNames = scopedTools.tools.map(tool => tool.name)
       for (const name of names) expect(scopedNames).not.toContain(name)
       await Promise.all(['device_pairing_grant_create', 'device_setup_code_create', 'device_revoke', 'operator_chat_cancel', 'operator_chat_respond'].map(async name => {
         const denied = await reader.callTool({ name, arguments: {} })
@@ -205,7 +204,7 @@ describe('current device and Operator control MCP parity', () => {
       const server = await createGraphqlMcpServer({ role: 'operator', principal: owner, operator: f.c.services })
       await server.close()
       const client = await f.connect('owner')
-      const names = (await client.listTools()).tools.map(tool => tool.name)
+      const names = await operatorCatalogNames(client)
       for (const name of ['operator_chat_cancel', 'operator_chat_respond']) expect(names.filter(candidate => candidate === name)).toHaveLength(1)
       expect(names).not.toContain('agent_defaults_get')
       expect(f.connectSql).not.toHaveBeenCalled()
@@ -216,7 +215,7 @@ describe('current device and Operator control MCP parity', () => {
     const f = await fixture({ operatorChat: false })
     try {
       const client = await f.connect('owner')
-      const names = (await client.listTools()).tools.map(tool => tool.name)
+      const names = await operatorCatalogNames(client)
       for (const name of ['operator_chat_cancel', 'operator_chat_respond']) {
         expect(names).not.toContain(name)
         const unavailable = await client.callTool({ name, arguments: {} })

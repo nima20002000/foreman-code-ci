@@ -16,6 +16,6 @@ describe('unsupported Codex interaction Run activity', () => {
     expect(activity).toMatchObject({ kind: 'error', status: 'failed', severity: 'error', summary: message })
     expect(JSON.stringify(activity)).not.toContain('private native request')
     expect(publicRunActivity({ ...row, native: { ...row.native, unsupportedInteractionCode: 'private text' } },
-      f.version, f.run.id, f.run.outcome).summary).toBe('Native activity recorded; details unavailable')
+      f.version, f.run.id, f.run.outcome).summary).toBe('Agent activity')
   })
 })

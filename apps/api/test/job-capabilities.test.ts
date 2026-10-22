@@ -7,6 +7,7 @@ import { JOB_TOOLS, unavailableJobToolCall } from '../src/mcp/operator/tools/job
 import { JOB_RUNTIME_TOOLS, unavailableJobRuntimeToolCall } from '../src/mcp/operator/tools/jobRuntimeProfiles.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { createGraphqlMcpServer, roleDeniedToolCall } from '../src/mcp/unified/server.js'
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 
 const actions:ManagementAction[]=['job_definitions:read','job_definitions:write','jobs:start','jobs:read','jobs:cancel','job_logs:read','job_artifacts:read','sources:read','source_roots:read',
   'source_roots:bind','workspace_locations:read','workspace_locations:validate','workspace_locations:update']
@@ -56,9 +57,9 @@ const call=(name:string)=>({jsonrpc:'2.0',id:1,method:'tools/call',params:{name,
 
 describe('Job capability summary matches mounted Operator tools',()=>{
   it('discovers exact Job tools and scoped requirements without claiming host qualification',async()=>{
-    const f=await fixture(),listed=jobNames((await f.client.listTools()).tools.map(tool=>tool.name))
+    const f=await fixture(),listed=jobNames(await operatorCatalogNames(f.client))
     expect(listed).toEqual([...JOB_TOOLS].sort())
-    const listedRuntime=runtimeNames((await f.client.listTools()).tools.map(tool=>tool.name))
+    const listedRuntime=runtimeNames(await operatorCatalogNames(f.client))
     expect(listedRuntime).toEqual([...JOB_RUNTIME_TOOLS].sort())
     for(const scope of [undefined,'workspace-a']) {
       const capabilities=await f.capabilities(scope)
@@ -104,7 +105,7 @@ describe('Job capability summary matches mounted Operator tools',()=>{
     expect(f.readEnrollment).not.toHaveBeenCalled();expect(f.updateEnrollment).not.toHaveBeenCalled()
   })
   it('keeps read-only discovery read-only and retains audited direct-write denial',async()=>{
-    const f=await fixture(principal(readerActions)),listed=jobNames((await f.client.listTools()).tools.map(tool=>tool.name))
+    const f=await fixture(principal(readerActions)),listed=jobNames(await operatorCatalogNames(f.client))
     expect(listed).toContain('job_get');expect(listed).not.toContain('job_start')
     expect(listed).toContain('job_queue_get')
     expect(listed).toContain('job_queue_list')
@@ -134,7 +135,7 @@ describe('Job capability summary matches mounted Operator tools',()=>{
     expect(runtimeNames(foreign.tools)).toEqual([])
     expect(runtimeNames(foreign.requirements!.map(requirement=>requirement.name))).toEqual([])
     for(const f of [await fixture(principal(),false,false),await fixture(principal([]))]) {
-      expect(jobNames((await f.client.listTools()).tools.map(tool=>tool.name))).toEqual([])
+      expect(jobNames(await operatorCatalogNames(f.client))).toEqual([])
       const capabilities=await f.capabilities('workspace-a')
       expect(jobNames(capabilities.tools)).toEqual([])
       expect(runtimeNames(capabilities.tools)).toEqual([])
@@ -143,13 +144,13 @@ describe('Job capability summary matches mounted Operator tools',()=>{
       expect(f.readEnrollment).not.toHaveBeenCalled();expect(f.updateEnrollment).not.toHaveBeenCalled()
     }
     const jobsOnly=await fixture(principal(),true,false),capabilities=await jobsOnly.capabilities('workspace-a')
-    expect(runtimeNames((await jobsOnly.client.listTools()).tools.map(tool=>tool.name))).toEqual([])
+    expect(runtimeNames(await operatorCatalogNames(jobsOnly.client))).toEqual([])
     expect(runtimeNames(capabilities.tools)).toEqual([])
     expect(capabilities.tools).toContain('job_start')
   })
   it('reports profiles-only tools without Job execution and denies qualification to a reader',async()=>{
     for(const jobActions of [actions,readerActions]) {
-      const f=await fixture(principal(jobActions),false),listed=(await f.client.listTools()).tools.map(tool=>tool.name)
+      const f=await fixture(principal(jobActions),false),listed=await operatorCatalogNames(f.client)
       const capabilities=await f.capabilities('workspace-a')
       expect(jobNames(listed)).toEqual([]);expect(jobNames(capabilities.tools)).toEqual([])
       expect(runtimeNames(capabilities.tools)).toEqual(runtimeNames(listed))
@@ -167,7 +168,7 @@ describe('Job capability summary matches mounted Operator tools',()=>{
   })
   it('withholds enrollment tools when the enrollment service is absent', async () => {
     const f = await fixture(principal(), true, true, { enrollment: false })
-    const listed = runtimeNames((await f.client.listTools()).tools.map(tool => tool.name))
+    const listed = runtimeNames(await operatorCatalogNames(f.client))
     const expected = JOB_RUNTIME_TOOLS.filter(name => !name.startsWith('ci_enrollment_')).sort()
     expect(listed).toEqual(expected)
     const capabilities = await f.capabilities('workspace-a')
@@ -178,13 +179,13 @@ describe('Job capability summary matches mounted Operator tools',()=>{
   })
   it('withholds runtime profile Save without source and root read grants',async()=>{
     const f=await fixture(principal(actions.filter(action=>action!=='sources:read'&&action!=='source_roots:read')))
-    const listed=runtimeNames((await f.client.listTools()).tools.map(tool=>tool.name))
+    const listed=runtimeNames(await operatorCatalogNames(f.client))
     expect(listed).not.toContain('job_runtime_profile_save')
     expect(listed).toContain('job_runtime_qualification_request')
   })
   it('denies computer preparation without definition read authority through MCP', async () => {
     const f = await fixture(principal(actions.filter(action => action !== 'job_definitions:read')))
-    const listed = (await f.client.listTools()).tools.map(tool => tool.name)
+    const listed = await operatorCatalogNames(f.client)
     expect(listed).not.toContain('build_computer_prepare')
     const capabilities = await f.capabilities('workspace-a')
     expect(capabilities.tools).not.toContain('build_computer_prepare')
@@ -206,7 +207,7 @@ describe('Job capability summary matches mounted Operator tools',()=>{
     await server.connect(serverTransport)
     const client=new Client({name:`job-discovery-${role}`,version:'1'})
     connections.push({client,close:()=>server.close()});await client.connect(clientTransport)
-    expect(jobNames((await client.listTools()).tools.map(tool=>tool.name))).toEqual([])
+    expect(jobNames(await operatorCatalogNames(client))).toEqual([])
     const denied=await roleDeniedToolCall({role,principal:worker,operator:f.context.services},call('job_start'))
     expect(denied?.result.isError).toBe(true);expect(JSON.stringify(denied)).toContain('ROLE_NOT_ALLOWED')
     expect(f.choices).not.toHaveBeenCalled()

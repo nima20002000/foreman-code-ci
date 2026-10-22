@@ -16,6 +16,7 @@ import { normalizeCodexPluginCatalog } from '../src/modules/harnesses/codexPlugi
 import { CodexPluginSettingsService } from '../src/modules/harnesses/codexPluginSettings.js'
 import type { CodexPluginAdapter } from '../src/modules/harnesses/codexPlugins.js'
 import { claudePluginPorts } from './helpers/claudePluginPorts.js'
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 
 const principal = ManagementPrincipalSchema.parse({ id: 'reader', name: 'Reader', audience: 'operator',
   expiresAt: '2099-01-01T00:00:00Z', revokedAt: null, grants: [{ actions: ['harnesses:read'], scope: {} }] })
@@ -181,7 +182,7 @@ it('supports fresh plugin reads through authenticated MCP and preserves read gra
   }
   const allowed = await connect('reader-token')
   const disallowed = await connect('denied-token')
-  expect((await allowed.listTools()).tools.map(tool => tool.name)).toEqual(expect.arrayContaining([
+  expect(await operatorCatalogNames(allowed)).toEqual(expect.arrayContaining([
     'codex_plugins_list', 'codex_plugin_get', 'claude_plugins_list',
   ]))
   const read = async (arguments_: Record<string, unknown>) => CodexPluginListResultSchema.parse(
@@ -207,7 +208,7 @@ it('supports fresh plugin reads through authenticated MCP and preserves read gra
   expect(decodeMcpToolResult(await allowed.callTool({ name: 'claude_plugins_list',
     arguments: { view: 'installed' } }))).toMatchObject({ items: [{ pluginId: 'notes@official', version: '2' }] })
   const reads = list.mock.calls.length
-  expect((await disallowed.listTools()).tools.map(tool => tool.name)).not.toContain('codex_plugins_list')
+  expect(await operatorCatalogNames(disallowed)).not.toContain('codex_plugins_list')
   for (const name of ['codex_plugins_list', 'codex_plugin_get', 'claude_plugins_list']) {
     const rejected = await disallowed.callTool({ name, arguments: { refresh: true } })
     expect(rejected.isError).toBe(true)

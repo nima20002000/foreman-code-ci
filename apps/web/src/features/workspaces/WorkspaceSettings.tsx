@@ -10,7 +10,8 @@ import { WorkspaceRepositoryForm } from './WorkspaceRepositoryForm'
 
 type Tone = 'success' | 'warning' | 'danger' | 'muted'
 
-function projectStatus(state: string | undefined, commit: string | undefined): { label: string; tone: Tone } {
+function projectStatus(state: string | undefined, commit: string | undefined, unreadable: boolean): { label: string; tone: Tone } {
+  if (unreadable) return { label: 'Status unavailable', tone: 'warning' }
   if (state === 'ready') return { label: commit ? `Ready at ${commit.slice(0, 7)}` : 'Ready', tone: 'success' }
   if (state === 'preparing') return { label: 'Preparing…', tone: 'warning' }
   if (state === 'failed' || state === 'conflict') return { label: 'Needs attention', tone: 'danger' }
@@ -22,11 +23,12 @@ function projectStatus(state: string | undefined, commit: string | undefined): {
 export function WorkspaceSettings({ workspace }: { workspace: ManagedWorkspace }) {
   const { workspace: { id, name, repository }, revision } = workspace
   const project = useWorkspaceRepository(id)
-  const state = project.data?.state
-  const status = projectStatus(state, project.data?.approvedSource?.manifest.git?.commit)
+  // A failed status read withdraws the last known status instead of showing it as current.
+  const state = project.isError ? undefined : project.data?.state
+  const status = projectStatus(state, project.isError ? undefined : project.data?.approvedSource?.manifest.git?.commit, project.isError)
   // The editor starts open while the repository still needs something from the user.
   const [editing, setEditing] = useState(!repository)
-  const needsAction = state !== undefined && state !== 'ready' && state !== 'unconfigured'
+  const needsAction = project.isError || (state !== undefined && state !== 'ready' && state !== 'unconfigured')
   const open = editing || needsAction
   const slug = repository ? `${repository.owner}/${repository.name}` : undefined
   return <div className="ws-settings">

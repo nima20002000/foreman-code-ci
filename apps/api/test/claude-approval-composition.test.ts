@@ -80,7 +80,7 @@ describe('production Claude approval composition', () => {
 
   it('admits an authenticated management manifest through runner, manager, policy callbacks and a real MCP handler', async () => {
     const endpoint = await managementEndpoint()
-    const f = productionClaudeFixture('operator', undefined, endpoint.url)
+    const f = productionClaudeFixture('operator', undefined, endpoint.url, undefined, undefined, undefined, ['mcp__graphql__workspace_list'])
     const client = new Client({ name: 'management-call', version: '1' })
     try {
       const start = { ...f.start, environment: { agentId: 'operator', variables: { GRAPHQL_MCP_TOKEN: 'synthetic-scoped-token' } } }
@@ -131,7 +131,7 @@ describe('production Claude approval composition', () => {
   it('keeps an allow-once selection uncertain when the SDK aborts before callback completion', async () => {
     const stage = (name: string) => console.info(`Recorded approval abort: ${name}`)
     const endpoint = await managementEndpoint()
-    const f = productionClaudeFixture('operator', undefined, endpoint.url)
+    const f = productionClaudeFixture('operator', undefined, endpoint.url, undefined, undefined, undefined, ['mcp__graphql__workspace_list'])
     const validateResponse = PostgresClaudeInteractionAuthority.prototype.validateResponse
     const validation = vi.spyOn(PostgresClaudeInteractionAuthority.prototype, 'validateResponse')
     try {
@@ -185,7 +185,7 @@ describe('production Claude approval composition', () => {
     files.scope.chat = { kind: 'agent', conversationId: 'agent', workspaceId: 'workspace', workflowId: 'workflow', agentId: 'agent' }
     files.scopes.set('agent', files.scope)
     const ref = await files.upload('file-through-production')
-    const f = productionClaudeFixture('agent', undefined, undefined, files.service)
+    const f = productionClaudeFixture('agent', undefined, undefined, files.service, undefined, undefined, ['mcp__graphql-files__files.read'])
     const client = new FileClient({ name: 'production-file-call', version: '1' })
     const issue = vi.spyOn(files.sessions, 'issueForAcceptedSession')
     try {

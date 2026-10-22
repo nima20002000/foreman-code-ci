@@ -6,7 +6,7 @@ import {
 } from '@foreman-code/contracts/wave25'
 import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
 import { writerFixture, type WriterFixture } from './eng04-writer-fixtures.js'
-import { graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { graphRpcValue } from './eng04-graph-composition-fixture.js'
 
 let db: Awaited<ReturnType<typeof currentDatabase>>
 const fixtures: WriterFixture[] = []
@@ -36,7 +36,9 @@ it('discovers, saves, clears and reads back Agent loops and their prompt through
     promptField: 'node.interval.prompt', promptMaxLength: AGENT_INTERVAL_PROMPT_MAX_LENGTH,
     minimumSeconds: AGENT_INTERVAL_MIN_SECONDS, maximumSeconds: AGENT_INTERVAL_MAX_SECONDS,
     maximumChecksPerRun: null, runStatusTool: 'run_status_get' })
-  const tools = JSON.stringify((await graphRpc(f.app, f.writer.token, 'tools/list')).result)
+  // tools/list shows only core tools; the workflow editing tools carry their full text in tool_schema.
+  const tools = JSON.stringify(await Promise.all([CURRENT_WORKFLOW_TOOLS.edits, CURRENT_WORKFLOW_TOOLS.save].map(
+    async name => (await f.call('tool_schema', { name })).result)))
   expect(tools).toContain('node.interval')
   expect(tools).toContain('Loops do not consume maxParallelism slots and serialize with work on the same node.')
   expect(tools).toContain('node.interval.prompt')
