@@ -57,11 +57,12 @@ it.each(['network', 502, 503] as const)('automatically recovers reads after %s d
   await waitFor(() => expect(reads).toBeGreaterThan(failedReads), { timeout: 4000 })
   restarting = false
   await screen.findByText('After deploy', {}, { timeout: 4000 })
-  await waitFor(() => expect(screen.queryByText('Updating — reconnecting…')).not.toBeInTheDocument())
+  await waitFor(() => expect(screen.queryByText('Updating — reconnecting…')).not.toBeInTheDocument(),
+    { timeout: 5_000 })
   await waitFor(() => expect(otherReads).toBeGreaterThan(1))
   expect(screen.getByRole('textbox', { name: 'Draft' })).toBe(draft)
   expect(draft).toHaveValue('unsaved')
-})
+}, 20_000)
 
 it.each(['network', 502, 503] as const)('waits calmly for initial access during %s', async failure => {
   let restarting = true

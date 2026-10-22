@@ -49,10 +49,10 @@ describe('browser peer verification', () => {
     status = 200
     networkFailure = false
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
-    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument(), { timeout: 5_000 })
     expect(screen.getByRole('textbox', { name: 'Server draft' })).toBe(draft)
     expect(draft).toHaveValue('unsaved server settings')
-  })
+  }, 20_000)
 
   it('requires successful initial verification before mounting the app', async () => {
     status = 503

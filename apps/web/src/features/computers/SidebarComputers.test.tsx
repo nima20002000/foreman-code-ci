@@ -8,7 +8,7 @@ import { resourceTelemetryFixtures } from '@foreman-code/contracts/resource-tele
 import { telemetrySelectorKey, type TelemetrySelector } from '@foreman-code/contracts/resource-telemetry'
 import { server } from '../../mocks/server'
 import { SidebarComputers } from './SidebarComputers'
-import { computerReadHandler, computersFixture, deviceId, deviceName, deviceTarget, mainId, mainTarget, registration } from './computersTestFixture'
+import { computerReadHandler, computersFixture, deviceId, deviceName, deviceTarget, mainId, mainTarget, pastReconnectGrace, registration } from './computersTestFixture'
 import computerStyles from './computers.css?inline'
 import shellStyles from '../../styles.css?inline'
 
@@ -61,6 +61,7 @@ beforeEach(() => {
 afterEach(() => {
   onlineManager.setOnline(true)
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
 afterAll(() => {
   if (originalAnimate) Object.defineProperty(HTMLElement.prototype, 'animate', originalAnimate)
@@ -348,6 +349,7 @@ it('hides activity indicators when offline or stale even if the last observation
   expect(within(main).queryByText('1')).not.toBeInTheDocument()
   act(() => onlineManager.setOnline(true))
   f.activity.computers[0]!.online = false
+  pastReconnectGrace()
   await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
   expect(await findComputer('Main PC, Main, Offline')).toBe(main)
   expect(within(main).queryByText('1')).not.toBeInTheDocument()
@@ -401,6 +403,7 @@ it('totals physical CPU and RAM from both computers and keeps missing readings e
   expect(await within(group).findByText('24 cores · 8 busy · 16 free')).toBeInTheDocument()
   expect(within(group).getByText('48 GiB · 12 used · 36 free')).toBeInTheDocument()
   f.activity.computers[1]!.online = false
+  pastReconnectGrace()
   await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
   expect(await within(group).findByText('8 cores · 4 busy · 4 free')).toBeInTheDocument()
   expect(within(group).getByText('1 of 2 computers reporting')).toBeInTheDocument()

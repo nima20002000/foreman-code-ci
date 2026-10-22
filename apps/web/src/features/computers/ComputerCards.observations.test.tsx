@@ -2,14 +2,17 @@ import { onlineManager } from '@tanstack/react-query'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import type { MaintenanceStatus, MaintenanceTask } from '@foreman-code/contracts/computer-maintenance'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import { computerKey } from '../../shared/api/computerActivity'
 import { ComputerCards } from './ComputerCards'
-import { computerReadHandler, computersFixture, deviceName, deviceTarget, mainId, mainTarget, registration } from './computersTestFixture'
+import { computerReadHandler, computersFixture, deviceName, deviceTarget, mainId, mainTarget, pastReconnectGrace, registration } from './computersTestFixture'
 
-afterEach(() => onlineManager.setOnline(true))
+afterEach(() => {
+  onlineManager.setOnline(true)
+  vi.useRealTimers()
+})
 
 function status(tasks: MaintenanceTask[] = []): MaintenanceStatus {
   return { observedAt: new Date().toISOString(), tasks,
@@ -56,6 +59,7 @@ it.each(['succeeded', 'running'] as const)('keeps an older failed sibling visibl
 })
 
 it.each(['running', 'succeeded'] as const)('qualifies cached %s maintenance after a refresh error and recovers through retry', async state => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
   let fail = false
   const upkeep = status([task('update-system', state)])
   const { client } = computersFixture(<ComputerCards mainId={mainId} devices={[]} />, [
@@ -64,27 +68,32 @@ it.each(['running', 'succeeded'] as const)('qualifies cached %s maintenance afte
       : HttpResponse.json({ computers: [{ target: mainTarget, status: upkeep }] })),
   ])
   const card = await screen.findByRole('article', { name: 'Main PC' })
-  await within(card).findByText('40 GB free of 100 GB')
+  await within(card).findByText(state === 'running' ? 'System update…' : 'System update: Finished')
   fail = true
   await act(async () => { await client.invalidateQueries({ queryKey: ['computer-maintenance'] }) })
-  expect(await within(card).findByRole('alert')).toHaveTextContent('Showing last confirmed details')
-  expect(within(card).getByRole('alert')).toHaveTextContent('Current task state is unknown')
+  await waitFor(() => expect(within(card).getByRole('button', { name: 'Restart' })).toBeDisabled())
+  // A read that fails once and recovers is a link blip; the note appears only after 20 s.
+  expect(within(card).queryByRole('alert')).not.toBeInTheDocument()
+  await act(async () => { await vi.advanceTimersByTimeAsync(20_000) })
+  expect(await within(card).findByRole('alert')).toHaveTextContent('Status may be out of date.')
   expect(within(card).getByRole('status')).toHaveTextContent('Last confirmed: System update')
   expect(within(card).getByRole('button', { name: 'Restart' })).toBeDisabled()
   fail = false
-  await userEvent.click(within(card).getByRole('button', { name: 'Retry maintenance' }))
+  await userEvent.click(within(card).getByRole('button', { name: 'Retry' }))
   await waitFor(() => expect(within(card).queryByRole('alert')).not.toBeInTheDocument())
   expect(within(card).getByRole('button', { name: 'Restart' })).toBeEnabled()
 })
 
 it('explains an initial maintenance read failure without implying cached facts', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
   computersFixture(<ComputerCards mainId={mainId} devices={[]} />, [
     http.post('*/api/management/computers/maintenance/read', () =>
       HttpResponse.json({ error: { code: 'UNAVAILABLE', message: 'Disconnected.' } }, { status: 503 })),
   ])
   const card = await screen.findByRole('article', { name: 'Main PC' })
-  expect(await within(card).findByRole('alert')).toHaveTextContent('Maintenance could not be refreshed.')
-  expect(within(card).getByRole('alert')).not.toHaveTextContent('Showing last confirmed')
+  await act(async () => { await vi.advanceTimersByTimeAsync(20_000) })
+  expect(await within(card).findByRole('alert')).toHaveTextContent('Status may be out of date.')
+  expect(within(card).queryByRole('status')).not.toBeInTheDocument()
 })
 
 it('distinguishes stale browser observations from a fresh Offline server observation', async () => {
@@ -97,6 +106,7 @@ it('distinguishes stale browser observations from a fresh Offline server observa
   expect(within(card).getByText(/Last observed: 0 agents running/)).toBeVisible()
   activity.computers[0]!.online = false
   act(() => onlineManager.setOnline(true))
+  pastReconnectGrace()
   await act(async () => { await client.invalidateQueries({ queryKey: ['computer-activity'] }) })
   expect(await within(card).findByText('Offline')).toBeVisible()
 })
@@ -136,7 +146,7 @@ it('reads healthy observations and releases acknowledged maintenance while anoth
   try {
     const card = await screen.findByRole('article', { name: 'Main PC' })
     expect(await within(card).findByRole('img', { name: 'GitHub: signed in' })).toBeVisible()
-    await within(card).findByText('40 GB free of 100 GB')
+    await within(card).findByText('Restart needed')
     expect(reads).toContain(computerKey(deviceTarget))
     await userEvent.click(within(card).getByRole('button', { name: 'Update' }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Update computers' })).toBeEnabled())

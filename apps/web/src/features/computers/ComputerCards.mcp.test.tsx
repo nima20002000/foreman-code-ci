@@ -4,7 +4,9 @@ import { ComputerCards } from './ComputerCards'
 import { computersFixture, deviceName, mainId, registration } from './computersTestFixture'
 
 it('shows the host-scoped Foreman MCP state read-only on a paired computer, from the maintenance readback', async () => {
-  computersFixture(<ComputerCards mainId={mainId} devices={[registration]} />)
+  const { activity } = computersFixture(<ComputerCards mainId={mainId} devices={[registration]} />)
+  // An Offline computer reports nothing live, so its tool chips are hidden.
+  activity.computers[1]!.online = true
   const device = await screen.findByRole('article', { name: deviceName })
   // The fixture reports Codex installed and Claude missing for the paired computer.
   expect(await within(device).findByRole('img', { name: 'Foreman MCP: Claude not set up' })).toHaveAttribute('data-state', 'missing')

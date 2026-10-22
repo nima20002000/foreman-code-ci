@@ -24,13 +24,20 @@ function status(workerStatus?: WorkerStatus): MaintenanceStatus {
 
 afterEach(() => vi.useRealTimers())
 
+/** An Offline computer reports nothing live, so the paired computer is online in these tests. */
+function deviceFixture(...args: Parameters<typeof computersFixture>) {
+  const fixture = computersFixture(...args)
+  fixture.activity.computers[1]!.online = true
+  return fixture
+}
+
 it('retries a failed Worker task even when the updater still reports its current version', async () => {
   const requests: ComputerMaintenanceStartInput[] = []
   const maintenance = status(worker)
   maintenance.tasks.push({ id: crypto.randomUUID(), kind: 'update-worker', state: 'failed',
     startedAt: '2026-10-17T14:00:00.000Z', finishedAt: '2026-10-17T14:01:00.000Z',
     summary: 'Download failed', outputTail: '' })
-  computersFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
+  deviceFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
     computerReadHandler('maintenance', { computers: [{ target: deviceTarget, status: maintenance }] }),
     http.post('*/api/management/computers/maintenance/start', async ({ request }) => {
       requests.push(await request.json() as ComputerMaintenanceStartInput)
@@ -47,7 +54,7 @@ it('retries a failed Worker task even when the updater still reports its current
 })
 
 it('shows the GitHub publication failure and does not offer a Worker update until a published target is available', async () => {
-  computersFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
+  deviceFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
     http.post('*/api/management/computers/maintenance/read', async ({ request }) => {
       const { target } = await request.json() as { target: DeviceProvisioningTarget }
       return HttpResponse.json({ computers: [{ target, status: status(behind),
@@ -63,18 +70,18 @@ it('shows the GitHub publication failure and does not offer a Worker update unti
 })
 
 it('shows current and target Worker versions only on paired computers', async () => {
-  computersFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
+  deviceFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
     computerReadHandler('maintenance', { computers: [
       { target: mainTarget, status: status(worker) }, { target: deviceTarget, status: status(worker) },
     ] }),
   ])
   const device = await screen.findByRole('article', { name: deviceName })
-  expect(await within(device).findByText('Current 0.0.56')).toBeVisible()
-  expect(within(device).getByText('Target 0.0.56')).toBeVisible()
-  expect(within(device).getByRole('status')).toHaveTextContent('Up to date')
+  const state = await within(device).findByRole('status')
+  expect(state).toHaveTextContent('0.0.56 · Up to date')
+  expect(state).toHaveAttribute('title', 'Current 0.0.56 · target 0.0.56')
   expect(within(device).getByRole('img', { name: 'Update: up to date' })).toBeVisible()
   const main = screen.getByRole('article', { name: 'Main PC' })
-  expect(within(main).queryByText('Current 0.0.56')).not.toBeInTheDocument()
+  expect(within(main).queryByTitle(/Current 0.0.56/)).not.toBeInTheDocument()
   expect(within(main).queryByText('Worker')).not.toBeInTheDocument()
 })
 
@@ -85,20 +92,20 @@ it.each([
   ['installing', 'Installing update'],
   ['restarting', 'Restarting Worker'],
 ] as const)('shows %s progress and prevents a second Worker update', async (state, label) => {
-  computersFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
+  deviceFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
     computerReadHandler('maintenance', { computers: [
       { target: deviceTarget, status: status({ ...worker, targetVersion: '0.0.57', state }) },
     ] }),
   ])
   const device = await screen.findByRole('article', { name: deviceName })
-  expect(await within(device).findByText(label)).toBeVisible()
+  expect(await within(device).findByRole('status')).toHaveTextContent(`0.0.56 → 0.0.57 · ${label}`)
   expect(within(device).getByRole('img', { name: 'Update: updating…' })).toBeVisible()
   expect(within(device).getByRole('button', { name: 'Update' })).toBeDisabled()
 })
 
 it.each(['failed', 'rolled-back'] as const)('shows the %s error and retries the paired Worker', async state => {
   const requests: ComputerMaintenanceStartInput[] = []
-  computersFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
+  deviceFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
     computerReadHandler('maintenance', { computers: [
       { target: deviceTarget, status: status({ ...worker, targetVersion: '0.0.57', state,
         lastError: 'Artifact digest did not match.' }) },
@@ -122,7 +129,7 @@ it.each(['failed', 'rolled-back'] as const)('shows the %s error and retries the 
 it('can request an update while work is running and shows the server drain readback', async () => {
   let workerStatus: WorkerStatus = behind
   const requests: ComputerMaintenanceStartInput[] = []
-  const { activity } = computersFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
+  const { activity } = deviceFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
     http.post('*/api/management/computers/maintenance/read', async ({ request }) => {
       const { target } = await request.json() as { target: DeviceProvisioningTarget }
       return HttpResponse.json({ computers: [{ target,
@@ -144,28 +151,29 @@ it('can request an update while work is running and shows the server drain readb
   const update = within(device).getByRole('button', { name: 'Update' })
   expect(update).toBeEnabled()
   await userEvent.click(update)
-  expect(await within(device).findByText('Waiting for current work to finish')).toBeVisible()
-  expect(within(device).getByText('Target 0.0.57')).toBeVisible()
+  await waitFor(() => expect(within(device).getByRole('status'))
+    .toHaveTextContent('0.0.56 → 0.0.57 · Waiting for current work to finish'))
   expect(update).toBeDisabled()
   expect(requests).toHaveLength(1)
   expect(requests[0]).toMatchObject({ task: { kind: 'update-worker' }, targets: [deviceTarget] })
 })
 
 it('shows unavailable Worker observations and disables updates until status is available', async () => {
-  computersFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
+  deviceFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
     computerReadHandler('maintenance', { computers: [
       { target: deviceTarget, status: status() },
     ] }),
   ])
   const device = await screen.findByRole('article', { name: deviceName })
-  expect(await within(device).findByText('Status unavailable')).toBeVisible()
-  expect(within(device).queryByText(/Current /)).not.toBeInTheDocument()
+  expect(await within(device).findByText('Not reported')).toBeVisible()
+  expect(within(device).queryByTitle(/Current /)).not.toBeInTheDocument()
   expect(within(device).getByRole('button', { name: 'Update' })).toBeDisabled()
 })
 
 it('locks Worker updates after a failed status refresh and restores them after readback succeeds', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
   let fail = false
-  const { client } = computersFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
+  const { client } = deviceFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
     http.post('*/api/management/computers/maintenance/read', async ({ request }) => {
       const { target } = await request.json() as { target: DeviceProvisioningTarget }
       if (target.hostRef.kind === 'device' && fail) {
@@ -177,15 +185,17 @@ it('locks Worker updates after a failed status refresh and restores them after r
     }),
   ])
   const device = await screen.findByRole('article', { name: deviceName })
-  await within(device).findByText('Current 0.0.56')
+  await within(device).findByRole('status')
   const update = within(device).getByRole('button', { name: 'Update' })
   expect(update).toBeEnabled()
   fail = true
   await act(async () => { await client.invalidateQueries({ queryKey: ['computer-maintenance'] }) })
-  expect(await within(device).findByRole('alert')).toHaveTextContent('Showing last confirmed details')
+  await waitFor(() => expect(update).toBeDisabled())
+  await act(async () => { await vi.advanceTimersByTimeAsync(20_000) })
+  expect(await within(device).findByRole('alert')).toHaveTextContent('Status may be out of date.')
   expect(update).toBeDisabled()
   fail = false
-  await userEvent.click(within(device).getByRole('button', { name: 'Retry maintenance' }))
+  await userEvent.click(within(device).getByRole('button', { name: 'Retry' }))
   await waitFor(() => expect(update).toBeEnabled())
   expect(within(device).queryByRole('alert')).not.toBeInTheDocument()
 })
@@ -193,7 +203,7 @@ it('locks Worker updates after a failed status refresh and restores them after r
 it('locks new actions during a pending or uncertain Worker request and retries the original command', async () => {
   const requests: ComputerMaintenanceStartInput[] = []
   let finishRequest: ((response: Response) => void) | undefined
-  computersFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
+  deviceFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
     computerReadHandler('maintenance', { computers: [
       { target: deviceTarget, status: status(behind) },
     ] }),
@@ -223,7 +233,7 @@ it('locks new actions during a pending or uncertain Worker request and retries t
 it('polls automatic Worker updates without a maintenance task and reads the completed version', async () => {
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
   let workerStatus: WorkerStatus = { ...worker, targetVersion: '0.0.57', state: 'downloading' }
-  computersFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
+  deviceFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
     http.post('*/api/management/computers/maintenance/read', async ({ request }) => {
       const { target } = await request.json() as { target: DeviceProvisioningTarget }
       return HttpResponse.json({ computers: [{ target,
@@ -232,11 +242,10 @@ it('polls automatic Worker updates without a maintenance task and reads the comp
     }),
   ])
   const device = await screen.findByRole('article', { name: deviceName })
-  expect(await within(device).findByText('Downloading update')).toBeVisible()
+  expect(await within(device).findByRole('status')).toHaveTextContent('Downloading update')
   workerStatus = { ...worker, currentVersion: '0.0.57', targetVersion: '0.0.57', state: 'current' }
   await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
-  expect(await within(device).findByText('Current 0.0.57')).toBeVisible()
-  expect(within(device).getByRole('status')).toHaveTextContent('Up to date')
+  await waitFor(() => expect(within(device).getByRole('status')).toHaveTextContent('0.0.57 · Up to date'))
   expect(within(device).getByRole('img', { name: 'Update: up to date' })).toBeVisible()
 })
 
@@ -245,7 +254,7 @@ it('keeps polling and update actions locked while the restarting Worker reconnec
   let maintenanceStatus: MaintenanceStatus | null = status({
     ...worker, targetVersion: '0.0.57', state: 'restarting',
   })
-  computersFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
+  deviceFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
     http.post('*/api/management/computers/maintenance/read', async ({ request }) => {
       const { target } = await request.json() as { target: DeviceProvisioningTarget }
       return HttpResponse.json({ computers: [{ target,
@@ -254,17 +263,16 @@ it('keeps polling and update actions locked while the restarting Worker reconnec
     }),
   ])
   const device = await screen.findByRole('article', { name: deviceName })
-  expect(await within(device).findByText('Restarting Worker')).toBeVisible()
+  expect(await within(device).findByRole('status')).toHaveTextContent('Restarting Worker')
   const update = within(device).getByRole('button', { name: 'Update' })
   expect(update).toBeDisabled()
   maintenanceStatus = null
   await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
-  expect(await within(device).findByText('Status unavailable')).toBeVisible()
+  expect(await within(device).findByText('Not reported')).toBeVisible()
   expect(update).toBeDisabled()
   maintenanceStatus = status({ ...worker, currentVersion: '0.0.57', targetVersion: '0.0.57' })
   await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
-  expect(await within(device).findByText('Current 0.0.57')).toBeVisible()
-  expect(within(device).getByRole('status')).toHaveTextContent('Up to date')
+  await waitFor(() => expect(within(device).getByRole('status')).toHaveTextContent('0.0.57 · Up to date'))
   expect(within(device).getByRole('img', { name: 'Update: up to date' })).toBeVisible()
 })
 
@@ -273,14 +281,14 @@ it.each([
   ['WORKER_BUNDLE_UNPUBLISHED', 'current', 'Worker bundle unavailable'],
   ['WORKER_UPDATING', 'downloading', 'Downloading update'],
 ] as const)('shows %s readiness alongside updater progress', async (code, state, message) => {
-  computersFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
+  deviceFixture(<ComputerCards mainId={mainId} devices={[registration]} />, [
     computerReadHandler('maintenance', { computers: [{ target: deviceTarget, status: status({ ...worker, state }),
       workerReadiness: { ready: false, code, expected: null, running: null,
         updatePhase: state, publicationError: null },
     }] }),
   ])
   const device = await screen.findByRole('article', { name: deviceName })
-  await within(device).findByText('Current 0.0.56')
+  await within(device).findByRole('status')
   expect(within(device).getByRole('status')).toHaveTextContent(message)
   expect(within(device).getByRole('status')).not.toHaveTextContent('Up to date')
 })

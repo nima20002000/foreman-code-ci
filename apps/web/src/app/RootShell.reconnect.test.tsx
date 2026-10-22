@@ -74,7 +74,8 @@ it.each(['network', 503] as const)('preserves folder selection, pending creation
     expect(identityReads).toBeGreaterThan(1)
     accessFailure = false
     await user.click(screen.getByRole('button', { name: 'Try again' }))
-    await waitFor(() => expect(screen.queryByRole('alert', { name: 'Server connection' })).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('alert', { name: 'Server connection' })).not.toBeInTheDocument(),
+      { timeout: 5_000 })
     expect(screen.getByRole('textbox', { name: 'Unsaved settings' })).toBe(settings)
     expect(settings).toHaveValue('Uncommitted settings')
   }
@@ -90,4 +91,4 @@ it.each(['network', 503] as const)('preserves folder selection, pending creation
   await reconnect()
   expect(screen.getByRole('textbox', { name: 'Folder name' })).toBe(name)
   expect(name).toHaveValue('My unsaved folder name')
-})
+}, 30_000)

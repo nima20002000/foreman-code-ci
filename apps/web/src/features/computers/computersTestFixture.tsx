@@ -7,6 +7,7 @@ import type { BuildComputerStatus } from '@foreman-code/contracts/build-computer
 import type { ComputerActivityList } from '@foreman-code/contracts/computer-activity'
 import type { ComputerAccounts } from '@foreman-code/contracts/computer-accounts'
 import type { ComputerConnections, ComputerMaintenanceListSchema } from '@foreman-code/contracts/computer-maintenance'
+import { vi } from 'vitest'
 import type { z } from 'zod'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import { server } from '../../mocks/server'
@@ -70,4 +71,10 @@ export function computersFixture(children: React.ReactNode, handlers: HttpHandle
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: ['/'] }) })
   const rendered = render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>)
   return { client, rendered, statuses, activity }
+}
+
+/** A computer whose link dropped still shows as online for a minute. Tests that need it Offline move the clock past that. */
+export function pastReconnectGrace() {
+  if (!vi.isFakeTimers()) vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true })
+  vi.setSystemTime(Date.now() + 61_000)
 }

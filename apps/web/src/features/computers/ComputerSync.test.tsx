@@ -28,8 +28,8 @@ it('shows status and persists off and on with readback revisions', async () => {
     }),
   ])
   const dialog = await open()
-  const toggle = await dialog.findByRole('switch', { name: 'Sync Website' })
-  expect(dialog.getByText('/projects/shared/workspace-id')).toBeVisible()
+  const toggle = await dialog.findByRole('switch', { name: 'Website' })
+  expect(dialog.getByText('Connected · idle')).toHaveAttribute('title', '/projects/shared/workspace-id')
   await userEvent.click(toggle)
   await waitFor(() => expect(toggle).not.toBeChecked())
   await userEvent.click(toggle)
@@ -54,11 +54,11 @@ it('retries an uncertain save with the same command', async () => {
     }),
   ])
   const dialog = await open()
-  await userEvent.click(await dialog.findByRole('switch', { name: 'Sync Website' }))
+  await userEvent.click(await dialog.findByRole('switch', { name: 'Website' }))
   await waitFor(() => expect(writes).toHaveLength(1))
   release()
   await userEvent.click(await dialog.findByRole('button', { name: 'Retry sync save' }))
-  await waitFor(() => expect(dialog.getByRole('switch', { name: 'Sync Website' })).not.toBeChecked())
+  await waitFor(() => expect(dialog.getByRole('switch', { name: 'Website' })).not.toBeChecked())
   expect(writes[1]).toEqual(writes[0])
 })
 
@@ -69,11 +69,11 @@ it('recovers from an unavailable computer without treating old state as current'
     } }, { status: 409 })),
   ])
   const dialog = await open()
-  expect(await dialog.findByText('Computer is offline.')).toBeVisible()
+  expect(await dialog.findByText(/Sync status is unavailable/)).toBeVisible()
   expect(dialog.queryByRole('switch')).not.toBeInTheDocument()
   server.use(http.post('*/api/management/computers/sync/status', () => HttpResponse.json(status())))
-  await userEvent.click(dialog.getByRole('button', { name: 'Refresh sync status' }))
-  expect(await dialog.findByRole('switch', { name: 'Sync Website' })).toBeChecked()
+  await userEvent.click(dialog.getByRole('button', { name: 'Retry' }))
+  expect(await dialog.findByRole('switch', { name: 'Website' })).toBeChecked()
 })
 
 it('explains deferred participation, folder errors and conflicts', async () => {
@@ -85,7 +85,7 @@ it('explains deferred participation, folder errors and conflicts', async () => {
     http.post('*/api/management/computers/sync/status', () => HttpResponse.json(value)),
   ])
   const dialog = await open()
-  expect(await dialog.findByText(/Sync starts when an Agent/)).toBeVisible()
+  expect(await dialog.findByText(/Starts when an Agent/)).toBeVisible()
   expect(dialog.getByText('One file could not be synced.')).toBeVisible()
   expect(dialog.getByText('draft.sync-conflict-20261008.txt')).toBeVisible()
 })
@@ -97,14 +97,14 @@ it('rejects a mismatched computer response instead of showing another installati
     } })),
   ])
   const dialog = await open()
-  expect(await dialog.findByText('Sync status belongs to another computer.')).toBeVisible()
+  expect(await dialog.findByText(/Sync status is unavailable/)).toBeVisible()
   expect(dialog.queryByRole('switch')).not.toBeInTheDocument()
 })
 
 it('recovers a revision conflict by refreshing before making a different save', async () => {
   let value = status()
   const writes: ComputerSyncUpdateInput[] = []
-  computersFixture(<ComputerSyncPanel target={mainTarget} />, [
+  const fixture = computersFixture(<ComputerSyncPanel target={mainTarget} />, [
     http.post('*/api/management/computers/sync/status', () => HttpResponse.json(value)),
     http.post('*/api/management/computers/sync/update', async ({ request }) => {
       const input = await request.json() as ComputerSyncUpdateInput
@@ -118,13 +118,13 @@ it('recovers a revision conflict by refreshing before making a different save', 
     }),
   ])
   const dialog = await open()
-  await userEvent.click(await dialog.findByRole('switch', { name: 'Sync Website' }))
+  await userEvent.click(await dialog.findByRole('switch', { name: 'Website' }))
   expect(await dialog.findByText('Sync settings changed. Refresh before saving.')).toBeVisible()
   expect(dialog.queryByRole('button', { name: 'Retry sync save' })).not.toBeInTheDocument()
-  await userEvent.click(dialog.getByRole('button', { name: 'Refresh sync status' }))
-  await waitFor(() => expect(dialog.getByRole('switch', { name: 'Sync Website' })).toBeEnabled())
-  await userEvent.click(dialog.getByRole('switch', { name: 'Sync Website' }))
-  await waitFor(() => expect(dialog.getByRole('switch', { name: 'Sync Website' })).not.toBeChecked())
+  await act(async () => { await fixture.client.invalidateQueries({ queryKey: ['computer-sync'] }) })
+  await waitFor(() => expect(dialog.getByRole('switch', { name: 'Website' })).toBeEnabled())
+  await userEvent.click(dialog.getByRole('switch', { name: 'Website' }))
+  await waitFor(() => expect(dialog.getByRole('switch', { name: 'Website' })).not.toBeChecked())
   expect(writes.map(input => input.expectedRevision)).toEqual([1, 2])
   expect(writes[0]!.commandId).not.toBe(writes[1]!.commandId)
 })
@@ -138,7 +138,7 @@ it('unlocks a rejected sync change after a successful background read', async ()
     }, { status: 409 })),
   ])
   const dialog = await open()
-  const toggle = await dialog.findByRole('switch', { name: 'Sync Website' })
+  const toggle = await dialog.findByRole('switch', { name: 'Website' })
   await userEvent.click(toggle)
   await dialog.findByText('Sync settings changed.')
   expect(toggle).toBeDisabled()

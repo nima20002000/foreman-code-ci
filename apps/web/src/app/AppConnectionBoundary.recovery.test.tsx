@@ -12,9 +12,8 @@ import { AppConnectionBoundary } from './AppConnectionBoundary'
 import { ReleaseAutoReload } from './RuntimeInstanceBoundary'
 
 let client: QueryClient
-const unavailable = () => HttpResponse.json({ error: {
-  code: 'SESSION_CHECK_FAILED', message: 'Connection interrupted.',
-} }, { status: 503 })
+// A gateway status without an API error body is a restart; an answer with an API error code is a domain failure.
+const unavailable = () => new HttpResponse('Restarting', { status: 503 })
 
 afterEach(() => {
   cleanup()
@@ -42,7 +41,7 @@ function mount(unsaved = () => false) {
 function RetryingRead() {
   const read = useQuery({ queryKey: ['retrying-read'], queryFn: ({ signal }) =>
     apiClient.request('/api/retrying-read', z.object({ value: z.string() }), { signal }) })
-  return <p>{read.isPending ? 'Retry read pending' : read.error?.message ?? read.data?.value}</p>
+  return <p>{read.isPending ? 'Retry read pending' : read.error ? 'Read failed' : read.data?.value}</p>
 }
 
 it('refreshes healthy reads only after a failed read actually recovers, not while its retry is pending', async () => {
@@ -71,7 +70,7 @@ it('refreshes healthy reads only after a failed read actually recovers, not whil
   </AppConnectionBoundary></QueryClientProvider>)
   try {
     await screen.findByText('Healthy page')
-    await screen.findByText('Connection interrupted.')
+    await screen.findByText('Read failed')
     expect(healthyReads).toBe(1)
     let retry!: Promise<void>
     await act(async () => {
@@ -115,7 +114,8 @@ it('recovers a structured server outage and refreshes mounted reads without a re
   value = 'After restart'
   available = true
   expect(await screen.findByText('After restart', {}, { timeout: 4_000 })).toBeVisible()
-  await waitFor(() => expect(screen.queryByRole('alert', { name: 'Server connection' })).not.toBeInTheDocument())
+  await waitFor(() => expect(screen.queryByRole('alert', { name: 'Server connection' })).not.toBeInTheDocument(),
+    { timeout: 5_000 })
   expect(screen.getByRole('textbox', { name: 'Unsaved draft' })).toBe(draft)
   expect(draft).toHaveValue('Keep this draft')
 })
@@ -139,9 +139,10 @@ it('probes a paused connection and resumes queries when the API returns without 
   available = true
   server.use(http.get('/api/recovery-page', () => HttpResponse.json({ value })))
   expect(await screen.findByText('After disconnect', {}, { timeout: 4_000 })).toBeVisible()
-  await waitFor(() => expect(screen.queryByText('Updating — reconnecting…')).not.toBeInTheDocument())
+  await waitFor(() => expect(screen.queryByText('Updating — reconnecting…')).not.toBeInTheDocument(),
+    { timeout: 5_000 })
   expect(screen.getByRole('textbox', { name: 'Unsaved draft' })).toBe(draft)
-})
+}, 20_000)
 
 it('checks the deployed build after recovery and uses the existing guarded app reload', async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
@@ -193,6 +194,8 @@ it('detects a release within seconds after a long API outage while runtime reads
   released = true
   await act(async () => { await vi.advanceTimersByTimeAsync(3_000) })
   expect(screen.getByText('App updated. Your pending changes are kept until it can reload.')).toBeVisible()
+  // The reconnect notice stays up for 3 s after the connection returns, so it does not flicker.
+  await act(async () => { await vi.advanceTimersByTimeAsync(3_500) })
   expect(screen.queryByText('Updating — reconnecting…')).not.toBeInTheDocument()
   expect(screen.getByRole('textbox', { name: 'Unsaved draft' })).toBe(draft)
   expect(reload).not.toHaveBeenCalled()

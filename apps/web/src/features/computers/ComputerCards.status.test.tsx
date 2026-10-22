@@ -77,10 +77,16 @@ it.each([
   [{ codex: 'installed', claude: 'missing' }, 'Foreman MCP: Claude not set up', 'missing'],
   [{ codex: 'missing', claude: 'missing' }, 'Foreman MCP: not set up', 'missing'],
   [{ codex: 'mismatch', claude: 'installed' }, 'Foreman MCP: needs repair', 'repair'],
-  [{ codex: null, claude: null }, 'Foreman MCP: unknown', 'unknown'],
 ] as const)('shows the Foreman MCP state %j', async (mcp, name, state) => {
   const card = await renderMain(status(), { accounts: accounts(['codex', true, true], ['claude', true, true], ['github', true, true]), mcp })
   expect(await chip(card, name)).toHaveAttribute('data-state', state)
+})
+
+it('shows no Foreman MCP chip while its state is unknown', async () => {
+  const card = await renderMain(status(), { accounts: accounts(['codex', true, true], ['claude', true, true], ['github', true, true]),
+    mcp: { codex: null, claude: null } })
+  await chip(card, 'Update: up to date')
+  expect(within(card).queryByRole('img', { name: /Foreman MCP/ })).not.toBeInTheDocument()
 })
 
 it('ignores the MCP state of a harness that is not installed', async () => {
@@ -128,7 +134,8 @@ it('shows a failed update with plain words and the raw code in the tooltip', asy
   expect(failed).toHaveAttribute('data-state', 'failed')
   expect(within(card).getByRole('status')).toHaveTextContent('Harness update: Disk quota exceeded')
   expect(within(card).getByRole('status')).not.toHaveTextContent('Unknown system error')
-  await userEvent.hover(within(card).getByText('Harness update: Disk quota exceeded'))
+  expect(within(card).getByText('Harness update: Disk quota exceeded')).toHaveAttribute('title', raw)
+  await userEvent.hover(failed)
   expect(await screen.findByRole('tooltip')).toHaveTextContent(raw)
 })
 

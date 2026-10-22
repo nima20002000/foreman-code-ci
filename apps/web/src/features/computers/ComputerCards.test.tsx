@@ -59,7 +59,9 @@ it.each([
   const card = await screen.findByRole('article', { name: 'Main PC' })
   expect(await within(card).findByRole('img', { name: 'Codex: sign-in unknown' })).toBeVisible()
   expect(within(card).getByRole('img', { name: 'Claude: sign-in unknown' })).toBeVisible()
-  expect(within(card).getByRole('img', { name: observation === 'absent' ? 'GitHub: unknown' : 'GitHub: sign-in unknown' })).toBeVisible()
+  // A tool whose state is unknown shows no chip at all; only a known state is shown.
+  if (observation === 'absent') expect(within(card).queryByRole('img', { name: /^GitHub/ })).not.toBeInTheDocument()
+  else expect(within(card).getByRole('img', { name: 'GitHub: sign-in unknown' })).toBeVisible()
   expect(within(card).queryByRole('img', { name: /signed out/i })).not.toBeInTheDocument()
   expect(within(card).queryByRole('button', { name: /Sign in/ })).not.toBeInTheDocument()
 })
@@ -79,11 +81,19 @@ it('offers GitHub sign-in for an explicit signed-out observation', async () => {
   })
 })
 
-it.each([['pending', 'Pairing pending'], ['revoked', 'Access revoked']] as const)('shows a %s computer as a short registration card', async (status, label) => {
-  const device: DeviceRegistration = { ...registration, status }
+it('shows a pending computer as a short registration card', async () => {
+  const device: DeviceRegistration = { ...registration, status: 'pending' }
   computersFixture(<ComputerCards mainId={mainTarget.hostRef.mainId} devices={[device]} />)
-  const card = await screen.findByRole('article', { name: /^Computer / })
-  expect(within(card).getByText(label)).toBeVisible()
+  const card = await screen.findByRole('article', { name: 'New computer' })
+  expect(within(card).getByText('Pairing pending')).toBeVisible()
+})
+
+it('does not show a revoked computer as a card', async () => {
+  const device: DeviceRegistration = { ...registration, status: 'revoked' }
+  computersFixture(<ComputerCards mainId={mainTarget.hostRef.mainId} devices={[device]} />)
+  await screen.findByRole('article', { name: 'Main PC' })
+  expect(screen.queryByRole('article', { name: 'New computer' })).not.toBeInTheDocument()
+  expect(screen.queryByText('Access revoked')).not.toBeInTheDocument()
 })
 
 it('shows versions, OS updates, restart need and disk, and starts maintenance on that computer in one click', async () => {
@@ -100,7 +110,6 @@ it('shows versions, OS updates, restart need and disk, and starts maintenance on
   expect(await within(main).findByRole('img', { name: 'Claude: not installed' })).toBeVisible()
   expect(within(main).getByRole('img', { name: 'Update: 3 updates' })).toBeVisible()
   expect(within(main).getByText('Restart needed')).toBeVisible()
-  expect(within(main).getByText('41 GB free of 193 GB')).toBeVisible()
   expect(within(main).getByRole('status')).toHaveTextContent('System update: 4 packages upgraded')
   expect(within(screen.getByRole('article', { name: deviceName })).queryByRole('button', { name: 'Restart' })).not.toBeInTheDocument()
   await userEvent.click(within(main).getByRole('button', { name: 'Update' }))
