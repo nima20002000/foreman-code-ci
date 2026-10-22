@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import type { BrowserOperatorToolDefinition } from '../../../modules/browser-runtime/operatorDefinition.js'
 import { hasAction } from '../../../modules/access/policy.js'
 import { bindBrowserOperation, browserSessionOperationNames, type BrowserCanonicalCodecs, type BrowserOperationHandlers, type BrowserOperationName } from '../../../modules/browser-runtime/operations.js'
@@ -23,11 +24,16 @@ const descriptions: Record<typeof browserSessionOperationNames[number], string> 
   browser_input: 'Submit bounded ordered page gestures for the acknowledged controlling viewer and exact epoch/generation. Stale and duplicate input never replays.',
 }
 
+/** A tool result is sent as an object (`{ value }` for lists and empty results), so only object-shaped outputs can be declared. */
+function declarableOutput(schema: unknown): boolean {
+  return schema instanceof z.ZodObject || schema instanceof z.ZodUnion && schema.options.every(declarableOutput)
+}
+
 export function createBrowserSessionTools(handlers: BrowserOperationHandlers, codecs: BrowserCanonicalCodecs) {
   return browserSessionOperationNames.map((name): BrowserOperatorToolDefinition => {
     const read = readNames.has(name)
     return { name, description: descriptions[name], inputSchema: codecs[name].inputSchema,
-      ...(codecs[name].outputSchema ? { outputSchema: codecs[name].outputSchema } : {}),
+      ...(declarableOutput(codecs[name].outputSchema) ? { outputSchema: codecs[name].outputSchema! } : {}),
       requires: [[read ? 'workflows:read' : 'workflows:update', 'resource']],
       discoverable: context => hasAction(context.principal, read ? 'workflows:read' : 'workflows:update')
         || hasAction(context.principal, read ? 'settings:read' : 'settings:update'),
