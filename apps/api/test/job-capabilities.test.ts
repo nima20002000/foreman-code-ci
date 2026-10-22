@@ -207,7 +207,7 @@ describe('Job capability summary matches mounted Operator tools',()=>{
     await server.connect(serverTransport)
     const client=new Client({name:`job-discovery-${role}`,version:'1'})
     connections.push({client,close:()=>server.close()});await client.connect(clientTransport)
-    expect(jobNames(await operatorCatalogNames(client))).toEqual([])
+    expect(jobNames((await client.listTools()).tools.map(tool=>tool.name))).toEqual([])
     const denied=await roleDeniedToolCall({role,principal:worker,operator:f.context.services},call('job_start'))
     expect(denied?.result.isError).toBe(true);expect(JSON.stringify(denied)).toContain('ROLE_NOT_ALLOWED')
     expect(f.choices).not.toHaveBeenCalled()
