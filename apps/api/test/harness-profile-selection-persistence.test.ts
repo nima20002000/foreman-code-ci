@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { describe, expect, it, vi } from 'vitest'
 import { AgentConfigurationVersionSchema, AgentSchema, DEFAULT_AGENT_DEFAULTS, DEFAULT_HARNESS_DEFAULTS, withAdvancedDefaults } from '@foreman-code/contracts'
+import type { ClaudeHarnessConfiguration } from '@foreman-code/contracts/claude'
 import { AgentCreateInputSchema, AgentUpdateInputSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { HostHarnessOverride } from '@foreman-code/contracts/harness-registry'
 import { OperatorAgentMutationService } from '../src/modules/workspaces/operatorAgents.js'
@@ -233,7 +234,9 @@ it('saves a changed role while retaining an unchanged default on a revoked compu
 
 describe('local Claude profile reuse', () => {
   it('reuses a qualified exact profile while a re-check of it is running', async () => {
-    const claude = withAdvancedDefaults(DEFAULT_HARNESS_DEFAULTS.claude)
+    const claude: ClaudeHarnessConfiguration = { harness: 'claude', model: 'claude-test', authMode: 'subscription',
+      configDirectory: '/recorded/claude', permissionMode: 'default', sandbox: 'read-only', tools: [], permissionRules: [],
+      instructions: '', mcpServers: {} }
     const value: HostHarnessOverride = { ...selection, revision: 3, presetId: 'preset', enabled: true, driverId: 'claude', configuration: claude,
       configurationFingerprint: commandInputHash(claude), qualification: 'unqualified' }
     const repository = { list: vi.fn(async () => [value]), latest: vi.fn(async () => value), lockRevision: vi.fn(async () => {}) } as unknown as HarnessInstanceSettingsRepository
@@ -241,6 +244,6 @@ describe('local Claude profile reuse', () => {
     const checks = { pending: () => true, failure: async () => undefined } as never
     const service = new HostHarnessOverrideService(repository, {} as PostgresCommandCoordinator, { authorize: async () => {} }, evidence, checks)
     const client = { query: vi.fn(async () => ({ rows: [{ id: mainId }] })) } as unknown as pg.PoolClient
-    await expect(service.selectionForConfiguration(principal, DEFAULT_HARNESS_DEFAULTS.claude, client)).resolves.toEqual(selection)
+    await expect(service.selectionForConfiguration(principal, claude, client)).resolves.toEqual(selection)
   })
 })

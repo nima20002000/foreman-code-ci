@@ -136,6 +136,18 @@ it('denies obsolete conversation browser input and retires it while its replacem
     .toMatchObject({ session: { id: first.id, state: 'closed', selectedTabId: null }, tabs: [] })
 })
 
+it('lists only open browser sessions when asked for live ones', async () => {
+  const f = await fixture(), client = await f.connect()
+  const subject = browserSubjects().find(value => value.kind === 'conversation')!
+  const sibling = { ...subject, agent: { ...subject.agent, workflowNodeId: 'sibling-node' } }
+  const open = ready(await f.sessions.open(f.owner, f.bindSubject(subject))).session
+  const finished = ready(await f.sessions.open(f.owner, f.bindSubject(sibling))).session
+  await value(f, client, 'browser_session_close', { sessionId: finished.id, commandId: 'close-sibling' })
+  const ids = (listed: unknown) => (listed as { sessions: { id: string }[] }).sessions.map(session => session.id)
+  expect(ids(await value(f, client, 'browser_sessions_list', {}))).toEqual(expect.arrayContaining([open.id, finished.id]))
+  expect(ids(await value(f, client, 'browser_sessions_list', { live: true }))).toEqual([open.id])
+})
+
 it('uses one authenticated setup lease for tabs, views, control, native fallback, input and replay-safe close', async () => {
   const f = await fixture(), client = await f.connect()
   const opened = await f.http('browser_session_open', { intent: 'setup', profileId: 'profile', computerId: 'main', commandId: 'setup' }, 'POST', '/api/browser/sessions/open')

@@ -140,6 +140,7 @@ export function productionClaudeFixture(surface: 'workflow' | 'operator' | 'agen
     }
     if (sql.includes('m.id as message_id')) return { rows: [{ ...row, sender_id: 'sender',
       message_id: 'user-message', native_submission: row.payload.nativeSubmission }] }
+    if (sql.includes("'approval'->>'handler'")) return { rows: [{ handler: null }] }
     if (sql.includes('select kind,id,owner_principal_id,operator_id')) return { rows: [{ ...row, id: surface, agent_id: 'agent' }] }
     if (sql.includes('select principal_id,result from management_command_receipts')
       || sql.includes('select result from management_command_receipts')) return { rows: receipts }

@@ -15,12 +15,17 @@ function fixture() {
   let clock = 0
   let active = true
   const open = new Map<string, BrowserSession>()
+  // Like the real lifecycle, preparing the same command again returns the session it already opened.
+  const prepared = new Map<string, BrowserSession>()
   const lifecycle = {
     prepare: vi.fn<BrowserLifecyclePort['prepare']>(async input => {
-      const id = `session-${open.size + 1}`
+      const again = prepared.get(input.commandId)
+      if (again && open.has(again.id)) return { kind: 'ready', session: again, control: {} } as Awaited<ReturnType<BrowserLifecyclePort['prepare']>>
+      const id = `session-${prepared.size + 1}`
       const session = { id, subject: input.subject, profileId: input.browser.profileId!, computerId: input.computerId,
         browserGeneration: 1, state: 'ready', selectedTabId: null } as BrowserSession
       open.set(id, session)
+      prepared.set(input.commandId, session)
       return { kind: 'ready', session, control: {} } as Awaited<ReturnType<BrowserLifecyclePort['prepare']>>
     }),
     release: vi.fn<BrowserLifecyclePort['release']>(async input => {
