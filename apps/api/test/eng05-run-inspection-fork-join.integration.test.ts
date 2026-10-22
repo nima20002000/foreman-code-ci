@@ -1,3 +1,4 @@
+import { operatorCatalogNames, operatorCatalog } from './support/operatorCatalog.js'
 import { describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { OperatorToolSchemaResultSchema } from '@foreman-code/contracts/operator-mcp'
@@ -23,7 +24,7 @@ describe.skipIf(!postgresEnabled)('PostgreSQL authenticated Run inspection: fork
     try {
       await f.engine.start(f.f.run.id); await terminal(f)
       const r = await reader(f), args = requestScope(f)
-      const discovery = (await r.client.listTools()).tools
+      const discovery = (await operatorCatalog(r.client))
       await checkInParallel(Object.values(RUN_INSPECTION_TOOLS), async name => {
         const tool = discovery.find((item) => item.name === name)
         expect(tool?.name).toBe(name)
@@ -92,7 +93,7 @@ describe.skipIf(!postgresEnabled)('PostgreSQL authenticated Run inspection: fork
       await denied(f, f.client, f.writer.token, RUN_INSPECTION_TOOLS.execution, { ...detailArgs, executionId: 'wrong-execution' }, 404, 'RUN_EXECUTION_NOT_FOUND')
 
       const d = await reader(f, [{ actions: ['capabilities:read'], scope: {} }])
-      const deniedDiscovery = (await d.client.listTools()).tools.map(tool => tool.name)
+      const deniedDiscovery = await operatorCatalogNames(d.client)
       await checkInParallel(Object.values(RUN_INSPECTION_TOOLS), async name => {
         expect(deniedDiscovery).not.toContain(name)
         await denied(f, d.client, d.token, name,

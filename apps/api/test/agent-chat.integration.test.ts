@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { readUntil } from './helpers/observableCondition.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import type { ClaudeHarnessConfiguration } from '@foreman-code/contracts/claude'
@@ -1443,10 +1444,10 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
         return client
       }
       const mcp = await connect(writerToken)
-      const tools = (await mcp.listTools()).tools.map((tool) => tool.name)
+      const tools = await operatorCatalogNames(mcp)
       expect(tools).toEqual(expect.arrayContaining(['agent_chat_read', 'agent_chat_send', 'agent_chat_interrupt', 'agent_chat_cancel_queued', 'agent_chat_respond']))
       const reader = await connect(readOnlyToken)
-      expect((await reader.listTools()).tools.map((tool) => tool.name)).not.toContain('agent_chat_send')
+      expect(await operatorCatalogNames(reader)).not.toContain('agent_chat_send')
       await settled(service, () => service.read(writer, fixture.scope.workspaceId, query(codexNode)))
       const read = await mcp.callTool({ name: 'agent_chat_read', arguments: { workspaceId: fixture.scope.workspaceId, query: query(codexNode) } })
       const state = AgentChatStateSchema.parse(decodeMcpToolResult(read))
@@ -1539,7 +1540,7 @@ describe('F4 authenticated transport / persistence regressions', { timeout: 60_0
           const replay = await f.app.inject({ method: 'POST', url: `${path}/messages`, headers, payload: input })
           expect(replay.statusCode, replay.body).toBe(matching ? 200 : 403)
           const mcp = await f.connect(credential.token)
-          expect((await mcp.listTools()).tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(['agent_chat_read', 'agent_chat_send',
+          expect(await operatorCatalogNames(mcp)).toEqual(expect.arrayContaining(['agent_chat_read', 'agent_chat_send',
             'agent_chat_interrupt', 'agent_chat_cancel_queued', 'agent_chat_respond']))
           const read = await mcp.callTool({ name: 'agent_chat_read', arguments: { workspaceId: scopedWorkspaceId, query: context } })
           expect(read.isError === true).toBe(!matching)
@@ -1595,7 +1596,7 @@ describe('F4 authenticated transport / persistence regressions', { timeout: 60_0
           { tool: 'agent_chat_respond', suffix: `/conversations/${id}/responses`, body: { requestId: randomUUID(), nativeRequestId: 'approval', optionId: 'accept' } },
         ]
         const mcp = await f.connect(credential.token)
-        const available = (await mcp.listTools()).tools.map((tool) => tool.name)
+        const available = await operatorCatalogNames(mcp)
         for (const command of commands) {
           const response = await f.app.inject({ method: 'POST', url: `${path}${command.suffix}`, headers, payload: command.body })
           expect(response.statusCode, response.body).toBe(403)

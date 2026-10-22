@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { createFixtureSchema, dropFixtureSchema } from './helpers/testResources.js'
 import { generateKeyPairSync, randomUUID, sign } from 'node:crypto'
@@ -98,7 +99,7 @@ describe.skipIf(!postgresEnabled)('trusted connections through the production Ma
         expect(f.app.hasRoute({ method, url })).toBe(true)
       }
       const client = await f.call(f.owner.token)
-      const tools = (await client.listTools()).tools.map(tool => tool.name)
+      const tools = await operatorCatalogNames(client)
       for (const suffix of ['host_discover', 'read', 'inspect', 'check', 'configure']) expect(tools).toContain(`device_connection_${suffix}`)
       expect(decodeMcpToolResult((await client.callTool({ name: 'device_connection_read', arguments: { deviceId } })))).toEqual(read.json())
       const outsider = await f.access.issue({ name: 'Denied scoped caller', audience: 'operator',

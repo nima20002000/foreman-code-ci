@@ -311,7 +311,7 @@ describe.skipIf(!connectionString || process.platform === 'win32')('AF-02 produc
             await client.connect(new StdioClientTransport({ command: process.execPath, args: [appLauncherPath()],
               env: { ...process.env, [OPERATOR_MCP_ENVIRONMENT_VARIABLE]: processToken } }))
           }
-          const tools = await client.listTools()
+          const tools = { tools: await operatorCatalog(client) }
           expect(tools.tools.some(tool => tool.name === 'operator_handoff_history_get')).toBe(true)
           await expectMcpAccessDenied(client.callTool({ name: 'workspace_create', arguments: { name: 'Denied warm write' } }))
           expect((await access.authenticate(delegateTokens.at(-1)!)).grants)

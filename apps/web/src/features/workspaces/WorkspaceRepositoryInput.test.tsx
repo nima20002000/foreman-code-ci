@@ -40,13 +40,13 @@ describe('repository input', () => {
   ])('rejects the complete input %s without sending a truncated repository', async (value) => {
     const writes = mount()
     const user = userEvent.setup()
-    await user.type(screen.getByRole('textbox', { name: 'Repository' }), value)
+    await user.type(screen.getByRole('textbox', { name: 'GitHub repository' }), value)
     const save = screen.getByRole('button', { name: 'Add project' })
     expect(save).toBeDisabled()
     expect(screen.getByText('Use owner/name or a GitHub repository URL without extra path segments.')).toBeVisible()
     await user.click(save)
     expect(writes).toEqual([])
-    expect(screen.getByRole('textbox', { name: 'Repository' })).toHaveValue(value)
+    expect(screen.getByRole('textbox', { name: 'GitHub repository' })).toHaveValue(value)
   })
 
   it.each([
@@ -60,7 +60,7 @@ describe('repository input', () => {
   ])('saves the complete repository reference %s', async (value) => {
     const writes = mount()
     const user = userEvent.setup()
-    await user.type(screen.getByRole('textbox', { name: 'Repository' }), value)
+    await user.type(screen.getByRole('textbox', { name: 'GitHub repository' }), value)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Add project' })).toBeEnabled())
     await user.click(screen.getByRole('button', { name: 'Add project' }))
     await waitFor(() => expect(writes).toHaveLength(1))
@@ -74,7 +74,7 @@ describe('repository input', () => {
 it.each(['release..stable', 'release/', 'release.lock', 'feature:broken', ''])('shows the invalid base branch %j on its own field and saves after correction', async value => {
   const writes = mount()
   const user = userEvent.setup()
-  const repository = screen.getByRole('textbox', { name: 'Repository' })
+  const repository = screen.getByRole('textbox', { name: 'GitHub repository' })
   const branch = screen.getByRole('textbox', { name: 'Base branch' })
   await user.type(repository, 'octo-owner/website')
   await user.clear(branch)

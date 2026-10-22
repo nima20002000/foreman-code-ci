@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { randomUUID } from 'node:crypto'
 import { Client } from '@modelcontextprotocol/client'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
@@ -50,14 +51,7 @@ beforeAll(async () => {
 afterAll(async () => { await fixture?.close() })
 
 async function listedNames(client: Client) {
-  const names: string[] = []
-  let cursor: string | undefined
-  do {
-    const page = await client.listTools(cursor ? { cursor } : {})
-    names.push(...page.tools.map(tool => tool.name))
-    cursor = page.nextCursor
-  } while (cursor)
-  return names.sort()
+  return operatorCatalogNames(client)
 }
 
 it.each([

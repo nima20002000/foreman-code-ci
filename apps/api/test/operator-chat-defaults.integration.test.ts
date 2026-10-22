@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
@@ -82,7 +83,7 @@ describe.skipIf(!connectionString)('Operator chat persistence and native binding
       const denied = await access.issue({ name: 'No conversation read grant', audience: 'operator',
         grants: [{ actions: ['settings:read'], scope: {} }], expiresAt: new Date(Date.now() + 60_000) })
       const deniedClient = await connect(denied.token)
-      expect((await deniedClient.listTools()).tools.map(tool => tool.name)).not.toContain('operator_chat_get')
+      expect(await operatorCatalogNames(deniedClient)).not.toContain('operator_chat_get')
       await expectMcpAccessDenied(deniedClient.callTool({ name: 'operator_chat_get', arguments: { conversationId: source.id } }))
       await expect(chat.get(source.id, denied.principal)).rejects.toMatchObject({ code: 'ACCESS_DENIED' })
       expect(await facts()).toEqual(before)
@@ -235,7 +236,7 @@ describe.skipIf(!connectionString)('Operator chat persistence and native binding
         return client
       }
       const client = await connect(['settings:read', 'settings:update', 'harnesses:read'])
-      expect((await client.listTools()).tools.map((tool) => tool.name)).toContain('operator_mcp_setup_get')
+      expect(await operatorCatalogNames(client)).toContain('operator_mcp_setup_get')
       const read = async () => ManagedAgentDefaultsSchema.parse(decodeMcpToolResult((await client.callTool({ name: 'agent_defaults_get', arguments: {} }))))
       const before = await read()
       expect(before.value.operator.harness).toMatchObject({ harness: 'codex', sandbox: 'danger-full-access' })
@@ -253,7 +254,7 @@ describe.skipIf(!connectionString)('Operator chat persistence and native binding
       expect((await client.callTool({ name: 'agent_defaults_update', arguments: { ...input, commandId: randomUUID() } })).isError).toBe(true)
       expect(decodeMcpToolResult((await client.callTool({ name: 'operator_mcp_setup_get', arguments: {} })))).toMatchObject({ status: 'configured', harness: 'codex' })
       const denied = await connect(['settings:read'])
-      expect((await denied.listTools()).tools.map((tool) => tool.name)).not.toContain('operator_mcp_setup_get')
+      expect(await operatorCatalogNames(denied)).not.toContain('operator_mcp_setup_get')
       await expectMcpAccessDenied(denied.callTool({ name: 'operator_mcp_setup_get', arguments: {} }))
       await expectMcpAccessDenied(denied.callTool({ name: 'agent_defaults_update', arguments: { ...input, commandId: randomUUID() } }))
       expect((await read()).revision).toBe(accepted.value.revision)

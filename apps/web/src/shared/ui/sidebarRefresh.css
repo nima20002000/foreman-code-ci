@@ -18,8 +18,8 @@
 .workspace-shell .shell-navigation .nav-submenu::before { left: 7px; background: color-mix(in srgb, var(--color-border) 70%, transparent); }
 
 /* Add actions: text rows, not outlined or dashed buttons. */
-.workspace-shell .shell-navigation .workspace-navigation-add,
-.workspace-shell .shell-navigation .workflow-navigation-add {
+.workspace-shell:not(.workspace-shell-navigation-collapsed) .shell-navigation .workspace-navigation-add,
+.workspace-shell:not(.workspace-shell-navigation-collapsed) .shell-navigation .workflow-navigation-add {
   display: flex; width: 100%; min-height: 28px; justify-content: flex-start; gap: 8px; padding: 4px 8px;
   border: 0; border-radius: 6px; background: transparent; box-shadow: none;
   color: var(--text-faint); font-size: 12.5px; font-weight: 500;

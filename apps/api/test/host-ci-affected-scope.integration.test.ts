@@ -1,3 +1,4 @@
+import { operatorCatalog } from './support/operatorCatalog.js'
 import type { ManagementAction } from '@foreman-code/contracts/management'
 import { z } from 'zod'
 import { CiGetOutputSchema, CiRunOutputSchema, integrationPartition } from '@foreman-code/contracts'
@@ -116,7 +117,7 @@ it('persists affected files through authenticated MCP, bounds partition count an
   const files = ['apps/api/test/a.integration.test.ts', 'apps/api/test/c.integration.test.ts']
   const input = { suite: 'integration', scope: 'affected', files, commit: 'a'.repeat(40), commandId: 'affected', partitions: 32 }
   try {
-    const listed = await f.operator.listTools()
+    const listed = { tools: await operatorCatalog(f.operator) }
     const tool = listed.tools.find(value => value.name === 'ci_run')!
     expect(tool.inputSchema.properties).toHaveProperty('scope')
     expect(tool.inputSchema.properties).toHaveProperty('files')
@@ -190,7 +191,7 @@ it('persists an explicit base through authenticated Operator MCP, enforces grant
   try {
     const baseCommit = 'b'.repeat(40)
     const input = { suite: 'integration', scope: 'affected', baseCommit, commandId: 'release-changes' }
-    const tool = (await f.operator.listTools()).tools.find(item => item.name === 'ci_run')!
+    const tool = (await operatorCatalog(f.operator)).find(item => item.name === 'ci_run')!
     expect(tool.inputSchema.properties).toHaveProperty('baseCommit')
     const reader = await f.connect(CI_GET_ACTIONS)
     const foreign = await f.connect([...CI_RUN_ACTIONS, ...CI_GET_ACTIONS], { workspaceIds: ['workspace-other'] })
@@ -259,7 +260,7 @@ it('defaults authenticated Agent MCP to affected scope, reads explicit full scop
   const f = await fixture({ agent: true })
   try {
     const agent = f.agent!
-    const tool = (await agent.listTools()).tools.find(item => item.name === 'ci_run')!
+    const tool = (await operatorCatalog(agent)).find(item => item.name === 'ci_run')!
     expect(tool.inputSchema.properties).toHaveProperty('scope')
     expect(tool.inputSchema.properties).toHaveProperty('files')
     for (const baseCommit of [undefined, 'b'.repeat(40)]) {

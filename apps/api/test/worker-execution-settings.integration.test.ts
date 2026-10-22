@@ -1,3 +1,4 @@
+import { operatorCatalogNames, operatorCatalog } from './support/operatorCatalog.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
@@ -89,7 +90,7 @@ it.each(startupCases)(
     expect((await app.inject({ method: 'GET', url: retiredHttpPath, headers: { authorization: `Bearer ${reader.token}` } })).statusCode).toBe(404)
 
     const client = await connect(reader.token)
-    const tools = (await client.listTools()).tools
+    const tools = (await operatorCatalog(client))
     const tool = tools.find(value => value.name === 'worker_execution_settings_get')
     expect(tool?.annotations?.readOnlyHint).toBe(true)
     const readback = await client.callTool({ name: 'worker_execution_settings_get', arguments: {} })
@@ -163,7 +164,7 @@ it.each(['0', '1'])(
     for (const grants of deniedGrants) {
       const denied = await issue('Denied settings reader', grants)
       const client = await connect(denied.token)
-      const tools = (await client.listTools()).tools.map(tool => tool.name)
+      const tools = await operatorCatalogNames(client)
       expect(tools).not.toContain('worker_execution_settings_get')
       const refused = await client.callTool({ name: 'worker_execution_settings_get', arguments: {} })
       expect(refused.isError).toBe(true)
@@ -190,7 +191,7 @@ it('persists remote settings through authenticated MCP with denied writes, revis
   const workspaceCaller = await f.connect(scoped.token)
   const input = { value: { ...DEFAULT_REMOTE_EXECUTION_SETTINGS, enabled: true }, expectedRevision: 0, commandId: randomUUID() }
   const update = (arguments_: typeof input) => client.callTool({ name: 'remote_execution_settings_update', arguments: arguments_ })
-  expect((await client.listTools()).tools.map(tool => tool.name)).toContain('remote_execution_settings_update')
+  expect(await operatorCatalogNames(client)).toContain('remote_execution_settings_update')
   const capabilities = decodeMcpToolResult(await client.callTool({ name: 'operator_get_capabilities', arguments: { detail: 'full' } }))
   expect(capabilities).toMatchObject({
     tools: expect.arrayContaining(['remote_execution_settings_get', 'remote_execution_settings_update']),
@@ -199,7 +200,7 @@ it('persists remote settings through authenticated MCP with denied writes, revis
       { name: 'remote_execution_settings_update', actions: ['settings:update'], detail: expect.any(String) },
     ]),
   })
-  expect((await denied.listTools()).tools.map(tool => tool.name)).not.toContain('remote_execution_settings_update')
+  expect(await operatorCatalogNames(denied)).not.toContain('remote_execution_settings_update')
   for (const caller of [denied, workspaceCaller]) {
     const refusal = await caller.callTool({ name: 'remote_execution_settings_update', arguments: input })
     expect(refusal.isError).toBe(true)

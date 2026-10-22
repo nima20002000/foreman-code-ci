@@ -1,3 +1,4 @@
+import { operatorCatalog } from './support/operatorCatalog.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RUN_INSPECTION_TOOLS, RunRecordDetailSchema } from '@foreman-code/contracts/wave25'
 import { postgresEnabled } from './helpers/wave25Agent3.js'
@@ -43,7 +44,7 @@ describe.skipIf(!postgresEnabled)('ENG06-D recovery readback over real HTTP and 
       expect(record).toEqual(redacted); expect(record.run).not.toHaveProperty('authorizationPrincipalId')
       const detail = await readParity(f, RUN_INSPECTION_TOOLS.execution, { ...scope(f), executionId }, client, allowed.token)
       expect(detail).toEqual(expected.details[0])
-      const tools = (await client.listTools()).tools
+      const tools = (await operatorCatalog(client))
       expect(tools.find((tool) => tool.name === RUN_INSPECTION_TOOLS.record)?.annotations?.readOnlyHint).toBe(true)
       expect(tools.map((tool) => tool.name)).not.toContain('run_start')
       expect(tools.map((tool) => tool.name)).not.toContain('run_stop')

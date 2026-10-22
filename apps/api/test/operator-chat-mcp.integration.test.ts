@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { OperatorConversationStateSchema } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
@@ -112,7 +113,7 @@ describe.skipIf(!postgresEnabled)('Authenticated Operator conversation tools', (
     })
     await repository.finish(conversation.id, request.requestId, { outcome: 'succeeded' })
     const before = await repository.get(conversation.id)
-    expect((await writer.client.listTools()).tools.map((tool) => tool.name)).not.toContain('operator_chat_send')
+    expect(await operatorCatalogNames(writer.client)).not.toContain('operator_chat_send')
     const capabilities = await writer.client.callTool({ name: 'operator_get_capabilities', arguments: { detail: 'full' } })
     expect(decodeMcpToolResult(capabilities)).toMatchObject({ tools: expect.not.arrayContaining(['operator_chat_send']) })
 
@@ -310,7 +311,7 @@ describe.skipIf(!postgresEnabled)('Authenticated Operator conversation tools', (
     const ungranted = await issue(['operator_chat:write'])
     const scoped = await issue(['operator_chat:read'], { workspaceIds: [randomUUID()] })
     for (const caller of [ungranted, scoped]) {
-      const names = (await caller.client.listTools()).tools.map((tool) => tool.name)
+      const names = await operatorCatalogNames(caller.client)
       for (const name of ['operator_chat_history_get', 'operator_chat_activity_get']) {
         expect(names).not.toContain(name)
         await denied(caller.client, name, { conversationId: conversation.id })
@@ -466,7 +467,7 @@ describe.skipIf(!postgresEnabled)('Authenticated Operator conversation tools', (
     const restoration = { conversationId: conversation.id, commandId: randomUUID() }
     const call = (name: string, input: typeof deletion) => owner.client.callTool({ name, arguments: input })
     const names = ['operator_chat_delete', 'operator_chat_restore']
-    expect((await owner.client.listTools()).tools.map(tool => tool.name)).toEqual(expect.arrayContaining(names))
+    expect(await operatorCatalogNames(owner.client)).toEqual(expect.arrayContaining(names))
     const capabilities = await owner.client.callTool({ name: 'operator_get_capabilities', arguments: { detail: 'full' } })
     expect(decodeMcpToolResult(capabilities)).toMatchObject({ tools: expect.arrayContaining(names) })
 
@@ -622,7 +623,7 @@ describe.skipIf(!postgresEnabled)('Authenticated Operator conversation tools', (
     const ungranted = await issue(['operator_chat:read'])
     const scoped = await issue(['harnesses:read'], { workspaceIds: [randomUUID()] })
     for (const caller of [ungranted, scoped]) {
-      expect((await caller.client.listTools()).tools.map((tool) => tool.name)).not.toContain('operator_mcp_setup_get')
+      expect(await operatorCatalogNames(caller.client)).not.toContain('operator_mcp_setup_get')
       await denied(caller.client, 'operator_mcp_setup_get', { conversationId: conversation.id })
     }
     const readback = await owner.client.callTool({ name: 'operator_chat_get', arguments: { conversationId: conversation.id } })

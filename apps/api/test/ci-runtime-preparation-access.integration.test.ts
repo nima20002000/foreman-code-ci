@@ -57,15 +57,17 @@ describe.skipIf(!postgresEnabled)('persisted runtime preparation access over aut
   it('discovers scoped runtime refresh without advertising write access to a reader', async () => {
     const f = await setup()
     const { fixture } = f
-    const writerTools = (await f.listTools()).tools
-    const readerTools = (await f.listTools(f.reader.token)).tools
-    for (const tools of [writerTools, readerTools]) {
-      const profiles = tools.find(tool => tool.name === 'job_runtime_profile_list')!
+    const describeTool = async (name: string, token: string) => {
+      const result = await f.call('tool_schema', { name }, token)
+      return result.isError ? undefined : decodeMcpToolResult(result) as { description: string }
+    }
+    for (const token of [f.writer.token, f.reader.token]) {
+      const profiles = (await describeTool('job_runtime_profile_list', token))!
       expect(profiles.description).toContain('Authorized writers can use build_computer_prepare')
       expect(profiles.description).toContain('arbitrary installer paths are unavailable')
     }
-    expect(writerTools.some(tool => tool.name === 'build_computer_prepare')).toBe(true)
-    expect(readerTools.some(tool => tool.name === 'build_computer_prepare')).toBe(false)
+    expect(await describeTool('build_computer_prepare', f.writer.token)).toBeDefined()
+    expect(await describeTool('build_computer_prepare', f.reader.token)).toBeUndefined()
     expect((await f.call('build_computer_prepare', { workspaceId: fixture.workspaceId,
       profileId: 'p-unit', commit, commandId: randomUUID() }, f.reader.token)).isError).toBe(true)
     expect(decodeMcpToolResult((await f.call('build_computer_prepare_get', {

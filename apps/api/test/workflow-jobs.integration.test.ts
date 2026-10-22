@@ -137,7 +137,7 @@ describe.skipIf(!postgresEnabled)('workflow job history HTTP and Operator MCP', 
     expect(first.items.some(item => item.execution.workflow)).toBe(true)
     expect(first.items.some(item => item.execution.initiatingAgent)).toBe(true)
     const client = await connect(reader.token)
-    const tools = await client.listTools()
+    const tools = { tools: await operatorCatalog(client) }
     expect(tools.tools.some(tool => tool.name === 'job_workflow_list')).toBe(true)
     const firstMcp = await client.callTool({ name: 'job_workflow_list', arguments: input() })
     expect(firstMcp.isError).not.toBe(true)
@@ -236,7 +236,7 @@ describe.skipIf(!postgresEnabled)('workflow job history HTTP and Operator MCP', 
     await queue.jobs.wakeQueue()
     const root = `/api/management/workspaces/${workflow.run.workspaceId}/jobs/queue`
     const client = await connect(reader.token)
-    const tools = await client.listTools()
+    const tools = { tools: await operatorCatalog(client) }
     expect(tools.tools.find(tool => tool.name === 'job_queue_list')?.inputSchema.properties)
       .toHaveProperty('workflowId')
     const waitingHttp = await app.inject({ method: 'GET', url: `${root}?workflowId=${workflow.run.workflowId}`,

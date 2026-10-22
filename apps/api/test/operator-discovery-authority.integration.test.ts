@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { randomUUID } from 'node:crypto'
 import type { Client } from '@modelcontextprotocol/client'
 import { ManagementActionSchema, type ManagementGrant } from '@foreman-code/contracts/management'
@@ -61,14 +62,7 @@ async function connect(grants: ManagementGrant[]) {
 }
 
 async function listedNames(client: Client) {
-  const names: string[] = []
-  let cursor: string | undefined
-  do {
-    const page = await client.listTools(cursor ? { cursor } : {})
-    names.push(...page.tools.map(tool => tool.name))
-    cursor = page.nextCursor
-  } while (cursor)
-  return names
+  return operatorCatalogNames(client)
 }
 
 async function expectDiscovery(client: Client, name: string, available: boolean, resource = {}) {

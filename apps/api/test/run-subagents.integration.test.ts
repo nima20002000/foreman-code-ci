@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { createFixtureSchema, dropFixtureSchema } from './helpers/testResources.js'
 import { childHistoryEvent } from '../src/modules/subagents/nativeReadback.js'
@@ -591,8 +592,8 @@ describe('durable per-Run children over SQL and authenticated MCP', () => {
     const connect = async (token: string) => { const client = new Client({ name: 'subagent-core', version: '1' }); clients.push(client); await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), { authProvider: { token: async () => token } })); return client }
     try {
       const allowed = await connect(f.writer.token), reader = await connect(f.reader.token), denied = await connect(f.denied.token)
-      expect((await reader.listTools()).tools.map(tool => tool.name)).toContain('run_subagents_list_v1')
-      expect((await reader.listTools()).tools.map(tool => tool.name)).not.toContain('run_subagent_input_v1')
+      expect(await operatorCatalogNames(reader)).toContain('run_subagents_list_v1')
+      expect(await operatorCatalogNames(reader)).not.toContain('run_subagent_input_v1')
       const deniedWrite = await reader.callTool({ name: 'run_subagent_input_v1', arguments: f.command })
       expect(deniedWrite.isError).toBe(true)
       expect((await denied.callTool({ name: 'run_subagents_list_v1', arguments: f.input })).isError).toBe(true)

@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
@@ -110,7 +111,7 @@ describe.skipIf(!postgresEnabled)('Syncthing through authenticated Operator MCP'
         grants: [{ actions: ['settings:read', 'settings:update', 'capabilities:read'],
           scope: { workspaceIds: [f.workspaceId] } }] })
       const client = await f.connect(scoped.token)
-      const names = (await client.listTools()).tools.map(tool => tool.name)
+      const names = await operatorCatalogNames(client)
       expect(names).not.toContain('computer_sync_status')
       expect(names).not.toContain('computer_sync_update')
       const input = { target: f.target, workspaceId: f.workspaceId, enabled: false,
@@ -133,7 +134,7 @@ describe.skipIf(!postgresEnabled)('Syncthing through authenticated Operator MCP'
     const f = await fixture({ withoutSync: true })
     try {
       const client = await f.connect(f.writer.token)
-      expect((await client.listTools()).tools.map(tool => tool.name)).not.toContain('computer_sync_status')
+      expect(await operatorCatalogNames(client)).not.toContain('computer_sync_status')
       for (const name of ['computer_sync_status', 'computer_sync_update']) {
         const result = await client.callTool({ name, arguments: {} })
         expect(result.isError).toBe(true)
@@ -149,8 +150,8 @@ describe.skipIf(!postgresEnabled)('Syncthing through authenticated Operator MCP'
       await f.sync.paired(f.target)
       const client = await f.connect(f.writer.token)
       const reader = await f.connect(f.reader.token)
-      expect((await client.listTools()).tools.map(tool => tool.name)).toContain('computer_sync_update')
-      expect((await reader.listTools()).tools.map(tool => tool.name)).not.toContain('computer_sync_update')
+      expect(await operatorCatalogNames(client)).toContain('computer_sync_update')
+      expect(await operatorCatalogNames(reader)).not.toContain('computer_sync_update')
       const read = async () => ComputerSyncStatusSchema.parse(decodeMcpToolResult((await client.callTool({
         name: 'computer_sync_status', arguments: { target: f.target },
       })))).folders.find(folder => folder.workspaceId === f.workspaceId)!

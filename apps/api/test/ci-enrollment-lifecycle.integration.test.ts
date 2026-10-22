@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
 import { CiEnrollmentStateSchema } from '@foreman-code/contracts'
@@ -109,7 +110,7 @@ describe.skipIf(!postgresEnabled)('automatic CI enrollment: lifecycle', () => {
     const f = await fixture()
     try {
       const client = await f.connect()
-      const tools = (await client.listTools()).tools.map(tool => tool.name)
+      const tools = await operatorCatalogNames(client)
       expect(tools).toEqual(expect.arrayContaining(['ci_enrollment_get', 'ci_enrollment_update']))
       const discovery = await client.callTool({ name: 'operator_get_capabilities', arguments: { detail: 'full', workspaceId: f.workspaceId } })
       expect(discovery.isError, JSON.stringify(discovery.content)).not.toBe(true)
@@ -141,7 +142,7 @@ describe.skipIf(!postgresEnabled)('automatic CI enrollment: lifecycle', () => {
         grants: [{ actions: ['job_definitions:read'], scope: { workspaceIds: [f.workspaceId] } }],
         expiresAt: new Date(Date.now() + 600_000) })
       const readonly = await f.connect(reader.token)
-      expect((await readonly.listTools()).tools.map(tool => tool.name)).not.toContain('ci_enrollment_update')
+      expect(await operatorCatalogNames(readonly)).not.toContain('ci_enrollment_update')
       const denied = await readonly.callTool({ name: 'ci_enrollment_update', arguments: {
         ...input, commandId: undefined, expectedRevision: 1, enabled: true,
       } })

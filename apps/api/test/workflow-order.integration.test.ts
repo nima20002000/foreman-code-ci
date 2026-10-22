@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { randomUUID } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import {
@@ -69,14 +70,7 @@ async function workflowOrderFixture() {
 type Fixture = Awaited<ReturnType<typeof workflowOrderFixture>>
 
 async function toolNames(client: Client): Promise<string[]> {
-  const names: string[] = []
-  let cursor: string | undefined
-  do {
-    const page = await client.listTools(cursor ? { cursor } : {})
-    names.push(...page.tools.map((tool) => tool.name))
-    cursor = page.nextCursor
-  } while (cursor)
-  return names
+  return operatorCatalogNames(client)
 }
 
 async function listPage(f: Fixture, client = f.client, token = f.owner.token, cursor?: string) {

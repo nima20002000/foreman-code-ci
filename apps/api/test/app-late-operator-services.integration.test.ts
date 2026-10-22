@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { createFixtureSchema, dropFixtureSchema } from './helpers/testResources.js'
 import { randomUUID } from 'node:crypto'
@@ -69,7 +70,7 @@ it('exposes late Operator services through authenticated MCP with denied callers
       return client
     }
     const client = await connect(owner.token), deniedClient = await connect(denied.token)
-    expect((await client.listTools()).tools.map(tool => tool.name)).toContain('job_definition_get')
+    expect(await operatorCatalogNames(client)).toContain('job_definition_get')
     const args = { workspaceId, definitionId: definition.id }
     const result = await client.callTool({ name: 'job_definition_get', arguments: args })
     expect(result.isError).not.toBe(true)

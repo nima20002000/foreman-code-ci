@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { OperatorSourceListResultSchema, decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { createFixtureSchema, dropFixtureSchema, removeFixtureDirectory } from './helpers/testResources.js'
 import { randomUUID } from 'node:crypto'
@@ -92,7 +93,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL)('admits exact approved sources and roo
       await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), { authProvider: { token: async () => token } })); return client }
     const client = await connect(operator.token)
     const approve = { workspaceId: workspace.id, commandId: randomUUID(), expectedLocationRevision: Number(policy.locationRevision), commit, executablePolicy: 'strip' }
-    const tools = await client.listTools()
+    const tools = { tools: await operatorCatalog(client) }
     expect(tools.tools.find(tool => tool.name === 'source_approve')?.inputSchema.properties)
       .not.toHaveProperty('approveTrackedTree')
     const capabilities = await client.callTool({ name: 'operator_get_capabilities',
@@ -219,7 +220,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL)('admits exact approved sources and roo
       grants: [{ actions: ['sources:read', 'source_roots:read'], scope: { workspaceIds: [workspace.id] } }],
       expiresAt: new Date(Date.now() + 120_000) })
     const sourceReaderClient = await connect(sourceReader.token)
-    const readerTools = await sourceReaderClient.listTools()
+    const readerTools = { tools: await operatorCatalog(sourceReaderClient) }
     expect(readerTools.tools.map(tool => tool.name)).not.toContain('source_root_get')
     expect(readerTools.tools.map(tool => tool.name)).not.toContain('source_root_list')
     const rootInput = { workspaceId: workspace.id, rootId: bound.binding.rootId, bindingRevision: 1 }
@@ -283,7 +284,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL)('admits exact approved sources and roo
     expect(Number((await pool.query<{ count: string }>(`select count(*) from management_audit where principal_id=$1 and outcome='denied'`, [denied.principal.id])).rows[0]!.count)).toBeGreaterThan(0)
     const reader = await access.issue({ name: 'Read-only source', audience: 'operator', grants: [{ actions: ['sources:read', 'workspace_locations:read'], scope: { workspaceIds: [workspace.id] } }], expiresAt: new Date(Date.now() + 120_000) })
     const readerClient = await connect(reader.token)
-    expect((await readerClient.listTools()).tools.map(t => t.name)).not.toContain('source_approve')
+    expect(await operatorCatalogNames(readerClient)).not.toContain('source_approve')
     const beforeDenied = await sources.list(owner.principal, 'mcp', { workspaceId: workspace.id })
     expect((await readerClient.callTool({ name: 'source_approve',
       arguments: { ...approve, commandId: randomUUID() } })).isError).toBe(true)

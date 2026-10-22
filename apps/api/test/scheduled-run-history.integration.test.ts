@@ -1,3 +1,4 @@
+import { operatorCatalogNames, operatorCatalog } from './support/operatorCatalog.js'
 import {
   decodeMcpToolResult, OperatorCompactCapabilitiesSchema, OperatorToolSchemaResultSchema,
 } from '@foreman-code/contracts/operator-mcp'
@@ -203,7 +204,7 @@ describe.skipIf(!postgresEnabled)('SCH-05 immutable Board/history authenticated 
     const f = await currentOperatorIntegration({ approvalNodeIds: [] })
     try {
       const r = await reader(f), args = snapshotScope(f)
-      const discovery = (await r.client.listTools()).tools
+      const discovery = (await operatorCatalog(r.client))
       for (const name of Object.values(RUN_HISTORY_TOOLS)) {
         const tool = discovery.find((item) => item.name === name)
         expect(tool?.name).toBe(name)
@@ -236,7 +237,7 @@ describe.skipIf(!postgresEnabled)('SCH-05 immutable Board/history authenticated 
       expect((await f.app.inject({ method: 'GET', url: url(RUN_HISTORY_TOOLS.snapshot, args), headers: { authorization: 'Bearer invalid' } })).statusCode).toBe(401)
       await parity(f, r.client, r.token, RUN_HISTORY_TOOLS.snapshot, args)
       const noRead = await reader(f, [{ actions: ['capabilities:read'], scope: {} }])
-      const deniedDiscovery = (await noRead.client.listTools()).tools.map(tool => tool.name)
+      const deniedDiscovery = await operatorCatalogNames(noRead.client)
       for (const name of historyNames) expect(deniedDiscovery).not.toContain(name)
       for (const detail of ['full', 'compact'] as const) {
         const response = value(await noRead.client.callTool({ name: 'operator_get_capabilities', arguments: { detail } }))

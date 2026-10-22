@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { seedAgent3 } from './helpers/wave25Agent3.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
@@ -76,7 +77,7 @@ it('discovers real unregistered folders without writes and safely deletes conten
     expect((await pool.query('select count(*)::int as count from workspaces')).rows[0].count).toBe(before)
     expect((await workspaces.list(owner.principal, { limit: 1, includeArchived: false })).items[0]!.workspace.id).toBe(registered.workspace.id)
     const input = { commandId: randomUUID(), path: first.items[0]!.path, expectedIdentity: first.items[0]!.identity }
-    const tools = (await denied.listTools()).tools.map((tool) => tool.name)
+    const tools = await operatorCatalogNames(denied)
     expect(tools).toContain('workspace_storage_folders_list')
     expect(tools).not.toContain('workspace_storage_folder_delete')
     const capabilities = decodeMcpToolResult((await denied.callTool({ name: 'operator_get_capabilities', arguments: { detail: 'full' } }))) as { tools: string[] }

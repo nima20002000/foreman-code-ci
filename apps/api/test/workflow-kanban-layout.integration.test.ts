@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { randomUUID } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { WorkflowKanbanLayoutReadSchema } from '@foreman-code/contracts'
@@ -43,7 +44,7 @@ it('shows, moves and hides a workflow Kanban through authenticated MCP and HTTP,
       await client.callTool({ name: 'workflow_kanban_layout_get', arguments: scope })))
 
     const ownerClient = await connect(owner.token)
-    const names = (await ownerClient.listTools()).tools.map((tool) => tool.name)
+    const names = await operatorCatalogNames(ownerClient)
     expect(names).toEqual(expect.arrayContaining(['workflow_kanban_layout_get', 'workflow_kanban_layout_set']))
     expect(await read(ownerClient)).toEqual({ ...scope, layout: { visible: false, frame: null } })
 
@@ -55,7 +56,7 @@ it('shows, moves and hides a workflow Kanban through authenticated MCP and HTTP,
     const reader = await access.issue({ name: 'Kanban reader', audience: 'operator', expiresAt,
       grants: [{ actions: ['workflows:read'], scope: { workspaceIds: [workspaceId] } }] })
     const readerClient = await connect(reader.token)
-    const readerNames = (await readerClient.listTools()).tools.map((tool) => tool.name)
+    const readerNames = await operatorCatalogNames(readerClient)
     expect(readerNames).toContain('workflow_kanban_layout_get')
     expect(readerNames).not.toContain('workflow_kanban_layout_set')
     await expectMcpAccessDenied(readerClient.callTool({ name: 'workflow_kanban_layout_set',

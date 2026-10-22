@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { DEFAULT_CODEX_ADVANCED_CONFIGURATION, type Agent } from '@foreman-code/contracts'
@@ -96,7 +97,7 @@ it('allows workflow-scoped Agent readers to update through HTTP and MCP and deni
   expect(httpSaved.value.agent.prompt).toEqual(httpInput.prompt)
   expect(httpSaved.value.affectedWorkflowIds).toEqual([workflowId])
 
-  const tools = (await scoped.client.listTools()).tools.map(tool => tool.name)
+  const tools = await operatorCatalogNames(scoped.client)
   expect(tools).toContain('agent_update')
   expect(tools).not.toContain('agent_create')
   const capabilities = await callWorkspaceTool(scoped.client, 'operator_get_capabilities',
@@ -139,7 +140,7 @@ it('allows workflow-scoped Agent readers to update through HTTP and MCP and deni
     expectedConfigurationVersionId: mcpSaved.value.agent.configurationVersionId!,
     prompt: { system: 'Denied instructions' },
   }
-  expect((await scoped.client.listTools()).tools.map(tool => tool.name)).toContain('agent_update')
+  expect(await operatorCatalogNames(scoped.client)).toContain('agent_update')
   await expectMcpAccessDenied(scoped.client.callTool({ name: 'agent_update', arguments: deniedInput }))
   const httpDenied = await fixture.app.inject({ method: 'PATCH', url: agentUrl, headers,
     payload: { ...deniedInput, commandId: randomUUID() } })
@@ -150,7 +151,7 @@ it('allows workflow-scoped Agent readers to update through HTTP and MCP and deni
 
   const reader = await fixture.issue([{ actions: ['agents:read'],
     scope: { workspaceIds: [workspaceId], workflowIds: [workflowId] } }])
-  expect((await reader.client.listTools()).tools.map(tool => tool.name)).not.toContain('agent_update')
+  expect(await operatorCatalogNames(reader.client)).not.toContain('agent_update')
   await expectMcpAccessDenied(reader.client.callTool({ name: 'agent_update', arguments: {
     ...deniedInput, commandId: randomUUID(),
   } }))
@@ -167,7 +168,7 @@ it('does not discover Agent updates when workspace mutation and workflow read gr
     { actions: ['agents:read'], scope: { workspaceIds: ['workspace-b'], workflowIds: ['workflow-b'] } },
     { actions: ['capabilities:read'], scope: {} },
   ])
-  expect((await scoped.client.listTools()).tools.map(tool => tool.name)).not.toContain('agent_update')
+  expect(await operatorCatalogNames(scoped.client)).not.toContain('agent_update')
   const capabilities = decodeMcpToolResult(await scoped.client.callTool({
     name: 'operator_get_capabilities', arguments: { detail: 'full' },
   }))

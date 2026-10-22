@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { randomUUID } from 'node:crypto'
 import { BrowserProfileSchema, BrowserOperationResponseSchemas } from '@foreman-code/contracts'
 import WebSocket from 'ws'
@@ -23,7 +24,7 @@ it('exposes the production browser catalog over authenticated HTTP and MCP with 
     await reader.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), {
       authProvider: { token: async () => owner.token },
     }))
-    expect((await reader.listTools()).tools.map(tool => tool.name)).toEqual(expect.arrayContaining([
+    expect(await operatorCatalogNames(reader)).toEqual(expect.arrayContaining([
       'browser_profiles_list', 'browser_profile_create', 'browser_sessions_list', 'browser_view_open', 'browser_control_release',
     ]))
     const listed = await reader.callTool({ name: 'browser_profiles_list', arguments: {} })

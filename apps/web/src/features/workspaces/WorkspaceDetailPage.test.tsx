@@ -129,11 +129,11 @@ describe('workspace settings actions', () => {
     const view = renderWithRouter(<WorkspaceDetailPage workspaceId="workspace-1" section="settings" />)
     const section = within(await screen.findByRole('region', { name: 'GitHub repository' }))
     const save = section.getByRole('button', { name: 'Add project' })
-    await user.type(section.getByRole('textbox', { name: 'Repository' }), 'not a repo')
+    await user.type(section.getByRole('textbox', { name: 'GitHub repository' }), 'not a repo')
     expect(section.getByText('Use owner/name or a GitHub repository URL without extra path segments.')).toBeVisible()
     expect(save).toBeDisabled()
-    await user.clear(section.getByRole('textbox', { name: 'Repository' }))
-    await user.type(section.getByRole('textbox', { name: 'Repository' }), 'https://github.com/octo-owner/website.git')
+    await user.clear(section.getByRole('textbox', { name: 'GitHub repository' }))
+    await user.type(section.getByRole('textbox', { name: 'GitHub repository' }), 'https://github.com/octo-owner/website.git')
     await waitFor(() => expect(save).toBeEnabled())
     await user.click(save)
     await waitFor(() => expect(bodies).toHaveLength(1))
@@ -143,7 +143,7 @@ describe('workspace settings actions', () => {
     view.queryClient.clear()
     renderWithRouter(<WorkspaceDetailPage workspaceId="workspace-1" section="settings" />)
     expect(await screen.findByText('Project ready')).toBeVisible()
-    expect(screen.getByRole('textbox', { name: 'Repository' })).toHaveValue('octo-owner/website')
+    expect(screen.getByRole('textbox', { name: 'GitHub repository' })).toHaveValue('octo-owner/website')
     expect(bodies).toHaveLength(1)
   })
 
@@ -170,7 +170,7 @@ describe('workspace settings actions', () => {
 
 it('keeps repository guidance beside its field and project action', async () => {
   renderWithRouter(<WorkspaceDetailPage workspaceId="workspace-1" section="settings" />)
-  await screen.findByRole('textbox', { name: 'Repository' })
+  await screen.findByRole('textbox', { name: 'GitHub repository' })
   const guidance = 'Each agent in a run gets its own branch and worktree of this repository on its computer.'
   expect(screen.queryByText(guidance)).not.toBeInTheDocument()
   const user = userEvent.setup()

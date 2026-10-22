@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
 import pg from 'pg'
@@ -134,7 +135,7 @@ it('discovers a saved Claude preset and configures and checks its host profile t
     expect(discovery.claude).toHaveBeenCalledOnce()
     expect(qualify).not.toHaveBeenCalled()
     await expectMcpAccessDenied(none.client.callTool({ name: 'harness_registry_get', arguments: hostRef }))
-    expect((await writer.client.listTools()).tools.map(tool => tool.name)).toEqual(expect.arrayContaining([
+    expect(await operatorCatalogNames(writer.client)).toEqual(expect.arrayContaining([
       'harness_registry_get', 'harness_instance_save', 'harness_instance_check', 'harness_instances_list',
     ]))
     const target = { hostRef, applicationInstallationId: mainId,

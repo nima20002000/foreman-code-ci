@@ -1,3 +1,4 @@
+import { operatorCatalogNames, operatorCatalog } from './support/operatorCatalog.js'
 import { workerHarnessCatalogFixture } from './helpers/workerHarnessCatalog.js'
 import { createInstalledWorkerProfileChecks } from '../src/modules/harnesses/installedWorkerProfileChecks.js'
 import { NativeConfigurationService } from '../src/modules/harnesses/nativeConfiguration.js'
@@ -67,12 +68,12 @@ it('refreshes and reads back model options through authenticated HTTP and Operat
     const reader = await connect(readerGrant.token)
     const updater = await connect(updaterGrant.token)
     const restricted = await connect(denied.token)
-    const readerTools = (await reader.listTools()).tools
+    const readerTools = (await operatorCatalog(reader))
     expect(readerTools.map((tool) => tool.name)).toContain('harness_options_refresh')
     expect(readerTools.map((tool) => tool.name)).not.toContain('opencode_models_cache_update')
     expect(readerTools.find((tool) => tool.name === 'harness_options_refresh')?.annotations?.readOnlyHint).toBe(true)
-    expect((await updater.listTools()).tools.map(tool => tool.name)).not.toContain('opencode_models_cache_update')
-    expect((await restricted.listTools()).tools.map((tool) => tool.name)).not.toContain('harness_options_refresh')
+    expect(await operatorCatalogNames(updater)).not.toContain('opencode_models_cache_update')
+    expect(await operatorCatalogNames(restricted)).not.toContain('harness_options_refresh')
     const deniedCall = await restricted.callTool({ name: 'harness_options_refresh', arguments: { harness: 'codex' } })
       .then((result) => result.isError === true, () => true)
     expect(deniedCall).toBe(true)

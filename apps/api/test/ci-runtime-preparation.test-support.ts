@@ -75,8 +75,6 @@ export function useCiRuntimePreparationFixture() {
       await rpc('tools/call', { name, arguments: input }, bearer) as {
         isError?: boolean; structuredContent?: unknown
       }
-    const listTools = async (bearer = writer.token) =>
-      await rpc('tools/list', {}, bearer) as { tools: { name: string; description: string }[] }
     const settle = async (service: CiRuntimeProvisioner) => {
       for (let attempt = 0; attempt < 1000; attempt++) {
         const status = await service.get(writer.principal, { workspaceId: fixture.workspaceId, profileId: 'p-unit' })
@@ -85,7 +83,7 @@ export function useCiRuntimePreparationFixture() {
       }
       throw new Error('Preparation did not settle')
     }
-    return { service, create, call, listTools, settle, writer, reader, services, access, database, fixture }
+    return { service, create, call, settle, writer, reader, services, access, database, fixture }
   }
 
   return { setup }

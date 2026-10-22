@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
 import { readdir } from 'node:fs/promises'
@@ -40,8 +41,8 @@ describe.skipIf(!postgresEnabled)('authenticated calls to hidden MCP tools', () 
         expiresAt: new Date(Date.now() + 600000),
       })
       const client = await f.connect(restricted.token)
-      const listed = (await client.listTools()).tools.map(tool => tool.name)
-      const catalog = (await f.client.listTools()).tools.map(tool => tool.name)
+      const listed = await operatorCatalogNames(client)
+      const catalog = await operatorCatalogNames(f.client)
       // Skill tools intentionally remain discoverable; their services enforce grants on calls.
       expect(listed.sort()).toEqual(['skill_list', 'skill_get', 'skill_versions_list', 'skill_create',
         'skill_update', 'skill_archive', 'skill_usage_get', 'skill_users_update'].sort())
@@ -115,7 +116,7 @@ describe.skipIf(!postgresEnabled)('authenticated calls to hidden MCP tools', () 
         grants: [{ actions: ['workspaces:read', 'workspace_locations:read'], scope: { workspaceIds: [workspaceId] } }],
       })
       const client = await f.connect(reader.token)
-      expect((await client.listTools()).tools.map(tool => tool.name)).not.toContain('workspace_update')
+      expect(await operatorCatalogNames(client)).not.toContain('workspace_update')
       expect((await client.callTool({ name: 'workspace_update', arguments: input })).isError).toBe(true)
       expect(decodeMcpToolResult((await client.callTool({ name: 'workspace_get', arguments: { workspaceId } }))))
         .toMatchObject(initial)
@@ -124,7 +125,7 @@ describe.skipIf(!postgresEnabled)('authenticated calls to hidden MCP tools', () 
         grants: [{ actions: ['workspaces:update'], scope: { workspaceIds: ['another-workspace'] } }],
       })
       const otherEditor = await f.connect(otherWorkspace.token)
-      expect((await otherEditor.listTools()).tools.map(tool => tool.name)).toContain('workspace_update')
+      expect(await operatorCatalogNames(otherEditor)).toContain('workspace_update')
       const deniedUpdate = await otherEditor.callTool({ name: 'workspace_update', arguments: input })
       expect(deniedUpdate.isError).toBe(true)
       expect(JSON.stringify(deniedUpdate.content)).toContain('ACCESS_DENIED')
@@ -136,7 +137,7 @@ describe.skipIf(!postgresEnabled)('authenticated calls to hidden MCP tools', () 
         ],
       })
       const wrongScopes = await f.connect(disjoint.token)
-      expect((await wrongScopes.listTools()).tools.map(tool => tool.name)).not.toContain('run_start')
+      expect(await operatorCatalogNames(wrongScopes)).not.toContain('run_start')
       const deniedRun = await wrongScopes.callTool({ name: 'run_start', arguments: { workspaceId } })
       expect(deniedRun.isError).toBe(true)
       expect(JSON.stringify(deniedRun.content)).toContain('ACCESS_DENIED')

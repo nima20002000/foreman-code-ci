@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { workerToolServices } from './helpers/workerMcpServices.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { removeFixtureDirectory } from './helpers/testResources.js'
@@ -279,7 +280,7 @@ describe.skipIf(!postgresEnabled)('Skills library over real PostgreSQL, HTTP and
 
   it('offers equivalent management through the one MCP endpoint with per-caller permission errors and no side effects', async () => {
     const operator = await mcp(owner)
-    const tools = (await operator.listTools()).tools.map((tool) => tool.name)
+    const tools = await operatorCatalogNames(operator)
     expect(tools).toEqual(expect.arrayContaining(['skill_list', 'skill_get', 'skill_versions_list', 'skill_create', 'skill_update', 'skill_archive']))
     const call = async (client: Client, name: string, args: Record<string, unknown>) => client.callTool({ name, arguments: args })
     const created = await call(operator, 'skill_create', { workspaceId: workspaceB, commandId: 'mcp-create-0001', name: 'MCP skill', instructions: 'From MCP' })

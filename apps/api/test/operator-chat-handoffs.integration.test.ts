@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
@@ -167,7 +168,7 @@ describe.skipIf(!connectionString)('Operator chat persistence and native binding
       await app?.close()
     })
     it('offers the same fork through authenticated MCP with persisted readback and denied callers', async () => {
-      expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(['operator_chat_create', 'operator_chat_get', 'operator_chat_send']))
+      expect(await operatorCatalogNames(client)).toEqual(expect.arrayContaining(['operator_chat_create', 'operator_chat_get', 'operator_chat_send']))
       const defaults = decodeMcpToolResult((await client.callTool({ name: 'agent_defaults_get', arguments: {} }))) as { revision: number; value: typeof DEFAULT_AGENT_DEFAULTS }
       const target = { ...claudeConfiguration }
       const changed = await client.callTool({ name: 'agent_defaults_update', arguments: { commandId: randomUUID(), expectedRevision: defaults.revision,
@@ -187,13 +188,13 @@ describe.skipIf(!connectionString)('Operator chat persistence and native binding
         [delegated.principal.id,fork.state.conversation.id])
       const reader = new Client({ name: 'handoff-reader', version: '1' }); clients.push(reader)
       await reader.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), { authProvider: { token: async () => delegated.token } }))
-      expect((await reader.listTools()).tools.map((tool) => tool.name)).toContain('operator_handoff_history_get')
-      expect((await reader.listTools()).tools.map((tool) => tool.name)).not.toContain('operator_chat_send')
+      expect(await operatorCatalogNames(reader)).toContain('operator_handoff_history_get')
+      expect(await operatorCatalogNames(reader)).not.toContain('operator_chat_send')
       const history = decodeMcpToolResult((await reader.callTool({ name: 'operator_handoff_history_get', arguments: {} }))) as { messages: Array<{ content: string }> }
       expect(history.messages.map((message) => message.content)).toContain('Remember the release details.')
       expect((await reader.callTool({ name: 'operator_handoff_history_get', arguments: { sourceConversationId: 'unrelated-chat' } })).isError).toBe(true)
       const denied = await connect(['operator_chat:read'])
-      expect((await denied.listTools()).tools.map((tool) => tool.name)).not.toContain('operator_chat_send')
+      expect(await operatorCatalogNames(denied)).not.toContain('operator_chat_send')
       await expectMcpAccessDenied(denied.callTool({ name: 'operator_chat_send', arguments: { conversationId: sourceId, request } }))
     })
   })

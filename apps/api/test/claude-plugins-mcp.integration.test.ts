@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
@@ -51,7 +52,7 @@ describe.skipIf(!postgresEnabled)('Claude plugins through authenticated Operator
     const read = async () => ClaudePluginListResultSchema.parse(decodeMcpToolResult((await operator.callTool({
       name: 'claude_plugins_list', arguments: {},
     }))))
-    expect((await operator.listTools()).tools.map(tool => tool.name)).toEqual(expect.arrayContaining([
+    expect(await operatorCatalogNames(operator)).toEqual(expect.arrayContaining([
       'claude_plugins_list', 'claude_plugin_change', 'claude_plugin_marketplace_add',
     ]))
     const noRevisionMarketplace = { source: 'owner/extra', commandId: randomUUID() }
@@ -133,7 +134,7 @@ describe.skipIf(!postgresEnabled)('Claude plugins through authenticated Operator
       ...input, action: 'uninstall', commandId: randomUUID(), expectedRevision: (await read()).revision,
     } })
     const readOnly = await connect(reader.token)
-    expect((await readOnly.listTools()).tools.map(tool => tool.name)).not.toContain('claude_plugin_change')
+    expect(await operatorCatalogNames(readOnly)).not.toContain('claude_plugin_change')
     const denied = await readOnly.callTool({ name: 'claude_plugin_change', arguments: { ...input, commandId: randomUUID() } })
     expect(denied.isError).toBe(true)
     expect(JSON.stringify(denied.content)).toContain('ACCESS_DENIED')

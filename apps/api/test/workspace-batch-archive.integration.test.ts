@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 import { createFixtureSchema, dropFixtureSchema } from './helpers/testResources.js'
@@ -43,13 +44,13 @@ it('batch archives workspaces through authenticated MCP with atomic conflicts, a
       return client
     }
     const client = await connect(owner.token)
-    expect((await client.listTools()).tools.map((tool) => tool.name)).toContain('workspace_batch_archive')
+    expect(await operatorCatalogNames(client)).toContain('workspace_batch_archive')
     const first = (await workspaces.create(owner.principal, 'http', { commandId: randomUUID(), name: 'First' })).value
     const second = (await workspaces.create(owner.principal, 'http', { commandId: randomUUID(), name: 'Second' })).value
     const input = { commandId: randomUUID(), workspaces: [first, second].map((item) => ({ workspaceId: item.workspace.id, expectedRevision: item.revision })) }
     const reader = await access.issue({ name: 'Reader', audience: 'operator', grants: [{ actions: ['workspaces:read'], scope: {} }], expiresAt: new Date(Date.now() + 60_000) })
     const denied = await connect(reader.token)
-    expect((await denied.listTools()).tools.map((tool) => tool.name)).not.toContain('workspace_batch_archive')
+    expect(await operatorCatalogNames(denied)).not.toContain('workspace_batch_archive')
     await expectMcpAccessDenied(denied.callTool({ name: 'workspace_batch_archive', arguments: input }))
     const scoped = await access.issue({ name: 'Scoped', audience: 'operator', grants: [{ actions: ['workspaces:archive'], scope: { workspaceIds: [first.workspace.id] } }], expiresAt: new Date(Date.now() + 60_000) })
     expect((await (await connect(scoped.token)).callTool({ name: 'workspace_batch_archive', arguments: input })).isError).toBe(true)

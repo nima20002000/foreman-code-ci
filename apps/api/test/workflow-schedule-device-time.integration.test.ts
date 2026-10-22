@@ -77,7 +77,7 @@ describe.skipIf(!postgresEnabled)('device-time and seconds authenticated HTTP/MC
     const owner = await connect(f.writer.token), reader = await connect(f.reader.token)
     const schedule = { mode: 'interval', timezone: 'Asia/Tokyo', every: 1, unit: 'second',
       anchorAt: '2099-08-25T00:30:17.250+09:00', enabled: true, policy: 'latest_saved' }
-    const tools = await owner.listTools()
+    const tools = { tools: await operatorCatalog(owner) }
     const saveTool = tools.tools.find((tool) => tool.name === 'workflow_schedule_save')!
     expect(saveTool.description).toContain('whole seconds, minutes or hours')
     expect(saveTool.description).toContain('caller device')

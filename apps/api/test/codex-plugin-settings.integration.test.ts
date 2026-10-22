@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { createFixtureSchema, dropFixtureSchema } from './helpers/testResources.js'
 import { randomUUID } from 'node:crypto'
@@ -75,11 +76,11 @@ it('lists, reads, installs and removes Codex plugins through authenticated MCP w
     }
     const allowed = await connect(reader.token)
     const disallowed = await connect(denied.token)
-    expect((await disallowed.listTools()).tools.map((tool) => tool.name)).not.toContain('codex_plugins_list')
-    expect((await allowed.listTools()).tools.map((tool) => tool.name)).toContain('codex_plugins_list')
-    expect((await allowed.listTools()).tools.map((tool) => tool.name)).not.toContain('codex_plugin_change')
+    expect(await operatorCatalogNames(disallowed)).not.toContain('codex_plugins_list')
+    expect(await operatorCatalogNames(allowed)).toContain('codex_plugins_list')
+    expect(await operatorCatalogNames(allowed)).not.toContain('codex_plugin_change')
     const operator = await connect(delegated.token)
-    expect((await operator.listTools()).tools.map((tool) => tool.name)).toContain('codex_plugin_change')
+    expect(await operatorCatalogNames(operator)).toContain('codex_plugin_change')
     const list = async (view: 'installed' | 'available') => CodexPluginListResultSchema.parse(
       decodeMcpToolResult((await allowed.callTool({ name: 'codex_plugins_list', arguments: { view } }))))
     expect((await list('available')).items.map((plugin) => plugin.pluginId)).toEqual(['notes@trusted'])

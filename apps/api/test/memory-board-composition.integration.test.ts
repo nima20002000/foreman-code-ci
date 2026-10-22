@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -40,7 +41,7 @@ describe.runIf(postgresEnabled)('Memory board application composition', () => {
       }
       const client = await connect(owner.token)
       const readOnly = await connect(reader.token)
-      expect((await client.listTools()).tools.map(tool => tool.name)).toContain('memory_card_create')
+      expect(await operatorCatalogNames(client)).toContain('memory_card_create')
       const snapshot = decodeMcpToolResult(await client.callTool({ name: 'memory_board_get', arguments: { scope: memory.scope } }))
       const boardId = (snapshot.board as { id: string }).id
       const created = decodeMcpToolResult(await client.callTool({ name: 'memory_card_create', arguments: {
@@ -54,7 +55,7 @@ describe.runIf(postgresEnabled)('Memory board application composition', () => {
         headers: { authorization: `Bearer ${reader.token}` } })
       expect(response.statusCode).toBe(200)
       expect(response.json().card).toEqual(created.card)
-      expect((await readOnly.listTools()).tools.map(tool => tool.name)).not.toContain('memory_card_create')
+      expect(await operatorCatalogNames(readOnly)).not.toContain('memory_card_create')
       expect((await readOnly.callTool({ name: 'memory_card_update', arguments: {
         kind: 'card_update', boardId, cardId: card.id, patch: { body: 'Denied' },
       } })).isError).toBe(true)

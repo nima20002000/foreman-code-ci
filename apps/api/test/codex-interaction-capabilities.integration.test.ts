@@ -1,3 +1,4 @@
+import { operatorCatalogNames, operatorCatalog } from './support/operatorCatalog.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { describe, expect, it } from 'vitest'
 import { CODEX_INTERACTION_SUPPORT } from '@foreman-code/contracts'
@@ -16,7 +17,7 @@ describe.skipIf(!postgresEnabled)('Codex interaction capability readback', () =>
       const entry = HarnessCatalogEntrySchema.parse(http.json())
       expect(entry.interactionSupport).toEqual(CODEX_INTERACTION_SUPPORT)
 
-      const tools = (await f.client.listTools()).tools
+      const tools = (await operatorCatalog(f.client))
       expect(tools.find((tool) => tool.name === 'harness_get')?.description).toContain('data-entry forms')
       const get = await f.client.callTool({ name: 'harness_get', arguments: { harness: 'codex' } })
       expect(get.isError).not.toBe(true)
@@ -33,7 +34,7 @@ describe.skipIf(!postgresEnabled)('Codex interaction capability readback', () =>
         headers: { authorization: `Bearer ${restricted.token}` } })
       expect(denied.statusCode).toBe(403)
       const reader = await f.connect(restricted.token)
-      expect((await reader.listTools()).tools.map((tool) => tool.name)).not.toContain('harness_get')
+      expect(await operatorCatalogNames(reader)).not.toContain('harness_get')
       await expectMcpAccessDenied(reader.callTool({ name: 'harness_get', arguments: { harness: 'codex' } }))
     } finally { await f.close() }
   }, 60_000)

@@ -16,7 +16,7 @@ async function tickets(f: Awaited<ReturnType<typeof fixture>>, workspaceId = f.w
 it('lets identical concurrent requests share one ticket group and read the same result through MCP', async () => {
   const f = await fixture()
   try {
-    const tools = await f.operator.listTools()
+    const tools = { tools: await operatorCatalog(f.operator) }
     expect(tools.tools.find(tool => tool.name === 'ci_run')?.description).toMatch(/joined/)
     const other = await f.connect(requesterActions)
     const input = { suite: 'typecheck', commit }

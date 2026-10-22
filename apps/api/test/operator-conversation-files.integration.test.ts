@@ -211,7 +211,7 @@ describe('Operator conversation file MCP parity', () => {
         scope: kind === 'operator' ? {} : { workspaceIds: [fixture.scope.workspaceId] } },
       ] })
       const editor = await connect(credential.token)
-      const listed = await editor.listTools()
+      const listed = { tools: await operatorCatalog(editor) }
       expect(listed.tools.map(tool => tool.name)).toEqual(expect.arrayContaining([
         'conversation_file_upload', 'conversation_file_finalize', 'conversation_file_cancel',
         'conversation_files_list', 'conversation_file_read',

@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { randomUUID } from 'node:crypto'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { expect, it } from 'vitest'
@@ -17,8 +18,8 @@ it('persists shared preferences through authenticated MCP, denies writes, and pr
       expiresAt: new Date(Date.now() + 3600000), grants: [{ actions: ['settings:read'], scope: {} }] })
     const client = await f.connect(owner.token)
     const otherComputer = await f.connect(reader.token)
-    expect((await client.listTools()).tools.map(tool => tool.name)).toContain('general_settings_update')
-    expect((await otherComputer.listTools()).tools.map(tool => tool.name)).not.toContain('general_settings_update')
+    expect(await operatorCatalogNames(client)).toContain('general_settings_update')
+    expect(await operatorCatalogNames(otherComputer)).not.toContain('general_settings_update')
     const input: GeneralSettingsUpdateInput = { value: { theme: 'light' }, expectedRevision: 0, commandId: randomUUID() }
     expect((await otherComputer.callTool({ name: 'general_settings_update', arguments: input })).isError).toBe(true)
     const call = (arguments_: GeneralSettingsUpdateInput) =>

@@ -1,3 +1,4 @@
+import { operatorCatalogNames, operatorCatalog } from './support/operatorCatalog.js'
 import { beginTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 import { sourceStorageCapacityFixture } from './helpers/sourceStorageCapacityFixture.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
@@ -244,7 +245,7 @@ describe.skipIf(!postgresEnabled)('failed Job source preparation reconciliation'
     const rows=(await database.pool.query<{operation_id:string}>('select operation_id from job_preparations where workspace_id=$1 and command_id=any($2) order by created_at',[workspaceId,commandsToReconcile])).rows
     expect(rows).toHaveLength(2)
     const operator=await client(writer.token)
-    expect((await operator.listTools()).tools.map(tool=>tool.name)).toContain('source_preparation_reconcile')
+    expect(await operatorCatalogNames(operator)).toContain('source_preparation_reconcile')
     for(const [i,row] of rows.entries()) {
       const before=await app.inject({method:'POST',url:sourceUrl()+'/get',headers:{authorization:`Bearer ${reader.token}`},payload:{operationId:row.operation_id}})
       expect(before.statusCode).toBe(200);expect(before.json().reservationState).toBe(i===0?'owned':'preparing')
@@ -277,7 +278,7 @@ describe.skipIf(!postgresEnabled)('failed Job source preparation reconciliation'
     const old=await start(commandsToReconcile[0]!);expect(old.statusCode).toBe(409);expect(old.json().error.code).toBe('SOURCE_PREPARATION_RECONCILED')
     const revoked=await access.issue({name:'Later revoked reader',audience:'operator',expiresAt:new Date(Date.now()+60000),grants:[{actions:['sources:read','source_roots:read'],scope:{workspaceIds:[workspaceId]}}]})
     const deniedClient=await client(reader.token)
-    expect((await deniedClient.listTools()).tools.some(tool=>tool.name==='source_preparation_reconcile')).toBe(false)
+    expect((await operatorCatalog(deniedClient)).some(tool=>tool.name==='source_preparation_reconcile')).toBe(false)
     await expectMcpAccessDenied(deniedClient.callTool({name:'source_preparation_reconcile',arguments:{workspaceId,operationId:rows[0]!.operation_id,commandId:randomUUID()}}))
     const foreign=await operator.callTool({name:'source_preparation_get',arguments:{workspaceId:'foreign',operationId:rows[0]!.operation_id}});expect(foreign.isError).toBe(true)
     await database.pool.query('update management_principals set revoked_at=now() where id=$1',[revoked.principal.id])

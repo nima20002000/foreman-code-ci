@@ -1,3 +1,4 @@
+import { operatorCatalogNames, operatorCatalog } from './support/operatorCatalog.js'
 import { execFileSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -155,7 +156,7 @@ describe('Worker updates through authenticated Operator MCP', () => {
     const f = await fixture()
     try {
       const operator = await f.connect('writer')
-      const tools = (await operator.listTools()).tools
+      const tools = (await operatorCatalog(operator))
       expect(JSON.stringify(tools.find(tool => tool.name === 'computers_maintenance_start')?.inputSchema))
         .toContain('update-worker')
       const capabilities = decodeMcpToolResult(await operator.callTool({
@@ -211,7 +212,7 @@ describe('Worker updates through authenticated Operator MCP', () => {
     try {
       for (const token of ['reader', 'scoped']) {
         const caller = await f.connect(token)
-        expect((await caller.listTools()).tools.map(tool => tool.name)).not.toContain('computers_maintenance_start')
+        expect(await operatorCatalogNames(caller)).not.toContain('computers_maintenance_start')
         const denied = await caller.callTool({ name: 'computers_maintenance_start', arguments: {
           commandId: randomUUID(), task: { kind: 'update-worker' },
         } })

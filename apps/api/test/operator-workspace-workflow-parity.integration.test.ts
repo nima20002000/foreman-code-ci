@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 import { callWorkspaceTool } from './helpers/workspaceMcp.js'
@@ -77,7 +78,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL)('provides authenticated Operator MCP p
       expect(response.isError, JSON.stringify(response)).not.toBe(true)
       return schema.parse(decodeMcpToolResult(response))
     }
-    const toolNames = (await client.listTools()).tools.map((tool) => tool.name)
+    const toolNames = await operatorCatalogNames(client)
     expect(toolNames).toEqual(expect.arrayContaining(['workspace_create', 'workspace_update', 'workspace_defaults_update', 'workspace_location_set', 'workflow_create', 'workflow_update', 'workflow_defaults_update', 'workflow_validate_v3', 'workflow_save_v3', 'workspace_folder_undo']))
     const defaults = await call('workspace_defaults_get', c.ManagedWorkspaceDefaultsSchema)
     await call('workspace_defaults_update', c.WorkspaceDefaultsUpdateResultSchema, {
@@ -264,9 +265,9 @@ it.skipIf(!process.env.TEST_DATABASE_URL)('provides authenticated Operator MCP p
     const restricted = await access.issue({ name: 'No provisioning', audience: 'operator',
       grants: [{ actions: ['workspaces:create'], scope: {} }], expiresAt: new Date(Date.now() + 60_000) })
     const limited = await connect(restricted.token)
-    expect((await limited.listTools()).tools.map((tool) => tool.name)).not.toContain('workspace_folder_create')
-    expect((await limited.listTools()).tools.map((tool) => tool.name)).not.toContain('workspace_folder_undo')
-    expect((await limited.listTools()).tools.map((tool) => tool.name)).not.toContain('workspace_folders_delete')
+    expect(await operatorCatalogNames(limited)).not.toContain('workspace_folder_create')
+    expect(await operatorCatalogNames(limited)).not.toContain('workspace_folder_undo')
+    expect(await operatorCatalogNames(limited)).not.toContain('workspace_folders_delete')
     await expectMcpAccessDenied(limited.callTool({ name: 'workspace_folders_delete', arguments: { paths: [folder.value.path], commandId: randomUUID() } }))
     await expectMcpAccessDenied(limited.callTool({ name: 'workspace_folder_undo', arguments: { ...undoInput, commandId: randomUUID() } }))
     const readOnly = await access.issue({ name: 'Workflow reader', audience: 'operator',

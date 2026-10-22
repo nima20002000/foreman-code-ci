@@ -1,3 +1,4 @@
+import { operatorCatalogNames, operatorCatalog } from './support/operatorCatalog.js'
 import { describe, expect, it, vi } from 'vitest'
 import { postgresEnabled } from './helpers/wave25Agent3.js'
 import { randomUUID } from 'node:crypto'
@@ -65,7 +66,7 @@ describe.skipIf(!postgresEnabled)('Selected historical Run chat PostgreSQL / HTT
         expect(body(await test.mcp.callTool({ name: 'run_node_placement_get', arguments: placementScope })))
           .toEqual(placement.json())
       }
-      const discovery = (await test.mcp.listTools()).tools.find((tool) => tool.name === 'agent_chat_read')!
+      const discovery = (await operatorCatalog(test.mcp)).find((tool) => tool.name === 'agent_chat_read')!
       expect(discovery.inputSchema.properties?.selection).toBeDefined()
       expect(discovery.inputSchema.properties?.history).toBeDefined()
       expect(discovery.name).toBe('agent_chat_read')
@@ -174,7 +175,7 @@ describe.skipIf(!postgresEnabled)('Selected historical Run chat PostgreSQL / HTT
         grants: [{ actions: ['agent_chat:read'], scope: { workspaceIds: [workspaceId], workflowIds: [workflowId], runIds: [a.runId] } }] })
       const reader = await test.connect(allowed.token)
       await read(test, targets[0]!, a.id, allowed.token, reader)
-      expect((await reader.listTools()).tools.map((tool) => tool.name)).not.toContain('agent_chat_send')
+      expect(await operatorCatalogNames(reader)).not.toContain('agent_chat_send')
       const denied = await test.app.inject({ method: 'GET', url: path(targets[1]!), headers: { authorization: `Bearer ${allowed.token}` } })
       expect(denied.statusCode).toBe(403)
       const deniedMcp = await reader.callTool({ name: 'agent_chat_read', arguments: { workspaceId,

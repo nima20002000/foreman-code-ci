@@ -54,7 +54,7 @@ describe('repository draft', () => {
     const state = fixture()
     const user = userEvent.setup()
     const view = mount()
-    const input = await screen.findByRole('textbox', { name: 'Repository' })
+    const input = await screen.findByRole('textbox', { name: 'GitHub repository' })
     await user.clear(input)
     await user.type(input, 'local-owner/local-repo')
     const newer = { ...state.read(), revision: 2, workspace: { ...state.read().workspace,
@@ -79,12 +79,12 @@ describe('repository draft', () => {
     const state = fixture()
     const user = userEvent.setup()
     const view = mount()
-    const input = await screen.findByRole('textbox', { name: 'Repository' })
+    const input = await screen.findByRole('textbox', { name: 'GitHub repository' })
     const newer = { ...state.read(), revision: 2, workspace: { ...state.read().workspace,
       repository: { ...state.read().workspace.repository!, name: 'remote-repo' } } }
     state.change(newer)
     act(() => view.queryClient.setQueryData(queryKeys.managedWorkspace('workspace-1'), newer))
-    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Repository' })).toHaveValue('octo-owner/remote-repo'))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'GitHub repository' })).toHaveValue('octo-owner/remote-repo'))
     await user.type(screen.getByRole('textbox', { name: 'Base branch' }), '-local')
     const latest = { ...newer, revision: 3 }
     state.change(latest)
@@ -106,7 +106,7 @@ describe('repository draft', () => {
     }))
     const user = userEvent.setup()
     mount()
-    const input = await screen.findByRole('textbox', { name: 'Repository' })
+    const input = await screen.findByRole('textbox', { name: 'GitHub repository' })
     await user.type(screen.getByRole('textbox', { name: 'Base branch' }), '-release')
     await user.click(screen.getByRole('button', { name: 'Save repository' }))
     expect(input).toBeDisabled()
@@ -123,7 +123,7 @@ describe('repository draft', () => {
     fixture()
     const user = userEvent.setup()
     const { router } = mount()
-    const input = await screen.findByRole('textbox', { name: 'Repository' })
+    const input = await screen.findByRole('textbox', { name: 'GitHub repository' })
     await user.type(screen.getByRole('textbox', { name: 'Base branch' }), '-local')
     await user.click(screen.getByRole('link', { name: /Project files/ }))
     expect(await screen.findByRole('alertdialog')).toHaveTextContent('You have unsaved changes in repository settings.')
@@ -143,7 +143,7 @@ describe('repository draft', () => {
     let fail = true
     const user = userEvent.setup()
     const view = mount()
-    const input = await screen.findByRole('textbox', { name: 'Repository' })
+    const input = await screen.findByRole('textbox', { name: 'GitHub repository' })
     await user.type(screen.getByRole('textbox', { name: 'Base branch' }), '-local')
     server.use(http.get('/api/management/workspaces/workspace-1', () => fail
       ? HttpResponse.json({ error: { code: 'INTERNAL_ERROR', message: 'Workspace refresh unavailable.' } }, { status })
@@ -212,7 +212,7 @@ describe('repository draft', () => {
     fixture()
     const user = userEvent.setup()
     const view = mount()
-    const input = await screen.findByRole('textbox', { name: 'Repository' })
+    const input = await screen.findByRole('textbox', { name: 'GitHub repository' })
     await user.type(screen.getByRole('textbox', { name: 'Base branch' }), '-local')
     let status = 403
     server.use(http.get('/api/management/workspaces/workspace-1', () => status === 200
@@ -238,7 +238,7 @@ describe('repository draft', () => {
     const state = fixture()
     const user = userEvent.setup()
     mount()
-    const input = await screen.findByRole('textbox', { name: 'Repository' })
+    const input = await screen.findByRole('textbox', { name: 'GitHub repository' })
     await user.type(screen.getByRole('textbox', { name: 'Base branch' }), '-local')
     state.change({ ...state.read(), revision: 2 })
     await user.click(screen.getByRole('button', { name: 'Save repository' }))
@@ -281,7 +281,7 @@ describe('repository draft', () => {
     const state = fixture()
     const user = userEvent.setup()
     mount()
-    const input = await screen.findByRole('textbox', { name: 'Repository' })
+    const input = await screen.findByRole('textbox', { name: 'GitHub repository' })
     await user.click(screen.getByRole('button', { name: /^Remove$/ }))
     await waitFor(() => expect(state.writes).toHaveLength(1))
     expect(state.writes[0]).toMatchObject({ expectedRevision: 1, repository: null })

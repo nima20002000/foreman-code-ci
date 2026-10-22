@@ -1,3 +1,4 @@
+import { operatorCatalog } from './support/operatorCatalog.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { createHash, randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
@@ -26,7 +27,7 @@ it('rejects OpenCode creation through authenticated HTTP and MCP without persist
     const agentId = randomUUID()
     const input = { workspaceId, agentId, commandId: randomUUID(), name: 'Retired harness choice',
       configuration: historicalConfiguration }
-    const tool = (await f.client.listTools()).tools.find(tool => tool.name === 'agent_create')
+    const tool = (await operatorCatalog(f.client)).find(tool => tool.name === 'agent_create')
     expect(tool).toBeDefined()
     const rejected = AgentCreateInputSchema.safeParse(input)
     expect(rejected.success).toBe(false)

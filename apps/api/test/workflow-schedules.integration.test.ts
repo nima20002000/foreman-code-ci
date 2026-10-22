@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
@@ -384,9 +385,9 @@ describe.skipIf(!postgresEnabled)('SCH-03 PostgreSQL persistence and authenticat
     const root = `/api/management/workspaces/${scope.workspaceId}/workflows/${scope.workflowId}/schedule`
     try {
       const owner = await connect(writer.token), readOnly = await connect(reader.token), outsider = await connect(foreign.token)
-      const listed = await owner.listTools()
+      const listed = { tools: await operatorCatalog(owner) }
       for (const name of WORKFLOW_SCHEDULE_TOOLS) expect(listed.tools.map((tool) => tool.name)).toContain(name)
-      expect((await readOnly.listTools()).tools.map((tool) => tool.name)).not.toContain('workflow_schedule_save')
+      expect(await operatorCatalogNames(readOnly)).not.toContain('workflow_schedule_save')
       const caps = await owner.callTool({ name: 'operator_get_capabilities', arguments: { ...scope, detail: 'full' } })
       expect(caps.isError).not.toBe(true)
       expect(ScheduleOperatorCapabilitiesSchema.parse(decodeMcpToolResult(caps)).tools).toEqual(expect.arrayContaining([...WORKFLOW_SCHEDULE_TOOLS]))

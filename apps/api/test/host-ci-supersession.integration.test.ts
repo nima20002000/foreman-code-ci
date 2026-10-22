@@ -22,7 +22,7 @@ it('supersedes every queued and running part through MCP and preserves the repla
     return reply
   }
   try {
-    const tools = await f.operator.listTools()
+    const tools = { tools: await operatorCatalog(f.operator) }
     expect(tools.tools.find(tool => tool.name === 'ci_run')?.annotations?.destructiveHint).toBe(true)
     const old = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
       suite: 'typecheck', commit: oldCommit, commandId: 'old-checks',

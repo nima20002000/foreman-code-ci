@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
@@ -132,7 +133,7 @@ describe.skipIf(!postgresEnabled)('durable build admission queue: mcp', () => {
     clients.push(writerClient)
     await writerClient.connect(new StreamableHTTPClientTransport(new URL('/mcp', address),
       { requestInit: { headers: { authorization: `Bearer ${writer.token}` } } }))
-    expect((await writerClient.listTools()).tools.map(tool => tool.name)).toContain('job_start')
+    expect(await operatorCatalogNames(writerClient)).toContain('job_start')
     const forged = await writerClient.callTool({ name: 'job_start', arguments: {
       workspaceId: f.workspaceId, ...input, commandId: randomUUID(), initiatingAgent,
     } })
@@ -188,9 +189,9 @@ describe.skipIf(!postgresEnabled)('durable build admission queue: mcp', () => {
     }
     const client = await connect(writer.token)
     const readOnly = await connect(reader.token)
-    const tools = (await client.listTools()).tools.map(tool => tool.name)
+    const tools = await operatorCatalogNames(client)
     expect(tools).toEqual(expect.arrayContaining(['job_queue_get', 'job_queue_list', 'job_queue_cancel']))
-    const readerTools = (await readOnly.listTools()).tools.map(tool => tool.name)
+    const readerTools = await operatorCatalogNames(readOnly)
     expect(readerTools).toEqual(expect.arrayContaining(['job_queue_get', 'job_queue_list']))
     expect(readerTools).not.toContain('job_queue_cancel')
     const capabilities = await client.callTool({ name: 'operator_get_capabilities', arguments: { detail: 'full',

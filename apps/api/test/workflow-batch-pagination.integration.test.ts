@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
@@ -35,7 +36,7 @@ it('paginates and atomically archives through authenticated MCP with scope, revi
       return client
     }
     const client = await connect(owner.token)
-    expect((await client.listTools()).tools.map((tool) => tool.name)).toContain('workflow_batch_archive')
+    expect(await operatorCatalogNames(client)).toContain('workflow_batch_archive')
     const workspaceId = (await workspaces.create(owner.principal, 'http', { commandId: randomUUID(), name: 'Batch' })).value.workspace.id
     await workspaces.create(owner.principal, 'http', { commandId: randomUUID(), name: 'Second' })
     const first = c.ManagedWorkspacePageSchema.parse(decodeMcpToolResult((await client.callTool({ name: 'workspace_list', arguments: { detail: 'full', limit: 1 } }))))
@@ -55,7 +56,7 @@ it('paginates and atomically archives through authenticated MCP with scope, revi
     const input = { workspaceId, commandId: randomUUID(), workflows: created.slice(0, 2).map(({ value }) => ({ workflowId: value.workflow.id, expectedRevision: value.revision })) }
     const reader = await access.issue({ name: 'Reader', audience: 'operator', grants: [{ actions: ['workflows:read'], scope: { workspaceIds: [workspaceId] } }], expiresAt: new Date(Date.now() + 60_000) })
     const denied = await connect(reader.token)
-    expect((await denied.listTools()).tools.map((tool) => tool.name)).not.toContain('workflow_batch_archive')
+    expect(await operatorCatalogNames(denied)).not.toContain('workflow_batch_archive')
     await expectMcpAccessDenied(denied.callTool({ name: 'workflow_batch_archive', arguments: input }))
     const scoped = await access.issue({ name: 'Scoped', audience: 'operator', grants: [{ actions: ['workflows:read', 'workflows:archive'], scope: { workspaceIds: [workspaceId], workflowIds: [input.workflows[0]!.workflowId] } }], expiresAt: new Date(Date.now() + 60_000) })
     const scopedClient = await connect(scoped.token)

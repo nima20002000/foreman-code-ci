@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
@@ -59,9 +60,9 @@ describe.each(settings)('$kind defaults transports', setting => {
           expect(removed.statusCode).toBe(404)
         }
       }
-      expect((await f.client.listTools()).tools.map(tool => tool.name))
+      expect(await operatorCatalogNames(f.client))
         .toEqual(expect.arrayContaining([setting.readTool, setting.updateTool]))
-      expect((await denied.listTools()).tools.map(tool => tool.name)).not.toContain(setting.updateTool)
+      expect(await operatorCatalogNames(denied)).not.toContain(setting.updateTool)
       await expectMcpAccessDenied(denied.callTool({ name: setting.updateTool, arguments: input }))
       const deniedHttp = await app.inject({ method: 'PUT', url: path, headers: headers(reader.token), payload: input })
       expect(deniedHttp.statusCode).toBe(403)

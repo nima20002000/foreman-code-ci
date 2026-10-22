@@ -1,3 +1,4 @@
+import { operatorCatalogNames, operatorCatalog } from './support/operatorCatalog.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
@@ -23,7 +24,7 @@ describe.skipIf(!postgresEnabled)('AF-05 attachment steering', { timeout: 90_000
     })
     try {
       await withAfMcp(f, async (writer, reader) => {
-        const tool = (await writer.listTools()).tools.find((entry) => entry.name === 'agent_chat_send')!
+        const tool = (await operatorCatalog(writer)).find((entry) => entry.name === 'agent_chat_send')!
         expect(tool.description).toMatch(/steer adds text only/)
         for (const attachments of [[doc], [image], [doc, image]]) for (const content of ['look at these', '']) {
           const input = f.request(f.conversationId, { intent: 'steer', expectedNativeTurnId: active.turn.nativeTurnId,
@@ -42,7 +43,7 @@ describe.skipIf(!postgresEnabled)('AF-05 attachment steering', { timeout: 90_000
         expect(f.native.steerCalls).toBe(0); expect(f.native.starts).toBe(starts)
         // Authority/discovery remains unchanged. A read-only principal cannot send even text.
         const text = f.request(f.conversationId, { intent: 'steer', expectedNativeTurnId: active.turn.nativeTurnId, content: 'text only' })
-        expect((await reader.listTools()).tools.map((entry) => entry.name)).not.toContain('agent_chat_send')
+        expect(await operatorCatalogNames(reader)).not.toContain('agent_chat_send')
         await expectMcpAccessDenied(reader.callTool({ name: 'agent_chat_send', arguments: { workspaceId: f.workspaceId, request: text } }))
         expect((await sendHttp(text, f.reader.token)).statusCode).toBe(403)
         expect((await sendHttp(text)).statusCode).toBe(202)

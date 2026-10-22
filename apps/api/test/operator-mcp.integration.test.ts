@@ -1,3 +1,4 @@
+import { operatorCatalogNames, operatorCatalog } from './support/operatorCatalog.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { removeFixtureDirectory } from './helpers/testResources.js'
 import { randomUUID } from 'node:crypto'
@@ -31,7 +32,7 @@ describe.skipIf(!postgresEnabled)('Operator MCP current PostgreSQL integration',
           scope: { workspaceIds: [workspaceId] } }],
       })
       const editor = await f.connect(credential.token)
-      expect((await editor.listTools()).tools.map(tool => tool.name)).toContain('workspace_update')
+      expect(await operatorCatalogNames(editor)).toContain('workspace_update')
       const updated = value(await editor.callTool({ name: 'workspace_update', arguments: {
         workspaceId, commandId: randomUUID(), expectedRevision: created.revision, name: 'Persisted edit',
       } })).value as { workspace: { id: string; name: string }; revision: number }
@@ -73,7 +74,7 @@ describe.skipIf(!postgresEnabled)('Operator MCP current PostgreSQL integration',
       await new PostgresFoundationSettingsRepository(f.db.pool).updateWorkspaceDefaults({
         suggestedName: 'New workspace', description: 'Default description', parentPath: f.db.directory,
       }, 0)
-      const tools = (await f.client.listTools()).tools
+      const tools = (await operatorCatalog(f.client))
       const schema = tools.find((tool) => tool.name === 'workspace_create')!.inputSchema
       expect(schema.required ?? []).toEqual([])
       expect(schema.properties).toHaveProperty('name')
@@ -112,7 +113,7 @@ describe.skipIf(!postgresEnabled)('Operator MCP current PostgreSQL integration',
   it('discovers current tools and denies missing, worker, expired, revoked, wrong-scope and read-only callers', async () => {
     const f = await currentOperatorIntegration()
     try {
-      const names = (await f.client.listTools()).tools.map((tool) => tool.name)
+      const names = await operatorCatalogNames(f.client)
       expect(names).toEqual(expect.arrayContaining(['workspace_create', 'workflow_create', 'run_start', 'run_stop', CURRENT_WORKFLOW_TOOLS.save]))
       expect(names).not.toContain('graph_draft_open')
       const readiness = value(await f.client.callTool({ name: 'execution_readiness_get', arguments: { harness: 'codex' } }))
@@ -120,8 +121,8 @@ describe.skipIf(!postgresEnabled)('Operator MCP current PostgreSQL integration',
       const readonly = await f.access.issue({ name: 'Reader', audience: 'operator', expiresAt: new Date(Date.now() + 600000),
         grants: [{ actions: ['workflows:read', 'graph:read', 'workspace_locations:validate'], scope: { workspaceIds: [f.f.scope.workspaceId] } }] })
       const reader = await f.connect(readonly.token)
-      expect((await reader.listTools()).tools.map((tool) => tool.name)).not.toContain(CURRENT_WORKFLOW_TOOLS.save)
-      expect((await reader.listTools()).tools.map((tool) => tool.name)).not.toContain('execution_readiness_get')
+      expect(await operatorCatalogNames(reader)).not.toContain(CURRENT_WORKFLOW_TOOLS.save)
+      expect(await operatorCatalogNames(reader)).not.toContain('execution_readiness_get')
       const deniedReadiness = await reader.callTool({ name: 'execution_readiness_get', arguments: { harness: 'codex' } })
       expect(deniedReadiness.isError).toBe(true)
       expect(JSON.stringify(deniedReadiness.content)).toContain('ACCESS_DENIED')

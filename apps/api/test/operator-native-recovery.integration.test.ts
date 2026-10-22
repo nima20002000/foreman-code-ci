@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -98,14 +99,14 @@ async function fixture() {
 }
 
 async function denied(client: Client, name: string, args: Record<string, unknown>) {
-  expect((await client.listTools()).tools.map(tool => tool.name)).not.toContain(name)
+  expect(await operatorCatalogNames(client)).not.toContain(name)
   const result = await client.callTool({ name, arguments: args })
   expect(result.isError).toBe(true)
   expect(JSON.stringify(result.content)).toContain('ACCESS_DENIED')
 }
 
 async function discovered(client: Client, names: string[]) {
-  expect((await client.listTools()).tools.map(tool => tool.name)).toEqual(expect.arrayContaining(names))
+  expect(await operatorCatalogNames(client)).toEqual(expect.arrayContaining(names))
   const capabilities = decodeMcpToolResult(await client.callTool({
     name: 'operator_get_capabilities', arguments: { detail: 'full' },
   })) as { tools: string[]; requirements: Array<{ name: string; actions: string[] }> }

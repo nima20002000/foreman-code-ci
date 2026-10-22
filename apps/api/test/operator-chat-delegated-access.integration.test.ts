@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
@@ -124,7 +125,7 @@ describe.skipIf(!connectionString)('Operator chat persistence and native binding
       expect(deniedResponse.status).toBe(403)
       const deniedClient = new Client({ name: 'claude-setup-denied', version: '1' }); clients.push(deniedClient)
       await deniedClient.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), { authProvider: { token: async () => denied.token } }))
-      expect((await deniedClient.listTools()).tools.map((tool) => tool.name)).not.toContain('operator_mcp_setup_get')
+      expect(await operatorCatalogNames(deniedClient)).not.toContain('operator_mcp_setup_get')
       await expectMcpAccessDenied(deniedClient.callTool({ name: 'operator_mcp_setup_get', arguments: {} }))
       await expectMcpAccessDenied(client.callTool({ name: 'operator_chat_create', arguments: {} }))
       expect(managersCreated).toBe(0)
@@ -190,10 +191,10 @@ describe.skipIf(!connectionString)('Operator chat persistence and native binding
         await withTransaction(pool, connection =>
           operators.updateWithClient(connection, harness, first.id, false, undefined, selector))
         await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), { authProvider: { token: async () => token! } }))
-        expect((await client.listTools()).tools.map((tool) => tool.name)).toContain('operator_mcp_setup_get')
+        expect(await operatorCatalogNames(client)).toContain('operator_mcp_setup_get')
         expect((await client.callTool({ name: 'operator_mcp_setup_get', arguments: {} })).isError).not.toBe(true)
         expect(inspected).toEqual([delegate.id])
-        expect((await client.listTools()).tools.map((tool) => tool.name)).not.toContain('operator_chat_create')
+        expect(await operatorCatalogNames(client)).not.toContain('operator_chat_create')
         if (denial === 'dead turn') {
           manager.finish(nativeCorrelation(conversation.id, 'active-delegate-turn'))
           await waitFor(async () => (await repository.active(conversation.id))?.active_request_id === null)

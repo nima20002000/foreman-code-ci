@@ -1,3 +1,4 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { createFixtureSchema, dropFixtureSchema } from './helpers/testResources.js'
 import { randomUUID } from 'node:crypto'
@@ -147,8 +148,8 @@ it('persists host overrides through authenticated MCP with denial, CAS, replay, 
     const address = await app.listen({ host: '127.0.0.1', port: 0 })
     const connect = async (token: string) => { const client = new Client({ name: 'host-instance-mcp', version: '1' }); clients.push(client); await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), { authProvider: { token: async () => token } })); return client }
     const writer = await connect(owner.token), denied = await connect(reader.token)
-    expect((await writer.listTools()).tools.map(tool => tool.name)).toEqual(expect.arrayContaining(['harness_instances_list', 'harness_instance_save', 'harness_instance_check']))
-    expect((await denied.listTools()).tools.map(tool => tool.name)).not.toContain('harness_instance_save')
+    expect(await operatorCatalogNames(writer)).toEqual(expect.arrayContaining(['harness_instances_list', 'harness_instance_save', 'harness_instance_check']))
+    expect(await operatorCatalogNames(denied)).not.toContain('harness_instance_save')
     const deniedSave = await denied.callTool({ name: 'harness_instance_save', arguments: {} })
     expect(deniedSave.isError).toBe(true)
     expect(JSON.stringify(deniedSave.content)).toContain('ACCESS_DENIED')

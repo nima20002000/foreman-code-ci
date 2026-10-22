@@ -1,3 +1,4 @@
+import { operatorCatalog } from './support/operatorCatalog.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { rm } from 'node:fs/promises'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
@@ -157,7 +158,7 @@ it('reconciles a changed Agent profile through authenticated MCP and admits the 
     expect(HostHarnessOverrideListSchema.parse(await call('harness_instances_list', {
       hostRef: target.hostRef, applicationInstallationId: mainId,
     })).overrides.find(profile => profile.instanceId === old.instanceId)).toEqual(listedProfile)
-    const tools = (await owner.listTools()).tools
+    const tools = (await operatorCatalog(owner))
     expect.soft(tools.find(tool => tool.name === 'agent_update')?.description)
       .toMatch(/harness_instances_list.*harness_instance_save.*returned selection/)
     expect.soft(tools.find(tool => tool.name === 'agent_update')?.description)
