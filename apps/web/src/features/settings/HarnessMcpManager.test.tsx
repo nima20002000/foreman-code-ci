@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { afterEach, expect, it } from 'vitest'
 import { server } from '../../mocks/server'
@@ -12,9 +12,18 @@ const checkedAt = '2026-09-20T00:00:00.000Z'
 const clients: QueryClient[] = []
 afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()) })
 
+/** The suggested-server row for one preset, e.g. "Foreman Code MCP". */
+const presetRow = (label: string) => within(screen.getByText(label).closest('.harness-preset-row') as HTMLElement)
+/** Buttons stay disabled while a read or change is in flight; click once they are ready. */
+async function clickWhenEnabled(name: string) {
+  const button = await screen.findByRole('button', { name })
+  await waitFor(() => expect(button).toBeEnabled())
+  fireEvent.click(button)
+}
+
 it.each([500, 503])('shows HTTP %s refresh failures and disables writes until an inspection succeeds', async (status) => {
   let unavailable = false
-  const message = 'Native inspection unavailable'
+  const message = 'Couldn\'t read servers.'
   server.use(
     http.get('/api/management/harnesses/codex/mcp', () => unavailable
       ? HttpResponse.json({ error: { code: 'HARNESS_QUALIFICATION_FAILED', message: 'Native inspection unavailable' } }, { status })
@@ -62,27 +71,21 @@ it.each(['codex'] as const)('adds, toggles, and removes Foreman Code and Linear 
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(client)
   render(<QueryClientProvider client={client}><HarnessMcpManager harness={harness} /></QueryClientProvider>)
   for (const [name, label] of [['foreman-code', 'Foreman Code MCP'], ['linear', 'Linear MCP']] as const) {
-    fireEvent.click(await screen.findByRole('button', { name: `Add ${label}` }))
+    const add = await presetRow(label).findByRole('button', { name: 'Add' })
+    await waitFor(() => expect(add).toBeEnabled())
+    fireEvent.click(add)
     const card = await screen.findByRole('button', { name: `View details for ${name}, Enabled` })
-    card.focus()
     fireEvent.click(card)
-    const dialog = screen.getByRole('dialog', { name: `${name} MCP details` })
-    expect(dialog).toBeVisible()
-    expect(screen.getByText(name === 'linear' ? 'https://mcp.linear.app/mcp/readonly' : 'http://127.0.0.1:3000/mcp')).toBeVisible()
-    fireEvent.pointerDown(dialog)
-    fireEvent.click(dialog)
-    expect(dialog).not.toBeVisible()
-    expect(card).toHaveFocus()
-    fireEvent.click(card)
-    expect(screen.queryByRole('dialog', { name: 'Review MCP change' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Disable' }))
-    fireEvent.click(await screen.findByRole('button', { name: `View details for ${name}, Disabled` }))
-    expect(screen.getByRole('dialog', { name: `${name} MCP details` })).toHaveTextContent('Disabled')
-    expect(screen.getByRole('button', { name: 'Remove server' })).toBeEnabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Enable' }))
-    await screen.findByRole('button', { name: `View details for ${name}, Enabled` })
-    fireEvent.click(screen.getByRole('button', { name: 'Remove server' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: `Add ${label}` })).toBeEnabled())
+    const details = screen.getByRole('region', { name: 'codex MCP connections' })
+    expect(within(details).getByRole('heading', { name })).toBeVisible()
+    expect(within(details).getByText(name === 'linear' ? 'https://mcp.linear.app/mcp/readonly' : 'http://127.0.0.1:3000/mcp')).toBeVisible()
+    await clickWhenEnabled('Disable')
+    await waitFor(() => expect(details).toHaveTextContent('Disabled'))
+    expect(screen.getByRole('button', { name: 'Remove' })).toBeVisible()
+    await clickWhenEnabled('Enable')
+    await waitFor(() => expect(details).toHaveTextContent('Enabled'))
+    await clickWhenEnabled('Remove')
+    await waitFor(() => expect(presetRow(label).getByRole('button', { name: 'Add' })).toBeEnabled())
   }
   expect(calls.map(({ preset, installed, enabled }) => [preset, installed, enabled])).toEqual([
     ['graphql', true, undefined], ['graphql', undefined, false], ['graphql', undefined, true], ['graphql', false, undefined],
@@ -106,8 +109,8 @@ it('keeps the original command identity when a one-click response is uncertain',
   )
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(client)
   render(<QueryClientProvider client={client}><HarnessMcpManager harness="codex" /></QueryClientProvider>)
-  fireEvent.click(await screen.findByRole('button', { name: 'Add Foreman Code MCP' }))
-  fireEvent.click(await screen.findByRole('button', { name: 'Retry original change' }))
+  fireEvent.click(await presetRow('Foreman Code MCP').findByRole('button', { name: 'Add' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Retry' }))
   await waitFor(() => expect(inputs).toHaveLength(2))
   expect(inputs[1]?.commandId).toBe(inputs[0]?.commandId)
 })
@@ -123,18 +126,14 @@ it('keeps protected and inherited servers inspectable while explaining why remov
   )
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(client)
   render(<QueryClientProvider client={client}><HarnessMcpManager harness="codex" /></QueryClientProvider>)
-  const card = await screen.findByRole('button', { name: 'View details for graphql, Enabled' })
-  card.focus()
-  fireEvent.click(card)
-  expect(screen.getByRole('dialog', { name: 'graphql MCP details' })).toHaveTextContent('http://127.0.0.1:3000/mcp')
-  fireEvent.click(screen.getByRole('button', { name: /^Close$/ }))
-  expect(card).toHaveFocus()
+  const details = () => screen.getByRole('region', { name: 'codex MCP connections' })
   for (const name of ['graphql', 'shared-tools']) {
-    fireEvent.click(screen.getByRole('button', { name: `View details for ${name}, ${name === 'graphql' ? 'Enabled' : 'Inherited'}` }))
-    expect(screen.getByRole('button', { name: 'Remove server' })).toBeDisabled()
-    expect(screen.getByRole('dialog', { name: `${name} MCP details` })).toHaveTextContent(name === 'graphql' ? 'This app-managed connection is protected here.' : 'This connection comes from another configuration source.')
+    fireEvent.click(await screen.findByRole('button', { name: `View details for ${name}, ${name === 'graphql' ? 'Enabled' : 'Inherited'}` }))
+    if (name === 'graphql') expect(details()).toHaveTextContent('http://127.0.0.1:3000/mcp')
+    expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument()
+    expect(details()).toHaveTextContent(name === 'graphql' ? 'Managed by Foreman Code.' : 'Change it in the config file it comes from.')
     expect(screen.queryByRole('button', { name: /^(Enable|Disable)$/ })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /^Close$/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
   }
 })
 
@@ -155,18 +154,17 @@ it('upgrades retired graphql-app and graphql-operator entries to the one Foreman
   )
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(client)
   render(<QueryClientProvider client={client}><HarnessMcpManager harness="codex" /></QueryClientProvider>)
-  await screen.findByRole('button', { name: 'Upgrade to Foreman Code MCP' })
-  expect(screen.queryByText('Replaces the separate graphql-app and graphql-operator connections with one connection for every role.')).not.toBeInTheDocument()
-  fireEvent.mouseEnter(screen.getByRole('button', { name: 'About Upgrade to Foreman Code MCP' }))
-  expect(screen.getByRole('tooltip')).toHaveTextContent('Replaces the separate graphql-app and graphql-operator connections with one connection for every role.')
+  const upgrade = await presetRow('Foreman Code MCP').findByRole('button', { name: 'Upgrade' })
+  expect(screen.getByText('Replaces the two older app connections.')).toBeVisible()
   fireEvent.click(screen.getByRole('button', { name: 'View details for graphql-operator, Needs attention' }))
-  expect(screen.getByRole('dialog', { name: 'graphql-operator MCP details' })).toHaveTextContent('This retired connection is replaced by foreman-code')
-  fireEvent.click(screen.getByRole('button', { name: /^Close$/ }))
-  fireEvent.click(screen.getByRole('button', { name: 'Upgrade to Foreman Code MCP' }))
+  expect(screen.getByRole('region', { name: 'codex MCP connections' })).toHaveTextContent('Retired. Use Upgrade to Foreman Code MCP to replace it.')
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+  await waitFor(() => expect(upgrade).toBeEnabled())
+  fireEvent.click(await presetRow('Foreman Code MCP').findByRole('button', { name: 'Upgrade' }))
   await waitFor(() => expect(inputs).toEqual([expect.objectContaining({ preset: 'graphql', installed: true })]))
 })
 
-it('keeps native enablement behind the existing review flow in the details dialog', async () => {
+it('keeps native enablement behind the existing review flow in the details view', async () => {
   let planned: { change: { kind: string; enabled: boolean } } | undefined
   server.use(
     http.get('/api/management/harnesses/codex/mcp', () => HttpResponse.json({ harness: 'codex', revision, checkedAt, scope: 'native-user',
@@ -182,9 +180,9 @@ it('keeps native enablement behind the existing review flow in the details dialo
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(client)
   render(<QueryClientProvider client={client}><HarnessMcpManager harness="codex" /></QueryClientProvider>)
   fireEvent.click(await screen.findByRole('button', { name: 'View details for mytools, Enabled' }))
-  expect(screen.getByRole('button', { name: 'Remove server' })).toBeEnabled()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Remove' })).toBeEnabled())
   fireEvent.click(screen.getByRole('button', { name: 'Disable' }))
-  expect(await screen.findByRole('dialog', { name: 'Review MCP change' })).toBeVisible()
+  expect(await screen.findByRole('heading', { name: 'Review change' })).toBeVisible()
   expect(planned?.change).toMatchObject({ kind: 'enable', enabled: false })
 })
 
@@ -196,7 +194,6 @@ it.each([500, 503])('adopts a plan settled by another session after HTTP %s whil
   }
   let decisions = 0
   let readbackFails = false
-  const message = 'Plan refresh failed'
   server.use(
     http.get('/api/management/harnesses/codex/mcp', () => HttpResponse.json({ harness: 'codex', revision, checkedAt,
       scope: 'native-user', servers: [], presets: { graphql: 'missing', linear: 'missing' } })),
@@ -216,13 +213,12 @@ it.each([500, 503])('adopts a plan settled by another session after HTTP %s whil
   fireEvent.click(await screen.findByRole('button', { name: 'Review' }))
   fireEvent.click(screen.getByRole('button', { name: 'Approve and apply' }))
   expect(await screen.findByText('Change uncertain')).toBeVisible()
-  expect(await screen.findByText(`Change requests: ${message}`)).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Reconcile without rewriting' })).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Confirm change' })).toBeVisible()
   plan = { ...plan, status: 'applied', error: null }
   readbackFails = false
   await client.invalidateQueries({ queryKey: harnessSettingsKeys.plans('codex') })
   expect(await screen.findByText('Change applied')).toBeVisible()
-  expect(screen.queryByRole('button', { name: 'Reconcile without rewriting' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Confirm change' })).not.toBeInTheDocument()
   expect(decisions).toBe(1)
 })
 
@@ -246,16 +242,16 @@ it.each(['parent', 'native'] as const)('locks an uncertain retry during %s acces
     <HarnessMcpManager harness="codex" accessUnavailable={accessUnavailable} />
   </QueryClientProvider>
   const mounted = render(panel(false))
-  fireEvent.click(await screen.findByRole('button', { name: 'Add Foreman Code MCP' }))
-  await screen.findByRole('button', { name: 'Retry original change' })
+  fireEvent.click(await presetRow('Foreman Code MCP').findByRole('button', { name: 'Add' }))
+  await screen.findByRole('button', { name: 'Retry' })
   expect(inputs).toHaveLength(1)
   if (source === 'parent') mounted.rerender(panel(true))
   else {
     nativeDenied = true
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
   }
-  await screen.findByText('Connection access is unavailable')
-  const retry = screen.getByRole('button', { name: 'Retry original change' })
+  await screen.findByText('Connections are unavailable right now.')
+  const retry = screen.getByRole('button', { name: 'Retry' })
   expect(retry).toBeDisabled()
   fireEvent.click(retry)
   expect(inputs).toHaveLength(1)
@@ -264,8 +260,8 @@ it.each(['parent', 'native'] as const)('locks an uncertain retry during %s acces
     nativeDenied = false
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
   }
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Retry original change' })).toBeEnabled())
-  fireEvent.click(screen.getByRole('button', { name: 'Retry original change' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Retry' })).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
   await waitFor(() => expect(inputs).toHaveLength(2))
   expect(inputs[1]).toEqual(inputs[0])
 })

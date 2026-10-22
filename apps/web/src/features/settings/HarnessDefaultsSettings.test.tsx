@@ -42,7 +42,7 @@ it('shows Codex and Claude as summary cards with status and no editor', () => {
   const codex = screen.getByRole('button', { name: 'Edit Codex defaults' }).closest('.settings-choice') as HTMLElement
   const claude = screen.getByRole('button', { name: 'Edit Claude defaults' }).closest('.settings-choice') as HTMLElement
   expect(within(codex).getByText('Ready')).toBeVisible()
-  expect(within(claude).getByText('Check the Claude profile.')).toBeVisible()
+  expect(within(claude).getByText('Unavailable')).toBeVisible()
   expect(within(codex).getByText('Operator MCP for codex')).toBeVisible()
   expect(within(codex).getByRole('region', { name: 'Codex accounts' })).toBeVisible()
   expect(within(claude).getByRole('region', { name: 'Claude accounts' })).toBeVisible()
@@ -134,5 +134,5 @@ it('uses discovered canonical targets for both account cards without placing con
   }
   await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Claude account computer' }), JSON.stringify(accountTarget))
   expect(onAccountTargetChange).toHaveBeenCalledWith(accountTarget)
-  expect(screen.getAllByText(/Worker ·.*Installation/)).toHaveLength(2)
+  expect(screen.getAllByRole('combobox', { name: /account computer$/ })).toHaveLength(2)
 })

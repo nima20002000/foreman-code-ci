@@ -24,9 +24,9 @@ export function ComputerSettings({ deviceId, onSelectComputer }: { deviceId?: st
   const addScope = useAddPanel(state => state.scope)
   const toggleAdd = useAddPanel(state => state.toggle)
   const adding = currentMain !== undefined && addScope === `${sessionGeneration()}:${currentMain.mainId}`
-  const readFailure = main.isError ? <Alert tone="danger" title="Couldn\u2019t read the Main PC."
+  const readFailure = main.isError ? <Alert tone="danger" title="Couldn’t read the Main PC."
     action={<Button size="sm" onClick={() => void main.refetch()}>Retry</Button>} />
-    : computers.isError ? <Alert tone="danger" title="Couldn\u2019t read computers."
+    : computers.isError ? <Alert tone="danger" title="Couldn’t read computers."
       action={<Button size="sm" onClick={() => void computers.refetch()}>Retry</Button>} /> : null
   const loading = !currentMain || computers.isPending ? <LoadingState label="Loading computers…" rows={2} /> : null
   return <section className="settings-editor-page computers-page" aria-label={deviceId ? 'Computer details' : 'Computers'}>

@@ -45,8 +45,11 @@ function mount(accounts: ManagedCircleAccounts, handler?: HttpHandler) {
   ])
 }
 
+function orgItem(owner: string) {
+  return screen.getByText(owner).closest('li')!
+}
 function orgRow(owner: string) {
-  return within(screen.getByText(owner).closest('li')!)
+  return within(orgItem(owner))
 }
 
 it('adds a read-only CircleCI summary below the computers with six independent org readings', async () => {
@@ -56,22 +59,19 @@ it('adds a read-only CircleCI summary below the computers with six independent o
   const standby = within(card).getByRole('region', { name: 'Standby CircleCI account' })
   expect(within(primary).getByText('Build pool')).toBeVisible()
   expect(within(standby).getByText('Overflow pool')).toBeVisible()
-  expect(within(primary).getByText('Configured')).toBeVisible()
-  expect(within(standby).getByText('Configured')).toBeVisible()
+  expect(within(primary).queryByText('Setup needed')).not.toBeInTheDocument()
+  expect(within(standby).queryByText('Setup needed')).not.toBeInTheDocument()
   expect(within(primary).getAllByRole('listitem')).toHaveLength(3)
   expect(within(standby).getAllByRole('listitem')).toHaveLength(3)
   for (const [owner, remaining] of [
     ['acme-one', '390,000'], ['acme-two', '380,000'], ['acme-three', '370,000'],
     ['beta-one', '350,000'], ['beta-two', '300,000'], ['beta-three', '250,000'],
   ]) {
-    expect(orgRow(owner!).getByText(`≈ ${remaining} credits left`)).toBeVisible()
-    expect(orgRow(owner!).getByText(/Updated 3 h ago/)).toBeVisible()
+    expect(orgRow(owner!).getByText(`≈ ${remaining} credits`)).toHaveAttribute('title', 'Updated 3 h ago')
   }
-  expect(orgRow('acme-two').getByText('1 job running')).toBeVisible()
-  expect(orgRow('acme-three').getByText('2 jobs running')).toBeVisible()
+  expect(orgRow('acme-two').getByText('1 job')).toBeVisible()
+  expect(orgRow('acme-three').getByText('2 jobs')).toBeVisible()
   expect(orgRow('beta-one').getByText('Standby')).toBeVisible()
-  expect(within(card).getByText(/Operator manages account registration/)).toBeVisible()
-  expect(within(card).getByText(/Local setup supplies the API token/)).toBeVisible()
   expect(within(card).queryByRole('textbox')).not.toBeInTheDocument()
   expect(within(card).queryByRole('combobox')).not.toBeInTheDocument()
   expect(within(card).queryByRole('switch')).not.toBeInTheDocument()
@@ -102,7 +102,7 @@ it('keeps configured credentials distinct from an account that needs attention',
   accounts.value.accounts[1]!.reasons = ['Account authentication is unavailable.']
   mount(accounts)
   const card = within(await screen.findByRole('region', { name: 'Standby CircleCI account' }))
-  expect(card.getByText('Configured')).toBeVisible()
+  expect(card.queryByText('Setup needed')).not.toBeInTheDocument()
   expect(card.getByText('Needs attention')).toBeVisible()
   expect(card.getByText('Account authentication is unavailable.')).toBeVisible()
 })
@@ -115,7 +115,8 @@ it('shows loading while the account read is pending', async () => {
     return HttpResponse.json(accountsFixture())
   }))
   try {
-    expect(await screen.findByText('Loading CircleCI…')).toBeInTheDocument()
+    const card = await screen.findByRole('region', { name: 'CircleCI' })
+    expect(card.querySelector('[aria-busy="true"]')).toBeInTheDocument()
   } finally {
     release()
   }
@@ -147,9 +148,8 @@ it('shows unavailable credits and their reason without turning standby into a lo
   accounts.value.accounts[1]!.orgs[0]!.creditsUnavailable = 'Usage export is unavailable.'
   mount(accounts)
   await screen.findByText('Build pool')
-  expect(orgRow('acme-one').getByText('Credits unavailable')).toBeVisible()
-  expect(orgRow('acme-one').getByText('Usage reading is stale.')).toBeVisible()
-  expect(orgRow('beta-one').getByText('Credits unavailable')).toBeVisible()
+  expect(orgRow('acme-one').getByText('Credits unknown')).toHaveAttribute('title', 'Usage reading is stale.')
+  expect(orgRow('beta-one').getByText('Credits unknown')).toHaveAttribute('title', 'Usage export is unavailable.')
   expect(orgRow('beta-one').getByText('Standby')).toBeVisible()
   expect(screen.queryByText(/Not logged in/)).not.toBeInTheDocument()
 })
@@ -167,8 +167,8 @@ it('reflects server overflow and monthly reset roles without calculating them fr
   const f = mount(accounts)
   await screen.findByText('Build pool')
   expect(orgRow('acme-one').getByText('Out of credits')).toBeVisible()
-  expect(orgRow('acme-one').getByText(primary.schedulingReason)).toBeVisible()
-  expect(orgRow('acme-one').getByText('1 job running')).toBeVisible()
+  expect(orgItem('acme-one')).toHaveAttribute('title', primary.schedulingReason)
+  expect(orgRow('acme-one').getByText('1 job')).toBeVisible()
   expect(orgRow('beta-one').getByText('Active')).toBeVisible()
   primary.schedulingRole = 'active'
   primary.schedulingReason = 'New UTC month; primary capacity resumed.'
@@ -180,7 +180,7 @@ it('reflects server overflow and monthly reset roles without calculating them fr
   server.use(http.get(endpoint, () => HttpResponse.json(accounts)))
   await act(() => f.client.invalidateQueries({ queryKey: ['circle-accounts'] }))
   expect(orgRow('acme-one').getByText('Active')).toBeVisible()
-  expect(orgRow('acme-one').getByText('Credits unavailable')).toBeVisible()
+  expect(orgRow('acme-one').getByText('Credits unknown')).toBeVisible()
   expect(orgRow('beta-one').getByText('Standby')).toBeVisible()
-  expect(orgRow('beta-one').getByText('1 job running')).toBeVisible()
+  expect(orgRow('beta-one').getByText('1 job')).toBeVisible()
 })

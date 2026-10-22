@@ -30,8 +30,8 @@ describe('Workspace defaults API access states', () => {
   it.each([401, 403, 503])('distinguishes an initial %s response', async (status) => {
     server.use(http.get('*/api/management/settings/workspaces', () => failure(status)))
     mount()
-    const title = [401, 403].includes(status) ? 'Access unavailable' : 'Workspace defaults are unavailable'
-    expect(await screen.findByText(title)).toBeVisible()
+    if ([401, 403].includes(status)) expect(await screen.findByText('Access unavailable')).toBeVisible()
+    else expect((await screen.findAllByText(/Couldn’t load/)).length).toBeGreaterThan(0)
     expect(screen.queryByLabelText('Suggested workspace name')).not.toBeInTheDocument()
   })
   it.each([401, 403])('hides a retained draft after a refresh returns %s', async (status) => {

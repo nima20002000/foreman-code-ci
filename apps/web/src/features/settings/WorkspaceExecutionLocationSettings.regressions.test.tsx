@@ -25,7 +25,7 @@ function mount(onSaved = vi.fn()) {
 }
 async function choose(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole('button', { name: 'Project folder' }))
-  const select = await screen.findByRole('combobox', { name: 'Computer and approved base folder' })
+  const select = await screen.findByRole('combobox', { name: 'Computer and folder' })
   await user.selectOptions(select, select.querySelectorAll('option')[2]!.value)
 }
 beforeEach(() => {
@@ -43,25 +43,25 @@ describe('bound workspace location acknowledgement fences', () => {
       return HttpResponse.json({ value: boundRootReadback(input, workerRoot), replayed: false })
     }))
     const view = mount(); const user = userEvent.setup(); await choose(user)
-    await user.type(screen.getByRole('textbox', { name: 'Relative folder on this computer' }), 'from-a')
-    await user.click(screen.getByRole('button', { name: 'Select location' })); await started.promise
+    await user.type(screen.getByRole('textbox', { name: 'Subfolder' }), 'from-a')
+    await user.click(screen.getByRole('button', { name: 'Use this folder' })); await started.promise
     view.navigate('workspace-b'); await choose(user)
     await act(async () => { gate.resolve(); await gate.promise })
     await waitFor(() => expect(view.client.isMutating()).toBe(0))
     expect(view.onSaved).not.toHaveBeenCalled()
     expect(screen.getByRole('dialog', { name: 'Execution folder' })).toBeVisible()
-    expect(screen.getByRole('textbox', { name: 'Relative folder on this computer' })).toHaveValue('')
+    expect(screen.getByRole('textbox', { name: 'Subfolder' })).toHaveValue('')
     expect(view.client.getQueryData<{ locationRevision: number }>(boundLocationKeys.read('workspace-b'))?.locationRevision).toBe(7)
   })
   it('retains the original command after permission to reconcile is withdrawn', async () => {
     const requests: unknown[] = []
     server.use(http.put('/api/management/workspaces/workspace-a/root-location', async ({ request }) => { requests.push(await request.json())
       return HttpResponse.json({ error: { code: requests.length === 1 ? 'INTERNAL' : 'FORBIDDEN', message: 'Outcome cannot be read.' } }, { status: requests.length === 1 ? 503 : 403 }) }))
-    mount(); const user = userEvent.setup(); await choose(user); await user.click(screen.getByRole('button', { name: 'Select location' }))
-    await user.click(await screen.findByRole('button', { name: 'Reconcile original selection' }))
+    mount(); const user = userEvent.setup(); await choose(user); await user.click(screen.getByRole('button', { name: 'Use this folder' }))
+    await user.click((await screen.findAllByRole('button', { name: 'Retry save' }))[0]!)
     await waitFor(() => expect(requests).toHaveLength(2))
     expect(requests[1]).toEqual(requests[0])
-    expect(screen.getByRole('combobox', { name: 'Computer and approved base folder' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: 'Computer and folder' })).toBeDisabled()
   })
   it('requires explicit reload after a location conflict and uses the refreshed revision', async () => {
     let currentRevision = 1
@@ -73,12 +73,12 @@ describe('bound workspace location acknowledgement fences', () => {
         if (writes.length === 1) { currentRevision = 2; return HttpResponse.json({ error: { code: 'LOCATION_REVISION_CONFLICT', message: 'Saved location changed.', details: { currentLocationRevision: 2 } } }, { status: 409 }) }
         return HttpResponse.json({ value: boundRootReadback(input, workerRoot), replayed: false })
       }))
-    mount(); const user = userEvent.setup(); await choose(user); await user.click(screen.getByRole('button', { name: 'Select location' }))
-    await user.click(await screen.findByRole('button', { name: 'Reload saved location' }))
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Computer and approved base folder' })).toHaveValue(''))
-    const select = screen.getByRole('combobox', { name: 'Computer and approved base folder' })
+    mount(); const user = userEvent.setup(); await choose(user); await user.click(screen.getByRole('button', { name: 'Use this folder' }))
+    await user.click(await screen.findByRole('button', { name: 'Reload' }))
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Computer and folder' })).toHaveValue(''))
+    const select = screen.getByRole('combobox', { name: 'Computer and folder' })
     await user.selectOptions(select, select.querySelectorAll('option')[2]!.value)
-    await user.click(screen.getByRole('button', { name: 'Select location' }))
+    await user.click(screen.getByRole('button', { name: 'Use this folder' }))
     await waitFor(() => expect(writes).toHaveLength(2))
     expect(writes[1]?.expectedLocationRevision).toBe(2)
   })

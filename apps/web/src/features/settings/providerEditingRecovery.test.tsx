@@ -28,7 +28,7 @@ function mount(initial?: HarnessEditor) {
   clients.push(client)
   return render(<QueryClientProvider client={client}><Editor initial={initial} /></QueryClientProvider>)
 }
-describe('PR17 provider editing recovery', () => {
+describe('provider editing recovery', () => {
   it('preserves independent native drafts across harness switches', async () => {
     mount()
     const user = userEvent.setup()

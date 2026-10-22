@@ -28,7 +28,7 @@ export function SettingsFormFeedback({ form }: { form: SettingsFormState }) {
         </div>} />
     </div> : null}
     {form.uncertain ? <div className="settings-form-feedback"><Alert live tone="warning" title="Save not confirmed. Retry to check it." /></div> : null}
-    {form.error && !form.conflicted && !form.uncertain ? <div className="settings-form-feedback"><Alert live tone="danger" title="Couldn\u2019t save">
+    {form.error && !form.conflicted && !form.uncertain ? <div className="settings-form-feedback"><Alert live tone="danger" title="Couldn’t save">
       {form.error} Your edits are still here.
     </Alert></div> : null}
     {form.savedRevision !== undefined && !form.error && !form.uncertain ? <p role="status" className="settings-saved-note">

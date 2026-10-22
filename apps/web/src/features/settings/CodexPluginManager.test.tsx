@@ -42,9 +42,10 @@ function reads() {
 async function openPlugin() {
   const user = userEvent.setup()
   await user.click(await screen.findByRole('button', { name: 'View notes plugin, available' }))
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Install plugin' })).toBeEnabled())
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Install' })).toBeEnabled())
   return user
 }
+const pluginView = () => within(screen.getByRole('region', { name: 'Codex plugins' }))
 it('discovers, installs, and removes using the exact reviewed snapshot', async () => {
   let installed = false
   const changes: Array<Record<string, unknown>> = []
@@ -67,19 +68,16 @@ it('discovers, installs, and removes using the exact reviewed snapshot', async (
   await user.click(await screen.findByRole('button', { name: 'Discover' }, { timeout: 10_000 }))
   expect(await screen.findByRole('button', { name: 'View notes plugin, available' })).toHaveTextContent(/^notes$/)
   await openPlugin()
-  expect(screen.getByRole('dialog', { name: 'notes plugin' })).not.toHaveTextContent('Bundle contents can be checked after installation.')
-  await user.hover(screen.getByRole('button', { name: 'About Bundle contents' }))
-  expect(screen.getByRole('tooltip')).toHaveTextContent('Bundle contents can be checked after installation.')
-  await user.unhover(screen.getByRole('button', { name: 'About Bundle contents' }))
-  await user.click(screen.getByRole('button', { name: 'Install plugin' }))
+  expect(pluginView().getByText('Shown after install')).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Install' }))
+  await waitFor(() => expect(pluginView().getByText('summarize')).toBeVisible())
+  await user.click(screen.getByRole('button', { name: 'Back' }))
   const card = await screen.findByRole('button', { name: 'View notes plugin, installed' })
-  expect(screen.getByRole('dialog', { name: 'notes plugin' })).toHaveTextContent('summarize')
-  await user.click(screen.getByRole('button', { name: /^Close$/ }))
   await waitFor(() => expect(card).toHaveFocus())
   await user.click(card)
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Remove plugin' })).toBeEnabled())
-  await user.click(screen.getByRole('button', { name: 'Remove plugin' }))
-  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'notes plugin' })).not.toBeInTheDocument())
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Remove' })).toBeEnabled())
+  await user.click(screen.getByRole('button', { name: 'Remove' }))
+  await waitFor(() => expect(router.state.location.search.pluginId).toBeUndefined())
   expect(changes.map((input) => input.action)).toEqual(['install', 'remove'])
   for (const input of changes) expect(input).toMatchObject({ expectedRevision: revision, artifactIdentity })
   expect(changes[0]?.commandId).not.toBe(changes[1]?.commandId)
@@ -100,18 +98,18 @@ it('retains a lost command through Refresh and panel remount, then retries its e
   }))
   const { client } = mount('/settings/harnesses?harness=codex&section=plugins&pluginView=available')
   const user = await openPlugin()
-  await user.click(screen.getByRole('button', { name: 'Install plugin' }))
-  await screen.findByRole('button', { name: 'Retry original request' })
-  await user.click(screen.getByRole('button', { name: /^Close$/ }))
+  await user.click(screen.getByRole('button', { name: 'Install' }))
+  await screen.findByRole('button', { name: 'Retry' })
+  await user.click(screen.getByRole('button', { name: 'Back' }))
   await user.click(screen.getByRole('button', { name: /^Refresh$/ }))
-  expect(await screen.findByRole('button', { name: 'Retry original request' })).toBeEnabled()
+  expect(await screen.findByRole('button', { name: 'Retry' })).toBeEnabled()
   cleanup()
   mount('/settings/harnesses?harness=codex&section=plugins&pluginView=available', client)
-  await user.click(await screen.findByRole('button', { name: 'Retry original request' }))
+  await user.click(await screen.findByRole('button', { name: 'Retry' }))
   await waitFor(() => expect(requests).toHaveLength(2))
   expect(requests[1]).toEqual(requests[0])
   await user.click(await screen.findByRole('button', { name: 'View notes plugin, available' }))
-  expect(screen.getByRole('button', { name: 'Install plugin' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Install' })).toBeDisabled()
 }, 20_000)
 it('does not turn Refresh into reconciliation and never executes another install during reconciliation', async () => {
   reads()
@@ -122,12 +120,12 @@ it('does not turn Refresh into reconciliation and never executes another install
   )
   mount('/settings/harnesses?harness=codex&section=plugins&pluginView=available')
   const user = await openPlugin()
-  await user.click(screen.getByRole('button', { name: 'Install plugin' }))
-  await screen.findByRole('button', { name: 'Reconcile original request' })
-  await user.click(screen.getByRole('button', { name: /^Close$/ }))
+  await user.click(screen.getByRole('button', { name: 'Install' }))
+  await screen.findByRole('button', { name: 'Check it' })
+  await user.click(screen.getByRole('button', { name: 'Back' }))
   await user.click(screen.getByRole('button', { name: /^Refresh$/ }))
   expect(writes).toBe(1); expect(reconciliations).toBe(0)
-  await user.click(await screen.findByRole('button', { name: 'Reconcile original request' }))
+  await user.click(await screen.findByRole('button', { name: 'Check it' }))
   await waitFor(() => expect(reconciliations).toBe(1))
   expect(writes).toBe(1)
 }, 20_000)
@@ -139,10 +137,10 @@ it('rehydrates an unresolved server receipt after a fresh page lifetime', async 
     result: { pluginId: base.pluginId, action: 'remove', status: 'uncertain', message: 'Earlier removal remains unresolved.' },
   }] })))
   mount('/settings/harnesses?harness=codex&section=plugins&pluginView=available')
-  expect(await screen.findByRole('button', { name: 'Reconcile original request' })).toBeVisible()
+  expect(await screen.findByRole('button', { name: 'Check it' })).toBeVisible()
   const user = userEvent.setup()
   await user.click(await screen.findByRole('button', { name: 'View notes plugin, available' }))
-  expect(await screen.findByRole('button', { name: 'Install plugin' })).toBeDisabled()
+  expect(await screen.findByRole('button', { name: 'Install' })).toBeDisabled()
 })
 it('does not combine newer list revisions with delayed old details', async () => {
   reads()
@@ -163,7 +161,7 @@ it('does not combine newer list revisions with delayed old details', async () =>
   )
   const listUpdated = deferred()
   const disabled = deferred()
-  const install = screen.getByRole('button', { name: 'Install plugin' })
+  const install = screen.getByRole('button', { name: 'Install' })
   const observer = new MutationObserver(() => {
     if (install.hasAttribute('disabled')) disabled.resolve()
   })
@@ -180,14 +178,14 @@ it('does not combine newer list revisions with delayed old details', async () =>
     })
     // Query cache completion can precede the batched observer render.
     await disabled.promise
-    expect(screen.getByRole('button', { name: 'Install plugin' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Install' })).toBeDisabled()
   } finally {
     observer.disconnect()
     unsubscribe()
     release()
     await act(async () => { await refreshing })
   }
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Install plugin' })).toBeEnabled())
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Install' })).toBeEnabled())
 }, 20_000)
 it.each(['list', 'detail'])('keeps protected content hidden through success → 403 → 503 for %s', async (target) => {
   reads()
@@ -197,13 +195,13 @@ it.each(['list', 'detail'])('keeps protected content hidden through success → 
     server.use(http.get('/api/management/harnesses/codex/plugins/operations', () => HttpResponse.json({ items: [] })),
       http.get(target === 'list' ? '/api/management/harnesses/codex/plugins' : '/api/management/harnesses/codex/plugins/:pluginId', () => HttpResponse.json({ error: { code: status === 403 ? 'ACCESS_DENIED' : 'UNAVAILABLE', message: 'Unavailable' } }, { status })))
     await client.invalidateQueries({ queryKey: harnessSettingsKeys.root })
-    expect(await screen.findByText('Plugin access unavailable')).toBeVisible()
-    expect(screen.queryByRole('button', { name: 'Install plugin' })).not.toBeInTheDocument()
+    expect(await screen.findByText('Plugins are unavailable right now.')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Install' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /View notes plugin/ })).not.toBeInTheDocument()
-    expect(within(screen.getByRole('dialog', { name: 'Plugin details' })).queryByText('trusted')).not.toBeInTheDocument()
+    expect(screen.queryByText('trusted')).not.toBeInTheDocument()
   }
   reads(); await client.invalidateQueries({ queryKey: harnessSettingsKeys.root })
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Install plugin' })).toBeEnabled())
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Install' })).toBeEnabled())
 }, 20_000)
 it('debounces rapid typing before starting another catalog read', async () => {
   reads()
@@ -219,29 +217,28 @@ it('debounces rapid typing before starting another catalog read', async () => {
   expect(queries.filter(Boolean)).toEqual(['notes'])
 })
 
-it('shows a rejected change and refresh recovery inside the active plugin dialog', async () => {
+it('shows a rejected change and refresh recovery inside the active plugin view', async () => {
   reads()
   server.use(http.post('/api/management/harnesses/codex/plugins/change', () => HttpResponse.json({
     error: { code: 'REVISION_CONFLICT', message: 'The plugin source changed. Review refreshed details.' },
   }, { status: 409 })))
   mount('/settings/harnesses?harness=codex&section=plugins&pluginView=available')
   const user = await openPlugin()
-  await user.click(screen.getByRole('button', { name: 'Install plugin' }))
-  const dialog = within(screen.getByRole('dialog', { name: 'notes plugin' }))
-  expect(await dialog.findByRole('alert')).toHaveTextContent('The plugin source changed. Review refreshed details.')
-  expect(dialog.getByRole('button', { name: 'Refresh list and details' })).toBeEnabled()
-  expect(dialog.queryByRole('button', { name: 'Reconcile original request' })).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Install' }))
+  const alert = within(await pluginView().findByRole('alert'))
+  expect(alert.getByText('The plugin source changed. Review refreshed details.')).toBeVisible()
+  expect(alert.getByRole('button', { name: 'Refresh' })).toBeEnabled()
+  expect(pluginView().queryByRole('button', { name: 'Check it' })).not.toBeInTheDocument()
 })
 
-it('disables installation and explains an incomplete catalog inside the detail dialog', async () => {
+it('disables installation and explains an incomplete catalog inside the plugin view', async () => {
   reads()
   server.use(http.get('/api/management/harnesses/codex/plugins', () =>
     HttpResponse.json({ ...listPayload(), catalogStatus: 'partial' })))
   mount('/settings/harnesses?harness=codex&section=plugins&pluginView=available&pluginId=notes%40trusted')
-  const dialog = within(await screen.findByRole('dialog', { name: 'notes plugin' }))
-  expect(await dialog.findByText('Installation unavailable')).toBeVisible()
-  expect(dialog.getByRole('button', { name: 'Install plugin' })).toBeDisabled()
-  expect(dialog.getByText(/The catalog is incomplete/)).toBeVisible()
+  const view = within(await screen.findByRole('region', { name: 'Codex plugins' }))
+  expect(await view.findByText(/Some sources didn't load/)).toBeVisible()
+  expect(view.getByRole('button', { name: 'Install' })).toBeDisabled()
 })
 
 it('awaits a fresh catalog on Refresh before updating the reviewed detail snapshot', async () => {
@@ -275,21 +272,21 @@ it('awaits a fresh catalog on Refresh before updating the reviewed detail snapsh
   )
   mount('/settings/harnesses?harness=codex&section=plugins&pluginView=available')
   const user = await openPlugin()
-  const dialog = within(screen.getByRole('dialog', { name: 'notes plugin' }))
-  const refresh = dialog.getByRole('button', { name: 'Refresh plugin' })
+  const dialog = pluginView()
+  const refresh = dialog.getByRole('button', { name: 'Refresh' })
   await waitFor(() => expect(refresh).toBeEnabled())
   expect(detailReads).toEqual([false])
   try {
     await user.click(refresh)
     await waitFor(() => expect(refreshRequested).toBe(true))
     expect(refresh).toBeDisabled()
-    expect(dialog.getByRole('button', { name: 'Install plugin' })).toBeDisabled()
+    expect(dialog.getByRole('button', { name: 'Install' })).toBeDisabled()
     expect(detailReads).toEqual([false])
   } finally {
     release()
   }
-  await waitFor(() => expect(dialog.getByRole('button', { name: 'Remove plugin' })).toBeEnabled())
-  const remove = dialog.getByRole('button', { name: 'Remove plugin' })
+  await waitFor(() => expect(dialog.getByRole('button', { name: 'Remove' })).toBeEnabled())
+  const remove = dialog.getByRole('button', { name: 'Remove' })
   expect(dialog.getByText('summarize')).toBeVisible()
   expect(detailReads[0]).toBe(false)
   expect(detailReads.slice(1)).toContain(true)

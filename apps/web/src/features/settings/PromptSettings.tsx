@@ -53,9 +53,9 @@ export function PromptSettings({ page }: { page: PromptSettingsPage; onBack?(): 
       <p>{info.help}</p>
     </header>
     {query.isError && !draft ? <ErrorState title={`${info.label} is unavailable`} description="Try again in a moment." onRetry={() => void query.refetch()} /> : null}
-    {query.isError && draft ? <Alert tone="warning" title="Couldn\u2019t refresh the saved prompt. Your edits are kept."
+    {query.isError && draft ? <Alert tone="warning" title="Couldn’t refresh the saved prompt. Your edits are kept."
       action={<Button size="sm" disabled={query.isFetching || form.isSaving || form.uncertain} onClick={() => void query.refetch()}>Refresh saved prompt</Button>} /> : null}
-    {access.isError ? <Alert tone="warning" title="Couldn\u2019t check editing access."
+    {access.isError ? <Alert tone="warning" title="Couldn’t check editing access."
       action={<Button size="sm" onClick={() => void access.refetch()}>Retry</Button>} /> : null}
     {form.conflicted ? <Alert tone="warning" title="This prompt changed elsewhere. Your edits are preserved."
       action={<div className="settings-defaults-conflict-actions">

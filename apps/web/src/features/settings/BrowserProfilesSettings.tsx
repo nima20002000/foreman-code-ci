@@ -33,7 +33,7 @@ export function BrowserProfilesSettings({ search, onSearch }: {
       onChange={event => onSearch({ mainId: current.mainId, ...(event.target.value === 'main' ? { computer: 'main' as const }
         : event.target.value.startsWith('device:') ? { computer: 'device' as const, deviceId: event.target.value.slice(7) } : {}) })} />}
     </header>
-    {main.isError || registrations.isError ? <Alert tone="warning" title="Couldn\u2019t read computers."
+    {main.isError || registrations.isError ? <Alert tone="warning" title="Couldn’t read computers."
       action={<Button size="sm" onClick={() => { void main.refetch(); void registrations.refetch() }}>Retry</Button>} /> : null}
     {mismatch || unknownDevice ? <Alert tone="warning" title="That computer is unavailable. Choose another one." />
       : current && !main.isError && !registrations.isError && (search.computer !== 'device' || target)

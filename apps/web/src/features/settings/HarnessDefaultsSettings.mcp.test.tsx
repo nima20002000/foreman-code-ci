@@ -83,7 +83,7 @@ it('retains the edited connection and its close guard across a background catalo
   await act(async () => { await client.invalidateQueries({ queryKey: queryKeys.managedHarnessCatalog }) })
   expect(await screen.findByText("Harness defaults couldn't update")).toBeInTheDocument()
   expect(screen.getByRole('textbox', { name: 'Server name' })).toHaveValue('draft-tools')
-  fireEvent.click(within(screen.getByRole('dialog', { name: 'Add Codex MCP server' })).getByRole('button', { name: 'Close dialog' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }))
   expect(await screen.findByRole('alertdialog', { name: 'Save changes before leaving?' })).toBeVisible()
   fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Close dialog' }))
   unavailable = false
@@ -101,23 +101,29 @@ it('keeps the local connection draft after access loss while hiding cached serve
   }))
   nativeReaders()
   const client = mount()
+  const privateTools = { name: 'View details for private-tools, Enabled' }
   await waitFor(() => expect(screen.getByRole('button', { name: 'Add server' })).toBeEnabled())
   await screen.findByText('Harnesses')
-  expect(screen.getByRole('button', { name: 'View details for private-tools, Enabled' })).toBeInTheDocument()
+  expect(screen.getByRole('button', privateTools)).toBeInTheDocument()
+  outcome = 'denied'
+  await act(async () => { await client.invalidateQueries({ queryKey: queryKeys.managedHarnessCatalog }) })
+  await screen.findByText('Connections are unavailable right now.')
+  expect(screen.queryByRole('button', privateTools)).not.toBeInTheDocument()
+  outcome = 'unavailable'
+  await act(async () => { await client.invalidateQueries({ queryKey: queryKeys.managedHarnessCatalog }) })
+  expect(screen.queryByRole('button', privateTools)).not.toBeInTheDocument()
+  outcome = 'ready'
+  await act(async () => { await client.invalidateQueries({ queryKey: queryKeys.managedHarnessCatalog }) })
+  expect(await screen.findByRole('button', privateTools)).toBeInTheDocument()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Add server' })).toBeEnabled())
   fireEvent.click(screen.getByRole('button', { name: 'Add server' }))
   fireEvent.change(screen.getByRole('textbox', { name: 'Server name' }), { target: { value: 'draft-tools' } })
   outcome = 'denied'
   await act(async () => { await client.invalidateQueries({ queryKey: queryKeys.managedHarnessCatalog }) })
-  await screen.findByText('Connection access is unavailable')
-  expect(screen.queryByRole('button', { name: 'View details for private-tools, Enabled' })).not.toBeInTheDocument()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Review' })).toBeDisabled())
   expect(screen.getByRole('textbox', { name: 'Server name' })).toHaveValue('draft-tools')
-  expect(screen.getByRole('button', { name: 'Review connection' })).toBeDisabled()
-  outcome = 'unavailable'
-  await act(async () => { await client.invalidateQueries({ queryKey: queryKeys.managedHarnessCatalog }) })
-  expect(screen.queryByRole('button', { name: 'View details for private-tools, Enabled' })).not.toBeInTheDocument()
   outcome = 'ready'
   await act(async () => { await client.invalidateQueries({ queryKey: queryKeys.managedHarnessCatalog }) })
-  expect(await screen.findByRole('button', { name: 'View details for private-tools, Enabled' })).toBeInTheDocument()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Review' })).toBeEnabled())
   expect(screen.getByRole('textbox', { name: 'Server name' })).toHaveValue('draft-tools')
-  expect(screen.getByRole('button', { name: 'Review connection' })).toBeEnabled()
 })

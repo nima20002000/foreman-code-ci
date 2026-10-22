@@ -210,7 +210,7 @@ describe('HarnessStatusMenu', () => {
     queryClient.setQueryData(inventoryKey(), inventory())
     await screen.findByRole('button', { name: 'Codex: Installed' })
     await act(async () => { await queryClient.invalidateQueries({ queryKey: inventoryKey() }) })
-    await expectDetails(await screen.findByRole('button', { name: 'Codex: Unverified' }), /Last inventory confirmed installation/)
+    await expectDetails(await screen.findByRole('button', { name: 'Codex: Unverified' }), /Could not refresh. Installed at the last check/)
     expect(screen.queryByRole('button', { name: 'Codex: Not installed' })).not.toBeInTheDocument()
   })
 
