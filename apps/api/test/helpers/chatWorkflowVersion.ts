@@ -17,6 +17,11 @@ export function isLiveWorkflowRead(sql: string): boolean {
   return normalized(sql) === 'select 1 from workflows where id=$1 and workspace_id=$2 and archived_at is null'
 }
 
+/** True for the lookup of a conversation's saved working folder, which a chat read uses to name a missing folder. */
+export function isSavedChatFolderRead(sql: string): boolean {
+  return normalized(sql).startsWith("select c.record->>'workingDirectory' as path,")
+}
+
 /** True for the exact saved Version read by id. */
 export function isSavedVersionRead(sql: string): boolean {
   return normalized(sql).startsWith('select id,workspace_id,workflow_id,version,entry_node_id,execution_semantics_version,record from workflow_versions where id = $1')
