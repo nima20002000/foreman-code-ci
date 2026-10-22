@@ -61,6 +61,7 @@ async function fixture(gate: boolean, failure: 'observed' | 'persisted', stopCon
       exitCode: record.id === failed.id ? 1 : null, message: null, logBytes: 0, collection: 'unsupported' })
   }
   const control = { stopConfirmed }
+  let passes = 0
   const canceled: string[] = []
   const started: string[] = []
   const commands = new PostgresCommandCoordinator(pool)
@@ -112,7 +113,14 @@ async function fixture(gate: boolean, failure: 'observed' | 'persisted', stopCon
   }
   return { ci, failed, running, starting, queued, passed, next, canceled, started, control, read,
     denied: () => call(clients[1]!, failed.id),
-    settle: async () => { await ci.dispatch(); await ci.drain() },
+    // An executor that has not confirmed cancellation is asked again only after a growing gap (at most a minute),
+    // so each pass runs a little after the longest gap instead of waiting it out.
+    settle: async () => {
+      passes += 1
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(Date.now() + 61_000 * passes)
+      try { await ci.dispatch(); await ci.drain() } finally { vi.useRealTimers() }
+    },
     close: async () => {
       await ci.close()
       await Promise.all(clients.map(client => client.close()))
@@ -171,11 +179,8 @@ it('retains an exclusive executor until cancellation is confirmed and retries fa
     expect((await f.read(f.next.id)).run.state).toBe('queued')
     expect(f.canceled).toContain(f.running.id)
     f.control.stopConfirmed = true
-    // An unconfirmed executor is asked again only after a growing gap, so move the clock past the longest one.
-    vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(Date.now() + 120_000)
     await f.settle()
     expect((await f.read(f.running.id)).run.state).toBe('canceled')
     expect((await f.read(f.next.id)).run.state).toBe('running')
-  } finally { vi.useRealTimers(); await f.close() }
+  } finally { await f.close() }
 })

@@ -85,7 +85,7 @@ describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('NIM-2691 bounded Activiti
           nativeEventType: 'provider.unavailable', secret: 'sk-native-canary' })])
         const unavailable = await activities.read(t.writer.principal, { ...input, cursor: newer.nextCursor })
         expect(unavailable.items[0]).toMatchObject({ kind: 'tool_log', status: 'recorded',
-          summary: 'Native activity recorded; details unavailable' })
+          summary: 'Agent activity' })
         expect(unavailable.items[0]?.actor).toBeUndefined()
         expect(JSON.stringify(unavailable)).not.toContain('sk-native-canary')
         const firstNode = agentWorkflowNode(t.version.definition.nodes[0])

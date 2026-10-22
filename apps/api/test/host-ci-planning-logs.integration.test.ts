@@ -311,15 +311,15 @@ it('retains persisted host capacity through failed cancellation and unavailable 
     expect(await readFile(join(directory, 'src', 'input.txt'), 'utf8')).toBe('live CI input')
     f.control.stopCode = 0
     f.control.code = 0
-    // An unconfirmed executor is asked again only after a growing gap, so move the clock past the longest one.
+    // An unconfirmed executor is asked again only after a growing gap (at most a minute), so run this pass after it.
     vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(Date.now() + 120_000)
+    vi.setSystemTime(Date.now() + 61_000)
     try {
       await f.ci.dispatch()
       await f.ci.drain()
-      await expect.poll(async () => CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: active.id }))
-        .run.state).toBe('canceled')
     } finally { vi.useRealTimers() }
+    await expect.poll(async () => CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: active.id }))
+      .run.state).toBe('canceled')
     const cancellationRead = CiGetOutputSchema.parse(await f.value('ci_get', { ticketId: active.id }))
     expect(cancellationRead.run.state).toBe('canceled')
     expect((await database.pool.query('select host_key from ci_runs where id=$1', [active.id]))
