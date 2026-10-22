@@ -72,8 +72,21 @@ describe.skipIf(process.platform !== 'linux')('local peer lookup failures', () =
       expect(response.body).toEqual({ error: { code: 'LOCAL_CLIENT_UNAVAILABLE',
         message: 'Could not verify the local browser connection. Try again in a moment.', details: { retryable: true } } })
       expect(app.forwarded()).toBe(0)
+      expect(lookup.calls).toBe(2)
       lookup.error = undefined
       expect((await app.request()).status).toBe(200)
+      expect(lookup.calls).toBe(3)
+      expect(app.forwarded()).toBe(1)
+    } finally { await app.close() }
+  })
+
+  it('succeeds when a single lookup fails transiently and the re-inspection works', async () => {
+    const app = await fixture()
+    try {
+      lookup.error = Object.assign(new Error('Command timed out'), { killed: true, signal: 'SIGTERM' })
+      setTimeout(() => { lookup.error = undefined }, 100)
+      const response = await app.request()
+      expect(response.status).toBe(200)
       expect(lookup.calls).toBe(2)
       expect(app.forwarded()).toBe(1)
     } finally { await app.close() }
@@ -97,10 +110,10 @@ describe.skipIf(process.platform !== 'linux')('local peer lookup failures', () =
     lookup.error = Object.assign(new Error('Command timed out'), { killed: true })
     const attempts = await Promise.allSettled(Array.from({ length: 20 }, () => localHumanClient(socket)))
     expect(attempts.every(result => result.status === 'rejected')).toBe(true)
-    expect(lookup.calls).toBe(1)
+    expect(lookup.calls).toBe(2)
     lookup.error = undefined
     await expect(localHumanClient(socket)).resolves.toBe(true)
-    expect(lookup.calls).toBe(2)
+    expect(lookup.calls).toBe(3)
   })
 
   it('keeps native agent denial and leaves bearer authentication to the API', async () => {
