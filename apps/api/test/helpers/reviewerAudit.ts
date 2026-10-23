@@ -15,9 +15,9 @@ import type { ExecutionCredentialProvider } from '../../src/modules/harnesses/mc
 import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart, NativeTurnInput } from '../../src/modules/harnesses/port.js'
 import type { PostgresApprovalBudgetRepository } from '../../src/modules/interactions/budget.js'
 import type { WriterFence } from '../../src/modules/interactions/coordination.js'
-import type { Wave25InteractionCoordinationRepository } from '../../src/modules/interactions/current/reviews.js'
+import type { CurrentInteractionCoordinationRepository } from '../../src/modules/interactions/current/reviews.js'
 import { ApprovalExecutionCoordinator } from '../../src/modules/interactions/execution.js'
-import type { Wave25InteractionRepository as PostgresInteractionRepository } from '../../src/modules/interactions/current/repository.js'
+import type { CurrentInteractionRepository as PostgresInteractionRepository } from '../../src/modules/interactions/current/repository.js'
 import { createReviewNativeCaptureChannel, type ReviewNativeCapture } from '../../src/modules/interactions/reviewNativeCapture.js'
 import { createWorkflowNativeCaptureChannel } from '../../src/modules/interactions/workflowNativeCapture.js'
 import type { RepeatNativeObservationStore } from '../../src/modules/interactions/repeatObservation.js'
@@ -241,7 +241,7 @@ export async function reviewerFixture(options: {
       return structuredClone(job)
     },
     async appendReviewNativeHistory(current: ReviewJob, events: readonly NativeHarnessEvent[],
-      projection: Parameters<Wave25InteractionCoordinationRepository['appendReviewNativeHistory']>[2]) {
+      projection: Parameters<CurrentInteractionCoordinationRepository['appendReviewNativeHistory']>[2]) {
       if (!projection?.nativeCapture) throw new Error('Original review history capture required.')
       captures.verify.read(projection.nativeCapture)
       for (const native of events) await coordination.appendReviewNativeEvent(current, native, projection)
@@ -250,7 +250,7 @@ export async function reviewerFixture(options: {
       hooks.eventCount += 1
       if (!hooks.countOnly) saved.events.push(structuredClone(native))
     },
-  } satisfies Partial<Wave25InteractionCoordinationRepository>)
+  } satisfies Partial<CurrentInteractionCoordinationRepository>)
   let stopped = false
   const terminalOwner = workflowTerminalOwner(() => execution, value => closures.read(value), () => prepared.length ? [credential.principalId] : [])
   connections.push(terminalOwner.connection)

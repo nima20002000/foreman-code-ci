@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createChatVisit, sameSelectedTarget } from './selectedRunChatModel'
+import { createChatVisit, sameSelectedTarget } from '../../chat-core'
 import { execution } from './sch10.testSupport'
 
 describe('historical chat identity', () => {

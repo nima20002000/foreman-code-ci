@@ -1,6 +1,6 @@
 import type { RefObject } from 'react'
 import type { OperatorConversationState, OperatorConversationSummary } from '@foreman-code/contracts'
-import { selectLiveTextTimeline } from '../conversations/chatTimeline'
+import { selectLiveTextTimeline } from '../chat-core'
 import type { useOperatorChatSetup } from '../../shared/api/operatorChatSetup'
 import type { useProviderAccounts } from '../provider-accounts'
 import { newerOperatorSummaries, operatorTurnStatus, summarizeOperatorConversation } from './operatorChatStatus'
