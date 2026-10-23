@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '../installationNames.mjs'
 import { optionalCommandId } from './commands.js'
 import { z } from 'zod'
 import { DeviceProvisioningHostReferenceSchema } from '../deviceResources.js'
@@ -39,10 +38,10 @@ export const HarnessMcpChangeSchema = z.discriminatedUnion('kind', [
 ])
 export type HarnessMcpChange = z.infer<typeof HarnessMcpChangeSchema>
 /** `graphql` is the one app connection for every role; the credential decides what a caller may use. */
-const HarnessMcpManagedPresetSchema = z.enum([INSTALLATION_NAMES.mcp.server, 'linear'])
+const HarnessMcpManagedPresetSchema = z.enum(['graphql', 'linear'])
 export type HarnessMcpManagedPreset = z.infer<typeof HarnessMcpManagedPresetSchema>
 /** Plan history keeps the pre-unification `operator` and `worker` presets readable. */
-const HarnessMcpPlanPresetSchema = z.enum([INSTALLATION_NAMES.mcp.server, 'linear', 'operator', 'worker'])
+const HarnessMcpPlanPresetSchema = z.enum(['graphql', 'linear', 'operator', 'worker'])
 /** `legacy`: old graphql-app/graphql-operator entries remain; applying the preset replaces them. */
 export const HarnessMcpPresetStatus = z.enum(['missing', 'installed', 'disabled', 'mismatch', 'inherited', 'legacy'])
 const ManagedHarness = z.enum(['codex', 'claude'])
@@ -62,7 +61,7 @@ const HarnessMcpServerSummarySchema = z.object({
 }).strict()
 export const HarnessMcpListResultSchema = z.object({
   harness: ManagedHarness, hostRef: HostRef, revision: Revision, servers: z.array(HarnessMcpServerSummarySchema),
-  presets: z.object({ [INSTALLATION_NAMES.mcp.server]: HarnessMcpPresetStatus, linear: HarnessMcpPresetStatus.exclude(['legacy']) }).strict().optional(),
+  presets: z.object({ graphql: HarnessMcpPresetStatus, linear: HarnessMcpPresetStatus.exclude(['legacy']) }).strict().optional(),
   checkedAt: z.string().datetime({ offset: true }), scope: z.literal('native-user'),
 }).strict()
 export type HarnessMcpList = z.infer<typeof HarnessMcpListResultSchema>

@@ -18,9 +18,9 @@ const jobEnv = (cwd) => {
   if (existsSync(hook)) env.NODE_OPTIONS = `${env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(hook).href}`
   delete env.GRAPHQL_HEAVY_JOB_COMMON
   delete env.GRAPHQL_HEAVY_JOB_TOKEN
-  delete env.GRAPHQL_HEAVY_JOB_COMMON
-  delete env.GRAPHQL_HEAVY_JOB_TOKEN
-  delete env.GRAPHQL_HEAVY_BASE_TMPDIR
+  delete env.FOREMAN_CODE_HEAVY_JOB_COMMON
+  delete env.FOREMAN_CODE_HEAVY_JOB_TOKEN
+  delete env.FOREMAN_CODE_HEAVY_BASE_TMPDIR
   delete env.FOREMAN_CODE_CI_CONTRACTS_CACHE
   delete env.CI_HOST_RUNNER
   return env
@@ -78,7 +78,7 @@ test('checkout paths with spaces, Unicode and percent characters retain queue ow
   try {
     for (const cwd of [f.first, f.second]) {
       const result = await run(cwd, ['--', process.execPath, '-e',
-        'console.log(JSON.stringify({cwd:process.cwd(),common:process.env.GRAPHQL_HEAVY_JOB_COMMON}))'])
+        'console.log(JSON.stringify({cwd:process.cwd(),common:process.env.FOREMAN_CODE_HEAVY_JOB_COMMON}))'])
       assert.equal(result.code, 0, result.output)
       const receipt = JSON.parse(result.output.split('\n').find(line => line.startsWith('{"cwd":')))
       assert.deepEqual(receipt, { cwd, common: f.common })
@@ -256,7 +256,7 @@ test('a dead running owner is reaped even with a live detached token-bearing wor
   const f = fixture()
   const token = randomUUID()
   const worker = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'],
-    { detached: true, stdio: 'ignore', env: { ...jobEnv(f.first), GRAPHQL_HEAVY_JOB_TOKEN: token } })
+    { detached: true, stdio: 'ignore', env: { ...jobEnv(f.first), FOREMAN_CODE_HEAVY_JOB_TOKEN: token } })
   const exited = new Promise(resolve => worker.once('exit', resolve))
   try {
     mockProc(f, `function readFileSync(path, ...args) { if (path === '/proc/99999998/environ') throw Object.assign(new Error('unrelated fixture denied'), { code: 'EACCES' }); return actualReadFileSync(path, ...args) }\nfunction readdirSync(path, ...args) { return path === '/proc' ? ['99999998', ${JSON.stringify(String(worker.pid))}] : actualReaddirSync(path, ...args) }`)

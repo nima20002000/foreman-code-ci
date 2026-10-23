@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { useRef, type ReactNode } from 'react'
 import { APP_MCP_SERVER_NAMES, PRODUCT_SLUG } from '@foreman-code/contracts/product'
 import type { HarnessDefaults } from '@foreman-code/contracts'
@@ -22,7 +21,7 @@ function CodexOperatorMcp() {
   const servers = useNativeMcpServers('codex')
   const plans = useNativeMcpPlans('codex')
   const managed = useApplyManagedMcpChange('codex', plans.data?.items)
-  const preset = servers.data?.presets?.[INSTALLATION_NAMES.mcp.server]
+  const preset = servers.data?.presets?.graphql
   if (servers.isPending) return <Status label="Checking…" tone="neutral" />
   if (servers.isError || !preset) return <Status label="Unavailable" tone="warning">
     <Button size="sm" variant="ghost" onClick={() => void servers.refetch()}>Retry</Button>
@@ -42,7 +41,7 @@ function CodexOperatorMcp() {
       void servers.refetch()
     }}>Refresh setup</Button>
   </Status>
-  const start = (change: { installed: boolean } | { enabled: boolean }) => managed.start({ preset: INSTALLATION_NAMES.mcp.server, ...change, expectedRevision: servers.data.revision })
+  const start = (change: { installed: boolean } | { enabled: boolean }) => managed.start({ preset: 'graphql', ...change, expectedRevision: servers.data.revision })
   switch (preset) {
     case 'installed': return <Status label="Installed" tone="success" />
     case 'inherited': {
@@ -66,11 +65,11 @@ function ClaudeOperatorMcp({ defaults, revision }: { defaults: HarnessDefaults; 
   const claude = defaults.claude
   if (!claude) return <Status label="No preset" tone="neutral"><small>Save a Claude preset first</small></Status>
   if (setup.isPending) return <Status label="Checking…" tone="neutral" />
-  if (setup.isError || !setup.data?.[INSTALLATION_NAMES.fields.claudeMcp]) return <Status label="Unavailable" tone="warning">
+  if (setup.isError || !setup.data?.graphqlMcp) return <Status label="Unavailable" tone="warning">
     <small className="operator-mcp-error" role="alert">{setup.error?.message ?? 'The app MCP endpoint is unavailable.'}</small>
     <Button size="sm" variant="ghost" onClick={() => void setup.refetch()}>Retry setup</Button>
   </Status>
-  const endpoint = setup.data[INSTALLATION_NAMES.fields.claudeMcp]
+  const endpoint = setup.data.graphqlMcp
   const serverName = APP_MCP_SERVER_NAMES.find((name) => Object.hasOwn(claude.mcpServers, name))
   const server = serverName ? claude.mcpServers[serverName] : undefined
   if (server?.type === endpoint.type && server.url === endpoint.url) {

@@ -12,7 +12,7 @@ import { buildApp } from '../../src/app.js'
 import type { OperatorServices } from '../../src/mcp/operator/types.js'
 import { InteractionService } from '../../src/modules/interactions/service.js'
 import { OperatorInteractionService } from '../../src/modules/interactions/operator.js'
-import { Wave25InteractionRepository } from '../../src/modules/interactions/current/repository.js'
+import { CurrentInteractionRepository } from '../../src/modules/interactions/current/repository.js'
 import { PostgresApprovalBudgetRepository } from '../../src/modules/interactions/budget.js'
 import { RunGraphReadService } from '../../src/modules/run-graph/readService.js'
 import { graphRpc } from '../graph-composition-fixture.js'
@@ -100,7 +100,7 @@ export function runtime(f: Fixture, observe: (execution: HarnessExecution) => Pr
 }
 
 export async function directionApi(f: Fixture, publication: RepeatStartPublication = repeatStartPublication) {
-  const repository = new Wave25InteractionRepository(f.db.pool)
+  const repository = new CurrentInteractionRepository(f.db.pool)
   const locations = new WorkspaceLocationService(f.db.pool, f.commands)
   const start = vi.fn(async (principal: Parameters<typeof admitRepeatRun>[2], source: 'http' | 'mcp',
     input: Parameters<typeof admitRepeatRun>[4], options: Parameters<typeof admitRepeatRun>[6] = {}) => {
