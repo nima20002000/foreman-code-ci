@@ -17,7 +17,7 @@ import { agentNodeFacts, edgeBend, relationshipLines, useFloatingCurve } from '.
 import { SignalEdgeShape } from '../SignalEdgeShape'
 import { RESPONSIVE_FIT_OPTIONS, RESPONSIVE_MIN_ZOOM, useResponsiveGraphViewport } from '../useResponsiveGraphViewport'
 import type { GraphNode, AgentGraphNode, JobGraphNode } from '../types'
-import { nodeTitle, putRelationship, removeRelationship, setWorkConnectionLimit, startFromConnectionSource } from './model'
+import { nodeTitle, putRelationship, removeRelationship, setWorkConnectionLimit } from './model'
 import { pinGraphLayout } from './placement'
 import { WorkConnectionLimitEditor } from './WorkConnectionLimitEditor'
 import type { EditGraph } from './AuthoringFields'
@@ -278,7 +278,7 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
       const next = connectHierarchyMember(base, roles, source, target)
         ?? (base.edges.some((edge) => edge.kind === kind && edge.source === source && edge.target === target) ? base
           : putRelationship(base, WorkflowRelationshipSchema.parse({ id: `relationship-${crypto.randomUUID()}`, kind, source, target })))
-      return next === base ? value : startFromConnectionSource(next)
+      return next === base ? value : next
     }) }
     catch (error) { report(error) }
   }
