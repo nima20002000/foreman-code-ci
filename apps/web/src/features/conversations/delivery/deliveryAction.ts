@@ -21,7 +21,7 @@ export function deliveryAction(presentation: DeliveryPresentation, intent: ChatD
     : applied === 'steer' ? steerReason
       : applied === 'interrupt_and_send' && (!active || !capabilities.interruptAndSend)
         ? 'Interrupt and send is unavailable for this target.'
-        : applied === 'next_turn' && !capabilities.queue ? 'This agent can\'t take a new message here.' : undefined)
+        : applied === 'next_turn' && !capabilities.queue ? 'This agent can\'t take a new message here. Use Follow up in Agent chat.' : undefined)
   const label = applied === 'steer' ? 'Steer now'
     : applied === 'interrupt_and_send' ? 'Interrupt and send' : queue ? 'Queue next' : 'Send'
   return { applied, label, reason }

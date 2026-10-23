@@ -142,35 +142,28 @@ export async function claimWorkflowControlInputLocked(sql:GraphTransactionSql,
   input:{execution:ExecutionRef;now:string;claimNew?:boolean}):Promise<WorkflowQueuedInput | undefined> {
   assertGraphTransaction(sql)
   const ref=ExecutionRefSchema.parse(input.execution)
-  const lineage=(await sql.query<{id:string}>(`with recursive lineage(id) as (
-      select $2::text union select k.previous_execution_id from run_control_continuations k
-      join lineage l on l.id=k.successor_execution_id where k.run_id=$1 and k.successor_execution_id is not null
-    ) select id from lineage`,[ref.runId,ref.executionId])).rows.map(row=>row.id)
   const retained=(await sql.query<ControlCommandRow>(`select ${CONTROL_COMMAND_COLUMNS} from run_chat_commands
     where run_id=$1 and kind='delivery' and delivered_execution->>'executionId'=$2
       and state in ('submitting','accepted','unknown') order by sequence limit 1`,[ref.runId,ref.executionId])).rows[0]
-  if(retained) return queuedInput(retained,ref,lineage)
+  if(retained) return queuedInput(retained,ref)
   if(input.claimNew===false) return undefined
-  // Input for this same work, or a message the owner left for this Agent's finished turn earlier in the Run.
-  const row=(await sql.query<ControlCommandRow>(`select ${CONTROL_COMMAND_COLUMNS} from run_chat_commands c
+  const row=(await sql.query<ControlCommandRow>(`with recursive lineage(id) as (
+      select $2::text union select k.previous_execution_id from run_control_continuations k
+      join lineage l on l.id=k.successor_execution_id where k.run_id=$1 and k.successor_execution_id is not null
+    ) select ${CONTROL_COMMAND_COLUMNS} from run_chat_commands c
     where c.run_id=$1 and c.kind='delivery' and c.state='queued' and c.target->>'kind'='workflow_execution'
-      and (c.target #>> '{execution,executionId}'=any($2::text[]) or exists(select 1 from harness_executions p
-        join harness_executions n on n.id=$3 and n.run_id=p.run_id and n.workflow_node_id=p.workflow_node_id
-        where p.run_id=$1 and p.id=c.target #>> '{execution,executionId}' and p.accepted))
-    order by c.sequence limit 1 for update of c`,[ref.runId,lineage,ref.executionId])).rows[0]
+      and c.target #>> '{execution,executionId}' in (select id from lineage)
+    order by c.sequence limit 1 for update of c`,[ref.runId,ref.executionId])).rows[0]
   if(!row) return undefined
   const receipt=ChatDeliveryReceiptSchema.parse(row.receipt)
   await updateControlCommand(sql,row,{...receipt,state:'submitting',updatedAt:input.now},input.now,{deliveredExecution:ref})
   await releaseHierarchyDirectionLocked(sql,{runId:ref.runId,executionId:ref.executionId,receiptId:row.id})
-  return queuedInput(row,ref,lineage)
+  return queuedInput(row,ref)
 }
-function queuedInput(row:ControlCommandRow,execution:ExecutionRef,lineage:readonly string[]):WorkflowQueuedInput {
-  const originalTarget=ChatDeliveryReceiptSchema.parse(row.receipt).target as WorkflowQueuedInput['originalTarget']
-  // A prompt saved for an earlier turn is not this turn's; the new turn's own request carries the message instead.
-  const sameWork=originalTarget.kind!=='workflow_execution' || lineage.includes(originalTarget.execution.executionId)
-  return {receiptId:row.id,commandId:row.id,originalTarget,
+function queuedInput(row:ControlCommandRow,execution:ExecutionRef):WorkflowQueuedInput {
+  return {receiptId:row.id,commandId:row.id,originalTarget:ChatDeliveryReceiptSchema.parse(row.receipt).target as WorkflowQueuedInput['originalTarget'],
     deliveredExecution:execution,request:ChatSendRequestSchema.parse(row.request),
-    ...(row.native_prompt !== null && sameWork ? {nativePrompt:row.native_prompt} : {})}
+    ...(row.native_prompt !== null ? {nativePrompt:row.native_prompt} : {})}
 }
 
 /** Existing Stop Run calls this under its owner lock before descendant cleanup. */

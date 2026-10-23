@@ -1,5 +1,4 @@
 import { settleMemoryRunLocked } from './memoryRunSettlement.js'
-import { closeRunControlInputsLocked } from '../collaboration/workflowControlQueue.js'
 import type { MemoryBoardPort } from '../collaboration/ports.js'
 import { readPublicRunStateLocked } from '../run-graph/publicRunState.js'
 import { publicAttentionTotals, readPublicAttentionCounts } from '../run-graph/currentAttention.js'
@@ -372,7 +371,6 @@ export async function requestWorkflowCleanup(pool: pg.Pool, runId: string, owner
         on conflict(run_id) do update set pending=true,updated_at=clock_timestamp(),
           failure_result=coalesce(run_cleanup_intents.failure_result,excluded.failure_result)`,
       [runId, failureResult ? canonicalGraphJson(failureResult) : null])
-      if (failureResult) await closeRunControlInputsLocked(sql, { runId, now: new Date().toISOString() })
       if (executionFailureNeeded) {
         const changed = await sql.query(`update approval_execution_state
           set failure_result=coalesce(failure_result,$2::jsonb) where execution_id=$1`,
