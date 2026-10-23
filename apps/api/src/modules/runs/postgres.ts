@@ -30,6 +30,7 @@ import { isWorkflowTranscriptEvent, WorkflowNativeProofServices } from './workfl
 import { readWorkflowTerminalSource } from './workflowNativeSource.js'
 import { NATIVE_EVENT_BATCH_SIZE } from '../interactions/nativeEventBatches.js'
 import { readWorkflowCoordinationTerminalLocked } from './workflowCoordinationTerminal.js'
+import { kanbanRecordMissingLocked } from './kanbanRecord.js'
 
 /** Saved pins never default to an old mode. Independent native/graph protocol
  * versions and WorkflowVersion revision numbers are not execution semantics. */
@@ -133,6 +134,11 @@ export class PostgresRunRepository {
   }
   async validateMemoryResult(id: string, result: ExecutionResult, owner: RunOwnership): Promise<void> {
     return (await this.repeat(owner)).validateMemoryResult(id, result)
+  }
+  /** A writable Agent's turn left no card on its workflow's Kanban. */
+  async kanbanRecordMissing(id: string, result: ExecutionResult, owner: RunOwnership): Promise<boolean> {
+    if (!this.memoryBoards) return false
+    return this.read(owner.runId, owner, sql => kanbanRecordMissingLocked(sql, id, result))
   }
   async reserveWorkResultRepair(id: string, providerId: string, owner: RunOwnership, evidence: RepeatNativeEvidence) {
     return (await this.repeat(owner)).reserveWorkResultRepair(id, providerId, captureRepeatNativeEvidence(evidence))

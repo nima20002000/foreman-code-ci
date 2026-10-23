@@ -44,7 +44,9 @@ it('edits a role in place and saves it with the read revision', async () => {
   mount({ selectedRole: 'coder' })
   const user = userEvent.setup()
   const memory = await screen.findByRole('combobox', { name: 'Memory board' })
-  expect(memory).toHaveValue('read')
+  expect(memory).toHaveValue('write')
+  // Memory on means read and write; only a workflow node or read-only access narrows it.
+  expect(within(memory).getAllByRole('option').map(option => option.textContent)).toEqual(['Off', 'Read and write'])
   await user.selectOptions(memory, 'none')
   await user.click(screen.getByRole('button', { name: 'Save Worker settings' }))
   await waitFor(() => expect(saved).toHaveLength(1))
