@@ -421,7 +421,6 @@ function isRuntimeFailure(error: unknown): boolean {
     'WORK_DIRECTION_WAIT_WRITER_REQUIRED', 'WORK_FAILURE_WRITER_REQUIRED',
     'WORKFLOW_NATIVE_APPROVAL_UNHANDLED',
     'WORK_CHECKPOINT_ACTIVATION_MISSING', 'WORK_SUCCESSOR_DUPLICATE', 'WORK_HANDOFF_DELIVERY_TOO_LARGE',
-    'WORK_REPORT_LIMIT_REACHED',
   ].includes(code)
 }
 
@@ -429,7 +428,7 @@ function runtimeFailureResult(error: unknown): ExecutionResult | undefined {
   if (error instanceof WorkExecutionFailure) return error.result
   if (!(error instanceof DomainError)) return undefined
   if (!preparationFailureCodes.has(error.code) && !['WORKFLOW_EXECUTION_BUDGET_EXHAUSTED', 'JOB_PREPARATION_TIMEOUT',
-    'WORK_RUN_EXECUTION_BUDGET_EXHAUSTED', 'EXECUTION_START_INTERRUPTED', 'WORK_REPORT_LIMIT_REACHED'].includes(error.code)) return undefined
+    'WORK_RUN_EXECUTION_BUDGET_EXHAUSTED', 'EXECUTION_START_INTERRUPTED'].includes(error.code)) return undefined
   return { outcome: 'failed', error: { code: error.code, message: error.message, retryable: false } }
 }
 

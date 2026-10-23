@@ -541,7 +541,7 @@ export class RepeatRunRepository {
             stored.workActivationId, resultJson, resultDigest, context.now])
           await context.sql.query('update harness_executions set accepted=true where id=$1 and run_id=$2',
             [executionId, context.scope.runId])
-          await closeWorkflowControlInputLocked(context.sql, { runId: context.scope.runId, executionId, now: context.now })
+          // Input still queued for this finished turn waits for the Agent's next turn; the Run's end closes the rest.
           await context.sql.query(`update run_work_activations set state='completed'
             where run_id=$1 and activation_id=$2`, [context.scope.runId, stored.workActivationId])
           await markWorkNoticeDeliveredLocked(context, stored.workActivationId!, executionId)
@@ -1724,11 +1724,10 @@ export class RepeatRunRepository {
   private async unresolvedWorkFailure(context: Context, items: ReadonlyArray<{ execution_id: string;
     reason: 'finish_with_findings' | 'repeated_exhausted_route' }>): Promise<ExecutionResult | undefined> {
     for (const item of items) {
-      const row = (await context.sql.query<{ record: unknown; activation_id: string; role: string | null }>(
-        `select e.record,e.work_activation_id as activation_id,c.record->>'productRole' as role
-        from harness_executions e left join agent_configuration_versions c on c.id=e.record->>'agentConfigurationVersionId'
-        where e.id=$1 and e.run_id=$2`, [item.execution_id, context.scope.runId])).rows[0]
-      if (!row || row.role === 'master') continue
+      const row = (await context.sql.query<{ record: unknown; activation_id: string }>(
+        'select record,work_activation_id as activation_id from harness_executions where id=$1 and run_id=$2',
+        [item.execution_id, context.scope.runId])).rows[0]
+      if (!row) continue
       const execution = HarnessExecutionSchema.parse(row.record)
       const node = context.version.definition.nodes.find((candidate) => candidate.id === execution.workflowNodeId)
       const name = node && node.kind !== 'job' ? node.name ?? node.label ?? node.id : execution.workflowNodeId

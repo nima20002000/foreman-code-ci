@@ -1,4 +1,5 @@
 import { assertOriginalWorkflowTerminal } from '../interactions/workflowTerminalSource.js'
+import { closeRunControlInputsLocked } from '../collaboration/workflowControlQueue.js'
 import { assertRepeatCanonicalReceiptLocked, requireRepeatCanonicalReceiptBeforeCommit } from '../run-graph/repeatReceipts.js'
 import type { WorkflowNativeProofRecord } from './workflowNativeProof.js'
 import {
@@ -251,6 +252,7 @@ export async function completeRunLocked(sql: GraphTransactionSql, suppliedRun: A
       result, finishedAt: new Date().toISOString() })
     try { canonicalGraphJson(next, RUN_GRAPH_LIMITS.transactionBytes) } catch { return conflict('WORKFLOW_RESULT_TOO_LARGE') }
     const fence = await owner.readOneShotFence(sql)
+    await closeRunControlInputsLocked(sql, { runId: run.id, now: new Date().toISOString() })
     await sql.query(`insert into run_cleanup_intents(run_id) values($1)
       on conflict(run_id) do update set pending=true,updated_at=clock_timestamp()`, [run.id])
     const changed = await sql.query('update runs set execution_state=$2,record=$3::jsonb where id=$1',

@@ -108,10 +108,13 @@ function ExecutionChatContent(props: ExecutionChatPanelProps) {
     <RetainedInput key={input.receiptId} input={input} {...retainedProps} />)
   // A finished execution takes no new turn here; its Agent chat continues the same session with its history.
   const closed = state?.state === 'idle' && target.kind === 'workflow_execution' && !presentation.capabilities.queue
+  // Messages still in doubt keep their status and recovery controls in view before handing over to that chat.
+  const unsettled = !!delivery.pending || !!delivery.pendingControl || retained.items.length > 0
+    || receipts.some(receipt => receipt.state === 'queued' || receipt.state === 'unknown')
   if (denied || delivery.denied) return <Alert tone="warning" title="Chat access unavailable"><Button onClick={() => {
     detailAbort.current = new AbortController(); setDenied(false); delivery.refresh()
   }}>Refresh access</Button></Alert>
-  if (closed && props.followUp) return <>{props.followUp}</>
+  if (closed && !unsettled && props.followUp) return <>{props.followUp}</>
   return <section className="agent-conversation" aria-label="Selected execution chat">
     {/* The Board's chat tab already names the Run attempt above this panel. */}
     <header className="agent-chat-identity"><h2>{props.name}</h2></header>
