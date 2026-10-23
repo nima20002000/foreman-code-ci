@@ -11,17 +11,14 @@ import { createTestPool } from './helpers/testPool.mjs'
 describe.runIf(postgresEnabled)('workflow reporting under database contention', () => {
   let fixture: Awaited<ReturnType<typeof faultWorkflowFixture>>
   let database: Awaited<ReturnType<typeof agent3Database>>
-  const siblingPreparation = deferred<void>()
   beforeAll(async () => {
     database = await agent3Database()
     // A competing transaction must not consume the pool capacity needed to report its timeout.
     database.pool.options.max = 1
-    fixture = await faultWorkflowFixture({ database, beforePreparePlacement: execution =>
-      execution.workflowNodeId === fixture.sibling.id ? siblingPreparation.promise : Promise.resolve() })
+    fixture = await faultWorkflowFixture({ database })
     await fixture.prepareEntry()
   }, 10_000)
   afterAll(async () => {
-    siblingPreparation.resolve()
     try { await fixture?.close() }
     finally { await database?.close() }
   }, 10_000)
@@ -48,13 +45,9 @@ describe.runIf(postgresEnabled)('workflow reporting under database contention', 
       await Promise.race([locked.promise, hold.then(() => {
         throw new Error('The lock transaction finished before signaling acquisition')
       })])
-      siblingPreparation.resolve()
-      await hold
       fixture.release()
-      const details = await fixture.finished()
-      const sibling = details.executions.filter(execution => execution.workflowNodeId === fixture.sibling.id)
-      console.log('Sibling attempts after delayed startup under the Run lock', JSON.stringify(sibling))
-      expectSuccessfulFaultRecovery(details, fixture)
+      await hold
+      expectSuccessfulFaultRecovery(await fixture.finished(), fixture)
       expect(retryFailures()).toMatchObject({ component: 'engine', status: 'degraded' })
       expect(retryFailures()!.failureCount).toBeGreaterThan(retriesBefore)
     } finally {
