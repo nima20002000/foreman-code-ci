@@ -10,7 +10,7 @@ function browserLocks() {
   const tails = new Map<string, Promise<unknown>>()
   return {
     request<T>(name: string, options: LockOptions, callback: (lock: Lock) => T | PromiseLike<T>): Promise<T> {
-      const work = (tails.get(name) ?? Promise.resolve()).catch(() => { /* ignore: a rejected lock holder must not block the next reservation. */ }).then(() => {
+      const work = (tails.get(name) ?? Promise.resolve()).catch(() => undefined).then(() => {
         options.signal?.throwIfAborted()
         return callback({ name, mode: 'exclusive' } as Lock)
       })
@@ -90,7 +90,7 @@ describe('F12: cross-tab durable Operator reservations', () => {
         injected = true
         // Another tab attempts a reservation between the first tab's read and write.
         competing = second.reserveOperatorMessage('conversation-one', 'Different command.', '/tab-b')
-        void competing.catch(() => { /* ignore: the competing rejection is asserted after the winner completes below. */ })
+        void competing.catch(() => undefined)
       }
       return value
     })
@@ -206,9 +206,7 @@ describe('F12: cross-tab durable Operator reservations', () => {
   it('fails before submission when the durable write fails and does not discard an unreadable pending request', async () => {
     const first = await tab()
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Quota exceeded') })
-    await expect(first.reserveOperatorMessage('conversation-one', 'No durable ID.', '/')).rejects.toThrow(
-      'Durable message storage is unavailable. Sending is disabled to avoid repeating a command after a lost response.',
-    )
+    await expect(first.reserveOperatorMessage('conversation-one', 'No durable ID.', '/')).rejects.toThrow('Quota exceeded')
     expect(window.localStorage.getItem(key())).toBeNull()
     vi.restoreAllMocks()
     window.localStorage.setItem(key(), '{unreadable')

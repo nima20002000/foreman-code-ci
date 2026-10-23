@@ -1,7 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import Fastify from 'fastify'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import type { ProductionAppOptions } from '../src/production.js'
 
 const state = vi.hoisted(() => ({
   app: undefined as ReturnType<typeof Fastify> | undefined,
@@ -60,8 +59,9 @@ vi.mock('../src/infrastructure/checkpoints.js', () => ({ createCheckpointStore: 
   setup: async () => { state.schemaChanges.push('checkpoints'); expect(state.ownerHeld).toBe(true) }, ping: async () => undefined,
   close: async () => { state.calls.push('checkpoints closed') },
 }) }))
-vi.mock('../src/production.js', () => ({ buildProductionApp: ({ infrastructure, database, checkpoints }: ProductionAppOptions) => {
-  if (infrastructure?.closeInfrastructure) {
+vi.mock('../src/production.js', () => ({ buildProductionApp: (...args: unknown[]) => {
+  const infrastructure = args[7] as { closeInfrastructure?: () => Promise<void> }
+  if (infrastructure.closeInfrastructure) {
     state.app!.addHook('onClose', async () => { await infrastructure.closeInfrastructure!() })
   }
   if (state.productionClose) {
@@ -72,8 +72,10 @@ vi.mock('../src/production.js', () => ({ buildProductionApp: ({ infrastructure, 
     prepareSchema: async () => {
       if (state.ownerFailure) throw state.ownerFailure
       state.ownerHeld = true
-      await database.migrate()
-      await checkpoints.setup()
+      const { createDatabase } = await import('../src/infrastructure/database.js')
+      const { createCheckpointStore } = await import('../src/infrastructure/checkpoints.js')
+      await createDatabase({ connectionString: '', maxConnections: 1, connectionTimeoutMs: 1 }).migrate()
+      await createCheckpointStore('', 'test').setup()
     },
     rsync: { kind: 'unavailable' },
     registerFileStorage: () => { expect(state.listeners.has('SIGTERM')).toBe(true) },

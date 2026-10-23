@@ -55,7 +55,8 @@ export class ProductionHarnessRegistry {
     private readonly currentRemoteBinding: (deviceId: string) => DeviceSessionBinding | null,
     private readonly environment: NodeJS.ProcessEnv = process.env,
     private readonly discovery: { launcher: typeof discoverLauncher; payloads: typeof passiveDriverPayloads;
-      claude?: (host: Extract<CanonicalMachineReference, { kind: 'main' }>, environment: TargetEnvironment, signal?: AbortSignal) => Promise<Awaited<ReturnType<typeof discoverInstalledClaudeSdk>> | null> }
+      claude?: (host: Extract<CanonicalMachineReference, { kind: 'main' }>, environment: TargetEnvironment, signal?: AbortSignal)
+        => Promise<Awaited<ReturnType<typeof discoverInstalledClaudeSdk>> | { unavailable: string } | null> }
       = { launcher: discoverInventoryLauncher, payloads: inventoryDriverPayloads },
     private readonly collectingBinding: (deviceId: string) => DeviceSessionBinding | null = currentRemoteBinding,
     private readonly connection: (deviceId: string) => DevicePresence | null = () => null) {}
@@ -111,10 +112,12 @@ export class ProductionHarnessRegistry {
     const records: HarnessInstallationRecord[] = []
     for (const driver of localHarnessDrivers) {
       if (driver.driverId === 'claude') {
-        const discovered = await this.discovery.claude?.(hostRef, environment, signal)
+        const result = await this.discovery.claude?.(hostRef, environment, signal)
         this.assertOpen(); signal?.throwIfAborted()
+        const discovered = result && !('unavailable' in result) ? result : undefined
         const launcher = discovered?.launcher ?? { requested: 'installed Claude SDK native executable', resolvedLauncher: null,
-          fingerprint: null, status: 'missing' as const, interpreter: null, diagnostics: ['The actual installed Claude SDK native declaration is unavailable.'],
+          fingerprint: null, status: 'missing' as const, interpreter: null, diagnostics: ['The actual installed Claude SDK native declaration is unavailable.',
+            ...(result && 'unavailable' in result ? [result.unavailable] : [])],
           environment, checkedAt: new Date().toISOString() }
         records.push({ hostRef, harnessInstallationId: discovered?.declaration.harnessInstallationId
           ?? commandInputHash({ hostRef, driverId: driver.driverId, unavailable: 'sdk-native-declaration' }),

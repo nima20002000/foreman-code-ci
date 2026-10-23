@@ -784,6 +784,7 @@ it('returns the latest persisted observation when a slower native read follows a
 
 it('routes the complete authenticated MCP Worker lifecycle to its owning slot and preserves receipts across service recreation', async () => {
   const { createRemoteAccountServices } = await import('./remoteServices.js')
+  let endpoint: ReturnType<Parameters<typeof createRemoteAccountServices>[0]['endpoint']>
   const f = await fixture({ routing: (local, commands) =>
     createRemoteAccountServices({ pool, commands, local, endpoint: () => endpoint }) })
   const { createProviderAccountWorkerExtension } = await import('./workerOperations.js')
@@ -831,7 +832,7 @@ it('routes the complete authenticated MCP Worker lifecycle to its owning slot an
       prepareAuthentication: async value => { launches++; return operation(value) }, observeAuthentication: operation,
       cancelAuthentication: async value => ({ ...await operation(value), state: 'canceled', nativeClosed: true }),
     } })
-  const endpoint: ReturnType<Parameters<typeof createRemoteAccountServices>[0]['endpoint']> = { captureRequest: (id: string) => online && id === current.deviceId ? { binding: current,
+  endpoint = { captureRequest: (id: string) => online && id === current.deviceId ? { binding: current,
     request: (payload: unknown) => extension.handle!(payload, { binding: current, signal: new AbortController().signal }) } : undefined,
     currentBinding: () => current, capabilities: () => [] }
   const client = await f.connect(f.owner.token)
