@@ -271,18 +271,13 @@ export async function attachBrowserHostMedia(socket: WebSocket, binding: Browser
         if (message.kind === 'close') { await stop(message.id, message.disconnected); return }
         if (message.kind !== 'open') throw new DomainError('BROWSER_MEDIA_INPUT', 'Unexpected host media command.', 400)
         if (subscriptions.has(message.id)) return
-        try {
-          const view = media.describe(message.viewId, message.ownerId)
-          if (view.sessionId !== message.sessionId) throw new DomainError('BROWSER_VIEW_SCOPE', 'The requested view belongs to another session.', 403)
-          const offMedia = media.subscribe(view.id, message.ownerId, () => change(message.id))
-          const offSession = broker.subscribe(view.sessionId, () => change(message.id))
-          subscriptions.set(message.id, { viewId: view.id, ownerId: message.ownerId, after: 0, stop: () => { offMedia(); offSession() } })
-          await send(socket, codec, { kind: 'control', id: message.id, control: broker.read(view.sessionId).control })
-          await send(socket, codec, { kind: 'opened', id: message.id, view }); change(message.id)
-        } catch (error) {
-          reportFailure(error); await stop(message.id, true)
-          await send(socket, codec, { kind: 'error', id: message.id, reason: 'Owned browser view unavailable.' })
-        }
+        const view = media.describe(message.viewId, message.ownerId)
+        if (view.sessionId !== message.sessionId) throw new DomainError('BROWSER_VIEW_SCOPE', 'The requested view belongs to another session.', 403)
+        const offMedia = media.subscribe(view.id, message.ownerId, () => change(message.id))
+        const offSession = broker.subscribe(view.sessionId, () => change(message.id))
+        subscriptions.set(message.id, { viewId: view.id, ownerId: message.ownerId, after: 0, stop: () => { offMedia(); offSession() } })
+        await send(socket, codec, { kind: 'control', id: message.id, control: broker.read(view.sessionId).control })
+        await send(socket, codec, { kind: 'opened', id: message.id, view }); change(message.id)
       } finally { queuedBytes -= bytes.byteLength }
     }).catch(error => { reportFailure(error); socket.close(1008, 'Host media command denied') })
   })
