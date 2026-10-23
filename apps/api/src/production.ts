@@ -16,38 +16,21 @@ import { isDatabasePoolTimeout } from '@foreman-code/contracts/failure'
 import { DeviceManagedMcp } from './modules/harnesses/deviceManagedMcp.js'
 import { RunWorktrees } from './modules/runs/runWorktrees.js'
 import { withTransaction } from './infrastructure/transaction.js'
-import { withCiDatabaseReservation } from './infrastructure/ciDatabasePriority.js'
 import { ComputerActivityService } from './modules/computers/activity.js'
 import { registerComputerActivityRoutes } from './routes/computerActivity.js'
 import { ComputerAccountsService } from './modules/computers/accounts.js'
 import {
   AGENT_SNAPSHOT_JSON_BYTES, AGENT_SNAPSHOT_NAMESPACE,
 } from '@foreman-code/contracts/source-materialization'
-import { agentFileReader } from './modules/ci-host/agentFileReader.js'
 import { CiRuntimeProvisioner } from './modules/jobs/ciRuntimeProvisioner.js'
 import { CiEnrollment } from './modules/jobs/ciEnrollment.js'
 import { startStateDeadlineSweeper } from './modules/diagnostics/stateDeadlines.js'
 import { reportServiceFailure, trackService } from './modules/diagnostics/serviceHealth.js'
 import { ProductionCiEnrollmentInventory } from './modules/jobs/ciEnrollmentInventory.js'
 import { CI_HOST_NAMESPACE, CI_RUNTIME_NAMESPACE, DEFAULT_STUCK_EXECUTION_IDLE_MS } from '@foreman-code/contracts'
-import { HostCiService } from './modules/ci-host/service.js'
-import { GitCiCommits } from './modules/ci-host/commits.js'
-import { RunCiAuthority } from './modules/jobs/ciAuthority.js'
-import { ProductionHostCiEndpoint } from './modules/ci-host/endpoint.js'
-import { HostCiRunner, systemHostCiPorts } from './modules/ci-host/runner.js'
-import { CircleCreditUsage } from './modules/ci-host/circleCredits.js'
-import { CircleAccountDirectory } from './modules/ci-host/circleAccounts.js'
-import { CircleAccountsManagementService } from './modules/settings/circleAccounts.js'
-import { CircleCreditCache } from './modules/ci-host/circleCreditCache.js'
-import { circleOrganizations } from './modules/ci-host/circleOrganizations.js'
-import { CircleStandby } from './modules/ci-host/circleStandby.js'
-import { CircleAccountFleetStatus } from './modules/ci-host/circleAccountStatus.js'
+import { agentFileReader, createCircleCi, createHostCi } from './modules/ci/mount.js'
+import type { CircleCreditUsage, CircleStandby, CloudCis, HostCiService, ReadAgentFiles } from './modules/ci/types.js'
 import { registerCircleAccountRoutes } from './routes/circleAccounts.js'
-import { homedir } from 'node:os'
-import { activeCiRuns, circleCiOrgs, cloudCis, runningCircleCiOwners, workspaceMirrorList, workspaceMirrors }
-  from './modules/ci-host/cloud.js'
-import { configuredReservedCloudSlots } from './modules/ci-host/cloudSlots.js'
-import { agentSnapshots, type ReadAgentFiles } from './modules/ci-host/agentSnapshots.js'
 import { registerComputerAccountsRoutes } from './routes/computerAccounts.js'
 import { registerComputerMaintenanceRoutes } from './routes/computerMaintenance.js'
 import { FleetMaintenanceService } from './modules/computers/fleet.js'
@@ -454,7 +437,7 @@ interface ProductionComposition {
   conversationNativeAccess: ConversationNativeAccess
   workflowChat: ReturnType<typeof createProductionWorkflowChat>
   stopWorkflowChat?: () => void
-  cloudCis?: ReturnType<typeof cloudCis>
+  cloudCis?: CloudCis
   workerChats: ReturnType<typeof createProductionWorkerConversations>
   agentChatProfileSelection: (
     configuration: import('@foreman-code/contracts').AgentConfigurationVersion,
@@ -3061,48 +3044,18 @@ async function initializeComputerServices(composition: ProductionComposition, ma
 
 async function initializeCircleCi(composition: ProductionComposition, machine: ProductionMainInstallation) {
   const { database, foundationSettings, commands, runtimeServices, app } = composition
-  const registry = { list: async () => (await foundationSettings.getCircleAccounts()).value.accounts }
-  const directory = new CircleAccountDirectory(systemHostCiPorts(), registry)
-  const context = async (id: string) => {
-    const account = await directory.context(id)
-    if (!account) throw new DomainError('CI_CLOUD_UNAVAILABLE', 'This CircleCI login is no longer registered.', 409)
-    return account
-  }
-  const options = { activeRuns: () => activeCiRuns(database.pool) }
-  const mirrors = workspaceMirrors(database.pool)
-  const mirrorList = workspaceMirrorList(database.pool)
-  const clouds = cloudCis(machine.installationId, mirrors, {
-    ...options, primaryContext: await context('default'), explicitCircleOrgs: true,
-  })
-  const cache = new CircleCreditCache(join(homedir(), '.local/share/foreman-code/circleci-usage', 'usage.json'))
-  const circleCredits = new CircleCreditUsage(async id => (await context(id)).http, {
-    allowance: () => withCiDatabaseReservation(database.pool, async () => {
-      return (await foundationSettings.getCircleCreditAllowance()).value
-    }),
-    primaryOwner: async () => null,
-  }, { cache })
-  const circleStandby = new CircleStandby(() => circleOrganizations(clouds), circleCredits, cache)
-  const circleOrgs = circleCiOrgs(clouds, machine.installationId, mirrors, mirrorList, {
-    ...options, registry, context, standby: circleStandby, explicitPrimary: true,
-    runningOrganizations: runningCircleCiOwners(database.pool, machine.installationId),
-  })
-  runtimeServices.circleAccounts = new CircleAccountsManagementService(foundationSettings, commands,
-    new CircleAccountFleetStatus(database.pool, machine.installationId, directory, clouds, circleStandby), async id => {
-    directory.invalidate(id)
-    for (const cloud of clouds) if (cloud.provider.circleAccountId === id) cloud.invalidateReadiness()
-    await circleOrgs.refresh()
-    circleOrgs.invalidate()
-    await circleOrgs.refresh()
-  })
+  const { circleAccounts, ...circleCi } = await createCircleCi({ pool: database.pool, mainId: machine.installationId,
+    foundationSettings, commands })
+  runtimeServices.circleAccounts = circleAccounts
   registerCircleAccountRoutes(app, runtimeServices.circleAccounts)
-  return { clouds, discoverClouds: () => circleOrgs.refresh(), circleCredits, circleStandby }
+  return circleCi
 }
 
 async function initializeCiServices(
   composition: ProductionComposition,
   machine: ProductionMainInstallation,
   computerServices: {
-    clouds: ReturnType<typeof cloudCis>
+    clouds: CloudCis
     discoverClouds: () => Promise<void>
     readAgentFiles: ReadAgentFiles
     workspaceRoots: WorkspaceBoundLocationService
@@ -3125,13 +3078,9 @@ async function initializeCiServices(
   } = composition
   const jobRuntime = composition.jobRuntime!
 
-  // CI runs directly on build computers (Main included) from GitHub, like self-hosted runners.
-  composition.hostCi = new HostCiService(database.pool, commands, new RunCiAuthority(database.pool), new GitCiCommits(),
-    new ProductionHostCiEndpoint(database.pool, machine.installationId, () => deviceRuntime.endpointForDomains(), new HostCiRunner(),
-      clouds, discoverClouds, workerExecution),
-    agentSnapshots(database.pool, readAgentFiles), {
-      reservedCloudSlots: configuredReservedCloudSlots(), circleCredits, circleStandby,
-    })
+  composition.hostCi = createHostCi({ pool: database.pool, mainId: machine.installationId, commands,
+    devices: () => deviceRuntime.endpointForDomains(), workerExecution, clouds, discoverClouds, readAgentFiles,
+    circleCredits, circleStandby })
   composition.hostCi.start()
   app.addHook('onClose', async () => { await composition.hostCi?.close() })
   const stopDeadlineSweeper = startStateDeadlineSweeper(database.pool, {

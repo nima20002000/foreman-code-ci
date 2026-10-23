@@ -55,7 +55,7 @@ test('Worker artifacts bundle new transitive API helpers without registering mod
     "import { value } from './value.js';\nexport const importedHelper = () => value;\n");
   await appendFile(join(f.root, 'apps/worker/src/workerFactory.mjs'),
     "\nexport { importedHelper } from '../../api/src/modules/worker-build-fixture/helper.ts';\n"
-      + "export { HostCiRunner } from '../../api/src/modules/ci-host/runner.ts';\n"
+      + "export { HostCiRunner } from '../../api/src/modules/ci/runner.ts';\n"
       + "export { configurationWithNodeSkills } from '../../api/src/modules/skills/nodeSkills.ts';\n"
       + "export { agentInstructionBundle } from '../../api/src/modules/skills/instructions.ts';\n"
       + "export { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25';\n");

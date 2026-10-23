@@ -9,7 +9,7 @@ import { DeviceApplicationChannel, extensionDescriptors, type DeviceExtensionReg
 import { adaptDeviceSocket } from '../src/modules/devices/deviceWire.js'
 import { deriveDispatch, freezePlacement } from '../src/modules/placement/binding.js'
 import { DomainError } from '../src/modules/errors.js'
-import { agentFileReader } from '../src/modules/ci-host/agentFileReader.js'
+import { agentFileReader } from '@foreman-code/ci/agentFileReader'
 import { AGENT_SNAPSHOT_JSON_BYTES, AGENT_SNAPSHOT_NAMESPACE } from '@foreman-code/contracts/source-materialization'
 import { workerConversationFixture } from '../src/modules/conversations/workerFixtures.test-support.js'
 import { DEFAULT_HARNESS_DEFAULTS, type AgentConfigurationVersion } from '@foreman-code/contracts'

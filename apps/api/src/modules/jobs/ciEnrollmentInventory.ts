@@ -13,7 +13,7 @@ import type { WorkerExecutionPolicy } from '../settings/workerExecution.js'
 import type { ManagedWorkspaceRootService } from '../workspace-roots/managedRoot.js'
 import { DomainError } from '../errors.js'
 import type { CiRuntimeWorker } from './ciRuntimeWorker.js'
-import { readHostCiStatus } from '../ci-host/status.js'
+import { readHostCiStatus } from '../ci/values.js'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { jobDigest } from './digest.js'
 

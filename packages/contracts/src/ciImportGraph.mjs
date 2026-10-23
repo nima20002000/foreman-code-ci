@@ -11,7 +11,7 @@ export const ciInfrastructure = [
   /(?:^|\/)migrations?\/|Migration\.[cm]?[jt]s$/,
   /^packages\/contracts\/src\/index\.ts$/,
   /^packages\/contracts\/src\/ci(?:Coverage|ImportGraph)\.[^/]+$/,
-  /^apps\/api\/src\/modules\/ci-host\/(?!.*\.(?:test|testSupport)\.[^/]+$)/,
+  /^apps\/ci\/src\//,
   /^scripts\/(?:test-integration[^/]*|test-resources[^/]*|integration-process[^/]*|integration-coverage[^/]*|ci-[^/]*|vitest-[^/]*|test-db\.mjs|test-command\.mjs|heavy-job\.mjs)$/,
   /^apps\/api\/test\/(?:helpers\/|setup[^/]*$)|^apps\/web\/src\/test\//,
   /^(?:\.github\/workflows\/|\.circleci\/)/,
@@ -32,22 +32,39 @@ export function importSpecifiers(text) {
   return values
 }
 
-/** The repository file a relative or contracts-package specifier names, or null when it names none.
+/** Workspace packages whose bare specifiers name repository source: the package name and its directory. */
+export const ciWorkspacePackages = Object.freeze({ '@foreman-code/contracts': 'packages/contracts', '@foreman-code/ci': 'apps/ci' })
+
+/** Each workspace package's `exports` map, from its package.json text; a missing manifest has no exports.
+ * @param {(path: string) => string | undefined} read
+ * @returns {Record<string, Record<string, unknown>>} */
+export function workspacePackageExports(read) {
+  return Object.fromEntries(Object.entries(ciWorkspacePackages).map(([name, directory]) => {
+    const text = read(`${directory}/package.json`)
+    const exports = text ? JSON.parse(text).exports : undefined
+    return [name, exports && typeof exports === 'object' ? exports : {}]
+  }))
+}
+
+/** The repository file a relative or workspace-package specifier names, or null when it names none.
  * @param {string} file
  * @param {string} specifier
  * @param {{ has(path: string): boolean }} paths
- * @param {Record<string, unknown>} exports The contracts package's `exports` map.
+ * @param {Record<string, unknown>} exports Each workspace package's `exports` map by package name
+ *   (`workspacePackageExports`), or the contracts package's `exports` map alone.
  * @returns {string | null} */
 export function resolveImport(file, specifier, paths, exports) {
   specifier = specifier.split('?')[0].split('#')[0]
+  // A map keyed by subpaths ('.', './x') is the contracts manifest's own `exports`.
+  const packages = Object.keys(exports).some(key => key.startsWith('.')) ? { '@foreman-code/contracts': exports } : exports
+  const name = Object.keys(ciWorkspacePackages).find(value => specifier === value || specifier.startsWith(`${value}/`))
   let target
   if (specifier.startsWith('.')) target = posix.normalize(posix.join(posix.dirname(file), specifier))
-  else if (specifier === '@foreman-code/contracts' || specifier.startsWith('@foreman-code/contracts/')) {
-    const key = specifier === '@foreman-code/contracts' ? '.' : `.${specifier.slice('@foreman-code/contracts'.length)}`
-    const entry = exports[key]
+  else if (name) {
+    const entry = /** @type {Record<string, unknown>} */ (packages[name] ?? {})[`.${specifier.slice(name.length)}`]
     const path = typeof entry === 'string' ? entry
       : entry && typeof entry === 'object' && 'import' in entry && typeof entry.import === 'string' ? entry.import : undefined
-    if (path) target = `packages/contracts/${path.replace(/^\.\//, '').replace(/^dist\//, 'src/')}`
+    if (path) target = `${ciWorkspacePackages[name]}/${path.replace(/^\.\//, '').replace(/^dist\//, 'src/')}`
   }
   if (!target) return null
   const stem = target.replace(/\.[cm]?js$/, '')

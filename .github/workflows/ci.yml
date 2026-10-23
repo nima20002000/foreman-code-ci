@@ -147,7 +147,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: apps/api/dist
-          key: api-build-${{ runner.os }}-node22.23.2-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('apps/api/src/**', '!apps/api/src/**/*.test.ts', '!apps/api/src/**/__tests__/**', 'apps/api/tsconfig*.json', 'apps/api/package.json', 'packages/contracts/src/**', '!packages/contracts/src/**/*.test.ts', '!packages/contracts/src/**/*.spec.ts', 'packages/contracts/tsconfig*.json', 'packages/contracts/package.json', 'scripts/copy-api-runtime.mjs') }}
+          key: api-build-${{ runner.os }}-node22.23.2-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('apps/api/src/**', '!apps/api/src/**/*.test.ts', '!apps/api/src/**/__tests__/**', 'apps/api/tsconfig*.json', 'apps/api/package.json', 'apps/ci/src/**', 'apps/ci/tsconfig*.json', 'apps/ci/package.json', 'packages/contracts/src/**', '!packages/contracts/src/**/*.test.ts', '!packages/contracts/src/**/*.spec.ts', 'packages/contracts/tsconfig*.json', 'packages/contracts/package.json', 'scripts/copy-api-runtime.mjs') }}
       # Both suites check the same no-emit web projects; share semantic results instead of checking them twice.
       - name: Web TypeScript cache
         id: web-typecheck

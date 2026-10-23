@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdir, mkdtemp, readFile, readdir, readlink, realpath, rename, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rename, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import test from 'node:test'
 import { copyVerificationRuntime, desktopLaunchEnvironment, hasNativeTurnStarted, localProductionEnvironment, preserveOperatorConfiguration, publish, readEnvironment,
   removeUninstalledRelease, renderEnvironment,
@@ -757,13 +758,15 @@ test('reuses one build tree reset to the exact next commit with dependencies and
 /** A build source whose fake pnpm deploy writes the API package and a dependency tree like legacy pnpm deploy. */
 async function apiBuildSource(directory) {
   const source = join(directory, 'source')
-  for (const path of ['apps/api/dist', 'packages/contracts/dist']) await mkdir(join(source, path), { recursive: true })
+  for (const path of ['apps/api/dist', 'packages/contracts/dist', 'apps/ci/dist']) await mkdir(join(source, path), { recursive: true })
   await writeFile(join(source, 'pnpm-lock.yaml'), 'lock: 1\n')
   await writeFile(join(source, 'apps/api/package.json'), '{"name":"@foreman-code/api"}\n')
   await writeFile(join(source, 'apps/api/README.md'), 'api\n')
   await writeFile(join(source, 'apps/api/dist/server.js'), 'build 1\n')
   await writeFile(join(source, 'packages/contracts/package.json'), '{"name":"@foreman-code/contracts"}\n')
   await writeFile(join(source, 'packages/contracts/dist/index.js'), 'contracts 1\n')
+  await writeFile(join(source, 'apps/ci/package.json'), '{"name":"@foreman-code/ci"}\n')
+  await writeFile(join(source, 'apps/ci/dist/runner.js'), 'ci 1\n')
   const deploys = []
   const run = async (command, args) => {
     if (!args.includes('deploy')) return
@@ -774,6 +777,15 @@ async function apiBuildSource(directory) {
     await writeFile(join(store, 'dist/index.js'), await readFile(join(source, 'packages/contracts/dist/index.js')))
     await mkdir(join(destination, 'node_modules/@foreman-code'), { recursive: true })
     await symlink('../.pnpm/@foreman-code+contracts/node_modules/@foreman-code/contracts', join(destination, 'node_modules/@foreman-code/contracts'))
+    // pnpm injects the CI package with its own contracts dependency, which a release must never load.
+    const ciStore = join(destination, 'node_modules/.pnpm/@foreman-code+ci/node_modules/@foreman-code')
+    await mkdir(join(ciStore, 'ci/dist'), { recursive: true })
+    await writeFile(join(ciStore, 'ci/package.json'), await readFile(join(source, 'apps/ci/package.json')))
+    await writeFile(join(ciStore, 'ci/dist/runner.js'), await readFile(join(source, 'apps/ci/dist/runner.js')))
+    await mkdir(join(ciStore, 'contracts/dist'), { recursive: true })
+    await writeFile(join(ciStore, 'contracts/package.json'), await readFile(join(source, 'packages/contracts/package.json')))
+    await writeFile(join(ciStore, 'contracts/dist/index.js'), await readFile(join(source, 'packages/contracts/dist/index.js')))
+    await symlink('../.pnpm/@foreman-code+ci/node_modules/@foreman-code/ci', join(destination, 'node_modules/@foreman-code/ci'))
     await mkdir(join(destination, 'node_modules/fastify'), { recursive: true })
     await writeFile(join(destination, 'node_modules/fastify/index.js'), 'fastify')
     await mkdir(join(destination, 'dist'), { recursive: true })
@@ -824,6 +836,26 @@ test('releases reuse installed dependencies while freezing their own contracts o
     { removeInBackground: path => removed.push(path) })
   assert.equal(removed.length, 1)
   assert.equal(await readFile(join(fourth, 'node_modules/fastify/index.js'), 'utf8'), 'fastify')
+})
+
+test('a release CI package loads the release contracts copy, so CI and API share one DomainError', async t => {
+  const directory = await installFixture(t)
+  const { source, run } = await apiBuildSource(directory)
+  const manifest = name => JSON.stringify({ name, type: 'module', exports: { '.': './dist/index.js', './runner': './dist/runner.js' } })
+  await writeFile(join(source, 'packages/contracts/package.json'), manifest('@foreman-code/contracts'))
+  await writeFile(join(source, 'packages/contracts/dist/index.js'), 'export class DomainError extends Error {}\n')
+  await writeFile(join(source, 'apps/ci/package.json'), manifest('@foreman-code/ci'))
+  await writeFile(join(source, 'apps/ci/dist/runner.js'),
+    "export { DomainError } from '@foreman-code/contracts'\nexport const build = 'ci 2'\n")
+  const release = join(directory, 'releases/release-a/apps/api')
+  await production.deployProductionApi(run, release, { dependencies: { root: join(directory, 'api-dependencies'), source } })
+  const ci = join(release, 'node_modules/@foreman-code/ci')
+  assert.equal((await lstat(ci)).isDirectory(), true)
+  await assert.rejects(stat(join(ci, 'node_modules')), { code: 'ENOENT' })
+  const runner = await import(pathToFileURL(join(ci, 'dist/runner.js')).href)
+  const contracts = await import(pathToFileURL(join(release, 'node_modules/@foreman-code/contracts/dist/index.js')).href)
+  assert.equal(runner.build, 'ci 2')
+  assert.equal(runner.DomainError, contracts.DomainError)
 })
 
 test('pruning protects retained and selected releases through installation aliases', async t => {
@@ -956,6 +988,7 @@ test('production builds check the API separately from JavaScript emit and browse
   await production.buildProductionSource(async (command, args) => { calls.push([command, args]) })
   assert.deepEqual(calls, [
     ['corepack', ['pnpm', '--filter', '@foreman-code/contracts', 'build']],
+    ['corepack', ['pnpm', '--filter', '@foreman-code/ci', 'build']],
     ['corepack', ['pnpm', '--filter', '@foreman-code/api', 'exec', 'tsc', '-p', 'tsconfig.build.json',
       '--noEmit', '--isolatedModules', '--tsBuildInfoFile', 'node_modules/.cache/tsc/production-check.tsbuildinfo']],
     ['node', ['scripts/emit-production-api.mjs']],
@@ -1028,7 +1061,7 @@ test('readiness polls while the service start command is waiting and smoke waits
   assert.equal(smoked, true)
 })
 
-for (const input of ['pnpm-lock.yaml', 'apps/api/package.json', 'packages/contracts/package.json',
+for (const input of ['pnpm-lock.yaml', 'apps/api/package.json', 'packages/contracts/package.json', 'apps/ci/package.json',
   'pnpm-workspace.yaml', '.npmrc']) {
   test(`dependency staging invalidates when ${input} changes`, async t => {
     const directory = await installFixture(t)

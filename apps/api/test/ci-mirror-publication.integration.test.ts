@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { CiGetOutputSchema, CiRunOutputSchema, type CiHostRun } from '@foreman-code/contracts'
 import { expect, it, vi } from 'vitest'
-import { fixture as mirrorFixture } from '../src/modules/ci-host/cloud.testSupport.js'
-import type { HostCiComputer, HostCiEndpoint } from '../src/modules/ci-host/service.js'
+import { fixture as mirrorFixture } from './ci-host/cloud.testSupport.js'
+import type { HostCiComputer, HostCiEndpoint } from '@foreman-code/ci/service'
 import { CI_GET_ACTIONS } from '../src/modules/jobs/ciAuthority.js'
 import { fixture } from './helpers/hostCiMcpFixture.js'
 

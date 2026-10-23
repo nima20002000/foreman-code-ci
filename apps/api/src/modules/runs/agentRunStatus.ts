@@ -1,10 +1,9 @@
 import type pg from 'pg'
-import { AgentRunStatusSchema, CiRunRecordSchema, RUN_STATUS_LIMITS, type AgentRunStatus } from '@foreman-code/contracts'
+import { AgentRunStatusSchema, CiRunRecordSchema, ciActivityFromRecord, RUN_STATUS_LIMITS, type AgentRunStatus } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
 import { workerScope, workerScopesForAction } from '../access/appPolicy.js'
 import { DomainError } from '../errors.js'
-import { ciActivityFromRecord } from './agentCiSnapshot.js'
 import { workflowJobLifecycle } from '../run-graph/workflowJobProjection.js'
 
 const clip = (text: string) => text.slice(0, RUN_STATUS_LIMITS.messageLength)

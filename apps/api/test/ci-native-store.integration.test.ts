@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { expect, it } from 'vitest'
 import { parse } from 'yaml'
-import { shellQuote } from '../src/modules/ci-host/warmSetup.js'
+import { shellQuote } from '@foreman-code/ci/warmSetup'
 import { nativeStoreFixtures, nativeVersion } from './helpers/ciNativeStoreFixture.js'
 
 const execute = promisify(execFile)

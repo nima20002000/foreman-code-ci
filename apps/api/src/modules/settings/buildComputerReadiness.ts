@@ -10,8 +10,7 @@ import { buildComputerTarget } from './buildComputers.js'
 import { jobComputerCapacityDecision, type VerificationMemoryReader } from '../jobs/computerSelection.js'
 import type { WorkerExecutionPolicy } from './workerExecution.js'
 import { DomainError } from '../errors.js'
-import { hostCiCapacity } from '../ci-host/capacity.js'
-import { readHostCiStatus } from '../ci-host/status.js'
+import { hostCiCapacity, readHostCiStatus } from '../ci/values.js'
 import { workerBundleErrorMessage } from '../computers/workerBundleReadiness.js'
 
 export function buildComputerReadiness(input: { endpoint(): DeviceEndpoint; profiles: JobRuntimeProfiles;
