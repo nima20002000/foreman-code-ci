@@ -3,6 +3,7 @@ import { withTransaction } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import { MessageSchema, type ActivityScope, type Message } from '@foreman-code/contracts'
 import type { ActivityTextOperation } from '@foreman-code/contracts/activity-text'
+import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import type { ActivityMutationFence } from './operatorActivityRepository.js'
 
 export type TextMutationResult = { status: 'committed' | 'ignored' | 'reconciliation_required'; revision: string; messageRevision?: string; message?: Message }
@@ -63,7 +64,7 @@ export async function appendConversationTextOperation(pool: pg.Pool, conversatio
     const result = (status: TextMutationResult['status']): TextMutationResult => ({ status, revision: row.revision,
       ...(prior ? { messageRevision: prior.revision } : {}) })
     if (prior && (prior.record.requestId !== requestId || prior.record.nativeParentMessageId !== undefined && prior.record.nativeParentMessageId !== identity.parentId || stored && (stored.sessionId !== identity.sessionId || stored.generation !== identity.generation
-      || stored.turnId !== identity.turnId || JSON.stringify(stored.nativeSubmission) !== JSON.stringify(fence.nativeSubmission) || stored.itemId !== identity.itemId || stored.partId !== identity.partId
+      || stored.turnId !== identity.turnId || canonicalJson(stored.nativeSubmission ?? null) !== canonicalJson(fence.nativeSubmission ?? null) || stored.itemId !== identity.itemId || stored.partId !== identity.partId
       || stored.parentId !== identity.parentId || stored.channel !== identity.channel))) {
       return undefined
     }
