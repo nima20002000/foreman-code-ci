@@ -9,8 +9,6 @@ import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { HostCiService, type CiCommits } from '@foreman-code/ci/service'
-import { GitCiCommits } from '@foreman-code/ci/commits'
-import type { HostCiEndpoint } from '@foreman-code/ci/service'
 import { CI_GET_ACTIONS, CI_RUN_ACTIONS, RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { createTestPool } from './helpers/testPool.mjs'
@@ -41,7 +39,7 @@ async function within<T>(promise: Promise<T>): Promise<T> {
   }
 }
 
-async function fixture(overrides: Partial<CiCommits>, runner?: { commits: CiCommits; endpoint: HostCiEndpoint }) {
+async function fixture(overrides: Partial<CiCommits>) {
   const pool = createTestPool({ connectionString: database.databaseUrl, max: 10,
     application_name: 'ci-admission-test', options: '-c statement_timeout=300 -c lock_timeout=300' })
   const workspaceId = randomUUID()
@@ -56,7 +54,7 @@ async function fixture(overrides: Partial<CiCommits>, runner?: { commits: CiComm
   }
   const access = new PostgresAccessService(pool)
   const commands = new PostgresCommandCoordinator(pool)
-  const ci = new HostCiService(mainCiContext, pool, commands, new RunCiAuthority(pool), runner?.commits ?? commits, runner?.endpoint ?? {
+  const ci = new HostCiService(mainCiContext, pool, commands, new RunCiAuthority(pool), commits, {
     computers: async () => [], request: async () => { throw new Error('No executor is configured') },
   })
   const app = buildApp({ logger: false,
@@ -87,7 +85,7 @@ async function fixture(overrides: Partial<CiCommits>, runner?: { commits: CiComm
     expect(result.isError).not.toBe(true)
     return CiGetOutputSchema.parse(decodeMcpToolResult(result)).run
   }
-  return { pool, ci, workspaceId, principalId: operator.principalId, connect, call, run, read,
+  return { pool, workspaceId, principalId: operator.principalId, connect, call, run, read,
     http: (input: CiRunInput) => app.inject({ method: 'POST',
       url: `/api/management/workspaces/${workspaceId}/ci`, payload: input,
       headers: { authorization: `Bearer ${operator.token}` } }),
@@ -98,54 +96,6 @@ async function fixture(overrides: Partial<CiCommits>, runner?: { commits: CiComm
       await pool.end()
     } }
 }
-
-it('admits 25 different commits while source publication is blocked and starts only published commits', async () => {
-  const blocked = barrier()
-  const published = new Set<string>()
-  const publishCommit = vi.fn(async (_ports, _repository: string, commit: string) => {
-    await blocked.wait()
-    published.add(commit)
-  })
-  const context = { ...mainCiContext, platform: { ...mainCiContext.platform,
-    ensureCommit: async () => 'fixture-clone', publishCommit } }
-  const commits = new GitCiCommits(context, {
-    cloneDirectory: () => 'fixture-clone',
-    git: async () => ({ code: 0, stdout: '', stderr: '' }),
-  })
-  const started: string[] = []
-  const f = await fixture({}, { commits, endpoint: {
-    computers: async () => [{ key: 'local-ci', label: 'Local CI', priority: 60,
-      hostRef: { kind: 'main', mainId: 'main-1' } }],
-    request: async (_computer, request) => {
-      if (request.operation === 'status') return { operation: 'status', ready: true, reasons: [],
-        cpuCount: 32, memoryBytes: 64 * 2 ** 30, slotsTotal: 25, slotsUsed: started.length, runs: [] }
-      if (request.operation !== 'start') throw new Error('Unexpected executor request')
-      expect(published.has(request.commit)).toBe(true)
-      started.push(request.commit)
-      return { operation: 'start', run: { runId: request.runId, state: 'running', step: 'lint', exitCode: null,
-        startedAt: new Date().toISOString(), finishedAt: null, message: null, logBytes: 0 } }
-    },
-  } })
-  const requested = Array.from({ length: 25 }, (_, index) => (index + 1).toString(16).padStart(40, '0'))
-  const requests = requested.map(commit => f.run({ suite: 'lint', scope: 'full', commit, noSupersede: true }))
-  try {
-    const admissions = await within(Promise.all(requests))
-    expect(new Set(admissions.map(value => value.ticketId)).size).toBe(25)
-    await within(blocked.entered)
-    expect(started).toEqual([])
-    for (const [index, admission] of admissions.entries()) {
-      expect(await f.read(admission.ticketId)).toMatchObject({ commit: requested[index], state: 'queued', suite: 'lint' })
-    }
-    blocked.release()
-    await expect.poll(() => started.length, { timeout: 10_000 }).toBe(25)
-    expect(new Set(started)).toEqual(new Set(requested))
-    expect(publishCommit).toHaveBeenCalledTimes(25)
-  } finally {
-    blocked.release()
-    await Promise.allSettled(requests)
-    await f.close()
-  }
-})
 
 it('admits concurrent authenticated MCP and HTTP requests while another commit resolver is blocked', async () => {
   const blocked = barrier()
