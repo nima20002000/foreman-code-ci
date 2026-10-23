@@ -37,7 +37,7 @@ export function browserPortFake(initial = browserRead()) {
     listSetupSessions: vi.fn(async () => [read.session]),
     acquire: vi.fn(async (_session, viewerId) => { control = { ...control, epoch: control.epoch + 1, state: 'user', controllingViewerId: viewerId }; return control }),
     release: vi.fn(async () => { control = { ...control, epoch: control.epoch + 1, state: 'agent', controllingViewerId: null }; return control }),
-    pause: vi.fn(async () => { control = { ...control, epoch: control.epoch + 1, state: 'paused', reason: 'Browser view disconnected' }; return control }),
+    pause: vi.fn(async () => { control = { ...control, epoch: control.epoch + 1, state: 'paused' }; return control }),
     openView: vi.fn(async (_session, _tab, _viewer, value) => { observer = value; return { close: closeView } }),
     input: vi.fn(async () => undefined), releasePressed: vi.fn(async () => undefined),
     selectTab: vi.fn(async () => ({ ...read, control })), createTab: vi.fn(async () => ({ ...read, control, createdTabId: read.tabs[0]!.tabId })),
