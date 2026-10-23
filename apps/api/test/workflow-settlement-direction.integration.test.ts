@@ -4,7 +4,7 @@ import type { ExecutionResult, HarnessExecution } from '@foreman-code/contracts'
 import { CANONICAL_RUN_GRAPH_MCP_TOOLS, CanonicalRunGraphCurrentSchema } from '@foreman-code/contracts/current'
 import { graphRpcValue } from './graph-composition-fixture.js'
 import { InteractionService } from '../src/modules/interactions/service.js'
-import { Wave25InteractionRepository } from '../src/modules/interactions/current/repository.js'
+import { CurrentInteractionRepository } from '../src/modules/interactions/current/repository.js'
 import { PostgresApprovalBudgetRepository } from '../src/modules/interactions/budget.js'
 import { RespondToInteractionResponseSchema, WorkDirectionRequestSchema } from '@foreman-code/contracts'
 import { workDirectionInteractionId } from '../src/modules/runs/workDirectionInteraction.js'
@@ -73,7 +73,7 @@ describe.skipIf(!postgresEnabled)('workflow settlement direction', () => {
             expect((await api.call('interaction_respond', response))?.isError).toBe(true)
             expect(await api.repository.get(interaction.id)).toMatchObject({ status: 'delivered',
               continuationRunId: expect.any(String) })
-            const restarted = new InteractionService(new Wave25InteractionRepository(f.db.pool),
+            const restarted = new InteractionService(new CurrentInteractionRepository(f.db.pool),
               new PostgresApprovalBudgetRepository(f.db.pool), {} as never, async () => undefined, undefined, undefined,
               { start: api.start, wake: async () => undefined })
             expect((await restarted.recover({ limit: 20 })).errors).toEqual([])

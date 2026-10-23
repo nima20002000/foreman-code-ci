@@ -2,3 +2,5 @@ export { DeviceApplicationError } from '../modules/devices/deviceApplicationErro
 export { DeviceConnectionError } from '../modules/devices/deviceWire.js'
 export { createInstalledWorkerDomains } from '../modules/devices/installedWorkerDomains.js'
 export { createWorkerConnection } from '../modules/devices/workerConnection.js'
+export { DeviceApplicationAdmissionError, deviceApplicationFailure } from '../modules/devices/deviceApplicationError.js'
+export { createWorkerRuntimeDrain } from '../modules/devices/installedWorkerDomains.js'
