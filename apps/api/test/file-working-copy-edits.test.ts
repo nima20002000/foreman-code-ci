@@ -389,9 +389,4 @@ describe('plain text attachments', () => {
         expect(result.content?.some((part) => part.text === text)).toBe(true)
       } finally { await app.close() }
     })
-
-  it('rejects text/plain bytes that are not valid UTF-8', async () => {
-    const f = await fixture()
-    await expect(copy(f, Buffer.from([0x68, 0xff, 0x0a]), 'bad.txt', 'text/plain')).rejects.toBeInstanceOf(DomainError)
-  })
 })

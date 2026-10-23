@@ -87,6 +87,16 @@ describe('FIL-03 managed file bytes', () => {
       await assert.rejects(storage.receive(randomUUID(), Readable.from([bytes]), fileMetadata({ ...empty, bytes })), { code: 'FILE_TYPE_INVALID' })
     }
   })
+  it('stores UTF-8 text/plain and rejects binary/invalid UTF-8 text', async () => {
+    const text = { filename: 'notes.txt', mediaType: 'text/plain' as const, bytes: Buffer.from('plain notes\n') }
+    const id = randomUUID(), metadata = fileMetadata(text)
+    const candidate = await storage.receive(id, Readable.from([text.bytes]), metadata)
+    await storage.stage(candidate, metadata); await storage.discard(candidate); await storage.finalize(id, metadata)
+    assert.deepEqual(await readFile(join(root, 'objects', id)), text.bytes)
+    for (const bytes of [Buffer.from([0, 1]), Buffer.from([0x68, 0xff, 0x0a])]) {
+      await assert.rejects(storage.receive(randomUUID(), Readable.from([bytes]), fileMetadata({ ...text, bytes })), { code: 'FILE_TYPE_INVALID' })
+    }
+  })
   it('detects missing and corrupted immutable bytes, never substitutes another revision', async () => {
     const id = randomUUID(), metadata = fileMetadata(markdown)
     await assert.rejects(storage.download(id, metadata), { code: 'FILE_BYTES_UNAVAILABLE' })
