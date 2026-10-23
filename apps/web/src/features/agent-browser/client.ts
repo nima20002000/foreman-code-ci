@@ -59,21 +59,23 @@ export function createBrowserUiClient(options: BrowserHttpOptions & { commands: 
       const admission = crypto.randomUUID(), retirement = crypto.randomUUID()
       // Do not abort allocation: a late view ID must be closed, even when the view has retired.
       const receipt = await call('POST', `${path(session.id)}/views`, options.views.open, [session, tab, viewerId, admission])
-      const abort = new AbortController(), combined = AbortSignal.any([signal, abort.signal])
+      const abort = new AbortController()
       const endpoint = `${path(session.id)}/views/${encodeURIComponent(receipt.viewId)}`
       let closing: Promise<void> | undefined
       let media: { close(): void } | undefined
       const close = () => {
         signal.removeEventListener('abort', retired)
-        closing ??= call('DELETE', endpoint, options.views.close, [session, receipt.viewId, retirement])
-        abort.abort(); media?.close()
+        closing ??= (async () => {
+          try { await call('DELETE', endpoint, options.views.close, [session, receipt.viewId, retirement]) }
+          finally { abort.abort(); media?.close() }
+        })()
         return closing
       }
       const retired = () => { void close().catch(error => observer.disconnected(error)) }
       if (signal.aborted) { await close(); return { close } }
       signal.addEventListener('abort', retired, { once: true })
       try {
-        media = connectBrowserView({ sessionId: session.id, viewId: receipt.viewId, signal: combined, codec: options.views.media,
+        media = connectBrowserView({ sessionId: session.id, viewId: receipt.viewId, signal: abort.signal, codec: options.views.media,
           origin: options.origin, socket: options.socket, observer: { ...observer, disconnected: error => {
             observer.disconnected(error)
             void close().catch(failure => observer.disconnected(failure))

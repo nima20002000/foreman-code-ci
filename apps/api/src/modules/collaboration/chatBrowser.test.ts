@@ -5,13 +5,14 @@ import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { BrowserAuthority } from './browserAuthority.js'
 import type { BrowserLifecyclePort } from './ports.js'
 import { CHAT_BROWSER_IDLE_MS, ChatBrowserSessions } from './chatBrowser.js'
+import { DomainError } from '../errors.js'
 
 const agent = { workspaceId: 'workspace', workflowId: 'workflow', workflowNodeId: 'node', agentId: 'agent' }
 const chatSubject = { kind: 'conversation', agent, conversationId: 'chat-1' } as Extract<AgentSubject, { kind: 'conversation' }>
 const runSubject = { kind: 'execution', agent, execution: { runId: 'run', executionId: 'execution' } } as unknown as AgentSubject
 const principal = { id: 'chat-principal', audience: 'worker' } as ManagementPrincipal
 
-function fixture() {
+function fixture(computerId = 'main') {
   let clock = 0
   let active = true
   const open = new Map<string, BrowserSession>()
@@ -33,10 +34,10 @@ function fixture() {
       return { sessionId: input.sessionId, state: 'closed' } as Awaited<ReturnType<BrowserLifecyclePort['release']>>
     }),
   }
-  const authority = { details: async (subject: AgentSubject) => ({ subject, active, computerId: 'main',
+  const authority = { details: async (subject: AgentSubject) => ({ subject, active, computerId,
     browser: { enabled: true, profileId: 'profile' } }) } as unknown as BrowserAuthority
   const chats = new ChatBrowserSessions({ pool: {} as pg.Pool, authority, lifecycle,
-    localSessions: async () => [...open.values()], chatSubject: async () => chatSubject, now: () => clock })
+    sessions: async () => [...open.values()], chatSubject: async () => chatSubject, now: () => clock })
   return { chats, lifecycle, open, tick: (ms: number) => { clock += ms }, archive: () => { active = false } }
 }
 
@@ -79,11 +80,55 @@ it('closes the chat browser after ten idle minutes and when the chat is archived
   expect(f.open.size).toBe(0)
 })
 
+it('continues the idle sweep after a Worker release fails and retries that browser on the next sweep', async () => {
+  const f = fixture('worker')
+  const first = await f.chats.sessionFor(principal)
+  const session = f.open.get(first!)!
+  f.open.set('other-chat-session', { ...session, id: 'other-chat-session', computerId: 'main',
+    subject: { ...chatSubject, conversationId: 'other-chat' } })
+  await f.chats.sweep()
+  f.tick(CHAT_BROWSER_IDLE_MS)
+  f.lifecycle.release.mockRejectedValueOnce(new DomainError('BROWSER_COMPUTER_OFFLINE', 'The Worker is offline.', 503))
+
+  await expect(f.chats.sweep()).resolves.toBeUndefined()
+  expect([...f.open.keys()]).toEqual([first])
+  expect(f.lifecycle.release).toHaveBeenCalledTimes(2)
+  await f.chats.sweep()
+  expect(f.open.size).toBe(0)
+  expect(f.lifecycle.release.mock.calls[2]![0]).toEqual(f.lifecycle.release.mock.calls[0]![0])
+})
+
+it('retains a chat browser after a failed Run handoff so the next idle sweep can retry it', async () => {
+  const f = fixture('worker')
+  await f.chats.sessionFor(principal)
+  f.tick(CHAT_BROWSER_IDLE_MS)
+  f.lifecycle.release.mockRejectedValueOnce(new DomainError('BROWSER_COMPUTER_OFFLINE', 'The Worker is offline.', 503))
+  await f.chats.yieldToRun('profile', 'worker')
+  expect(f.open.size).toBe(1)
+
+  await f.chats.sweep()
+  expect(f.open.size).toBe(0)
+  expect(f.lifecycle.release.mock.calls[1]![0]).toEqual(f.lifecycle.release.mock.calls[0]![0])
+})
+
+it('retries an idle browser whose host cleanup is still pending without resetting its idle time', async () => {
+  const f = fixture('worker')
+  const sessionId = await f.chats.sessionFor(principal)
+  f.tick(CHAT_BROWSER_IDLE_MS)
+  f.lifecycle.release.mockResolvedValueOnce({ sessionId: sessionId!, state: 'pending', reason: 'Waiting for native tab closure.' })
+  await f.chats.sweep()
+  expect(f.open.size).toBe(1)
+
+  await f.chats.sweep()
+  expect(f.open.size).toBe(0)
+  expect(f.lifecycle.release).toHaveBeenCalledTimes(2)
+})
+
 it('gives a chat on a paired device the actor from that session\'s control facts', async () => {
   const f = fixture()
   const control = vi.fn(async (_principal: ManagementPrincipal, sessionId: string) =>
     sessionId === 'remote-session' ? { browserGeneration: 3, epoch: 7 } : undefined)
-  const chats = new ChatBrowserSessions({ pool: {} as pg.Pool, lifecycle: f.lifecycle, localSessions: async () => [],
+  const chats = new ChatBrowserSessions({ pool: {} as pg.Pool, lifecycle: f.lifecycle, sessions: async () => [],
     localControl: () => undefined, sessionControl: control, chatSubject: async () => chatSubject } as never)
   expect(await chats.agentActor(principal, 'remote-session')).toEqual({ kind: 'agent', browserGeneration: 3, epoch: 7 })
 })

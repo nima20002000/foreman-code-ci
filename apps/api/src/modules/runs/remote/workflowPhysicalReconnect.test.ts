@@ -1,5 +1,6 @@
 import { expect, it, vi } from 'vitest'
 import { DeviceConnectionError } from '../../devices/deviceWire.js'
+import { DeviceApplicationError } from '../../devices/deviceApplicationError.js'
 import { physicalFixture } from './__tests__/installedWorkflowHost.js'
 import { createRemoteWorkflowPhysicalVerification } from './workflowPhysicalVerification.js'
 import { pagePhysicalReadout } from './workflowPhysicalReadout.js'
@@ -59,3 +60,29 @@ it.each(['initial', 'continuation'] as const)(
     }
   },
 )
+
+it('recaptures the physical observation when the same boot reconnects during Main retry backoff', async () => {
+  const f = await physicalFixture()
+  let binding = f.context.binding
+  const replacement = { ...binding, connectionGeneration: binding.connectionGeneration + 1,
+    connectionEpoch: 'reconnected-during-backoff' }
+  const fresh = vi.fn(async () => ({ payload: pagePhysicalReadout(f.readout) }))
+  const original = vi.fn(async () => {
+    setTimeout(() => { binding = replacement }, 100)
+    throw new DeviceApplicationError('DATABASE_READ_TIMEOUT')
+  })
+  const producer = createRemoteWorkflowPhysicalVerification({ endpoint: () => ({
+    currentBinding: () => binding,
+    captureRequest: () => ({ binding, request: binding === replacement ? fresh : original }),
+  }) })
+  vi.useFakeTimers()
+  try {
+    const result = producer.prefetch(f.readout.receipt, f.placement, f.source)
+    const checked = expect(result).resolves.toMatchObject({ kind: 'original-remote-physical' })
+    await Promise.allSettled([checked, vi.advanceTimersByTimeAsync(1_000)])
+    await checked
+    expect(original).toHaveBeenCalledOnce()
+    expect(fresh).toHaveBeenCalledOnce()
+    expect(producer.confirmedClosed(await result, f.session)).toBe(false)
+  } finally { vi.useRealTimers(); await f.sqlConnection.close() }
+})

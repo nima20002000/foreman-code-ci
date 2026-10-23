@@ -29,7 +29,7 @@ function cliCommand(stateDirectory, command, input) {
       if (status === 0 && size <= 32_768) resolve(output.trim());
       else {
         const code = error.split(/[:\s(]/, 1)[0];
-        reject(new WorkerError(['setup_code_invalid', 'setup_code_identity_mismatch', 'setup_code_expired', 'setup_code_cancelled', 'already_paired', 'wrong_main_proof', 'pairing_main_unreachable', 'pairing_outcome_unknown', 'pairing_http_rejected', 'target_runtime_mismatch'].includes(code) ? code : 'companion_command_failed'));
+        reject(new WorkerError(['setup_code_invalid', 'setup_code_identity_mismatch', 'setup_code_expired', 'setup_code_cancelled', 'already_paired', 'worker_already_running', 'wrong_main_proof', 'pairing_main_unreachable', 'pairing_outcome_unknown', 'pairing_http_rejected', 'target_runtime_mismatch'].includes(code) ? code : 'companion_command_failed'));
       }
     });
     child.stdin.end(input ? `${input}\n` : '');
