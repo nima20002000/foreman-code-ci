@@ -1,7 +1,7 @@
 import { createPublicKey, generateKeyPairSync, sign } from 'node:crypto'
 import type pg from 'pg'
 import { MainIdentityProofRequestSchema, MainSignedIdentityProofSchema, MainEnrollmentProofRequestSchema, MainSignedEnrollmentProofSchema, type MainIdentityProofRequest, type MainSignedIdentityProof, type MainEnrollmentProofRequest, type MainSignedEnrollmentProof } from '@foreman-code/contracts/device-identity'
-import { mainIdentityProofMessage, mainEnrollmentProofMessage, publicKeyFingerprint } from '@foreman-code/contracts-node/device-identity-node'
+import { mainIdentityProofMessage, mainEnrollmentProofMessage, publicKeyFingerprint } from '@foreman-code/contracts/device-identity-node'
 import { DeviceAccessError } from './access.js'
 import type { SqlQuery } from '../../infrastructure/transaction.js'
 

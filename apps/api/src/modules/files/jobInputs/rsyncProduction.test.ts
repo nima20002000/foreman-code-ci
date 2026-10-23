@@ -5,7 +5,7 @@ import { TransferIntentSchema, type VerifiedTransferReceipt } from '@foreman-cod
 import { JobInputAdmissionSchema, JobInputDeliveryReceiptSchema, type JobInputDeliveryReceipt } from '@foreman-code/contracts/job-inputs'
 import { jobExecution } from '../../../../test/helpers/jobFixture.js'
 import { makeManifest } from './manifest.js'
-import { createMainJobInputRsyncExtension } from './rsyncProduction.js'
+import { createMainJobInputRsyncExtension, jobInputTransferPorts } from './rsyncProduction.js'
 import { transferContextForBinding } from '../../byte-transfer/carrier.js'
 
 function fixture() {
@@ -89,4 +89,15 @@ describe('Main canonical Job-input rsync composition', () => {
     await expect(extension.handle!({ method: 'stage', transferId: f.intent.transferId }, f.frame)).rejects.toMatchObject({ code: 'JOB_INPUT_RSYNC_UNAVAILABLE' })
     await expect(extension.handle!({ method: 'delivery-status', transferId: f.intent.transferId }, f.frame)).rejects.toThrow('Original delivery pending')
   })
+})
+
+
+it('keeps an explicitly selected rsync backend and commits chunked-delivery ACKs without external writer holds', async () => {
+  const f = fixture(), captureRequest = vi.fn()
+  expect(jobInputTransferPorts({ captureRequest }, f.rsync)).toBe(f.rsync)
+  const extension = createMainJobInputRsyncExtension(f.canonical, f.original, jobInputTransferPorts({ captureRequest }))
+  expect(await extension.handle!({ method: 'delivery-ack', transferId: f.intent.transferId, receipt: f.delivered }, f.frame))
+    .toEqual({ payload: f.delivered })
+  expect(f.order).toEqual(['persist', 'readback'])
+  expect(captureRequest).not.toHaveBeenCalled()
 })

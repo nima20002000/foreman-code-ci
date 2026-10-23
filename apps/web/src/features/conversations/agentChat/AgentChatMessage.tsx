@@ -5,7 +5,7 @@ import type { Message } from '@foreman-code/contracts'
 import { useMutation } from '@tanstack/react-query'
 import { errorMessage } from '../../../shared/errorMessage'
 import { Button, CodeBlock, MessageBubble } from '../../../shared/ui/nocturne'
-import { TextTruncationNotice } from '../TextTruncationNotice'
+import { TextTruncationNotice } from '../../chat-core'
 import { structuredResult } from './structuredResult'
 
 const markdownComponents: Components = {

@@ -10,7 +10,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(new URL('../../api/package.json', import.meta.url));
 const { tsImport } = await import(require.resolve('tsx/esm/api'));
 const { loadOrCreateWorkerIdentity, persistWorkerPairing, loadWorkerPairing } =
-  await tsImport('../../../packages/contracts-node/src/deviceIdentityNode.ts', import.meta.url);
+  await tsImport('../../../packages/contracts/src/deviceIdentityNode.ts', import.meta.url);
 import { installVersion, rollbackVersion, requireReleaseState } from '../src/installation.mjs';
 import { doctorReport, persistentFilesystems } from '../src/diagnostics.mjs';
 import { startWorker, readWorkerStatus, acquireWorkerLock } from '../src/runtime.mjs';

@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { readFile } from 'node:fs/promises'
+import { DomainError, writeDurableFile } from '@foreman-code/contracts/server-kit'
 import type { CloudRun } from './cloudProviders.js'
 
 export async function readCloudRun(path: string): Promise<CloudRun> {
@@ -26,18 +25,6 @@ export async function readCloudRun(path: string): Promise<CloudRun> {
 }
 
 export async function saveCloudRun(path: string, run: CloudRun): Promise<CloudRun> {
-  const directory = dirname(path)
-  await mkdir(directory, { recursive: true, mode: 0o700 })
-  const temporary = `${path}.${randomUUID()}.pending`
-  try {
-    await writeFile(temporary, JSON.stringify(run), { flag: 'wx', mode: 0o600 })
-    const file = await open(temporary, 'r')
-    try { await file.sync() } finally { await file.close() }
-    await rename(temporary, path)
-    const parent = await open(directory, 'r')
-    try { await parent.sync() } finally { await parent.close() }
-    return run
-  } finally {
-    await rm(temporary, { force: true })
-  }
+  await writeDurableFile(path, JSON.stringify(run), { temporaryPath: `${path}.${randomUUID()}.pending` })
+  return run
 }

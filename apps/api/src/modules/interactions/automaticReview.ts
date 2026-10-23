@@ -1,4 +1,4 @@
-import { errorMessage } from '@foreman-code/contracts-node/server-kit'
+import { errorMessage } from '@foreman-code/contracts/server-kit'
 import { randomUUID } from 'node:crypto'
 import { DurableInteractionSchema, type DurableInteraction } from '@foreman-code/contracts'
 import type pg from 'pg'
