@@ -132,3 +132,34 @@ it.runIf(postgresEnabled)('keeps a same-title unrelated card separate from the A
     expect(original.card).toMatchObject({ title: node.name, body: 'Owner notes', status: 'todo', assignee: null })
   } finally { await runtime.close() }
 }, 60000)
+
+it.runIf(postgresEnabled)('reuses an Agent card with unresolved findings without resolving nonterminal work', async () => {
+  const fixture = agentFixture(true)
+  fixture.version.definition.handoffs = { contractVersion: 1 }
+  let findings = ['The source still needs review.']
+  const runtime = await currentOperatorIntegration({ fixture, approvalNodeIds: [], outputFor: () => ({
+    routing: { kind: 'finish' }, data: { latestDeliverable: { text: 'Inspected the source' }, remainingFindings: findings },
+  }) })
+  try {
+    await expect(runtime.engine.start(runtime.f.run.id)).rejects.toMatchObject({ code: 'WORK_SELECTED_EXECUTION_FAILED' })
+    const scope = { kind: 'workflow', workspaceId: runtime.f.scope.workspaceId, workflowId: runtime.f.scope.workflowId }
+    const board = MemoryBoardViewSchema.parse(await memoryCall(runtime.client, 'memory_board_get', { scope }))
+    const cards = board.openColumns.flatMap(column => column.items)
+    expect(cards).toHaveLength(1)
+    const card = cards[0]!
+    expect(card).toMatchObject({ status: 'blocked', reason: expect.stringContaining(findings[0]!) })
+    findings = []
+    const run = WorkflowRunV3Schema.parse({ ...runtime.f.run, id: `run-${randomUUID()}` })
+    await insertProviderRun(runtime.db.pool, { ...runtime.f, run })
+    await runtime.engine.start(run.id)
+    expect((await runtime.runs.get(run.id))?.outcome).toBe('succeeded')
+    const detail = MemoryCardDetailSchema.parse(await memoryCall(runtime.client, 'memory_board_get', {
+      boardId: board.board.id, view: 'card', cardId: card.id }))
+    expect(detail.bindings).toHaveLength(2)
+    expect(detail.bindings).toContainEqual(expect.objectContaining({ work: expect.objectContaining({ runId: run.id }), state: 'accepted' }))
+    const previous = detail.bindings.find(binding => binding.work.runId === runtime.f.run.id)
+    expect(previous).toMatchObject({ state: 'blocked', reason: 'The source still needs review.' })
+    expect(previous?.resolution).toBeUndefined()
+    expect((await runtime.runs.get(runtime.f.run.id))?.outcome).toBe('failed')
+  } finally { await runtime.close() }
+}, 60000)

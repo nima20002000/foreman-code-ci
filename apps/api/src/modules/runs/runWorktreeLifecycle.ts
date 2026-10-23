@@ -1,6 +1,5 @@
 import type pg from 'pg'
 import { outstandingCheckoutReviewSql } from './worktreeReviewers.js'
-import { CLOSED_RUN_STATES_SQL } from './runState.js'
 
 export interface WorktreeAllocationRow {
   repository_root: string
@@ -47,14 +46,14 @@ export const runWorktreeCleanupCondition = `
     and (writer.record->>'workingDirectory'=w.record->>'workingDirectory'
       or exists(select 1 from run_worktrees used where used.run_id=r.id
         and used.checkout_root=w.checkout_root and used.allocation_id=writer.id))
-    and ((writer.record->>'state'<>'completed' and r.execution_state not in (${CLOSED_RUN_STATES_SQL}))
+    and ((writer.record->>'state'<>'completed' and r.execution_state not in ('completed','interrupted'))
       or exists(select 1 from execution_native_sessions n where n.execution_id=writer.id
         and n.workflow_finalized_at is null)
       or (writer.record->>'nativeSessionId' is not null and not exists(
         select 1 from execution_native_sessions n where n.execution_id=writer.id
           and n.workflow_finalized_at is not null))
       or (${outstandingCheckoutReviewSql})))
-  and (r.execution_state in (${CLOSED_RUN_STATES_SQL}) or exists(
+  and (r.execution_state in ('completed','interrupted') or exists(
     select 1 from harness_executions owner
       join harness_executions newer on newer.run_id=owner.run_id
         and newer.workflow_node_id=owner.workflow_node_id

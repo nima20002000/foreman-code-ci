@@ -29,7 +29,6 @@ import type { RunOwnership } from '../runs/ownership.js'
 import { workflowJobGraphSourceChangesLocked } from './workflowJobProjection.js'
 import { componentLogger } from '../diagnostics/logger.js'
 import { ZodError } from 'zod'
-import { isClosedRunState } from '../runs/runState.js'
 
 export { graphSourceDigest } from './graphDigest.js'
 
@@ -286,7 +285,7 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
         if (!run) throw new RunGraphError('GRAPH_SCOPE_MISMATCH')
         if (!['review.settle', 'run.stop'].includes(effect.identity.kind)) {
           if (run.stopped) throw new RunGraphError('GRAPH_STOP_CONFLICT')
-          if (isClosedRunState(run.execution_state)) throw new RunGraphError('GRAPH_TERMINAL_CONFLICT')
+          if (['completed', 'interrupted'].includes(run.execution_state)) throw new RunGraphError('GRAPH_TERMINAL_CONFLICT')
         }
         assertGraphEffectAuthority(expected, await guarded.guard.readCurrentLocked(this.sql, currentScope, effect.identity))
         if (effect.identity.kind === 'run.stop') {
@@ -640,10 +639,10 @@ export class RunGraphPublication<S extends CanonicalRunGraphScope = RunGraphScop
         const run = (await this.sql.query<{ execution_state: string; stopped: boolean }>(
           'select execution_state,stop_requested_at is not null as stopped from runs where id=$1', [scope.runId])).rows[0]
         if (!run) throw new RunGraphError('GRAPH_SCOPE_MISMATCH')
-        terminalEvidenceOnly = run.stopped || isClosedRunState(run.execution_state)
+        terminalEvidenceOnly = run.stopped || ['completed', 'interrupted'].includes(run.execution_state)
         if (mode === 'progress') {
           if (run.stopped) throw new RunGraphError('GRAPH_STOP_CONFLICT')
-          if (isClosedRunState(run.execution_state)) throw new RunGraphError('GRAPH_TERMINAL_CONFLICT')
+          if (['completed', 'interrupted'].includes(run.execution_state)) throw new RunGraphError('GRAPH_TERMINAL_CONFLICT')
         }
         if (this.#sources.size >= RUN_GRAPH_LIMITS.transactionSources) throw new RunGraphError('GRAPH_TRANSACTION_LIMIT')
         value = await mutate(this.sql)

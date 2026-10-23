@@ -6,12 +6,10 @@ import type { LegacyChatDeliveryBridge } from '../workflow-chat/legacyBridge.js'
 import type pg from 'pg'
 import type { TransactionSql } from '../../infrastructure/transaction.js'
 import { ConversationDeliveryOwner, type ConversationTarget } from './conversationDeliveryOwner.js'
-import { ConversationControlQueue, ConversationEvents, conversationDeliveryState, definiteCreationRejection, definitePromptRejection,
-  failedTurnResult, followDeliveryReceipts, qualifyDeliveryIntent } from './conversationEngine.js'
 import type { PostgresChatDeliveryRepository } from '../workflow-chat/deliveryRepository.js'
 import type { DeliveryQualification, StoredDelivery } from '../workflow-chat/model.js'
 import type { ChatSendRequest, ChatDeliveryReceipt } from '@foreman-code/contracts'
-import { sessionTaskContent } from '@foreman-code/contracts'
+import { SessionControlStateSchema, sessionTaskContent } from '@foreman-code/contracts'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { validateMessageAttachments } from './messageAttachments.js'
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
@@ -24,7 +22,7 @@ import { publicOperatorConversation } from './operatorConversationRecord.js'
 import { APP_MCP_TOKEN } from '../harnesses/appMcpLauncher.js'
 import type { SessionControlRequest } from '@foreman-code/contracts'
 import { pendingSessionControls, type ChatModelCatalog } from '../harnesses/sessionControlDefaults.js'
-import { lockedSessionModes, validateSessionMessage } from './sessionControls/messageAdmission.js'
+import { validateSessionMessage } from './sessionControls/messageAdmission.js'
 import type { SessionControlStore } from './sessionControls/store.js'
 import { acceptedOperatorResponseControl } from './acceptedResponseControl.js'
 import { nativeNonSubmission } from './nativeNonSubmission.js'
@@ -94,8 +92,23 @@ export async function ensureOperatorRuntimeDirectory(managedRuntimeRoot: string)
   })
 }
 
-export class OperatorConversationEvents extends ConversationEvents<OperatorConversationStreamEvent> {
-  constructor() { super(OperatorConversationStreamEventSchema) }
+export class OperatorConversationEvents {
+  private sequence = 0
+  private readonly listeners = new Map<string, Set<(event: OperatorConversationStreamEvent) => void>>()
+  private readonly owners = new Set<(event: OperatorConversationStreamEvent) => void>()
+  publish(conversationId: string, type: OperatorConversationStreamEvent['type'], data: Record<string, unknown>) {
+    const event = OperatorConversationStreamEventSchema.parse({ id: this.sequence++, conversationId, type, data })
+    for (const owner of this.owners) owner(event)
+    for (const listener of this.listeners.get(conversationId) ?? []) {
+      try { listener(event) } catch (error) { logIgnoredError('engine', 'publish conversation event', error) }
+    }
+  }
+  subscribeOwner(listener: (event: OperatorConversationStreamEvent) => void) { this.owners.add(listener); return () => this.owners.delete(listener) }
+  subscribe(id: string, listener: (event: OperatorConversationStreamEvent) => void) {
+    const listeners = this.listeners.get(id) ?? new Set()
+    listeners.add(listener); this.listeners.set(id, listeners)
+    return () => { listeners.delete(listener); if (!listeners.size) this.listeners.delete(id) }
+  }
 }
 
 export interface NativeManagerResolver extends ChatModelCatalog {
@@ -155,11 +168,33 @@ interface HistoryContext {
   reconcile?(): Promise<void>
 }
 function failure(error: unknown): ExecutionResult {
-  return failedTurnResult(error, 'OPERATOR_SETUP_FAILED', 'Operator setup failed.')
+  const provider = error && typeof error === 'object' && 'result' in error
+    ? (error as { result?: ExecutionResult }).result?.error : undefined
+  return { outcome: 'failed', error: { code: provider?.code ?? (error && typeof error === 'object'
+    && 'code' in error && typeof error.code === 'string' ? error.code : 'OPERATOR_SETUP_FAILED'),
+    message: provider?.message ?? (errorMessage(error, 'Operator setup failed.')), retryable: true } }
 }
+
 /** Only evidence about the attempted prompt, never a later history/approval error. */
-const definiteOperatorPromptRejection = (error: unknown) => definitePromptRejection(error, 'turn-start')
-const definiteCreationFailure = (error: unknown) => definiteCreationRejection(error, true)
+function definitePromptRejection(error: unknown): boolean {
+  if (error instanceof NativeDeliveryError) {
+    return error.operation === 'turn_submission' && error.delivery === 'not_sent'
+  }
+  if (!error || typeof error !== 'object') return false
+  if ('certainty' in error) return error.certainty === 'definite'
+  // Codex's RPC contract predates NativeDeliveryCertainty. A rejected read or
+  // interrupt is not evidence that turn/start was rejected.
+  return 'method' in error && error.method === 'turn/start'
+    && 'uncertain' in error && error.uncertain === false
+}
+function definiteCreationFailure(error: unknown): boolean {
+  if (error instanceof NativeDeliveryError) {
+    return error.operation === 'session_creation' && error.delivery === 'not_sent'
+  }
+  if (!error || typeof error !== 'object') return false
+  if ('certainty' in error) return error.certainty === 'definite'
+  return false
+}
 
 export class OperatorChatService {
   get deliveryBridge(): LegacyChatDeliveryBridge | undefined { return operatorDeliveryBridge(this) }
@@ -186,7 +221,7 @@ export class OperatorChatService {
   private readonly tasks = new Map<string, { requestId: string; controller: AbortController; promise: Promise<void> }>()
   private readonly accepting = new Set<Promise<unknown>>()
   private readonly acceptanceControllers = new Set<AbortController>()
-  private readonly controls = new ConversationControlQueue()
+  private readonly controls = new Map<string, Promise<unknown>>()
   private readonly responding = new Set<string>()
   private readonly lifetime = new AbortController()
   private reconciliation: Promise<void> | undefined
@@ -215,7 +250,13 @@ export class OperatorChatService {
     return this.get(id, principal)
   }
 
-  private control<T>(id: string, operation: () => Promise<T>): Promise<T> { return this.controls.run(id, operation) }
+  private control<T>(id: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.controls.get(id) ?? Promise.resolve()
+    const next = previous.catch(() => { /* ignore: the previous caller receives its failure; the queue must still admit the next operation. */ }).then(operation)
+    this.controls.set(id, next)
+    void next.finally(() => { if (this.controls.get(id) === next) this.controls.delete(id) }).catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
+    return next
+  }
   private assertOpen(): void {
     if (this.closing) throw new DomainError('OPERATOR_CHAT_CLOSING', 'Operator chat is shutting down.', 503)
   }
@@ -639,7 +680,8 @@ export class OperatorChatService {
       read: async (principal, target) => {
         const state = await this.get(target.conversationId, principal)
         const row = await this.repository.active(target.conversationId)
-        return { target, state, receipts: [], delivery: { state: conversationDeliveryState(row),
+        return { target, state, receipts: [], delivery: { state: row?.turn_state === 'starting' ? 'starting'
+          : row?.turn_state === 'canceling' || row?.turn_state === 'uncertain' ? 'settling' : row?.active_request_id ? 'active' : 'idle',
         capabilities: { steer: row && await this.qualifiedSteer(row) ? 'native_expected_turn' : 'unavailable',
           queue: state.conversation.status !== 'archived', interruptAndSend: state.conversation.status !== 'archived' },
         ...(row?.active_native_turn_id ? { nativeTurnId: row.active_native_turn_id } : {}) } }
@@ -647,9 +689,11 @@ export class OperatorChatService {
       progress: (command, tx) => this.deliveryProgress(command, tx), ...(changed ? { changed } : {}),
     })
     this.canonicalDelivery = owner
-    followDeliveryReceipts(this.events, owner, { operation: 'synchronize Operator delivery',
-      target: async conversationId => ({ kind: 'operator_conversation', conversationId }),
-      afterEvent: conversationId => this.pumpDeliveries(conversationId) })
+    this.events.subscribeOwner(event => {
+      if (event.type === 'delta') return
+      void this.syncDeliveryReceipts(event.conversationId, owner).catch(error => logIgnoredError('engine', 'synchronize Operator delivery', error))
+      this.pumpDeliveries(event.conversationId)
+    })
     return owner
   }
 
@@ -672,7 +716,8 @@ export class OperatorChatService {
 
   private async lockDelivery(tx: TransactionSql, principal: ManagementPrincipal, target: ConversationTarget): Promise<ConversationRow> {
     await this.authorizeDelivery(principal, target, 'read', tx)
-    const row = await this.repository.lockLiveRow(tx, target.conversationId)
+    const row = (await tx.query<ConversationRow>(`select * from operator_conversations
+      where id=$1 and kind='operator' and deleted_at is null for update`, [target.conversationId])).rows[0]
     if (!row || row.owner_principal_id !== principal.id) throw new DomainError('CONVERSATION_NOT_FOUND', 'Conversation was not found.', 404)
     if (publicOperatorConversation(row.record).status === 'archived') throw new DomainError('CONVERSATION_ARCHIVED', 'This conversation is read-only.', 409)
     return row
@@ -709,12 +754,15 @@ export class OperatorChatService {
       : await this.repository.configuration(row.operator_configuration_version_id, tx)
     if (!configuration) throw new DomainError('OPERATOR_CONFIGURATION_NOT_FOUND', 'The accepted Operator configuration is unavailable.', 409)
     this.validate(configuration)
-    const modes = await lockedSessionModes(tx, row.id, request.sessionMode)
+    const controls = (await tx.query<{ record: unknown }>('select record from conversation_session_controls where conversation_id=$1 for update', [row.id])).rows[0]
+    const savedControls = controls ? SessionControlStateSchema.parse(controls.record) : undefined
+    const mode = savedControls?.appliedMode ?? 'regular'
+    const requestedMode = request.sessionMode ?? savedControls?.desiredMode ?? 'regular'
     const canSteer = Boolean(row.active_request_id && row.active_native_turn_id && configuration.id === row.operator_configuration_version_id && !request.attachments?.length
-      && modes.requested === modes.applied && await this.qualifiedSteer(row))
-    const appliedIntent = qualifyDeliveryIntent(request.intent, { canSteer, active: Boolean(row.active_request_id) }, {
-      steerUnavailable: 'This input cannot steer the qualified Operator turn; use Queue or Interrupt and send.',
-      notActive: 'There is no active Operator turn to interrupt.' })
+      && requestedMode === mode && await this.qualifiedSteer(row))
+    const appliedIntent = request.intent === 'auto' ? canSteer ? 'steer' : 'next_turn' : request.intent
+    if (appliedIntent === 'steer' && !canSteer) throw new DomainError('CHAT_STEER_UNAVAILABLE', 'This input cannot steer the qualified Operator turn; use Queue or Interrupt and send.', 409)
+    if (appliedIntent === 'interrupt_and_send' && !row.active_request_id) throw new DomainError('CHAT_TURN_NOT_ACTIVE', 'There is no active Operator turn to interrupt.', 409)
     const input = { ...(legacy ?? this.deliveryInput(request)), intent: appliedIntent }
     validateSessionMessage(input.content, input.sessionMode)
     await validateMessageAttachments(tx, row.id, input.attachments)
@@ -753,10 +801,11 @@ export class OperatorChatService {
           AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(30_000)]))
           if (result.nativeTurnId !== binding.nativeTurnId) throw new Error('The native owner acknowledged a different steer turn.')
           state = 'accepted'; nativeTurnId = result.nativeTurnId; errorCode = ''
-        } catch (error) { state = definiteOperatorPromptRejection(error) ? 'failed' : 'unknown'; errorCode = 'CHAT_STEER_UNCONFIRMED' }
+        } catch (error) { state = definitePromptRejection(error) ? 'failed' : 'unknown'; errorCode = 'CHAT_STEER_UNCONFIRMED' }
       }
-      await this.repository.recordSteerDelivery(id, command.request.commandId, state, nativeTurnId,
-        errorCode ? { code: errorCode, message: 'Read the retained steer receipt before sending another command.' } : undefined)
+      await this.repository.pool.query(`update operator_conversation_turns set delivery=$3,native_turn_id=coalesce(native_turn_id,$4),
+        delivery_error=$5::jsonb,updated_at=now() where conversation_id=$1 and request_id=$2 and delivery in ('submitting','unknown')`,
+      [id, command.request.commandId, state, nativeTurnId ?? null, errorCode ? JSON.stringify({ code: errorCode, message: 'Read the retained steer receipt before sending another command.' }) : null])
       this.events.publish(id, 'state', { requestId: command.request.commandId, snapshotRequired: true })
     })
   }
@@ -779,7 +828,15 @@ export class OperatorChatService {
 
   private async deliveryProgress(command: StoredDelivery, tx: TransactionSql): Promise<Partial<Pick<ChatDeliveryReceipt, 'state' | 'nativeTurnId' | 'errorCode'>>> {
     if (command.request.target.kind !== 'operator_conversation') throw new Error('A foreign target reached the Operator owner.')
-    const row = await this.repository.deliveryEvidence(tx, command.request.target.conversationId, command.request.commandId)
+    const row = (await tx.query<{ delivery: ChatDeliveryReceipt['state']; result: ExecutionResult | null;
+      native_turn_id: string | null; delivery_error: { code: string } | null; submitted: boolean; uncertain: boolean;
+      original_result: ExecutionResult | null }>(`select t.delivery,t.result,t.native_turn_id,t.delivery_error,
+      t.payload->'nativeSubmission' is not null as submitted,
+      c.active_request_id=t.request_id and c.turn_state='uncertain' as uncertain,original.result as original_result
+      from operator_conversation_turns t join operator_conversations c on c.id=t.conversation_id
+      left join operator_conversation_turns original on original.conversation_id=t.conversation_id
+        and original.request_id=t.payload->>'targetRequestId'
+      where t.conversation_id=$1 and t.request_id=$2`, [command.request.target.conversationId, command.request.commandId])).rows[0]
     if (!row) return { state: 'unknown', errorCode: 'CHAT_OWNER_JOURNAL_MISSING' }
     const result = row.result ?? (command.receipt.appliedIntent === 'steer' && row.delivery === 'accepted' ? row.original_result : null)
     const state = result ? result.outcome === 'succeeded' ? 'completed' : result.outcome === 'canceled' ? 'canceled' : 'failed'
@@ -787,6 +844,11 @@ export class OperatorChatService {
         : row.native_turn_id || row.submitted ? 'accepted' : row.delivery
     return { state, ...(row.native_turn_id ? { nativeTurnId: row.native_turn_id } : {}),
       ...(row.delivery_error ? { errorCode: row.delivery_error.code } : result?.error ? { errorCode: result.error.code } : {}) }
+  }
+
+  private async syncDeliveryReceipts(id: string, owner: ConversationDeliveryOwner): Promise<void> {
+    const commands = await owner.receipts.unfinishedForTarget({ kind: 'operator_conversation', conversationId: id })
+    for (const command of commands) await owner.refresh(command)
   }
 
   private async runtime(id: string, row: ConversationRow, configuration: OperatorConfigurationVersion, signal: AbortSignal,
@@ -1094,7 +1156,7 @@ export class OperatorChatService {
     } catch (error) {
       logOperatorTurnFailure(error)
       if (signal.aborted) textStream?.dispose(); else textStream?.flush()
-      if (submitted || (submitting && !definiteOperatorPromptRejection(error)) || (creating && !definiteCreationFailure(error))) {
+      if (submitted || (submitting && !definitePromptRejection(error)) || (creating && !definiteCreationFailure(error))) {
         await this.repository.uncertain(id, input.requestId, errorMessage(error, 'Native delivery is uncertain.'))
       } else {
         await this.control(id, async () => {
@@ -1715,7 +1777,7 @@ export class OperatorChatService {
       // Dispose before waiting for stream consumers. Creation-time managers are already registered.
       const first = await Promise.allSettled([
         ...[...this.runtimes.entries()].map(([id, runtime]) => this.stopRuntime(id, runtime)),
-        ...this.accepting, ...this.controls.pending(),
+        ...this.accepting, ...this.controls.values(),
         ...[...this.tasks.values()].map((task) => task.promise),
         ...(this.reconciliation ? [this.reconciliation] : []),
       ])

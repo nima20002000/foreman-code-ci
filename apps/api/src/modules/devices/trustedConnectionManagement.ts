@@ -56,8 +56,7 @@ export const trustedConnectionTools = [
   }),
   defineOperatorTool({
     name: 'device_connection_configure', requires: [['settings:update', 'global']], enabled: s => !!s.trustedConnections,
-    description: 'Save or revoke remote-command consent for a paired device as the selected OS user, given current device and consent revisions. Enables no live SSH/VPN, root/sudo, credentials or agent grants.',
-    detail: 'Pairing authorizes direct connection changes through HTTP and MCP.',
+    description: 'Persist or revoke remote-command consent for a paired device as the selected OS user. Requires global settings:update; pairing authorizes direct connection changes through HTTP and MCP. Does not enable live SSH/VPN, root/sudo, persistent credentials or agent grants. Requires current device and consent revisions.',
     inputSchema: TrustedConnectionConfigureSchema, outputSchema: TrustedConnectionConsentSchema,
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     handle: (context, input) => invoke(context.principal, 'settings:update', () => service(context).configure(context.principal, input, 'mcp')),

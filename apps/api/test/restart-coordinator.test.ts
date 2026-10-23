@@ -39,14 +39,15 @@ function fixture(options: Parameters<typeof recoveryDatabase>[0] = {}) {
     calls.push('retire-reviews')
   } }, cancelPendingForRun: async () => { calls.push('cancel-interactions'); return 1 } }
   const manager = { resolve: () => { calls.push('resolve'); throw new Error('Cold native allocation is forbidden') } }
-  const coordinator = new ApprovalExecutionCoordinator({ runs: runs as unknown as CoordinatorArgs[0]['runs'],
-    interactions: interactions as unknown as CoordinatorArgs[0]['interactions'], budgets: { stop: async () => { calls.push('stop-budget') } } as unknown as CoordinatorArgs[0]['budgets'],
-    managers: manager as unknown as CoordinatorArgs[0]['managers'], activeTimeoutMs: 5_000,
-    credentials: { revokeForExecution: async () => { calls.push('revoke-credential') } } as unknown as CoordinatorArgs[0]['credentials'], workflowClosures: { read: (execution) => readWorkflowClosure(db.connection, execution) } as CoordinatorArgs[0]['workflowClosures'],
-    recoverNativeProcesses: async (id) => {
+  const coordinator = new ApprovalExecutionCoordinator(runs as unknown as CoordinatorArgs[0],
+    interactions as unknown as CoordinatorArgs[1], { stop: async () => { calls.push('stop-budget') } } as unknown as CoordinatorArgs[2],
+    manager as unknown as CoordinatorArgs[3], 5_000,
+    { revokeForExecution: async () => { calls.push('revoke-credential') } } as unknown as CoordinatorArgs[5],
+    undefined, { read: (execution) => readWorkflowClosure(db.connection, execution) } as CoordinatorArgs[7], undefined, undefined, undefined,
+    async (id) => {
       if (!recovery.available) return false
       assert.equal(id, db.state.execution.id); assert.equal(db.state.active, false); calls.push('close-processes'); return true
-    } })
+    })
   // The SQL double cannot run real attempt settlement; record the per-attempt decision instead.
   vi.spyOn(coordinator, 'abandonAttempt').mockImplementation(async (_owner, execution, failure) => {
     calls.push(`abandon:${execution.id}:${failure.outcome === 'failed' ? failure.error?.code : failure.outcome}`)

@@ -27,15 +27,6 @@ export async function admitSessionMessage(client: SqlQuery, conversationId: stri
     [conversationId, JSON.stringify(state)])
 }
 
-/** The applied and requested session modes, read under the conversation's session-control row lock. */
-export async function lockedSessionModes(client: SqlQuery, conversationId: string, requested: SessionMode | undefined):
-  Promise<{ applied: SessionMode; requested: SessionMode }> {
-  const result = await client.query<{ record: unknown }>(
-    'select record from conversation_session_controls where conversation_id=$1 for update', [conversationId])
-  const saved = result.rows[0] ? SessionControlStateSchema.parse(result.rows[0].record) : undefined
-  return { applied: saved?.appliedMode ?? 'regular', requested: requested ?? saved?.desiredMode ?? 'regular' }
-}
-
 export function validateSessionMessage(content: string, mode?: SessionMode) {
   const command = parseSessionCommand(content)
   if (command.kind === 'invalid') throw new DomainError('SESSION_COMMAND_INVALID', command.message, 422)

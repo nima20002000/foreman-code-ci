@@ -53,8 +53,10 @@ it.runIf(postgresEnabled).each([false, true])('repairs a late card conflict and 
         reason: null, assignee: null, linkedNodes: [] } })
     cardId = (created.card as { id: string }).id
     const started = await prepared.start()
-    await vi.waitFor(async () => expect((await runtime.runs.get(started.run.id))?.outcome).toBe('succeeded'),
+    await vi.waitFor(async () => expect((await runtime.runs.get(started.run.id))?.executionState).toBe('completed'),
       { timeout: 30000, interval: 50 })
+    const details = await runtime.runs.getDetails(prepared.scope.workspaceId, started.run.id)
+    expect(details?.run.outcome, JSON.stringify({ result: details?.executions[0]?.result, repairs })).toBe('succeeded')
     expect(conflicted).toBe(true)
     expect(settled).toBe(true)
     expect(settlementAttempts).toBe(retrySettlement ? 2 : 1)

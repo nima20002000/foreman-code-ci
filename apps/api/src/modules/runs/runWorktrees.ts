@@ -13,7 +13,6 @@ import { directoryFlags, withPrivateDirectoryLock } from '../sources/privateFile
 import { DomainError } from '../errors.js'
 import { reuseRunCheckout, runWorktreeCleanupCondition, type WorktreeAllocationRow } from './runWorktreeLifecycle.js'
 import { sha256Hex } from '../../shared/hash.js'
-import { isClosedRunState } from './runState.js'
 
 type Sql = Pick<pg.PoolClient, 'query'>
 type Allocation = { root: string; checkoutRoot: string; record: RunWorktree; cleanupAttempts: number }
@@ -56,7 +55,7 @@ export class RunWorktrees {
   private async requireActiveRun(sql: Sql, runId: string): Promise<void> {
     const terminal = (await sql.query<{ execution_state: string }>(
       'select execution_state from runs where id=$1 for share', [runId])).rows[0]
-    if (!terminal || isClosedRunState(terminal.execution_state)) {
+    if (!terminal || ['completed', 'interrupted'].includes(terminal.execution_state)) {
       throw new DomainError('RUN_WORKTREE_CLOSED', 'A terminal Run cannot allocate a worktree.', 409)
     }
   }

@@ -9,7 +9,6 @@ import { DomainError } from '../../../modules/errors.js'
 import { toolFailure } from '../../shared/results.js'
 import { invokeOperatorTool } from '../invoke.js'
 import type { OperatorRequestContext } from '../types.js'
-import { toolDetail } from '../../shared/toolDetail.js'
 
 type HierarchyTool = typeof WORKFLOW_HIERARCHY_TOOLS[keyof typeof WORKFLOW_HIERARCHY_TOOLS]
 function compatibleReportReads(principal: ManagementPrincipal): boolean {
@@ -44,19 +43,16 @@ export function registerWorkflowHierarchyTools(server: McpServer, context: Opera
   if (!service) return
   const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   if (workflowHierarchyToolAvailable(context, WORKFLOW_HIERARCHY_TOOLS.get)) server.registerTool(WORKFLOW_HIERARCHY_TOOLS.get, {
-    description: 'Read the saved Master, Orchestrator and Worker reporting hierarchy with exact node and configuration identities, for the current version or a Run or WorkflowVersion pin. Loads no transcripts.',
-    ...toolDetail('Optional Run or WorkflowVersion pins preserve historical membership; omitted pins read the current saved version. Requires workflow and graph reads, plus Run reads for a Run pin. Does not create a conversation.'),
+    description: 'Read saved Master/Orchestrator/Worker reporting membership with exact node and configuration identities. Optional Run or WorkflowVersion pins preserve historical membership; omitted pins read the current saved version. Requires workflow and graph reads, plus Run reads for a Run pin. Does not load transcripts or create a conversation.',
     inputSchema: WorkflowHierarchyReadInputSchema, outputSchema: WorkflowHierarchyReadResultSchema, annotations,
   }, input => invokeOperatorTool(context, WORKFLOW_HIERARCHY_TOOLS.get, () => service.read(context.principal, input)))
   if (workflowHierarchyToolAvailable(context, WORKFLOW_HIERARCHY_TOOLS.update)) server.registerTool(WORKFLOW_HIERARCHY_TOOLS.update, {
-    description: 'Update only the saved reporting hierarchy under normal workflow publication authority (hierarchy: null removes it, keeping Agents and routes). Role, entry, Agent and route changes go through workflow_edit_v3 first.',
-    ...toolDetail('Optional expectedRevision checks the supplied revision; optional commandId makes retries exact. Invalid roles, routes, incomplete setup or unsettled executable edits fail without a partial save.'),
+    description: 'Update only saved reporting hierarchy through the normal workflow publication authority. hierarchy:null removes reporting metadata and preserves Agents/routes; make any required role/entry edits through workflow_edit_v3 first. Optional expectedRevision checks the supplied revision; optional commandId makes retries exact. Invalid roles, routes, incomplete setup or unsettled executable edits fail without a partial save. Use full workflow_edit_v3 for staged Agent, route, role or entry changes.',
     inputSchema: WorkflowHierarchyUpdateInputSchema, outputSchema: WorkflowHierarchyUpdateResultSchema,
     annotations: { ...annotations, readOnlyHint: false },
   }, input => invokeOperatorTool(context, WORKFLOW_HIERARCHY_TOOLS.update, () => service.update(context.principal, 'mcp', input)))
   if (workflowHierarchyToolAvailable(context, WORKFLOW_HIERARCHY_TOOLS.reports)) server.registerTool(WORKFLOW_HIERARCHY_TOOLS.reports, {
-    description: 'Read committed hierarchy reports for one Run: parentNodeId returns each direct child\'s latest report, workflowNodeId a node\'s report history. Reports never authorize acceptance.',
-    ...toolDetail('Optional opaque cursor preserves scope/filter/snapshot; default 50 and maximum 100. Failure, cancellation and blocking remain distinct. Requires Run, graph and workflow reads.'),
+    description: 'Read bounded committed hierarchy reports for one exact Run. parentNodeId returns each direct child’s latest report; workflowNodeId returns report history. Optional opaque cursor preserves scope/filter/snapshot; default 50 and maximum 100. Failure, cancellation and blocking remain distinct; reports are projections and never authorize acceptance. Requires Run, graph and workflow reads.',
     inputSchema: WorkflowReportsReadInputSchema, outputSchema: WorkflowReportsPageSchema, annotations,
   }, input => invokeOperatorTool(context, WORKFLOW_HIERARCHY_TOOLS.reports, () => service.reports(context.principal, input)))
 }

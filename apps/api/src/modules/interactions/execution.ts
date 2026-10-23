@@ -1,9 +1,8 @@
 import type { WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import { MemoryResultRejected } from '../collaboration/memoryResultError.js'
 import { isDatabaseTimeout, retryDatabaseTimeout } from '../../infrastructure/databaseRetry.js'
-import type { ExecutionLimiter } from '../runs/limiter.js'
-import { RunExecutionCapacity } from './executionCapacity.js'
-import { NativeCredentialLedger } from './nativeCredentialLedger.js'
+import { withAbortSignal } from '../../infrastructure/abortSignal.js'
+import { ExecutionLimiter } from '../runs/limiter.js'
 import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
 import { runtimeTimingPoint, timeRuntimeOperation, withRuntimeTimingContext } from '../../infrastructure/runtimeTiming.js'
 import { inspectNativeResponse } from '../harnesses/responseAvailability.js'
@@ -67,7 +66,7 @@ import { attemptCleanup, cleanupTimeoutMs, withCleanupDeadline } from './cleanup
 import { deviceRequestTimeoutMs } from '../devices/deviceRequestRetry.js'
 import { readExecutionPlacement } from '../placement/persistence.js'
 import { buildHarnessPrompt } from '../harnesses/prompt.js'
-import { isTransientRefreshFailure, renewOwnedLeases } from '../leases/ownerLeases.js'
+import { isTransientRefreshFailure, renewOwnedLeases, type OwnedLease } from '../leases/ownerLeases.js'
 import { componentLogger } from '../diagnostics/logger.js'
 import { isTransientExecutionError, isTransientExecutionResult, transientExecutionFailure } from '../runs/executionRetryPolicy.js'
 import type { PostgresRunRepository } from '../runs/postgres.js'
@@ -102,7 +101,6 @@ import { reviewPreflightIdentity } from './reviewPolicy.js'
 import type { RepeatReviewerBindings } from './repeatReviewer.js'
 import { assertSameRepeatExecution, assertSameReviewJob, repeatPhysicalSettlementPending,
   reviewPhysicallySettled, type RepeatNativeObservationStore } from './repeatObservation.js'
-import { isRunInProgress } from '../runs/runState.js'
 
 export type ApprovalExecutionObservation =
   | { state: 'waiting'; execution: HarnessExecution; interaction: DurableInteraction; interactions: DurableInteraction[] }
@@ -237,39 +235,11 @@ function restorableApproval(interaction: DurableInteraction): boolean {
   return interaction.status !== 'canceled'
 }
 
-/** What the coordinator works with. Tests may compose only the native ports they exercise. */
-export interface ApprovalExecutionDependencies {
-  runs: PostgresRunRepository
-  interactions: PostgresInteractionRepository
-  budgets: PostgresApprovalBudgetRepository
-  managers: NativeSessionManagerResolver
-  activeTimeoutMs: number
-  credentials?: ExecutionCredentialProvider | undefined
-  validateContinuation?: (((executionId: string, signal?: AbortSignal) => Promise<void>) & {
-    forRestart?(executionId: string): Promise<void>
-  }) | undefined
-  workflowClosures?: WorkflowClosureStore | undefined
-  repeatReviewerBindings?: RepeatReviewerBindings | undefined
-  nativeCaptures?: WorkflowNativeCapturePort | undefined
-  reviewNativeCaptures?: ReviewNativeCapturePort | undefined
-  recoverNativeProcesses?: ((executionId: string, signal: AbortSignal, owner: RunOwnership) => Promise<boolean>) | undefined
-  reserveNativeLaunch?: ((executionId: string, manager: NativeHarnessSessionManager,
-    consultation?: CoordinatorConsultationBinding) => void | Promise<void>) | undefined
-  prepareManagerContext?: ((context: NativeManagerResolutionContext) => Promise<NativeManagerResolutionContext>) | undefined
-  commitReviewNative?: ((executionId: string) => Promise<void>) | undefined
-  collaboration?: WorkflowCollaborationIntegration | undefined
-}
-
-/** Production composes the original native capture, closure, reviewer, credential and continuation ports. */
-export type CurrentApprovalExecutionDependencies = ApprovalExecutionDependencies & {
-  [Port in 'credentials' | 'validateContinuation' | 'workflowClosures' | 'repeatReviewerBindings' | 'nativeCaptures'
-    | 'reviewNativeCaptures']-?: NonNullable<ApprovalExecutionDependencies[Port]>
-}
-
 /** Idempotent ensure/observe boundary called first on every LangGraph node entry. */
 export class ApprovalExecutionCoordinator {
-  private readonly credentialLedger: NativeCredentialLedger
-  private readonly capacity = new RunExecutionCapacity()
+  private readonly managerCredentials = new WeakMap<NativeHarnessSessionManager, IssuedWorkerCredential>()
+
+  private readonly credentialRenewals = new WeakMap<NativeHarnessSessionManager, Promise<void>>()
 
   readonly reviewers: ReviewerDispatcher
   get reviewCoordination() { return this.interactions.coordination }
@@ -285,12 +255,22 @@ export class ApprovalExecutionCoordinator {
   private readonly cancellations = new Map<string, Promise<void>>()
   private readonly reviewerRecoveries = new Map<string, Promise<boolean>>()
   private readonly sharedRunOwners = new Map<string, RunOwnership>()
+  private readonly runCapacity = new Map<string, { maximum: number; limiter: ExecutionLimiter }>()
   private readonly consultationStarts = new Map<string, Promise<void>>()
   private workflowControls: ReturnType<typeof createWorkflowChatOwner> | undefined
   private closing = false
   private restartClosure: Promise<void> | undefined
 
-  executionCapacity(runId: string, maximum: number): ExecutionLimiter { return this.capacity.limiter(runId, maximum) }
+  executionCapacity(runId: string, maximum: number): ExecutionLimiter {
+    const existing = this.runCapacity.get(runId)
+    if (existing) {
+      if (existing.maximum !== maximum) throw new DomainError('RUN_PIN_CONFLICT', 'Run parallelism changed.', 409)
+      return existing.limiter
+    }
+    const limiter = new ExecutionLimiter(maximum, 1000)
+    this.runCapacity.set(runId, { maximum, limiter })
+    return limiter
+  }
 
   residentRunIds(): string[] {
     return [...new Set([...this.pendingCleanupRuns, ...[...this.ownedSessions.values()].map((owned) => owned.execution.runId)])]
@@ -410,7 +390,7 @@ export class ApprovalExecutionCoordinator {
     if (owned.consultation) return this.cleanupConsultation(owned)
     if (cancel) owned.controller.abort()
     if (owned.cleanup) return owned.cleanup
-    const safe = nativePersistenceRedactor(this.credentialLedger.secrets(owned.manager))
+    const safe = nativePersistenceRedactor(Object.values(this.managerCredentials.get(owned.manager)?.environment.variables ?? {}))
     const task = (async () => {
       const failures: Error[] = []
       const attempt = <T>(label: string, operation: (signal: AbortSignal) => Promise<T>) =>
@@ -481,7 +461,7 @@ export class ApprovalExecutionCoordinator {
         return true
       })
       if (closed && revoked && !owned.opening) {
-        const released = await attempt('release native manager', async () => { this.credentialLedger.delete(owned.manager); this.managers.release?.(owned.context, this.rawManagers.get(owned.manager) ?? owned.manager, owned.failed ? 'failed' : 'released'); return true })
+        const released = await attempt('release native manager', async () => { this.managerCredentials.delete(owned.manager); this.managers.release?.(owned.context, this.rawManagers.get(owned.manager) ?? owned.manager, owned.failed ? 'failed' : 'released'); return true })
         if (released && this.ownedSessions.get(owned.execution.id) === owned) this.ownedSessions.delete(owned.execution.id)
       }
       if ((!closed || owned.opening) && !failures.length) failures.push(new Error(`${owned.execution.id}: native session closure is unconfirmed.`))
@@ -498,7 +478,7 @@ export class ApprovalExecutionCoordinator {
     const session = owned.session
     const generation = owned.generation
     const registration = owned.closureGeneration
-    const credential = this.credentialLedger.get(owned.manager)
+    const credential = this.managerCredentials.get(owned.manager)
     const check = () => {
       assertCurrent()
       if (this.ownedSessions.get(owned.execution.id) !== owned || owned.generation !== generation
@@ -506,8 +486,8 @@ export class ApprovalExecutionCoordinator {
         || owned.closureGeneration !== registration || owned.session !== session
         || this.credentials && !credential
           && !(owned.terminalRecoveredWithoutCredential && finishRecoveredCredentials)
-        || credential && (this.credentialLedger.get(owned.manager)?.principalId !== credential.principalId
-          || this.credentialLedger.get(owned.manager)?.environment !== credential.environment)) {
+        || credential && (this.managerCredentials.get(owned.manager)?.principalId !== credential.principalId
+          || this.managerCredentials.get(owned.manager)?.environment !== credential.environment)) {
         throw new DomainError('REPEAT_CLEANUP_PENDING', 'The exact native lifetime cannot yet be closed.', 409)
       }
     }
@@ -526,7 +506,7 @@ export class ApprovalExecutionCoordinator {
         await finishRecoveredCredentials()
       }
       check()
-      this.credentialLedger.delete(owned.manager)
+      this.managerCredentials.delete(owned.manager)
       await owned.stopWaitingRenewal?.()
       await owned.stopReviewerRenewal?.()
       await owned.releaseReviewOwner?.()
@@ -617,7 +597,7 @@ export class ApprovalExecutionCoordinator {
     terminal: NonNullable<NativeHistory['terminalTurn']>, manager: NativeHarnessSessionManager,
     lane: SessionWriteLease): Promise<void> {
     const session = owned.session!
-    const safe = nativePersistenceRedactor(this.credentialLedger.secrets(owned.manager))
+    const safe = nativePersistenceRedactor(Object.values(this.managerCredentials.get(owned.manager)?.environment.variables ?? {}))
     if (!manager.settleTurn) throw new DomainError('NATIVE_SETTLEMENT_UNAVAILABLE', 'The original native settlement port is unavailable.', 409)
     await this.interactions.coordination.acknowledgeLaneTurn(lane.fence, terminal.correlationId, terminal.providerId)
     lane.providerId = terminal.providerId
@@ -739,7 +719,7 @@ export class ApprovalExecutionCoordinator {
           if (await this.interactions.coordination.hasUnsettledReview(executionId)) return
           const currentRun = await this.runs.get(owned.execution.runId)
           await guard()
-          if (owned.manager.retainsReviewerSession && currentRun && isRunInProgress(currentRun.executionState)
+          if (owned.manager.retainsReviewerSession && currentRun && ['running', 'waiting'].includes(currentRun.executionState)
             && currentRun.outcome === 'pending') return
           await guard()
           await this.closeRepeatLifetime(owned, check)
@@ -756,48 +736,34 @@ export class ApprovalExecutionCoordinator {
     }
   }
 
-  private readonly runs: PostgresRunRepository
-  private readonly interactions: PostgresInteractionRepository
-  private readonly budgets: PostgresApprovalBudgetRepository
-  private readonly managers: NativeSessionManagerResolver
-  private readonly activeTimeoutMs: number
-  private readonly credentials: ExecutionCredentialProvider | undefined
-  private readonly validateContinuation: ApprovalExecutionDependencies['validateContinuation']
-  private readonly workflowClosures: WorkflowClosureStore | undefined
-  private readonly repeatReviewerBindings: RepeatReviewerBindings | undefined
-  private readonly nativeCaptures: WorkflowNativeCapturePort | undefined
-  private readonly reviewNativeCaptures: ReviewNativeCapturePort | undefined
-  private readonly recoverNativeProcesses: ApprovalExecutionDependencies['recoverNativeProcesses']
-  private readonly reserveNativeLaunch: ApprovalExecutionDependencies['reserveNativeLaunch']
-  private readonly prepareManagerContext: ApprovalExecutionDependencies['prepareManagerContext']
-  private readonly commitReviewNative: ApprovalExecutionDependencies['commitReviewNative']
-  private readonly collaboration: WorkflowCollaborationIntegration | undefined
-
-  constructor(dependencies: ApprovalExecutionDependencies) {
-    this.runs = dependencies.runs
-    this.interactions = dependencies.interactions
-    this.budgets = dependencies.budgets
-    this.managers = dependencies.managers
-    this.activeTimeoutMs = dependencies.activeTimeoutMs
-    this.credentials = dependencies.credentials
-    this.credentialLedger = new NativeCredentialLedger(dependencies.credentials)
-    this.validateContinuation = dependencies.validateContinuation
-    this.workflowClosures = dependencies.workflowClosures
-    this.repeatReviewerBindings = dependencies.repeatReviewerBindings
-    this.nativeCaptures = dependencies.nativeCaptures
-    this.reviewNativeCaptures = dependencies.reviewNativeCaptures
-    this.recoverNativeProcesses = dependencies.recoverNativeProcesses
-    this.reserveNativeLaunch = dependencies.reserveNativeLaunch
-    this.prepareManagerContext = dependencies.prepareManagerContext
-    this.commitReviewNative = dependencies.commitReviewNative
-    this.collaboration = dependencies.collaboration
-    this.reviewers = new ReviewerDispatcher(this.interactions.coordination, this)
+  constructor(
+    private readonly runs: PostgresRunRepository,
+    private readonly interactions: PostgresInteractionRepository,
+    private readonly budgets: PostgresApprovalBudgetRepository,
+    private readonly managers: NativeSessionManagerResolver,
+    private readonly activeTimeoutMs: number,
+    private readonly credentials?: ExecutionCredentialProvider,
+    private readonly validateContinuation?: ((executionId: string, signal?: AbortSignal) => Promise<void>) & {
+      forRestart?(executionId: string): Promise<void>
+    },
+    private readonly workflowClosures?: WorkflowClosureStore,
+    private readonly repeatReviewerBindings?: RepeatReviewerBindings,
+    private readonly nativeCaptures?: WorkflowNativeCapturePort,
+    private readonly reviewNativeCaptures?: ReviewNativeCapturePort,
+    private readonly recoverNativeProcesses?: (executionId: string, signal: AbortSignal, owner: RunOwnership) => Promise<boolean>,
+    private readonly reserveNativeLaunch?: (executionId: string, manager: NativeHarnessSessionManager,
+      consultation?: CoordinatorConsultationBinding) => void | Promise<void>,
+    private readonly prepareManagerContext?: (context: NativeManagerResolutionContext) => Promise<NativeManagerResolutionContext>,
+    private readonly commitReviewNative?: (executionId: string) => Promise<void>,
+    private readonly collaboration?: WorkflowCollaborationIntegration,
+  ) {
+    this.reviewers = new ReviewerDispatcher(interactions.coordination, this)
   }
 
-  /** Production builds this coordinator from CurrentApprovalExecutionDependencies, so every native port is present. */
   assertCurrentProduction(runs: PostgresRunRepository): void {
-    if (this.runs !== runs) throw new DomainError(
-      'CURRENT_NATIVE_COMPOSITION_REQUIRED', 'The coordinator must use the current production Run repository.', 503)
+    if (this.runs !== runs || !this.nativeCaptures || !this.reviewNativeCaptures || !this.workflowClosures || !this.repeatReviewerBindings
+      || !this.credentials || !this.validateContinuation) throw new DomainError(
+      'CURRENT_NATIVE_COMPOSITION_REQUIRED', 'The original native capture, closure, reviewer, credential and continuation ports are required.', 503)
     this.interactions.coordination.assertOriginalNativeComposition()
   }
 
@@ -1083,7 +1049,7 @@ export class ApprovalExecutionCoordinator {
     const current = owned
     if (!current.consultation) current.consultation = { binding: active.binding, commandId: command.id, target,
       ...(current.context.purpose === 'reviewer' ? { previous: { context: current.context,
-        ...(this.credentialLedger.get(current.manager) ? { credential: this.credentialLedger.get(current.manager)! } : {}) } } : {}) }
+        ...(this.managerCredentials.get(current.manager) ? { credential: this.managerCredentials.get(current.manager)! } : {}) } } : {}) }
     if (canonicalJson(current.consultation.binding) !== canonicalJson(active.binding)) throw new DomainError(
       'COORDINATOR_NATIVE_SOURCE_PENDING', 'Another consultation still owns the retained coordinator.', 409)
     current.runOwner = owner
@@ -1105,7 +1071,7 @@ export class ApprovalExecutionCoordinator {
       if (consultation.previous) consultation.accessRebindAttempted = true
       if (!consultation.credential) consultation.credential = await this.prepareConsultationCredential(
         current, active.binding, !!active.nativeTarget)
-      this.credentialLedger.set(current.manager, consultation.credential)
+      this.managerCredentials.set(current.manager, consultation.credential)
       await this.collaboration?.prepareConsultation(owner, source, active.binding, transaction)
       const browserPrompt = await this.collaboration?.readConsultationPrompt(active.binding, transaction)
       const start = { kind: 'workflow-consultation' as const, consultation: active.binding, request,
@@ -1244,11 +1210,11 @@ export class ApprovalExecutionCoordinator {
     if (previous) {
       owned.context = previous.context
       delete owned.consultation; delete owned.activeSessionMode
-      if (previous.credential) this.credentialLedger.set(owned.manager, previous.credential)
-      else this.credentialLedger.delete(owned.manager)
+      if (previous.credential) this.managerCredentials.set(owned.manager, previous.credential)
+      else this.managerCredentials.delete(owned.manager)
       this.maintainRetainedReviewer(owned)
     } else {
-      this.credentialLedger.delete(owned.manager)
+      this.managerCredentials.delete(owned.manager)
       this.managers.release?.(owned.context, this.rawManagers.get(owned.manager) ?? owned.manager)
       if (this.ownedSessions.get(owned.execution.id) === owned) this.ownedSessions.delete(owned.execution.id)
     }
@@ -1576,7 +1542,7 @@ export class ApprovalExecutionCoordinator {
         }
       }
       if (owned.closureGeneration) credential.nativeLifetimeGeneration = owned.closureGeneration
-      this.credentialLedger.set(resolved.manager, credential)
+      this.managerCredentials.set(resolved.manager, credential)
       signal?.throwIfAborted()
       resolved.markResident?.()
       return undefined
@@ -1588,13 +1554,13 @@ export class ApprovalExecutionCoordinator {
           'The original native process credential cannot be restored.', 409)
         const credential = await this.credentials.restore(context.executionId, { agentId: context.agentId, variables })
         if (owned.closureGeneration) credential.nativeLifetimeGeneration = owned.closureGeneration
-        this.credentialLedger.set(resolved.manager, credential)
+        this.managerCredentials.set(resolved.manager, credential)
         signal?.throwIfAborted()
         return credential.environment
       }
     }
     if (resolved.processState === 'resident') {
-      const credential = this.credentialLedger.get(resolved.manager)
+      const credential = this.managerCredentials.get(resolved.manager)
       if (!credential) throw new Error('The resident native process has no owned worker credential lease.')
       const remaining = remainingCredentialLifetime(credential)
       if (!Number.isFinite(remaining)) throw new Error('The worker credential expiry is invalid.')
@@ -1602,7 +1568,7 @@ export class ApprovalExecutionCoordinator {
         throw new Error('The resident worker credential cannot be renewed without replacing its process.')
       }
       if (this.credentials.renew && remaining <= WORKER_CREDENTIAL_RENEWAL_WINDOW_MS) {
-        await this.credentialLedger.renew(resolved.manager, context.executionId, {
+        await this.renewCredential(resolved.manager, context.executionId, {
           signal,
           check: async () => { signal?.throwIfAborted() },
         })
@@ -1619,16 +1585,50 @@ export class ApprovalExecutionCoordinator {
     const remaining = remainingCredentialLifetime(prepared.credential)
     if (!Number.isFinite(remaining) || remaining <= 0) throw new Error('The prepared worker credential is not live.')
     if (owned.closureGeneration) prepared.credential.nativeLifetimeGeneration = owned.closureGeneration
-    this.credentialLedger.set(resolved.manager, prepared.credential)
+    this.managerCredentials.set(resolved.manager, prepared.credential)
     signal?.throwIfAborted()
     return prepared.credential.environment
   }
 
   /** The execution credential as one lease of its owner; Worker relays and launcher routes follow its expiry. */
+  private credentialLease(manager: NativeHarnessSessionManager, renew: () => Promise<void>): OwnedLease {
+    return { name: 'execution credential', renewWithinMs: WORKER_CREDENTIAL_RENEWAL_WINDOW_MS,
+      remainingMs: () => remainingCredentialLifetime(this.managerCredentials.get(manager)), renew }
+  }
+
+  private renewCredential(manager: NativeHarnessSessionManager, executionId: string,
+    options: { force?: boolean; signal?: AbortSignal | undefined; check(): Promise<void> }): Promise<void> {
+    const renew = async () => {
+      options.signal?.throwIfAborted()
+      await options.check()
+      const credential = this.managerCredentials.get(manager)
+      if (!credential) throw new Error('The native process lost its credential lease.')
+      if (!options.force && remainingCredentialLifetime(credential) > WORKER_CREDENTIAL_RENEWAL_WINDOW_MS) return
+      if (!this.credentials?.renew) throw new Error('The native credential cannot be renewed.')
+      const expiresAt = await this.credentials.renew(executionId, credential, options.signal)
+      await options.check()
+      if (this.managerCredentials.get(manager) !== credential || !Number.isFinite(Date.parse(expiresAt))
+        || remainingCredentialLifetime({ ...credential, expiresAt }) <= 0) {
+        throw new Error('Native credential renewal lost its owner or returned an invalid expiry.')
+      }
+      this.managerCredentials.set(manager, { ...credential, expiresAt })
+    }
+    const enqueue = () => {
+      // A restart joins the heartbeat before reading and replacing the same process credential.
+      const previous = this.credentialRenewals.get(manager)
+      const renewal = (previous ? previous.then(renew, renew) : renew()).finally(() => {
+        if (this.credentialRenewals.get(manager) === renewal) this.credentialRenewals.delete(manager)
+      })
+      this.credentialRenewals.set(manager, renewal)
+      return renewal
+    }
+    return options.signal ? withAbortSignal(enqueue, options.signal) : enqueue()
+  }
+
   /** Snapshot the owned process values before a terminal cleanup can discard them. */
   reviewPersistence(executionId: string) {
     const owned = this.ownedSessions.get(executionId)
-    const credential = owned && this.credentialLedger.get(owned.manager)
+    const credential = owned && this.managerCredentials.get(owned.manager)
     if (this.credentials && !credential) throw new DomainError('REVIEWER_CREDENTIAL_LOST',
       'Native persistence requires the exact process credential redaction context.', 409)
     return nativePersistenceRedactor(Object.values(credential?.environment.variables ?? {}))
@@ -1658,7 +1658,7 @@ export class ApprovalExecutionCoordinator {
   reviewCredentialIdentity(executionId: string, session: NativeSessionReference): { required: boolean; principalId?: string } {
     const owned = this.ownedSessions.get(executionId)
     if (owned?.session) this.assertSessionIdentity(owned.session, session)
-    const credential = owned && this.credentialLedger.get(owned.manager)
+    const credential = owned && this.managerCredentials.get(owned.manager)
     return { required: Boolean(this.credentials), ...(credential ? { principalId: credential.principalId } : {}) }
   }
 
@@ -1722,7 +1722,7 @@ export class ApprovalExecutionCoordinator {
       || execution.agentConfigurationVersionId !== owned.execution.agentConfigurationVersionId
       || execution.workingDirectory !== owned.context.workingDirectory
       || execution.runtimeDirectory !== owned.execution.runtimeDirectory
-      || !run || run.id !== owned.execution.runId || !isRunInProgress(run.executionState) || run.outcome !== 'pending'
+      || !run || run.id !== owned.execution.runId || !['running', 'waiting'].includes(run.executionState) || run.outcome !== 'pending'
       || run.approval?.handler !== 'orchestrator' || run.approval.designatedOrchestratorAgentId !== execution.agentId
       || !configuration || (configuration.productRole !== 'master' && configuration.productRole !== 'orchestrator')
       || configuration.agentId !== execution.agentId
@@ -1739,7 +1739,7 @@ export class ApprovalExecutionCoordinator {
     assertOwned: () => Promise<void>): Promise<ReviewCredentialMaintenance> {
     const owned = this.ownedSessions.get(executionId)
     if (!owned) throw new DomainError('REVIEWER_CREDENTIAL_LOST', 'The reviewer native process is no longer owned.', 409)
-    const initial = this.credentialLedger.get(owned.manager)
+    const initial = this.managerCredentials.get(owned.manager)
     const generation = owned.generation
     if (this.credentials && !initial) throw new DomainError('REVIEWER_CREDENTIAL_LOST', 'The reviewer credential is no longer owned.', 409)
     const stopped = new AbortController()
@@ -1789,14 +1789,14 @@ export class ApprovalExecutionCoordinator {
     const stopRenewal = !signal.aborted && initial && this.credentials ? renewOwnedLeases({
       signal,
       check,
-      leases: [this.credentialLedger.lease(owned.manager, async () => {
-        const credential = this.credentialLedger.get(owned.manager)
+      leases: [this.credentialLease(owned.manager, async () => {
+        const credential = this.managerCredentials.get(owned.manager)
         if (!credential || credential.principalId !== initial.principalId || credential.environment !== initial.environment
           || !Number.isFinite(remainingCredentialLifetime(credential)) || remainingCredentialLifetime(credential) <= 0) {
           throw new DomainError('REVIEWER_CREDENTIAL_LOST', 'The reviewer lost its live process credential.', 409)
         }
         if (remainingCredentialLifetime(credential) <= WORKER_CREDENTIAL_RENEWAL_WINDOW_MS) {
-          await this.credentialLedger.renew(owned.manager, executionId, { check, signal })
+          await this.renewCredential(owned.manager, executionId, { check, signal })
         }
       })],
       onFailure: (error) => {
@@ -1833,7 +1833,7 @@ export class ApprovalExecutionCoordinator {
     lane: SessionWriteLease, signal: AbortSignal): Promise<void> {
     const owned = this.ownedSessions.get(executionId)
     if (!owned?.manager.retainsReviewerSession) return
-    const credential = this.credentialLedger.get(owned.manager)
+    const credential = this.managerCredentials.get(owned.manager)
     if (!credential || !this.credentials?.bindReviewerJob || !owned.reviewOwner)
       throw new DomainError('REVIEWER_CREDENTIAL_LOST', 'The original reviewer process lease is unavailable.', 409)
     owned.reviewOwner.assertOwned()
@@ -1859,14 +1859,14 @@ export class ApprovalExecutionCoordinator {
   }
 
   private maintainWaitingWorkflowCredential(owned: OwnedNativeSession): void {
-    const initial = this.credentialLedger.get(owned.manager)
+    const initial = this.managerCredentials.get(owned.manager)
     const session = owned.session
     if (owned.stopWaitingRenewal || !initial || !session || !this.credentials?.renew) return
     const generation = owned.generation
     const lifetime = owned.closureGeneration
     const check = async () => {
       owned.controller.signal.throwIfAborted()
-      const credential = this.credentialLedger.get(owned.manager)
+      const credential = this.managerCredentials.get(owned.manager)
       if (this.ownedSessions.get(owned.execution.id) !== owned || !isDeepStrictEqual(owned.session, session)
         || owned.generation !== generation || owned.closureGeneration !== lifetime || owned.failed || owned.cleanup
         || credential?.principalId !== initial.principalId || credential.environment !== initial.environment) {
@@ -1884,10 +1884,10 @@ export class ApprovalExecutionCoordinator {
     owned.stopWaitingRenewal = renewOwnedLeases({
       signal: owned.controller.signal,
       check,
-      leases: [this.credentialLedger.lease(owned.manager, async () => {
+      leases: [this.credentialLease(owned.manager, async () => {
         try {
           await owned.manager.withCredentialLease(session, owned.controller.signal, async signal => {
-            await this.credentialLedger.renew(owned.manager, owned.execution.id, { signal, check: async () => {
+            await this.renewCredential(owned.manager, owned.execution.id, { signal, check: async () => {
               signal.throwIfAborted()
               await check()
               signal.throwIfAborted()
@@ -1909,7 +1909,7 @@ export class ApprovalExecutionCoordinator {
     if (owned.stopReviewerRenewal || !this.credentials?.renew) return
     owned.stopReviewerRenewal = renewOwnedLeases({
       signal: owned.controller.signal,
-      leases: [this.credentialLedger.lease(owned.manager, () => {
+      leases: [this.credentialLease(owned.manager, () => {
         const renewal = this.renewRetainedReviewer(owned).finally(() => {
           if (owned.reviewerRenewal === renewal) delete owned.reviewerRenewal
         })
@@ -1921,10 +1921,10 @@ export class ApprovalExecutionCoordinator {
   }
 
   private async renewRetainedReviewer(owned: OwnedNativeSession): Promise<void> {
-    const credential = this.credentialLedger.get(owned.manager)
+    const credential = this.managerCredentials.get(owned.manager)
     if (!credential || this.ownedSessions.get(owned.execution.id) !== owned)
       throw new DomainError('REVIEWER_CREDENTIAL_LOST', 'The retained process lease changed.', 409)
-    await this.credentialLedger.renew(owned.manager, owned.execution.id, {
+    await this.renewCredential(owned.manager, owned.execution.id, {
       signal: owned.controller.signal,
       check: async () => {
         owned.controller.signal.throwIfAborted()
@@ -1975,7 +1975,7 @@ export class ApprovalExecutionCoordinator {
     if (!native?.finalized) return false
     owner.assertOwned()
     const run = await this.runs.get(execution.runId, owner)
-    if (!run || !isRunInProgress(run.executionState) || !this.workflowClosures
+    if (!run || !['running', 'waiting'].includes(run.executionState) || !this.workflowClosures
       || !this.credentials?.recoverRemote) return false
     const retained = await owner.oneShotConnection().transaction(sql => readRecoverableRemoteReviewer(sql, execution))
     if (!retained) return false
@@ -2035,7 +2035,7 @@ export class ApprovalExecutionCoordinator {
       const credential = await this.credentials.recoverRemote(execution.id, access, job)
       if (credential.principalId !== retained.principalId) throw new DomainError('REVIEWER_AUTHORITY_LOST',
         'The original reviewer credential changed during recovery.', 409)
-      this.credentialLedger.set(owned.manager, credential)
+      this.managerCredentials.set(owned.manager, credential)
       await owner.oneShotConnection().transaction(assertRetainedReviewer)
       resolved.markResident?.()
       this.maintainRetainedReviewer(owned)
@@ -2125,7 +2125,7 @@ export class ApprovalExecutionCoordinator {
           || owned.session.nativeSessionId !== current.nativeSessionId) { await abandon(current, owned); continue }
         assertSameRepeatExecution(owned.execution, current)
         const recovery = owned.restartRecovery
-        const credential = this.credentialLedger.get(owned.manager)
+        const credential = this.managerCredentials.get(owned.manager)
         if (recovery?.principalId && credential && credential.principalId !== recovery.principalId) { await abandon(current, owned); continue }
         const restoring = recovery?.owner === owner && !!(owned.preparing || owned.opening)
           && recovery.attachmentGeneration === owned.closureGeneration
@@ -2179,8 +2179,8 @@ export class ApprovalExecutionCoordinator {
   }
 
   private async renewForRestart(owned: OwnedNativeSession, owner?: RunOwnership): Promise<void> {
-    if (!this.credentials?.renew || !this.credentialLedger.has(owned.manager)) return
-    await this.credentialLedger.renew(owned.manager, owned.execution.id, {
+    if (!this.credentials?.renew || !this.managerCredentials.has(owned.manager)) return
+    await this.renewCredential(owned.manager, owned.execution.id, {
       force: true,
       check: async () => {
         owner?.assertOwned()
@@ -2212,7 +2212,7 @@ export class ApprovalExecutionCoordinator {
       const reviewResults = await Promise.allSettled([drainingReviews])
       for (const owned of sessions) owned.controller.abort(reason)
       const closeSession = async (owned: OwnedNativeSession, owner?: RunOwnership) => {
-        const safe = nativePersistenceRedactor(this.credentialLedger.secrets(owned.manager))
+        const safe = nativePersistenceRedactor(Object.values(this.managerCredentials.get(owned.manager)?.environment.variables ?? {}))
         const failures: Error[] = []
         await attemptCleanup(failures, `${owned.execution.id}: close for restart`, async signal => {
           if (this.ownedSessions.get(owned.execution.id) !== owned) return
@@ -2295,7 +2295,7 @@ export class ApprovalExecutionCoordinator {
         const resident = siblings.filter(owned => this.ownedSessions.get(owned.execution.id) === owned
           && !this.closedExecutions.has(owned.execution.id))
         const ownerSession = resident.find(owned => owned.context.acceptedPlacement?.hostRef.kind === 'device'
-          || this.credentials?.renew && this.credentialLedger.has(owned.manager))
+          || this.credentials?.renew && this.managerCredentials.has(owned.manager))
         const retained = ownerSession && await withCleanupDeadline(async signal => {
           for (;;) {
             signal.throwIfAborted()
@@ -2316,7 +2316,7 @@ export class ApprovalExecutionCoordinator {
         } finally { if (retained) await retained.release() }
       }))
       const safe = nativePersistenceRedactor(sessions.flatMap(owned =>
-        this.credentialLedger.secrets(owned.manager)))
+        Object.values(this.managerCredentials.get(owned.manager)?.environment.variables ?? {})))
       const failures = results.flatMap(result => result.status === 'fulfilled'
         ? result.value : [safe.error(result.reason) as Error])
       for (const result of reviewResults) {
@@ -2397,7 +2397,7 @@ export class ApprovalExecutionCoordinator {
       failures.push(...await this.cleanupSession(owned, false))
     }
     if (failures.length) throw new AggregateError(failures, 'Completed Run session cleanup was incomplete.')
-    this.capacity.release(runId)
+    this.runCapacity.delete(runId)
   }
 
   /** Read-only exact callback qualification. A cold read never allocates or attaches a manager. */
@@ -2517,7 +2517,7 @@ export class ApprovalExecutionCoordinator {
           this.adoptRunOwner(owner)
           const combined = AbortSignal.any([owned.controller.signal, controller.signal, ...(signal ? [signal] : [])])
           if (context.reviewJob) {
-            const credential = this.credentialLedger.get(owned.manager)
+            const credential = this.managerCredentials.get(owned.manager)
             if (!credential || !this.credentials?.bindReviewerJob) throw new DomainError('REVIEWER_CREDENTIAL_LOST',
               'The original reviewer credential cannot bind its current job.', 409)
             await this.credentials.bindReviewerJob(execution.id, credential, context.reviewJob)
@@ -2565,7 +2565,7 @@ export class ApprovalExecutionCoordinator {
       if (previous?.cleanup || previous?.reviewFinishing) throw new DomainError('SESSION_LANE_BUSY',
         'The captured reviewer lifetime is still closing.', 409)
       const native = await this.interactions.coordination.workflowSession(execution.id)
-      if ((configuration.productRole !== 'master' && configuration.productRole !== 'orchestrator') || !isRunInProgress(run.executionState)
+      if ((configuration.productRole !== 'master' && configuration.productRole !== 'orchestrator') || !['running', 'waiting'].includes(run.executionState)
         || run.outcome !== 'pending' || execution.state !== 'completed' || !native?.finalized || run.approval?.handler !== 'orchestrator'
         || run.approval.designatedOrchestratorAgentId !== execution.agentId) {
         throw new DomainError('SESSION_LANE_BUSY', 'Workflow finalization must finish before review attachment.', 409)
@@ -2626,7 +2626,7 @@ export class ApprovalExecutionCoordinator {
         if (credential.principalId !== continuing.principalId || !isDeepStrictEqual(current, expected))
           throw new DomainError('NATIVE_CREDENTIAL_RECOVERY_REQUIRED', 'The original remote process lease changed.', 409)
         if (owned.closureGeneration) credential.nativeLifetimeGeneration = owned.closureGeneration
-        this.credentialLedger.set(resolved.manager, credential)
+        this.managerCredentials.set(resolved.manager, credential)
         await this.validateContinuation?.(execution.id, signal)
         signal.throwIfAborted()
         resolved.markResident?.()
@@ -2652,7 +2652,7 @@ export class ApprovalExecutionCoordinator {
       signal.throwIfAborted()
       return { manager: resolved.manager, session, signal: owned.controller.signal }
     } catch (error) {
-      const safe = nativePersistenceRedactor(this.credentialLedger.secrets(owned.manager))
+      const safe = nativePersistenceRedactor(Object.values(this.managerCredentials.get(owned.manager)?.environment.variables ?? {}))
       if (isRestartCancellation(error, signal)) throw safe.error(error)
       componentLogger('harness').warn({ err: safe.error(error), executionId: execution.id },
         'workflow approval attachment failed')
@@ -2729,11 +2729,11 @@ export class ApprovalExecutionCoordinator {
       await this.runs.requestCleanup(owner.runId, owner)
       const owned = this.ownedSessions.get(execution.id)
       if (!owned) throw error
-      const safe = nativePersistenceRedactor(this.credentialLedger.secrets(owned.manager))
+      const safe = nativePersistenceRedactor(Object.values(this.managerCredentials.get(owned.manager)?.environment.variables ?? {}))
       owned.controller.abort(error)
       // Dispose the attempted attachment; the cold registry still has to prove physical closure.
       await owned.manager.dispose()
-      this.credentialLedger.delete(owned.manager)
+      this.managerCredentials.delete(owned.manager)
       this.managers.release?.(owned.context, this.rawManagers.get(owned.manager) ?? owned.manager, 'failed')
       if (this.ownedSessions.get(execution.id) === owned) this.ownedSessions.delete(execution.id)
       componentLogger('harness').warn({ err: safe.error(error), executionId: execution.id }, 'workflow approval restoration requires cleanup')
@@ -3127,7 +3127,7 @@ export class ApprovalExecutionCoordinator {
         input.owner.assertOwned()
       },
       watchCredential: () => {
-        const credential = observation.manager && this.credentialLedger.get(observation.manager)
+        const credential = observation.manager && this.managerCredentials.get(observation.manager)
         if (credential) observation.knownSecrets.push(...Object.values(credential.environment.variables))
       },
       safeValue: value => nativePersistenceRedactor(observation.knownSecrets).value(value),
@@ -3159,7 +3159,7 @@ export class ApprovalExecutionCoordinator {
   private startWorkflowCredentialMaintenance(observation: WorkflowObservationState): void {
     const { input } = observation
     observation.watchCredential()
-    if (!this.credentials || observation.stopRenewal || !observation.manager! || !this.credentialLedger.has(observation.manager!)) return
+    if (!this.credentials || observation.stopRenewal || !observation.manager! || !this.managerCredentials.has(observation.manager!)) return
     observation.stopRenewal = renewOwnedLeases({
       signal: observation.signal,
       check: async () => {
@@ -3168,11 +3168,11 @@ export class ApprovalExecutionCoordinator {
         await this.validateContinuation?.(observation.execution.id, observation.signal)
         input.owner.assertOwned()
       },
-      leases: [this.credentialLedger.lease(observation.manager!, async () => {
-        const credential = this.credentialLedger.get(observation.manager!)
+      leases: [this.credentialLease(observation.manager!, async () => {
+        const credential = this.managerCredentials.get(observation.manager!)
         if (!credential) throw new Error('The execution lost its native credential lease.')
         if (remainingCredentialLifetime(credential) <= WORKER_CREDENTIAL_RENEWAL_WINDOW_MS) {
-          await this.credentialLedger.renew(observation.manager!, observation.context!.executionId, {
+          await this.renewCredential(observation.manager!, observation.context!.executionId, {
             signal: observation.signal,
             check: async () => {
               observation.signal.throwIfAborted()
@@ -3188,7 +3188,7 @@ export class ApprovalExecutionCoordinator {
         failure.cause = error
         componentLogger('harness').warn({ operation: 'maintain workflow credential',
           executionId: observation.execution.id, runId: observation.execution.runId, phase, lease,
-          remainingMs: remainingCredentialLifetime(this.credentialLedger.get(observation.manager!)),
+          remainingMs: remainingCredentialLifetime(this.managerCredentials.get(observation.manager!)),
           err: observation.safeError(failure) }, 'Worker credential maintenance failed')
         observation.credentialFailure.abort(failure)
       },
@@ -3591,7 +3591,8 @@ export class ApprovalExecutionCoordinator {
     await lane.guard.check()
     owner.assertOwned()
     const owned = this.ownedSessions.get(execution.id)
-    const safe = nativePersistenceRedactor(owned ? this.credentialLedger.secrets(owned.manager) : [])
+    const safe = nativePersistenceRedactor(Object.values(owned
+      ? this.managerCredentials.get(owned.manager)?.environment.variables ?? {} : {}))
     const history = safe.value(observed ?? await nativeManager.reconcile(session, original.correlationId, lane.guard.signal))
     assertOriginalWorkflowTerminal(execution, session, history, original.correlationId)
     if (!isDeepStrictEqual(history.terminalTurn!.result, original.nativeResult)) throw new DomainError(
@@ -3769,7 +3770,7 @@ export class ApprovalExecutionCoordinator {
   private async failWorkflowObservation(observation: WorkflowObservationState, rawError: unknown): Promise<never> {
     const { input, repeat } = observation
     // A credential may have been issued just before an abort rejected setup.
-    const credential = observation.manager! && this.credentialLedger.get(observation.manager!)
+    const credential = observation.manager! && this.managerCredentials.get(observation.manager!)
     if (credential) observation.knownSecrets.push(...Object.values(credential.environment.variables))
     const error = observation.safeError(observation.signal.aborted && observation.signal.reason instanceof DomainError
       && ['WORKER_CREDENTIAL_EXPIRING', 'EXECUTION_ACTIVE_TIMEOUT'].includes(observation.signal.reason.code)
@@ -3920,7 +3921,7 @@ export class ApprovalExecutionCoordinator {
     await owned.stopWaitingRenewal?.()
     if (this.ownedSessions.get(owned.execution.id) !== owned) return
     this.ownedSessions.delete(owned.execution.id)
-    this.credentialLedger.delete(owned.manager)
+    this.managerCredentials.delete(owned.manager)
     this.managers.release?.(owned.context, this.rawManagers.get(owned.manager) ?? owned.manager, 'released')
   }
 

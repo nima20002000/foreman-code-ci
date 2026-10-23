@@ -326,10 +326,10 @@ export async function reviewerFixture(options: {
     async readUnbound() { return undefined },
   }
   const workflowCapture = createWorkflowNativeCaptureChannel()
-  const runtime = new ApprovalExecutionCoordinator({ runs, interactions, budgets, managers, activeTimeoutMs: 30_000, credentials, validateContinuation: async () => {
+  const runtime = new ApprovalExecutionCoordinator(runs, interactions, budgets, managers, 30_000, credentials, async () => {
     hooks.validations += 1
     await hooks.validate?.()
-  }, workflowClosures: closures, nativeCaptures: workflowCapture.capture, reviewNativeCaptures: captures.capture })
+  }, closures, undefined, workflowCapture.capture, captures.capture)
   const workflowStore: RepeatNativeObservationStore = {
     async readExecution() { return { execution, ref: { nodeId: execution.workflowNodeId, occurrence: null }, slotId: 'review-worker-slot',
       input: { executionSemanticsVersion: 3, runInput: {}, occurrence: null, entry: null, predecessors: [] },

@@ -296,9 +296,10 @@ export function currentRestartUnit(reviewer = false, acceptedPlacement?: Accepte
     const store = new PostgresWorkflowClosureStore(pool,
       executionId => executionId === execution.id && state.restartDetached)
     type Args = ConstructorParameters<typeof ApprovalExecutionCoordinator>
-    const coordinator = new ApprovalExecutionCoordinator({ runs: runs as unknown as Args[0]['runs'], interactions: interactions as unknown as Args[0]['interactions'],
-      budgets: budgets as unknown as Args[0]['budgets'], managers: resolver, activeTimeoutMs: 60_000, credentials: credentials as unknown as Args[0]['credentials'], workflowClosures: store, nativeCaptures: captures.capture,
-      prepareManagerContext: acceptedPlacement ? async context => ({ ...context, acceptedPlacement }) : undefined })
+    const coordinator = new ApprovalExecutionCoordinator(runs as unknown as Args[0], interactions as unknown as Args[1],
+      budgets as unknown as Args[2], resolver, 60_000, credentials as unknown as Args[5], undefined, store,
+      undefined, captures.capture, undefined, undefined, undefined,
+      acceptedPlacement ? async context => ({ ...context, acceptedPlacement }) : undefined)
     const observation: RepeatNativeObservationStore = {
       async readExecution(id) {
         assert.equal(id, execution.id)

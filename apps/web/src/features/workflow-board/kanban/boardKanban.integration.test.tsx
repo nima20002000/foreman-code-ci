@@ -183,8 +183,6 @@ it('opens a card in its own window with what its Agent did and every update acro
   board.memory.control.history = [
     update('change-2', 3, { status: { before: 'doing', after: 'done' } }, 'run-second'),
     update('change-1', 2, { body: { before: '', after: 'Drafted the release notes.' }, status: { before: 'done', after: 'doing' } }, 'run-first'),
-    { ...update('change-0', 1, { title: { before: null, after: 'Prepare release notes' }, body: { before: null, after: '' },
-      reason: { before: null, after: null }, status: { before: null, after: 'doing' } }, 'run-first'), entityRevision: 1 },
   ]
   await mountMeasuredBoard(board.href)
   const kanban = await screen.findByRole('region', { name: 'Kanban' })
@@ -194,10 +192,7 @@ it('opens a card in its own window with what its Agent did and every update acro
   expect(within(window).getByText('Done')).toBeVisible()
   expect(within(window).getByText(/Drafted the release notes\.\s+Linked the changelog\./)).toBeVisible()
   const updates = await within(window).findAllByRole('listitem', { name: /Release Agent/ })
-  expect(updates).toHaveLength(3)
-  // Creating a card is one line, not every field it started with.
-  expect(updates[2]).toHaveTextContent('Created this card in Doing')
-  expect(updates[2]).not.toHaveTextContent('Cleared')
+  expect(updates).toHaveLength(2)
   expect(updates[0]).toHaveTextContent('Moved to Done')
   expect(updates[0]).toHaveTextContent('Run run-seco')
   expect(updates[1]).toHaveTextContent('Moved to Doing')

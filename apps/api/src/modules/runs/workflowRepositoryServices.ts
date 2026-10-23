@@ -30,7 +30,6 @@ import type { ApprovalPostgresSaver } from '../../infrastructure/approvalCheckpo
 import { lockInteraction } from '../interactions/wave25/context.js'
 import { assertSavedPendingApprovalOriginalLocked } from '../interactions/nativeApprovalProof.js'
 import { readRetainedRemoteReviewers } from '../interactions/retainedRemoteReviewer.js'
-import { isRunInProgress, writeRunStateLocked } from './runState.js'
 
 export interface WorkflowRestartApprovals {
   saver: ApprovalPostgresSaver
@@ -98,7 +97,7 @@ export async function allowTechnicalRetryLocked(sql: GraphTransactionSql, run: A
     const execution = HarnessExecutionSchema.parse(structuredClone(supplied))
     const snapshot = await readAcceptedRepeatRunLocked(sql, run.id)
     if (!sameRepeatValue(snapshot.run, run) || !sameRepeatValue(snapshot.version, version)) return conflict('RUN_PIN_CONFLICT')
-    if (snapshot.stopRequested || snapshot.cleanupPending || !isRunInProgress(run.executionState)) return false
+    if (snapshot.stopRequested || snapshot.cleanupPending || !['running', 'waiting'].includes(run.executionState)) return false
     const stored = await readRepeatExecutionLocked(sql, snapshot, execution.id)
     if (!sameRepeatValue(stored.execution, execution) || stored.accepted) return conflict('REPEAT_RETRY_NOT_ALLOWED')
     if (execution.state !== 'completed' || execution.result?.outcome !== 'failed' || !execution.result.error?.retryable) return false
@@ -208,7 +207,7 @@ export async function completeRunLocked(sql: GraphTransactionSql, suppliedRun: A
     const { run, version } = snapshot
     if (!sameRepeatValue(run, suppliedRun) || !sameRepeatValue(version, suppliedVersion)) return conflict('RUN_PIN_CONFLICT')
     if (snapshot.stopRequested || snapshot.cleanupPending) return conflict('GRAPH_STOP_CONFLICT')
-    if (!isRunInProgress(run.executionState)) return conflict('GRAPH_TERMINAL_CONFLICT')
+    if (!['running', 'waiting'].includes(run.executionState)) return conflict('GRAPH_TERMINAL_CONFLICT')
     const terminals = [...structuredClone(suppliedTerminals)].sort((a, b) =>
       a.execution.workflowNodeId.localeCompare(b.execution.workflowNodeId)
       || a.execution.executionId.localeCompare(b.execution.executionId))
@@ -256,7 +255,9 @@ export async function completeRunLocked(sql: GraphTransactionSql, suppliedRun: A
     await closeRunControlInputsLocked(sql, { runId: run.id, now: new Date().toISOString() })
     await sql.query(`insert into run_cleanup_intents(run_id) values($1)
       on conflict(run_id) do update set pending=true,updated_at=clock_timestamp()`, [run.id])
-    if (await writeRunStateLocked(sql, run.executionState, next, JSON.stringify(next)) !== 1) return conflict('RUN_PIN_CONFLICT')
+    const changed = await sql.query('update runs set execution_state=$2,record=$3::jsonb where id=$1',
+      [run.id, next.executionState, JSON.stringify(next)])
+    if (changed.rowCount !== 1) return conflict('RUN_PIN_CONFLICT')
     // Called inside the existing run.complete effect, whose G1 finalizer commits
     // the actual Run/source/presentation and completion effect atomically.
     beforeGraphCommit(sql, async () => {

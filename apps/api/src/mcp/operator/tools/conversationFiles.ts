@@ -25,8 +25,11 @@ export const conversationFileTools: readonly OperatorToolDefinition[] = [
     name: 'conversation_file_upload',
     requires: [['agent_chat:write', 'resource'], ['agent_chat:read', 'resource']],
     enabled: services => !!services.temporaryFiles,
-    description: 'Stage a temporary chat attachment (up to 25 MiB) from upload metadata and canonical contentBase64 for an Operator or Agent conversation; then conversation_file_finalize publishes it or conversation_file_cancel discards it.',
-    detail: 'conversation is {kind: operator, conversationId} or {kind: agent, workspaceId, conversationId}. Use agent_chat_ensure_conversation before the first Agent attachment. Retry identical upload.requestId and metadata. Uses normal conversation read/write authority; does not issue or accept native file-session credentials.',
+    description: 'Stage a temporary chat attachment from canonical contentBase64 and upload metadata (up to 25 MiB). '
+      + 'conversation is {kind: operator, conversationId} or {kind: agent, workspaceId, conversationId}. '
+      + 'Use agent_chat_ensure_conversation before the first Agent attachment. Retry identical upload.requestId and metadata. '
+      + 'Call conversation_file_finalize to publish, or conversation_file_cancel to discard staging. '
+      + 'Uses normal conversation read/write authority; does not issue or accept native file-session credentials.',
     inputSchema: ConversationFileUploadInputSchema, outputSchema: FileMutationResultSchema,
     annotations: { ...readAnnotations, readOnlyHint: false },
     run: (context, input) => {

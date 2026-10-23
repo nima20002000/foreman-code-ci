@@ -3,7 +3,6 @@ import type { ManagementAction, ManagementPrincipal, OperatorToolName } from '@f
 import { TelemetrySelectorSchema, type TelemetryReadService } from '@foreman-code/contracts/resource-telemetry'
 import { hasAction, isAuthorized, type AuthorizedResource } from '../../modules/access/policy.js'
 import { toolFailure } from '../shared/results.js'
-import { toolDetail } from '../shared/toolDetail.js'
 import { readTelemetry, RESOURCE_TELEMETRY_READ_TOOL, type TelemetryDenialAudit } from '../../modules/resource-telemetry/readback/adapters.js'
 import { defineOperatorTool } from './definition.js'
 import type { OperatorRequestContext } from './types.js'
@@ -23,8 +22,7 @@ export function telemetryDenialAudit(context: OperatorRequestContext, tool: Oper
     context.services.commands.recordDenied(principalId, source, tool, selectorKey) }
 }
 
-const description = 'Read passive CPU and RAM telemetry (plus free disk for a computer) for one exact computer or owned workflow, CI or conversation selector; values are fresh for six seconds. Never starts collectors, providers or processes.'
-const detail = 'Requires a live explicit whole-computer telemetry grant or the exact role-specific owned-scope grant; Agent/Run access never implies computer permission. Denied results expose no cached values. Never starts pairing.'
+const description = 'Read ResourceTelemetry v1 for one exact computer or owned workflow/CI/conversation selector. Requires a live explicit whole-computer telemetry grant or the exact role-specific owned-scope grant; Agent/Run access never implies computer permission. Passive bounded CPU/RAM, plus free disk space on computer reads; freshness expires at six seconds; denied exposes no cached values. This never starts collectors, providers, processes or pairing.'
 const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
 
 async function respond(reads: TelemetryReadService<ManagementPrincipal>, principal: ManagementPrincipal,
@@ -43,7 +41,6 @@ export const resourceTelemetryTool = defineOperatorTool({
   discoverable: telemetryDiscoverable,
   permissionDetail: TELEMETRY_PERMISSION_DETAIL,
   description,
-  detail,
   inputSchema: TelemetrySelectorSchema,
   annotations,
   handle: (context, input, { extra }) => respond(context.services.resourceTelemetry!.reads, context.principal, input, extra,
@@ -53,6 +50,6 @@ export const resourceTelemetryTool = defineOperatorTool({
 /** Tool listing is discovery only: the shared service resolves the exact live grant on every call. */
 export function registerResourceTelemetryTools(server: McpServer, principal: ManagementPrincipal,
   reads: TelemetryReadService<ManagementPrincipal>, audit: TelemetryDenialAudit): void {
-  server.registerTool(RESOURCE_TELEMETRY_READ_TOOL, { description, ...toolDetail(detail), inputSchema: TelemetrySelectorSchema, annotations },
+  server.registerTool(RESOURCE_TELEMETRY_READ_TOOL, { description, inputSchema: TelemetrySelectorSchema, annotations },
     (input, extra) => respond(reads, principal, input, extra, audit))
 }

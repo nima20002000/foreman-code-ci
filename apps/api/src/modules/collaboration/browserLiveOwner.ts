@@ -2,7 +2,6 @@ import type { SqlQuery } from '../../infrastructure/transaction.js'
 import type { BrowserSubjectDetails } from './browserAuthority.js'
 import { readCoordinatorCredentialAuthority } from '../access/consultationAuthority.js'
 import { DomainError } from '../errors.js'
-import { OPEN_RUN_STATES_SQL } from '../runs/runState.js'
 
 /** Immutable pins were validated at preparation; each dispatch rechecks only live ownership. */
 export async function browserOwnerIsActive(sql: SqlQuery, pins: BrowserSubjectDetails): Promise<boolean> {
@@ -23,7 +22,7 @@ export async function browserOwnerIsActive(sql: SqlQuery, pins: BrowserSubjectDe
         and e.record->>'agentConfigurationVersionId'=$6 and (e.record->>'attempt')::integer=$7
         and e.work_activation_id is not distinct from $8 and r.stop_requested_at is null
         and r.worker_credentials_closed_at is null and e.worker_credentials_closed_at is null
-        and r.execution_state in (${OPEN_RUN_STATES_SQL})
+        and r.execution_state in ('queued','running','waiting')
         and e.record->>'state' in ('queued','starting','running','waiting')`,
     [execution.executionId, execution.runId, execution.workflowVersionId, agent.agentId,
       agent.workflowNodeId, agent.configurationVersionId, execution.attempt, execution.activationId ?? null])
