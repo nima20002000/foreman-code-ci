@@ -20,7 +20,7 @@ import {
 import { AcceptedWorkflowRunCurrentSchema, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { WORKER_NATIVE_OUTPUT_TOOL_NAMES, WorkerNativeOutputOperationSchema } from '@foreman-code/contracts/worker-native-output'
 import { resolveImmutableApprovalRoute } from '../workflows/index.js'
-import { assertWave25WorkerBinding } from './current/credentialAuthority.js'
+import { assertCurrentWorkerBinding } from './current/credentialAuthority.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { AgentRunStatus } from '@foreman-code/contracts'
 import { AgentRunStatusService } from '../runs/agentRunStatus.js'
@@ -203,7 +203,7 @@ export class PostgresAppInteractionService implements AppInteractionService {
   async canRespond(principal: ManagementPrincipal): Promise<boolean> {
     if (!this.orchestration) return false
     if (!hasWorkerAction(principal, 'interactions:respond') || !hasWorkerAction(principal, 'interactions:read')) return false
-    try { await assertWave25WorkerBinding(this.pool, principal.id) }
+    try { await assertCurrentWorkerBinding(this.pool, principal.id) }
     catch (error) { if (error instanceof DomainError) return false; throw error }
     workerScope(principal)
     const scopes = workerScopesForAction(principal, 'interactions:respond')

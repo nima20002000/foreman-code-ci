@@ -25,7 +25,7 @@ function fixture(){
     else if(!rows.length&&values.length===1&&typeof values[0]==='string')rows=[{locked:true}]
     else if(values.length===3&&Array.isArray(values[0]))rows=receipts.has(`${values[1]}:${values[2]}`)?[receipts.get(`${values[1]}:${values[2]}`)]:[]
     if(values.length===6&&typeof values[3]==='number')grants++
-    else if(values.length===6&&String(values[4]).startsWith('sha256:'))receipts.set(`${values[1]}:${values[2]}`,{input_hash:values[4],target_key:values[3],result:JSON.parse(values[5] as string)})
+    else if(values.length===6)receipts.set(`${values[1]}:${values[2]}`,{input_hash:values[4],target_key:values[3],result:JSON.parse(values[5] as string)})
     if(values.length===5&&values[1]===mainId)registrations.push(values[4])
     return {rows,rowCount:rows.length,command:'SELECT',oid:0,fields:[]}
   })

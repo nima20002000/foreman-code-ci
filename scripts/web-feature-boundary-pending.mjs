@@ -35,7 +35,6 @@ export const pendingWebFeatureImports = new Set([
   'apps/web/src/features/operator-chat/OperatorChatNotices.tsx > apps/web/src/features/conversations/ChatNotice.tsx',
   'apps/web/src/features/operator-chat/OperatorComposer.tsx > apps/web/src/features/conversations/ChatPrimaryActions.tsx',
   'apps/web/src/features/operator-chat/OperatorComposer.tsx > apps/web/src/features/conversations/sessionControls/useSessionControls.ts',
-  'apps/web/src/features/operator-chat/OperatorComposer.tsx > apps/web/src/features/conversations/sessionControls/useSlashCommandMenu.tsx',
   'apps/web/src/features/operator-chat/OperatorConversationTranscript.tsx > apps/web/src/features/conversations/ChatDecisionReceipts.tsx',
   'apps/web/src/features/operator-chat/OperatorHistory.tsx > apps/web/src/features/conversations/HistoryWindowNotice.tsx',
   'apps/web/src/features/operator-chat/OperatorHistory.tsx > apps/web/src/features/conversations/agentChat/model.ts',

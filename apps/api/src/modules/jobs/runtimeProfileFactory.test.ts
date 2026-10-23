@@ -14,15 +14,10 @@ it.each(['ready', 'unavailable', 'changed','root-revoked'] as const)('reads the 
     grants: [{ actions: ['job_definitions:read'], scope: { workspaceIds: [profile.workspaceId] } }] }
   // The principal read binds the principal id, the profile read the workspace id, the root policy read the workspace id,
   // policy id and revision.
-  let profileRead = false
   const query = vi.fn(async (_text: string, values: unknown[] = []) => {
     if (values.length === 1 && values[0] === principal.id) return { rows: [{ ...principal,
       expires_at: new Date(principal.expiresAt), revoked_at: null, delegated_from: null }] }
-    if (values.length === 1 && values[0] === profile.workspaceId) {
-      const rows = profileRead ? [] : [{ record: profile }]
-      profileRead = true
-      return { rows }
-    }
+    if (values.length === 1 && values[0] === profile.workspaceId) return { rows: [{ record: profile }] }
     if (values.length === 3 && values[0] === profile.workspaceId) return { rows:state === 'root-revoked' ? [] : [{ allowed:true }] }
     return { rows: [] }
   })

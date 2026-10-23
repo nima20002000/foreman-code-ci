@@ -332,7 +332,7 @@ function inputHash(kind) {
   if (list.status !== 0) throw new Error('Build cache source inventory could not be read.')
   const hash = createHash('sha256').update(process.version).update(process.platform).update(process.arch).update(common).update(root)
   const scope = kind === 'contracts' ? 'packages/contracts' : `apps/${kind}`
-  const tools = kind === 'web' ? ['typescript', 'vite', '@vitejs/plugin-react', '@tailwindcss/vite'] : ['typescript']
+  const tools = kind === 'web' ? ['typescript', 'vite', '@vitejs/plugin-react'] : ['typescript']
   try {
     for (const name of tools) {
       const path = require.resolve(name, { paths: [join(root, scope)] })
