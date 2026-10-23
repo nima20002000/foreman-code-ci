@@ -398,16 +398,19 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
 - [x] #19 Run state machine: `runs/runState.ts`, with every `execution_state` write going through
   `writeRunStateLocked`.
 - [ ] #20 SQL mixed into orchestration.
-- [x] #21 Monster functions: existing splits retained; `qualifyVerificationRuntime` now also names command,
-  report, ordinary-suite and interruption steps, preserving effect order (branch `fix/a21-qualify`; CI pending).
-- [~] #22 Proof/verification/receipt sprawl.
+- [~] #21 Monster functions: `dispatchReview` split. Open: `openLocked`, `workHandoffAdmission`.
+- [x] #22 Proof/verification/receipt sprawl: matching shapes shared; distinct proof models retained.
   - Done (7b, written without compiling or running tests): `shared/deepFreeze.ts` (`deepFreeze`, `frozenJsonCopy`, with a
     test) replaces six private copies in `interactions/{workflow,review}NativeCapture.ts`,
     `runs/remote/workflowPhysicalReadout.ts`, `harnesses/instanceRegistry.ts`,
     `harnesses/instanceSettings/acceptedProfile.ts` and `placement/binding.ts`. `memory-boards` `MutationReceipt` is now an
     alias of the contract's `MemoryBoardMutationReceipt` (they were the same shape). `placement/remoteNativeSource.ts`
     has one `readOriginal` check instead of two copies. Persisted data and HTTP/MCP shapes are untouched.
-  - Not merged, because the shapes differ or the change needs a compiler and the DB tests: `Workflow`/`Review`
+  - Follow-up (`fix/a22-proof`): `shared/nativeCapture.ts` shares the exact four-field `NativeCaptureLane` between
+    workflow capture, reviewer capture and the remote workflow lifetime. Workflow/remote lanes remain nullable;
+    reviewer lanes remain required, and existing readonly modifiers stay unchanged. This is API-private provenance,
+    not a new HTTP/MCP contract. Only type declarations and type-only imports change.
+  - Intentionally separate after comparing the shapes: `Workflow`/`Review`
     `NativeProofRecord`/`Services` and `NativeVerificationPort` (parallel, ~700 and ~230 lines, different tables and
     leases); `RemoteTerminalEvidence`, `RemoteJobTerminalEvidence` and `NativeTerminalEvidence` (three different
     persisted shapes); `CodexMessagePublicationReceipt`/`ClaudeMessagePublicationReceipt` (differ in
@@ -441,7 +444,6 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   (`workHandoffAdmission.ts`) is route, replay, usage, denial and acceptance; `qualifyVerificationRuntime`
   (`verificationQualification.ts`) delegates quota claims, workspace, runtime and isolation checks, quota pressure,
   the qualification plan, the suite context and the final result to helpers. Steps run in the original order.
-- [ ] #22 Proof/verification/receipt sprawl.
 - [x] #23 One `executionExtension` factory for all four execution-v1 sides.
 
 ### PR 9: Operator MCP (#77, draft)
