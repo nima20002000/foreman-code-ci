@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { Message } from '@foreman-code/contracts'
-import { createFileCardHttpClient, MessageFileCards } from '../file-cards'
+import { createFileCardHttpClient, MessageFileCards } from '../file-cards/index'
 import { messageAttachmentRefs } from './chatAttachmentAttempt'
 
 /** Persisted message readback only. Neither uploads nor synthetic activity rows become cards. */

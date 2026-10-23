@@ -1,6 +1,6 @@
 import { ApiError } from '../../../shared/api/client'
 import type { DeliveryReadback } from './client'
-import { boundedNativeWindow, nativeMessageAtLeastAsNew } from './nativeMessageWindow'
+import { boundedNativeWindow, nativeMessageAtLeastAsNew } from '../../chat-core'
 
 /** Committed stream revisions fence in-flight HTTP reads, while a successful newer page owns its cursor. */
 export function acceptDeliveryReadback(previous: DeliveryReadback | undefined, incoming: DeliveryReadback): DeliveryReadback {

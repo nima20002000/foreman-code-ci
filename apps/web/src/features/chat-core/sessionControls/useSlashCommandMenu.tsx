@@ -1,4 +1,4 @@
-import { Button } from '../../../shared/ui/nocturne'
+import { Button } from '../../../shared/ui/nocturne/index'
 import { useId, useState, type KeyboardEvent } from 'react'
 
 export function useSlashCommandMenu(value: string, setValue: (value: string) => void,
