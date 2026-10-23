@@ -225,11 +225,11 @@ describe('WorkspaceRouteEntry integration', () => {
     await user.hover(node)
     const actions = within(screen.getByLabelText('Editable workflow graph')).getByRole('group', { name: `${title} actions` })
     const tick = setInterval(() => console.error('TICK'), 1000)
-    for (const [obj, name] of [[Element.prototype, 'setAttribute'], [Element.prototype, 'querySelector'], [Node.prototype, 'appendChild'], [Node.prototype, 'removeChild'], [window, 'getComputedStyle'], [Node.prototype, 'insertBefore']] as const) {
+    for (const [obj, name] of [[Element.prototype, 'setAttribute'], [Element.prototype, 'querySelector'], [Node.prototype, 'appendChild'], [Node.prototype, 'removeChild'], [window, 'getComputedStyle'], [Node.prototype, 'insertBefore'], [Promise.prototype, 'then'], [globalThis, 'queueMicrotask'], [JSON, 'stringify'], [Array.prototype, 'push'], [Array.prototype, 'map'], [Map.prototype, 'get'], [Map.prototype, 'set'], [Object, 'keys'], [globalThis, 'setTimeout'], [globalThis, 'fetch'], [String.prototype, 'replace'], [Array.prototype, 'filter'], [Object, 'assign'], [Array.prototype, 'includes']] as const) {
       const original = (obj as any)[name] as (...args: unknown[]) => unknown
       let count = 0
       ;(obj as any)[name] = function (this: unknown, ...args: unknown[]) {
-        if (++count === 400000) { const trace = new Error(`LOOP ${name}`).stack; console.error(String(trace).slice(0, 3000)); throw new Error(`LOOP ${name}`) }
+        if (++count === 1500000) { const trace = new Error(`LOOP ${name}`).stack; console.error(String(trace).slice(0, 3000)); throw new Error(`LOOP ${name}`) }
         return original.apply(this, args)
       }
     }

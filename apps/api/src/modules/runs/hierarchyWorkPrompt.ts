@@ -31,6 +31,7 @@ export function hierarchyWorkPrompt(definition: WorkflowDefinitionV3, nodeId: st
     'Each child may be selected once. Your reserved continuation receives all selected children\'s deliverables and findings after they settle.',
     'For a single saved work handoff use {"kind":"request","outcome":<saved route>}.',
     'Answer your actual caller with {"kind":"return","requestId":<received request ID>,"outcome":"accepted" or "needs_changes"}.',
+    'A return starts no children and ends your part; when your task needs your children, delegate first and return only from the continuation that receives their results.',
     'Only the Master may finish the workflow with {"kind":"finish"}, after every child obligation settles. Finish never starts unselected children.',
     'Master finish with remaining findings waits for explicit user direction in this same Run.',
     ...(node.artifactOutputs ? [`Also include artifactOutputs with the original publication command IDs for these keys: ${JSON.stringify(node.artifactOutputs.outputKeys)}.`] : []),
