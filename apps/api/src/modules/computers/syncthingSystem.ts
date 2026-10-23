@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { chmod, copyFile, mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,6 +8,7 @@ import { systemPorts } from './accountProbe.js'
 import { createSyncthingAvailability } from './syncthingAvailability.js'
 import { SyncthingConflictScanner } from './syncthingConflictScan.js'
 import { DomainError } from '../errors.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export interface SyncthingPorts {
   prepare(signal?: AbortSignal, assertCurrent?: () => void): Promise<SyncIdentity>
@@ -104,7 +105,7 @@ export function systemSyncthingPorts(environment: NodeJS.ProcessEnv = process.en
     const sums = (await download(`${base}/sha256sum.txt`, signal)).toString('utf8')
     const expected = sums.split('\n').map(line => line.trim().split(/\s+/u))
       .find(parts => parts[1]?.replace(/^\*/u, '') === archiveName)?.[0]
-    if (expected !== createHash('sha256').update(archive).digest('hex')) {
+    if (expected !== sha256Hex(archive)) {
       throw failure('The Syncthing download did not match its published checksum.')
     }
     const scratch = join(tmpdir(), `foreman-syncthing-${randomUUID()}`)

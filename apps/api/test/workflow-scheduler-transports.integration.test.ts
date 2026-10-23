@@ -8,9 +8,10 @@ import { PostgresLocalHumanAccess } from '../src/modules/access/localHuman.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { ScheduleClearResultSchema } from '../src/modules/schedules/transportSchemas.js'
 import { DomainError } from '../src/modules/errors.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
-import { sch11Once, sch11Settings } from './helpers/sch11ClockCases.js'
-import { sch11Actions, sch11DomainState, sch11Fixture, type Sch11Database, type Sch11Fixture } from './helpers/sch11Fixture.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
+import { sch11Once, sch11Settings } from './helpers/scheduleClockCases.js'
+import { sch11Actions, sch11DomainState, sch11Fixture, type Sch11Database, type Sch11Fixture } from './helpers/scheduleFixture.js'
 
 // HTTP/MCP use their real service clock. A far-future Once gives an exact cursor
 // without changing auth clocks or monkey-patching product methods. Deterministic

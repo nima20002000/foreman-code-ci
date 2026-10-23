@@ -14,9 +14,9 @@ import { bindRepeatNodeInput, repeatDigest, repeatExecutionIdentity, repeatSlotI
 import { claudeNativeEvent } from '../src/modules/harnesses/claudeSdk/nativeEvents.js'
 import type { ClaudeDecodedChange } from '../src/modules/harnesses/claudeSdk/normalization.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
-import type { currentDatabase } from './helpers/eng04CurrentDatabase.js'
-import { nim2691TaskDatabase } from './helpers/nim2691Database.js'
-import { graphFixture, graphHeaders, graphRpc, graphRpcValue, ownedGraph } from './eng04-graph-composition-fixture.js'
+import type { currentDatabase } from './helpers/database.js'
+import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
+import { graphFixture, graphHeaders, graphRpc, graphRpcValue, ownedGraph } from './graph-composition-fixture.js'
 
 const occurredAt = '2026-10-04T10:00:00.000Z'
 const executionId = 'native-activity-execution'

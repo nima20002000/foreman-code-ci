@@ -22,9 +22,9 @@ import { PostgresSettingsRepository } from '../src/modules/settings/postgres.js'
 import { buildProductionApp } from '../src/production.js'
 
 it('saves Claude templates through authenticated MCP while unavailable API-key delivery blocks qualification and preserves historical proof', async () => {
-  const connectionString = process.env.HRT_F14_ADMIN_DATABASE_URL
+  const connectionString = process.env.TEST_DATABASE_URL
   if (!connectionString || !['127.0.0.1', 'localhost', '[::1]'].includes(new URL(connectionString).hostname)) {
-    throw new Error('Requires an explicit loopback HRT_F14_ADMIN_DATABASE_URL; only a fresh owned schema is modified.')
+    throw new Error('Requires an explicit loopback TEST_DATABASE_URL; only a fresh owned schema is modified.')
   }
   const admin = new pg.Pool({ connectionString })
   const schema = `hrt_f14_${randomUUID().replaceAll('-', '')}`
@@ -54,7 +54,7 @@ it('saves Claude templates through authenticated MCP while unavailable API-key d
     const access = new PostgresAccessService(pool)
     const writer = await access.issue({ name: 'F14 writer', audience: 'operator', grants: [{ actions: ['harnesses:read', 'harnesses:update'], scope: {} }], expiresAt: new Date(Date.now() + 120_000) })
     const reader = await access.issue({ name: 'F14 reader', audience: 'operator', grants: [{ actions: ['harnesses:read'], scope: {} }], expiresAt: new Date(Date.now() + 120_000) })
-    production = buildProductionApp(config, database, checkpoints, false)
+    production = buildProductionApp({ config, database, checkpoints, logger: false })
     const address = await production.app.listen({ host: '127.0.0.1', port: 0 })
     const connect = async (token: string) => {
       const client = new Client({ name: 'hrt-f14', version: '1' }); clients.push(client)

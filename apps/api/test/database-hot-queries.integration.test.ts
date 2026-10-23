@@ -6,18 +6,19 @@ import { SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
 import { buildApp } from '../src/app.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { databaseHotQueriesMigration } from '../src/infrastructure/databaseHotQueriesMigration.js'
-import { HostCiService, type HostCiComputer, type HostCiEndpoint } from '../src/modules/ci-host/service.js'
+import { HostCiService, type HostCiComputer, type HostCiEndpoint } from '@foreman-code/ci/service'
 import { RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
 import { RunManagementService } from '../src/modules/runs/management.js'
 import { readNativeActivityFacts } from '../src/modules/runs/nativeActivitySnapshot.js'
 import { bindRepeatNodeInput, repeatDigest, repeatExecutionIdentity, repeatSlotId } from '../src/modules/runs/repeatResolution.js'
 import { openRunGraphPublication } from '../src/modules/run-graph/publication.js'
 import { openRepeatCanonicalPublicationLocked, publishRepeatRunStateLocked } from '../src/modules/run-graph/repeatPublication.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import {
   changeRunState, graphFixture, graphHeaders, graphRpc, graphRpcValue, graphUrl, ownedGraph,
-} from './eng04-graph-composition-fixture.js'
+} from './graph-composition-fixture.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 function databaseBeforeHotQueryUpgrade() {
   return currentDatabase({ deferMigration: databaseHotQueriesMigration.version })
@@ -116,7 +117,7 @@ it('upgrades hot query access while preserving native facts, CI revisions and au
       } }
     },
   }
-  const ci = new HostCiService(db.pool, fixture.commands, new RunCiAuthority(db.pool), {} as never, endpoint)
+  const ci = new HostCiService(mainCiContext, db.pool, fixture.commands, new RunCiAuthority(db.pool), {} as never, endpoint)
   const runs = new RunManagementService(db.pool, fixture.commands, {} as never, {} as never, {} as never)
   const app = buildApp({
     readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },

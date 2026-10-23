@@ -1,10 +1,10 @@
-import { createHash } from 'node:crypto'
 import { lstat, readdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { z } from 'zod'
 import { DomainError } from '../errors.js'
 import { readProtectedRuntimeConfiguration, readProtectedRuntimeFile,
-  type InstalledRuntimeConfigurationLocation } from './installedRuntimeConfiguration.js'
+  type InstalledRuntimeConfigurationLocation } from '@foreman-code/contracts/installed-runtime-node'
+import { sha256Hex } from '../../shared/hash.js'
 
 /** Refresh retains protected configurations so accepted jobs can still use their original image and source. */
 export async function findRetainedRuntimeConfiguration<T>(
@@ -26,7 +26,7 @@ export async function findRetainedRuntimeConfiguration<T>(
       return null
     })
     if (!bytes) continue
-    const digest = createHash('sha256').update(bytes).digest('hex')
+    const digest = sha256Hex(bytes)
     if (name !== `job-runtime-${digest}.json`) {
       throw new DomainError('JOB_RUNTIME_CONTEXT_CHANGED', 'A retained runtime configuration changed.', 409)
     }

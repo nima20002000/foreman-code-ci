@@ -37,7 +37,8 @@ import { FileByteStorage } from '../src/modules/files/storage.js'
 import { PostgresOperatorRepository } from '../src/modules/operators/postgres.js'
 import { FILE_RETENTION_PATH, registerFileRetentionRoutes } from '../src/routes/fileRetention.js'
 import { registerFileRoutes } from '../src/routes/files.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 type Credential = Awaited<ReturnType<PostgresAccessService['issue']>>
 type Owner = Credential & { conversationId: string }

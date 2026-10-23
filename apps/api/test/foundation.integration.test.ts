@@ -12,10 +12,11 @@ import { PostgresOperatorRepository } from '../src/modules/operators/postgres.js
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const connectionString = process.env.TEST_DATABASE_URL
 
-describe.skipIf(!connectionString)('HAP-01 durable foundation', () => {
+describe.skipIf(!postgresEnabled)('HAP-01 durable foundation', () => {
   let schema: string
   let admin: pg.Pool
   let pool: pg.Pool

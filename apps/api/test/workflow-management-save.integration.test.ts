@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest'
 import {
   CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveResultSchema, CurrentWorkflowReadResultSchema,
 } from '@foreman-code/contracts/wave25'
-import { graphRpcValue, graphHeaders } from './eng04-graph-composition-fixture.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { graphRpcValue, graphHeaders } from './graph-composition-fixture.js'
+import { postgresEnabled } from './helpers/database.js'
 import { useWorkflowManagementFixture } from './workflowManagement.helpers.js'
 
 describe.skipIf(!postgresEnabled)('Authenticated workflow management save', () => {

@@ -1,5 +1,4 @@
-import { spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { spawnProcess } from '../../shared/process.js'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { BYTE_TRANSFER_POLICY as POLICY, TransferContextSchema, TransferIntentSchema,
@@ -9,6 +8,7 @@ import type { RsyncProcessLaunch, RsyncRemoteWriter } from './rsyncWriterOwnersh
 import type { TransferAuthorization, TransferOperation } from './service.js'
 import { componentLogger } from '../diagnostics/logger.js'
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 const log = componentLogger('byte-transfer')
 
@@ -102,7 +102,7 @@ export class NodeRsyncExecutor implements RsyncExecutor {
     if (!command.owner && (command.args.includes('--partial') || command.args[0] === '--server')) throw new Error('Rsync byte subprocess owner unavailable')
     const child = command.owner
       ? await command.owner.ownership.spawnProcess(command.owner, command.executable, command.args, signal)
-      : spawn(command.executable, command.args, { shell: false, detached: true,
+      : spawnProcess(command.executable, command.args, { shell: false, detached: true,
         stdio: ['ignore', 'pipe', 'pipe'], env: { PATH: '/usr/bin:/bin', LANG: 'C' } })
     return new Promise((resolve, reject) => {
       let output = '', overflow = false, killTimer: ReturnType<typeof setTimeout> | undefined
@@ -172,7 +172,7 @@ export async function verifyRsyncBinaries(endpoint: RsyncEndpoint, executor: Rsy
       throw new Error('Rsync security qualification requires upstream 3.5.0 or newer')
     }
   }
-  if (createHash('sha256').update(await readFile(endpoint.localBinary)).digest('hex') !== endpoint.localBinarySha256
+  if (sha256Hex(await readFile(endpoint.localBinary)) !== endpoint.localBinarySha256
     || !remote.includes(`${endpoint.remoteBinarySha256}  ${endpoint.remoteBinary}\n`)) throw new Error('Rsync binary changed')
   return { local, remote }
 }

@@ -16,6 +16,7 @@ import { PostgresFoundationSettingsRepository } from '../src/modules/settings/fo
 import { FoundationSettingsManagementService } from '../src/modules/settings/management.js'
 import { buildApp } from '../src/app.js'
 import { registerOperatorChatFixture, type OperatorChatFixture, claudeConfiguration, prepareClaudeProfile, ChatManager, waitFor } from './helpers/operatorChatFixture.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const connectionString = process.env.TEST_DATABASE_URL
 
@@ -33,7 +34,7 @@ registerOperatorChatFixture(fixture => {
   ({ pool, access, owner, operators, repository, manager, authority, chat, runtimeDirectory } = fixture)
 }, () => chat)
 
-describe.skipIf(!connectionString)('Operator chat persistence and native binding with stubbed authority', () => {
+describe.skipIf(!postgresEnabled)('Operator chat persistence and native binding with stubbed authority', () => {
   it('projects accepted models through authenticated MCP and history without changing immutable turn or message facts', async () => {
     const writer = await access.issue({ name: 'Accepted model reader', audience: 'operator',
       grants: [{ actions: ['operator_chat:read', 'operator_chat:write'], scope: {} }], expiresAt: new Date(Date.now() + 60_000) })

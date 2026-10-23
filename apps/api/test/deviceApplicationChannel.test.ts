@@ -9,7 +9,7 @@ import { DeviceApplicationChannel, extensionDescriptors, type DeviceExtensionReg
 import { adaptDeviceSocket } from '../src/modules/devices/deviceWire.js'
 import { deriveDispatch, freezePlacement } from '../src/modules/placement/binding.js'
 import { DomainError } from '../src/modules/errors.js'
-import { agentFileReader } from '../src/modules/ci-host/agentFileReader.js'
+import { agentFileReader } from '@foreman-code/ci/agentFileReader'
 import { AGENT_SNAPSHOT_JSON_BYTES, AGENT_SNAPSHOT_NAMESPACE } from '@foreman-code/contracts/source-materialization'
 import { workerConversationFixture } from '../src/modules/conversations/workerFixtures.test-support.js'
 import { DEFAULT_HARNESS_DEFAULTS, type AgentConfigurationVersion } from '@foreman-code/contracts'
@@ -17,6 +17,7 @@ import { RemoteNativeSessionManager } from '../src/modules/runs/remote/nativeMan
 import { RemoteExecutionRpcRequestSchema } from '@foreman-code/contracts/remote-execution-rpc'
 import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-execution'
 import { startNativeHistoryDownload } from '../src/modules/runs/remote/nativeHistoryPage.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 class Socket extends EventEmitter {
   bufferedAmount = 0
@@ -907,7 +908,7 @@ it('retrieves a remote Agent snapshot taking longer than thirty seconds within i
     { maxJsonBytes: AGENT_SNAPSHOT_JSON_BYTES, maxBinaryBytes: 0 }, 600_000, undefined, AGENT_SNAPSHOT_NAMESPACE)
   pair.rawMain.latencyMs = 50
   pair.rawWorker.latencyMs = 50
-  const read = agentFileReader(() => ({
+  const read = agentFileReader(mainCiContext, () => ({
     capabilities: () => pair.main.capabilities(),
     request: (_deviceId, namespace, payload, options) => pair.main.request(namespace, payload, options),
   }))

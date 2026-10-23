@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { RunStartV3InputSchema } from '@foreman-code/contracts/wave25'
 import { runStartSemantics } from '../src/modules/runs/repeatStartDispatch.js'
-import { startFixture } from './eng04-start-fixtures.js'
+import { startFixture } from './start-fixtures.js'
 
 describe('semantics-3 Start discrimination', () => {
   it('accepts explicit semantics 3 as the one current Start family', () => {

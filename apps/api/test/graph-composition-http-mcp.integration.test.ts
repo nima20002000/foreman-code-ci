@@ -3,10 +3,10 @@ import {
   CANONICAL_RUN_GRAPH_MCP_TOOLS, RepeatGraphPageV3Schema, RepeatGraphSnapshotV3Schema,
   reduceRepeatGraphPageV3, type CurrentFixtureForm,
 } from '@foreman-code/contracts/wave25'
-import { currentDatabase as agent3Database, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase as agent3Database, postgresEnabled } from './helpers/database.js'
 import {
   graphFixture, graphUrl, graphHeaders, graphRpc, graphRpcValue, changeRunState, privateCanary,
-  type GraphFixture, type GraphTestDatabase, graphCatalogNames } from './eng04-graph-composition-fixture.js'
+  type GraphFixture, type GraphTestDatabase, graphCatalogNames } from './graph-composition-fixture.js'
 
 /** Real bearer authentication and actual stateless Operator MCP HTTP transport,
  * using the same PostgreSQL/publisher/read service. No mock principal, browser

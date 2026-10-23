@@ -28,14 +28,19 @@ import { registerWorkerMcpInstallation } from '../../../apps/api/src/modules/har
 import { readUpdateRecord } from './updateSupervisor.mjs';
 import { WORKER_UPDATE_NAMESPACE } from '../../../packages/contracts/src/workerUpdate.ts';
 import { runWorkerStartupSmoke, workerCiStartupStatus, runCiInstallSmoke } from './ciInstallSmoke.mjs';
-import { HostCiRunner } from '../../../apps/api/src/modules/ci-host/runner.ts';
+// The Worker's CI context: the host services the API adapter implements, without Main's server ports.
+import { ciPlatform } from '../../../apps/api/src/modules/ci/platform.ts';
+import { createCiContext } from '@foreman-code/ci/environment';
+import { HostCiRunner } from '@foreman-code/ci/runner';
 import { isDeepStrictEqual } from 'node:util';
 import { WorkerArtifactReplySchema, WorkerArtifactManifestSchema } from '../../../packages/contracts/src/workerUpdate.ts';
 import { workerArtifactContentSha256 } from '../../../packages/contracts/src/workerArtifactContentNode.mjs';
 import { workerBundleReadiness, requireWorkerBundleReady } from '../../../apps/api/src/modules/computers/workerBundleReadiness.ts';
 
+const ciContext = createCiContext(ciPlatform);
+
 export function runInstalledCiSmoke(input, { signal } = {}) {
-  return runCiInstallSmoke(input, { runner: new HostCiRunner(), signal });
+  return runCiInstallSmoke(input, { runner: new HostCiRunner(ciContext), signal });
 }
 export { ensurePairedManagedSetup };
 export { refreshWorkflowSelection };
@@ -234,7 +239,7 @@ export async function startConfiguredWorker({ stateDirectory, extensions = [], e
             if (!captured) throw new WorkerError('worker_update_channel_unavailable');
             return captured.request(payload, { timeoutMs: 5000, signal: startupLifetime.signal });
           },
-          smoke: input => runCiInstallSmoke(input, { runner: new HostCiRunner(), signal: startupLifetime.signal }),
+          smoke: input => runCiInstallSmoke(input, { runner: new HostCiRunner(ciContext), signal: startupLifetime.signal }),
         }).then(() => { startupCi.pending = false; updater?.ready(); }, error => {
           startupCi.error = error.message;
           process.stderr.write(`Worker startup CI smoke failed: ${error.message}\n`);

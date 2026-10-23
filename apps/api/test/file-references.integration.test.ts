@@ -32,7 +32,8 @@ import { registerGraphqlMcp } from '../src/mcp/unified/transport.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { FILE_REFERENCE_TOOL_NAMES } from '../src/mcp/operator/tools/fileReferences.js'
 import { FileReferenceReadResultSchema } from '@foreman-code/contracts/files'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
 /** Real credentials, PostgreSQL, disk storage and authenticated /mcp. No harness or paid model. */

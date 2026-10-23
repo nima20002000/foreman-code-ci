@@ -14,7 +14,7 @@ import { currentOperatorIntegration } from './currentOperatorIntegration.js'
 import {
   value, reader, pairedRead, pairedDenial, terminal, startThroughHttp,
   type InspectionMeasurement, type InspectionHarness, type InspectionReader,
-} from './eng05DInspection.js'
+} from './runInspectionBounds.js'
 
 async function pages(f: InspectionHarness, r: InspectionReader, runId: string, measurements: InspectionMeasurement[]) {
   const input = { workspaceId: f.f.scope.workspaceId, runId }

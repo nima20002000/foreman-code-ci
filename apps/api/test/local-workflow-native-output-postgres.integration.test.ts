@@ -5,8 +5,9 @@ import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { LocalWorkflowArtifactAuthority } from '../src/modules/runs/remote/localWorkflowArtifactAuthority.js'
 import { runWorkHandoffWithRestart, workHandoffRuntimeFixture } from './helpers/workHandoffRuntimeFixture.js'
+import { postgresEnabled } from './helpers/database.js'
 
-describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('PostgreSQL local workflow artifact authority', () => {
+describe.skipIf(!postgresEnabled)('PostgreSQL local workflow artifact authority', () => {
   it.each(['artifact context'] as const)(
     'keeps %s reads from locking executions ahead of their Run after acceptance and restart', async boundary => {
     const definition = makeCurrentWorkflowFixture(randomUUID(), 'single')

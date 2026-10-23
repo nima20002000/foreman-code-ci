@@ -1,10 +1,10 @@
-import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
 import { open, readdir, realpath } from 'node:fs/promises'
 import { join, relative, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import type { ClaudePersistedSession } from './port.js'
 import { compactionBlocksSend, type CompactionState } from '@foreman-code/contracts'
+import { sha256Hex } from '../../../shared/hash.js'
 
 export class ClaudeCompactionHistoryUnavailableError extends Error {}
 
@@ -14,8 +14,8 @@ export interface ClaudeCompactionCursor {
   scope: string
 }
 export function claudeSessionScopeHash(session: ClaudePersistedSession) {
-  return createHash('sha256').update(JSON.stringify([session.deviceId, session.profilePath,
-    session.configRevision, session.cwd, session.nativeSessionId])).digest('hex')
+  return sha256Hex(JSON.stringify([session.deviceId, session.profilePath,
+    session.configRevision, session.cwd, session.nativeSessionId]))
 }
 
 /** Read only the admitted session's native log; no ambient profile or latest-session lookup. */
@@ -39,7 +39,7 @@ export async function readClaudeCompactionHistory(session: ClaudePersistedSessio
       if (relative(projects, canonical).startsWith('..')) throw new Error('Native transcript escaped its profile')
       const info = await file.stat()
       if (!info.isFile()) throw new Error('Native transcript is not a regular file')
-      const identity = createHash('sha256').update(JSON.stringify([canonical,info.dev,info.ino,info.birthtimeMs])).digest('hex')
+      const identity = sha256Hex(JSON.stringify([canonical,info.dev,info.ino,info.birthtimeMs]))
       const scope = claudeSessionScopeHash(session)
       if (cursor && (cursor.identity !== identity || cursor.scope !== scope || cursor.offset > info.size)) {
         throw new Error('The native transcript identity changed during compaction')

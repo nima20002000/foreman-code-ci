@@ -5,6 +5,7 @@ import type { HarnessExecution } from '@foreman-code/contracts'
 import {
   useSettlementFixtures, timeout, finish, failed, handoffs, acceptedActivation, runtime,
 } from './helpers/workflowSettlementTestSupport.js'
+import { postgresEnabled } from './helpers/database.js'
 
 // Native terminals and physical closure are explicit test inputs. Authenticated
 // Save/MCP reads, canonical publication, SQL transactions and settlement execute.
@@ -14,7 +15,7 @@ vi.mock('../src/modules/interactions/repeatNativeSettlement.js', async (importOr
   settleRepeatNativeExecutionWithProofLocked: vi.fn(async () => undefined),
 }))
 
-describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('workflow settlement retry capacity', () => {
+describe.skipIf(!postgresEnabled)('workflow settlement retry capacity', () => {
   const withFixture = useSettlementFixtures()
 
   it.each([false, true])('fails downstream admission after an early retry uses the last slot (restart: %s)', async (restart) => {

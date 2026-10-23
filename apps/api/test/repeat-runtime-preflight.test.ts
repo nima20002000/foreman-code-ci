@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest'
 import { DomainError } from '../src/modules/errors.js'
 import { executeRepeatRuntime, type RepeatRuntimeLifecycle } from '../src/modules/runs/repeatRuntime.js'
-import { a1Scenario, graphHarness } from './helpers/eng04A1GraphHarness.js'
+import { a1Scenario, graphHarness } from './helpers/graphScenarioHarness.js'
 
 function fixture() {
   const graph = graphHarness(a1Scenario('single', 'preflight-recovery'))

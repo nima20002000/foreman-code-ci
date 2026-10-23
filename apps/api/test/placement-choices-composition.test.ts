@@ -58,7 +58,7 @@ beforeEach(async () => {
   })
   denied = vi.spyOn(PostgresCommandCoordinator.prototype, 'recordDenied').mockResolvedValue(undefined)
   discover = vi.spyOn(ProductionPlacementChoiceDiscovery.prototype, 'list').mockResolvedValue({ choices: [choice], pending: false, unavailableComputers: [] })
-  production = buildProductionApp(config, database, checkpoints, false)
+  production = buildProductionApp({ config, database, checkpoints, logger: false })
   address = await production.app.listen({ host: '127.0.0.1', port: 0 })
 })
 

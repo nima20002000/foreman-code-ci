@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto'
 import { BYTE_TRANSFER_POLICY, TransferProgressSchema, TransferIntentSchema, VerifiedTransferReceiptSchema,
   type ByteTransferPort, type TransferContext, type TransferIntent, type VerifiedTransferReceipt } from '@foreman-code/contracts/byte-transfer'
+import { sha256Hex } from '../../shared/hash.js'
 
 /** A/C supply only an already sealed immutable source/output snapshot, never a live work-file path. */
 export interface ImmutableTransferSource {
@@ -71,7 +71,7 @@ export class ResumableByteTransferSender {
       const inputBytes = await wait(bounded => this.source.read(intent, offset, length, bounded))
       if (inputBytes.byteLength !== length) throw new Error('Immutable source length changed')
       const bytes = Buffer.from(inputBytes)
-      const sha256 = createHash('sha256').update(bytes).digest('hex')
+      const sha256 = sha256Hex(bytes)
       try {
         check()
         const ack = await wait(async bounded => this.receiver.append(intent.transferId, await this.connection.current(bounded), { offset, sha256, bytes }, bounded))

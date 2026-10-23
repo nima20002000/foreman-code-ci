@@ -5,7 +5,7 @@ import { WorkActivationInputSchema, WorkflowVersionV3Schema, workLimitNoticeText
 import type { GraphSqlClient } from '../src/modules/run-graph/connection.js'
 import { PostgresRepeatReviewerBindings } from '../src/modules/interactions/repeatReviewer.js'
 import { repeatDigest, repeatExecutionIdentity, workActivationSlotId } from '../src/modules/runs/repeatResolution.js'
-import { approvalFixture } from './helpers/wave25ApprovalFixture.js'
+import { approvalFixture } from './helpers/approvalFixture.js'
 
 function fixture() {
   const base = approvalFixture()

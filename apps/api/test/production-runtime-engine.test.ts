@@ -10,7 +10,7 @@ import type { RepeatEngineStartContext } from '../src/modules/runs/repeatStartCo
 import type { RunOwnership } from '../src/modules/runs/ownership.js'
 
 // Engine REGISTRATION/fence tests with explicit recording ports. Actual graph
-// progression lives in eng04-a1-engine-foundation.test.ts. Neither is PG/native proof.
+// progression lives in graph-progression-foundation.test.ts. Neither is PG/native proof.
 const calls = vi.hoisted(() => ({ entries: [] as RepeatEngineStartContext[],
   work: undefined as undefined | ((context: RepeatEngineStartContext) => Promise<void>) }))
 vi.mock('../src/modules/runs/repeatStartComposition.js', () => ({ executeRepeatEngineStart: async (context: RepeatEngineStartContext) => {

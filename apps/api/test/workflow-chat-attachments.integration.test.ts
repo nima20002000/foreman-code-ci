@@ -15,7 +15,7 @@ import { currentOperatorIntegration } from './helpers/currentOperatorIntegration
 import { ControlledWorkflowProvider } from './helpers/controlledWorkflowProvider.js'
 import { hierarchyRuntimeFixture, coordinationOutput } from './helpers/hierarchyRuntimeFixture.js'
 import { workflowChatCall, workflowChatTarget } from './helpers/workflowChatRequests.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { deferred } from './helpers/deferred.js'
 
 describe.skipIf(!postgresEnabled)('workflow chat attachment delivery', () => {

@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 import { useLocation, useNavigate } from '@tanstack/react-router'
-import { MemoryBoardWireSchemas, type MemoryBoardScope, type MemoryCardWorkBinding } from '@foreman-code/contracts'
+import { type MemoryBoardScope, type MemoryCardWorkBinding } from '@foreman-code/contracts'
 import { MemoryBoard } from '../memory-boards/MemoryBoard'
 import { MemoryBoardDialog } from '../memory-boards/MemoryBoardDialog'
 import { createMemoryBoardClient } from '../memory-boards/client'
@@ -9,7 +9,7 @@ import { useLocalHumanAccessQuery } from '../../shared/api/settingsExperience'
 import { useManagedWorkflowQuery } from '../../shared/api/query'
 import { canUseBoardAction } from './permissions'
 
-const client = createMemoryBoardClient(MemoryBoardWireSchemas)
+const client = createMemoryBoardClient()
 
 export function MemoryBoardSurface({ scope, scopeName, dialog }: {
   scope: MemoryBoardScope

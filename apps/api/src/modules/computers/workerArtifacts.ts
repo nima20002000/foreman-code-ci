@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
 import { lstat, open, realpath } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -12,8 +11,9 @@ import { DeviceApplicationError } from '../devices/deviceApplicationError.js'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import type { DeviceExtensionRegistration } from '../devices/deviceApplicationChannel.js'
 import { DomainError } from '../errors.js'
+import { sha256Hex } from '../../shared/hash.js'
 
-const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
+const sha256 = (bytes: Uint8Array) => sha256Hex(bytes)
 
 function sameTarget(left: WorkerArtifactTarget, right: WorkerArtifactTarget) {
   return left.os === right.os && left.osRelease === right.osRelease && left.arch === right.arch

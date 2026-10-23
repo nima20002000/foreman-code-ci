@@ -9,11 +9,12 @@ import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { WorkflowScheduleDispatcher } from '../src/modules/schedules/dispatcher.js'
 import { ScheduleOccurrencePageSchema } from '../src/modules/schedules/transportSchemas.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import {
   sch11Actions, sch11DomainState, sch11Fixture,
   type Sch11Database, type Sch11Fixture,
-} from './helpers/sch11Fixture.js'
+} from './helpers/scheduleFixture.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
 type Mode = ScheduleConfiguration['mode']

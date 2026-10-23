@@ -55,5 +55,21 @@ export default tseslint.config(
     ],
     rules: { 'no-control-regex': 'off' },
   },
+  {
+    // Shared helpers: one-shot SHA-256 digests go through src/shared/hash.ts (incremental hashing keeps createHash),
+    // and child processes start only through src/shared/process.ts. CI keeps its own until it is a separate service.
+    files: ['src/**/*.ts'],
+    ignores: ['src/modules/ci/**', '**/*.test.ts', '**/*.test-support.ts', '**/__tests__/**'],
+    rules: {
+      'no-restricted-syntax': ['error',
+        { selector: "CallExpression[callee.property.name='digest'] > MemberExpression.callee > CallExpression.object[callee.property.name='update'] > MemberExpression.callee > CallExpression.object[callee.name='createHash'][arguments.0.value='sha256']",
+          message: 'Use sha256Hex/sha256Digest/sha256CanonicalJsonHex from src/shared/hash.ts.' },
+      ],
+      'no-restricted-imports': ['error', { paths: ['node:child_process', 'child_process'].map(name => ({ name, allowTypeImports: true,
+        message: 'Start child processes through src/shared/process.ts (runProcess, runProcessSettled, spawnProcess, forkProcess).' })) }],
+    },
+  },
+  { files: ['src/shared/hash.ts'], rules: { 'no-restricted-syntax': 'off' } },
+  { files: ['src/shared/process.ts'], rules: { 'no-restricted-imports': 'off' } },
   ...foremanLint(import.meta.dirname),
 )

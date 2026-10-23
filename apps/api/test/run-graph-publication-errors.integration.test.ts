@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 import { openRunGraphPublication, graphSourceDigest } from '../src/modules/run-graph/publication.js'
 import { readPublicProjectionLocked } from '../src/modules/run-graph/compactSnapshot.js'
 import { readOperationalFailures } from '../src/modules/diagnostics/logger.js'
-import { checkpointRuntimeFixture } from './helpers/wave25Br1003Runtime.js'
+import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
 
 it.each([
   new TypeError('Publication projection failed'),

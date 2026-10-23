@@ -5,7 +5,7 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { makeCurrentWorkflowFixture, WorkActivationInputSchema } from '@foreman-code/contracts/wave25'
 import { isWorkflowStart } from '../src/modules/harnesses/sessionStart.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 it.runIf(postgresEnabled)('keeps linked parent work Doing until its required child return commits', async () => {
   const fixture = makeCurrentWorkflowFixture(randomUUID(), 'sequential')

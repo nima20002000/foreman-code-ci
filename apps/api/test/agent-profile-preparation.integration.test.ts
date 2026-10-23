@@ -53,8 +53,7 @@ it('prepares Claude profiles without retaining connections needed by nested prof
       if (resolving === 10) entered.resolve()
       await release.promise
       return { accountId, homePath: home, authMode: 'subscription' }
-    } })
-    accounts.bindProfiles(profiles)
+    } }, profiles)
     Object.assign(f.services, { agents: new AgentManagementService(f.pool), extensions: {
       agents: new OperatorAgentMutationService(f.pool, f.commands, {
         qualifyConfiguration: async () => { throw new Error('Expected saved profile qualification') },

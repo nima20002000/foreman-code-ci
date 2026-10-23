@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { nativeCorrelationProvidersMigration } from '../src/infrastructure/nativeCorrelationProvidersMigration.js'
-import { checkpointRuntimeFixture } from './helpers/wave25Br1003Runtime.js'
+import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
 
 it('upgrades existing native correlations for Claude while preserving historical providers and rejecting unknown ones', async () => {
   const f = await checkpointRuntimeFixture()

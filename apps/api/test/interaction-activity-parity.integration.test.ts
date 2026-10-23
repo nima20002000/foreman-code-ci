@@ -7,7 +7,7 @@ import { OperatorInteractionService } from '../src/modules/interactions/operator
 import { routedApprovalFixture } from './helpers/routedApprovalFixture.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import { PostgresWorkspaceRepository } from '../src/modules/workspaces/postgres.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 /** Uses the existing production native/reviewer factory seam and original-source PostgreSQL approval writer.
  * Provider transport remains recorded fixtures; this is not live provider qualification. */

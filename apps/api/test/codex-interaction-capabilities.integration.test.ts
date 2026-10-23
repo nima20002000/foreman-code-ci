@@ -5,7 +5,7 @@ import { CODEX_INTERACTION_SUPPORT } from '@foreman-code/contracts'
 import { HarnessCatalogEntrySchema, HarnessCatalogResultSchema } from '@foreman-code/contracts/management'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('Codex interaction capability readback', () => {
   it('agrees through authenticated HTTP and Operator MCP and denies a caller without harness grants', async () => {

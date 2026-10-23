@@ -6,11 +6,11 @@ import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { RunManagementService } from '../src/modules/runs/management.js'
 import { createCurrentNativeProductionFactory } from '../src/modules/runs/workflowProduction.js'
-import { graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { codexApprovalRuntime } from './helpers/codexApprovalRuntime.js'
 import { readUntil } from './helpers/observableCondition.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.runIf(postgresEnabled)('idle interval Run lifetime', () => {
   it.each([false, true])('checks after graph settlement and restart until MCP Stop (handoffs=%s)', async (handoffs) => {

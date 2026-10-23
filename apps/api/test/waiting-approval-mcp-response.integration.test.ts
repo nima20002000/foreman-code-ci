@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { expect, it, vi } from 'vitest'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { approvalResponse } from './helpers/eng06ApprovalFaults.js'
+import { approvalResponse } from './helpers/approvalFaults.js'
 import { respondWaitingApproval } from './helpers/respondWaitingApproval.js'
 
 it('delivers once through a scoped MCP caller and reads back the response after retry', async () => {

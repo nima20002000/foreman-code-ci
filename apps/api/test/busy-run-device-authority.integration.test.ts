@@ -11,7 +11,8 @@ import type { DeviceExtensionRegistration } from '../src/modules/devices/deviceA
 import { deviceApplicationFailure } from '../src/modules/devices/deviceApplicationError.js'
 import { createFixtureSchema, dropFixtureSchema } from './helpers/testResources.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 // Placement, device registration and Operator authority are other domains; this file holds real
 // PostgreSQL row locks on the Run's own rows, exactly where a busy Run owner holds them.

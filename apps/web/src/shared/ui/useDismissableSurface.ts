@@ -1,4 +1,5 @@
 import { useEffect, useRef, type RefObject } from 'react'
+import { useOutsidePress } from './useOutsidePress'
 
 export type SurfaceDismissReason = 'escape' | 'outside' | 'exclusive'
 
@@ -66,29 +67,21 @@ export function useDismissableSurface({
       onDismissRef.current('escape')
     }
 
-    const closeOnOutsidePress = (event: MouseEvent) => {
-      const target = event.target
-      if (!(target instanceof Node)) return
-      if (target instanceof Element && target.closest('dialog[open][aria-modal="true"]')) return
-      // Let navigation and panel triggers own the destination of a leave decision.
-      if (target instanceof Element && target.closest('a[href], button[aria-haspopup="dialog"]')) return
-      if (surfaceRef.current?.contains(target)) return
-      if (triggerRef?.current?.contains(target)) return
-      onDismissRef.current('outside')
-      window.setTimeout(() => {
-        const active = document.activeElement
-        if (active && active !== document.body && active !== document.documentElement) return
-        triggerRef?.current?.focus()
-      }, 0)
-    }
-
     window.addEventListener('keydown', closeOnEscape)
-    // Capture is required for surfaces anchored inside canvases such as React
-    // Flow, which may stop bubbling pointer events before they reach document.
-    document.addEventListener('mousedown', closeOnOutsidePress, true)
-    return () => {
-      window.removeEventListener('keydown', closeOnEscape)
-      document.removeEventListener('mousedown', closeOnOutsidePress, true)
-    }
-  }, [dismissOnEscape, open, surfaceRef, triggerRef])
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [dismissOnEscape, open])
+
+  // Capture (the default) is required for surfaces anchored inside canvases such as React
+  // Flow, which may stop bubbling pointer events before they reach document.
+  useOutsidePress(open, (target) => !!(target instanceof Element && (target.closest('dialog[open][aria-modal="true"]')
+    // Let navigation and panel triggers own the destination of a leave decision.
+    || target.closest('a[href], button[aria-haspopup="dialog"]')))
+    || !!surfaceRef.current?.contains(target) || !!triggerRef?.current?.contains(target), () => {
+    onDismissRef.current('outside')
+    window.setTimeout(() => {
+      const active = document.activeElement
+      if (active && active !== document.body && active !== document.documentElement) return
+      triggerRef?.current?.focus()
+    }, 0)
+  }, { event: 'mousedown' })
 }

@@ -1,10 +1,9 @@
-import { createHash } from 'node:crypto'
-import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { DomainError } from '../errors.js'
 import type { BrowserSnapshotIdentity } from './types.js'
+import { sha256CanonicalJsonHex } from '../../shared/hash.js'
 
 export function browserInputHash(value: unknown): string {
-  return createHash('sha256').update(canonicalJson(value)).digest('hex')
+  return sha256CanonicalJsonHex(value)
 }
 
 export function sameBrowserSnapshot(left: BrowserSnapshotIdentity | null, right: BrowserSnapshotIdentity | null): boolean {

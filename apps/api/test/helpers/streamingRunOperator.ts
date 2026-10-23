@@ -8,7 +8,7 @@ import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.
 import { OperatorInteractionService } from '../../src/modules/interactions/operator.js'
 import { RunManagementService } from '../../src/modules/runs/management.js'
 import { createCurrentNativeProductionFactory } from '../../src/modules/runs/workflowProduction.js'
-import type { checkpointRuntimeFixture } from './wave25Br1003Runtime.js'
+import type { checkpointRuntimeFixture } from './checkpointRuntime.js'
 
 export async function streamingOperator(f: Awaited<ReturnType<typeof checkpointRuntimeFixture>>) {
   const access = new PostgresAccessService(f.db.pool)

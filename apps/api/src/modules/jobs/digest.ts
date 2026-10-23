@@ -1,6 +1,5 @@
-import { createHash } from 'node:crypto'
-import { canonicalJson } from '@foreman-code/contracts/canonical-json'
+import { sha256CanonicalJsonHex } from '../../shared/hash.js'
 
 export function jobDigest(value: unknown): string {
-  return createHash('sha256').update(canonicalJson(value)).digest('hex')
+  return sha256CanonicalJsonHex(value)
 }

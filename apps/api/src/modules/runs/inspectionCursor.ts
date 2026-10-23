@@ -1,10 +1,10 @@
-import { createHash } from 'node:crypto'
 import { DomainError } from '../errors.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export interface ExecutionPagePosition { createdAt: string; executionId: string }
 type Kind = 'executions' | 'bindings'
 const invalid = () => new DomainError('RUN_INSPECTION_CURSOR_INVALID', 'The cursor is invalid for this exact inspection scope and filters.', 400)
-const key = (scope: readonly unknown[]) => createHash('sha256').update(JSON.stringify(scope)).digest('hex')
+const key = (scope: readonly unknown[]) => sha256Hex(JSON.stringify(scope))
 function encode(kind: Kind, scope: readonly unknown[], position: unknown): string {
   return Buffer.from(JSON.stringify({ version: 1, kind, scope: key(scope), position }), 'utf8').toString('base64url')
 }

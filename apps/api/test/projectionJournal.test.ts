@@ -5,7 +5,7 @@ import { openRunGraphPublication, type RunGraphPublication } from '../src/module
 import { requireRepeatCanonicalReceiptBeforeCommit } from '../src/modules/run-graph/repeatReceipts.js'
 import { readRepeatGraphCurrent, readRepeatGraphPage } from '../src/modules/run-graph/repeatReader.js'
 import { assertRepeatGraphCommittedState } from '../src/modules/run-graph/repeatProjectionProof.js'
-import { ProjectionDatabase, projectionScope, projectionDigest, occurrenceFact, publicationInput } from './eng04-projection-fixture.js'
+import { ProjectionDatabase, projectionScope, projectionDigest, occurrenceFact, publicationInput } from './projection-fixture.js'
 
 async function database() { const db = new ProjectionDatabase(); await db.initialize(); return db }
 const domainSources = (db: ProjectionDatabase) => db.state.sources.filter((row) => row.source_kind === 'input_binding')

@@ -14,7 +14,7 @@ import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresDeviceAccessService } from '../src/modules/devices/access.js'
 import { buildProductionApp } from '../src/production.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 
 const origin = 'http://127.0.0.1:5173'
 const browserHeaders = { host: '127.0.0.1:3000', origin }
@@ -44,8 +44,8 @@ async function fixture() {
   }
   try {
     await checkpoints.setup()
-    const build = () => buildProductionApp(config, { pool: db.pool, ping: async () => { await db.pool.query('select 1') },
-      migrate: () => applyApplicationMigrations(db.pool), close: async () => {} }, checkpoints, false)
+    const build = () => buildProductionApp({ config, database: { pool: db.pool, ping: async () => { await db.pool.query('select 1') },
+      migrate: () => applyApplicationMigrations(db.pool), close: async () => {} }, checkpoints, logger: false })
     production = build()
     await production.initialize()
     const app = production.app

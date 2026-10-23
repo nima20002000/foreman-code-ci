@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll } from 'vitest'
 import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { migratedDatabase } from './migratedDatabase.js'
-import { checkpointRuntimeFixture } from './wave25Br1003Runtime.js'
+import { checkpointRuntimeFixture } from './checkpointRuntime.js'
 
 export function workflowConcurrencyFixture() {
   let database: Awaited<ReturnType<typeof migratedDatabase>> | undefined

@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto'
 import { DomainError } from '../errors.js'
 import { SOURCE_ENTRY_LIMIT, SOURCE_MANIFEST_MAX_BYTES, SourceManifestSchema, type SourceManifest, type SourceEntry } from '@foreman-code/contracts/source-materialization'
+import { sha256Hex } from '../../shared/hash.js'
 
 export class SourceError extends DomainError {
   constructor(code: string, message: string, options?: ErrorOptions) {
@@ -29,7 +29,7 @@ export function sourcePath(path: string): string {
   }
   return path
 }
-export function sourceSha256(bytes: Uint8Array): string { return createHash('sha256').update(bytes).digest('hex') }
+export function sourceSha256(bytes: Uint8Array): string { return sha256Hex(bytes) }
 export function manifestDigest(manifest: Omit<SourceManifest, 'manifestDigest'>): string {
   // Fixed construction order is part of v1; caller JSON property order is irrelevant.
   return sourceSha256(Buffer.from(JSON.stringify({ version: manifest.version, snapshotId: manifest.snapshotId,

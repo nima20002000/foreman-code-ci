@@ -10,7 +10,7 @@ import { ExecutionReadinessService } from '../src/modules/harnesses/executionRea
 import { NativeRollout } from '../src/modules/harnesses/nativeRollout.js'
 import { PostgresSettingsRepository } from '../src/modules/settings/postgres.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { buildApp } from '../src/app.js'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { initializeNativeDefaults } from '../src/modules/harnesses/initializeDefaults.js'

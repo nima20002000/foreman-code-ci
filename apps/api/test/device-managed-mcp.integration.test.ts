@@ -38,7 +38,7 @@ it('applies paired-device MCP through authenticated Operator MCP with denial, re
   const device = new DeviceManagedMcp(pool, mainId, () => endpoint, commands)
   const mcp = new HarnessMcpSettingsService(pool, commands, { codex: { read: async () => { throw new Error('Main must not be inspected') },
       apply: async () => { throw new Error('Main must not be changed') } } }, () => {},
-    async () => {}, 'https://app.test/mcp', device)
+    async () => {}, 'https://app.test/mcp', () => device)
   const app = buildApp({ logger: false,
     readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
     operator: { access, services: { commands, harnessSettings: { mcp, directories: {} }, extensions: { workspace: {} } } as unknown as OperatorServices } })

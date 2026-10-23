@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildComputerPriorityMigration } from '../src/infrastructure/buildComputerPriorityMigration.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const mainA = '11111111-1111-4111-8111-111111111111'
 const mainB = '22222222-2222-4222-8222-222222222222'

@@ -12,7 +12,7 @@ import { registerApprovalCheckpointResume } from '../src/modules/runs/approvalCh
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import { PostgresWorkspaceRepository } from '../src/modules/workspaces/postgres.js'
 import { codexWorkflowRuntime } from './helpers/codexWorkflowRuntime.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { calls, until } from './fixtures/codex-test-helpers.js'
 
 describe.skipIf(!postgresEnabled)('Codex workflow input delivery through authenticated MCP', () => {

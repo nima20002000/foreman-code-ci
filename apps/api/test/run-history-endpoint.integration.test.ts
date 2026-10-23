@@ -7,7 +7,7 @@ import { buildApp } from '../src/app.js'
 import { RunManagementService } from '../src/modules/runs/management.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { currentRunHistory } from './helpers/currentRunHistory.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 /** Real HTTP/Streamable MCP, live bearer grants and typed persisted V3 facts.
  * This is read parity; no provider or execution completion is simulated. */
@@ -33,7 +33,7 @@ describe.skipIf(!postgresEnabled)('saved current Run HTTP/MCP parity', () => {
     address = await app.listen({ host: '127.0.0.1', port: 0 })
   }, 60000)
   afterAll(async () => {
-    for (const client of clients) await client.close().catch(() => undefined)
+    for (const client of clients) await client.close().catch(() => /* ignore: best-effort cleanup; the test outcome is already decided */ undefined)
     await app?.close(); await fixture?.db.close()
   })
   const input = () => ({ workspaceId: fixture.run.workspaceId, runId: fixture.run.id })

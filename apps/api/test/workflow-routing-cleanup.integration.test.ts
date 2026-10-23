@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import { RUN_INSPECTION_TOOLS, RunRecordDetailSchema } from '@foreman-code/contracts/wave25'
-import { scenarioFixture } from './helpers/eng07BScenarios.js'
-import { runPath, scenarioHarness } from './helpers/eng07BHarness.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { scenarioFixture } from './helpers/scenarioFixtures.js'
+import { runPath, scenarioHarness } from './helpers/scenarioHarness.js'
+import { postgresEnabled } from './helpers/database.js'
 import { DomainError } from '../src/modules/errors.js'
 
 describe.skipIf(!postgresEnabled)('routing workflow cleanup', () => {

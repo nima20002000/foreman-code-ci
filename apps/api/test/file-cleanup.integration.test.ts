@@ -30,8 +30,10 @@ import { readFileRetentionSnapshot } from '../src/modules/files/retentionSnapsho
 import { TemporaryFileService } from '../src/modules/files/service.js'
 import { FileByteStorage } from '../src/modules/files/storage.js'
 import { PostgresOperatorRepository } from '../src/modules/operators/postgres.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { deferred } from './helpers/deferred.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 type Credential = Awaited<ReturnType<PostgresAccessService['issue']>>
 type Owner = Credential & { conversationId: string }
@@ -58,9 +60,9 @@ describe.skipIf(!postgresEnabled)('FIL-04 temporary cleanup integration', () => 
       if ((await database.pool.query('select 1 from application_migrations where version=$1', [migration.version])).rowCount) continue
       const client = await database.pool.connect()
       try {
-        await client.query('begin'); await client.query(migration.sql)
-        await client.query('insert into application_migrations(version) values($1)', [migration.version]); await client.query('commit')
-      } catch (error) { await client.query('rollback'); throw error } finally { client.release() }
+        await beginTransaction(client); await client.query(migration.sql)
+        await client.query('insert into application_migrations(version) values($1)', [migration.version]); await commitTransaction(client)
+      } catch (error) { await rollbackTransaction(client); throw error } finally { client.release() }
     }
     access = new PostgresAccessService(database.pool)
     retention = new FileRetentionService(database.pool, new PostgresCommandCoordinator(database.pool))
@@ -254,11 +256,11 @@ describe.skipIf(!postgresEnabled)('FIL-04 temporary cleanup integration', () => 
       await assert.rejects(files.withAllocation(who.principal.id, selected.requestId, async () => undefined), { code: 'FILE_UPLOAD_BUSY' })
       const checking = await database.pool.connect()
       try {
-        await checking.query('begin')
+        await beginTransaction(checking)
         const acquired = await checking.query<{ locked: boolean }>('select pg_try_advisory_xact_lock(hashtextextended($1,273640)) as locked', [who.principal.id])
         assert.equal(acquired.rows[0]!.locked, false, 'FIL-40 save must not race the physical deletion')
       } finally {
-        try { await checking.query('rollback') } finally { checking.release() }
+        try { await rollbackTransaction(checking) } finally { checking.release() }
       }
     } finally { release.resolve(); await first }
     await missing(stored)
@@ -283,7 +285,7 @@ describe.skipIf(!postgresEnabled)('FIL-04 temporary cleanup integration', () => 
       const blockerPid = (await blocker.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
       saving = retention.save(who.principal, 'http', { commandId: 'fil04-extension-race', expectedRevision: 1,
         durationSeconds: 7200, applyToExisting: true })
-      void saving.catch(() => undefined)
+      void saving.catch(() => /* ignore: marks the promise handled; the test awaits it below */ undefined)
       const waiting = await readUntil(async () => {
         return (await database.pool.query<{ waiting: boolean }>(`select exists(select 1 from pg_stat_activity
           where $1::int=any(pg_blocking_pids(pid)) and wait_event_type='Lock') as waiting`, [blockerPid])).rows[0]!.waiting
@@ -331,7 +333,7 @@ describe.skipIf(!postgresEnabled)('FIL-04 temporary cleanup integration', () => 
     }
     const paused = new TemporaryFileService(files, new PausedBytes(storageRoot, MAX_FILE_BYTES), authorization)
     const reading = paused.download(who.principal, target(who), pins(stored))
-    void reading.catch(() => undefined)
+    void reading.catch(() => /* ignore: marks the promise handled; the test awaits it below */ undefined)
     await verified.promise
     try {
       await save(who, 3600, true)

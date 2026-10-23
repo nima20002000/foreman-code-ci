@@ -8,7 +8,7 @@ import type { ArtifactPublicationAuthority, VerifiedArtifactReader } from './dis
 import type { AcceptedArtifactAttemptFence } from './distributed/authorization.js'
 vi.mock('../../routes/files.js', () => ({ registerFileRoutes: vi.fn() }))
 vi.mock('../../routes/fileReferences.js', () => ({ registerFileReferenceRoutes: vi.fn() }))
-vi.mock('./tools/production.js', () => ({ registerProductionFileTools: vi.fn() }))
+vi.mock('./tools/production.js', () => ({ createProductionFileTools: vi.fn() }))
 import { registerProductionFileStorage, createProductionDistributedArtifacts } from './production.js'
 function ports() {
   // No hooks, database calls or native process are run by this composition test.

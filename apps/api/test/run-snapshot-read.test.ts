@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type pg from 'pg'
-import { sharedFixture } from './eng04-shared-fixture.js'
+import { sharedFixture } from './shared-repeat-fixture.js'
 import { ExclusiveGraphConnection, type GraphTransactionSql } from '../src/modules/run-graph/connection.js'
 import {
   readAcceptedRepeatRunSnapshot, readRecordedRepeatRunSnapshot, type AcceptedRepeatRunSnapshot,

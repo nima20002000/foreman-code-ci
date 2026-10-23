@@ -5,7 +5,7 @@ import { DomainError } from '../src/modules/errors.js'
 import { nextIntervalCheckAt } from '../src/modules/runs/intervalChecks.js'
 import { executeRepeatRuntime, type RepeatRuntimeLifecycle } from '../src/modules/runs/repeatRuntime.js'
 import type { RepeatTickAdmission } from '../src/modules/runs/repeatPostgres.js'
-import { a1Scenario, graphHarness } from './helpers/eng04A1GraphHarness.js'
+import { a1Scenario, graphHarness } from './helpers/graphScenarioHarness.js'
 
 it('continues checks past the former history limit', () => {
   const facts = { openId: null, openTick: null, graphOpen: false,

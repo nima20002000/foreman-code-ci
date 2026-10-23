@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { readCurrentRunDetails } from '../src/modules/runs/currentRead.js'
 import { currentRunHistory } from './helpers/currentRunHistory.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('persisted current Run history pins', () => {
   let f: Awaited<ReturnType<typeof currentRunHistory>>

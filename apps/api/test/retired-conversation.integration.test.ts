@@ -19,7 +19,8 @@ import { NativeResponseJournal } from '../src/modules/harnesses/recovery/respons
 import { NativeHarnessFactories } from '../src/modules/harnesses/runtimeFactory.js'
 import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('Retired Operator conversation history', () => {
   let database: Awaited<ReturnType<typeof agent3Database>>

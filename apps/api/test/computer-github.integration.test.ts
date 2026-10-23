@@ -14,7 +14,8 @@ import { probeComputerAccounts, type AccountProbePorts } from '../src/modules/co
 import { ComputerAccountsService } from '../src/modules/computers/accounts.js'
 import { ComputerGitHubService } from '../src/modules/computers/github.js'
 import { GitHubLoginRunner } from '../src/modules/computers/githubLogin.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 it.skipIf(!postgresEnabled).each(['structured', 'text'])('verifies GitHub accounts through MCP with %s status', async format => {
   const database = await agent3Database()

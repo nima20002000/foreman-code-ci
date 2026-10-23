@@ -18,7 +18,7 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { ComputerMaintenance, type MaintenancePorts } from '../src/modules/computers/maintenance.js'
 import { fakeComputer } from './helpers/fleetSync.js'
 import { FleetMaintenanceService } from '../src/modules/computers/fleet.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 
 const initialStatus = (): MaintenanceStatus => ({
   observedAt: new Date().toISOString(),

@@ -30,7 +30,7 @@ import { workflowFileContextSessionMigration } from './workflowFileContextSessio
 import { nativeBatchReadMigration } from './nativeBatchReadMigration.js'
 import { withTransaction } from './transaction.js'
 import { checkpointOwnerMigration } from './checkpointOwnerMigration.js'
-import { errorMessage } from '../shared/errorMessage.js'
+import { errorMessage } from '@foreman-code/contracts/server-kit'
 import { providerAccountsMigration, providerAccountObservationsMigration } from '../modules/provider-accounts/migration.js'
 import { nativeProofSourceLimitMigration } from './nativeProofSourceLimitMigration.js'
 import { nativeActivityNoiseMigration } from './nativeActivityNoiseMigration.js'
@@ -1032,7 +1032,7 @@ export const migrations = [
   workReturnGroupMigration,
   workReturnNodeGroupingMigration,
   ciActivityRequesterLookupMigration,
-  { ...workflowHierarchyMigration, version: 2026102100 },
+  workflowHierarchyMigration,
   hierarchyGroupsMigration,
   hierarchyDirectionMigration,
   workflowCollaborationMigration,
@@ -1042,12 +1042,12 @@ export const migrations = [
   workflowChatIndexMigration,
   hierarchyFeedbackMigration,
   hierarchyAdmissionMigration,
-  { ...workflowChatMigration, version: 2026102120 },
+  workflowChatMigration,
   conversationCredentialsMigration,
-  { ...browserProfilesMigration, version: 2026102122 },
-  { ...workflowChatNotificationsMigration, version: 2026102123 },
-  { version: 2026102124, ...memoryBoardsMigration },
-  { ...memoryWorkIndexesMigration, version: 2026102125 },
+  browserProfilesMigration,
+  workflowChatNotificationsMigration,
+  memoryBoardsMigration,
+  memoryWorkIndexesMigration,
   memoryRepeatDecisionMigration,
   workflowKanbanMigration,
   memoryWaitingForUserMigration,
@@ -1058,12 +1058,30 @@ export const migrations = [
   workReplyRequestMigration,
 ] as const
 
+/**
+ * The array order above is the order of record: pending migrations run in that order, never sorted by version, and
+ * a deployed database records each applied version in `application_migrations`. Never change an existing entry's
+ * SQL or version. The first LEGACY_UNORDERED_MIGRATIONS entries were registered before versions had to increase;
+ * every later entry must have a version greater than all earlier ones, so append new migrations at the end.
+ */
+export const LEGACY_UNORDERED_MIGRATIONS = 196
+/** `application_migrations.version` is a PostgreSQL integer. */
+const MAX_MIGRATION_VERSION = 2_147_483_647
+
 export function assertMigrationVersions(entries: readonly { version: number }[]): void {
   const versions = new Set<number>()
-  for (const { version } of entries) {
+  let highest = -Infinity
+  entries.forEach(({ version }, index) => {
+    if (!Number.isInteger(version) || version < 1 || version > MAX_MIGRATION_VERSION) {
+      throw new Error(`Application migration version ${version} must be a positive PostgreSQL integer.`)
+    }
     if (versions.has(version)) throw new Error(`Duplicate application migration version: ${version}`)
+    if (index >= LEGACY_UNORDERED_MIGRATIONS && version <= highest) {
+      throw new Error(`Application migration ${version} must have a version greater than ${highest}; append new migrations with increasing versions.`)
+    }
     versions.add(version)
-  }
+    highest = Math.max(highest, version)
+  })
 }
 
 export async function applyApplicationMigrations(pool: pg.Pool): Promise<void> {

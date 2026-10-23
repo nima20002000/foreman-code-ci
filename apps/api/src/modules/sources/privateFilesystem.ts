@@ -1,9 +1,9 @@
 import { constants, readFileSync, type BigIntStats } from 'node:fs'
-import { spawn } from 'node:child_process'
 import { open, mkdir, lstat, realpath, type FileHandle } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { SourceError } from './manifest.js'
 import { DomainError } from '../errors.js'
+import { flockOpenFile } from '../../shared/fileLock.js'
 
 export const directoryFlags = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW
 export function anchored(handle: FileHandle, name = ''): string { return `/proc/self/fd/${handle.fd}${name ? `/${name}` : ''}` }
@@ -11,22 +11,10 @@ export function anchored(handle: FileHandle, name = ''): string { return `/proc/
 /** The inherited open file description keeps the lock after flock exits, until its final holder closes. */
 export async function lockOpenFile(file: FileHandle,
   options: { nonBlocking?: boolean; signal?: AbortSignal | undefined } = {}): Promise<boolean> {
-  options.signal?.throwIfAborted()
-  return new Promise((resolve, reject) => {
-    const child = spawn('/usr/bin/flock', ['--exclusive', ...(options.nonBlocking ? ['--nonblock'] : []), '3'], {
-      stdio: ['ignore', 'ignore', 'ignore', file.fd],
-      ...(options.signal ? { signal: options.signal } : {}),
-    })
-    let failure: Error | undefined
-    child.once('error', error => { failure = error })
-    child.once('close', code => {
-      if (options.signal?.aborted) reject(options.signal.reason)
-      else if (failure) reject(failure)
-      else if (code === 0) resolve(true)
-      else if (options.nonBlocking && code === 1) resolve(false)
-      else reject(new SourceError('SOURCE_CLAIM_LOCK_FAILED', 'Source ownership serialization failed.'))
-    })
-  })
+  const code = await flockOpenFile(file, options)
+  if (code === 0) return true
+  if (options.nonBlocking && code === 1) return false
+  throw new SourceError('SOURCE_CLAIM_LOCK_FAILED', 'Source ownership serialization failed.')
 }
 
 /** Lock the pinned directory inode across processes, until the guard closes. */

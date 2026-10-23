@@ -4,9 +4,9 @@ import { WorkActivationInputSchema, makeCurrentWorkflowFixture } from '@foreman-
 import { INTERRUPT } from '@langchain/langgraph'
 import { ApprovalPostgresSaver } from '../src/infrastructure/approvalCheckpointSaver.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
-import { checkpointRuntimeFixture } from './helpers/wave25Br1003Runtime.js'
-import { approvalResponse } from './helpers/eng06ApprovalFaults.js'
-import { readCurrentExecutions } from './helpers/wave25Agent3.js'
+import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
+import { approvalResponse } from './helpers/approvalFaults.js'
+import { readCurrentExecutions } from './helpers/workflowDatabase.js'
 
 export function restartCleanup() {
   const closes: Array<() => Promise<void>> = []

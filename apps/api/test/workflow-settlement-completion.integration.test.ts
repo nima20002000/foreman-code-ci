@@ -2,11 +2,12 @@ import { MemorySaver } from '@langchain/langgraph'
 import { describe, expect, it, vi } from 'vitest'
 import type { ExecutionResult, HarnessExecution } from '@foreman-code/contracts'
 import { CANONICAL_RUN_GRAPH_MCP_TOOLS, CanonicalRunGraphCurrentSchema } from '@foreman-code/contracts/wave25'
-import { graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { graphRpcValue } from './graph-composition-fixture.js'
 import { hasWorkDirectionWait } from '../src/modules/runs/workflowLifecycle.js'
 import {
   useSettlementFixtures, timeout, finish, handoffs, acceptedActivation, runtime,
 } from './helpers/workflowSettlementTestSupport.js'
+import { postgresEnabled } from './helpers/database.js'
 
 // Native terminals and physical closure are explicit test inputs. Authenticated
 // Save/MCP reads, canonical publication, SQL transactions and settlement execute.
@@ -16,7 +17,7 @@ vi.mock('../src/modules/interactions/repeatNativeSettlement.js', async (importOr
   settleRepeatNativeExecutionWithProofLocked: vi.fn(async () => undefined),
 }))
 
-describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('workflow settlement completion', () => {
+describe.skipIf(!postgresEnabled)('workflow settlement completion', () => {
   const withFixture = useSettlementFixtures()
 
   it.each(['none', 'accepted', 'checkpoint'] as const)(

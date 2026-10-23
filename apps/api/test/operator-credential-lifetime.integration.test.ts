@@ -9,8 +9,9 @@ import { PostgresFoundationSettingsRepository } from '../src/modules/settings/fo
 import { FoundationSettingsManagementService } from '../src/modules/settings/management.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
-describe.skipIf(!process.env.TEST_DATABASE_URL)('Operator credential lifetime', () => {
+describe.skipIf(!postgresEnabled)('Operator credential lifetime', () => {
   it('keeps default credentials usable through MCP after a month, with persisted scope and revocation', async () => {
     const db = await migratedDatabase()
     const access = new PostgresAccessService(db.pool)

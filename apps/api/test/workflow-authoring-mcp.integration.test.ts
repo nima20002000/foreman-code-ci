@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
-import { graphFixture, graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { currentDatabase } from './helpers/database.js'
+import { graphFixture, graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 
 it('reads persisted workflow versions, rejects corrupt hashes and rechecks live read authority', async () => {
   const db = await currentDatabase()

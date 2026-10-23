@@ -13,7 +13,7 @@ import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js
 import { PostgresWorkspaceRepository } from '../src/modules/workspaces/postgres.js'
 import { codexApprovalRuntime } from './helpers/codexApprovalRuntime.js'
 import { approvalResponse } from './helpers/approvalResponse.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 it.skipIf(!postgresEnabled)('authorizes workflow Operator responses, persists readback, and recovers without another native response', async () => {
   const f = await codexApprovalRuntime('user')

@@ -3,9 +3,10 @@ import { describe, expect, it } from 'vitest'
 import { NativeSessionReferenceSchema } from '@foreman-code/contracts'
 import { CURRENT_WORKFLOW_TOOLS, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { postgresEnabled, readCurrentExecutions } from './helpers/wave25Agent3.js'
+import { readCurrentExecutions } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { assertSettled, corruptProof, editThrough, meaningfulInput, saveThrough, stageThrough,
-  transports } from './helpers/eng07SaveAdmission.testSupport.js'
+  transports } from './helpers/saveAdmission.testSupport.js'
 
 for (const transport of transports) describe.skipIf(!postgresEnabled)(`Main-local detached closure over ${transport}`, () => {
   it('reconciles a terminal Main-local detachment before permitting workflow edits', async () => {

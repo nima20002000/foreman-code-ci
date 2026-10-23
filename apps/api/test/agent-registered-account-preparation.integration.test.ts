@@ -21,7 +21,7 @@ import { OperatorAgentMutationService } from '../src/modules/workspaces/operator
 import { qualifyConfiguration } from './helpers/concurrentMutations.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 it.skipIf(!postgresEnabled)('creates a registered-account Agent through MCP with native discovery outside account locks', async () => {
   const f = await currentOperatorIntegration({ agentManagement: true })

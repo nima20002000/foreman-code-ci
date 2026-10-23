@@ -1,6 +1,6 @@
 import { describe, it } from 'vitest'
 import { installApprovalCleanup, stopApprovalWithActiveSibling } from './helpers/approvalInterruptPublication.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 installApprovalCleanup()
 

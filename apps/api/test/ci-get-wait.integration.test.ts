@@ -7,9 +7,10 @@ import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { HostCiService, type CiCommits } from '../src/modules/ci-host/service.js'
+import { HostCiService, type CiCommits } from '@foreman-code/ci/service'
 import { CI_GET_ACTIONS, RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 it('long-polls authenticated MCP against persisted ticket changes and reads them back after restart', async () => {
   const database = await migratedDatabase()
@@ -17,7 +18,7 @@ it('long-polls authenticated MCP against persisted ticket changes and reads them
   const workspaceId = randomUUID()
   const access = new PostgresAccessService(pool)
   const commands = new PostgresCommandCoordinator(pool)
-  const create = () => new HostCiService(pool, commands, new RunCiAuthority(pool), {} as CiCommits, {
+  const create = () => new HostCiService(mainCiContext, pool, commands, new RunCiAuthority(pool), {} as CiCommits, {
     computers: async () => [], request: async () => { throw new Error('Unexpected build computer call') },
   })
   const ci = create()

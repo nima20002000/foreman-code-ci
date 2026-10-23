@@ -10,11 +10,11 @@ import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { PostgresAppInteractionService } from '../src/modules/interactions/app.js'
 import { Wave25WorkerCredentialService } from '../src/modules/interactions/wave25/credentials.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
-import { insertProviderRun } from './helpers/wave25Br1003Runtime.js'
-import { candidateFor, seedAgent3 } from './helpers/wave25Agent3.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
+import { insertProviderRun } from './helpers/checkpointRuntime.js'
+import { candidateFor, seedAgent3 } from './helpers/workflowDatabase.js'
 
-it.runIf(Boolean(process.env.TEST_DATABASE_URL))(
+it.runIf(postgresEnabled)(
   'keeps retired local output tools unavailable and rejects revoked or unrelated worker callers', async () => {
     const db = await currentDatabase()
     const clients: Client[] = []

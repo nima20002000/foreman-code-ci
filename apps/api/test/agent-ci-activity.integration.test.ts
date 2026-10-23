@@ -12,7 +12,7 @@ import { BugReportPageSchema } from '@foreman-code/contracts/management'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 import { buildApp } from '../src/app.js'
-import { HostCiService, type HostCiComputer, type HostCiEndpoint } from '../src/modules/ci-host/service.js'
+import { HostCiService, type HostCiComputer, type HostCiEndpoint } from '@foreman-code/ci/service'
 import { databaseHotQueriesMigration } from '../src/infrastructure/databaseHotQueriesMigration.js'
 import { CI_GET_ACTIONS, RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
 import { RunManagementService } from '../src/modules/runs/management.js'
@@ -28,7 +28,7 @@ import { PostgresFileRepository } from '../src/modules/files/postgres.js'
 import { FileByteStorage } from '../src/modules/files/storage.js'
 import { BugReportService } from '../src/modules/bug-reports/service.js'
 import { Wave25WorkerCredentialService } from '../src/modules/interactions/wave25/credentials.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { measuredCiPages } from './helpers/measuredCiPages.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { hostCiActivityMigration } from '../src/infrastructure/hostCiActivityMigration.js'
@@ -36,13 +36,14 @@ import { ciActivityRunLockMigration } from '../src/infrastructure/ciActivityRunL
 import { runActivityCommitLockMigration } from '../src/infrastructure/runActivityCommitLockMigration.js'
 import { ciSharedActivityMigration } from '../src/infrastructure/ciSharedActivityMigration.js'
 import { ciActivityRequesterLookupMigration } from '../src/infrastructure/ciActivityRequesterLookupMigration.js'
-import { changeRunState, graphFixture, graphRpc, graphRpcValue, ownedGraph } from './eng04-graph-composition-fixture.js'
+import { changeRunState, graphFixture, graphRpc, graphRpcValue, ownedGraph } from './graph-composition-fixture.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
-import { insertCurrentRunFixture } from './helpers/eng04CurrentRunFixture.js'
+import { insertCurrentRunFixture } from './helpers/currentRunFixture.js'
 import { acceptRunAuthority, bindRunAuthority } from '../src/modules/access/runAuthority.js'
 import { withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 import { repeatStartPublication } from '../src/modules/run-graph/repeatStartPublication.js'
 import { insertRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 async function admitCiRun(pool: pg.Pool, input: AcceptedRepeatStartV1, principal: ManagementPrincipal) {
   return withExclusiveGraphConnection(pool, connection => connection.transaction(async sql => {
@@ -129,7 +130,7 @@ async function fixture(options: { deferMigration?: number | number[]; form?: Cur
         ...(tests ? { testResults: tests } : {}) }
     },
   }
-  const ci = new HostCiService(database.pool, graph.commands, new RunCiAuthority(database.pool), {
+  const ci = new HostCiService(mainCiContext, database.pool, graph.commands, new RunCiAuthority(database.pool), {
     capabilities: async () => ({ parts: true, integrationPartitions: true, affected: true }),
     resolve: async () => 'a'.repeat(40),
   }, endpoint)

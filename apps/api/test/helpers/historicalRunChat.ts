@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { expect } from 'vitest'
 import type { HarnessExecution } from '@foreman-code/contracts'
 import type { SelectedRunChatTarget } from '@foreman-code/contracts/selected-run-chat'
-import { readSelected, selectedPath, targetFor, type HistoricalApi } from './sch12HistoricalRuns.js'
+import { readSelected, selectedPath, targetFor, type HistoricalApi } from './historicalRuns.js'
 
 export function chatTarget(api: HistoricalApi, execution: HarnessExecution): SelectedRunChatTarget {
   return { ...targetFor(api.f, execution.runId), workflowNodeId: execution.workflowNodeId }

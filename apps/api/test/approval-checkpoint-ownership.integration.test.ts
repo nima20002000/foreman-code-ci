@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { productionFixtures, stageDelivered, recover, checkpointCut } from './helpers/approvalCheckpointProduction.js'
 
 describe.skipIf(!postgresEnabled)('approval checkpoint ownership', () => {

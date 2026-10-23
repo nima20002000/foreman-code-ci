@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import * as c from '@foreman-code/contracts/management'
 import * as current from '@foreman-code/contracts/wave25'
 import { describe, expect, it } from 'vitest'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { skillConsumerFixture } from './helpers/skillConsumerFixture.js'
 
 describe.skipIf(!postgresEnabled)('Skill consumer update plans over authenticated MCP: bulk', () => {

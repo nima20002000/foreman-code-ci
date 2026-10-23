@@ -7,7 +7,7 @@ import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresSourceReservations } from '../src/modules/sources/reservations.js'
 import { sourceStorageLimits } from '../src/modules/sources/storageCapacity.js'
 import { sourceStorageCapacityFixture } from './helpers/sourceStorageCapacityFixture.js'
-import { agent3Database } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { verificationCapacityFixture } from './helpers/verificationCapacityFixture.js'
 import { verificationFixture } from './helpers/jobVerificationFixture.js'
 

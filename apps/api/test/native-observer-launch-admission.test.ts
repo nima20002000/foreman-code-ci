@@ -8,8 +8,8 @@ import { repeatNativeObserver } from '../src/modules/runs/repeatRuntime.js'
 import { RunnerAdmission } from '../src/modules/runs/runnerAdmission.js'
 import type { RepeatNativeLaunchStore } from '../src/modules/interactions/repeatObservation.js'
 import type { ApprovalExecutionCoordinator } from '../src/modules/interactions/execution.js'
-import { nativeCompleted } from './eng04-native-fixtures.js'
-import { native2Fixture } from './eng04-native2-fixtures.js'
+import { nativeCompleted } from './native-repeat-fixtures.js'
+import { native2Fixture } from './native-reviewer-fixtures.js'
 
 function observerFixture(completed = false) {
   const f = native2Fixture(completed)

@@ -8,7 +8,7 @@ import type { WorkspaceLocationService } from '../src/modules/workspaces/locatio
 import { WorkerExecutionPolicy } from '../src/modules/settings/workerExecution.js'
 import { createScheduleDispatcher } from '../src/modules/schedules/runtime.js'
 import type { PostgresScheduleDispatcher } from '../src/modules/schedules/postgresDispatcher.js'
-import { startFixture } from './eng04-start-fixtures.js'
+import { startFixture } from './start-fixtures.js'
 
 const hooks = vi.hoisted(() => ({ admit: vi.fn(), scheduled: undefined as
   ConstructorParameters<typeof PostgresScheduleDispatcher>[1] | undefined }))

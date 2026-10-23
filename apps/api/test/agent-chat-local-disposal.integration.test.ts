@@ -8,7 +8,7 @@ import { PostgresOperatorConversationRepository } from '../src/modules/conversat
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { createAdmittedNativeManager } from '../src/modules/harnesses/admittedManager.js'
-import { agent3Database, seedAgent3 } from './helpers/wave25Agent3.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
 import { ChatManager } from './helpers/operatorChatFixture.js'
 import { readUntil } from './helpers/observableCondition.js'
 

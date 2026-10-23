@@ -4,8 +4,8 @@ import { RunOutcomeSchema } from '@foreman-code/contracts'
 import { assertMeaningfulSaveAdmitted, readAffectedGraphRuns } from '../src/modules/graph-drafts/saveAdmission.js'
 import type { GraphSqlClient } from '../src/modules/run-graph/connection.js'
 import { currentSaveAdmissionFixture } from './helpers/currentSaveAdmission.js'
-import { recoveryIdentity } from './helpers/eng06Recovery.testSupport.js'
-import { saveNativeProtocolFixture, type SaveNativeProof } from './helpers/eng07SaveNativeSettlement.testSupport.js'
+import { recoveryIdentity } from './helpers/recoveryExecution.testSupport.js'
+import { saveNativeProtocolFixture, type SaveNativeProof } from './helpers/saveNativeSettlement.testSupport.js'
 
 /** Query-boundary tests, not a PostgreSQL emulator. The lock and aggregate
  * reads have different result shapes. After those reads the REAL canonical

@@ -1,11 +1,11 @@
-import { createHash } from 'node:crypto'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import type { AgentNodeRef, LogicalWorkRef, MemoryBoardScope } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
+import { sha256CanonicalJsonHex } from '../../shared/hash.js'
 
 export { canonicalJson }
 export function inputHash(value: unknown): string {
-  return createHash('sha256').update(canonicalJson(value)).digest('hex')
+  return sha256CanonicalJsonHex(value)
 }
 export function normalizeTitle(title: string): string {
   return title.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLowerCase()

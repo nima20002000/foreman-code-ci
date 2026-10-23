@@ -3,11 +3,12 @@ import { afterAll, beforeAll, expect, it } from 'vitest'
 import { CiRunRecordSchema, type CiHostRequest } from '@foreman-code/contracts'
 import { createDatabase } from '../src/infrastructure/database.js'
 import { withCiDatabasePriority } from '../src/infrastructure/ciDatabasePriority.js'
-import { claimCiSlot } from '../src/modules/ci-host/cloudSlots.js'
-import type { HostCiComputer } from '../src/modules/ci-host/serviceTypes.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { claimCiSlot } from '@foreman-code/ci/cloudSlots'
+import type { HostCiComputer } from '@foreman-code/ci/serviceTypes'
+import { currentDatabase } from './helpers/database.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
-import { graphFixture } from './eng04-graph-composition-fixture.js'
+import { graphFixture } from './graph-composition-fixture.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 let db: Awaited<ReturnType<typeof currentDatabase>>
 let graph: Awaited<ReturnType<typeof graphFixture>>
@@ -71,7 +72,7 @@ it.each(['operator', 'agent'] as const)(
       commit: ticket.commit, suite: ticket.suite, scope: ticket.scope, files,
       durations: Object.fromEntries(files.map(file => [file, 30_000])),
     }
-    const claimed = await withCiDatabasePriority(() => claimCiSlot(dispatch.pool, ticket, computer, request))
+    const claimed = await withCiDatabasePriority(() => claimCiSlot(mainCiContext, dispatch.pool, ticket, computer, request))
     expect(claimed).toMatchObject({ id: ticket.id, state: 'starting', files,
       computer: { hostRef: computer.hostRef }, dispatchRequest: { runId: ticket.id } })
     const persisted = await db.pool.query<{ record: unknown }>('select record from ci_runs where id=$1', [ticket.id])

@@ -5,8 +5,8 @@ import type { SqlQuery } from '../src/infrastructure/transaction.js'
 import { detectStuckExecutions } from '../src/modules/bug-reports/stuckExecutions.js'
 import { readNativeActivityFacts, projectNativeActivityFacts } from '../src/modules/runs/nativeActivitySnapshot.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
-import { seedAgent3 } from './helpers/wave25Agent3.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
 
 interface Plan {
   'Actual Rows': number

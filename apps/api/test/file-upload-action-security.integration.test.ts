@@ -18,7 +18,8 @@ import { PostgresFileRepository } from '../src/modules/files/postgres.js'
 import { TemporaryFileService } from '../src/modules/files/service.js'
 import { FileByteStorage } from '../src/modules/files/storage.js'
 import { registerFileRoutes } from '../src/routes/files.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const body = Buffer.from('# upload action regression\n')
 const metadata = { filename: 'upload.md', mediaType: 'text/markdown' as const,

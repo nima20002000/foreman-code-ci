@@ -9,6 +9,7 @@ import { BYTE_TRANSFER_POLICY as POLICY, TransferIntentSchema, TransferContextSc
   type TransferProgress, type VerifiedTransferReceipt, type ByteTransferPort } from '@foreman-code/contracts/byte-transfer'
 import { ignoreError } from '../diagnostics/ignoredError.js'
 import { CanonicalTransferOwnership } from './canonicalOwnership.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export type TransferOperation = 'start' | 'status' | 'append' | 'finish' | 'cancel' | 'read'
 export class TransferExpiredError extends Error {}
@@ -25,7 +26,7 @@ const JournalSchema = z.object({ intent: TransferIntentSchema, progress: Transfe
   deletionRequested: z.boolean().optional(),
   external: z.object({ 'rsync-source': ExternalHoldSchema.optional(), 'rsync-receiver': ExternalHoldSchema.optional() }).strict().optional() }).strict()
 type Journal = z.infer<typeof JournalSchema>
-const digest = (data: Uint8Array) => createHash('sha256').update(data).digest('hex')
+const digest = (data: Uint8Array) => sha256Hex(data)
 const emptyHash = digest(new Uint8Array())
 function key(id: string) { return z.uuid().parse(id) }
 

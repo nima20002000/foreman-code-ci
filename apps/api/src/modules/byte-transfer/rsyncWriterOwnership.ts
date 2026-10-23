@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
@@ -13,6 +13,7 @@ import { cgroupPopulated } from '../harnesses/recovery/cgroupBoundary.js'
 import { NativeProcessRegistry, spawnNativeProcess, nativeProcessExit,
   type NativeProcessRecovery } from '../harnesses/recovery/processRegistry.js'
 import { privateDirectory, readRecord, syncDirectory, writeRecord } from '../harnesses/recovery/storage.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 const Hash = z.string().regex(/^[a-f0-9]{64}$/)
 const Identity = z.object({ pid: z.number().int().min(2), startTicks: z.string().regex(/^\d+$/) }).strict()
@@ -57,7 +58,7 @@ export interface RsyncStoreOwnership {
   captureRetirementHandle(intent: TransferIntent, handle: FileHandle): void
   retire<T>(intent: TransferIntent, work: () => Promise<T>): Promise<T>
 }
-const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
+const digest = (value: unknown) => sha256Hex(JSON.stringify(value))
 const self = () => {
   const found = processIdentity(process.pid)
   if (!found) throw new Error('Rsync owner process identity unavailable')
@@ -695,7 +696,7 @@ export class RsyncWriterOwnership {
   }
 }
 export const rsyncArgumentDigest = (args: readonly string[]) => digest(args)
-const digestBytes = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
+const digestBytes = (bytes: Uint8Array) => sha256Hex(bytes)
 
 /** Standalone protected SSH wrapper. Fresh admission is granted by the live W07 service;
  * this process owns the actual server's write-ahead scope and protocol streams. */

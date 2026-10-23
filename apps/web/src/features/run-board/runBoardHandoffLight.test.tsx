@@ -5,7 +5,7 @@ import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { RepeatGraphCurrentV3Schema, repeatGraphTopologyV3 } from '@foreman-code/contracts/wave25'
 import { server } from '../../mocks/server'
-import { WorkflowBoardContext } from '../workflow-board/context'
+import { WorkflowBoardProvider } from '../workflow-board/context'
 import { RunBoardCanvas } from './RunBoardCanvas'
 import { runA, versionReply } from './testFixtures'
 import { installFlowLayout } from './testFlowLayout'
@@ -43,8 +43,8 @@ async function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const board = { workspaceId: runA.workspaceId, workflowId: runA.workflowId, inspection: {}, activeRuns: 1,
     selectRun: vi.fn(), selectInspection: vi.fn(), openLocation: vi.fn(), openRuns: vi.fn() }
-  const router = createRouter({ routeTree: createRootRoute({ component: () => <WorkflowBoardContext.Provider value={board}>
-    <RunBoardCanvas snapshot={runA} /></WorkflowBoardContext.Provider> }), history: createMemoryHistory({ initialEntries: ['/'] }) })
+  const router = createRouter({ routeTree: createRootRoute({ component: () => <WorkflowBoardProvider value={board}>
+    <RunBoardCanvas snapshot={runA} /></WorkflowBoardProvider> }), history: createMemoryHistory({ initialEntries: ['/'] }) })
   await router.load()
   return render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>).container
 }

@@ -8,13 +8,14 @@ import { readProductEnvironment } from '@foreman-code/contracts/product-environm
 import { appMcpServerName } from '../appMcpLauncher.js'
 import { appMcpTokenEnvironment, isDatabaseCredentialVariable } from '../secrets.js'
 import { agentInstructionBundle } from '../../skills/instructions.js'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import type { NativeSessionStart } from '../port.js'
 import { HarnessExecutionError } from '../errors.js'
 import { ClaudeBoundedQueue } from './queue.js'
 import { claudePromptUuid, type ClaudeMessageTurnInput, type ClaudeNativeSessionManagerOptions,
   type ClaudeManagerContext, type Turn, type Runtime } from './sessionTypes.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 /** A caller's signal bounds native startup only; it never owns the resident query afterwards. */
 export function startupSignal(signal?: AbortSignal): { signal?: AbortSignal; release(): void } {
@@ -130,7 +131,7 @@ export function canonicalStart(start: NativeSessionStart): NativeSessionStart {
 
 export function authorizationScope(ctx: ClaudeManagerContext, start: NativeSessionStart): string {
   const identity = ['claude-mcp-authorization-v1', ctx.options.scope, canonicalStart(start)]
-  return createHash('sha256').update(JSON.stringify(identity)).digest('hex')
+  return sha256Hex(JSON.stringify(identity))
 }
 
 export function sessionContext(start: NativeSessionStart) {

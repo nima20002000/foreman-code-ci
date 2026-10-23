@@ -7,7 +7,7 @@ import { repeatDigest, repeatExecutionIdentity, repeatSlotId, freezeRepeatEntry 
 import type { RepeatNativeChange } from '../src/modules/runs/repeatNativeRepository.js'
 import { workflowNativeReservation } from '../src/modules/runs/workflowNativeEntry.js'
 import { createWorkflowNativeCaptureChannel } from '../src/modules/interactions/workflowNativeCapture.js'
-import { nativeAt, nativeCompleted, nativeFixture } from './eng04-native-fixtures.js'
+import { nativeAt, nativeCompleted, nativeFixture } from './native-repeat-fixtures.js'
 
 /** Real repository + transaction facade over scripted, rollback-capable pg
  * replies. The authority/publication adapters here are TEST DOUBLES, not a

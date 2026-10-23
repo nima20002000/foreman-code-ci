@@ -3,6 +3,7 @@ import type pg from 'pg'
 import { MainIdentityProofRequestSchema, MainSignedIdentityProofSchema, MainEnrollmentProofRequestSchema, MainSignedEnrollmentProofSchema, type MainIdentityProofRequest, type MainSignedIdentityProof, type MainEnrollmentProofRequest, type MainSignedEnrollmentProof } from '@foreman-code/contracts/device-identity'
 import { mainIdentityProofMessage, mainEnrollmentProofMessage, publicKeyFingerprint } from '@foreman-code/contracts/device-identity-node'
 import { DeviceAccessError } from './access.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 
 export const mainDeviceIdentityMigration = { version: 282102, sql: 'create table device_main_identity (main_id uuid primary key, record jsonb not null);' } as const
 
@@ -12,10 +13,14 @@ export interface MainDeviceIdentity {
   privateKey: string
   publicKeyFingerprint: string
 }
+/** This Main's installation UUID, when its installation row exists. */
+export async function readMainInstallationId(sql: GraphSqlClient): Promise<string | undefined> {
+  return (await sql.query<{ id: string }>('select id from application_installation where singleton=true')).rows[0]?.id
+}
+
 /** Main's existing installation UUID remains the authority. One app-authentication key survives restarts. */
 export async function loadOrCreateMainDeviceIdentity(pool: Pick<pg.Pool, 'query'>, mainId: string): Promise<MainDeviceIdentity> {
-  const installation = await pool.query<{ id: string }>('select id from application_installation where singleton=true')
-  if (installation.rows[0]?.id !== mainId) throw new DeviceAccessError('wrong_main')
+  if (await readMainInstallationId(pool) !== mainId) throw new DeviceAccessError('wrong_main')
   const existing = await pool.query<{ record: MainDeviceIdentity }>('select record from device_main_identity where main_id=$1', [mainId])
   let identity = existing.rows[0]?.record
   if (!identity) {

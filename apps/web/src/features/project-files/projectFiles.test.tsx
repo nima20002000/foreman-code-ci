@@ -10,7 +10,7 @@ import { server } from '../../mocks/server'
 import { beginSessionChange, finishSessionChange } from '../../shared/api/sessionBoundary'
 import { ProjectFilesSection } from './ProjectFilesSection'
 import { projectFilesClient } from './projectFilesClient'
-import { readUploadBytes } from './projectFilesBytes'
+import { readUploadBytes } from '../../shared/api/bytes'
 import { projectFilesKeys } from './projectFilesQueries'
 
 it.each(['panel', 'heading', 'toolbar', 'Upload', 'hint', 'empty', 'list', 'row'])(

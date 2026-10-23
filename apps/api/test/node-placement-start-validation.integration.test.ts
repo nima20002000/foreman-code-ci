@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { advanceMainSourceBinding, fixture, startInput, toolError } from './helpers/nodePlacementStartFixture.js'
 
 afterEach(() => vi.restoreAllMocks())

@@ -1,7 +1,6 @@
 import { materializationDirectory, type PrivateSourceMaterializer } from './materialization.js'
 import { SOURCE_MATERIALIZATION_RECORD_MAX_BYTES, sourceMaterializationParent } from '@foreman-code/contracts/source-materialization'
 import { isDeepStrictEqual } from 'node:util'
-import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
 import { mkdir, open, readdir, type FileHandle } from 'node:fs/promises'
@@ -19,16 +18,15 @@ import { anchored, entryParent, identity, openChildDirectory, openPrivateRoot } 
 import { SOURCE_LIMITS, SourceError, sourceSha256, verifySourceBytes, verifySourceManifest } from './manifest.js'
 import type { MaterializationAttempt } from './ports.js'
 import { DomainError } from '../errors.js'
+import { startIsolatedGit } from '../../shared/git.js'
 
 /** Drain bounded Git output while streaming input. Waiting for writes before
  * reading a child's output can deadlock both pipes on a realistic source tree. */
 async function importSnapshot(gitDirectory: string, input: AsyncIterable<Buffer>, signal: AbortSignal) {
-  let child: ReturnType<typeof execFile>
+  let child: ReturnType<typeof startIsolatedGit>
   const finished = new Promise<void>((resolve, reject) => {
-    child = execFile('/usr/bin/git', ['--no-replace-objects', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
-      '-C', gitDirectory, 'fast-import', '--quiet', '--done', '--date-format=raw'], {
-      encoding: 'buffer', maxBuffer: 2 * 1024 * 1024, timeout: SOURCE_LIMITS.preparationMs, killSignal: 'SIGKILL', signal,
-      env: { PATH: '/usr/bin:/bin', HOME: '/nonexistent', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0', GIT_NO_REPLACE_OBJECTS: '1' },
+    child = startIsolatedGit(gitDirectory, ['fast-import', '--quiet', '--done', '--date-format=raw'], {
+      maxOutputBytes: 2 * 1024 * 1024, timeoutMs: SOURCE_LIMITS.preparationMs, killSignal: 'SIGKILL', signal,
     }, error => error ? reject(error) : resolve())
   })
   void finished.catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })

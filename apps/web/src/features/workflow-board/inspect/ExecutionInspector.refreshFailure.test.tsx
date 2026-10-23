@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { runInspectionKey, type RepeatGraphScopeV3, type RunExecutionDetail, type RunExecutionSummary, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
-import { WorkflowBoardContext } from '../context'
+import { WorkflowBoardProvider } from '../context'
 import { ExecutionInspector } from './ExecutionInspector'
 
 // Component scenario: the Run-inspection reads are stubbed at the query-hook boundary with a failed
@@ -28,8 +28,8 @@ function tree(selected: boolean) {
   const board = { workspaceId: scope.workspaceId, workflowId: scope.workflowId, run: scope, activeRuns: 0,
     inspection: { runNodeId: 'review', ...(selected ? { runExchangeKey: runInspectionKey({ executionId: 'exec-a' }) } : {}) },
     selectInspection: vi.fn(), selectRun: vi.fn(), openLocation: vi.fn(), openRuns: vi.fn() }
-  return <QueryClientProvider client={new QueryClient()}><WorkflowBoardContext.Provider value={board}>
-    <ExecutionInspector scope={scope} version={version} /></WorkflowBoardContext.Provider></QueryClientProvider>
+  return <QueryClientProvider client={new QueryClient()}><WorkflowBoardProvider value={board}>
+    <ExecutionInspector scope={scope} version={version} /></WorkflowBoardProvider></QueryClientProvider>
 }
 afterEach(() => { cleanup(); store.summaries = []; store.details.clear() })
 

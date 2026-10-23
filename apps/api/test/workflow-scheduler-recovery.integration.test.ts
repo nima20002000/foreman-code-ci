@@ -5,10 +5,11 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { WorkflowScheduleDispatcher } from '../src/modules/schedules/dispatcher.js'
 import { PostgresScheduleDispatcher } from '../src/modules/schedules/postgresDispatcher.js'
 import type { ScheduleDispatchContext } from '../src/modules/schedules/dispatchErrors.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
-import { sch11ClockCases, sch11Minute, sch11Once, sch11Settings } from './helpers/sch11ClockCases.js'
-import { sch11DomainState, sch11Fixture, sch11Pool, type Sch11Database, type Sch11Fixture } from './helpers/sch11Fixture.js'
-import { sch11Child } from './helpers/sch11Process.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
+import { sch11ClockCases, sch11Minute, sch11Once, sch11Settings } from './helpers/scheduleClockCases.js'
+import { sch11DomainState, sch11Fixture, sch11Pool, type Sch11Database, type Sch11Fixture } from './helpers/scheduleFixture.js'
+import { sch11Child } from './helpers/scheduleProcess.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
 /** No `.fails`/skip markers hide product regressions. Except for the established
@@ -311,6 +312,6 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL clock parity / crash recove
       await loop.stop(); loop.start(); await loop.tick()
       expect(scans).toBe(1)
       expect(await others[3]!.current()).toEqual(otherSaved[3])
-    } finally { release.resolve(); await work.catch(() => undefined); await closing; await loop.stop() }
+    } finally { release.resolve(); await work.catch(() => /* ignore: cleanup; the test body already awaited or asserted this outcome */ undefined); await closing; await loop.stop() }
   }, 60_000)
 })

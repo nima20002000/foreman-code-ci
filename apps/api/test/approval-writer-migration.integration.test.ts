@@ -5,8 +5,9 @@ import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { agent3Database, postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
-import { approvalFixture } from './helpers/wave25ApprovalFixture.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
+import { approvalFixture } from './helpers/approvalFixture.js'
 
 // Legacy approval inference/materialization is retired. Current protection uses
 // the typed complete-definition writer and preserves accepted immutable facts.

@@ -5,7 +5,7 @@ import { readUntil } from './helpers/observableCondition.js'
 import { deferred } from './helpers/deferred.js'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
 
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 
 let database: Awaited<ReturnType<typeof currentDatabase>>
 let pool: pg.Pool

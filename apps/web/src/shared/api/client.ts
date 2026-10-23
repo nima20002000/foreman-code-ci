@@ -1,10 +1,10 @@
-import { installationHeaders, reloadChangedInstallation } from './sessionBoundary'
+import { ApiError, isGatewayStatus } from './apiError'
+import { apiErrorFromPayload, apiUrl, beginFencedOperation, installationHeaders, sendRaw } from './transport'
 import {
   CurrentWorkspaceDetailsSchema, CurrentGetWorkflowResponseSchema, CurrentRunDetailsSchema, CurrentManagedWorkflowCommandResultSchema, CurrentManagedWorkflowPageSchema, RunStartV3InputSchema, RunStartV3ResultSchema, CurrentWorkflowCreateInputSchema, 
   type CurrentWorkspaceDetails, type CurrentGetWorkflowResponse, type CurrentRunDetails, type CurrentWorkflowCreateInput,
 } from '@foreman-code/contracts/wave25'
 import {
-  ApiErrorResponseSchema,
   GetInteractionResponseSchema,
   ListInteractionsRequestSchema,
   ListInteractionsResponseSchema,
@@ -38,9 +38,6 @@ import {
 } from '@foreman-code/contracts'
 import { z } from 'zod'
 import { collectManagementPages, managementPageUrl } from './managementPaging'
-import {
-  assertSession, sessionGeneration, sessionSignal, sessionIsSwitching, SessionChangedError,
-} from './sessionBoundary'
 import {
   WorkflowReorderInputSchema, WorkflowReorderResultSchema, type WorkflowReorderInput,
   WorkspaceBatchArchiveInputSchema, WorkspaceBatchArchiveResultSchema, type WorkspaceBatchArchiveInput,
@@ -92,57 +89,13 @@ export type RequestOptions = Omit<RequestInit, 'body' | 'method'> & {
   timeoutMs?: number
 }
 
-export type ApiErrorPayload = {
-  code: string
-  message: string
-  details?: Record<string, unknown>
-  requestId?: string
-}
-
-/** A normalized error for both HTTP failures and invalid API responses. */
-export class ApiError extends Error {
-  readonly code: string
-  readonly status: number
-  readonly details?: Record<string, unknown>
-  readonly requestId?: string
-  /** The failed call, for error reports. */
-  method?: string
-  path?: string
-
-  constructor(payload: ApiErrorPayload, status = 0, options?: ErrorOptions) {
-    super(payload.message, options)
-    this.name = 'ApiError'
-    this.code = payload.code
-    this.status = status
-    this.details = payload.details
-    this.requestId = payload.requestId
-  }
-
-  static is(error: unknown): error is ApiError {
-    return error instanceof ApiError
-  }
-}
-
-function isGatewayStatus(status: number): boolean {
-  return status === 502 || status === 503 || status === 504
-}
-
-/** The API is restarting or unreachable: no response, a gateway status without an API error body, or work the
- * API canceled while it shut down. */
-export function isApiRestartError(error: unknown): boolean {
-  return ApiError.is(error) && (error.code === 'NETWORK_ERROR' || error.code === 'API_RESTARTING'
-    || (error.code === 'HTTP_ERROR' && isGatewayStatus(error.status)))
-}
+export { ApiError, isApiRestartError, type ApiErrorPayload } from './apiError'
 
 type FetchLike = typeof fetch
 
 export interface ApiClientOptions {
   baseUrl?: string
   fetch?: FetchLike
-}
-
-function isAbortError(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError'
 }
 
 function describeIssues(error: z.ZodError): Record<string, unknown> {
@@ -163,14 +116,6 @@ function parseRequest<T>(schema: z.ZodType<T>, value: unknown): T {
 
 function toPath(value: string): string {
   return encodeURIComponent(value)
-}
-
-function resolveRequestUrl(baseUrl: string, path: string): string {
-  if (baseUrl) return `${baseUrl}${path}`
-  // Browsers resolve `/api/...` relative to the current origin. Node's fetch
-  // requires an absolute URL, so retain the same semantics in Vitest/SSR.
-  const origin = typeof globalThis.location?.origin === 'string' ? globalThis.location.origin : 'http://localhost'
-  return new URL(path, origin).toString()
 }
 
 /**
@@ -232,38 +177,24 @@ export class ApiClient {
   private async readResponse<T>(path: string, schema: z.ZodType<T>,
     options: RequestOptions & { method?: string; body?: unknown }): Promise<T> {
     const { body, method = 'GET', headers, signal, ...init } = options
-    const generation = sessionGeneration()
     const identityRead = path === '/api/runtime/identity' || path === '/api/runtime/build-identity/v1' || path === '/api/local-human'
     if (!identityRead && this.runtimeCompatibility?.() === false) {
       throw new ApiError({ code: 'APP_UPDATED', message: 'The app has updated. Your pending changes are kept until the app can reload.' }, 409)
     }
-    if (sessionIsSwitching()) throw new SessionChangedError()
-    const requestSignal = signal ? AbortSignal.any([signal, sessionSignal()]) : sessionSignal()
+    const operation = beginFencedOperation({ signal })
     const bootstrap = path === '/api/runtime/identity' || path === '/api/local-human'
     const requestHeaders = bootstrap ? new Headers(headers) : installationHeaders(headers)
     requestHeaders.set('Accept', 'application/json')
     if (body !== undefined) requestHeaders.set('Content-Type', 'application/json')
 
-    let response: Response
-    try {
-      response = await (this.fetchImpl ?? globalThis.fetch)(resolveRequestUrl(this.baseUrl, path), {
-        ...init,
-        credentials: 'omit',
-        method,
-        headers: requestHeaders,
-        signal: requestSignal,
-        body: body === undefined ? undefined : JSON.stringify(body),
-      })
-    } catch (error) {
-      // AbortError is meaningful to TanStack Query and should not be turned
-      // into a retryable API failure.
-      if (isAbortError(error)) throw error
-      throw new ApiError({
-        code: 'NETWORK_ERROR',
-        message: 'Updating — reconnecting…',
-        details: { cause: error instanceof Error ? error.message : String(error) },
-      }, undefined, { cause: error })
-    }
+    const response = await sendRaw(this.baseUrl ? `${this.baseUrl}${path}` : apiUrl(path), operation, {
+      ...init,
+      method,
+      headers: requestHeaders,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      fetch: this.fetchImpl,
+      networkMessage: 'Updating — reconnecting…',
+    })
 
     let payload: unknown = undefined
     if (response.status !== 204) {
@@ -275,24 +206,12 @@ export class ApiClient {
     }
 
     // Includes late responses from fetch implementations which ignore AbortSignal.
-    assertSession(generation)
-    requestSignal.throwIfAborted()
+    operation.check()
     if (!response.ok) {
-      const parsedError = ApiErrorResponseSchema.safeParse(payload)
-      if (parsedError.success) {
-        reloadChangedInstallation(parsedError.data.error.code)
-        // The API answered with its own error: a domain failure its owner shows, never a restart.
-        throw new ApiError(parsedError.data.error, response.status)
-      }
-      throw new ApiError(
-        {
-          code: 'HTTP_ERROR',
-          // A gateway status without an API error body means the API is restarting or unreachable.
-          message: isGatewayStatus(response.status)
-            ? 'Updating — reconnecting…' : `The API request failed with status ${response.status}.`,
-        },
-        response.status,
-      )
+      // An API error body is a domain failure its owner shows, never a restart. A gateway status without one
+      // means the API is restarting or unreachable.
+      throw apiErrorFromPayload(payload, response.status, isGatewayStatus(response.status)
+        ? 'Updating — reconnecting…' : `The API request failed with status ${response.status}.`)
     }
 
     const parsed = schema.safeParse(payload)

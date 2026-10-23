@@ -7,8 +7,9 @@ import {
 } from '@foreman-code/contracts/wave25'
 import { LOCAL_RUNNER_ID } from '../src/modules/workspaces/location.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
-import { sch11Fixture, sch11DomainState } from './helpers/sch11Fixture.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
+import { sch11Fixture, sch11DomainState } from './helpers/scheduleFixture.js'
 import { deferred } from './helpers/deferred.js'
 
 const maintenanceKey = 'foreman-code:production-maintenance'

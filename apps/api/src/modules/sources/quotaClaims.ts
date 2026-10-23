@@ -1,5 +1,4 @@
 import { constants } from 'node:fs'
-import { createHash } from 'node:crypto'
 import { open, unlink, type FileHandle } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
@@ -9,6 +8,7 @@ import type { JobVerificationQuotaPool } from '@foreman-code/contracts/job-verif
 import { anchored } from './privateFilesystem.js'
 import { SourceError } from './manifest.js'
 import type { MaterializationAttempt } from './ports.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 const QualificationQuotaClaimSchema = z.object({ kind: z.literal('qualification'),
   qualificationId: z.uuid(), operationId: z.uuid() }).strict()
@@ -25,11 +25,11 @@ const SourceQuotaClaimSchema = z.object({
 export function sourceMaterializationClaimName(binding: RootBinding,
   attempt: Pick<MaterializationAttempt, 'executionId' | 'attemptId'>, quota?: unknown, scope?: 'execution'): string {
   if (quota) {
-    const owner = createHash('sha256').update(JSON.stringify([attempt.executionId, attempt.attemptId])).digest('hex')
+    const owner = sha256Hex(JSON.stringify([attempt.executionId, attempt.attemptId]))
     return `binding-${binding.rootId}-${owner}.lock`
   }
   if (!scope && binding.accessMode === 'exclusive-write') return `binding-${binding.rootId}.lock`
-  return `binding-${binding.rootId}-${createHash('sha256').update(attempt.executionId).digest('hex')}.lock`
+  return `binding-${binding.rootId}-${sha256Hex(attempt.executionId)}.lock`
 }
 
 /** An interrupted exclusive write removes only its own incomplete record. */

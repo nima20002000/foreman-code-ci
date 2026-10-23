@@ -10,7 +10,7 @@ import { createProductionJobs } from '../src/modules/jobs/production.js'
 import { InstalledJobRuntimeConfigurationSchema } from '../src/modules/jobs/installedRuntimeHost.js'
 import { buildComputerTarget } from '../src/modules/settings/buildComputers.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 
 /** Exercises production composition and readiness; it does not claim physical qualification. */
 describe.skipIf(!postgresEnabled)('default installed Main Job composition', () => {

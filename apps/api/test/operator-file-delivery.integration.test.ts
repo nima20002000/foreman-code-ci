@@ -31,6 +31,7 @@ import { fileRuntimeFixture } from './fixtures/codex-file-runtime-helpers.js'
 import { appLauncherPath, installAppLauncher } from '../src/modules/harnesses/appMcpLauncher.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 import { reportIntegrationPhase } from './helpers/integrationPhase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 // Codex uses an executable protocol fixture with deterministic responses.
 vi.doMock('../src/modules/harnesses/codexProtocol.js', async () => {
@@ -121,7 +122,7 @@ function fileCallValue(result: CodexFileCallResult): unknown {
 
 // Same constructor used by buildProductionApp; no alternate manager resolver or
 // fake attachment admission is supplied by these sends.
-describe.skipIf(!connectionString || process.platform === 'win32')('AF-02 production Operator native file delivery', () => {
+describe.skipIf(!postgresEnabled || process.platform === 'win32')('AF-02 production Operator native file delivery', () => {
   let schema: string, admin: pg.Pool, pool: pg.Pool, f: Fixture, config: ApiConfig, vault: string, runtimeHome: string
   let app: FastifyInstance
   let managementEndpoint: string

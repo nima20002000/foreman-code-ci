@@ -11,7 +11,7 @@ import { assertWorkHandoffDeliveryLocked } from '../src/modules/runs/workHandoff
 import { createWorkLimitNotice } from '../src/modules/runs/workHandoffNotice.js'
 import { repeatDigest, repeatId } from '../src/modules/runs/repeatResolution.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
-import { transaction } from './eng04-migration-fixtures.js'
+import { transaction } from './repeat-migration-fixtures.js'
 
 export const text = (value: unknown) => canonicalGraphJson(value, 4 * 1024 * 1024)
 

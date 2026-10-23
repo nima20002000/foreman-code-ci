@@ -13,6 +13,7 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { buildApp } from '../src/app.js'
 import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
 import { registerOperatorChatFixture, type OperatorChatFixture, claudeConfiguration, ChatManager, waitFor } from './helpers/operatorChatFixture.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const connectionString = process.env.TEST_DATABASE_URL
 
@@ -30,7 +31,7 @@ registerOperatorChatFixture(fixture => {
   ({ pool, access, owner, operators, repository, manager, authority, chat, runtimeDirectory } = fixture)
 }, () => chat)
 
-describe.skipIf(!connectionString)('Operator chat persistence and native binding with stubbed authority', () => {
+describe.skipIf(!postgresEnabled)('Operator chat persistence and native binding with stubbed authority', () => {
   it('saves future budgets through authenticated MCP independently of current history and denies callers without permission', async () => {
     const writer = await access.issue({ name: 'default settings owner', audience: 'operator', grants: owner.grants,
       expiresAt: new Date(Date.now() + 600000) })

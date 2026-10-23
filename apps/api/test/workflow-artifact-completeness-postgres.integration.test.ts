@@ -29,6 +29,7 @@ import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import type { FileQuery } from '../src/modules/files/repository.js'
 import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 import { completeResultRepair } from '../src/modules/runs/remote/workflowRepair.test-support.js'
+import { postgresEnabled } from './helpers/database.js'
 const text = (value: unknown) => canonicalGraphJson(value, 4 * 1024 * 1024)
 // Explicit SQL-boundary facts only. No host qualification, provider process,
 // native byte production or physical publication is established by this fixture.
@@ -102,7 +103,7 @@ function facts(handoff = false) {
 }
 const databaseUrl = process.env.TEST_DATABASE_URL
 const schema = `artifact_gate_${randomUUID().replaceAll('-', '')}`
-describe.skipIf(!databaseUrl)('durable artifact completeness gate on real PostgreSQL facts', () => {
+describe.skipIf(!postgresEnabled)('durable artifact completeness gate on real PostgreSQL facts', () => {
   let admin: pg.Pool, pool: pg.Pool
   beforeAll(async () => {
     const url = new URL(databaseUrl!)

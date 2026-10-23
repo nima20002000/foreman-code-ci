@@ -13,9 +13,10 @@ import type { LangGraphWorkflowEngine } from '../src/modules/runs/engine.js'
 import { admitRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
 import { repeatStartPublication } from '../src/modules/run-graph/repeatStartPublication.js'
 import { createWorkflowNativeCaptureChannel } from '../src/modules/interactions/workflowNativeCapture.js'
-import { currentRepositoryServices } from './helpers/wave25CurrentRepository.js'
+import { currentRepositoryServices } from './helpers/currentRepository.js'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
-import { agent3Database, seedAgent3, candidateFor, graphHead, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database, seedAgent3, candidateFor, graphHead } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
 /** Tests transactional admission and the public application service in isolated fixtures. */

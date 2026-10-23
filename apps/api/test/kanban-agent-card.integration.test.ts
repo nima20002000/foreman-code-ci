@@ -7,8 +7,8 @@ import { HarnessExecutionError } from '../src/modules/harnesses/errors.js'
 import { isWorkflowStart } from '../src/modules/harnesses/sessionStart.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { memoryCall, type MemoryRuntime } from './helpers/memoryWorkflow.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
-import { insertProviderRun } from './helpers/wave25Br1003Runtime.js'
+import { postgresEnabled } from './helpers/database.js'
+import { insertProviderRun } from './helpers/checkpointRuntime.js'
 
 function agentFixture(readOnly = false) {
   const fixture = makeCurrentWorkflowFixture(randomUUID(), 'single')

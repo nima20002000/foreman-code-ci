@@ -1,14 +1,14 @@
-import { installationHeaders, reloadChangedInstallation } from '../../shared/api/sessionBoundary'
-import { ApiErrorResponseSchema } from '@foreman-code/contracts'
 import {
   FileReferenceMutationResultSchema, FilePageSchema, FileRowSchema,
   WorkspaceProjectFilesListInputSchema, WorkspaceProjectFilesListSchema, WorkspaceReferenceFileScopeSchema,
   type FilePage, type FileRow, type FileWithRevision,
 } from '@foreman-code/contracts/files'
 import { apiClient, ApiError } from '../../shared/api/client'
-import { assertSession, sessionGeneration, sessionIsSwitching, sessionSignal, SessionChangedError } from '../../shared/api/sessionBoundary'
+import {
+  apiErrorFromResponse, apiUrl, beginFencedOperation, installationHeaders, sendRaw, type FencedOperation,
+} from '../../shared/api/transport'
 import { inspectAttachment } from '../attachments/attachmentFiles'
-import { readExactBytes, readUploadBytes, sha256Hex } from './projectFilesBytes'
+import { readExactBytes, readUploadBytes, sha256Hex } from '../../shared/api/bytes'
 
 export interface ProjectFileUploadInput { workspaceId: string; requestId: string; file: File }
 export interface ProjectFileRemoveInput { workspaceId: string; row: FileRow; commandId: string }
@@ -37,43 +37,17 @@ function pinnedPath(workspaceId: string, row: FileRow): string {
   const value = checkedRow(workspaceId, row)
   return `${root(workspaceId)}/${encodeURIComponent(value.file.fileId)}/revisions/${encodeURIComponent(value.revision.revisionId)}`
 }
-function boundary(signal?: AbortSignal) {
-  if (sessionIsSwitching()) throw new SessionChangedError()
-  return {
-    generation: sessionGeneration(),
-    signal: AbortSignal.any([sessionSignal(), AbortSignal.timeout(120_000), ...(signal ? [signal] : [])]),
-  }
-}
-function guard(operation: ReturnType<typeof boundary>): void {
-  assertSession(operation.generation)
-  operation.signal.throwIfAborted()
-}
+const boundary = (signal?: AbortSignal) => beginFencedOperation({ signal, timeoutMs: 120_000 })
 
-/** Only the raw PUT/download bypass the JSON-only apiClient, inside this MSW-mockable boundary. */
-async function rawRequest(path: string, operation: ReturnType<typeof boundary>, body?: ArrayBuffer): Promise<Response> {
-  guard(operation)
-  let response: Response
-  try {
-    response = await globalThis.fetch(new URL(path, globalThis.location?.origin ?? 'http://localhost').toString(), {
-      method: body === undefined ? 'GET' : 'PUT', body,
-      headers: installationHeaders(body === undefined ? { Accept: 'application/octet-stream' }
-        : { Accept: 'application/json', 'Content-Type': 'application/octet-stream' }),
-      credentials: 'omit', cache: 'no-store', redirect: 'error', signal: operation.signal,
-    })
-  } catch (error) {
-    guard(operation)
-    if (error instanceof Error && error.name === 'AbortError') throw error
-    throw new ApiError({ code: 'NETWORK_ERROR', message: 'The file request could not be completed.' }, undefined, { cause: error })
-  }
-  guard(operation)
-  if (!response.ok) {
-    const payload: unknown = await response.json().catch(() => /* ignore: a body that is not JSON fails the schema below */ undefined)
-    guard(operation)
-    const error = ApiErrorResponseSchema.safeParse(payload)
-    if (error.success) reloadChangedInstallation(error.data.error.code)
-    throw new ApiError(error.success ? error.data.error
-      : { code: 'HTTP_ERROR', message: 'The file request failed.' }, response.status)
-  }
+/** Only the raw PUT/download bypass the JSON-only apiClient, through the shared transport. */
+async function rawRequest(path: string, operation: FencedOperation, body?: ArrayBuffer): Promise<Response> {
+  const response = await sendRaw(apiUrl(path), operation, {
+    method: body === undefined ? 'GET' : 'PUT', body,
+    headers: installationHeaders(body === undefined ? { Accept: 'application/octet-stream' }
+      : { Accept: 'application/json', 'Content-Type': 'application/octet-stream' }),
+    cache: 'no-store', redirect: 'error', networkMessage: 'The file request could not be completed.',
+  })
+  if (!response.ok) throw await apiErrorFromResponse(response, operation, 'The file request failed.')
   return response
 }
 
@@ -91,14 +65,14 @@ export const projectFilesClient = {
   async upload(input: ProjectFileUploadInput): Promise<FileWithRevision> {
     // This immutable operation context survives navigation; it never reads the selected workspace later.
     const operation = boundary()
-    guard(operation)
+    operation.check()
     const inspected = inspectAttachment(input.file)
     if (!inspected.ok) throw new ApiError({ code: 'INVALID_REQUEST', message: inspected.issue.message })
     const uploadRoot = root(input.workspaceId)
     const bytes = await readUploadBytes(input.file, operation.signal)
     if (bytes.byteLength !== input.file.size) throw invalidResponse()
     const sha256 = await sha256Hex(bytes)
-    guard(operation)
+    operation.check()
     const path = `${uploadRoot}/uploads/${encodeURIComponent(input.requestId)}`
     const check = (value: unknown, ready: boolean, previous?: FileWithRevision) => {
       const row = checkedRow(input.workspaceId, value)
@@ -112,13 +86,13 @@ export const projectFilesClient = {
       method: 'POST', signal: operation.signal,
       body: { requestId: input.requestId, filename: inspected.filename, mediaType: inspected.mediaType, byteSize: bytes.byteLength, sha256 },
     })
-    guard(operation)
+    operation.check()
     const allocation = check(allocated.value, false)
     // Replaying a lost finalize acknowledgement must not allocate another logical file.
     if (allocation.file.state === 'ready') return allocation
     const response = await rawRequest(path, operation, bytes)
     const uploaded: unknown = await response.json().catch(() => /* ignore: a body that is not JSON fails the schema below */ undefined)
-    guard(operation)
+    operation.check()
     const parsed = FileReferenceMutationResultSchema.safeParse(uploaded)
     if (!parsed.success) throw invalidResponse()
     const staged = check(parsed.data.value, false, allocation)
@@ -126,7 +100,7 @@ export const projectFilesClient = {
     const finalized = await apiClient.request(`${path}/finalize`, FileReferenceMutationResultSchema, {
       method: 'POST', signal: operation.signal, body: {},
     })
-    guard(operation)
+    operation.check()
     return check(finalized.value, true, staged)
   },
 
@@ -135,7 +109,7 @@ export const projectFilesClient = {
     const result = await apiClient.request(pinnedPath(input.workspaceId, input.row), FileReferenceMutationResultSchema, {
       method: 'DELETE', body: { commandId: input.commandId }, signal: operation.signal,
     })
-    guard(operation)
+    operation.check()
     const removed = checkedRow(input.workspaceId, result.value)
     if (removed.file.state !== 'removed' || !sameRevision(input.row, removed)) throw invalidResponse()
     return removed
@@ -153,7 +127,7 @@ export const projectFilesClient = {
     }
     const bytes = await readExactBytes(response, value.revision.byteSize, operation.signal)
     const hash = await sha256Hex(bytes)
-    guard(operation)
+    operation.check()
     if (hash !== value.revision.sha256) throw invalidResponse()
     // Download only. Untrusted files are never rendered, navigated to, or previewed as active content.
     return new Blob([bytes], { type: 'application/octet-stream' })

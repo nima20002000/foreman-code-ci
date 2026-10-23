@@ -1,6 +1,5 @@
 import { jobLifecycleSignal } from '../../jobs/lifecycle.js'
 import { withTransaction } from '../../../infrastructure/transaction.js'
-import { createHash } from 'node:crypto'
 import { basename } from 'node:path'
 import type pg from 'pg'
 import type { Readable } from 'node:stream'
@@ -22,6 +21,7 @@ import type { FileMutationSource } from '../repository.js'
 import { JobOutputPublicationInputSchema, type JobOutputPublicationInput } from '@foreman-code/contracts/job-output-transfer'
 import type { FileStorageService } from '../service.js'
 import { completedBytes } from '../tools/transfers.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 export type { JobOutputPublicationInput } from '@foreman-code/contracts/job-output-transfer'
 export interface TrustedJobOutputReader {
@@ -39,7 +39,7 @@ export interface JobPublicationLedger {
   link(value: JobPublicationLink): Promise<void>
   list(query: JobSql, workspaceId: string, executionId: string): Promise<{ link: JobPublicationLink; value: FileWithRevision }[]>
 }
-const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
+const digest = (value: unknown) => sha256Hex(JSON.stringify(value))
 const scope = (workspaceId: string, jobExecutionId: string): JobExecutionFileScope => ({ kind: 'job_execution', workspaceId, jobExecutionId })
 
 /** Implements CI-B's actual port with canonical W09 objects and the existing publication ledger. */
@@ -96,7 +96,7 @@ export class CanonicalJobArtifactPort implements JobArtifactPort {
     const live = await this.authorizeRead(query,principal,workspaceId,executionId)
     const opened = await this.files.download(live,scope(workspaceId,executionId),{fileId,revisionId})
     const bytes = await completedBytes(opened.stream,Math.max(1,artifact.byteSize))
-    if (bytes.length !== artifact.byteSize || createHash('sha256').update(bytes).digest('hex') !== artifact.sha256) throw new DomainError('FILE_HASH_MISMATCH','The exact artifact bytes failed verification.',410)
+    if (bytes.length !== artifact.byteSize || sha256Hex(bytes) !== artifact.sha256) throw new DomainError('FILE_HASH_MISMATCH','The exact artifact bytes failed verification.',410)
     await this.authorizeRead(query,principal,workspaceId,executionId)
     const current = await this.files.repository.read(fileId,revisionId)
     if (!current || fileStateAt(current.value.file,this.clock().toISOString()) !== 'ready') throw new DomainError('FILE_BYTES_UNAVAILABLE','The job artifact expired during read.',410)
@@ -195,7 +195,7 @@ export class CanonicalJobArtifactPort implements JobArtifactPort {
           if ('kind' in output && output.kind === 'suite-summary') {
             const bytes = await completedBytes(stream, Math.max(1, selected.value.revision.byteSize))
             if (bytes.length !== selected.value.revision.byteSize
-              || createHash('sha256').update(bytes).digest('hex') !== selected.value.revision.sha256) {
+              || sha256Hex(bytes) !== selected.value.revision.sha256) {
               throw new DomainError('FILE_HASH_MISMATCH', 'Summary bytes changed.', 410)
             }
             summary = JSON.parse(bytes.toString('utf8'))

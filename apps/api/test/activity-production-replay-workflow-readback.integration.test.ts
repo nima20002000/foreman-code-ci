@@ -1,7 +1,7 @@
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
 import { afterEach, describe, expect, it } from 'vitest'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { closeActivityReplay, setup, completedRun } from './helpers/activityReplayFixture.js'
 
 afterEach(closeActivityReplay)

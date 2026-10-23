@@ -17,6 +17,7 @@ import { PostgresFoundationSettingsRepository } from '../../src/modules/settings
 import { WorkspaceLocationService } from '../../src/modules/workspaces/location.js'
 import { WorkspaceManagementService } from '../../src/modules/workspaces/management.js'
 import type { OperatorServices } from '../../src/mcp/operator/types.js'
+import type { WorkspaceRootPolicyPort } from '../../src/modules/sources/rootPolicyPorts.js'
 import { closeTestResources } from '../support/cleanup.js'
 import { migratedDatabase } from './migratedDatabase.js'
 import { createTestPool } from './testPool.mjs'
@@ -28,6 +29,8 @@ type WorkspaceFixtureServices = {
   commands: PostgresCommandCoordinator
   parentPath: string
   services: OperatorServices
+  /** Root policies the fixture's location service reads; set them once they are published. */
+  rootPolicies: { current?: WorkspaceRootPolicyPort }
 }
 
 export async function workspaceMcpFixture(options: {
@@ -53,7 +56,8 @@ export async function workspaceMcpFixture(options: {
   const clients: Client[] = []
   const access = new PostgresAccessService(pool)
   const commands = new PostgresCommandCoordinator(pool)
-  const locations = new WorkspaceLocationService(pool, commands, undefined, 'runner-local')
+  const rootPolicies: { current?: WorkspaceRootPolicyPort } = {}
+  const locations = new WorkspaceLocationService(pool, commands, undefined, 'runner-local', () => rootPolicies.current)
   const defaults = new PostgresFoundationSettingsRepository(pool, parentPath)
   const workspaces = new WorkspaceManagementService(pool, commands, locations, defaults, parentPath)
   const services = { commands, locations, workspaces } as unknown as OperatorServices
@@ -91,11 +95,11 @@ export async function workspaceMcpFixture(options: {
       await createFixtureSchema(admin, schema)
       await applyApplicationMigrations(pool)
     }
-    await options.configureServices?.({ pool, access, commands, parentPath, services })
+    await options.configureServices?.({ pool, access, commands, parentPath, services, rootPolicies })
     app = buildApp({ logger: false, readiness: {
       database: { ping: async () => undefined }, checkpoints: { ping: async () => undefined },
     }, operator: { access, services }, ...(options.runtimeIdentity ? { runtimeIdentity: options.runtimeIdentity } : {}) })
-    await options.configure?.({ app, pool, access, commands, parentPath, services })
+    await options.configure?.({ app, pool, access, commands, parentPath, services, rootPolicies })
     const address = await app.listen({ host: '127.0.0.1', port: options.port ?? 0 })
     async function connect(token: string) {
       const client = new Client({ name: 'workspace-regression', version: '1.0.0' })

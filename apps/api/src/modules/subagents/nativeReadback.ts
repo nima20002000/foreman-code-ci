@@ -1,7 +1,7 @@
-import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import type { NativeHarnessEvent } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 const CursorSchema = z.object({ root: z.string().min(1), target: z.string().min(1), cursor: z.string().nullable(), offset: z.number().int().nonnegative().optional(), children: z.array(z.string().min(1).max(512)).max(128).optional() }).strict()
 export type NativeChildCursor = z.infer<typeof CursorSchema>
@@ -16,6 +16,6 @@ export function childHistoryCursor(root: string, value?: string): NativeChildCur
 export function encodeChildHistoryCursor(cursor: NativeChildCursor): string { return Buffer.from(JSON.stringify(cursor)).toString('base64url') }
 /** Stable native readback identity; ingestion reuses the first durable observation timestamp on exact replay. */
 export function childHistoryEvent(type: string, payload: Record<string, unknown>, occurredAt = new Date().toISOString()): NativeHarnessEvent {
-  const digest = createHash('sha256').update(JSON.stringify([type, payload])).digest('hex')
+  const digest = sha256Hex(JSON.stringify([type, payload]))
   return { type, payload, occurredAt, connectionId: `child-history-${digest}`, sequence: 0 }
 }

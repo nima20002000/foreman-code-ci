@@ -1,69 +1,21 @@
-import type { MemoryWorkPageInfo, MemoryWorkSummary } from '@foreman-code/contracts'
-import type { z } from 'zod'
+import type { MemoryWorkPageInfo } from '@foreman-code/contracts'
 import type {
-  AgentNodeRef, AgentSubject, ExecutionRef, LogicalWorkRef, MemoryBoard, MemoryBoardScope, MemoryBoardMutation,
-  MemoryCard, MemoryNote, MemoryCardWorkBinding, MemoryCardWorkClaim,
+  AgentNodeRef, LogicalWorkRef, MemoryBoard, MemoryBoardChange, MemoryBoardChangesPage, MemoryBoardCommandRead,
+  MemoryBoardMutation, MemoryBoardMutationReceipt, MemoryBoardScope, MemoryBoardView as MemoryBoardViewContract,
+  MemoryCard, MemoryCardDetail as MemoryCardDetailContract, MemoryCardWorkBinding, MemoryCardWorkClaim, MemoryNote,
 } from '@foreman-code/contracts'
 
-/** Presentation projections over the canonical entities. C0 supplies their wire
- * validators at composition; this feature does not declare replacement schemas. */
-export interface MemoryPage<T> {
-  items: T[]
-  nextCursor: string | null
-  hasMore: boolean
-  revision: number
-}
+/** Feature names for the canonical memory-board wire shapes in contracts. */
+export type MemoryPage<T> = MemoryWorkPageInfo & { items: T[] }
 export type CardStatus = MemoryCard['status']
 export type OpenStatus = Exclude<CardStatus, 'done'>
-export interface MemoryBoardView {
-  board: MemoryBoard
-  openColumns: Array<MemoryPage<MemoryCard> & { status: OpenStatus }>
-  notes: MemoryPage<MemoryNote>
-  counts: Record<CardStatus, number> & { completed: number; dropped: number; notes: number }
-  sequence: number
-}
-export interface MemoryActor { kind: 'operator' | 'agent' | 'engine'; id: string; displayName: string }
-export interface MemoryChange {
-  id: string
-  boardId: string
-  sequence: number
-  boardRevision: number
-  entity: 'card' | 'note'
-  entityId: string
-  entityRevision: number
-  commandId?: string
-  sourceEventKey?: string
-  actor: MemoryActor
-  occurredAt: string
-  provenance?: { principalId?: string; subject?: AgentSubject; work?: LogicalWorkRef; execution?: ExecutionRef }
-  changes?: Record<string, { before: unknown; after: unknown }>
-}
-export interface MemoryCardDetail {
-  card: MemoryCard
-  bindings: MemoryCardWorkBinding[]
-  claims: MemoryCardWorkClaim[]
-  bindingPage: MemoryWorkPageInfo
-  claimPage: MemoryWorkPageInfo
-  workSummary: MemoryWorkSummary
-  history: MemoryPage<MemoryChange>
-}
-export interface MemoryReceipt {
-  commandId: string
-  outcome: 'created' | 'existing' | 'updated' | 'unchanged'
-  card?: MemoryCard
-  note?: MemoryNote
-  bindings: MemoryCardWorkBinding[]
-  claims: MemoryCardWorkClaim[]
-  boardRevision: number
-}
-export type MemoryCommandRead =
-  | { commandId: string; state: 'known'; receipt: MemoryReceipt }
-  | { commandId: string; state: 'rejected'; error: { code: string; message: string; status: number; details?: Record<string, unknown> } }
-  | { commandId: string; state: 'unknown' }
-export interface MemoryChangesPage extends MemoryPage<MemoryChange> {
-  watermark: number
-  resetRequired: boolean
-}
+export type MemoryBoardView = MemoryBoardViewContract
+export type MemoryChange = MemoryBoardChange
+export type MemoryActor = MemoryChange['actor']
+export type MemoryCardDetail = MemoryCardDetailContract
+export type MemoryReceipt = MemoryBoardMutationReceipt
+export type MemoryCommandRead = MemoryBoardCommandRead
+export type MemoryChangesPage = MemoryBoardChangesPage
 export interface CardFilter {
   status: CardStatus
   completionKind?: 'completed' | 'dropped'
@@ -89,18 +41,6 @@ export interface MemoryBoardClient {
   readChanges(boardId: string, afterSequence?: number, options?: PageOptions): Promise<MemoryChangesPage>
   mutate(command: MemoryBoardMutation): Promise<MemoryReceipt>
   subscribe(boardId: string, listeners: MemoryStreamListeners): () => void
-}
-export interface MemoryWireSchemas {
-  bindings: z.ZodType<MemoryPage<MemoryCardWorkBinding>>
-  claims: z.ZodType<MemoryPage<MemoryCardWorkClaim>>
-  board: z.ZodType<MemoryBoardView>
-  cards: z.ZodType<MemoryPage<MemoryCard>>
-  card: z.ZodType<MemoryCardDetail>
-  notes: z.ZodType<MemoryPage<MemoryNote>>
-  command: z.ZodType<MemoryCommandRead>
-  receipt: z.ZodType<MemoryReceipt>
-  changes: z.ZodType<MemoryChangesPage>
-  change: z.ZodType<MemoryChange>
 }
 /** A bounded, already-authorized node/work projection supplied by D's shell. */
 export interface MemoryNodeOption {

@@ -289,6 +289,10 @@ export type JobDefinitionSaveRecord = z.infer<typeof JobDefinitionSaveRecordSche
 export type ResolvedJobDefinitionSpecRecord = z.infer<typeof ResolvedJobDefinitionSpecRecordSchema>
 export type PreparedJobSpecRecord = z.infer<typeof PreparedJobSpecRecordSchema>
 export type JobExecutionRecord = z.infer<typeof JobExecutionRecordSchema>
+/** Management job read envelopes. */
+export const JobDefinitionListSchema = z.object({ definitions: z.array(JobDefinitionRecordSchema) })
+export const JobDefinitionReadSchema = z.object({ definition: JobDefinitionRecordSchema })
+export const JobExecutionReadSchema = z.object({ execution: JobExecutionRecordSchema })
 export type JobAcceptedSpecRecord = z.infer<typeof JobAcceptedSpecRecordSchema>
 
 export function isAutoJobSpecRecord(spec: JobDefinitionSpecRecord): spec is

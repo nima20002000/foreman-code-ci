@@ -27,7 +27,7 @@ describe('agent and workflow execution limits', () => {
     const user = userEvent.setup()
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Coder updated' } })
     await user.click(screen.getByRole('button', { name: 'Save agent settings' }))
-    expect(onSave.mock.calls[0]![2]).toEqual(policy)
+    expect(onSave.mock.calls[0]![0].executionPolicy).toEqual(policy)
   })
   it('allows a name validation attempt and focuses its explained error', async () => {
     const onSave = vi.fn()

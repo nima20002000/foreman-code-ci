@@ -5,7 +5,7 @@ import { DEFAULT_CODEX_ADVANCED_CONFIGURATION, memoryBoardTools } from '@foreman
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 it.runIf(postgresEnabled).each([false, true])('applies result board effects only for a pinned coordination protocol (%s)', async pinned => {
   const fixture = makeCurrentWorkflowFixture(randomUUID(), 'single')

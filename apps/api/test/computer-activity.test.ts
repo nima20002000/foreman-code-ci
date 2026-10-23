@@ -21,8 +21,9 @@ import { COMPUTER_ACCOUNTS_NAMESPACE, ComputerAccountsListSchema, type ComputerA
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { CircleStandby } from '../src/modules/ci-host/circleStandby.js'
+import { CircleStandby } from '@foreman-code/ci/circleStandby'
 import { operatorCatalogNames } from './support/operatorCatalog.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 const mainId = '11111111-1111-4111-8111-111111111111'
 const deviceId = '22222222-2222-4222-8222-222222222222'
@@ -212,7 +213,7 @@ it('lists the cloud CI services Main is logged in to or running CI on through HT
 })
 
 it('reads separate account roles and running counts without hiding a draining legacy executor', async () => {
-  const selector = new CircleStandby(async () => [
+  const selector = new CircleStandby(mainCiContext, async () => [
     { owner: 'alpha', circleAccountId: 'default', role: 'primary', ready: true, mirrorNames: new Set(['site-ci']) },
     { owner: 'delta', circleAccountId: 'reserve', role: 'standby', ready: true, mirrorNames: new Set(['site-ci']) },
   ], { reading: async organization => ({ credits: { total: 400_000,

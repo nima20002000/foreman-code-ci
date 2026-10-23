@@ -1,8 +1,8 @@
-import { createHash } from 'node:crypto'
 import type { Readable } from 'node:stream'
 import { posix, win32 } from 'node:path'
 import type { RegisteredCodexCopy } from './port.js'
 import { reportOperationProgress } from '../../operationProgress.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 export class CodexFileDeliveryError extends Error {
   constructor(readonly code: string, options?: ErrorOptions) {
@@ -11,7 +11,7 @@ export class CodexFileDeliveryError extends Error {
   }
 }
 export function fail(code: string): never { throw new CodexFileDeliveryError(code) }
-export const sha256 = (data: Uint8Array): string => createHash('sha256').update(data).digest('hex')
+export const sha256 = (data: Uint8Array): string => sha256Hex(data)
 
 /** Own chunks synchronously at delivery, before a producer can reuse its buffer. */
 export async function collectCodexFileBytes(stream: Readable, maximum: number,

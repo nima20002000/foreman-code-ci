@@ -6,7 +6,7 @@ import {
   canonicalGraphJson, CurrentEditReadResultSchema, CurrentWorkflowReadResultSchema, CurrentWorkflowCapabilitiesSchema,
   CurrentWorkflowSavedSchema, CurrentWorkflowSaveInputSchema,
 } from '@foreman-code/contracts/wave25'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { fixture, startInput, toolError } from './helpers/nodePlacementStartFixture.js'
 import { commandInputHash } from '../src/modules/commands/postgres.js'

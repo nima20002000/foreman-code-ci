@@ -16,7 +16,7 @@ import { buildProductionApp } from '../../src/production.js'
 import { ActivityProductionReplay } from './activityProductionReplay.js'
 import { createActivityReplayFileStorage, createActivityReplayWorkspace, startActivityReplayProduction } from './activityReplayLifecycle.js'
 import { privateFixtureDirectory } from './privateFixtureDirectory.js'
-import { agent3Database, seedAgent3 } from './wave25Agent3.js'
+import { agent3Database, seedAgent3 } from './workflowDatabase.js'
 import { agentWorkflowVersion } from './agentWorkflowFixture.js'
 
 const closes: Array<() => Promise<void>> = []
@@ -108,7 +108,7 @@ export async function setup(options: { operatorSandbox?: 'read-only' | 'workspac
   const database = { pool: db.pool, ping: async () => { await db.pool.query('select 1') },
     migrate: () => applyApplicationMigrations(db.pool), close: async () => {} }
   const infrastructure = replay.infrastructure(join(workspace.harnessWorkspaceRoot, 'native-process-registry'))
-  let production = buildProductionApp(config, database, checkpoints, false, undefined, undefined, undefined, infrastructure)
+  let production = buildProductionApp({ config, database, checkpoints, logger: false, infrastructure })
   let origin = await startActivityReplayProduction(production, replay, closes, config.port)
   const headers = { authorization: `Bearer ${writer.token}` }
   async function http(method: 'GET' | 'POST' | 'PUT', url: string, payload?: Record<string, unknown>, token = writer.token) {
@@ -135,7 +135,7 @@ export async function setup(options: { operatorSandbox?: 'read-only' | 'workspac
   expect(changed.statusCode, changed.body).toBe(200)
   async function restart() {
     await production.shutdown()
-    production = buildProductionApp(config, database, checkpoints, false, undefined, undefined, undefined, infrastructure)
+    production = buildProductionApp({ config, database, checkpoints, logger: false, infrastructure })
     origin = await startActivityReplayProduction(production, replay, closes, config.port)
   }
   return { db, saved, location, access, writer, denied, replay, headers, http, call, restart, reconcile: () => production.reconcile((error) => { throw error }), get origin() { return origin } }

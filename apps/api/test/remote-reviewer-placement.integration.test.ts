@@ -4,8 +4,9 @@ import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema, CurrentWorkflo
   CurrentWorkflowSaveResultSchema, ExecutableWorkflowV3Schema } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { remoteReviewerPlacementFixture } from './helpers/remoteReviewerPlacement.js'
-import { postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
-import { graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
+import { graphRpcValue } from './graph-composition-fixture.js'
 
 describe.skipIf(!postgresEnabled)('remote designated Orchestrator authoring over authenticated MCP', () => {
   it('validates, saves and reads the remote placement while denying a read-only caller', async () => {

@@ -14,10 +14,11 @@ import { registerCurrentWorkflowRoutes } from '../src/routes/currentWorkflow.js'
 import { registerCurrentWorkflowTools } from '../src/mcp/operator/tools/currentWorkflow.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { DomainError } from '../src/modules/errors.js'
+import { postgresEnabled } from './helpers/database.js'
 
 /** Actual SQL saved-version writer and authenticated production HTTP/MCP handlers.
  * This verifies declarations only; no native qualification, output or edge is fabricated. */
-describe.skipIf(!process.env.TEST_DATABASE_URL)('saved workflow artifact declaration parity', () => {
+describe.skipIf(!postgresEnabled)('saved workflow artifact declaration parity', () => {
   it('retains exact optional fields, original history and idempotence, with denied scoped/read-only/revoked callers', async () => {
     const f = await currentRunHistory(), app = Fastify(), clients: Client[] = []
     try {

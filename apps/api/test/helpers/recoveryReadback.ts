@@ -1,5 +1,5 @@
 import { expect } from 'vitest'
-import { executionRows, readback, type Form, type RecoveryFixture } from './eng06DRecovery.js'
+import { executionRows, readback, type Form, type RecoveryFixture } from './recoveryFixture.js'
 
 export const forms: Form[] = ['sequential', 'repeat']
 

@@ -1,6 +1,6 @@
 import type { OperatorConversationStreamEvent, OperatorConversationState } from '@foreman-code/contracts'
 import { describe, expect, it, vi } from 'vitest'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { agentMessage, emit, finish, until } from './fixtures/codex-test-helpers.js'
 import { useCodexChatDelivery } from './codex-chat-delivery.helpers.js'
 

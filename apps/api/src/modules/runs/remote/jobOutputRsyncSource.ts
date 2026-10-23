@@ -1,5 +1,4 @@
 import { jobLifecycleSignal } from '../../jobs/lifecycle.js'
-import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { JobOutputPublicationInputSchema, type JobOutputPublicationInput } from '@foreman-code/contracts/job-output-transfer'
 import { BYTE_TRANSFER_POLICY, TransferIntentSchema, type TransferIntent } from '@foreman-code/contracts/byte-transfer'
@@ -7,6 +6,7 @@ import type { JobExecutionRecord } from '@foreman-code/contracts/job-verificatio
 import type { ImmutableTransferSource } from '../../byte-transfer/sender.js'
 import { DomainError } from '../../errors.js'
 import type { RemoteOperationJournal } from './operationJournal.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 export interface RetainedJobOutputRsyncRecord {
   intent:TransferIntent
@@ -56,7 +56,7 @@ export class JobOutputRsyncSource {
     const original=await this.closed(record)
     if(!isDeepStrictEqual(original,execution))throw new DomainError('JOB_OUTPUT_CLOSURE_CONFLICT','Caller execution differs from original journal closure.',409)
     const bytes=Buffer.from(capturedBytes)
-    if(bytes.length!==input.byteSize||createHash('sha256').update(bytes).digest('hex')!==input.sha256)
+    if(bytes.length!==input.byteSize||sha256Hex(bytes)!==input.sha256)
       throw new DomainError('JOB_OUTPUT_HASH_CONFLICT','Captured immutable bytes differ from original admission.',410)
     await this.retained.retain(record,bytes,signal)
     signal.throwIfAborted()

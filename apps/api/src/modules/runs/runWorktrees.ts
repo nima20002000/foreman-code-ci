@@ -12,6 +12,7 @@ import { ensureWorktreeGitIdentity, systemGitWorktreePorts, type GitWorktreePort
 import { directoryFlags, withPrivateDirectoryLock } from '../sources/privateFilesystem.js'
 import { DomainError } from '../errors.js'
 import { reuseRunCheckout, runWorktreeCleanupCondition, type WorktreeAllocationRow } from './runWorktreeLifecycle.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 type Sql = Pick<pg.PoolClient, 'query'>
 type Allocation = { root: string; checkoutRoot: string; record: RunWorktree; cleanupAttempts: number }
@@ -32,7 +33,7 @@ export class RunWorktrees {
 
   private async exclusive<T>(identity: string, signal: AbortSignal,
     work: () => Promise<T>): Promise<T> {
-    const key = createHash('sha256').update(identity).digest('hex')
+    const key = sha256Hex(identity)
     const path = join(this.managedRoot, '.locks', key)
     await mkdir(path, { recursive: true, mode: 0o700 })
     const directory = await open(path, directoryFlags)
@@ -130,7 +131,7 @@ export class RunWorktrees {
   }
 
   private checkoutIdentity(run: AcceptedWorkflowRunV3, allocationId: string) {
-    const namespace = createHash('sha256').update(run.workspaceId).digest('hex')
+    const namespace = sha256Hex(run.workspaceId)
     const name = createHash('sha256').update(run.id).update('\0').update(allocationId).digest('hex')
     const branch = `foreman/run-${name}`
     return { branch, checkoutRoot: join(this.managedRoot, namespace, branch.slice('foreman/'.length)) }

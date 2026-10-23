@@ -36,7 +36,7 @@ describe('exact native sandbox settings in the actual form', () => {
     fireEvent.click(screen.getByText('More settings'))
     expect(screen.getByText(/Leaving workspace-write removes additional writable directories/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Save agent settings' }))
-    const saved = onSave.mock.calls[0]![0] as Agent
+    const saved = onSave.mock.calls[0]![0].agent as Agent
     expect(HarnessConfigurationSchema.safeParse(saved.harnessConfiguration).success).toBe(true)
     expect(saved.harnessConfiguration).toMatchObject({ sandbox, advanced: { additionalWritableDirectories: [] } })
     expect(saved.harnessConfiguration?.harness === 'codex' ? saved.harnessConfiguration.advanced?.workspaceWrite : 'wrong harness').toBeUndefined()

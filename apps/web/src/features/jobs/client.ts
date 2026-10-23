@@ -1,27 +1,29 @@
 import { WorkflowJobListInputSchema, WorkflowJobPageSchema, type WorkflowJobListInput } from '@foreman-code/contracts/job-verification'
-import { JobWorkflowExecutionReferenceSchema, type JobWorkflowAdmissionReference } from '@foreman-code/contracts/job-workflow'
-import { z } from 'zod'
-import { JobLogPageSchema, JobArtifactSchema } from '@foreman-code/contracts/jobs'
-import { JobDefinitionRecordSchema, JobExecutionRecordSchema } from '@foreman-code/contracts/job-verification'
+import { JobWorkflowExecutionReferenceReadSchema, type JobWorkflowAdmissionReference } from '@foreman-code/contracts/job-workflow'
+import type { z } from 'zod'
+import { JobLogPageSchema, JobArtifactListSchema, JobArtifactSchema, type JobArtifact } from '@foreman-code/contracts/jobs'
+import { JobDefinitionListSchema, JobDefinitionReadSchema, JobExecutionReadSchema } from '@foreman-code/contracts/job-verification'
 import { JobQueueListInputSchema, JobQueuePageSchema } from '@foreman-code/contracts/job-admission'
 import { apiClient, ApiError, type RequestOptions } from '../../shared/api/client'
+import { readExactBytes, sha256Hex } from '../../shared/api/bytes'
+import { apiUrl, beginFencedOperation, sendRaw } from '../../shared/api/transport'
 
 const root = (workspaceId: string) => `/api/management/workspaces/${encodeURIComponent(workspaceId)}/jobs`
 const executionPath = (workspaceId: string, id: string) => `${root(workspaceId)}/executions/${encodeURIComponent(id)}`
 function mismatch(): never { throw new ApiError({ code: 'JOB_SELECTION_MISMATCH', message: 'The response belongs to another job or workspace.' }, 409) }
 export const jobsClient = {
   async workflowExecution(input: JobWorkflowAdmissionReference, options?: RequestOptions) {
-    const { reference } = await apiClient.request(`${root(input.workspaceId)}/workflow-executions/${encodeURIComponent(input.runId)}/${encodeURIComponent(input.nodeExecutionId)}`, z.object({ reference: JobWorkflowExecutionReferenceSchema }), options)
+    const { reference } = await apiClient.request(`${root(input.workspaceId)}/workflow-executions/${encodeURIComponent(input.runId)}/${encodeURIComponent(input.nodeExecutionId)}`, JobWorkflowExecutionReferenceReadSchema, options)
     for (const key of ['workspaceId', 'workflowId', 'runId', 'workflowVersionId', 'nodeId', 'nodeExecutionId', 'occurrenceId', 'occurrenceIndex'] as const) if (reference[key] !== input[key]) mismatch()
     return reference
   },
   async definitions(workspaceId: string, options?: RequestOptions) {
-    const { definitions } = await apiClient.request(`${root(workspaceId)}/definitions`, z.object({ definitions: z.array(JobDefinitionRecordSchema) }), options)
+    const { definitions } = await apiClient.request(`${root(workspaceId)}/definitions`, JobDefinitionListSchema, options)
     if (definitions.some(item => item.workspaceId !== workspaceId)) mismatch()
     return definitions
   },
   async definitionVersion(workspaceId:string,id:string,versionId:string,options?:RequestOptions) {
-    const {definition}=await apiClient.request(`${root(workspaceId)}/definitions/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}`,z.object({definition:JobDefinitionRecordSchema}),options)
+    const {definition}=await apiClient.request(`${root(workspaceId)}/definitions/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}`,JobDefinitionReadSchema,options)
     if(definition.workspaceId!==workspaceId||definition.id!==id||definition.versionId!==versionId)mismatch()
     return definition
   },
@@ -55,7 +57,7 @@ export const jobsClient = {
     return page
   },
   async execution(workspaceId: string, id: string, options?: RequestOptions) {
-    const { execution } = await apiClient.request(executionPath(workspaceId, id), z.object({ execution: JobExecutionRecordSchema }), options)
+    const { execution } = await apiClient.request(executionPath(workspaceId, id), JobExecutionReadSchema, options)
     if (execution.workspaceId !== workspaceId || execution.id !== id) mismatch()
     return execution
   },
@@ -65,30 +67,24 @@ export const jobsClient = {
     return page
   },
   async artifacts(workspaceId: string, id: string, options?: RequestOptions) {
-    const { artifacts } = await apiClient.request(`${executionPath(workspaceId, id)}/artifacts`, z.object({ artifacts: z.array(JobArtifactSchema) }), options)
+    const { artifacts } = await apiClient.request(`${executionPath(workspaceId, id)}/artifacts`, JobArtifactListSchema, options)
     if (artifacts.some(item => item.executionId !== id)) mismatch()
     return artifacts
   },
 }
 
 /** Save only digest-verified immutable bytes; artifact HTML is never opened in the app origin. */
-export async function downloadJobArtifact(workspaceId: string, artifact: import('@foreman-code/contracts/jobs').JobArtifact, signal?: AbortSignal) {
-  const { JobArtifactSchema } = await import('@foreman-code/contracts/jobs')
+export async function downloadJobArtifact(workspaceId: string, artifact: JobArtifact, signal?: AbortSignal) {
   const pin = JobArtifactSchema.parse(artifact)
   if (pin.state !== 'available' || pin.byteSize > 64 * 1024 * 1024) throw new ApiError({ code: 'ARTIFACT_UNAVAILABLE', message: 'Artifact expired, unavailable or above the 64 MiB browser download limit.' })
-  const { assertSession, sessionGeneration, sessionSignal, sessionIsSwitching, SessionChangedError } = await import('../../shared/api/sessionBoundary')
-  if (sessionIsSwitching()) throw new SessionChangedError()
-  const generation = sessionGeneration()
-  const requestSignal = AbortSignal.any([sessionSignal(), AbortSignal.timeout(120000), ...(signal ? [signal] : [])])
+  const operation = beginFencedOperation({ signal, timeoutMs: 120000 })
   const path = `${executionPath(workspaceId, pin.executionId)}/artifacts/${encodeURIComponent(pin.fileId)}/revisions/${encodeURIComponent(pin.revisionId)}/content`
-  const response = await fetch(new URL(path, location.origin), { credentials: 'omit', cache: 'no-store', redirect: 'error', signal: requestSignal })
-  assertSession(generation)
-  requestSignal.throwIfAborted()
+  const response = await sendRaw(apiUrl(path), operation, { cache: 'no-store', redirect: 'error',
+    networkMessage: 'Artifact bytes unavailable or permission lost.' })
   if (!response.ok) throw new ApiError({ code: 'ARTIFACT_UNAVAILABLE', message: 'Artifact bytes unavailable or permission lost.' }, response.status)
-  const { readExactBytes, sha256Hex } = await import('../project-files/projectFilesBytes')
-  const bytes = await readExactBytes(response, pin.byteSize, requestSignal)
-  assertSession(generation)
+  const bytes = await readExactBytes(response, pin.byteSize, operation.signal)
+  operation.check()
   if (bytes.byteLength !== pin.byteSize || await sha256Hex(bytes) !== pin.sha256) throw new ApiError({ code: 'ARTIFACT_CORRUPT', message: 'Artifact bytes do not match the accepted revision digest or size.' })
-  assertSession(generation)
+  operation.check()
   return new Blob([bytes], { type: 'application/octet-stream' })
 }

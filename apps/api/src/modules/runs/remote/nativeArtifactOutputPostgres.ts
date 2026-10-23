@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { beginTransaction, commitTransaction, rollbackTransaction } from '../../../infrastructure/transaction.js'
 import { isDeepStrictEqual as same } from 'node:util'
 import type pg from 'pg'
@@ -15,6 +14,7 @@ import { DomainError } from '../../errors.js'
 import { NativeArtifactOutputSchema, LocalNativeArtifactOutputSchema, WorkflowNativeArtifactOutputSchema,
   type LocalNativeArtifactOutput, type WorkflowNativeArtifactOutput, type NativeArtifactOutput,
   type NativeArtifactOutputRepository } from './nativeArtifactOutputs.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 const operation = 'remote.native-artifact.output'
 const conflict = (): never => { throw new DomainError('NATIVE_ARTIFACT_OUTPUT_CONFLICT', 'The original native output slot identifies different canonical facts.', 409) }
@@ -85,7 +85,7 @@ export class PostgresNativeArtifactOutputRepository implements NativeArtifactOut
     signal?.throwIfAborted()
     validateOutput(this.mainId, record)
     const target = this.target(record.producer, record.outputKey), serialized = canonicalGraphJson(record)
-    const commandId = createHash('sha256').update(target).digest('hex'), inputHash = createHash('sha256').update(serialized).digest('hex')
+    const commandId = sha256Hex(target), inputHash = sha256Hex(serialized)
     const client = await this.pool.connect()
     let released = false
     let processId: number | undefined

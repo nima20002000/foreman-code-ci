@@ -6,8 +6,9 @@ import { RemoteJobDispatchIntentSchema } from '@foreman-code/contracts/remote-jo
 import { JobPublicationAuthority } from '../src/modules/jobs/authority.js'
 import { JobApplicationBridge } from '../src/modules/runs/remote/jobApplicationBridge.js'
 import { jobExecution } from './helpers/jobFixture.js'
+import { postgresEnabled } from './helpers/database.js'
 
-describe.skipIf(!process.env.TEST_DATABASE_URL)('Concurrent Job publication authorization', () => {
+describe.skipIf(!postgresEnabled)('Concurrent Job publication authorization', () => {
   it('authorizes overlapping publications without upgrading a shared execution lock', async () => {
     const url = new URL(process.env.TEST_DATABASE_URL!)
     if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) || !/test/i.test(url.pathname)) {

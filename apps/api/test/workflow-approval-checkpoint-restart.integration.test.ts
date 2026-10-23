@@ -1,5 +1,5 @@
 import { describe, it } from 'vitest'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { assertJoinCheckpointRestart, restartCleanup } from './workflowApprovalRestart.test-support.js'
 
 const closes = restartCleanup()

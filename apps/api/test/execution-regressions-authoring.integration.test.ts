@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { SupportedHarnessConfigurationSchema } from '@foreman-code/contracts'
 import { OperatorAgentMutationService } from '../src/modules/workspaces/operatorAgents.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { regressionAuthoringFixture } from './helpers/executionRegressions.js'
 
 describe.skipIf(!postgresEnabled)('current execution authoring regressions', () => {

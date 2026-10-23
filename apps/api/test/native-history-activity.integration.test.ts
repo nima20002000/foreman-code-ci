@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { DeviceHistoryGap } from '@foreman-code/contracts/device-application'
-import { checkpointRuntimeFixture } from './helpers/wave25Br1003Runtime.js'
-import { postgresEnabled, readCurrentExecutions } from './helpers/wave25Agent3.js'
+import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
+import { readCurrentExecutions } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('native history recovery activity', () => {
   it('persists skipped ranges once while the workflow and its sibling finish normally', async () => {

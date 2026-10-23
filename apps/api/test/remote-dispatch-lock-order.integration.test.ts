@@ -6,7 +6,9 @@ import { DispatchIntentSchema } from '@foreman-code/contracts/node-placement'
 import { SourceRootRecordSchema } from '@foreman-code/contracts/source-admission'
 import { AgentSourceAttemptAuthority } from '../src/modules/sources/agentSourceAuthority.js'
 import { readReconciledDispatchIntent } from '../src/modules/runs/remote/persistence.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 describe.skipIf(!postgresEnabled)('remote dispatch and worker credential lock ordering', () => {
   let database: Awaited<ReturnType<typeof agent3Database>>
@@ -47,7 +49,7 @@ describe.skipIf(!postgresEnabled)('remote dispatch and worker credential lock or
     let pending: Promise<unknown> | undefined
     try {
       for (const sql of [reader, credentials]) {
-        await sql.query('begin')
+        await beginTransaction(sql)
         await sql.query(`set local search_path to ${schema}`)
         await sql.query("set local lock_timeout='2s'")
       }
@@ -58,7 +60,7 @@ describe.skipIf(!postgresEnabled)('remote dispatch and worker credential lock or
         await reader.query('select id from runs where id=$1 for share', [intent.runId])
         return value
       })()
-      void pending.catch(() => undefined) // Joined below before either connection is released.
+      void pending.catch(() => /* ignore: marks the promise handled; the test awaits it below */ undefined) // Joined below before either connection is released.
       const waiting = await readUntil(async () => {
         return (await database.pool.query<{ waiting: boolean }>(
           'select cardinality(pg_blocking_pids($1))>0 as waiting', [readerPid],
@@ -66,13 +68,13 @@ describe.skipIf(!postgresEnabled)('remote dispatch and worker credential lock or
       }, value => value, { timeoutMs: 1000, description: 'the PostgreSQL lock wait' })
       expect(waiting).toBe(true)
       expect(await readReconciledDispatchIntent(credentials, intent.operationId, true)).toEqual(intent)
-      await credentials.query('commit')
+      await commitTransaction(credentials)
       expect(await pending).toEqual(intent)
-      await reader.query('commit')
+      await commitTransaction(reader)
     } finally {
-      await credentials.query('rollback')
-      await pending?.catch(() => undefined)
-      await reader.query('rollback')
+      await rollbackTransaction(credentials)
+      await pending?.catch(() => /* ignore: cleanup; the test body already awaited or asserted this outcome */ undefined)
+      await rollbackTransaction(reader)
       reader.release()
       credentials.release()
     }
@@ -99,7 +101,7 @@ describe.skipIf(!postgresEnabled)('remote dispatch and worker credential lock or
     let pending: Promise<void> | undefined
     try {
       for (const sql of [reader, credentials]) {
-        await sql.query('begin')
+        await beginTransaction(sql)
         await sql.query(`set local search_path to ${schema}`)
         await sql.query("set local lock_timeout='2s'")
       }
@@ -111,7 +113,7 @@ describe.skipIf(!postgresEnabled)('remote dispatch and worker credential lock or
         attempt: { executionId: 'unallocated-execution', attemptId: intent.attemptId,
           placementHash: 'e'.repeat(64), keyRevision: null, authorizationRevision: null },
       })
-      void pending.catch(() => undefined) // Joined before either transaction is released.
+      void pending.catch(() => /* ignore: marks the promise handled; the test awaits it below */ undefined) // Joined before either transaction is released.
       const waiting = await readUntil(async () => {
         return (await database.pool.query<{ waiting: boolean }>(
           'select cardinality(pg_blocking_pids($1))>0 as waiting', [readerPid],
@@ -119,12 +121,12 @@ describe.skipIf(!postgresEnabled)('remote dispatch and worker credential lock or
       }, value => value, { timeoutMs: 1000, description: 'the PostgreSQL lock wait' })
       expect(waiting).toBe(true)
       await credentials.query('select id from harness_executions where id=$1 for update', ['unallocated-execution'])
-      await credentials.query('commit')
+      await commitTransaction(credentials)
       await expect(pending).rejects.toMatchObject({ code: 'AGENT_SOURCE_ALLOCATION_MISSING' })
     } finally {
-      await credentials.query('rollback')
-      await pending?.catch(() => undefined)
-      await reader.query('rollback')
+      await rollbackTransaction(credentials)
+      await pending?.catch(() => /* ignore: cleanup; the test body already awaited or asserted this outcome */ undefined)
+      await rollbackTransaction(reader)
       reader.release()
       credentials.release()
     }

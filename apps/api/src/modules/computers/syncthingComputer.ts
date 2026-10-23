@@ -1,13 +1,13 @@
-import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { SyncComputerRequestSchema, SyncComputerStateSchema, SyncIdentitySchema,
   type SyncComputerRequest, type SyncComputerState, type SyncIdentity } from '@foreman-code/contracts/computer-accounts'
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import { systemSyncthingPorts, type SyncthingPorts } from './syncthingSystem.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export function sharedFolderId(workspaceId: string): string {
-  return `workspace-${createHash('sha256').update(workspaceId).digest('hex')}`
+  return `workspace-${sha256Hex(workspaceId)}`
 }
 const FolderSchema = z.object({ id: z.string(), label: z.string(), path: z.string(),
   devices: z.array(z.object({ deviceID: z.string() })), paused: z.boolean().optional() }).passthrough()

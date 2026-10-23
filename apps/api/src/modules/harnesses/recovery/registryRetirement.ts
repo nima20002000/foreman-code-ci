@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { lstatSync, readdirSync, rmdirSync, unlinkSync } from 'node:fs'
 import { rename, rm } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -9,6 +8,7 @@ import { bootIdentity, identityAlive } from './linuxIdentity.js'
 import { nativeRegistryProjection, type NativeLaunchObservation } from './registryObservation.js'
 import { existingPrivateDirectory, privateDirectory, readRecord, recordObject, syncDirectory,
   writeRecord, writeRecordBatch, storageBatch, syncDirectoryAsync } from './storage.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 /** Preserve every closure before committing a batch of registration removals. */
 export async function retireRegistrations(directory: string, observations: ReadonlyMap<string, NativeLaunchObservation>): Promise<void> {
@@ -67,7 +67,7 @@ export function pruneClosedObservation(directory: string, id: string): void {
   if (raw === undefined) return
   const row = NativeProcessObservationSchema.parse(raw)
   if (row.launchId !== id || row.lifecycle !== 'closed' || !row.closureEvidence
-    || createHash('sha256').update(row.owner).digest('hex') !== basename(directory)) {
+    || sha256Hex(row.owner) !== basename(directory)) {
     throw new Error('Invalid native closure archive record.')
   }
   if (row.bootId === bootIdentity() && [row.guardian, row.provider].some(process => process && identityAlive(process))) {
@@ -115,7 +115,7 @@ function pruneRetiredOwner(directory: string): void {
   const ownerKey = basename(directory)
   if (retired.format !== 2 || retired.owner !== observation.owner || retired.id !== observation.launchId
     || observation.lifecycle !== 'closed' || !observation.closureEvidence
-    || createHash('sha256').update(observation.owner).digest('hex') !== ownerKey) return
+    || sha256Hex(observation.owner) !== ownerKey) return
   if (observation.bootId === bootIdentity()
     && [observation.guardian, observation.provider].some(process => process && identityAlive(process))) return
   const local = join(directory, 'closed')

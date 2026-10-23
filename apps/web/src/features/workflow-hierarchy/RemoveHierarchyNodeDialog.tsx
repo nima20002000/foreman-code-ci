@@ -4,14 +4,14 @@ import { useGraphDraftStore } from '../graph/store'
 import { nodeTitle } from '../graph/nextDraft/model'
 import type { NextDraftEdit } from '../graph/nextDraft/state'
 import { pinBoardLayout } from '../graph/nextDraft/placement'
-import { useWorkflowBoard } from '../workflow-board/context'
+import { useBoardSelection } from '../workflow-board/context'
 import { hierarchyNodes, removeHierarchyNode } from './authoring'
 
 export function RemoveHierarchyNodeDialog({ draftKey, edit, pending, report }: {
   draftKey: string; edit: NextDraftEdit; pending: boolean; report(error: unknown): void
 }) {
   const form = edit.workflowForms?.removeNode
-  const board = useWorkflowBoard()
+  const board = useBoardSelection()
   const node = edit.graph.nodes.find(item => item.id === form?.nodeId)
   const master = form?.nodeId === edit.graph.hierarchy?.masterNodeId
   const workers = !master && form ? edit.graph.hierarchy?.parents.filter(member => member.parentNodeId === form.nodeId) ?? [] : []

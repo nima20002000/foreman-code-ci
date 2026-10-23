@@ -4,9 +4,9 @@ import {
   AGENT_INTERVAL_MAX_SECONDS, AGENT_INTERVAL_MIN_SECONDS, AGENT_INTERVAL_PROMPT_MAX_LENGTH, CURRENT_WORKFLOW_TOOLS, CurrentWorkflowCapabilitiesSchema,
   CurrentWorkflowReadResultSchema, CurrentWorkflowSaveResultSchema,
 } from '@foreman-code/contracts/wave25'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
-import { writerFixture, type WriterFixture } from './eng04-writer-fixtures.js'
-import { graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { currentDatabase } from './helpers/database.js'
+import { writerFixture, type WriterFixture } from './writer-fixtures.js'
+import { graphRpcValue } from './graph-composition-fixture.js'
 
 let db: Awaited<ReturnType<typeof currentDatabase>>
 const fixtures: WriterFixture[] = []

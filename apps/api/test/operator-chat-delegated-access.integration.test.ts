@@ -18,6 +18,7 @@ import { NativeRollout } from '../src/modules/harnesses/nativeRollout.js'
 import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
 import { registerOperatorChatFixture, type OperatorChatFixture, waitFor } from './helpers/operatorChatFixture.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const connectionString = process.env.TEST_DATABASE_URL
 
@@ -34,7 +35,7 @@ registerOperatorChatFixture(fixture => {
   ({ pool, access, operators, repository, manager, authority, chat, runtimeDirectory } = fixture)
 }, () => chat)
 
-describe.skipIf(!connectionString)('Operator chat persistence and native binding with stubbed authority', () => {
+describe.skipIf(!postgresEnabled)('Operator chat persistence and native binding with stubbed authority', () => {
   it('issues a usable delegated bearer when the native adapter cannot retain native turns', async () => {
     const parent = await access.issue({ name: 'Native chat owner', audience: 'operator',
       grants: [{ actions: ['operator_chat:read', 'operator_chat:write', 'harnesses:read'], scope: {} }] })

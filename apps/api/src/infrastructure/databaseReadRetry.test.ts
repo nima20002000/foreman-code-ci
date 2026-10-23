@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { acquireDatabaseConnection, withDatabaseReadRetry } from './databaseReadRetry.js'
+import { acquireDatabaseConnection, withDatabaseReadRetry } from './databaseRetry.js'
 
 const timeout = () => new Error('timeout exceeded when trying to connect')
 

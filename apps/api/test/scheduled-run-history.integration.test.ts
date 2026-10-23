@@ -18,7 +18,8 @@ import { insertRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
 import { encodeRunHistoryCursor } from '../src/modules/runs/historyCursor.js'
 import { LOCAL_RUNNER_ID } from '../src/modules/workspaces/location.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { waitForSuccessfulRunCleanup } from './helpers/runSettlement.testSupport.js'
 
 // The task explicitly leaves the application registry to the integrator. In

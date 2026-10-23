@@ -18,9 +18,9 @@ import { PostgresFoundationSettingsRepository } from '../src/modules/settings/fo
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { WorkspaceManagementService } from '../src/modules/workspaces/management.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
-import { seedAgent3 } from './helpers/wave25Agent3.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
 
 const execute = promisify(execFile)
 async function git(path: string, ...args: string[]) {

@@ -12,7 +12,8 @@ import { FleetMaintenanceService, type FleetSources } from '../src/modules/compu
 import { ComputerMaintenance } from '../src/modules/computers/maintenance.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { fakeComputer, settle } from './helpers/fleetSync.js'
 
 function controlledRestart(computer: ReturnType<typeof fakeComputer>) {

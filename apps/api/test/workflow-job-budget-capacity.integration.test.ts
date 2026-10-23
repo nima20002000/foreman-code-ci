@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { describe, expect, it, vi } from 'vitest'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { CANONICAL_RUN_GRAPH_MCP_TOOLS } from '@foreman-code/contracts/wave25'
 import { hasWorkflowExecutionCapacityLocked } from '../src/modules/runs/workflowExecutionBudget.js'
-import { graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { graphRpcValue } from './graph-composition-fixture.js'
 import { snapshot, success, timeout, useWorkflowJobBudgetFixture } from './helpers/workflowJobBudgetFixture.js'
 
 vi.mock('../src/modules/interactions/repeatNativeSettlement.js', async importOriginal => ({

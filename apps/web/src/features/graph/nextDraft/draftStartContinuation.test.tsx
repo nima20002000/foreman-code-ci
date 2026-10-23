@@ -12,7 +12,7 @@ import { currentWorkflowFixture } from '../../../shared/mocks/currentWorkflow'
 import { beginSessionChange, finishSessionChange } from '../../../shared/api/sessionBoundary'
 import { useGraphDraftStore } from '../store'
 import { clearBoardStartStorage, readBoardStart } from '../../workflow-board/startOutbox'
-import { WorkflowBoardContext } from '../../workflow-board/context'
+import { WorkflowBoardProvider } from '../../workflow-board/context'
 import { RunActivityPanel } from '../../workflow-board/RunActivityPanel'
 import { boardRunListKey } from '../../workflow-board/keys'
 import { boardStartClient } from '../../workflow-board/startClient'
@@ -113,10 +113,10 @@ async function showRuns(h: ReturnType<typeof setup>) {
   }))
   render(<QueryClientProvider client={h.client}>
     {['workflow', 'unrelated-workflow'].map(workflowId => <section key={workflowId} aria-label={workflowId}>
-      <WorkflowBoardContext.Provider value={{ workspaceId: 'workspace', workflowId, inspection: {}, activeRuns: 0,
+      <WorkflowBoardProvider value={{ workspaceId: 'workspace', workflowId, inspection: {}, activeRuns: 0,
         selectRun: h.selectRun, selectInspection: vi.fn(), openLocation: vi.fn(), openRuns: vi.fn() }}>
         <RunActivityPanel summaries={[]} />
-      </WorkflowBoardContext.Provider>
+      </WorkflowBoardProvider>
     </section>)}
   </QueryClientProvider>)
   await waitFor(() => {

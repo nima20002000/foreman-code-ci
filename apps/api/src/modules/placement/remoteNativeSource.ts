@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import type { HarnessExecution } from '@foreman-code/contracts'
 import { canonicalGraphJson, sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { REMOTE_NATIVE_SOURCE_LIMIT } from '@foreman-code/contracts/remote-workflow-physical'
@@ -8,6 +7,7 @@ import type { GraphTransactionSql } from '../run-graph/connection.js'
 import { beforeGraphCommit, isGraphTransactionFinalizing } from '../run-graph/connection.js'
 import type { WorkflowOriginalNativeSource } from '../interactions/workflowNativeCapture.js'
 import { DomainError } from '../errors.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export interface RemoteNativeSourceEvidence { readonly provenance: 'remote'; readonly sourceDigest: string }
 export interface VerifiedRemoteOriginalSource {
@@ -29,8 +29,7 @@ export interface RemoteNativeBatchPhysicalVerification extends RemoteNativePhysi
     originals: readonly VerifiedRemoteOriginalSource[]): Promise<void>
 }
 
-const digest = (source: WorkflowOriginalNativeSource) => createHash('sha256')
-  .update(canonicalGraphJson(source, REMOTE_NATIVE_SOURCE_LIMIT)).digest('hex')
+const digest = (source: WorkflowOriginalNativeSource) => sha256Hex(canonicalGraphJson(source, REMOTE_NATIVE_SOURCE_LIMIT))
 const conflict = (): never => { throw new DomainError('REMOTE_NATIVE_SOURCE_NOT_CAPTURED', 'Native source must originate in the configured authenticated remote producer.', 409) }
 
 /** Paired private producer/capture/verifier, analogous to the existing private
@@ -63,12 +62,12 @@ export function createRemoteNativeSourceChannel(): {
       const entries = observations.get(id) ?? new Map<string, VerifiedRemoteOriginalSource>()
       const generation = generations.get(id) ?? Object.freeze({})
       generations.set(id, generation)
-      const receiptDigest = createHash('sha256').update(canonicalGraphJson(verified.receipt)).digest('hex')
+      const receiptDigest = sha256Hex(canonicalGraphJson(verified.receipt))
       if (!entries.has(key) && entries.size >= 1024) throw new DomainError('REMOTE_NATIVE_SOURCE_BACKPRESSURE', 'The original native source capture window is full.', 503)
       const original: VerifiedRemoteOriginalSource = Object.freeze({ verified, source: copy, sourceDigest: key, assertCurrent: () => {
         assertOriginalProducer()
         if (generations.get(id) !== generation || digest(copy) !== key
-          || createHash('sha256').update(canonicalGraphJson(verified.receipt)).digest('hex') !== receiptDigest) return conflict()
+          || sha256Hex(canonicalGraphJson(verified.receipt)) !== receiptDigest) return conflict()
       } })
       entries.set(key, original); observations.set(id, entries)
     },

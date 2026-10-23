@@ -1,10 +1,10 @@
-import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { DEVICE_JSON_CONTINUATION_BYTES, DEVICE_JSON_CONTINUATION_LIMIT, DeviceJsonContinuationSchema,
   type DeviceJsonContinuation, type DeviceJsonContinuationRequest } from '@foreman-code/contracts/device-application'
 import { DomainError } from '../../errors.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
-const digest = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
+const digest = (bytes: Uint8Array) => sha256Hex(bytes)
 type ContinuationOptions = { maxBytes?: number }
 function continuationSchema(options: ContinuationOptions) {
   if (options.maxBytes === undefined) return DeviceJsonContinuationSchema

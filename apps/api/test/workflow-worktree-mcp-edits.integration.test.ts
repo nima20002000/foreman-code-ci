@@ -12,7 +12,7 @@ import {
 } from '@foreman-code/contracts/wave25'
 import { buildApp } from '../src/app.js'
 import { ProviderAccountConfigurationService } from '../src/modules/harnesses/providerAccountConfiguration.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 import { setup } from './helpers/workflowWorktreeMcp.js'

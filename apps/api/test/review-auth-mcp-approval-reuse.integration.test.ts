@@ -7,7 +7,7 @@ import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { expect, it } from 'vitest'
 import { makeCurrentWorkflowFixture, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
 import { resolveImmutableApprovalRoute } from '../src/modules/workflows/approvalRoutes.js'
-import { seedAgent3 } from './helpers/wave25Agent3.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
 
 it('saves and reads exact approval routes for two nodes sharing a Worker Agent', async () => {
   const database = await migratedDatabase()

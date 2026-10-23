@@ -1,7 +1,7 @@
-import { MemoryBoardMutationSchema, type MemoryBoardMutation, type MemoryBoardScope } from '@foreman-code/contracts'
+import { MemoryBoardMutationSchema, MemoryBoardWireSchemas as schemas, type MemoryBoardMutation, type MemoryBoardScope } from '@foreman-code/contracts'
 import { apiClient, ApiError, type ApiClient } from '../../shared/api/client'
 import { subscribeMemoryBoard } from './stream'
-import type { MemoryBoardClient, MemoryWireSchemas, PageOptions } from './ports'
+import type { MemoryBoardClient, PageOptions } from './ports'
 
 const root = '/api/memory-boards'
 const segment = encodeURIComponent
@@ -29,9 +29,9 @@ function matchesScope(actual: MemoryBoardScope, expected: MemoryBoardScope): boo
   return actual.kind === expected.kind && actual.workspaceId === expected.workspaceId
     && (actual.kind !== 'workflow' || (expected.kind === 'workflow' && actual.workflowId === expected.workflowId))
 }
-/** D supplies C0's authoritative read validators. All requests use the existing
+/** Reads are validated with the contracts wire schemas. All requests use the existing
  * installation/session boundary; the browser never falls back to a fake. */
-export function createMemoryBoardClient(schemas: MemoryWireSchemas, http: ApiClient = apiClient): MemoryBoardClient {
+export function createMemoryBoardClient(http: ApiClient = apiClient): MemoryBoardClient {
   return {
     async resolve(scope, signal) {
       const view = await http.request(readPath({ scope: JSON.stringify(scope), view: 'board' }), schemas.board, { signal })

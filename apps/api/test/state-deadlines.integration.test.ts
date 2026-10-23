@@ -1,14 +1,15 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 import { CiRunRecordSchema } from '@foreman-code/contracts'
-import { expireOverdueCiRuns } from '../src/modules/ci-host/deadlines.js'
+import { expireOverdueCiRuns } from '@foreman-code/ci/deadlines'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { sweepStateDeadlines } from '../src/modules/diagnostics/stateDeadlines.js'
 import { RunActivitiesService } from '../src/modules/runs/activities.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 import { deferred, rejectableDeferred } from './helpers/deferred.js'
 import { measuredCiPages } from './helpers/measuredCiPages.js'
-import { graphFixture } from './eng04-graph-composition-fixture.js'
+import { graphFixture } from './graph-composition-fixture.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 it('publishes independent Run activity before a held Run writer and delivers both in commit order', async () => {
   const db = await currentDatabase()
@@ -106,7 +107,7 @@ it('fails overdue CI tickets in the database and keeps a running executor\'s slo
   const queued = ticket('queued', { message: 'No ready computer for lint; no eligible computers' })
   const running = ticket('running', { startedAt: at(4 * 60 * 60_000), step: 'lint',
     computer: { hostRef: { kind: 'main', mainId: 'main' }, label: 'Main computer' } })
-  const sources = { ciRuns: (now: Date) => expireOverdueCiRuns(db.pool, now, async run => run) }
+  const sources = { ciRuns: (now: Date) => expireOverdueCiRuns(mainCiContext, db.pool, now, async run => run) }
   try {
     for (const [run, hostKey] of [[queued, null], [running, 'main:main']] as const) {
       await db.pool.query(`insert into ci_runs(id,workspace_id,group_id,state,host_key,record)
@@ -151,7 +152,7 @@ it('finds overdue CI tickets without reading every finished ticket', async () =>
       const client = await measured.pool.connect()
       try { return await client.query(text, values) } finally { client.release() }
     } } as unknown as typeof db.pool
-    expect(await expireOverdueCiRuns(pool, new Date())).toBe(1)
+    expect(await expireOverdueCiRuns(mainCiContext, pool, new Date())).toBe(1)
     // The finished tickets span hundreds of heap pages; the one overdue ticket needs a handful.
     expect(measured.pages.max).toBeLessThan(100)
     const saved = (await db.pool.query<{ state: string }>('select state from ci_runs where id=$1', [queued.id])).rows[0]

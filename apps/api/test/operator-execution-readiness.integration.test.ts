@@ -9,7 +9,7 @@ import { PostgresOperatorRepository } from '../src/modules/operators/postgres.js
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import { DomainError } from '../src/modules/errors.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { buildApp } from '../src/app.js'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { authorizeOperatorConfigurationRead } from '../src/modules/operators/configurationRead.js'

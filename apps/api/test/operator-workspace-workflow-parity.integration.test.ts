@@ -25,8 +25,9 @@ import { WorkflowManagementService } from '../src/modules/workflows/management.j
 import { HarnessDirectoryBrowser } from '../src/modules/harnesses/directoryBrowser.js'
 import { OperatorAgentMutationService } from '../src/modules/workspaces/operatorAgents.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
+import { postgresEnabled } from './helpers/database.js'
 
-it.skipIf(!process.env.TEST_DATABASE_URL)('provides authenticated Operator MCP parity for creation, defaults and workspace/workflow settings', async () => {
+it.skipIf(!postgresEnabled)('provides authenticated Operator MCP parity for creation, defaults and workspace/workflow settings', async () => {
   const connectionString = process.env.TEST_DATABASE_URL
   if (!connectionString) throw new Error('TEST_DATABASE_URL is required')
   const parsed = new URL(connectionString)

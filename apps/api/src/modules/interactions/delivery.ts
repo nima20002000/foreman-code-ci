@@ -1,7 +1,7 @@
 import { withInteractionResponse, type DurableInteraction, type NativeSessionReference } from '@foreman-code/contracts'
-import { createHash } from 'node:crypto'
 import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import type { NativeHistory, NativeResponseDeliveryEvidence } from '../harnesses/port.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export type { NativeResponseDeliveryEvidence } from '../harnesses/port.js'
 
@@ -26,7 +26,7 @@ export interface NativeDeliveryOutcome {
 }
 
 export function responseValueDigest(value: unknown): string {
-  return createHash('sha256').update(canonicalGraphJson(value ?? null)).digest('hex')
+  return sha256Hex(canonicalGraphJson(value ?? null))
 }
 
 function object(value: unknown): Record<string, unknown> | undefined {

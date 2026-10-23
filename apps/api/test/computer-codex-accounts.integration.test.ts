@@ -10,7 +10,8 @@ import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { probeComputerAccounts, systemPorts, type AccountProbePorts } from '../src/modules/computers/accountProbe.js'
 import { ComputerAccountsService } from '../src/modules/computers/accounts.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 it.skipIf(!postgresEnabled)('reads passive Codex account state through authenticated MCP', async () => {
   const database = await agent3Database()

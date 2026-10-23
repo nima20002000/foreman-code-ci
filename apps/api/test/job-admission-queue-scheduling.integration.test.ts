@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { PostgresJobDispatch } from '../src/modules/jobs/dispatch.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { setupJobAdmissionQueue } from './helpers/jobAdmissionQueue.js'
 
 describe.skipIf(!postgresEnabled)('durable build admission queue: scheduling', () => {

@@ -20,6 +20,7 @@ import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'
 import { createFixtureSchema, dropFixtureSchema } from './helpers/testResources.js'
+import { postgresEnabled } from './helpers/database.js'
 
 class SessionManager implements NativeHarnessSessionManager {
   readonly harness = 'codex' as const
@@ -109,7 +110,7 @@ async function waitFor(id: string, check: () => Promise<boolean>) {
     subscribe: changed => chat.events.subscribe(id, changed) })
 }
 
-describe.skipIf(!connectionString)('Operator conversation attention', () => {
+describe.skipIf(!postgresEnabled)('Operator conversation attention', () => {
   it('includes a standalone native request discovered after session controls resume a completed chat', async () => {
     const issued = await access.issue({ name: 'standalone request owner', audience: 'operator', grants: owner.grants,
       expiresAt: new Date(Date.now() + 600_000) })

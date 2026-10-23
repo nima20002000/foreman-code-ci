@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { NativeProcessRegistry, spawnNativeProcess } from '../src/modules/harnesses/recovery/processRegistry.js'
 import { bootIdentity, processIdentity } from '../src/modules/harnesses/recovery/linuxIdentity.js'
 import { privateDirectory, readRecord, writeRecord } from '../src/modules/harnesses/recovery/storage.js'
-import { reserveFromExitedParent } from './helpers/eng06LaunchReservation.testSupport.js'
+import { reserveFromExitedParent } from './helpers/launchReservation.testSupport.js'
 
 /** Real filesystem, fsync, parent PID/start-time and kernel liveness checks.
  * These no-dispatch cuts intentionally need no native binary or cgroup mount. */

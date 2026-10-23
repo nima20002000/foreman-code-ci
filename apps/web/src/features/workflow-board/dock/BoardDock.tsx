@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
-import { MemoryBoardWireSchemas, type MemoryBoardScope } from '@foreman-code/contracts'
+import { type MemoryBoardScope } from '@foreman-code/contracts'
 import { Icon } from '../../../shared/ui/nocturne'
 import { createMemoryBoardClient } from '../../memory-boards/client'
 import { useMemoryBoard } from '../../memory-boards/queries'
 import type { CiServerSummary } from '../inspect/ciServer'
 import './boardDock.css'
 
-const client = createMemoryBoardClient(MemoryBoardWireSchemas)
+const client = createMemoryBoardClient()
 
 /** Board objects closed by the viewer sit here, top right of the Board, and still show their activity.
  * Clicking one puts the object back where it was. */

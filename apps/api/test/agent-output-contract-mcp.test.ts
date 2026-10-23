@@ -8,9 +8,9 @@ import { SkillCatalogService } from '../src/modules/skills/catalog.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import { composeInstructionText } from '../src/modules/skills/instructions.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
-import { writerFixture, type WriterFixture } from './eng04-writer-fixtures.js'
-import { graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { currentDatabase } from './helpers/database.js'
+import { writerFixture, type WriterFixture } from './writer-fixtures.js'
+import { graphRpcValue } from './graph-composition-fixture.js'
 
 let db: Awaited<ReturnType<typeof currentDatabase>>
 const fixtures: WriterFixture[] = []

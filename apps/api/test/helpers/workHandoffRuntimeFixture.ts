@@ -2,8 +2,8 @@ import { vi } from 'vitest'
 import type { HarnessExecution, HarnessExecutionRequest } from '@foreman-code/contracts'
 import { WorkActivationInputSchema, makeCurrentWorkflowFixture, type WorkHandoffResult } from '@foreman-code/contracts/wave25'
 import { RepeatRunRepository } from '../../src/modules/runs/repeatPostgres.js'
-import { checkpointRuntimeFixture } from './wave25Br1003Runtime.js'
-import { br1002At } from './wave25Br1002Cuts.js'
+import { checkpointRuntimeFixture } from './checkpointRuntime.js'
+import { br1002At } from './continuationCuts.js'
 import { rejectableDeferred } from './deferred.js'
 
 export async function workHandoffRuntimeFixture(definition: ReturnType<typeof makeCurrentWorkflowFixture>,

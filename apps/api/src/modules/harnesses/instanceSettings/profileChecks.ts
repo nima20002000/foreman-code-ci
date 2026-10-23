@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
 import type pg from 'pg'
@@ -22,6 +22,7 @@ import type { HarnessInstallationRecord } from '../installationRegistry.js'
 import { qualificationError, staleQualification } from '../qualificationErrors.js'
 import { CLAUDE_PROFILE_CHECK_REVISION } from '../claudeSdk/profileRevision.js'
 import { logIgnoredError } from '../../diagnostics/ignoredError.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 export interface AutomaticHostProfileCheck {
   host: CanonicalMachineReference
@@ -54,7 +55,7 @@ const profileKey = (value: Pick<ProfileCheckSelection, 'instanceId' | 'revision'
 const automaticChecksPerHost = 2
 
 export function nativeProfileCheckId(mainId: string, principalId: string, commandId: string): string {
-  const hex = createHash('sha256').update(JSON.stringify(['harness.instance.check', mainId, principalId, commandId])).digest('hex').slice(0, 32)
+  const hex = sha256Hex(JSON.stringify(['harness.instance.check', mainId, principalId, commandId])).slice(0, 32)
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20)}`
 }
 
@@ -465,7 +466,7 @@ export class HostHarnessInstanceProfileChecks {
       }
     }
   }
-  private async qualifyProfile(client: pg.PoolClient, input: HostHarnessInstanceCheckInput, checkId: string,
+  private async qualifyProfile(client: pg.ClientBase, input: HostHarnessInstanceCheckInput, checkId: string,
     authorize: (client: pg.PoolClient) => Promise<void>, signal: AbortSignal,
     options: { source?: 'system'; reuseLatest?: true } = {}) {
     const profileLock = `harness-instance-profile:${input.instanceId}`

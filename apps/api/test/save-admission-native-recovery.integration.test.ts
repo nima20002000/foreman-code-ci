@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { editThrough, meaningfulInput, saveThrough, stageThrough,
-  versionCount, type Transport } from './helpers/eng07SaveAdmission.testSupport.js'
+  versionCount, type Transport } from './helpers/saveAdmission.testSupport.js'
 import { assertNewVersionOnly, nativeFacts, recoveredFixture } from './helpers/saveAdmissionTransport.js'
 
 describe.skipIf(!postgresEnabled)('workflow Save after native recovery', () => {

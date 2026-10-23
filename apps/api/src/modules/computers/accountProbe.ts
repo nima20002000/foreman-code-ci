@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { access, readFile, realpath, stat } from 'node:fs/promises'
 import { constants } from 'node:fs'
@@ -9,6 +8,7 @@ import { ComputerAccountsSchema, type ComputerAccount, type ComputerAccounts } f
 import { fallbackOnMissing } from '../diagnostics/ignoredError.js'
 import { DomainError } from '../errors.js'
 import { executableUnavailable } from './executableError.js'
+import { runProcessSettled } from '../../shared/process.js'
 
 export interface AccountProbePorts {
   /** Absolute executable path, or null when the tool is not installed. */
@@ -240,14 +240,12 @@ export function systemPorts(environment: NodeJS.ProcessEnv = process.env,
       }
       return null
     },
-    run: (binary, args, signal) => new Promise((resolve, reject) => {
-      execFile(binary, args, { signal, timeout: 15_000, maxBuffer: 256 * 1024, encoding: 'utf8',
-        env: { ...environment, NO_COLOR: '1', GH_PROMPT_DISABLED: '1' } }, (error, stdout, stderr) => {
-        if (error && typeof (error as { code?: unknown }).code !== 'number') { reject(error); return }
-        const code = error && typeof (error as { code?: unknown }).code === 'number' ? (error as { code: number }).code : error ? null : 0
-        resolve({ code, stdout, stderr })
-      })
-    }),
+    run: async (binary, args, signal) => {
+      const result = await runProcessSettled(binary, args, { signal, timeoutMs: 15_000, maxOutputBytes: 256 * 1024,
+        env: { ...environment, NO_COLOR: '1', GH_PROMPT_DISABLED: '1' } })
+      if (result.error && result.code === null) throw result.error
+      return { code: result.code, stdout: result.stdout, stderr: result.stderr }
+    },
     readText: path => readFile(path, 'utf8').catch(fallbackOnMissing(null)),
   }
 }

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import {
   McpInteractionSummarySchema,
   type DurableInteraction,
@@ -6,6 +5,7 @@ import {
 import { z } from 'zod'
 import { toolResult } from '../../mcp/shared/results.js'
 import { DomainError } from '../errors.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 // Includes both JSON representations and escaping, with room for HTTP/SSE framing and the RPC id.
 export const INTERACTION_MCP_RESPONSE_BYTES = 384 * 1024
@@ -52,7 +52,7 @@ export function interactionMcpGet(
 ) {
   if (!contentCursor && fitsInteractionMcpResponse(value)) return value
   const json = JSON.stringify(value)
-  const sha256 = createHash('sha256').update(json).digest('hex')
+  const sha256 = sha256Hex(json)
   let offset = 0
   if (contentCursor) {
     let cursor: z.infer<typeof ContentCursorSchema>

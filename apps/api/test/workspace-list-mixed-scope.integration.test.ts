@@ -4,7 +4,7 @@ import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { WorkspaceManagementService } from '../src/modules/workspaces/management.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 
 it('pages through every readable workspace when one grant is also restricted to a computer', async () => {
   const db = await currentDatabase()

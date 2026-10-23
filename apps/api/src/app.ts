@@ -1,96 +1,22 @@
-import { registerProductionBrowserRoutes } from './routes/browserComposition.js'
 import { registerRuntimeInstallationSecurity } from './infrastructure/runtimeIdentity.js'
 import { randomUUID } from 'node:crypto'
 import type { Socket } from 'node:net'
 import { scheduleDispatchLog } from './modules/schedules/dispatchErrors.js'
 
-import {
-  ApiErrorResponseSchema,
-  ServiceHealthSchema,
-  type ServiceHealth,
-  type RuntimeIdentity, type RuntimeBuildIdentity, RuntimeBuildIdentitySchema, frozenRuntimeIdentity,
-} from '@foreman-code/contracts'
+import { ApiErrorResponseSchema } from '@foreman-code/contracts'
 import Fastify, { LogController, type FastifyBaseLogger, type FastifyInstance } from 'fastify'
-import type pg from 'pg'
 import { z } from 'zod'
 
-import type { AppMcpServices } from './mcp/app/types.js'
-import { registerGraphqlMcp, type GraphqlMcpServices } from './mcp/unified/transport.js'
-import type { OperatorServices } from './mcp/operator/types.js'
 import { registerOperatorHttpSecurity, requireLocalRequest } from './modules/access/http.js'
-import type { PostgresAccessService } from './modules/access/postgres.js'
-import type { LocalHumanAccess } from './modules/access/localHuman.js'
 import { DomainError, databaseConnectionFailure, databaseReadFailure, publicFailureClass } from './modules/errors.js'
-import type { McpDetectionService } from './modules/harnesses/mcpDetection.js'
-import { registerUserInteractions } from './routes/userInteractions.js'
-import { registerRunGraphRoutes } from './routes/runGraph.js'
-import { registerRunPlacementRoutes, registerNodePlacementChoicesRoutes } from './modules/placement/transports.js'
-import { registerManagementRoutes } from './routes/management.js'
-import { registerMcpDetectionRoute } from './routes/mcpDetection.js'
-import { registerProductRoutes, type ProductServices } from './routes/product.js'
-import { registerWorkflowChatRoutes } from './routes/workflowChat.js'
-import { registerMemoryBoardRoutes } from './routes/memoryBoards.js'
-import { registerAgentChatRoutes } from './routes/agentChat.js'
-import { registerWorkflowScheduleRoutes } from './routes/workflowSchedules.js'
-import { registerWorkflowKanbanRoutes } from './routes/workflowKanban.js'
-import { registerWorkflowHierarchyRoutes } from './routes/workflowHierarchy.js'
-import { registerWorkflowExecutionChatRoutes } from './routes/workflowExecutionChat.js'
-import { registerProviderAccountRoutes } from './routes/providerAccounts.js'
-import { registerAppErrorRoutes } from './routes/appErrors.js'
+import { registerApiRoutes, type ApiRouteServices } from './routes/registry.js'
+import { DEFAULT_READINESS_TIMEOUT_MS } from './routes/health.js'
 
-export interface ReadinessDependencies {
-  database: { ping(signal?: AbortSignal): Promise<void> }
-  checkpoints: { ping(signal?: AbortSignal): Promise<void> }
-}
+export type { ReadinessDependencies } from './routes/health.js'
 
-export interface BuildAppOptions {
-  runtimeIdentity?: () => Promise<RuntimeIdentity>
-  runtimeBuildIdentity?: () => RuntimeBuildIdentity
-  localHuman?: LocalHumanAccess
-  browserOrigin?: string
-  readiness: ReadinessDependencies
-  readinessTimeoutMs?: number
-  product?: ProductServices
-  operator?: { access: PostgresAccessService; services: OperatorServices }
-  appMcp?: AppMcpServices
-  workerArtifacts?: GraphqlMcpServices['workerArtifacts']
-  mcpDetection?: { pool: pg.Pool; service: McpDetectionService }
+export interface BuildAppOptions extends ApiRouteServices {
   logger?: boolean | FastifyBaseLogger
   closeInfrastructure?: () => Promise<void>
-}
-
-type DependencyStatus = 'ok' | 'unavailable'
-
-function createDependencyCheck(
-  check: (signal: AbortSignal) => Promise<void>,
-  timeoutMs: number,
-): () => Promise<DependencyStatus> {
-  let inFlight: Promise<DependencyStatus> | undefined
-  return () => {
-    if (inFlight) return inFlight
-    const controller = new AbortController()
-    const work = Promise.resolve().then(() => check(controller.signal))
-    const status = work.then<DependencyStatus, DependencyStatus>(
-      () => 'ok',
-      () => 'unavailable',
-    )
-    let timer: ReturnType<typeof setTimeout>
-    const deadline = new Promise<DependencyStatus>((resolve) => {
-      timer = setTimeout(() => {
-        controller.abort(new Error('Readiness deadline exceeded'))
-        resolve('unavailable')
-      }, timeoutMs)
-    })
-    const attempt = Promise.race([status, deadline])
-    inFlight = attempt
-    // Keep the same unavailable result while a non-cooperative check is still
-    // pending. Concurrent/repeated probes must not queue more dependency work.
-    void status.then(() => {
-      clearTimeout(timer)
-      inFlight = undefined
-    })
-    return attempt
-  }
 }
 
 const SLOW_REQUEST_MS = 2000
@@ -119,7 +45,7 @@ function publicRequestError(error: unknown): DomainError {
 }
 
 export function buildApp(options: BuildAppOptions): FastifyInstance {
-  const timeoutMs = options.readinessTimeoutMs ?? 2000
+  const timeoutMs = options.readinessTimeoutMs ?? DEFAULT_READINESS_TIMEOUT_MS
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 2147483647) {
     throw new RangeError('readinessTimeoutMs must be a positive 32-bit integer')
   }
@@ -173,74 +99,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   if (options.operator || options.appMcp) {
     app.addHook('onRequest', async request => { requireLocalRequest(request) })
   }
-  const checkDatabase = createDependencyCheck(
-    (signal) => options.readiness.database.ping(signal), timeoutMs,
-  )
-  const checkCheckpoints = createDependencyCheck(
-    (signal) => options.readiness.checkpoints.ping(signal), timeoutMs,
-  )
-
-  if (options.runtimeIdentity) {
-    registerRuntimeInstallationSecurity(app, options.runtimeIdentity)
-    app.get('/health/identity', async (_request, reply) => { reply.header('cache-control', 'no-store'); return frozenRuntimeIdentity(await options.runtimeIdentity!()) })
-    app.get('/api/runtime/identity', async (_request, reply) => { reply.header('cache-control', 'no-store'); return frozenRuntimeIdentity(await options.runtimeIdentity!()) })
-  }
-
-  if (options.runtimeBuildIdentity) {
-    app.get('/api/runtime/build-identity/v1', async (_request, reply) => {
-      reply.header('cache-control', 'no-store')
-      return RuntimeBuildIdentitySchema.parse(options.runtimeBuildIdentity!())
-    })
-  }
-
-  app.get('/health/live', async () => ServiceHealthSchema.parse({ status: 'ok', service: 'graphql-api' }))
-
-  app.get('/health/ready', async (_request, reply) => {
-    const [database, checkpoints] = await Promise.all([checkDatabase(), checkCheckpoints()])
-    const response: ServiceHealth = ServiceHealthSchema.parse({
-      status: database === 'ok' && checkpoints === 'ok' ? 'ok' : 'unavailable',
-      service: 'graphql-api',
-      checks: { database, checkpoints },
-    })
-    if (response.status === 'unavailable') reply.code(503)
-    return response
-  })
-
+  if (options.runtimeIdentity) registerRuntimeInstallationSecurity(app, options.runtimeIdentity)
   if (options.operator) registerOperatorHttpSecurity(app, options.operator.access, options.localHuman, options.browserOrigin)
-  const browser = options.operator?.services.browser
-  if (browser && options.operator) registerProductionBrowserRoutes(app, browser, { access: options.operator.access,
-    localHuman: options.localHuman, browserOrigin: options.browserOrigin, runtimeIdentity: options.runtimeIdentity })
-  if (options.operator?.services.memoryBoards) registerMemoryBoardRoutes(app, options.operator.services.memoryBoards)
-  if (options.operator) registerManagementRoutes(app, options.operator.services)
-  if (options.operator) registerAppErrorRoutes(app)
-  if (options.operator?.services.providerAccounts) registerProviderAccountRoutes(app, options.operator.services.providerAccounts)
-  if (options.operator?.services.runPlacements) registerRunPlacementRoutes(app, options.operator.services.runPlacements)
-  if (options.operator?.services.placementChoices) registerNodePlacementChoicesRoutes(app, options.operator.services.placementChoices)
-  if (options.operator?.services.workflows?.schedules) registerWorkflowScheduleRoutes(app, options.operator.services.workflows.schedules)
-  if (options.operator?.services.workflows?.kanban) registerWorkflowKanbanRoutes(app, options.operator.services.workflows.kanban)
-  if (options.operator?.services.workflowHierarchy) registerWorkflowHierarchyRoutes(app, options.operator.services.workflowHierarchy)
-  if (options.operator?.services.executionChat) registerWorkflowExecutionChatRoutes(app, options.operator.services.executionChat)
-  if (options.operator?.services.runGraph) registerRunGraphRoutes(app, options.operator.services.runGraph,
-    (principalId, code, route) => options.operator!.services.commands.recordDenied(principalId, 'http', code, route))
-  if (options.operator && options.mcpDetection) {
-    registerMcpDetectionRoute(app, options.operator.services.locations, options.mcpDetection.service,
-      options.operator.services.harnessSettings?.mcp)
-  }
-  if (options.operator?.services.workflowChat) registerWorkflowChatRoutes(app, options.operator.services.workflowChat)
-  if (options.operator?.services.agentChat) registerAgentChatRoutes(app, options.operator.services.agentChat)
-  if (options.operator && options.product?.interactions) registerUserInteractions(app, options.product.interactions)
-  if (options.product) registerProductRoutes(app, options.product, options.operator?.services)
-  const bugReports = options.appMcp?.bugReports ?? options.operator?.services.bugReports
-  const commands = options.appMcp?.commands ?? options.operator?.services.commands
-  if (options.operator || options.appMcp) registerGraphqlMcp(app, {
-    access: (options.operator?.access ?? options.appMcp?.access)!,
-    ...(options.operator ? { operator: Object.assign(options.operator.services, { workerToolsMcpImplemented: Boolean(options.appMcp) }) } : {}),
-    ...(options.appMcp ? { interactions: options.appMcp.interactions } : {}),
-    ...(options.appMcp?.references ? { references: options.appMcp.references } : {}),
-    ...(bugReports ? { bugReports } : {}),
-    ...(commands ? { commands } : {}),
-    ...(options.workerArtifacts ? { workerArtifacts: options.workerArtifacts } : {}),
-  })
+  registerApiRoutes(app, { ...options, readinessTimeoutMs: timeoutMs })
 
   app.setErrorHandler(async (error, request, reply) => {
     const failure = databaseConnectionFailure(databaseReadFailure(error))

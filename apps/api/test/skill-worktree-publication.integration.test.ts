@@ -7,7 +7,7 @@ import type { z } from 'zod'
 import { buildApp } from '../src/app.js'
 import { createOperatorExtensions } from '../src/mcp/operator/extensions.js'
 import { setup } from './helpers/workflowWorktreeMcp.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 for (const [source, worktree] of [
   ['http', true],

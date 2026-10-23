@@ -7,7 +7,7 @@ import type { GraphTransactionSql } from '../src/modules/run-graph/connection.js
 import { assertRepeatCanonicalReceiptLocked, type RepeatCanonicalReceipt } from '../src/modules/run-graph/repeatReceipts.js'
 import { repeatExecutionDriver } from '../src/modules/runs/repeatRuntime.js'
 import { currentApprovalSettlementUnit } from './helpers/currentApprovalSettlementUnit.js'
-import { native2Fixture } from './eng04-native2-fixtures.js'
+import { native2Fixture } from './native-reviewer-fixtures.js'
 
 const { graphSourceDigest } = publication
 

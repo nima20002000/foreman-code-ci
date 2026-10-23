@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, vi } from 'vitest'
-import { postgresEnabled } from './wave25Agent3.js'
-import { executionRows, type RecoveryFixture } from './eng06DRecovery.js'
+import { postgresEnabled } from './database.js'
+import { executionRows, type RecoveryFixture } from './recoveryFixture.js'
 
 export const attempts = (rows: Awaited<ReturnType<typeof executionRows>>) => rows.map((row) => row.execution.attempt).sort((a, b) => a - b)
 export async function occurrences(f: RecoveryFixture, runId = f.base.f.run.id) {

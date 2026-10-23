@@ -12,8 +12,8 @@ import type { FileToolContext } from '../src/modules/files/tools/types.js'
 import { PostgresOperatorRepository } from '../src/modules/operators/postgres.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import { PostgresSettingsRepository } from '../src/modules/settings/postgres.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
-import { seedAgent3 } from './helpers/wave25Agent3.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
 
 const retiredConfiguration = {
   harness: 'opencode', model: 'saved-provider/model', variant: 'max', nativeAgent: 'build',

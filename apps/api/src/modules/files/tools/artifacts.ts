@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { FileRevisionSchema, MAX_FILE_BYTES, type MessageAttachmentRef } from '@foreman-code/contracts/files'
 import { DomainError } from '../../errors.js'
@@ -6,6 +6,7 @@ import type { FileByteStorage } from '../storage.js'
 import type { FileToolSessions } from './context.js'
 import { completedBytes } from './transfers.js'
 import type { ArtifactSnapshot, AuthorizedFileCaller, FileToolArtifact, FileToolRepository, FileEditToolName } from './types.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 type ArtifactPermission = 'files.create_working_copy' | 'files.publish_result' | FileEditToolName
 
@@ -43,7 +44,7 @@ export class FileToolArtifacts {
     try {
       const data = await completedBytes(stream, MAX_FILE_BYTES, signal)
       if (data.length !== snapshot.revision.byteSize
-        || createHash('sha256').update(data).digest('hex') !== snapshot.revision.sha256) {
+        || sha256Hex(data) !== snapshot.revision.sha256) {
         throw new DomainError('FILE_BYTES_UNAVAILABLE', 'The artifact bytes do not match their revision.', 410)
       }
       return { revision: snapshot.revision, bytes: data }
@@ -98,7 +99,7 @@ export class FileToolArtifacts {
       const artifact = await this.get(caller, artifactId)
       if (artifact.writeId !== writeId || artifact.state === 'failed') throw new DomainError('FILE_ARTIFACT_WRITE_STALE', 'This writer no longer owns the artifact.', 409)
       const data = await completedBytes(source, MAX_FILE_BYTES, signal)
-      const sha256 = createHash('sha256').update(data).digest('hex')
+      const sha256 = sha256Hex(data)
       if (artifact.state === 'complete') {
         if (artifact.snapshot?.revision.sha256 === sha256 && artifact.snapshot.revision.byteSize === data.length) {
           await this.sessions.authenticate(token, permission); return artifact.snapshot

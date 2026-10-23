@@ -1,5 +1,4 @@
 import { captureVerificationInventory } from '../../../../../scripts/verification-runner.mjs'
-import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { JobVerificationOfflineSeedReceiptSchema, JobVerificationRepositoryContextSchema, JobVerificationQualificationCandidateSchema }
   from '@foreman-code/contracts/job-verification-runtime'
@@ -10,6 +9,7 @@ import { readProtectedRuntimeFile,
 import { readInstalledVerificationConfiguration } from './installedVerificationRuntime.js'
 import { requireJobGitMounts, verifyJobGitMounts } from './privateGitMounts.js'
 import { verificationRepositoryContext } from './executorOutputs.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export function createVerificationSystemInput(input: {
   configuration: InstalledRuntimeConfigurationLocation | null
@@ -29,7 +29,7 @@ export function createVerificationSystemInput(input: {
     const configuration = await readInstalledVerificationConfiguration(input.configuration, candidate.profile)
     const bytes = await readProtectedRuntimeFile({ path: configuration.seedReceiptPath,
       ownerUid: input.configuration!.ownerUid }, 16 * 1024 * 1024)
-    const seedDigest = createHash('sha256').update(bytes).digest('hex')
+    const seedDigest = sha256Hex(bytes)
     if (seedDigest !== configuration.seedReceiptSha256
       || seedDigest !== qualification.candidate.fingerprint.seedReceiptSha256) {
       throw new Error('Protected offline seed receipt changed after qualification.')

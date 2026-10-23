@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { fileToolsMigration } from '../src/modules/files/tools/migration.js'
 import { PostgresFileToolRepository } from '../src/modules/files/tools/postgres.js'
 import type { CopyReceipt, FileToolArtifact, FileToolContext, PublicationLink } from '../src/modules/files/tools/types.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const databaseUrl = process.env.TEST_DATABASE_URL
 const schema = `fil05_${randomUUID().replaceAll('-', '')}`
@@ -13,7 +14,7 @@ const context: FileToolContext = { ownerPrincipalId: 'owner', nativeSessionId: '
   scope: { kind: 'temporary', chat: { kind: 'agent', conversationId: 'conversation', agentId: 'agent', workspaceId: 'workspace', workflowId: 'workflow' } },
   allowMutation: true, allowedTools: ['files.list', 'files.read', 'files.create_working_copy', 'files.publish_result'] }
 
-describe.skipIf(!databaseUrl)('FIL-05 PostgreSQL durability and compare-and-set', () => {
+describe.skipIf(!postgresEnabled)('FIL-05 PostgreSQL durability and compare-and-set', () => {
   let admin: pg.Pool | undefined, pool: pg.Pool | undefined
   let first: PostgresFileToolRepository, second: PostgresFileToolRepository
   beforeAll(async () => {

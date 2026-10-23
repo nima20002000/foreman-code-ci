@@ -9,6 +9,7 @@ import { JOB_INPUT_DIRECTORY } from '@foreman-code/contracts/job-inputs'
 import { openPrivateRoot, entryParent, anchored, identity } from '../sources/privateFilesystem.js'
 import { verifyMaterializedSourceTree } from '../sources/materialization.js'
 import { verifySourceBytes, verifySourceManifest } from '../sources/manifest.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 /** Replaces the previous closed diagnostic's sealed input without making it writable. */
 export async function writeVerificationQualificationContext(inputRoot: string, contents: string): Promise<void> {
@@ -148,7 +149,7 @@ export async function prepareVerificationQualificationSource(input: {
   const indexContent = Buffer.concat([header, ...indexEntries])
   const index = Buffer.concat([indexContent, createHash(format).update(indexContent).digest()])
   await writeFile(join(gitDirectory, 'index'), index, { mode: 0o600, flag: 'wx' })
-  const digest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
+  const digest = (bytes: Buffer) => sha256Hex(bytes)
   const privateGit = JobVerificationPrivateGitSchema.parse({ sourceCommit: manifest.git.commit, generatedCommit,
     configDigest: digest(config), indexDigest: digest(index),
     repositoryReceiptDigest: digest(Buffer.from(JSON.stringify({ generatedCommit, manifestDigest: manifest.manifestDigest }))) })

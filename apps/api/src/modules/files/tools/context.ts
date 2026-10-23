@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import { z } from 'zod'
 import { TemporaryFileScopeSchema } from '@foreman-code/contracts/files'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -7,6 +7,7 @@ import { DomainError } from '../../errors.js'
 import type { FileAccess, FileConversation, FileConversationAuthorization } from '../authorization.js'
 import { fileScopeIdentity } from '../requests.js'
 import { ALL_FILE_TOOL_NAMES, type AuthorizedFileCaller, type FileToolContext, type FileToolOperation, type FileToolRepository } from './types.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 export const FileToolContextSchema = z.object({
   ownerPrincipalId: z.string().min(1), scope: TemporaryFileScopeSchema,
@@ -16,7 +17,7 @@ export const FileToolContextSchema = z.object({
   allowedTools: z.array(z.enum(ALL_FILE_TOOL_NAMES)).max(ALL_FILE_TOOL_NAMES.length),
 }).strict().refine((value) => (value.turnId !== undefined) !== (value.nativeMessageId !== undefined),
   { message: 'Exactly one observed native turn or message identity is required.' })
-export const digest = (value: string) => createHash('sha256').update(value).digest('hex')
+export const digest = (value: string) => sha256Hex(value)
 export function bindingIdentity(context: FileToolContext): string {
   if (context.nativeMessageId) return digest(JSON.stringify(['native-message', context.ownerPrincipalId,
     fileScopeIdentity(context.scope), context.nativeSessionId, context.nativeMessageId, context.messageId ?? null]))

@@ -13,7 +13,7 @@ import { NativeProcessRegistry } from '../../src/modules/harnesses/recovery/proc
 import { registerUserInteractions } from '../../src/routes/userInteractions.js'
 import { currentOperatorIntegration } from './currentOperatorIntegration.js'
 import { privateFixtureDirectory } from './privateFixtureDirectory.js'
-import type { agent3Database } from './wave25Agent3.js'
+import type { agent3Database } from './workflowDatabase.js'
 
 export interface NativeHttpIsolationInput {
   script: string; directory: string; recovery: NativeProcessRecovery; owner: string; token: string

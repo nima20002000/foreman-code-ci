@@ -9,9 +9,9 @@ import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { CI_ENROLLMENT_ACTIONS, CiEnrollment } from '../src/modules/jobs/ciEnrollment.js'
-import type { CiEnrollmentInventory, CiEnrollmentTarget } from '../src/modules/jobs/ciEnrollmentInventory.js'
-import { ciEnrollmentProfileInput } from '../src/modules/jobs/ciEnrollmentProfiles.js'
+import { CI_ENROLLMENT_ACTIONS, CiEnrollment } from '@foreman-code/ci/ciEnrollment'
+import type { CiEnrollmentInventory, CiEnrollmentTarget } from '@foreman-code/ci/ciEnrollmentInventory'
+import { ciEnrollmentProfileInput } from '@foreman-code/ci/ciEnrollmentProfiles'
 import { JobRuntimeProfiles } from '../src/modules/jobs/runtimeProfiles.js'
 import { DomainError } from '../src/modules/errors.js'
 import { BuildComputerSettings, buildComputerKey } from '../src/modules/settings/buildComputers.js'
@@ -19,8 +19,9 @@ import { createSourceManifest } from '../src/modules/sources/manifest.js'
 import { createProductionSources } from '../src/modules/sources/production.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { buildComputerFixture } from './helpers/buildComputerFixture.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 import { verificationCapacityFixture } from './helpers/verificationCapacityFixture.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 export function ciEnrollmentFixture() {
   let database: Awaited<ReturnType<typeof currentDatabase>>
@@ -147,7 +148,7 @@ async function createFixture(db: Awaited<ReturnType<typeof currentDatabase>>) {
         return root
       }),
     }
-    const enrollment = new CiEnrollment(db.pool, commands, profiles, preparation, inventory)
+    const enrollment = new CiEnrollment(mainCiContext, db.pool, commands, profiles, preparation, inventory)
     closeEnrollment = () => enrollment.close()
     const settings = new BuildComputerSettings(db.pool, commands,
       async () => ({ state: 'ready', reasons: [], remoteExecutionEnabled: true }))

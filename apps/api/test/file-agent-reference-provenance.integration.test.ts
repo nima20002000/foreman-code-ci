@@ -8,10 +8,12 @@ import { fileReferenceMigration } from '../src/infrastructure/fileReferenceMigra
 import { fileReferenceAccessMigration } from '../src/infrastructure/fileReferenceAccessMigration.js'
 import { PostgresReferenceReadRepository } from '../src/modules/files/references/agentProvenance.js'
 import type { AgentReferenceContext } from '../src/modules/files/references/agentTypes.js'
+import { postgresEnabled } from './helpers/database.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 /** Real independent PostgreSQL transactions, using minimal parent identity tables. This is a
  * storage/provenance integration fixture, not a native worker credential or full application fixture. */
-describe.skipIf(!process.env.TEST_DATABASE_URL)('FIL-37 PostgreSQL immutable reference provenance', () => {
+describe.skipIf(!postgresEnabled)('FIL-37 PostgreSQL immutable reference provenance', () => {
   let admin: pg.Pool | undefined, pool: pg.Pool, schema: string
   let first: PostgresReferenceReadRepository, second: PostgresReferenceReadRepository
   const at = '2026-09-28T01:00:00.000Z', created = '2026-09-28T00:00:00.000Z'
@@ -25,7 +27,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('FIL-37 PostgreSQL immutable ref
   beforeAll(async () => {
     const url = process.env.TEST_DATABASE_URL!
     const parsed = new URL(url)
-    // Same explicit loopback/test-name guard as test/helpers/wave25Agent3.ts; no DATABASE_URL fallback.
+    // Same explicit loopback/test-name guard as test/helpers/workflowDatabase.ts; no DATABASE_URL fallback.
     if (!['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname) || !parsed.pathname.toLowerCase().includes('test')) {
       throw new Error('Use an explicit loopback PostgreSQL database named for tests')
     }
@@ -52,14 +54,14 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('FIL-37 PostgreSQL immutable ref
     workflowId: string | null = 'A', state: 'pending' | 'ready' = 'ready') {
     const fileId = randomUUID(), revisionId = `rev-${fileId}`, client = await pool.connect()
     try {
-      await client.query('begin')
+      await beginTransaction(client)
       await client.query(`insert into files(file_id,owner_principal_id,current_revision_id,scope_kind,workspace_id,workflow_id,state,created_at)
         values($1,'owner',$2,$3,$4,$5,$6,$7::timestamptz)`,
       [fileId, revisionId, scope, workspaceId, scope === 'workspace_reference' ? null : workflowId, state, created])
       await client.query(`insert into file_revisions(revision_id,file_id,filename,media_type,byte_size,sha256,origin,created_at,storage_key)
         values($1,$2,'same-name.md','text/markdown',4,$3,'upload',$4::timestamptz,$5)`, [revisionId, fileId, '0'.repeat(64), created, randomUUID()])
-      await client.query('commit'); return ref(fileId, revisionId)
-    } catch (error) { await client.query('rollback'); throw error } finally { client.release() }
+      await commitTransaction(client); return ref(fileId, revisionId)
+    } catch (error) { await rollbackTransaction(client); throw error } finally { client.release() }
   }
   async function anotherRevision(pin: ReturnType<typeof ref>) {
     const revisionId = randomUUID()

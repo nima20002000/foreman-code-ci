@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, expect, vi } from 'vitest'
 import type { DurableInteraction } from '@foreman-code/contracts'
-import { checkpointRuntimeFixture } from './wave25Br1003Runtime.js'
-import { agent3Database } from './wave25Agent3.js'
+import { checkpointRuntimeFixture } from './checkpointRuntime.js'
+import { agent3Database } from './workflowDatabase.js'
 
 type Fixture = Awaited<ReturnType<typeof checkpointRuntimeFixture>>
 

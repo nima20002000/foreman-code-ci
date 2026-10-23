@@ -8,7 +8,7 @@ import { RunPlacementGetResultSchema } from '@foreman-code/contracts/placement-r
 import { DomainError } from '../src/modules/errors.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { sourceWorktreeMcpFixture } from './helpers/sourceWorktreeMcpFixture.js'
 
 afterEach(() => vi.restoreAllMocks())

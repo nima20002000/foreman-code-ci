@@ -4,7 +4,7 @@ import * as c from '@foreman-code/contracts/management'
 import * as current from '@foreman-code/contracts/wave25'
 import { describe, expect, it, vi } from 'vitest'
 import { DomainError } from '../src/modules/errors.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { skillConsumerFixture } from './helpers/skillConsumerFixture.js'
 
 describe.skipIf(!postgresEnabled)('Skill consumer update plans over authenticated MCP: interruptions', () => {

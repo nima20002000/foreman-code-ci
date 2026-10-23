@@ -1,5 +1,5 @@
 import { vi } from 'vitest'
-import type { Br1002Runtime } from './wave25Br1002Cuts.js'
+import type { Br1002Runtime } from './continuationCuts.js'
 import { rejectableDeferred } from './deferred.js'
 
 type ReviewNativeArgs = Parameters<Br1002Runtime['repository']['coordination']['appendReviewNativeEvent']>

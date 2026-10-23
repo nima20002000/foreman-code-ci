@@ -1,5 +1,6 @@
 import { timeRuntimeOperation } from '../diagnostics/runtimeTiming.js'
-import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import type { ChildProcess, ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawnProcess } from '../../shared/process.js'
 import type { Readable } from 'node:stream'
 import { nativeOutputCollector } from './nativeCommandOutput.js'
 import { NativeProcessRegistry, nativeProcessExit, spawnNativeProcess, prepareNativeProcessRecovery, stopRecoveredChild, type NativeProcessRecovery } from './recovery/processRegistry.js'
@@ -68,7 +69,7 @@ export async function signalTree(child: ChildProcess, signal: NodeJS.Signals): P
   if (process.platform === 'win32') {
     // Windows has no POSIX process groups. Kill the tree, not just its root.
     await new Promise<void>((resolve, reject) => {
-      const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
+      const killer = spawnProcess('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
       killer.once('error', reject)
       killer.once('close', (code) => {
         if (code === 0 || code === 128) resolve() // 128: the process already exited.

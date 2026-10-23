@@ -31,6 +31,15 @@ async function row(database: Database, id: string): Promise<Row | undefined> {
     from management_principals where id=$1`, [id])).rows[0]
 }
 
+/** The principal a Run was accepted under, and the Run's workspace. */
+export async function readRunAuthorizationPrincipal(database: Database, runId: string): Promise<{
+  principalId: string; workspaceId: string
+} | undefined> {
+  const row = (await database.query<{ principal_id: string; workspace_id: string }>(
+    "select record->>'authorizationPrincipalId' as principal_id,workspace_id from runs where id=$1", [runId])).rows[0]
+  return row && { principalId: row.principal_id, workspaceId: row.workspace_id }
+}
+
 /** Only root human authority or a tokenless, Run-bound snapshot is durable authority. */
 /** `atCommit` rechecks a transaction that may itself be the Run's terminal
  * transition. It keeps revocation and grant checks but tolerates the Run

@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 import type { NativeSessionReference } from '@foreman-code/contracts'
 import type { NativeHarnessSessionManager } from '../src/modules/harnesses/port.js'
 import { SingleWriterSessionManager } from '../src/modules/interactions/sessionWriter.js'
-import { nativeLanes } from './helpers/nativeLanes.js'
+import { nativeLanes } from './helpers/memorySessionCoordination.js'
 
 it('persists the acknowledged native turn before a running result can be observed', async () => {
   const coordination = nativeLanes()

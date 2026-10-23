@@ -25,12 +25,13 @@ import { qualifyApprovedRootAllowlist } from '../src/modules/sources/rootAttesta
 import { qualifiedGit } from '../src/modules/sources/capture.js'
 import { sourceSha256 } from '../src/modules/sources/manifest.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
+import { postgresEnabled } from './helpers/database.js'
 
 /** Root-only DB fixture: real authenticated /mcp, actual workspace/installation,
  * canonical Git capture and persisted readback. The fixture registered-root
  * authority uses the real generic policy/host helper modules; native/remote execution is intentionally not invoked.
  */
-it.skipIf(!process.env.TEST_DATABASE_URL)('admits exact approved sources and roots through authenticated MCP without caller paths or fake Run/Agent', async () => {
+it.skipIf(!postgresEnabled)('admits exact approved sources and roots through authenticated MCP without caller paths or fake Run/Agent', async () => {
   const connectionString = process.env.TEST_DATABASE_URL!
   const url = new URL(connectionString)
   if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) || !url.pathname.includes('test')) throw new Error('Use an owned disposable loopback test database.')

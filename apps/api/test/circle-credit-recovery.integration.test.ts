@@ -4,12 +4,13 @@ import { CiRunRecordSchema } from '@foreman-code/contracts'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
-import { CircleStandby } from '../src/modules/ci-host/circleStandby.js'
-import { CircleCreditCache } from '../src/modules/ci-host/circleCreditCache.js'
-import { HostCiService, type CiCommits } from '../src/modules/ci-host/service.js'
-import type { HostCiComputer, HostCiEndpoint } from '../src/modules/ci-host/serviceTypes.js'
+import { CircleStandby } from '@foreman-code/ci/circleStandby'
+import { CircleCreditCache } from '@foreman-code/ci/circleCreditCache'
+import { HostCiService, type CiCommits } from '@foreman-code/ci/service'
+import type { HostCiComputer, HostCiEndpoint } from '@foreman-code/ci/serviceTypes'
 import type { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import type { CiAuthority } from '../src/modules/jobs/ciAuthority.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 it('offers one probe slot to the dispatcher while preserving replacement slots', async () => {
   const db = await migratedDatabase()
@@ -27,8 +28,8 @@ it('offers one probe slot to the dispatcher while preserving replacement slots',
       { owner: 'alpha', circleAccountId: 'default', role: 'primary' as const, ready: true, mirrorNames: new Set(['site-ci']) },
       { owner: 'delta', circleAccountId: 'reserve', role: 'standby' as const, ready: true, mirrorNames: new Set(['site-ci']) },
     ]
-    const policy = new CircleStandby(async () => organizations, { reading: async () => ({ credits: null }) },
-      new CircleCreditCache(), () => now)
+    const policy = new CircleStandby(mainCiContext, async () => organizations, { reading: async () => ({ credits: null }) },
+      new CircleCreditCache(mainCiContext), () => now)
     await policy.recordCreditRefusal('alpha')
     now += 5 * 60_000
     await policy.roles()
@@ -60,7 +61,7 @@ it('offers one probe slot to the dispatcher while preserving replacement slots',
       }
       throw new Error(`Unexpected fixture request: ${request.operation}`)
     } }
-    service = new HostCiService(db.pool, {} as PostgresCommandCoordinator, {} as CiAuthority,
+    service = new HostCiService(mainCiContext, db.pool, {} as PostgresCommandCoordinator, {} as CiAuthority,
       {} as CiCommits, endpoint, undefined, { circleStandby: policy })
     await service.dispatch()
     await service.drain()

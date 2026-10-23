@@ -4,7 +4,7 @@ import { AgentChatStateSchema, SendAgentChatMessageResponseSchema } from '@forem
 import { AgentMutationResultSchema } from '@foreman-code/contracts/management'
 import { workerConversationFixture } from '../src/modules/conversations/workerFixtures.test-support.js'
 import { remoteAgentConversation } from './helpers/remoteAgentConversation.js'
-import { graphHeaders } from './eng04-graph-composition-fixture.js'
+import { graphHeaders } from './graph-composition-fixture.js'
 
 it.each(['main', 'worker'] as const)('steers an active Codex turn on %s through authenticated MCP', async location => {
   const f = await remoteAgentConversation('codex', location)

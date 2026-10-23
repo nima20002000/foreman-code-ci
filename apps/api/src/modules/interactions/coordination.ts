@@ -1,10 +1,10 @@
 import { renewNativeLane } from './laneRenewal.js'
-import { withTransaction, inTransaction } from '../../infrastructure/transaction.js'
+import { withTransaction } from '../../infrastructure/transaction.js'
 import { DeviceHistoryGapSchema, type DeviceHistoryGap } from '@foreman-code/contracts/device-application'
 import { DurableInteractionSchema, type DurableInteraction, IdSchema, TimestampSchema, NativeSessionLaneSchema, NativeSessionReferenceSchema, ReviewJobSchema, type NativeHarnessEvent, type NativeSessionReference, type NativeSessionLane, type ReviewJob } from '@foreman-code/contracts'
 import type pg from 'pg'
 
-import { interactionConnection } from './connection.js'
+import { deliveryTransactionClient } from './connection.js'
 import { DomainError } from '../errors.js'
 import { appendNativeEvent } from '../runs/nativeEvents.js'
 import { assertOrchestratorGraphAuthority } from './graphAuthority.js'
@@ -35,7 +35,7 @@ function leaseInput(id: string, owner: string, token: string, expiresAt: string)
 export class PostgresInteractionCoordinationRepository {
   constructor(private readonly pool: pg.Pool) {}
 
-  private get queryConnection() { return interactionConnection.getStore() ?? this.pool }
+  private get queryConnection() { return deliveryTransactionClient() ?? this.pool }
 
   assertOrchestratorConnection(interaction: DurableInteraction, executionId: string) {
     return assertOrchestratorGraphAuthority(this.queryConnection, interaction, { executionId })
@@ -466,7 +466,7 @@ export class PostgresInteractionCoordinationRepository {
   async releaseLane(id: string, leaseToken: string, observed: {
     observedStatus: NativeSessionLane['observedStatus']; currentTurnOrMessageId?: string; connectionGeneration?: number
   }): Promise<NativeSessionLane> {
-    return inTransaction(this.pool, interactionConnection.getStore(), async (client) => {
+    return withTransaction(this.pool, async (client) => {
       const found = await client.query<{ record: unknown }>(
         `select record from native_session_lanes where id=$1 and record->>'leaseToken'=$2
          and (record->>'leaseExpiresAt')::timestamptz > clock_timestamp() for update`, [id, leaseToken],
@@ -492,6 +492,6 @@ export class PostgresInteractionCoordinationRepository {
       )
       if (updated.rowCount !== 1) throw new DomainError('SESSION_LANE_LEASE_LOST', 'The native writer expired during release.', 409)
       return next
-    })
+    }, { join: deliveryTransactionClient() })
   }
 }

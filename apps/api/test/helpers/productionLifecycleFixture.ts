@@ -12,7 +12,7 @@ import { loadConfig } from '../../src/config.js'
 import { createDatabase } from '../../src/infrastructure/database.js'
 import { createCheckpointStore } from '../../src/infrastructure/checkpoints.js'
 import { makeCurrentWorkflowFixture, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
-import { seedAgent3 } from './wave25Agent3.js'
+import { seedAgent3 } from './workflowDatabase.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { CodexAppServerSessionManager } from '../../src/modules/harnesses/codexAppServer.js'
 import type { NativeHistory, WorkflowNativeSessionStart } from '../../src/modules/harnesses/port.js'
@@ -22,7 +22,7 @@ import { ReviewerDispatcher } from '../../src/modules/interactions/reviewer.js'
 import { PostgresRunRepository } from '../../src/modules/runs/postgres.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
 import { WorkspaceLocationService } from '../../src/modules/workspaces/location.js'
-import { approvalFixture } from './wave25ApprovalFixture.js'
+import { approvalFixture } from './approvalFixture.js'
 import { buildProductionApp } from '../../src/production.js'
 import { privateFixtureDirectory } from './privateFixtureDirectory.js'
 
@@ -178,7 +178,7 @@ export function registerProductionLifecycleFixture() {
     vi.spyOn(CodexAppServerSessionManager.prototype, 'cancel').mockResolvedValue(true)
     vi.spyOn(CodexAppServerSessionManager.prototype, 'close').mockImplementation(async () => { native.closes++ })
     vi.spyOn(ReviewerDispatcher.prototype, 'reconcile').mockResolvedValue() // manually drive the real dispatcher between crash boundaries
-    production = buildProductionApp(config, database, checkpoints, false)
+    production = buildProductionApp({ config, database, checkpoints, logger: false })
     production.registerFileStorage()
     runs = Reflect.get(production.engine, 'runs') as PostgresRunRepository
     interactions = Reflect.get(runtime(), 'interactions') as PostgresInteractionRepository

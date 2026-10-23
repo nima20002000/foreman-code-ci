@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import { describe, expect, it, vi } from 'vitest'
 import { CANONICAL_RUN_GRAPH_MCP_TOOLS, CanonicalRunGraphCurrentSchema } from '@foreman-code/contracts/wave25'
-import { graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { graphRpcValue } from './graph-composition-fixture.js'
 import {
   useSettlementFixtures, timeout, finish, handoffs, acceptedActivation, sourceAndRequest, runtime,
 } from './helpers/workflowSettlementTestSupport.js'
+import { postgresEnabled } from './helpers/database.js'
 
 // Native terminals and physical closure are explicit test inputs. Authenticated
 // Save/MCP reads, canonical publication, SQL transactions and settlement execute.
@@ -14,7 +15,7 @@ vi.mock('../src/modules/interactions/repeatNativeSettlement.js', async (importOr
   settleRepeatNativeExecutionWithProofLocked: vi.fn(async () => undefined),
 }))
 
-describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('workflow settlement reviews', () => {
+describe.skipIf(!postgresEnabled)('workflow settlement reviews', () => {
   const withFixture = useSettlementFixtures()
 
   it.each([false, true])('aggregates all terminal review revisions beyond node count (restart: %s)', async (restart) => {

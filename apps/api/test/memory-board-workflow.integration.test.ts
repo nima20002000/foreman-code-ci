@@ -9,7 +9,7 @@ import { APP_MCP_TOKEN_ENVIRONMENT_VARIABLE } from '../src/modules/access/worker
 import { isWorkflowStart } from '../src/modules/harnesses/sessionStart.js'
 import { LOCAL_RUNNER_ID } from '../src/modules/workspaces/location.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 async function call(client: Client, name: string, args: Record<string, unknown>) {
   const reply = await client.callTool({ name, arguments: args })

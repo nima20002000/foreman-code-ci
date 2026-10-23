@@ -1,7 +1,7 @@
 import { BuildComputerPrepareStatusSchema } from '@foreman-code/contracts'
 import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, expect } from 'vitest'
-import { currentDatabase } from './eng04CurrentDatabase.js'
+import { currentDatabase } from './database.js'
 import { commit } from './ciPreparationFixture.js'
 import { persistedMainPreparationFixture } from './persistedMainPreparationFixture.js'
 

@@ -103,7 +103,7 @@ function fixture() {
       calls.consumed.push(current.map((item) => item.id))
       const ids = new Set(current.map((item) => item.id))
       // Explicit checkpoint-consumer port; not native ACK evidence. Production
-      // atomic receipt/claim tests live in wave25-r1-checkpoint.integration.test.ts.
+      // atomic receipt/claim tests live in checkpoint-owner-receipt.integration.test.ts.
       control.checkpoint.tasks = control.checkpoint.tasks.filter((task) =>
         !task.interrupts?.some((pending) => ids.has((pending.value as { interactionId: string }).interactionId)))
       control.checkpoint.next = control.checkpoint.tasks.map((task) => task.name)

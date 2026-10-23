@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { readPublicNodeProjection } from '../src/modules/run-graph/publicProjection.js'
 import { withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
-import { agent3Database, postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const historySize = 4000
 

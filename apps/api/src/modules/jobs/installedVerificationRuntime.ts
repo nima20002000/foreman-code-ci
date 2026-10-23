@@ -1,9 +1,9 @@
 import { InstalledVerificationRuntimeConfigurationSchema, InstalledVerificationRuntimeCaptureInputSchema,
-  MAX_VERIFICATION_CONFIGURATION_BYTES, type InstalledVerificationRuntimeCaptureInput,
-  type InstalledVerificationRuntimeConfiguration } from './installedVerificationConfiguration.js'
+  MAX_VERIFICATION_CONFIGURATION_BYTES, readProtectedRuntimeFile, type InstalledVerificationRuntimeCaptureInput,
+  type InstalledVerificationRuntimeConfiguration, type InstalledRuntimeConfigurationLocation,
+  type InstalledRuntimeObservedHost } from '@foreman-code/contracts/installed-runtime-node'
 import { readVerificationQuotaPool } from './quotaOwnership.js'
 import { isDeepStrictEqual } from 'node:util'
-import { createHash } from 'node:crypto'
 import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import { verifySourceManifest } from '../sources/manifest.js'
 import { openPrivateRoot } from '../sources/privateFilesystem.js'
@@ -15,11 +15,10 @@ import { JobVerificationRuntimeFingerprintSchema, JobVerificationOfflineSeedRece
 import { DomainError } from '../errors.js'
 import { captureJobRuntimeConfiguration, fingerprintQualificationPath, qualificationMountId } from './qualification.js'
 import { readFile } from 'node:fs/promises'
-import { readProtectedRuntimeFile, type InstalledRuntimeConfigurationLocation,
-  type InstalledRuntimeObservedHost } from './installedRuntimeConfiguration.js'
 import { findRetainedRuntimeConfiguration } from './retainedRuntimeConfiguration.js'
+import { sha256Hex } from '../../shared/hash.js'
 
-const hash = (value: unknown) => createHash('sha256').update(canonicalGraphJson(value)).digest('hex')
+const hash = (value: unknown) => sha256Hex(canonicalGraphJson(value))
 
 export async function readInstalledVerificationConfiguration(
   location: InstalledRuntimeConfigurationLocation | null, profile: JobVerificationProfile,
@@ -64,7 +63,7 @@ export async function captureInstalledVerificationRuntimeConfiguration(raw: Inst
     .some(file => file.path === entry.path && file.sha256 === entry.sha256))) {
     throw new DomainError('JOB_RUNTIME_CONTEXT_CHANGED', 'Offline seed differs from the approved qualification source.', 409)
   }
-  const seedReceiptSha256 = createHash('sha256').update(receiptBytes).digest('hex')
+  const seedReceiptSha256 = sha256Hex(receiptBytes)
   const tools = await Promise.all(input.toolSources.map(async tool => ({
     kind: tool.kind, executable: tool.executable, version: tool.version,
     binarySha256: (await fingerprintQualificationPath(tool.sourceExecutable, true)).sha256,
@@ -84,7 +83,7 @@ export async function captureInstalledVerificationRuntimeConfiguration(raw: Inst
 
 async function assertSeedReceipt(configuration: InstalledVerificationRuntimeConfiguration, ownerUid: number) {
   const bytes = await readProtectedRuntimeFile({ path: configuration.seedReceiptPath, ownerUid }, 16 * 1024 * 1024)
-  if (createHash('sha256').update(bytes).digest('hex') !== configuration.seedReceiptSha256) {
+  if (sha256Hex(bytes) !== configuration.seedReceiptSha256) {
     throw new DomainError('JOB_RUNTIME_CONTEXT_CHANGED', 'Protected offline seed receipt changed.', 409)
   }
   return JobVerificationOfflineSeedReceiptSchema.parse(JSON.parse(bytes.toString('utf8')))

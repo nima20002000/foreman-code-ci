@@ -7,7 +7,7 @@ import { makeCurrentWorkflowFixture, type CurrentEditSaveInput, type WorkflowVer
 import { prepareCurrentStagedAgents } from '../src/modules/graph-drafts/currentStagedAgents.js'
 import { identity, readContext } from '../src/modules/interactions/wave25/context.js'
 import type { GraphSqlClient } from '../src/modules/run-graph/connection.js'
-import { deliveryFixture } from './helpers/wave25ApprovalFixture.js'
+import { deliveryFixture } from './helpers/approvalFixture.js'
 
 /** Scripted read ports exercise current contracts and domain predicates, not SQL integration. */
 function fixture() {

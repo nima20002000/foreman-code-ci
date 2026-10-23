@@ -95,7 +95,7 @@ async function main() {
   await checkpoints.setup(); await checkpoints.ping()
   for (const path of [config.workspaceStorageRoot, config.harnesses.workspaceRoot]) await mkdir(path, { recursive: true, mode: 0o700 })
   stage = 'api-start'
-  const { app, initialize, reconcile, drainShutdown } = buildProductionApp(config, db, checkpoints, false)
+  const { app, initialize, reconcile, drainShutdown } = buildProductionApp({ config, database: db, checkpoints, logger: false })
   let timer
   app.addHook('onClose', async () => {
     clearInterval(timer)

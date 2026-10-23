@@ -45,7 +45,9 @@ import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js
 import { registerAgentChatRoutes } from '../src/routes/agentChat.js'
 import { registerFileRoutes } from '../src/routes/files.js'
 import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
-import { agent3Database, postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 /** Only native I/O and the finished-Run read projection are synthetic. File uploads,
  * disk bytes, grants, chat services, PostgreSQL receipts, HTTP and MCP are real. */
@@ -133,9 +135,9 @@ describe.skipIf(!postgresEnabled)('FIL-10 real chat attachments', { timeout: 60_
     if (!present.rowCount) {
       const client = await database.pool.connect()
       try {
-        await client.query('begin'); await client.query(fileStorageMigration.sql)
-        await client.query('insert into application_migrations(version) values($1)', [fileStorageMigration.version]); await client.query('commit')
-      } catch (error) { await client.query('rollback'); throw error } finally { client.release() }
+        await beginTransaction(client); await client.query(fileStorageMigration.sql)
+        await client.query('insert into application_migrations(version) values($1)', [fileStorageMigration.version]); await commitTransaction(client)
+      } catch (error) { await rollbackTransaction(client); throw error } finally { client.release() }
     }
     root = await mkdtemp(join(process.env.FOREMAN_CODE_TEST_ROOT!, '.fil10-test-'))
     fixture = await seedAgent3(database.pool, root, makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential'))
@@ -331,7 +333,7 @@ describe.skipIf(!postgresEnabled)('FIL-10 real chat attachments', { timeout: 60_
       agentId: query().agentId, workspaceId: fixture.scope.workspaceId, workflowId: fixture.scope.workflowId } })
     const input = request(id, { attachments: [pin(file)] })
     const gate = await database.pool.connect()
-    await gate.query('begin')
+    await beginTransaction(gate)
     await gate.query('select file_id from files where file_id=$1 for update', [file.file.fileId])
     const blockingPid = Number((await gate.query('select pg_backend_pid() as pid')).rows[0].pid)
     const sending = agentSend(input).then((response) => response)
@@ -342,7 +344,7 @@ describe.skipIf(!postgresEnabled)('FIL-10 real chat attachments', { timeout: 60_
       await waitFor(async () => Boolean((await database.pool.query(
         'select 1 from pg_stat_activity where $1::int=any(pg_blocking_pids(pid))', [blockingPid])).rowCount))
       expect((await agent.read(owner.principal, fixture.scope.workspaceId, otherContext)).conversation).toBeNull()
-    } finally { await gate.query('rollback'); gate.release() }
+    } finally { await rollbackTransaction(gate); gate.release() }
     expect((await sending).statusCode).toBe(202); await settleAgent(id)
     const duplicate = await agentSend(input)
     expect(duplicate.statusCode).toBe(200)
@@ -487,15 +489,15 @@ describe.skipIf(!postgresEnabled)('FIL-10 real chat attachments', { timeout: 60_
     const file = await upload(id, Buffer.from('# raced'))
     const blocking = await database.pool.connect(), admission = await database.pool.connect()
     try {
-      await blocking.query('begin'); await admission.query('begin')
+      await beginTransaction(blocking); await beginTransaction(admission)
       await blocking.query('select file_id from files where file_id=$1 for update', [file.file.fileId])
       const checking = validateMessageAttachments(admission, id, [pin(file)])
       const rejected = expect(checking).rejects.toMatchObject({ code: 'MESSAGE_ATTACHMENT_UNAVAILABLE' })
       await blocking.query("update files set state='expired' where file_id=$1", [file.file.fileId])
-      await blocking.query('commit'); await rejected
-      await admission.query('rollback')
+      await commitTransaction(blocking); await rejected
+      await rollbackTransaction(admission)
     } finally {
-      await blocking.query('rollback').catch(() => {}); await admission.query('rollback').catch(() => {})
+      await rollbackTransaction(blocking).catch(() => /* ignore: best-effort cleanup; the test outcome is already decided */ {}); await rollbackTransaction(admission).catch(() => /* ignore: best-effort cleanup; the test outcome is already decided */ {})
       blocking.release(); admission.release()
     }
   })

@@ -2,9 +2,9 @@ import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { RunRecordDetailSchema } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../src/modules/errors.js'
-import { runPath, scenarioHarness } from './helpers/eng07BHarness.js'
-import { scenarioFixture } from './helpers/eng07BScenarios.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { runPath, scenarioHarness } from './helpers/scenarioHarness.js'
+import { scenarioFixture } from './helpers/scenarioFixtures.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('accepted workflow cleanup recovery', () => {
   it('recovers the saved Run after repeated close uncertainty without starting another native turn', async () => {

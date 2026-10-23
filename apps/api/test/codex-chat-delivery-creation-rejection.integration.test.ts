@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it, vi } from 'vitest'
 import { CodexStdioTransport, isObject } from '../src/modules/harnesses/codexStdioTransport.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { calls, until } from './fixtures/codex-test-helpers.js'
 import { useCodexChatDelivery } from './codex-chat-delivery.helpers.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'

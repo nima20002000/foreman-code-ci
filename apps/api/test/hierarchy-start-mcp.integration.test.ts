@@ -9,8 +9,8 @@ import { CurrentRunDetailsSchema, CurrentWorkflowSaveResultSchema, RunStartV3Res
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { coordinationOutput } from './helpers/hierarchyRuntimeFixture.js'
 import { workflowChatCall } from './helpers/workflowChatRequests.js'
-import { graphRpc } from './eng04-graph-composition-fixture.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { graphRpc } from './graph-composition-fixture.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('single-computer hierarchy Start through authenticated MCP', () => {
   it('creates, saves and runs Master to Orchestrator to Worker, then reads both child reports and the Master result', async () => {

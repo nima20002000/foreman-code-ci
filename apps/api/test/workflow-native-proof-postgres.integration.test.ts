@@ -22,7 +22,8 @@ import { repeatStartPublication } from '../src/modules/run-graph/repeatStartPubl
 import { assertRepeatCanonicalReceiptLocked } from '../src/modules/run-graph/repeatReceipts.js'
 import { readRepeatRunSourceLocked } from '../src/modules/run-graph/publication.js'
 import { withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
-import { agent3Database, graphHead, postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
+import { agent3Database, graphHead, seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 // Real, opt-in, disposable loopback PostgreSQL. The genuine v3 version is saved
 // by authenticated HTTP and the typed writer; Start uses authenticated live
@@ -30,8 +31,7 @@ import { agent3Database, graphHead, postgresEnabled, seedAgent3 } from './helper
 // This is NOT production HTTP Start/runtime/native verification. No native
 // source, closure, approval ack, untyped graph fact or fake service is inserted.
 // Positive native ingestion/settlement remain intentionally untested/blocked.
-const enabled = postgresEnabled
-describe.skipIf(!enabled)('ENG04 native proof accepted v3 PostgreSQL guard slice', () => {
+describe.skipIf(!postgresEnabled)('ENG04 native proof accepted v3 PostgreSQL guard slice', () => {
   let db: Awaited<ReturnType<typeof agent3Database>>
   const apps: FastifyInstance[] = [], owners = new Set<RunOwnership>()
   beforeAll(async () => { db = await agent3Database() }, 60000)

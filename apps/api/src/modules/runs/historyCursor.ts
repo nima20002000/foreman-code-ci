@@ -1,12 +1,12 @@
-import { createHash } from 'node:crypto'
 import { DomainError } from '../errors.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 interface WorkflowScope { workspaceId: string; workflowId?: string | undefined }
 export interface RunHistoryBoundary { admittedAt: string; runId: string }
 const MAX_CURSOR_BYTES = 16_384
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/
 function scopeHash(scope: WorkflowScope): string {
-  return createHash('sha256').update(JSON.stringify([scope.workspaceId, scope.workflowId])).digest('hex')
+  return sha256Hex(JSON.stringify([scope.workspaceId, scope.workflowId]))
 }
 function invalid(): never {
   throw new DomainError('RUN_HISTORY_CURSOR_INVALID', 'Use a Run history cursor from the same workspace and workflow filter.', 400)

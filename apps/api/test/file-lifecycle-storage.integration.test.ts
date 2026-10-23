@@ -9,7 +9,7 @@ import type { AllocationSession, AllocationState, FileMutationContext } from '..
 import { FileByteStorage } from '../src/modules/files/storage.js'
 import { readFileRetentionSnapshot } from '../src/modules/files/retentionSnapshot.js'
 import { fileFixtures, fileMetadata } from './helpers/fileFixtures.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { allocate, anotherChat, base, contentUrl, fil14Database, finalize, headers, markdown, owner, ready, reread, upload, type Fil14Database, type Runtime } from './helpers/fil14Lifecycle.js'
 import { deferred } from './helpers/deferred.js'
 
@@ -225,7 +225,7 @@ describe.skipIf(!postgresEnabled)('FIL-14 storage, isolation and restart verific
     }
     const slow = await database.open({ bytes: new PausedReceiver(database.root, MAX_FILE_BYTES) })
     const sending = upload(slow, who, requestId, markdown.bytes)
-    void sending.catch(() => undefined)
+    void sending.catch(() => /* ignore: marks the promise handled; the test awaits it below */ undefined)
     try {
       await Promise.race([received.promise, sending.then(() => assert.fail('Retry skipped the receive barrier'))])
       // The first upload has an open attempt but no DB transaction/publication lock.

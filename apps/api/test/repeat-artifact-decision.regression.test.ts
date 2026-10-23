@@ -4,7 +4,7 @@ import { parseWorkflowArtifactResult } from '@foreman-code/contracts/workflow-ar
 import type { RepeatRepositoryHost } from '../src/modules/runs/repeatPostgres.js'
 import { normalizeRepeatTerminal } from '../src/modules/runs/repeatNode.js'
 import { repeatDigest } from '../src/modules/runs/repeatResolution.js'
-import { createRepeatHarness, makeSimpleRepeatFixture, repeatExitOutput } from './helpers/eng04RepeatFixtures.js'
+import { createRepeatHarness, makeSimpleRepeatFixture, repeatExitOutput } from './helpers/repeatFixtures.js'
 
 function artifactHarness() {
   const fixture = makeSimpleRepeatFixture(2, { suffix: 'f01-artifact-decision' })

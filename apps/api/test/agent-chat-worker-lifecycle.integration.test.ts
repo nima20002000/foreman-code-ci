@@ -30,8 +30,8 @@ import { conversationChatTools } from '../src/modules/access/conversationCredent
 import { prepareAgentChatInput } from '../src/modules/collaboration/chatInputPreparation.js'
 import { prepareWorkerInput } from './helpers/workerChatPreparation.js'
 import { ChatManager, waitFor } from './helpers/operatorChatFixture.js'
-import { agent3Database, seedAgent3 } from './helpers/wave25Agent3.js'
-import { graphHeaders, graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { graphHeaders, graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 import { deferred } from './helpers/deferred.js'
 
 async function fixture() {

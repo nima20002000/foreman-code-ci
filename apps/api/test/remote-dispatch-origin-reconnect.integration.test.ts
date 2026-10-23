@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { freezePlacement, deriveDispatch } from '../src/modules/placement/binding.js'
 import { reserveRemoteDispatchOrigin } from '../src/modules/placement/remoteReceiptCommit.js'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
-import { agent3Database, postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 function dispatch(run: { id: string }) {
   const mainId = randomUUID()

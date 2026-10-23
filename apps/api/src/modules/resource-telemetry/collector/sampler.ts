@@ -1,10 +1,10 @@
-import { createHash } from 'node:crypto'
 import { TELEMETRY_LIMITS, telemetryCanonical, type TelemetryCollectedRow, type TelemetryIdentity, type TelemetryStorage } from '@foreman-code/contracts/resource-telemetry'
 import { cpuWindow, type CpuBaseline } from './cpu.js'
 import { disjointAccounting } from './linuxCgroup.js'
 import { counter as parseCounter, parseHostCpu, parseHostMemory, parseOnlineCpus, safeBytes, sourceFailure, type HostConstants } from './linuxProcfs.js'
 import type { OwnershipReader } from './ownership.js'
 import { collectProcessSet, type ProcessIdentity, type ProcessReader } from './processSet.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 type Reason = TelemetryCollectedRow['coverage']['reasons'][number]
 function reason(error: unknown): Reason {
@@ -80,7 +80,7 @@ export class LinuxSampler {
       if (!window || previousMono === undefined) return { state: 'warmup', reason: 'warmup' }
       return { state: 'ok', basis, windowStartMonoNs: previousMono.toString(), windowEndMonoNs: monoNs.toString(),
         previousCounter: window.previous, currentCounter: window.current, previousTotal: window.previousTotal,
-        currentTotal: window.currentTotal, intervalDeltaNs, baselineRef: createHash('sha256').update(current.generation + ':' + (this.sources.get(key) ?? 'process-set')).digest('hex') }
+        currentTotal: window.currentTotal, intervalDeltaNs, baselineRef: sha256Hex(current.generation + ':' + (this.sources.get(key) ?? 'process-set')) }
     }
     let host: TelemetryCollectedRow
     if (p.wholeHostVisible) {
@@ -113,7 +113,7 @@ export class LinuxSampler {
     const capturedMemberships: Array<{ row: TelemetryCollectedRow; identities: Set<string> }> = []
     for (const view of views) {
       signal.throwIfAborted()
-      const key = createHash('sha256').update(telemetryCanonical(view.selector) + ':' + view.leaseId + ':' + telemetryCanonical({ launches: [...view.launchIds].sort(), roots: view.roots.map(root => `${root.bootId}:${root.pid}:${root.startTicks}`).sort() })).digest('hex')
+      const key = sha256Hex(telemetryCanonical(view.selector) + ':' + view.leaseId + ':' + telemetryCanonical({ launches: [...view.launchIds].sort(), roots: view.roots.map(root => `${root.bootId}:${root.pid}:${root.startTicks}`).sort() }))
       alive.add(key)
       const selector = view.selector
       if (selector.mainId !== identity.mainId || telemetryCanonical(selector.host) !== telemetryCanonical(identity.host)

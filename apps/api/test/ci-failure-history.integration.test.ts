@@ -7,9 +7,10 @@ import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { HostCiService } from '../src/modules/ci-host/service.js'
+import { HostCiService } from '@foreman-code/ci/service'
 import { CI_GET_ACTIONS, RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 let database: Awaited<ReturnType<typeof migratedDatabase>>
 beforeAll(async () => { database = await migratedDatabase() }, 60_000)
@@ -31,7 +32,7 @@ async function fixture() {
     [workspaceId, JSON.stringify({ id: workspaceId, name: 'Failure history fixture' })])
   const access = new PostgresAccessService(pool)
   const commands = new PostgresCommandCoordinator(pool)
-  const ci = new HostCiService(pool, commands, new RunCiAuthority(pool), {
+  const ci = new HostCiService(mainCiContext, pool, commands, new RunCiAuthority(pool), {
     resolve: async () => { throw new Error('Ticket reads must not resolve commits') },
     capabilities: async () => ({ parts: false, integrationPartitions: false, affected: false }),
   }, {

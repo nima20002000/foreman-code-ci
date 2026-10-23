@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { memoryCall, memoryWorkflow, workflowMemory } from './helpers/memoryWorkflow.js'
 
 it.runIf(postgresEnabled)('settles a parent binding when Stop cancels a waiting join before child execution admission', async () => {

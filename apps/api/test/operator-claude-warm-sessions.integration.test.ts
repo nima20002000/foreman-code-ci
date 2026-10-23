@@ -9,12 +9,13 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { OperatorChatService } from '../src/modules/conversations/operatorChat.js'
 import { registerOperatorChatFixture, type OperatorChatFixture, claudeConfiguration, waitFor } from './helpers/operatorChatFixture.js'
 import { operatorClaudeReplay } from './helpers/operatorClaudeReplay.js'
+import { postgresEnabled } from './helpers/database.js'
 
 let f: OperatorChatFixture
 let chat: OperatorChatService
 registerOperatorChatFixture(fixture => { f = fixture; chat = f.chat }, () => chat)
 
-describe.skipIf(!process.env.TEST_DATABASE_URL)('Operator warm Claude SDK sessions', () => {
+describe.skipIf(!postgresEnabled)('Operator warm Claude SDK sessions', () => {
   it('reuses one SDK query for two authenticated turns and cold-resumes after shutdown', async () => {
     await f.operators.update({ ...claudeConfiguration, configDirectory: '/recorded/profile' },
       (await f.operators.ensure()).configuration.id)

@@ -23,7 +23,7 @@ import { createAdmittedNativeManager } from '../src/modules/harnesses/admittedMa
 import type { NativeHarnessSessionManager } from '../src/modules/harnesses/port.js'
 import type { CodexChatFiles } from '../src/modules/harnesses/codexFiles/runtime.js'
 import { CodexStdioTransport } from '../src/modules/harnesses/codexStdioTransport.js'
-import { agent3Database, seedAgent3 } from './helpers/wave25Agent3.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
 import { deliveryFixture } from './fixtures/codex-delivery.js'
 import { until } from './fixtures/codex-test-helpers.js'
 import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'

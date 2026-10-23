@@ -13,7 +13,7 @@ import { codexQualificationSuite } from '../../src/modules/harnesses/qualificati
 
 import { qualificationRevisionWithIdentity } from '../../src/modules/harnesses/qualification/identity.js'
 import { qualifyScheduleHarness } from './qualifyScheduleHarness.js'
-import type { Sch11Fixture } from './sch11Fixture.js'
+import type { Sch11Fixture } from './scheduleFixture.js'
 
 /** Production discovery and settings; qualification is an explicit native operation. */
 export async function scheduleHarnessFixture(f: Sch11Fixture, mainId: string, principal: ManagementPrincipal) {

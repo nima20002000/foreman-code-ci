@@ -27,7 +27,7 @@ beforeEach(() => {
   checkpoints = createCheckpointStore(config.database.connectionString, 'schema_fixture', config.database)
   vi.spyOn(database, 'migrate').mockResolvedValue()
   vi.spyOn(checkpoints, 'setup').mockResolvedValue()
-  production = buildProductionApp(config, database, checkpoints, false)
+  production = buildProductionApp({ config, database, checkpoints, logger: false })
 })
 afterEach(async () => {
   await production.shutdown()

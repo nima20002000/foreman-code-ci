@@ -2,7 +2,7 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { BuildComputerPrepareStatusSchema } from '@foreman-code/contracts'
 import { describe, expect, it } from 'vitest'
 import { commit, mainId } from './helpers/ciPreparationFixture.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { mainPreparationRecoverySuite } from './helpers/mainPreparationRecoverySuite.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 

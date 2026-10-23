@@ -4,11 +4,12 @@ import { randomUUID } from 'node:crypto'
 import { CiEnrollmentStateSchema } from '@foreman-code/contracts'
 import { OperatorCapabilitiesSchema } from '@foreman-code/contracts/management'
 import { describe, expect, it, vi } from 'vitest'
-import { CI_ENROLLMENT_ACTIONS, CiEnrollment } from '../src/modules/jobs/ciEnrollment.js'
-import { ciEnrollmentProfileInput } from '../src/modules/jobs/ciEnrollmentProfiles.js'
+import { CI_ENROLLMENT_ACTIONS, CiEnrollment } from '@foreman-code/ci/ciEnrollment'
+import { ciEnrollmentProfileInput } from '@foreman-code/ci/ciEnrollmentProfiles'
 import { buildComputerKey } from '../src/modules/settings/buildComputers.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { ciEnrollmentFixture } from './ci-enrollment.test-support.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 describe.skipIf(!postgresEnabled)('automatic CI enrollment: lifecycle', () => {
   const fixture = ciEnrollmentFixture()
@@ -46,7 +47,7 @@ describe.skipIf(!postgresEnabled)('automatic CI enrollment: lifecycle', () => {
       await f.enrollment.reconcile()
       expect(f.preparation.start).toHaveBeenCalledTimes(4)
       expect(f.preparations.get(id)!.state).toBe('preparing')
-      const restarted = new CiEnrollment(f.db.pool, f.commands, f.profiles, f.preparation, f.inventory)
+      const restarted = new CiEnrollment(mainCiContext, f.db.pool, f.commands, f.profiles, f.preparation, f.inventory)
       expect(await restarted.read(reader.principal, { workspaceId: f.workspaceId }))
         .toEqual(await f.enrollment.read(reader.principal, { workspaceId: f.workspaceId }))
       await restarted.close()
@@ -126,7 +127,7 @@ describe.skipIf(!postgresEnabled)('automatic CI enrollment: lifecycle', () => {
       const disabled = CiEnrollmentStateSchema.parse(decodeMcpToolResult(changed)).computers[0]!
       expect(disabled).toMatchObject({ enabled: false, revision: 1, state: 'disabled' })
       expect((await client.callTool({ name: 'ci_enrollment_update', arguments: input })).isError).not.toBe(true)
-      const restarted = new CiEnrollment(f.db.pool, f.commands, f.profiles, f.preparation, f.inventory)
+      const restarted = new CiEnrollment(mainCiContext, f.db.pool, f.commands, f.profiles, f.preparation, f.inventory)
       expect((await restarted.read(f.owner.principal, { workspaceId: f.workspaceId })).computers[0])
         .toMatchObject({ target: disabled.target, enabled: false, revision: 1, state: 'disabled' })
       await restarted.close()

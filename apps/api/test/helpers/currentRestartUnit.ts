@@ -15,7 +15,7 @@ import { PostgresWorkflowClosureStore } from '../../src/modules/interactions/wor
 import type { ChildProcessEnvironment, NativeHarnessSessionManager } from '../../src/modules/harnesses/port.js'
 import type { NativeSessionManagerResolver } from '../../src/modules/interactions/runtimePorts.js'
 import type { AcceptedNodePlacement } from '@foreman-code/contracts/node-placement'
-import { nativeLanes } from './nativeLanes.js'
+import { nativeLanes } from './memorySessionCoordination.js'
 import { currentUnitSnapshot } from './currentUnitSnapshot.js'
 
 export interface RestartClosureRow {

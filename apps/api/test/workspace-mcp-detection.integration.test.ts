@@ -15,7 +15,7 @@ import { McpDetectionService, type NativeMcpInspector } from '../src/modules/har
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { WorkspaceManagementService } from '../src/modules/workspaces/management.js'
 import { OperatorWorkspaceControls } from '../src/modules/workspaces/operatorControls.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 
 it('validates the persisted workspace identity before HTTP and authenticated MCP inspection', async () => {
   const database = await currentDatabase()

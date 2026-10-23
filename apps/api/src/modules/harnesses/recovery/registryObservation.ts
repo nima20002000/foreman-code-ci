@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { opendirSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { cgroupBoundary, type NativeCgroupBoundary } from './cgroupBoundary.js'
@@ -6,6 +6,7 @@ import { bootIdentity, identityAlive } from './linuxIdentity.js'
 import { existingPrivateDirectory, readRecord, recordObject } from './storage.js'
 import { RegistryChanges } from './registryChanges.js'
 import { archivedRetirement } from './registryArchive.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 export interface NativeLaunchObservation {
   readonly owner: string; readonly launchId: string; readonly bootId: string
@@ -52,7 +53,7 @@ function readLaunch(root: string, ownerKey: string, id: string): NativeLaunchObs
   if (raw === undefined) return undefined // Concurrent retirement is not closure proof.
   const intent = recordObject(raw)
   if (intent.format !== 1 || intent.id !== id || typeof intent.owner !== 'string' || typeof intent.boot !== 'string'
-    || createHash('sha256').update(intent.owner).digest('hex') !== ownerKey) throw new Error('Invalid native observation intent.')
+    || sha256Hex(intent.owner) !== ownerKey) throw new Error('Invalid native observation intent.')
   const launch: NativeLaunchObservation = { owner: intent.owner, launchId: id, bootId: intent.boot, lifecycle: 'closure-unconfirmed' }
   const dispatch = readRecord(join(path, 'dispatched.json'))
   if (dispatch !== undefined) {
@@ -111,7 +112,7 @@ function retiredObservation(root: string, ownerKey: string): NativeLaunchObserva
   if (retired.observation === undefined) return undefined
   const row = recordObject(retired.observation)
   if (retired.format !== 2 || row.owner !== retired.owner || row.launchId !== retired.id
-    || typeof row.owner !== 'string' || createHash('sha256').update(row.owner).digest('hex') !== ownerKey
+    || typeof row.owner !== 'string' || sha256Hex(row.owner) !== ownerKey
     || typeof row.launchId !== 'string' || !/^[0-9a-f-]{36}$/.test(row.launchId)
     || typeof row.bootId !== 'string' || row.lifecycle !== 'closed'
     || !['linux_boot_changed', 'native_not_started', 'cgroup_v2_empty', 'native_exit_removed_cgroup',
@@ -254,7 +255,7 @@ class Projection {
     }
     for (const row of this.active.values()) {
       if (!ownerSeen.has(row.launchId) && next.get(row.launchId)?.lifecycle === 'active'
-        && createHash('sha256').update(row.owner).digest('hex') === ownerKey) {
+        && sha256Hex(row.owner) === ownerKey) {
         next.set(row.launchId, Object.freeze({ ...row, lifecycle: 'closure-unconfirmed' }))
       }
     }

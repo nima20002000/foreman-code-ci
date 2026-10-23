@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { memoryWorkflow, workflowMemory } from './helpers/memoryWorkflow.js'
 
 it.runIf(postgresEnabled).each([{ finding: null }, { finding: '' }, { finding: [] }])('retains a JSON finding $finding through logical acceptance and fails the Run with it', async ({ finding }) => {

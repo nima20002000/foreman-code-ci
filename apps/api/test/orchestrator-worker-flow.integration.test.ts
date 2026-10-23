@@ -5,6 +5,7 @@ import { WorkActivationInputSchema, type WorkActivationInput, type WorkflowDefin
 import { hasWorkDirectionWait } from '../src/modules/runs/workflowLifecycle.js'
 import { RunHandoffReadService } from '../src/modules/runs/handoffRead.js'
 import { handoffs, runtime, timeout, useSettlementFixtures } from './helpers/workflowSettlementTestSupport.js'
+import { postgresEnabled } from './helpers/database.js'
 
 // Native terminals are scripted per execution; typed Save, the engine, routing, SQL constraints and settlement execute.
 vi.mock('../src/modules/interactions/repeatNativeSettlement.js', async (importOriginal) => ({
@@ -20,7 +21,7 @@ const result = (routing: Record<string, unknown>, latestDeliverable: unknown, re
 const team = (graph: WorkflowDefinitionV3): WorkflowDefinitionV3 => ({ ...handoffs(10)(graph),
   nodes: graph.nodes.map((node, index) => ({ ...node, name: index === 0 ? 'Orchestrator' : 'Worker' })) })
 
-describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('Orchestrator and Worker workflow', () => {
+describe.skipIf(!postgresEnabled)('Orchestrator and Worker workflow', () => {
   const withFixture = useSettlementFixtures()
 
   it('starts the Worker with the Orchestrator task and brings each Worker result back to the Orchestrator to check', async () => {

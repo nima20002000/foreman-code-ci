@@ -4,8 +4,8 @@ import { buildApp } from '../src/app.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { RunManagementService } from '../src/modules/runs/management.js'
 import { codexApprovalRuntime } from './helpers/codexApprovalRuntime.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
-import { graphHeaders, graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { postgresEnabled } from './helpers/database.js'
+import { graphHeaders, graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 
 describe.skipIf(!postgresEnabled)('persisted public approval activity', () => {
   it.each(['uncertain', 'failed'] as const)(

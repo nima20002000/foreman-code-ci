@@ -15,9 +15,9 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { WorkspaceManagementService } from '../src/modules/workspaces/management.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
-import { seedAgent3 } from './helpers/wave25Agent3.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
 
 const execute = promisify(execFile)
 async function git(path: string, ...args: string[]) {

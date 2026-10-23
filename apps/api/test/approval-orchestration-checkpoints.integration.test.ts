@@ -2,9 +2,9 @@ import { approvalOrchestrationDatabase } from './helpers/approvalOrchestrationDa
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildApp } from '../src/app.js'
-import { checkpointRuntimeFixture } from './helpers/wave25Br1003Runtime.js'
+import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
 import { approvalResponse } from './helpers/approvalResponse.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 afterEach(() => vi.restoreAllMocks())
 describe.skipIf(!postgresEnabled)('current durable approval orchestration', () => {

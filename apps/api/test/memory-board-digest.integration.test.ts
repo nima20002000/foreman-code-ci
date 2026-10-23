@@ -6,7 +6,8 @@ import { withTransaction } from '../src/infrastructure/transaction.js'
 import { MemoryBoardService } from '../src/modules/memory-boards/service.js'
 import { memoryFixture } from '../src/modules/memory-boards/testing/fixture.js'
 import type { BoardSnapshot } from '../src/modules/memory-boards/types.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('Memory board digest selection', () => {
   let database: Awaited<ReturnType<typeof agent3Database>>

@@ -5,12 +5,13 @@ import {
   CurrentWorkflowSaveResultSchema, CurrentWorkflowReadResultSchema,
 } from '@foreman-code/contracts/wave25'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
-import { writerFixture } from './eng04-writer-fixtures.js'
-import { graphHeaders, graphRpcValue } from './eng04-graph-composition-fixture.js'
-import type { currentDatabase } from './helpers/eng04CurrentDatabase.js'
-import { nim2691TaskDatabase as taskDatabase } from './helpers/nim2691Database.js'
+import { writerFixture } from './writer-fixtures.js'
+import { graphHeaders, graphRpcValue } from './graph-composition-fixture.js'
+import type { currentDatabase } from './helpers/database.js'
+import { nim2691TaskDatabase as taskDatabase } from './helpers/taskDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
-const postgresDescribe = describe.skipIf(process.env.NIM2691_POSTGRES !== '1')
+const postgresDescribe = describe.skipIf(!postgresEnabled)
 postgresDescribe('combined handoff artifact authoring through Operator MCP', () => {
   it('saves, reads persisted declarations, and denies a reader the same write', async () => {
     await taskDatabase(async (pool, directory) => {

@@ -10,9 +10,9 @@ import { continuationValidator } from '../src/modules/runs/continuation.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import { WorkspaceManagementService } from '../src/modules/workspaces/management.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { approvalResponse } from './helpers/eng06ApprovalFaults.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
-import { readCurrentExecutions } from './helpers/wave25Agent3.js'
+import { approvalResponse } from './helpers/approvalFaults.js'
+import { postgresEnabled } from './helpers/database.js'
+import { readCurrentExecutions } from './helpers/workflowDatabase.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 
 afterEach(() => vi.restoreAllMocks())

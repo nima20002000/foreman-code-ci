@@ -1,6 +1,6 @@
-import { open } from 'node:fs/promises'
+import { open, readFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
-import { execFile } from 'node:child_process'
+import { endianness } from 'node:os'
 
 const U64 = (1n << 64n) - 1n
 export function counter(value: string): bigint {
@@ -73,18 +73,28 @@ export async function readBounded(path: string, signal: AbortSignal, maxBytes = 
   } finally { await file.close() }
 }
 export interface HostConstants { clockTicksPerSecond: bigint; pageSize: bigint }
-/** Fixed arguments, once at initialization; no shell and no sampling-time subprocess. */
+const AT_NULL = 0n, AT_PAGESZ = 6n, AT_CLKTCK = 17n
+/** The kernel gives every process its clock tick rate and page size in the auxiliary vector; sysconf(3) and
+ * getconf(1) report these same entries. */
+export function hostConstantsFromAuxv(auxv: Buffer, wordBytes: 4 | 8, littleEndian: boolean): HostConstants {
+  const word = (offset: number) => wordBytes === 8
+    ? littleEndian ? auxv.readBigUInt64LE(offset) : auxv.readBigUInt64BE(offset)
+    : BigInt(littleEndian ? auxv.readUInt32LE(offset) : auxv.readUInt32BE(offset))
+  const entries = new Map<bigint, bigint>()
+  for (let offset = 0; offset + 2 * wordBytes <= auxv.length; offset += 2 * wordBytes) {
+    const type = word(offset)
+    if (type === AT_NULL) break
+    entries.set(type, word(offset + wordBytes))
+  }
+  const clockTicksPerSecond = entries.get(AT_CLKTCK), pageSize = entries.get(AT_PAGESZ)
+  if (!clockTicksPerSecond || !pageSize) throw new Error('invalid-counter')
+  return { clockTicksPerSecond, pageSize }
+}
+/** Read once at initialization, without a subprocess. */
 export async function qualifyHostConstants(signal: AbortSignal): Promise<HostConstants> {
-  const read = (name: 'CLK_TCK' | 'PAGESIZE') => new Promise<bigint>((resolve, reject) => {
-    execFile('/usr/bin/getconf', [name], { signal, timeout: 2000, maxBuffer: 128, encoding: 'utf8', cwd: '/', env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' } }, (error, stdout) => {
-      if (error) { reject(error); return }
-      try { const n = counter(stdout.trim()); if (!n) throw new Error('invalid-counter'); resolve(n) } catch (failure) { reject(failure) }
-    })
-  })
-  const results = await Promise.allSettled([read('CLK_TCK'), read('PAGESIZE')])
-  const failure = results.find(r => r.status === 'rejected')
-  if (failure?.status === 'rejected') throw failure.reason
-  return { clockTicksPerSecond: (results[0] as PromiseFulfilledResult<bigint>).value, pageSize: (results[1] as PromiseFulfilledResult<bigint>).value }
+  signal.throwIfAborted()
+  const auxv = await readFile('/proc/self/auxv', { signal })
+  return hostConstantsFromAuxv(auxv, ['arm', 'ia32', 'mips', 'mipsel', 'ppc'].includes(process.arch) ? 4 : 8, endianness() === 'LE')
 }
 export function sourceFailure(error: unknown): 'permission-denied' | 'identity-changed' | 'limit-exceeded' | 'source-missing' | 'invalid-counter' | 'source-failure' {
   const code = (error as NodeJS.ErrnoException)?.code

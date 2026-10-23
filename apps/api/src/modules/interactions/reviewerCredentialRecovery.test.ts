@@ -1,6 +1,6 @@
 import type pg from 'pg'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { recoveryExecution } from '../../../test/helpers/eng06Recovery.testSupport.js'
+import { recoveryExecution } from '../../../test/helpers/recoveryExecution.testSupport.js'
 import type { PostgresAccessService } from '../access/postgres.js'
 import { readRecoverableRemoteReviewer } from './retainedRemoteReviewer.js'
 import { assertWave25WorkerBinding } from './wave25/credentialAuthority.js'

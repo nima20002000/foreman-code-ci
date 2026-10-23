@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import type pg from 'pg'
 import { AgentSchema, AgentConfigurationVersionSchema, agentTemplateForRole, newAgentGraphqlTools, projectHarnessEffort } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -10,6 +9,7 @@ import { authorizeAgentConfiguration } from '../workspaces/operatorAgents.js'
 import { readImmutableAgentConfiguration } from '../workflows/immutableRead.js'
 import type { ProviderAccountConfigurationService } from '../harnesses/providerAccountConfiguration.js'
 import { readAgentDefaultsSetting } from '../settings/foundation.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export function authorizeStagedAgents(principal: ManagementPrincipal, input: Pick<CurrentEditSaveInput, 'workspaceId' | 'stagedAgents'>) {
   for (const item of input.stagedAgents ?? []) {
@@ -68,11 +68,11 @@ export async function prepareCurrentStagedAgents(client: pg.PoolClient, principa
     }
     authorizeAgentConfiguration(principal, input.workspaceId, configInput.harness, configInput.assignedSkills)
     const content = await pinnedConfigurationContent(client, input.workspaceId, configInput, current)
-    const id = `staged-config-${createHash('sha256').update(`${input.commandId}:${item.agent.id}`).digest('hex')}`
+    const id = `staged-config-${sha256Hex(`${input.commandId}:${item.agent.id}`)}`
     const now = new Date().toISOString()
     const version = Number((await client.query<{ version: string }>('select coalesce(max(version),0)+1 as version from agent_configuration_versions where agent_id=$1', [item.agent.id])).rows[0]!.version)
     const configuration = AgentConfigurationVersionSchema.parse({ ...content, id, version,
-      contentHash: `sha256:${createHash('sha256').update(JSON.stringify(content)).digest('hex')}`, createdAt: now })
+      contentHash: `sha256:${sha256Hex(JSON.stringify(content))}`, createdAt: now })
     const harness = configuration.harness
     const agent = AgentSchema.parse({ ...old, id: item.agent.id, name: item.agent.name, description: item.agent.description,
       role: item.agent.role, productRole: configuration.productRole, harness: harness.harness, harnessConfiguration: harness,

@@ -34,8 +34,7 @@ infrastructure.inventoryDiscovery = {
 }
 const database = createDatabase(config.database)
 const checkpoints = createCheckpointStore(config.database.connectionString, config.checkpoints.schema, config.database)
-const production = buildProductionApp(config, database, checkpoints, false,
-  undefined, undefined, { codex: codexQualificationSuite }, infrastructure)
+const production = buildProductionApp({ config, database, checkpoints, logger: false, qualificationSuites: { codex: codexQualificationSuite }, infrastructure })
 const reportReconciliation = error => componentLogger('engine').error({ err: error }, 'run reconciliation failed')
 if (process.env.FOREMAN_CODE_RESTART_FIXTURE_READY) {
   production.app.post('/__fixture-reconcile', async request => {

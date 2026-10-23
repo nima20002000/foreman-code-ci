@@ -8,8 +8,8 @@ import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { RunHistoryService } from '../src/modules/runs/history.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
-import { graphHeaders, graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
+import { graphHeaders, graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 
 describe.skipIf(!postgresEnabled)('historical database upgrade', () => {
   it('migrates retained versions through the pending writer and preserves authenticated Run readback', async () => {

@@ -17,8 +17,8 @@ import { createClaudeSdkRunner } from '../src/modules/harnesses/claudeSdk/runner
 import { ClaudeBoundedQueue } from '../src/modules/harnesses/claudeSdk/queue.js'
 import type { ClaudeNativeSessionManager } from '../src/modules/harnesses/claudeSdk/sessionManager.js'
 import type { ClaudeSdkClient, ClaudeSdkUserMessage } from '../src/modules/harnesses/claudeSdk/port.js'
-import { graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
-import { nim2691TaskDatabase } from './helpers/nim2691Database.js'
+import { graphRpc, graphRpcValue } from './graph-composition-fixture.js'
+import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
 /** Native transport frames are doubled; runner, normalizer, manager, callback authority, caller and PostgreSQL are real. */

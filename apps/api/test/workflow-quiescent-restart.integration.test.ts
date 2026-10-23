@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { checkpointRuntimeFixture } from './helpers/wave25Br1003Runtime.js'
+import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
 import { settleWorkForRestart } from '../src/modules/runs/workflowLifecycle.js'
 
 it('preserves an ordinary workflow before native admission and starts it once after restart', async () => {

@@ -5,13 +5,14 @@ import { buildApp } from '../src/app.js'
 import { RunManagementService } from '../src/modules/runs/management.js'
 import { withCurrentRunRead } from '../src/modules/runs/currentRead.js'
 import { readRunActivitySnapshot } from '../src/modules/runs/activitySnapshot.js'
-import { graphFixture, graphHeaders, graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
-import { nim2691TaskDatabase } from './helpers/nim2691Database.js'
-import type { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { graphFixture, graphHeaders, graphRpc, graphRpcValue } from './graph-composition-fixture.js'
+import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
+import type { currentDatabase } from './helpers/database.js'
 import { RunActivitiesPageSchema } from '@foreman-code/contracts/wave25'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
+import { postgresEnabled } from './helpers/database.js'
 
-it.skipIf(process.env.NIM2691_POSTGRES !== '1').each(['running', 'completed'])('pages public history independently of 1000 %s native items over HTTP/MCP', async (status) => {
+it.skipIf(!postgresEnabled).each(['running', 'completed'])('pages public history independently of 1000 %s native items over HTTP/MCP', async (status) => {
   await nim2691TaskDatabase(async (pool, directory) => {
     await applyApplicationMigrations(pool)
     const db = { pool, directory, schema: 'public', close: async () => {} } as Awaited<ReturnType<typeof currentDatabase>>

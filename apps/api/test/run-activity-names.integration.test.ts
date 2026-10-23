@@ -14,10 +14,10 @@ import { RunOwnership } from '../src/modules/runs/ownership.js'
 import { RepeatRepositoryFactory } from '../src/modules/runs/repeatRepositoryHost.js'
 import { createWorkflowNativeCaptureChannel } from '../src/modules/interactions/workflowNativeCapture.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
-import { currentRepositoryServices } from './helpers/wave25CurrentRepository.js'
-import type { currentDatabase } from './helpers/eng04CurrentDatabase.js'
-import { nim2691TaskDatabase } from './helpers/nim2691Database.js'
-import { graphFixture, graphHeaders, graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { currentRepositoryServices } from './helpers/currentRepository.js'
+import type { currentDatabase } from './helpers/database.js'
+import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
+import { graphFixture, graphHeaders, graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 
 it('keeps admission-time Agent names in the Run board and Activities after presentation-only saves', async () => {
   await nim2691TaskDatabase(async (pool, directory) => {

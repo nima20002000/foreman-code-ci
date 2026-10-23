@@ -28,7 +28,7 @@ import { DomainError } from '../src/modules/errors.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { mixedComputerPlacement } from './helpers/mixedComputerPlacement.js'
 import { verificationCapacityFixture } from './helpers/verificationCapacityFixture.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 // Host attestations and qualification metadata are fixtures; authorization, location changes,
 // persisted bindings and placement discovery use the production services over authenticated MCP.
@@ -74,7 +74,7 @@ async function fixture() {
       },
     }
     const policies = new PostgresWorkspaceRootPolicies(placement.local.hostRef.mainId, hosts)
-    base.locations.setRootPolicies(policies)
+    base.rootPolicies.current = policies
     const createLocations = () => new WorkspaceBoundLocationService(base.db.pool, base.commands, policies)
     const createChoices = () => new NodePlacementChoicesService(base.db.pool,
       new ProductionPlacementChoiceDiscovery(base.db.pool, () => ({ roots: policies, sources: placement.sources,

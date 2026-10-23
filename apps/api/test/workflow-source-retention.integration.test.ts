@@ -10,7 +10,7 @@ import { createSourceManifest } from '../src/modules/sources/manifest.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { mixedComputerPlacement } from './helpers/mixedComputerPlacement.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'
 
 async function fixture() {

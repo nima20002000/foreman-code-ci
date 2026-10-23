@@ -1,5 +1,5 @@
 import { closeQualificationResources } from '../cleanup.js'
-import { randomUUID, createHash } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { AgentFilePublishInputSchema, AgentFileReadInputSchema } from '@foreman-code/contracts/files'
@@ -13,6 +13,7 @@ import { APP_MCP_SERVER_NAME, chatExcludedAppMcpServerNames } from '../../appMcp
 import { runCommand } from '../../process.js'
 import { inheritedAgentEnvironment } from '../../secrets.js'
 import { collectChecks, modelCheck, nonempty, object, requireCondition, type Check } from './checks.js'
+import { sha256Hex } from '../../../../shared/hash.js'
 
 const bundleName = 'codex_app_server_protocol.schemas.json'
 const response = (value: unknown, text?: string) => ({ success: true,
@@ -51,7 +52,7 @@ export const codexQualificationSuite: QualificationSuite = {
       expiresAt: new Date(Date.parse(now) + 3_600_000).toISOString() }
     const sourceRevision = { fileId: sourceId, revisionId: sourceRevisionId, filename: 'qualification-source.md',
       mediaType: 'text/markdown' as const, byteSize: sourceBytes.length,
-      sha256: createHash('sha256').update(sourceBytes).digest('hex'), origin: 'upload' as const, createdAt: now }
+      sha256: sha256Hex(sourceBytes), origin: 'upload' as const, createdAt: now }
     const runCommandChecked = async (args: string[]) => {
       await input.assertInstallation?.(signal)
       const result = await runCommand(input.binary, args, input.workDirectory, signal, environment,
@@ -107,7 +108,7 @@ export const codexQualificationSuite: QualificationSuite = {
             state: 'ready', retentionDurationSeconds: 3600, expiresAt: new Date(Date.parse(createdAt) + 3_600_000).toISOString() },
           revision: { fileId: outputId, revisionId: outputRevisionId, filename: 'qualification-result.md',
             mediaType: 'text/markdown', byteSize: Buffer.byteLength(bytes),
-            sha256: createHash('sha256').update(bytes).digest('hex'), origin: 'agent_output', createdAt },
+            sha256: sha256Hex(bytes), origin: 'agent_output', createdAt },
         }, replayed: false }))
       } else await transport.reject(request.id, -32602, 'Invalid qualification file call.')
     }
@@ -128,7 +129,7 @@ export const codexQualificationSuite: QualificationSuite = {
     }
     const checks: Check[] = [
       ['binary-sha256', async () => {
-        const actual = createHash('sha256').update(await readFile(input.binary)).digest('hex')
+        const actual = sha256Hex(await readFile(input.binary))
         requireCondition(actual === input.binarySha256, 'Codex binary SHA-256 differs from the requested candidate.')
         return actual
       }],
@@ -143,7 +144,7 @@ export const codexQualificationSuite: QualificationSuite = {
         await runCommandChecked(['app-server', 'generate-json-schema', '--experimental', '--out', schemaDir])
         const bytes = await readFile(join(schemaDir, bundleName))
         protocol = protocolFromBundle(object(JSON.parse(bytes.toString('utf8'))))
-        evidence.schemaSha256 = createHash('sha256').update(bytes).digest('hex')
+        evidence.schemaSha256 = sha256Hex(bytes)
         return `Generated protocol bundle ${String(evidence.schemaSha256)}`
       }],
       ['thread-start', async () => {

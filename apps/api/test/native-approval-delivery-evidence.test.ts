@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { matchingDeliveryEvidence, responseValueDigest, type NativeResponseDeliveryEvidence } from '../src/modules/interactions/delivery.js'
-import { deliveryFixture } from './helpers/wave25ApprovalFixture.js'
+import { deliveryFixture } from './helpers/approvalFixture.js'
 
 const event = (sequence: number, type: string, payload: Record<string, unknown>, connectionId = 'codex-connection') => ({
   sequence, connectionId, type, payload, occurredAt: `2026-09-21T00:00:${String(sequence).padStart(2, '0')}.000Z`,

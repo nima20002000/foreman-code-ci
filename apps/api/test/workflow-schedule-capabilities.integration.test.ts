@@ -9,9 +9,10 @@ import { createCheckpointStore, type CheckpointStore } from '../src/infrastructu
 import { ScheduleOperatorCapabilitiesSchema } from '../src/mcp/operator/tools/workflowSchedules.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { buildProductionApp } from '../src/production.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
-import { sch11Once } from './helpers/sch11ClockCases.js'
-import { sch11DomainState, sch11Fixture, type Sch11Database, type Sch11Fixture } from './helpers/sch11Fixture.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
+import { sch11Once } from './helpers/scheduleClockCases.js'
+import { sch11DomainState, sch11Fixture, type Sch11Database, type Sch11Fixture } from './helpers/scheduleFixture.js'
 
 // Discovery must use the actual production Run service and schedule lifecycle,
 // not a boolean capability stub or a SQL fixture posing as a native binding.
@@ -50,10 +51,10 @@ describe.skipIf(!postgresEnabled)('SCH-03 authenticated schedule capability comp
       checkpoints = createCheckpointStore(config.database.connectionString, config.checkpoints.schema, config.database)
       // agent3Database already ran the registered migrations on its guarded,
       // isolated schema. Its pool remains owned by the shared fixture.
-      app = buildProductionApp(config, {
+      app = buildProductionApp({ config, database: {
         pool: database.pool, ping: async () => { await database.pool.query('select 1') },
         migrate: async () => {}, close: async () => {},
-      }, checkpoints, false).app
+      }, checkpoints, logger: false }).app
     } else {
       app = buildApp({ readiness: { database: { ping: async () => { await database.pool.query('select 1') } },
         checkpoints: { ping: async () => {} } },

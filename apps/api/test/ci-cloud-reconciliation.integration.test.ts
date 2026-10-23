@@ -8,11 +8,12 @@ import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { HostCiService, type HostCiComputer } from '../src/modules/ci-host/service.js'
+import { HostCiService, type HostCiComputer } from '@foreman-code/ci/service'
 import { RunCiAuthority, CI_GET_ACTIONS } from '../src/modules/jobs/ciAuthority.js'
 import { cloudCiLookupFixture } from './helpers/cloudCiLookupFixture.js'
 import { ciReadWhen } from './helpers/ciReadWhen.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 let database: Awaited<ReturnType<typeof migratedDatabase>>
 beforeAll(async () => { database = await migratedDatabase() }, 60_000)
@@ -36,7 +37,7 @@ it.each(['starting', 'running'] as const)('retains transient CircleCI ownership 
   await pool.query('insert into ci_runs(id,workspace_id,group_id,state,host_key,record) values($1,$2,$3,$4,$5,$6::jsonb)',
     [record.id, workspaceId, record.groupId, state, computer.key, JSON.stringify(record)])
   const commands = new PostgresCommandCoordinator(pool)
-  const create = () => new HostCiService(pool, commands, new RunCiAuthority(pool), {
+  const create = () => new HostCiService(mainCiContext, pool, commands, new RunCiAuthority(pool), {
     resolve: async () => f.run.commit,
     capabilities: async () => ({ parts: false, integrationPartitions: false, affected: false }),
   }, { computers: async () => [computer], request: async (_computer, request) => f.reopen().handle(request) })

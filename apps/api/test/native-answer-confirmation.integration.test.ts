@@ -5,7 +5,8 @@ import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { readActivityCommands } from '../src/modules/conversations/activityCommands.js'
 import { NativeConversationControlCommands } from '../src/modules/conversations/nativeControlCommands.js'
 import { responseValueDigest } from '../src/modules/interactions/delivery.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('persisted native answer confirmation', () => {
   it.each(['after_response', 'during_response'] as const)('confirms consumption %s without sending again', async timing => {

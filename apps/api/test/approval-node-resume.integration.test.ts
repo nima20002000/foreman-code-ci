@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { checkpointRuntimeFixture } from './helpers/wave25Br1003Runtime.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
+import { postgresEnabled } from './helpers/database.js'
 import { approvalResponse } from './helpers/approvalResponse.js'
 
 /** Actual current engine, PostgreSQL approvals and LangGraph checkpoints with a

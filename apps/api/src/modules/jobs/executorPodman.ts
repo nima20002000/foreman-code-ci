@@ -1,5 +1,5 @@
 import { JOB_GIT_ENVIRONMENT, JOB_GIT_CONTAINER_DIRECTORY, JOB_PRIVATE_GIT_LAYOUT, requireJobGitMounts, verifyJobGitMounts } from './privateGitMounts.js'
-import { spawn } from 'node:child_process'
+import { spawnProcess } from '../../shared/process.js'
 import { constants } from 'node:fs'
 import { mkdir, open, readdir, realpath, stat } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -211,7 +211,7 @@ export function spawnPodmanCommand(executable: string, argv: string[], environme
   if (!executable.startsWith('/') || Object.keys(environment).some(key => !['PATH', 'XDG_RUNTIME_DIR', 'LANG'].includes(key))) {
     throw new Error('Runtime command environment must be explicitly allowlisted.')
   }
-  return spawn(executable, argv[0] === '--remote=false' ? argv : ['--remote=false', ...argv], { shell: false, stdio: ['ignore', 'pipe', 'pipe'], env: environment })
+  return spawnProcess(executable, argv[0] === '--remote=false' ? argv : ['--remote=false', ...argv], { shell: false, stdio: ['ignore', 'pipe', 'pipe'], env: environment })
 }
 
 export type { PodmanCommandRunner }

@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { access, readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
@@ -15,6 +15,7 @@ import { assertCodexProtectedOutputPlacement, codexNativeOutputSandboxProbeComma
 import { DomainError } from '../errors.js'
 import { nativePersistenceRedactor } from '../interactions/nativePersistence.js'
 import { CodexCommandOutput, recordedCodexCommandOutput } from './codexCommandOutput.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 const unavailable = () => new DomainError('WORKER_NATIVE_OUTPUT_PROTECTION_FAILED',
   'The selected native sandbox did not prove protection of its output store.', 409)
@@ -181,11 +182,11 @@ export async function qualifyCodexOutputProtection(input: {
         'The original native sandbox probe did not execute the required command.', 409, {
           terminalStatus: terminals.get(turnId)?.status ?? null,
           terminalError: terminals.get(turnId)?.error ?? null,
-          expectedCommandDigest: createHash('sha256').update(command).digest('hex'),
+          expectedCommandDigest: sha256Hex(command),
           commands: observed.map(({ item }) => ({ status: item.status, exitCode: item.exitCode,
             commandType: typeof item.command,
             commandDigest: typeof item.command === 'string'
-              ? createHash('sha256').update(item.command).digest('hex') : null,
+              ? sha256Hex(item.command) : null,
             output: matchesCodexNativeProbeCommand(item.command, command, environment.SHELL ?? '/bin/bash')
               && typeof item.aggregatedOutput === 'string' ? redact.text(item.aggregatedOutput).slice(0, 2048) : null,
             command: typeof item.command === 'string' && item.command.includes(marker)

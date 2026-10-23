@@ -5,7 +5,7 @@ import { QueryClientProvider, onlineManager } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { HttpResponse } from 'msw'
 import { currentRunKey, useCurrentRunQuery } from './currentRunQuery'
-import { WorkflowBoardContext } from './context'
+import { WorkflowBoardProvider } from './context'
 import { useSelectedRunRecord } from './runFacts'
 import { inspectionBoardFixture } from './inspect/inspectionFixtures'
 import { useExecutionPages } from './inspect/queries'
@@ -21,10 +21,10 @@ let fixture: InspectionFixture
 let cache: ReturnType<typeof newBoardQueryClient>
 function wrapper({ children }: { children: ReactNode }) {
   const scope = fixture.runs.before.scope
-  return <QueryClientProvider client={cache}><WorkflowBoardContext.Provider value={{
+  return <QueryClientProvider client={cache}><WorkflowBoardProvider value={{
     workspaceId: scope.workspaceId, workflowId: scope.workflowId, run: scope, inspection: {}, activeRuns: 1,
     selectRun: () => undefined, selectInspection: () => undefined, openLocation: () => undefined, openRuns: () => undefined,
-  }}>{children}</WorkflowBoardContext.Provider></QueryClientProvider>
+  }}>{children}</WorkflowBoardProvider></QueryClientProvider>
 }
 beforeEach(async () => {
   fixture = await inspectionBoardFixture(`eng05d-poll-${++serial}`)

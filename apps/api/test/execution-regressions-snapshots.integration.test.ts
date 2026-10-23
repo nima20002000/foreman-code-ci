@@ -4,8 +4,8 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { removeFixtureDirectory } from './helpers/testResources.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
-import { currentRepositoryFixture } from './helpers/wave25CurrentRepository.js'
+import { postgresEnabled } from './helpers/database.js'
+import { currentRepositoryFixture } from './helpers/currentRepository.js'
 import { executionRegressionDatabase } from './helpers/executionRegressions.js'
 
 let database: Awaited<ReturnType<typeof executionRegressionDatabase>>

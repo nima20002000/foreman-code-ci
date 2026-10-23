@@ -16,9 +16,9 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import type { DeviceEndpoint } from '../src/modules/devices/deviceEndpoint.js'
 import { PostgresDeviceAccessService } from '../src/modules/devices/access.js'
 import { CI_PREPARATION_ACTIONS } from '../src/modules/jobs/ciAuthority.js'
-import { CiEnrollment } from '../src/modules/jobs/ciEnrollment.js'
-import { ProductionCiEnrollmentInventory } from '../src/modules/jobs/ciEnrollmentInventory.js'
-import { ciEnrollmentProfileInput } from '../src/modules/jobs/ciEnrollmentProfiles.js'
+import { CiEnrollment } from '@foreman-code/ci/ciEnrollment'
+import { ProductionCiEnrollmentInventory } from '../src/modules/ci/enrollmentInventory.js'
+import { ciEnrollmentProfileInput } from '@foreman-code/ci/ciEnrollmentProfiles'
 import { JobRuntimeProfiles } from '../src/modules/jobs/runtimeProfiles.js'
 import { BuildComputerSettings } from '../src/modules/settings/buildComputers.js'
 import { WorkerExecutionPolicy } from '../src/modules/settings/workerExecution.js'
@@ -29,11 +29,12 @@ import { ManagedWorkspaceRootService } from '../src/modules/workspace-roots/mana
 import { WorkspaceBoundLocationService } from '../src/modules/workspace-roots/service.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { buildComputerFixture } from './helpers/buildComputerFixture.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { deferred } from './helpers/deferred.js'
 import { removeFixtureDirectory } from './helpers/testResources.js'
 import { verificationCapacityFixture } from './helpers/verificationCapacityFixture.js'
 import { workspaceRootDirectory } from './helpers/workspaceRootDirectory.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 // PostgreSQL, source/root services, filesystem checks and authenticated MCP are real; CI preparation is bounded.
 async function fixture(options: { managedStorage: boolean; hostCi?: boolean; beforePrepare?: () => Promise<void> }) {
@@ -162,7 +163,7 @@ async function fixture(options: { managedStorage: boolean; hostCi?: boolean; bef
       () => endpoint, () => undefined, new WorkerExecutionPolicy({ enabled: true, managedBy: 'startup' }),
       new ManagedWorkspaceRootService(new PostgresCommandCoordinator(db.pool), roots, sources.policies))
     const reconciled = deferred()
-    enrollment = new CiEnrollment(db.pool, commands, profiles, preparation, createInventory(), () => reconciled.resolve())
+    enrollment = new CiEnrollment(mainCiContext, db.pool, commands, profiles, preparation, createInventory(), () => reconciled.resolve())
     const settings = new BuildComputerSettings(db.pool, commands,
       async () => ({ state: 'ready', reasons: [], remoteExecutionEnabled: true }))
     await settings.update(owner.principal, 'mcp', { commandId: randomUUID(), target: worker.target,
@@ -187,7 +188,7 @@ async function fixture(options: { managedStorage: boolean; hostCi?: boolean; bef
     }
     const restart = async () => {
       await enrollment!.close()
-      enrollment = new CiEnrollment(db.pool, new PostgresCommandCoordinator(db.pool), profiles, preparation, createInventory())
+      enrollment = new CiEnrollment(mainCiContext, db.pool, new PostgresCommandCoordinator(db.pool), profiles, preparation, createInventory())
       services.ciEnrollment = enrollment
     }
     const setReadOnlyPrimary = async () => {

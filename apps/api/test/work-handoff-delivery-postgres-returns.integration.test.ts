@@ -5,12 +5,13 @@ import { describe, expect, it } from 'vitest'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { RepeatRunRepository } from '../src/modules/runs/repeatPostgres.js'
 import { createWorkLimitNotice } from '../src/modules/runs/workHandoffNotice.js'
-import { nim2691TaskDatabase as taskDatabase } from './helpers/nim2691Database.js'
+import { nim2691TaskDatabase as taskDatabase } from './helpers/taskDatabase.js'
 import {
   acceptedReview, acquireOwner, acceptPreparedResult, boundaryNoticeDeliverable, databaseJsonBytes, returnPreview, text,
 } from './work-handoff-delivery-postgres.test-support.js'
+import { postgresEnabled } from './helpers/database.js'
 
-const postgresDescribe = describe.skipIf(process.env.NIM2691_POSTGRES !== '1')
+const postgresDescribe = describe.skipIf(!postgresEnabled)
 postgresDescribe('handoff delivery returns', () => {
   it.each([
     { restart: false, payload: 'text' }, { restart: true, payload: 'text' },

@@ -9,11 +9,12 @@ import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { HostCiService, type CiCommits, type HostCiEndpoint } from '../src/modules/ci-host/service.js'
+import { HostCiService, type CiCommits, type HostCiEndpoint } from '@foreman-code/ci/service'
 import { RunCiAuthority, CI_GET_ACTIONS, CI_RUN_ACTIONS } from '../src/modules/jobs/ciAuthority.js'
 import { ciReadWhen } from './helpers/ciReadWhen.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { ciRunReadback } from './helpers/ciRunReadback.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 let database: Awaited<ReturnType<typeof migratedDatabase>>
 beforeAll(async () => { database = await migratedDatabase() }, 60_000)
@@ -71,7 +72,7 @@ it.each([
     resolve: async () => provenance.sourceCommit,
     capabilities: async () => ({ parts: false, integrationPartitions: false, affected: false }),
   }
-  const create = () => new HostCiService(pool, commands, new RunCiAuthority(pool), commits, endpoint)
+  const create = () => new HostCiService(mainCiContext, pool, commands, new RunCiAuthority(pool), commits, endpoint)
   let ci = create()
   const app = buildApp({ logger: false,
     readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },

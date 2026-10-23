@@ -1,10 +1,11 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { access, readFile, realpath, unlink, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { CodexNativeOutputSandbox } from '../../codexNativeOutput.js'
 import type { NativeQualificationSuiteInput } from '../nativeOwnership.js'
 import { collectChecks, requireCondition, type Check } from './checks.js'
 import { z } from 'zod'
+import { sha256Hex } from '../../../../shared/hash.js'
 
 export const CODEX_NATIVE_OUTPUT_SANDBOX_SUITE_REVISION = 'codex-native-output-protection-3'
 export interface CodexNativeSandboxProbeObservation {
@@ -96,7 +97,7 @@ export async function runCodexNativeOutputSandboxChecks(input: NativeQualificati
     binarySha256: input.binarySha256, providerVersion: input.version, protectedDirectory: input.protectedDirectory }
   const assertCurrent = async () => {
     signal.throwIfAborted(); await input.assertInstallation?.(signal); await input.probe.assertCurrent(signal); signal.throwIfAborted()
-    requireCondition(createHash('sha256').update(await readFile(input.binary)).digest('hex') === input.binarySha256, 'Exact native binary changed.')
+    requireCondition(sha256Hex(await readFile(input.binary)) === input.binarySha256, 'Exact native binary changed.')
     signal.throwIfAborted()
   }
   let policy: Awaited<ReturnType<CodexNativeSandboxProbePort['capturePolicy']>> | undefined

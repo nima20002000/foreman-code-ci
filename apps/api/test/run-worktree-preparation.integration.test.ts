@@ -8,7 +8,8 @@ import { decodeMcpToolResult, OperatorRunGetResultSchema } from '@foreman-code/c
 import { RunWorktrees } from '../src/modules/runs/runWorktrees.js'
 import { repeatRuntimeDirectory } from '../src/modules/runs/repeatRepositoryHost.js'
 import { systemGitWorktreePorts } from '../src/modules/sources/gitWorktree.js'
-import { agent3Database, postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { gitFixtureEnvironment } from './helpers/gitFixture.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 

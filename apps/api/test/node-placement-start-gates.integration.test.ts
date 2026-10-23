@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { fixture, startInput, toolError } from './helpers/nodePlacementStartFixture.js'
 
 afterEach(() => vi.restoreAllMocks())

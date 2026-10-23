@@ -7,8 +7,10 @@ import type pg from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest'
 import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { agentChatKey, PostgresAgentChatRepository } from '../src/modules/conversations/agentChatRepository.js'
-import { postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { deferred } from './helpers/deferred.js'
+import { rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 /** Real, independent PostgreSQL sessions. No app server, HTTP transport or native provider.
  * The shared helper owns a separate migrated database on the disposable loopback server. */
@@ -92,10 +94,10 @@ describe.skipIf(!postgresEnabled)('G2 A2-PF-06: acknowledgement / unknown Postgr
             ? repository.steerAccepted(f.id, f.requestId, 'native-A') : repository.accepted(f.id, f.requestId, 'native-A')
           const unknown = (repository: PostgresAgentChatRepository) => repository.unknown(f.id, f.requestId, 'G2 uncertain transport')
           const firstTask = firstOperation === 'acknowledgement' ? acknowledge(first) : unknown(first)
-          pending.push(firstTask); void firstTask.catch(() => undefined)
+          pending.push(firstTask); void firstTask.catch(() => /* ignore: marks the promise handled; the test awaits it below */ undefined)
           await Promise.race([held.promise, firstTask.then(() => { throw new Error('The first transaction never acquired a tested lock') })])
           const secondTask = firstOperation === 'acknowledgement' ? unknown(second) : acknowledge(second)
-          pending.push(secondTask); void secondTask.catch(() => undefined)
+          pending.push(secondTask); void secondTask.catch(() => /* ignore: marks the promise handled; the test awaits it below */ undefined)
           // No sleep-based guess: PostgreSQL must report the second backend blocked by
           // the first. Releasing now forms a cycle on the old receipt→conversation path.
           await waitForBlocker(firstPid, secondPid)
@@ -118,8 +120,8 @@ describe.skipIf(!postgresEnabled)('G2 A2-PF-06: acknowledgement / unknown Postgr
         } finally {
           release.resolve()
           await Promise.allSettled(pending)
-          await firstClient.query('rollback').catch(() => undefined)
-          await secondClient.query('rollback').catch(() => undefined)
+          await rollbackTransaction(firstClient).catch(() => /* ignore: best-effort cleanup; the test outcome is already decided */ undefined)
+          await rollbackTransaction(secondClient).catch(() => /* ignore: best-effort cleanup; the test outcome is already decided */ undefined)
           firstClient.release(); secondClient.release()
         }
       })

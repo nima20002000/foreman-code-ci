@@ -5,6 +5,7 @@ import { join, basename } from 'node:path'
 import { DomainError } from '../errors.js'
 import { browserInputHash } from '../browser-profiles/identity.js'
 import { atomicBrowserPrivateJson } from './journal.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export interface BrowserFileMetadata {
   id: string; name: string; mimeType: string; byteLength: number; receivedBytes: number
@@ -122,7 +123,7 @@ export class BrowserFileStore {
         || input.bytes.length !== 262_144 && input.offset + input.bytes.length !== owned.metadata.byteLength) {
         throw new DomainError('BROWSER_FILE_CHUNK_INVALID', 'The upload chunk does not match this file.', 400)
       }
-      const digest = createHash('sha256').update(input.bytes).digest('hex')
+      const digest = sha256Hex(input.bytes)
       if (owned.chunks[String(input.offset)]) {
         if (owned.chunks[String(input.offset)] !== digest) throw new DomainError('BROWSER_FILE_CHUNK_CONFLICT', 'This upload offset already contains different bytes.', 409)
         return owned.metadata

@@ -3,7 +3,7 @@ import { OperatorChatService } from '../src/modules/conversations/operatorChat.j
 import { nativeCorrelation } from '../src/modules/conversations/operatorChatRepository.js'
 import type { PostgresOperatorConversationRepository } from '../src/modules/conversations/operatorChatRepository.js'
 import type { NativeHarnessSessionManager, NativeSessionStart } from '../src/modules/harnesses/port.js'
-import { memoryConversation, operator } from './fixtures/agent1OperatorChat.js'
+import { memoryConversation, operator } from './fixtures/operatorChatMemory.js'
 import { workerConversationFixture } from '../src/modules/conversations/workerFixtures.test-support.js'
 
 function setup(ids: string[]) {

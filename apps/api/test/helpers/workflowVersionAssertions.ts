@@ -5,9 +5,9 @@ import {
   CurrentWorkflowReadResultSchema, CURRENT_WORKFLOW_TOOLS, RepeatGraphSnapshotV3Schema,
   RunStartV3InputSchema, type WorkflowDefinitionV3,
 } from '@foreman-code/contracts/wave25'
-import { scenarioFixture, type Scenario } from './eng07BScenarios.js'
-import { scenarioHarness, type Harness, type Saved, type Started, type Via } from './eng07BHarness.js'
-import { assertScenarioEvidence } from './eng07BEvidence.js'
+import { scenarioFixture, type Scenario } from './scenarioFixtures.js'
+import { scenarioHarness, type Harness, type Saved, type Started, type Via } from './scenarioHarness.js'
+import { assertScenarioEvidence } from './scenarioEvidence.js'
 
 function withoutRepeat(graph: WorkflowDefinitionV3) {
   const { repeat: _repeat, ...ordinary } = graph

@@ -4,9 +4,9 @@ import {
   CURRENT_WORKFLOW_TOOLS, CurrentWorkflowCapabilitiesSchema, CurrentWorkflowReadResultSchema,
   CurrentWorkflowSaveResultSchema, CurrentEditReadResultSchema, MAX_AGENT_ACTIVE_TIMEOUT_MS,
 } from '@foreman-code/contracts/wave25'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
-import { writerFixture, type WriterFixture } from './eng04-writer-fixtures.js'
-import { graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { currentDatabase } from './helpers/database.js'
+import { writerFixture, type WriterFixture } from './writer-fixtures.js'
+import { graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 
 describe('workflow Agent active-time budget through authenticated MCP', () => {
   let db: Awaited<ReturnType<typeof currentDatabase>>

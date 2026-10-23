@@ -3,7 +3,7 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { describe, expect, it } from 'vitest'
 
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 function rpcResult(body: string) {
   const data = body.split('\n').find(line => line.startsWith('data: '))

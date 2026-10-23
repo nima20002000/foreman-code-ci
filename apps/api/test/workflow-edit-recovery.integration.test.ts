@@ -10,10 +10,10 @@ import { commandInputHash, PostgresCommandCoordinator } from '../src/modules/com
 import { readAffectedGraphRuns } from '../src/modules/graph-drafts/saveAdmission.js'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { graphHeaders, graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
-import { writerFixture, type WriterFixture } from './eng04-writer-fixtures.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
-import { insertCurrentRunFixture } from './helpers/eng04CurrentRunFixture.js'
+import { graphHeaders, graphRpc, graphRpcValue } from './graph-composition-fixture.js'
+import { writerFixture, type WriterFixture } from './writer-fixtures.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
+import { insertCurrentRunFixture } from './helpers/currentRunFixture.js'
 
 async function seedRenameIntent(t: WriterFixture, principal: ManagementPrincipal,
   stage: ReturnType<typeof CurrentEditStageInputSchema.parse>, state: 'staged' | 'uncertain',

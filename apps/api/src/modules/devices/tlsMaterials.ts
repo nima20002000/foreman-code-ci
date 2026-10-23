@@ -1,10 +1,11 @@
 import { constants } from 'node:fs'
 import { open, realpath, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { X509Certificate, createHash } from 'node:crypto'
+import { X509Certificate } from 'node:crypto'
 import { isIP } from 'node:net'
 import { createSecureContext } from 'node:tls'
 import type { DeviceListenerConfig } from './productionConfig.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export async function readOwnedDeviceTlsFile(path: string): Promise<Buffer> {
   if (await realpath(path) !== resolve(path)) throw new Error('Device TLS files must not use symbolic links.')
@@ -42,7 +43,7 @@ export async function readDeviceTlsMaterials(config: DeviceListenerConfig) {
     if (!ca.ca || !x509.verify(ca.publicKey)) {
       throw new Error('The approved device TLS leaf is not signed by its app-specific CA.')
     }
-    publicTrust = { certificatePem, sha256: createHash('sha256').update(ca.raw).digest('hex') }
+    publicTrust = { certificatePem, sha256: sha256Hex(ca.raw) }
   }
   return { certificate, key, publicTrust }
 }

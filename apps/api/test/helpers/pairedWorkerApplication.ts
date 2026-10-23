@@ -296,9 +296,7 @@ export async function pairedWorkerApplication(options: { harnesses?: readonly Ag
     await checkpoints.setup()
     const tls = await certificates(root)
     const startMain = async () => {
-      const main = buildProductionApp(config, database!, checkpoints!, fixtureLogger, undefined, undefined,
-        { codex: codexQualificationSuite },
-        { mode: 'native', deviceListener: { host: '127.0.0.1', port: devicePort, advertisedEndpoint: endpoint, ...tls } })
+      const main = buildProductionApp({ config, database: database!, checkpoints: checkpoints!, logger: fixtureLogger, qualificationSuites: { codex: codexQualificationSuite }, infrastructure: { mode: 'native', deviceListener: { host: '127.0.0.1', port: devicePort, advertisedEndpoint: endpoint, ...tls } } })
       production = main
       main.registerFileStorage()
       await main.initialize()

@@ -1,5 +1,4 @@
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
-import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { dirname, join, resolve } from 'node:path'
 import { AcceptedProviderAccountBindingSchema, ProviderAccountIdSchema } from '@foreman-code/contracts/provider-accounts'
@@ -9,6 +8,7 @@ import { providerAccountEnvironment } from '../provider-accounts/environment.js'
 import type { NativeProcessRecovery } from './recovery/processRegistry.js'
 import { readRecord, recordObject, writeRecord } from './recovery/storage.js'
 import { DomainError } from '../errors.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 interface RuntimeAccountRecord {
   accountId: string | null
@@ -36,7 +36,7 @@ function pinnedAccount(value: unknown, provider: AccountProvider, owner: string)
 
 function bindingPath(provider: AccountProvider, recovery: NativeProcessRecovery): string {
   const registryRoot = resolve(recovery.root)
-  const key = createHash('sha256').update(JSON.stringify([registryRoot, provider, recovery.owner])).digest('hex')
+  const key = sha256Hex(JSON.stringify([registryRoot, provider, recovery.owner]))
   return join(dirname(registryRoot), 'provider-account-bindings', `${key}.json`)
 }
 

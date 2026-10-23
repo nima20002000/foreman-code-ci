@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest'
-import { native2Fixture } from './eng04-native2-fixtures.js'
+import { native2Fixture } from './native-reviewer-fixtures.js'
 
 it('closes the persisted native session after its save acknowledgement was lost', async () => {
   const f = native2Fixture(false)

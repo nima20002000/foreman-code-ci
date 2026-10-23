@@ -10,9 +10,10 @@ import { admitRepeatRun, repeatStartReceipt } from '../src/modules/runs/repeatSt
 import type { ScheduledStart } from '../src/modules/schedules/postgresDispatcher.js'
 import { WorkflowScheduleService } from '../src/modules/schedules/service.js'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
-import { sch11Minute, sch11Once } from './helpers/sch11ClockCases.js'
-import { sch11Blocked, sch11DomainState, sch11Fixture, sch11Pool, type Sch11Database, type Sch11Fixture } from './helpers/sch11Fixture.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
+import { sch11Minute, sch11Once } from './helpers/scheduleClockCases.js'
+import { sch11Blocked, sch11DomainState, sch11Fixture, sch11Pool, type Sch11Database, type Sch11Fixture } from './helpers/scheduleFixture.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
 async function reached(signal: Promise<unknown>, work: Promise<unknown>) {

@@ -2,7 +2,7 @@ import { CompactionStateSchema, type CompactionState } from '@foreman-code/contr
 import { open, readFile, rename, mkdir, unlink, stat } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { remoteActiveNative, RemoteWorkflowTurnInputSchema, RemoteReviewerAssignmentSchema, RemoteReviewerTurnSchema,
   type RemoteReviewerAssignment } from '@foreman-code/contracts/remote-execution'
@@ -40,6 +40,7 @@ import { QualificationReceiptSchema, QualificationOCICertificateSchema, qualific
 import { acquireJournalOwner } from './journalOwner.js'
 import { hasPositiveRemoteEntryClosure } from '@foreman-code/contracts/remote-execution-entry-closure-node'
 import { RuntimeJournalArchive, RUNTIME_JOURNAL_RETENTION_MS } from './runtimeJournalArchive.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 const ControlDeliverySchema = z.object({
   operationId: z.string(), commandId: z.string(), phase: z.enum(['reserved', 'entered', 'acknowledged']),
@@ -72,7 +73,7 @@ const same = isDeepStrictEqual
 const journalByteLimit = 4 * 1024 * 1024
 const controlReserveBytes = 4096
 const retainedReviewTurns = 16
-const hash = (value: string) => createHash('sha256').update(value).digest('hex')
+const hash = (value: string) => sha256Hex(value)
 
 /** Single worker owner; the caller must hold the worker installation's exclusive service lock.
  * Every mutating method fsyncs before returning authority to the native adapter.

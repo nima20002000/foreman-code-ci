@@ -2,7 +2,6 @@
 import { hasWorkflowRequest, sessionStartConfiguration, sessionStartOwner, sessionStartSystemPrompt } from '../sessionStart.js'
 import { readProductEnvironment } from '@foreman-code/contracts/product-environment'
 import { isSupportedAppMcpTokenName } from '../appMcpLauncher.js'
-import { createHash } from 'node:crypto'
 import { CodexHarnessConfigurationSchema, DEFAULT_CODEX_ADVANCED_CONFIGURATION, type CodexAdvancedConfiguration,
   type CodexHarnessConfiguration } from '@foreman-code/contracts'
 import { HarnessExecutionError } from '../errors.js'
@@ -12,6 +11,7 @@ import { agentInstructionBundle } from '../../skills/instructions.js'
 import { canonicalJsonNumericKeysFirstLegacy } from '@foreman-code/contracts/canonical-json'
 import { CodexRpcError, isObject, object, type JsonObject, type RequestId } from '../codexStdioTransport.js'
 import type { CodexTransport, CodexSessionOperations, TurnSnapshot, Runtime, Prepared } from './types.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 export const MAX_EVENTS = 1_024
 export const MAX_EVENT_BYTES = 8 * 1024 * 1024
@@ -153,7 +153,7 @@ export function stringArray(value: unknown): string[] | undefined {
 }
 export function requestKey(generation: number, id: RequestId): string { return `${generation}:${typeof id}:${String(id)}` }
 export function itemNotificationKey(generation: number, method: string, turnId: unknown, itemId: unknown, itemType: unknown): string {
-  return createHash('sha256').update(canonicalJsonNumericKeysFirstLegacy([generation, method, turnId, itemId, itemType])).digest('hex')
+  return sha256Hex(canonicalJsonNumericKeysFirstLegacy([generation, method, turnId, itemId, itemType]))
 }
 export function stagedNativeOutputTerminal(runtime: Runtime, turnId: string): boolean {
   return runtime.starting?.staged.some(event => 'method' in event && event.method === 'turn/completed'

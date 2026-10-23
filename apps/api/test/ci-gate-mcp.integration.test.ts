@@ -11,13 +11,14 @@ import { createTestPool } from './helpers/testPool.mjs'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { buildComputerIntegrationShards, gateIntegrationShards } from '../src/modules/ci-host/capacity.js'
-import { HostCiService, type HostCiComputer } from '../src/modules/ci-host/service.js'
+import { buildComputerIntegrationShards, gateIntegrationShards } from '@foreman-code/ci/capacity'
+import { HostCiService, type HostCiComputer } from '@foreman-code/ci/service'
 import { CI_GET_ACTIONS, CI_RUN_ACTIONS, RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { cloudCiLookupFixture } from './helpers/cloudCiLookupFixture.js'
-import { ciExecutionRunId } from '../src/modules/ci-host/executionAttempt.js'
+import { ciExecutionRunId } from '@foreman-code/ci/executionAttempt'
 import { ciRunReadback } from './helpers/ciRunReadback.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 /** Dispatch passes hand observations and follow-up passes to background work; settle waits for all of it. */
 async function settle(service: { dispatch(): Promise<void>; drain(): Promise<void> }) {
@@ -184,7 +185,7 @@ async function fixture(options: { cloudSlots?: number; files?: string[]; offline
   const startedAt = new Date().toISOString()
   const started: { key: string; request: CiHostRequest }[] = []
   const commands = new PostgresCommandCoordinator(pool)
-  const ci = new HostCiService(pool, commands, new RunCiAuthority(pool), {
+  const ci = new HostCiService(mainCiContext, pool, commands, new RunCiAuthority(pool), {
     resolve: async (_repository, _branch, commit) => commit ?? 'a'.repeat(40),
     capabilities: async () => ({ parts: true, integrationPartitions: true, affected: true }),
     integrationInventory: async () => ({ files, durations: Object.fromEntries(files.map(file => [file, 120_000])) }),

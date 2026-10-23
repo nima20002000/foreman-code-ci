@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { DomainError } from '../src/modules/errors.js'
 import type { NativeHarnessSessionManager } from '../src/modules/harnesses/port.js'
 import { SingleWriterSessionManager } from '../src/modules/interactions/sessionWriter.js'
-import { nativeLanes } from './helpers/nativeLanes.js'
+import { nativeLanes } from './helpers/memorySessionCoordination.js'
 
 afterEach(() => {
   vi.useRealTimers()

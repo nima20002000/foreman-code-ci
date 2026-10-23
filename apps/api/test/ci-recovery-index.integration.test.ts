@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { CiRunRecordSchema } from '@foreman-code/contracts'
-import { HostCiService, type CiCommits, type HostCiComputer } from '../src/modules/ci-host/service.js'
+import { HostCiService, type CiCommits, type HostCiComputer } from '@foreman-code/ci/service'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
 import { describe, expect, it, vi } from 'vitest'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 type Plan = { 'Node Type': string; 'Actual Rows': number; Plans?: Plan[] }
 
@@ -74,7 +75,7 @@ it('recovers only eligible persisted tickets through dispatch without loading co
     return selected
   })
   const observed = new Set<string>()
-  const service = new HostCiService(pool, new PostgresCommandCoordinator(pool), new RunCiAuthority(pool), {} as CiCommits, {
+  const service = new HostCiService(mainCiContext, pool, new PostgresCommandCoordinator(pool), new RunCiAuthority(pool), {} as CiCommits, {
     computers: async () => computers,
     request: async (_computer, request) => {
       if (request.operation === 'status') return { operation: 'status', ready: true, reasons: [],

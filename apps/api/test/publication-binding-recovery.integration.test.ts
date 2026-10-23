@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { afPublicationFixture } from './helpers/afPublicationFixture.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { bindingIdentity } from '../src/modules/files/tools/context.js'
 import { PostgresFileToolRepository } from '../src/modules/files/tools/postgres.js'
 import type { FileToolContext } from '../src/modules/files/tools/types.js'

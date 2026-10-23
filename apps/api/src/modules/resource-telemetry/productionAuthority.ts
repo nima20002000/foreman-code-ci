@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { withExclusiveGraphConnection, type GraphTransactionSql } from '../run-graph/connection.js'
 import type pg from 'pg'
 import { HarnessExecutionSchema, NativeSessionLaneSchema, NativeSessionReferenceSchema, type HarnessExecution, type NativeSessionReference } from '@foreman-code/contracts'
@@ -20,6 +19,7 @@ import { readReconciledDispatchIntent } from '../runs/remote/persistence.js'
 import type { NativeLaunchObservation, PassiveNativeRegistry, TrustedNativeScope, TrustedNativeScopes } from './collector/registryAdapter.js'
 import type { TelemetryOwnershipReader, TelemetryReadAuthority, TelemetrySessionReader } from './ingestion/ports.js'
 import type { TelemetryOwnedTargetFacts, TelemetryTargetAuthority } from './readback/selector.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export interface CapturedTelemetryNativeOwner {
   execution: HarnessExecution
@@ -55,7 +55,7 @@ interface ScopeFacts extends TelemetryOwnedTargetFacts {
   state: TrustedNativeScope['lifecycle']
   sharedOwners: TelemetryOwner[]
 }
-const signature = (value: unknown) => createHash('sha256').update(telemetryCanonical(value)).digest('hex')
+const signature = (value: unknown) => sha256Hex(telemetryCanonical(value))
 const withoutGeneration = (host: TelemetryHost): TelemetryOwnedTargetFacts['host'] => {
   const copy: TelemetryOwnedTargetFacts['host'] = { ...host }
   Reflect.deleteProperty(copy, 'collectorGeneration')

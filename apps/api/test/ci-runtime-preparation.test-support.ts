@@ -5,11 +5,12 @@ import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { registerGraphqlMcp } from '../src/mcp/unified/transport.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { CiRuntimeProvisioner } from '../src/modules/jobs/ciRuntimeProvisioner.js'
+import { CiRuntimeProvisioner } from '@foreman-code/ci/ciRuntimeProvisioner'
 import { buildComputerTarget, buildComputerKey } from '../src/modules/settings/buildComputers.js'
-import { agent3Database } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import type { AppInteractionService } from '../src/modules/interactions/app.js'
 import { ciPreparationFixture, builder, mainId } from './helpers/ciPreparationFixture.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 export function useCiRuntimePreparationFixture() {
   let database: Awaited<ReturnType<typeof agent3Database>>
@@ -50,7 +51,7 @@ export function useCiRuntimePreparationFixture() {
       (host_key,target,revision,build_enabled,build_priority,updated_by) values($1,$2::jsonb,1,true,100,$3)`,
     [buildComputerKey(target), JSON.stringify(target), writer.principal.id])
     const create = () => {
-      const service = new CiRuntimeProvisioner(database.pool, fixture.profileService as never, fixture.sources as never,
+      const service = new CiRuntimeProvisioner(mainCiContext, database.pool, fixture.profileService as never, fixture.sources as never,
         () => fixture.endpoint, commands, { timing: { pollMs: 0,
           wait: () => new Promise(resolve => setImmediate(resolve)), now: () => new Date() } })
       provisioners.push(service)

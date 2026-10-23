@@ -35,7 +35,7 @@ export async function workspaceRepositoryFixture() {
   let commit!: string
   let recreate!: () => WorkspaceRepositoryService
   const gitCalls: string[][] = []
-  const f = await workspaceMcpFixture({ configure: async ({ pool, commands, services, parentPath, app }) => {
+  const f = await workspaceMcpFixture({ configure: async ({ pool, commands, services, parentPath, app, rootPolicies }) => {
     const mainId = (await pool.query<{ id: string }>('select id from application_installation where singleton=true')).rows[0]!.id
     storage = join(parentPath, 'projects')
     runtime = join(parentPath, 'runtime')
@@ -75,7 +75,7 @@ export async function workspaceRepositoryFixture() {
     } finally {
       sql.release()
     }
-    services.locations.setRootPolicies(policies)
+    rootPolicies.current = policies
     roots = new WorkspaceBoundLocationService(pool, commands, policies)
     const sourceRoots = new RegisteredWorkspaceSourceRoots(policies, hosts)
     const system = systemGitWorktreePorts(gitFixtureEnvironment())

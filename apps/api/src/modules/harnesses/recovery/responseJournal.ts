@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { ExecutionResultSchema, NativeSessionReferenceSchema,
   type ExecutionResult, type NativeSessionReference } from '@foreman-code/contracts'
@@ -7,6 +7,7 @@ import type { NativeResponseIdentity } from '../port.js'
 import type { NativeResponseDeliveryEvidence } from '../../interactions/delivery.js'
 import { privateDirectory, readRecord, recordObject, syncDirectory, writeRecord } from './storage.js'
 import { responseValueDigest } from '../../interactions/delivery.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 const fields = ['source', 'harness', 'providerVersion', 'nativeSessionId', 'nativeRequestId',
   'nativeRequestType', 'optionId', 'semantic'] as const
@@ -17,9 +18,9 @@ const TurnAttemptSchema = z.object({ format: z.literal(1), session: NativeSessio
   result: ExecutionResultSchema.refine(result => result.outcome !== 'succeeded').optional() }).strict()
 
 function rejectedTurnKey(session: NativeSessionReference, correlationId: string): string {
-  return 'turn-rejection-' + createHash('sha256').update(JSON.stringify([
+  return 'turn-rejection-' + sha256Hex(JSON.stringify([
     session.harness, session.providerVersion, session.nativeSessionId, correlationId,
-  ])).digest('hex')
+  ]))
 }
 
 function checked(value: unknown): NativeResponseDeliveryEvidence {
@@ -36,9 +37,9 @@ function checked(value: unknown): NativeResponseDeliveryEvidence {
   return Object.fromEntries(keys.map((key) => [key, proof[key]])) as unknown as NativeResponseDeliveryEvidence
 }
 function key(proof: Pick<NativeResponseDeliveryEvidence, 'harness' | 'providerVersion' | 'nativeSessionId' | 'nativeRequestId'>): string {
-  return createHash('sha256').update(JSON.stringify([
+  return sha256Hex(JSON.stringify([
     proof.harness, proof.providerVersion, proof.nativeSessionId, proof.nativeRequestId,
-  ])).digest('hex')
+  ]))
 }
 function same(left: NativeResponseDeliveryEvidence, right: NativeResponseDeliveryEvidence): boolean {
   // A second qualified source may independently confirm the same response.

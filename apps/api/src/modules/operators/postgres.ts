@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 
 import {
   HarnessConfigurationSchema,
@@ -16,7 +16,7 @@ import type pg from 'pg'
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
 import { canonicalJsonNumericKeysFirstLegacy, canonicalJsonValueLegacy } from '@foreman-code/contracts/canonical-json'
 
-import { inTransaction } from '../../infrastructure/transaction.js'
+import { withTransaction } from '../../infrastructure/transaction.js'
 import { PostgresFoundationSettingsRepository } from '../settings/foundation.js'
 
 import { DomainError } from '../errors.js'
@@ -24,12 +24,13 @@ import { harnessProfileSelectionConflict } from '../harnesses/instanceSettings/s
 import type { ProviderAccountConfigurationService } from '../harnesses/providerAccountConfiguration.js'
 import { resolveWorkspaceSkills } from '../skills/catalog.js'
 import { composeInstructionText, instructionsTooLarge } from '../skills/instructions.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 const OPERATOR_ID = 'application-operator'
 
 // Sort provider-owned map keys too: schema parsing normalizes fields, not record key order.
 // Persisted configuration hashes depend on the frozen numeric-keys-first legacy form.
-function hash(value: unknown) { return `sha256:${createHash('sha256').update(canonicalJsonNumericKeysFirstLegacy(value)).digest('hex')}` }
+function hash(value: unknown) { return `sha256:${sha256Hex(canonicalJsonNumericKeysFirstLegacy(value))}` }
 
 function acceptedConfiguration(value: HarnessConfiguration): HarnessConfiguration {
   if (value.harness === 'opencode') throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
@@ -78,7 +79,7 @@ export class PostgresOperatorRepository {
   }
 
   async ensure(supplied?: pg.ClientBase): Promise<{ operator: OperatorAgent; configuration: OperatorConfigurationVersion }> {
-    return inTransaction(this.pool, supplied, (client) => this.ensureWithClient(client))
+    return withTransaction(this.pool, (client) => this.ensureWithClient(client), { join: supplied })
   }
 
   async ensureWithClient(client: pg.ClientBase): Promise<{ operator: OperatorAgent; configuration: OperatorConfigurationVersion }> {
@@ -102,7 +103,7 @@ export class PostgresOperatorRepository {
     const skills = await operatorSkillContent(client, defaults.assignedSkills, defaults.assignedSkills)
     const content = { harness: canonicalJsonValueLegacy(harness), ...skills, ...profile, ...nativePolicy }
     const contentHash = 'assignedSkills' in skills || defaults.harnessProfileSelection || defaults.nativeTools
-      ? `sha256:${createHash('sha256').update(JSON.stringify(content)).digest('hex')}` : hash(harness)
+      ? `sha256:${sha256Hex(JSON.stringify(content))}` : hash(harness)
     const configuration = OperatorConfigurationVersionSchema.parse({
       id: `${OPERATOR_ID}-config-v1-${randomUUID()}`, operatorId: OPERATOR_ID, version: 1,
       harness, showThinking: defaults.showThinking ?? false, ...skills, ...profile, ...nativePolicy,
@@ -126,7 +127,7 @@ export class PostgresOperatorRepository {
 
   async update(input: HarnessConfiguration, expectedConfigurationVersionId: string, supplied?: pg.ClientBase) {
     const harness = acceptedConfiguration(input)
-    return inTransaction(this.pool, supplied, (client) => this.updateWithClient(client, harness, expectedConfigurationVersionId))
+    return withTransaction(this.pool, (client) => this.updateWithClient(client, harness, expectedConfigurationVersionId), { join: supplied })
   }
 
   async updateWithClient(client: pg.ClientBase, harness: HarnessConfiguration, expectedConfigurationVersionId: string, showThinking = false,
@@ -159,7 +160,7 @@ export class PostgresOperatorRepository {
       const createdAt = new Date().toISOString()
       const profile = selection ? { harnessProfileSelection: selection } : {}
       const content = { harness: canonicalJsonValueLegacy(harness), showThinking, ...skills, ...profile, ...nativePolicy }
-      const contentHash = `sha256:${createHash('sha256').update(JSON.stringify(content)).digest('hex')}`
+      const contentHash = `sha256:${sha256Hex(JSON.stringify(content))}`
       const configuration = OperatorConfigurationVersionSchema.parse({
         id: `${OPERATOR_ID}-config-v${version}-${randomUUID()}`, operatorId: OPERATOR_ID, version,
         harness, showThinking, ...skills, ...profile, ...nativePolicy, contentHash, createdAt,

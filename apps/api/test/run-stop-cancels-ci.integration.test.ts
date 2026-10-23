@@ -13,11 +13,12 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { PostgresAppInteractionService } from '../src/modules/interactions/app.js'
 import { Wave25WorkerCredentialService } from '../src/modules/interactions/wave25/credentials.js'
 import { RunCiAuthority, CI_GET_ACTIONS, CI_RUN_ACTIONS } from '../src/modules/jobs/ciAuthority.js'
-import { HostCiService, type HostCiComputer, type HostCiEndpoint } from '../src/modules/ci-host/service.js'
+import { HostCiService, type HostCiComputer, type HostCiEndpoint } from '@foreman-code/ci/service'
 import { RunManagementService } from '../src/modules/runs/management.js'
 import { createCurrentNativeProductionFactory } from '../src/modules/runs/workflowProduction.js'
-import { graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
-import { checkpointRuntimeFixture, insertProviderRun } from './helpers/wave25Br1003Runtime.js'
+import { graphRpc, graphRpcValue } from './graph-composition-fixture.js'
+import { checkpointRuntimeFixture, insertProviderRun } from './helpers/checkpointRuntime.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 async function fixture() {
   const saved = makeCurrentWorkflowFixture(randomUUID(), 'single')
@@ -82,7 +83,7 @@ async function fixture() {
       return { operation: 'read', run: entry.run, text: '', nextOffset: 0 }
     },
   }
-  const ci: HostCiService = new HostCiService(pool, commands, new RunCiAuthority(pool), {
+  const ci: HostCiService = new HostCiService(mainCiContext, pool, commands, new RunCiAuthority(pool), {
     capabilities: async () => ({ parts: true, integrationPartitions: true, affected: true }),
     resolve: async () => {
       await beforeResolve?.()

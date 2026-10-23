@@ -1,15 +1,15 @@
-import { createHash } from 'node:crypto'
 import { McpServer, ProtocolError, ProtocolErrorCode, type ListToolsRequest,
   type ListToolsResult, type ServerContext } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { compactJsonSchema } from './shared/schemaCompaction.js'
+import { sha256Hex } from '../shared/hash.js'
 
 const pageBytes = 400 * 1024
 const Cursor = z.object({ catalog: z.string().regex(/^[a-f0-9]{64}$/), offset: z.number().int().positive() }).strict()
 type ListHandler = (request: ListToolsRequest, context: ServerContext) => ListToolsResult | Promise<ListToolsResult>
 
 function page(result: ListToolsResult, request: ListToolsRequest): ListToolsResult {
-  const catalog = createHash('sha256').update(JSON.stringify(result.tools)).digest('hex')
+  const catalog = sha256Hex(JSON.stringify(result.tools))
   let offset = 0
   if (request.params?.cursor !== undefined) {
     let parsed: unknown

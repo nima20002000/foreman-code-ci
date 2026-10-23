@@ -4,10 +4,12 @@ import { admitRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
 import { repeatStartPublication } from '../src/modules/run-graph/repeatStartPublication.js'
 import { DomainError } from '../src/modules/errors.js'
 import { WorkflowScheduleDispatcher } from '../src/modules/schedules/dispatcher.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
-import { sch11Fixture, sch11DomainState, type Sch11Database, type Sch11Fixture } from './helpers/sch11Fixture.js'
-import { sch11Once, sch11Minute } from './helpers/sch11ClockCases.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
+import { sch11Fixture, sch11DomainState, type Sch11Database, type Sch11Fixture } from './helpers/scheduleFixture.js'
+import { sch11Once, sch11Minute } from './helpers/scheduleClockCases.js'
 import { rejectableDeferred } from './helpers/deferred.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 describe.skipIf(!postgresEnabled)('scheduled Start concurrency and cancellation', () => {
   let database: Sch11Database
@@ -27,7 +29,7 @@ describe.skipIf(!postgresEnabled)('scheduled Start concurrency and cancellation'
     const holder = await database.pool.connect()
     let pending: Promise<unknown>[] = []
     try {
-      await holder.query('begin')
+      await beginTransaction(holder)
       await holder.query('select pg_advisory_xact_lock(hashtext($1))', [`admission:runner:${f.locations.runnerId}`])
       const first = f.dispatcher(f.startUsing(pool)).dispatch(firstSchedule)
       const second = other.dispatcher(other.startUsing(pool)).dispatch(secondSchedule)
@@ -42,14 +44,14 @@ describe.skipIf(!postgresEnabled)('scheduled Start concurrency and cancellation'
           and clock_timestamp()-xact_start > interval '2.5 seconds'`)
         expect(queued.rows[0]!.count).toBe(2)
       }, { timeout: 5_000, interval: 20 })
-      await holder.query('commit')
+      await commitTransaction(holder)
       await Promise.all(pending)
       expect(await f.countRuns()).toBe(1)
       expect(await other.countRuns()).toBe(1)
       expect(await f.history()).toEqual([expect.objectContaining({ status: 'accepted' })])
       expect(await other.history()).toEqual([expect.objectContaining({ status: 'accepted' })])
     } finally {
-      await holder.query('rollback')
+      await rollbackTransaction(holder)
       holder.release()
       await Promise.allSettled(pending)
       await pool.end()
@@ -151,6 +153,6 @@ describe.skipIf(!postgresEnabled)('scheduled Start concurrency and cancellation'
       await rejected
       expect(await sch11DomainState(f)).toEqual(before)
       expect(await f.countRuns()).toBe(0)
-    } finally { release.resolve(); await pending.catch(() => undefined) }
+    } finally { release.resolve(); await pending.catch(() => /* ignore: cleanup; the test body already awaited or asserted this outcome */ undefined) }
   }, 15_000)
 })

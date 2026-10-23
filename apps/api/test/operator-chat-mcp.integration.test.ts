@@ -19,8 +19,9 @@ import { PostgresOperatorConversationRepository } from '../src/modules/conversat
 import { PostgresOperatorRepository } from '../src/modules/operators/postgres.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
-import { ReviewManager } from './fixtures/agent1OperatorChat.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { ReviewManager } from './fixtures/operatorChatMemory.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
 describe.skipIf(!postgresEnabled)('Authenticated Operator conversation tools', () => {

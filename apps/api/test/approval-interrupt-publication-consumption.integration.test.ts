@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 import { approvalResponse } from './helpers/approvalResponse.js'
 import { approvalWithActiveSibling, installApprovalCleanup } from './helpers/approvalInterruptPublication.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
-import { graphParity } from './helpers/wave25R1GraphParity.js'
+import { postgresEnabled } from './helpers/database.js'
+import { graphParity } from './helpers/graphParity.js'
 
 installApprovalCleanup()
 

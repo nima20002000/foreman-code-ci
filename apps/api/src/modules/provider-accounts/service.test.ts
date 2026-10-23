@@ -20,7 +20,7 @@ import { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { LocalProviderCredentials } from './localCredentials.js'
 import { NativeProviderAccountCommands, type AccountCommandInvocation } from './nativeCommands.js'
 import { ProviderAccountsRepository } from './repository.js'
-import { ProviderAccountsService, type ProviderAccountOperationNativePort } from './service.js'
+import { ProviderAccountsService, type ProviderAccountOperationNativePort, type ProviderAccountRouting } from './service.js'
 import { providerAccountEnvironment } from './environment.js'
 import { operatorCatalogNames } from '../../../test/support/operatorCatalog.js'
 
@@ -47,7 +47,9 @@ afterAll(async () => {
   }
 })
 
-async function fixture() {
+async function fixture(options: {
+  routing?: (local: ProviderAccountsService, commands: PostgresCommandCoordinator) => ProviderAccountRouting
+} = {}) {
   const access = new PostgresAccessService(pool)
   const owner = await access.issue({ name: 'Owner', audience: 'operator', expiresAt: new Date('2099-01-01'),
     grants: [{ actions: ['settings:read', 'settings:update', 'capabilities:read',
@@ -86,8 +88,10 @@ async function fixture() {
       binding: input.operation.binding, generation: input.operation.generation,
       sequence: input.operation.nativeSequence + 1, state: 'canceled', nativeClosed: true })),
   }
+  const routing = options.routing
   const createService = () => new ProviderAccountsService(pool,
-    new ProviderAccountsRepository(pool, () => credentials.hostId()), credentials, native, commands)
+    new ProviderAccountsRepository(pool, () => credentials.hostId()), credentials, native, commands, undefined,
+    routing && (local => routing(local, commands)))
   const service = createService()
   const app = buildApp({ readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
     localHuman: { current: async () => owner.principal },
@@ -118,13 +122,11 @@ it('creates and accepts an account with database target reads on a one-slot pool
   cleanups.push(() => oneSlot.end())
   const mainId = await f.credentials.hostId()
   const service = new ProviderAccountsService(oneSlot,
-    new ProviderAccountsRepository(oneSlot, () => f.credentials.hostId()), f.credentials, f.native,
-    new PostgresCommandCoordinator(oneSlot))
-  service.bindTarget(async sql => {
-    const row = (await sql.query<{ id: string }>('select $1::text as id', [mainId])).rows[0]!
-    return { hostRef: { kind: 'main', mainId: row.id }, applicationInstallationId: row.id,
-      keyRevision: null, authorizationRevision: null }
-  })
+    new ProviderAccountsRepository(oneSlot, () => f.credentials.hostId(), async sql => {
+      const row = (await sql.query<{ id: string }>('select $1::text as id', [mainId])).rows[0]!
+      return { hostRef: { kind: 'main', mainId: row.id }, applicationInstallationId: row.id,
+        keyRevision: null, authorizationRevision: null }
+    }), f.credentials, f.native, new PostgresCommandCoordinator(oneSlot))
   const account = (await add(service, f.owner.principal, 'codex', 'subscription')).value.accounts[0]!
   const configuration = { ...DEFAULT_HARNESS_DEFAULTS.codex, accountId: account.id }
   const prepared = await service.acceptedBindings.prepare(configuration)
@@ -560,9 +562,9 @@ it('does not adopt prior slot records after an application reinstall even when t
   const f = await fixture()
   const account = (await add(f.service, f.owner.principal, 'codex', 'subscription')).value.accounts[0]!
   const otherMain = randomUUID()
-  const recreated = f.createService()
-  recreated.bindTarget(async () => ({ hostRef: { kind: 'main', mainId: otherMain },
-    applicationInstallationId: otherMain, keyRevision: null, authorizationRevision: null }))
+  const recreated = new ProviderAccountsService(pool,
+    new ProviderAccountsRepository(pool, () => f.credentials.hostId(), async () => ({ hostRef: { kind: 'main', mainId: otherMain },
+      applicationInstallationId: otherMain, keyRevision: null, authorizationRevision: null })), f.credentials, f.native, f.commands)
   await expect(recreated.get(f.owner.principal, { accountId: account.id }))
     .rejects.toMatchObject({ code: 'PROVIDER_ACCOUNT_TARGET_CONFLICT' })
   await expect(recreated.resolve('codex', account.id)).rejects.toMatchObject({ code: 'PROVIDER_ACCOUNT_TARGET_CONFLICT' })
@@ -781,8 +783,10 @@ it('returns the latest persisted observation when a slower native read follows a
 })
 
 it('routes the complete authenticated MCP Worker lifecycle to its owning slot and preserves receipts across service recreation', async () => {
-  const f = await fixture()
   const { createRemoteAccountServices } = await import('./remoteServices.js')
+  let endpoint: ReturnType<Parameters<typeof createRemoteAccountServices>[0]['endpoint']>
+  const f = await fixture({ routing: (local, commands) =>
+    createRemoteAccountServices({ pool, commands, local, endpoint: () => endpoint }) })
   const { createProviderAccountWorkerExtension } = await import('./workerOperations.js')
   const { ProviderAccountTargetsSchema, ProviderAccountModelsSchema, ProviderAccountAuthenticationPageSchema } =
     await import('@foreman-code/contracts/provider-accounts')
@@ -828,14 +832,9 @@ it('routes the complete authenticated MCP Worker lifecycle to its owning slot an
       prepareAuthentication: async value => { launches++; return operation(value) }, observeAuthentication: operation,
       cancelAuthentication: async value => ({ ...await operation(value), state: 'canceled', nativeClosed: true }),
     } })
-  const endpoint = { captureRequest: (id: string) => online && id === current.deviceId ? { binding: current,
+  endpoint = { captureRequest: (id: string) => online && id === current.deviceId ? { binding: current,
     request: (payload: unknown) => extension.handle!(payload, { binding: current, signal: new AbortController().signal }) } : undefined,
     currentBinding: () => current, capabilities: () => [] }
-  const route = (service: ProviderAccountsService) => {
-    service.bindRouting(createRemoteAccountServices({ pool, commands: f.commands, local: service, endpoint: () => endpoint }))
-    return service
-  }
-  route(f.service)
   const client = await f.connect(f.owner.token)
   const call = async (name: string, arguments_: Record<string, unknown>) =>
     decodeMcpToolResult(await client.callTool({ name, arguments: arguments_ }))
@@ -873,7 +872,7 @@ it('routes the complete authenticated MCP Worker lifecycle to its owning slot an
     .toEqual({ id: 'worker-model', name: 'Worker model', reasoningEfforts: ['high'], variants: [], serviceTiers: ['standard'] })
   const prepared = ProviderAccountAuthenticationResultSchema.parse(await call('provider_account_auth_prepare',
     { ...command(1), target, accountId: account.id, intent: 'sign-in' }))
-  const readback = route(f.createService())
+  const readback = f.createService()
   expect((await readback.authenticationList(f.reader.principal, { target, accountId: account.id })).operations)
     .toEqual([prepared.value])
   online = false
@@ -916,7 +915,7 @@ it('routes the complete authenticated MCP Worker lifecycle to its owning slot an
   expect(slots.get(registered.value.accounts[1]!.id)!.binding!.profileRef).toBe('worker-existing-profile')
   const removed = ProviderAccountUpdateResultSchema.parse(await call('provider_account_remove', { ...command(3), target, accountId: account.id }))
   expect(removed.value.accounts[0]!.removedAt).not.toBeNull()
-  expect((await route(f.createService()).get(f.reader.principal, { target, accountId: account.id })).removedAt)
+  expect((await f.createService().get(f.reader.principal, { target, accountId: account.id })).removedAt)
     .toBe(removed.value.accounts[0]!.removedAt)
   current = { ...current, workerInstallationId: randomUUID(), connectionGeneration: 3 }
   expect((await client.callTool({ name: 'provider_account_models', arguments: { target, accountId: registered.value.accounts[1]!.id } })).isError)

@@ -78,6 +78,23 @@ export const WorkflowChatPostResponseSchema = z.object({
   }
   if (delivered.size !== mentioned.size) context.addIssue({ code: 'custom', path: ['receipts'], message: 'Every mentioned node needs a receipt.' });
 });
+const workflowChatPage = <T extends z.ZodType>(item: T) => z.object({ items: z.array(item),
+  nextCursor: z.string().nullable(), hasMore: z.boolean(), revision: z.number().int().nonnegative() });
+/** GET .../chat: a page of posts; long bodies are truncated and read on with WorkflowChatBodySchema. */
+export const WorkflowChatPageSchema = workflowChatPage(WorkflowChatPostSchema).extend({
+  bodyTruncations: z.array(z.object({ postId: z.string(), nextBodyCursor: z.string(), originalBytes: z.number() })).optional(),
+});
+export const WorkflowChatBodySchema = z.object({ postId: z.string(), body: z.string(),
+  nextBodyCursor: z.string().nullable(), revision: z.number().int().nonnegative() });
+export const WorkflowChatDeliveryPageSchema = workflowChatPage(ChatDeliveryReceiptSchema);
+/** One server-sent workflow chat event. */
+export const WorkflowChatEventSchema = z.object({ revision: z.number().int().nonnegative(),
+  post: WorkflowChatPostSchema.optional(), receipt: ChatDeliveryReceiptSchema.optional(),
+  snapshotRequired: z.boolean().optional() });
+export type WorkflowChatPage = z.infer<typeof WorkflowChatPageSchema>;
+export type WorkflowChatDeliveryPage = z.infer<typeof WorkflowChatDeliveryPageSchema>;
+export type WorkflowChatEvent = z.infer<typeof WorkflowChatEventSchema>;
+
 export const EngineChatMessageSchema =
   NativeSourceMessageSchema.extend({
     provenance: z.discriminatedUnion('kind', [

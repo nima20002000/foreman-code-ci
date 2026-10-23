@@ -20,7 +20,7 @@ import { pendingResponseQuery } from '../src/modules/harnesses/responseAvailabil
 import { PostgresOperatorRepository } from '../src/modules/operators/postgres.js'
 import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
 import { browserOwnerUpgrade } from './helpers/browserOwnerUpgrade.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 import type { LocalHumanRecoveryInput } from './helpers/localHumanRecoveryChild.js'
 import { readUntil } from './helpers/observableCondition.js'
 import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'

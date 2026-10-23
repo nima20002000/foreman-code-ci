@@ -3,7 +3,7 @@
 Run `corepack pnpm db:up` and `corepack pnpm test:acceptance` from the repository
 root on the computer with provider credentials. The root command uses the heavy
 job queue, builds shared contracts, and runs the existing
-`eng03-c-native.acceptance.test.ts` file with native execution enabled.
+`native-lifecycle.acceptance.test.ts` file with native execution enabled.
 
 The runner creates a unique loopback PostgreSQL database for each invocation and
 supplies it as `ENG03_A_TEST_DATABASE_URL`. It closes the owned test process group

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { PostgresInteractionCoordinationRepository } from '../src/modules/interactions/coordination.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 
 let database: Awaited<ReturnType<typeof currentDatabase>>
 let repository: PostgresInteractionCoordinationRepository

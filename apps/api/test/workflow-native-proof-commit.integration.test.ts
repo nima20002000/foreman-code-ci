@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { WorkflowNativeProofRecord } from '../src/modules/runs/workflowNativeProof.js'
-import { checkpointRuntimeFixture } from './helpers/wave25Br1003Runtime.js'
+import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
 import { readUntil } from './helpers/observableCondition.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 afterEach(() => vi.restoreAllMocks())
 

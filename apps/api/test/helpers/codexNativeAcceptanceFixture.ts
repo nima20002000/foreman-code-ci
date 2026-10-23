@@ -15,7 +15,7 @@ import { AppMcpRoutes } from '../../src/modules/harnesses/appMcpRoutes.js'
 import { installAppLauncher } from '../../src/modules/harnesses/appMcpLauncher.js'
 import { PostgresAppInteractionService } from '../../src/modules/interactions/app.js'
 import { PostgresInteractionRepository } from '../../src/modules/interactions/postgres.js'
-import { agent3Database, seedAgent3 } from './wave25Agent3.js'
+import { agent3Database, seedAgent3 } from './workflowDatabase.js'
 
 /** Real execution-bound credentials and authenticated MCP; no ambient token or authority is borrowed. */
 export async function codexNativeAcceptanceFixture(approvalPolicy: 'never' | 'on-request' = 'never') {

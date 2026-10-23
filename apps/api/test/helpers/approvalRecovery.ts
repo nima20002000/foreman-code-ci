@@ -1,7 +1,7 @@
 import { afterEach, expect, vi } from 'vitest'
 import { DomainError } from '../../src/modules/errors.js'
-import { readCurrentExecutions } from './wave25Agent3.js'
-import { approvalFaultFixture, approvalResponse, type ApprovalFaultFixture, type FaultForm } from './eng06ApprovalFaults.js'
+import { readCurrentExecutions } from './workflowDatabase.js'
+import { approvalFaultFixture, approvalResponse, type ApprovalFaultFixture, type FaultForm } from './approvalFaults.js'
 
 export function createApprovalRecoverySetup() {
   const fixtures: ApprovalFaultFixture[] = []

@@ -12,7 +12,8 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { ComputerSyncService } from '../src/modules/computers/sync.js'
 import { SyncthingComputer, sharedFolderId } from '../src/modules/computers/syncthingComputer.js'
 import { fakeSyncthing, mainSyncId, workerSyncId } from './helpers/syncthing.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('Syncthing through authenticated Operator MCP', () => {
   let database: Awaited<ReturnType<typeof agent3Database>>

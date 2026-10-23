@@ -26,7 +26,7 @@ import { PostgresOperatorRepository } from '../src/modules/operators/postgres.js
 import type { AppInteractionService } from '../src/modules/interactions/app.js'
 import { createGraphqlMcpServer } from '../src/mcp/unified/server.js'
 import { agentInstructionBundle } from '../src/modules/skills/instructions.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { deferred } from './helpers/deferred.js'
 
 const qualify = { qualifyConfiguration: async (value: HarnessConfiguration) => {

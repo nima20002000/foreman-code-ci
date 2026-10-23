@@ -8,7 +8,8 @@ import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { ComputerAccountsService } from '../src/modules/computers/accounts.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('computer account pagination through HTTP and Operator MCP', () => {
   let database: Awaited<ReturnType<typeof agent3Database>>

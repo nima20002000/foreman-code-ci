@@ -35,12 +35,12 @@ import { join } from 'node:path'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { CodexStdioTransport } from '../src/modules/harnesses/codexStdioTransport.js'
 
-// Explicit loopback admin connection and a random OWNED schema. Never read TEST_DATABASE_URL or migrate public.
+// Explicit loopback test database and a random OWNED schema. Never migrate public.
 describe('durable per-Run children over SQL and authenticated MCP', () => {
   let admin: pg.Pool, pool: pg.Pool, schema: string
   beforeAll(async () => {
-    const connectionString = process.env.SUBAGENT_CORE_ADMIN_DATABASE_URL ?? process.env.TEST_DATABASE_URL
-    if (!connectionString || !['127.0.0.1', 'localhost', '[::1]'].includes(new URL(connectionString).hostname)) throw new Error('An explicit loopback TEST_DATABASE_URL (or SUBAGENT_CORE_ADMIN_DATABASE_URL) is required.')
+    const connectionString = process.env.TEST_DATABASE_URL
+    if (!connectionString || !['127.0.0.1', 'localhost', '[::1]'].includes(new URL(connectionString).hostname)) throw new Error('An explicit loopback TEST_DATABASE_URL is required.')
     admin = new pg.Pool({ connectionString, max: 1 })
     schema = `subagent_core_${randomUUID().replaceAll('-', '')}`
     await createFixtureSchema(admin, schema)

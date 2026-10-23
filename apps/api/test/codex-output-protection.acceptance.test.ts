@@ -8,7 +8,7 @@ import { inheritedAgentEnvironment } from '../src/modules/harnesses/secrets.js'
 import { NativeProcessRegistry } from '../src/modules/harnesses/recovery/processRegistry.js'
 import { DomainError } from '../src/modules/errors.js'
 
-const enabled = process.env.NIM2691_REAL_NATIVE === '1'
+const enabled = process.env.RUN_REAL_NATIVE_WORKFLOW_TESTS === '1'
 
 describe.skipIf(!enabled)('original native output store protection', () => {
   it('proves that the selected native actor and its descendant cannot write the private output store', async () => {

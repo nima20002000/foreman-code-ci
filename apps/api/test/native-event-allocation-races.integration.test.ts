@@ -2,7 +2,7 @@ import type { HarnessNativeEvent } from '@foreman-code/contracts'
 import { describe, expect, it } from 'vitest'
 import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 import { appendNativeEvent } from '../src/modules/runs/nativeEvents.js'
-import { counts, event, forcedRace, nextSequence, withSharedAllocationDatabase } from './pr17-native-event-allocation.test-support.js'
+import { counts, event, forcedRace, nextSequence, withSharedAllocationDatabase } from './native-event-allocation.test-support.js'
 
 describe('PostgreSQL native event allocation races', () => {
   const database = withSharedAllocationDatabase()

@@ -9,7 +9,7 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import { OperatorLifecycleService } from '../src/modules/workspaces/operatorLifecycle.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 
 function workflowRecord(workspaceId: string, id: string) {
   return WorkflowDefinitionV3Schema.parse({

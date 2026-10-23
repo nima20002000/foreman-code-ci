@@ -12,7 +12,7 @@ import { LOCAL_RUNNER_ID } from '../src/modules/workspaces/location.js'
 import { answerForRun } from './helpers/coordinationEnvelope.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 type Runtime = Awaited<ReturnType<typeof currentOperatorIntegration>>
 type Starter = { runtime: Runtime; input: RunStartV3Input }

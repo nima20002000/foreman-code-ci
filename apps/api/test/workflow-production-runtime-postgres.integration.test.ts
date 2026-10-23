@@ -14,8 +14,9 @@ import { withExclusiveGraphConnection, type GraphTransactionSql } from '../src/m
 import { readRepeatRunSourceLocked } from '../src/modules/run-graph/publication.js'
 import { repeatStartPublication } from '../src/modules/run-graph/repeatStartPublication.js'
 import { insertRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
-import { agent3Database, graphHead, postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
-import { createRepeatFixtureWriter, insertFixtureRepeatRun, repeatReadyAgent3Fixture } from './eng04-repeat-fixture-writer.js'
+import { agent3Database, graphHead, seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
+import { createRepeatFixtureWriter, insertFixtureRepeatRun, repeatReadyAgent3Fixture } from './repeat-fixture-writer.js'
 
 // Opt-in REAL PostgreSQL/migrations/ownership/authority/canonical publication.
 // Setup creates synthetic immutable Runs, NOT authenticated HTTP/MCP Start.

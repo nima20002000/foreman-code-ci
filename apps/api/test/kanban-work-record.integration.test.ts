@@ -7,7 +7,7 @@ import { isWorkflowStart } from '../src/modules/harnesses/sessionStart.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { correctiveNativeManager, type CorrectiveRequest } from './helpers/correctiveNativeManager.js'
 import { memoryCall, type MemoryRuntime } from './helpers/memoryWorkflow.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 it.runIf(postgresEnabled).each(['silent', 'records', 'creates-other', 'updates-other', 'unchanged', 'read-only'] as const)(
   'a Worker is asked once only when it did not update its own workflow Kanban card (%s)', async mode => {

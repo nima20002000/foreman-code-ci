@@ -6,7 +6,7 @@ import { withTransaction } from '../../infrastructure/transaction.js'
 import { validateReviewerBootstrap } from './reviewerBootstrap.js'
 import { reconcileAgentProfilePlacements } from './agentProfilePlacements.js'
 import { requireCurrentWorkflowAccess } from './currentWorkflowPolicy.js'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import type { z } from 'zod'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -40,6 +40,7 @@ import {
   IMMUTABLE_WORKFLOW_VERSION_COLUMNS, readImmutableWorkflowVersion, readImmutableAgentConfiguration,
   type ImmutableWorkflowVersionRow, type ImmutableAgentConfigurationRow,
 } from './immutableRead.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 type Source = 'http' | 'mcp'
 
@@ -93,7 +94,7 @@ function completeSaveInput(
   } })
 }
 const fail = (code: string, message: string): never => { throw new DomainError(code, message, 409) }
-const digest = (value: string) => `sha256:${createHash('sha256').update(value).digest('hex')}`
+const digest = (value: string) => `sha256:${sha256Hex(value)}`
 function authorize(principal: ManagementPrincipal, input: Scope & { graph?: WorkflowDefinitionV3 }, write: boolean) {
   requireCurrentWorkflowAccess(principal, write ? 'save' : 'validate', input)
   authorizeWorkflowWorktreeContent(principal, input)

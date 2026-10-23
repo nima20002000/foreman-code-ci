@@ -13,7 +13,7 @@ import { WorkerExecutionPolicy } from '../src/modules/settings/workerExecution.j
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import { RemoteExecutionSettingsService } from '../src/modules/settings/remoteExecution.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 
 let database: Awaited<ReturnType<typeof currentDatabase>>
 const resources: Array<() => Promise<void>> = []

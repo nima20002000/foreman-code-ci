@@ -1,12 +1,10 @@
 import type { ContextSnapshot, SessionMode, SessionPreferences, WorkflowSessionContinuation } from '@foreman-code/contracts'
 import { readNativeExecutionBinding } from '../../placement/executionBinding.js'
 import { isDeepStrictEqual } from 'node:util'
-import { createHash } from 'node:crypto'
 import { HarnessExecutionRequestSchema, AgentConfigurationVersionSchema, ApprovalResponseOptionSchema,
   RETIRED_OPENCODE_MESSAGE, withInteractionResponse, type NativeSessionReference, type HarnessExecutionRequest,
   type RecordedAgentHarness, type AgentHarness } from '@foreman-code/contracts'
 import { canonicalGraphJson, OutputSchemaSchema } from '@foreman-code/contracts/wave25'
-import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { DispatchIntentSchema, type AcceptedNodePlacement, type DispatchIntent, type NativeExecutionPlacement } from '@foreman-code/contracts/node-placement'
 import { RemoteOwnerControlSchema, RemoteReviewerAssignmentSchema, remoteActiveNative, type RemoteReviewerRequest,
   type RemoteNativeIdentity, type RemoteTerminalEvidence, type RemoteOperationReceipt, type RemoteOwnerControl,
@@ -23,6 +21,7 @@ import { startNativeHistoryDownload } from './nativeHistoryPage.js'
 import { DomainError } from '../../errors.js'
 import { logIgnoredError } from '../../diagnostics/ignoredError.js'
 import { inspectNativeResponse } from '../../harnesses/responseAvailability.js'
+import { sha256CanonicalJsonHex, sha256Hex } from '../../../shared/hash.js'
 
 function executableHarness(harness: RecordedAgentHarness): AgentHarness {
   if (harness === 'opencode') {
@@ -334,7 +333,7 @@ export class RemoteExecutionHost {
       || placement.payload.agentConfigurationVersionId !== request.configuration.id || placement.payload.agentId !== request.configuration.agentId
       || request.executionId !== intent.executionId || request.runId !== intent.runId || request.workflowNodeId !== intent.nodeId
       || request.workingDirectory !== (executionPlacement?.workingTree.canonicalCwd ?? placement.destination.canonicalCwd)
-      || intent.inputDigest !== `sha256:${createHash('sha256').update(canonicalGraphJson(request.input)).digest('hex')}`) throw new Error('Remote launch binding mismatch')
+      || intent.inputDigest !== `sha256:${sha256Hex(canonicalGraphJson(request.input))}`) throw new Error('Remote launch binding mismatch')
     await this.ports.authorize(intent, placement, 'start', controller.signal)
     assertRuntimeLeafPath(request.runtimeDirectory, placement)
     assertRuntimeLeafBinding(await this.ports.attestRuntimeLeaf(intent, placement, request, executionPlacement, controller.signal), request.runtimeDirectory, intent, placement, executionPlacement)
@@ -446,7 +445,7 @@ export class RemoteExecutionHost {
       || request.executionId !== raw.intent.executionId || request.runId !== raw.intent.runId || request.workflowNodeId !== raw.intent.nodeId
       || raw.session.harness !== request.configuration.harness.harness
       || request.workingDirectory !== (executionPlacement?.workingTree.canonicalCwd ?? placement.destination.canonicalCwd)
-      || raw.intent.inputDigest !== `sha256:${createHash('sha256').update(canonicalGraphJson(request.input)).digest('hex')}`) throw new Error('Recovery binding mismatch')
+      || raw.intent.inputDigest !== `sha256:${sha256Hex(canonicalGraphJson(request.input))}`) throw new Error('Recovery binding mismatch')
     await this.ports.authorize(raw.intent, placement, 'read')
     assertRuntimeLeafPath(request.runtimeDirectory, placement)
     assertRuntimeLeafBinding(await this.ports.attestRuntimeLeaf(raw.intent, placement, request, executionPlacement), request.runtimeDirectory, raw.intent, placement, executionPlacement)
@@ -518,8 +517,8 @@ export class RemoteExecutionHost {
     const history = correcting ? await resident.manager.reconcile(resident.session, before.receipt.turnInput!.correlationId) : undefined
     const outputSchema = output?.outputSchema ? OutputSchemaSchema.parse(output.outputSchema) : undefined
     const reserved = await this.ports.journal.reserveTurn(operationId, {
-      correlationId, promptDigest: createHash('sha256').update(prompt).digest('hex'), sessionMode: sessionMode ?? 'regular',
-      ...(outputSchema ? { outputSchemaDigest: createHash('sha256').update(canonicalJson(outputSchema)).digest('hex') } : {}),
+      correlationId, promptDigest: sha256Hex(prompt), sessionMode: sessionMode ?? 'regular',
+      ...(outputSchema ? { outputSchemaDigest: sha256CanonicalJsonHex(outputSchema) } : {}),
       ...(output?.deferSettlement ? { deferSettlement: output.deferSettlement } : {}),
     }, history)
     if (!reserved.reserved) return this.ports.journal.status(operationId)
@@ -572,7 +571,7 @@ export class RemoteExecutionHost {
     const before = await resident.manager.history(resident.session)
     const afterSequence = before.nextSequence === undefined ? before.events.at(-1)?.sequence ?? -1 : before.nextSequence - 1
     const reserved = await this.ports.journal.reserveReviewTurn(operationId,
-      RemoteReviewerAssignmentSchema.strip().parse(review), createHash('sha256').update(prompt).digest('hex'), afterSequence)
+      RemoteReviewerAssignmentSchema.strip().parse(review), sha256Hex(prompt), afterSequence)
     if (!reserved.reserved) return this.ports.journal.status(operationId)
     await this.authorizeReview(resident, review)
     if (!await this.ports.journal.enterReviewTurn(operationId, correlationId)) return this.ports.journal.status(operationId)

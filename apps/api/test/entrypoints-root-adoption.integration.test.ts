@@ -10,7 +10,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { describe, expect, it } from 'vitest'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
 import type { ApprovedRootAllowlist } from '@foreman-code/contracts/workspace-root-policies'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { workspaceRootDirectory } from './helpers/workspaceRootDirectory.js'
 import { PostgresAccessService, bearerToken } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'

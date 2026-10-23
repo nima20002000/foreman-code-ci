@@ -3,6 +3,7 @@ import { create } from 'zustand'
 import { z } from 'zod'
 import { FileRetentionSaveInputSchema } from '@foreman-code/contracts/files'
 import { ApiError } from '../../shared/api/client'
+import { readStoredCommand, writeStoredCommand } from '../../shared/api/commandOutbox'
 import { protectedKey } from '../../shared/api/protectedChatStorage'
 import { retentionSeconds } from './retentionDraft'
 
@@ -21,12 +22,13 @@ export const retentionCommandKey = (ownerPrincipalId: string) => protectedKey('o
 function update(key: string, entry: Entry) {
   useCommands.setState((state) => ({ entries: { ...state.entries, [key]: entry } }))
 }
+const unavailable = 'Save recovery is unavailable.'
 function stored(key: string): RetentionCommand | undefined {
-  const text = window.sessionStorage.getItem(key)
-  return text === null ? undefined : CommandSchema.parse(JSON.parse(text))
+  const text = readStoredCommand(key, unavailable, window.sessionStorage)
+  return text === undefined ? undefined : CommandSchema.parse(JSON.parse(text))
 }
 function load(key: string) {
-  try { update(key, { pending: stored(key) }) } catch { update(key, { error: 'Save recovery is unavailable.' }) }
+  try { update(key, { pending: stored(key) }) } catch { update(key, { error: unavailable }) }
 }
 export function pendingRetentionCommand(key: string): RetentionCommand | undefined {
   return useCommands.getState().entries[key]?.pending
@@ -40,20 +42,20 @@ export function retainRetentionCommand(key: string, command: RetentionCommand) {
       throw new ApiError({ code: 'RETENTION_COMMAND_UNRESOLVED', message: 'Resolve the previous save first.' })
     }
     // Write before POST: a reload during the request must reuse this exact command.
-    if (!pending) window.sessionStorage.setItem(key, JSON.stringify(input))
+    if (!pending) writeStoredCommand(key, JSON.stringify(input), unavailable, window.sessionStorage)
     update(key, { pending: pending ?? input })
     return Boolean(pending)
   } catch (error) {
     if (ApiError.is(error)) throw error
-    update(key, { error: 'Save recovery is unavailable.' })
+    update(key, { error: unavailable })
     // No HTTP request was made; this local failure is definitive.
-    throw new ApiError({ code: 'INVALID_REQUEST', message: 'Save recovery is unavailable.' }, undefined, { cause: error })
+    throw new ApiError({ code: 'INVALID_REQUEST', message: unavailable }, undefined, { cause: error })
   }
 }
 export function settleRetentionCommand(key: string, commandId: string) {
   const pending = stored(key)
   if (pending && pending.input.commandId !== commandId) throw new Error('A different retention command is pending')
-  window.sessionStorage.removeItem(key)
+  writeStoredCommand(key, undefined, unavailable, window.sessionStorage)
   update(key, {})
 }
 

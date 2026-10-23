@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import { DomainError } from '../src/modules/errors.js'
 import { JobOwnership } from '../src/modules/jobs/ownership.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { setupJobAdmissionQueue } from './helpers/jobAdmissionQueue.js'
 
 describe.skipIf(!postgresEnabled)('durable build admission queue: preparation', () => {

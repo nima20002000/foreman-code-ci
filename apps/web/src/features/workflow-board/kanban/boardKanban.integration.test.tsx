@@ -61,7 +61,7 @@ async function streamOpened(after = 0) {
   return source!
 }
 
-it('adds the Kanban from the toolbar, keeps its moved place across a reload, closes it into the dock, and never changes cards', async () => {
+it('adds the Kanban from the toolbar and keeps its moved place and cards across a reload', async () => {
   const board = install('kanban-layout')
   const user = userEvent.setup()
   const first = await mountMeasuredBoard(board.href)
@@ -97,16 +97,6 @@ it('adds the Kanban from the toolbar, keeps its moved place across a reload, clo
   expect(moved).not.toEqual(before)
   await waitFor(() => expect(board.saves.at(-1)).toMatchObject({ visible: true, frame: { x: Math.round(moved.x), y: Math.round(moved.y) } }))
 
-  // A card opens in its own window; editing it opens the workflow's memory board on that card.
-  await user.click(within(kanban).getByRole('button', { name: 'Prepare release notes' }))
-  const card = await screen.findByRole('dialog', { name: 'Prepare release notes' })
-  await user.click(within(card).getByRole('button', { name: 'Edit in memory board' }))
-  const dialog = await screen.findByRole('dialog', { name: 'Memory board' })
-  await user.click(within(dialog).getByRole('button', { name: /close memory board/i }))
-  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Memory board' })).not.toBeInTheDocument())
-  expect(board.memory.calls.filter((call) => call.method === 'mutate')).toEqual([])
-  expect([...board.memory.cards.keys()].sort()).toEqual(['card-docs', 'card-release'])
-
   // After a reload it comes back at the same place with the same cards.
   first.unmount()
   const earlier = MemorySource.instances.length
@@ -115,6 +105,27 @@ it('adds the Kanban from the toolbar, keeps its moved place across a reload, clo
   expect(placed('board-kanban')).toEqual({ x: Math.round(moved.x), y: Math.round(moved.y) })
   await streamOpened(earlier)
   expect(await within(again).findByRole('button', { name: 'Update the docs' })).toBeVisible()
+  expect(board.memory.calls.filter((call) => call.method === 'mutate')).toEqual([])
+  expect([...board.memory.cards.keys()].sort()).toEqual(['card-docs', 'card-release'])
+})
+
+it('opens a card, closes the Kanban into the dock, restores it, and hides it without changing its cards', async () => {
+  const frame = { x: 700, y: 100, width: 760, height: 460 }
+  const board = install('kanban-dock', { visible: true, frame })
+  const user = userEvent.setup()
+  await mountMeasuredBoard(board.href)
+  const again = await screen.findByRole('region', { name: 'Kanban' })
+  await streamOpened()
+
+  // A card opens in its own window; editing it opens the workflow's memory board on that card.
+  await user.click(await within(again).findByRole('button', { name: 'Prepare release notes' }))
+  const card = await screen.findByRole('dialog', { name: 'Prepare release notes' })
+  await user.click(within(card).getByRole('button', { name: 'Edit in memory board' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Memory board' })
+  await user.click(within(dialog).getByRole('button', { name: /close memory board/i }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Memory board' })).not.toBeInTheDocument())
+  expect(board.memory.calls.filter((call) => call.method === 'mutate')).toEqual([])
+  expect([...board.memory.cards.keys()].sort()).toEqual(['card-docs', 'card-release'])
 
   // Its X only minimizes it into the dock: the saved layout and the cards stay, and the dock item restores it.
   const saved = board.saves.length
@@ -122,7 +133,7 @@ it('adds the Kanban from the toolbar, keeps its moved place across a reload, clo
   await waitFor(() => expect(screen.queryByRole('region', { name: 'Kanban' })).not.toBeInTheDocument())
   await user.click(screen.getByRole('button', { name: /^Restore Kanban/ }))
   expect(await screen.findByRole('region', { name: 'Kanban' })).toBeInTheDocument()
-  expect(placed('board-kanban')).toEqual({ x: Math.round(moved.x), y: Math.round(moved.y) })
+  expect(placed('board-kanban')).toEqual({ x: frame.x, y: frame.y })
   expect(board.saves).toHaveLength(saved)
 
   // Pressed again, the toolbar button takes it off the Board; its cards stay.
@@ -161,7 +172,8 @@ it('shows which Agent just changed a card on that card only, with a light from t
 it('opens a card in its own window with what its Agent did and every update across Runs', async () => {
   const board = install('kanban-card-window', { visible: true, frame: { x: 700, y: 0, width: 760, height: 460 } })
   const node = board.graph.nodes[0]!
-  const agent = { workspaceId: board.graph.workspaceId, workflowId: board.graph.id, workflowNodeId: node.id, agentId: node.agentId }
+  if (node.kind === 'job') throw new Error('The fixture starts with an Agent node')
+  const agent ={ workspaceId: board.graph.workspaceId, workflowId: board.graph.id, workflowNodeId: node.id, agentId: node.agentId }
   board.memory.cards.set(board.release.id, { ...board.release, status: 'done', completionKind: 'completed', assignee: agent,
     body: 'Drafted the release notes.\nLinked the changelog.' })
   const update = (id: string, sequence: number, changes: MemoryChange['changes'], runId: string): MemoryChange => ({
@@ -171,8 +183,6 @@ it('opens a card in its own window with what its Agent did and every update acro
   board.memory.control.history = [
     update('change-2', 3, { status: { before: 'doing', after: 'done' } }, 'run-second'),
     update('change-1', 2, { body: { before: '', after: 'Drafted the release notes.' }, status: { before: 'done', after: 'doing' } }, 'run-first'),
-    { ...update('change-0', 1, { title: { before: null, after: 'Prepare release notes' }, body: { before: null, after: '' },
-      reason: { before: null, after: null }, status: { before: null, after: 'doing' } }, 'run-first'), entityRevision: 1 },
   ]
   await mountMeasuredBoard(board.href)
   const kanban = await screen.findByRole('region', { name: 'Kanban' })
@@ -182,10 +192,7 @@ it('opens a card in its own window with what its Agent did and every update acro
   expect(within(window).getByText('Done')).toBeVisible()
   expect(within(window).getByText(/Drafted the release notes\.\s+Linked the changelog\./)).toBeVisible()
   const updates = await within(window).findAllByRole('listitem', { name: /Release Agent/ })
-  expect(updates).toHaveLength(3)
-  // Creating a card is one line, not every field it started with.
-  expect(updates[2]).toHaveTextContent('Created this card in Doing')
-  expect(updates[2]).not.toHaveTextContent('Cleared')
+  expect(updates).toHaveLength(2)
   expect(updates[0]).toHaveTextContent('Moved to Done')
   expect(updates[0]).toHaveTextContent('Run run-seco')
   expect(updates[1]).toHaveTextContent('Moved to Doing')

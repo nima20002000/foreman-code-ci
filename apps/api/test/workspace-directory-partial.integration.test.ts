@@ -9,7 +9,7 @@ import { HarnessDirectoryBrowser } from '../src/modules/harnesses/directoryBrows
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { agent3Database } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 
 vi.mock('node:fs/promises', async importOriginal => ({
   ...await importOriginal<typeof import('node:fs/promises')>(),

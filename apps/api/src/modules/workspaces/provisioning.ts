@@ -1,8 +1,8 @@
-import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
 import { lstat, realpath, mkdir, open } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { DomainError } from '../errors.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 /** Only a server-owner-configured root can be provisioned. No caller-selected path. */
 export async function provisionWorkspaceDirectory(configuredRoot: string, workspaceId: string): Promise<string> {
@@ -15,7 +15,7 @@ export async function provisionWorkspaceDirectory(configuredRoot: string, worksp
   if (!rootStat.isDirectory() || (rootStat.mode & 0o022) !== 0 || (process.getuid && rootStat.uid !== process.getuid())) {
     throw new DomainError('PROVISIONING_ROOT_UNSAFE','The configured provisioning root must be a runner-owned directory without group/world write access.',503)
   }
-  const name = `workspace-${createHash('sha256').update(workspaceId).digest('hex')}`
+  const name = `workspace-${sha256Hex(workspaceId)}`
   const directory = join(root,name)
   let created = false
   try { await mkdir(directory,{mode:0o700}); created = true }

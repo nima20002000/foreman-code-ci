@@ -280,7 +280,7 @@ it.each(['codex', 'claude'] as const)('keeps an Agent’s %s account when its mo
   await user.click(screen.getByRole('option', { name: /Other model/ }))
   expect(picker).toHaveValue(selected)
   await user.click(screen.getByRole('button', { name: 'Save agent settings' }))
-  expect(onSave.mock.calls[0]![0]).toMatchObject({ harnessConfiguration: { accountId: selected, model: 'other-model' } })
+  expect(onSave.mock.calls[0]![0].agent).toMatchObject({ harnessConfiguration: { accountId: selected, model: 'other-model' } })
 })
 
 function OperatorSettings({ configuration }: { configuration: HarnessConfiguration }) {

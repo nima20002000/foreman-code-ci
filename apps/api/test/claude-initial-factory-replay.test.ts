@@ -1,5 +1,5 @@
 import { SingleWriterSessionManager } from '../src/modules/interactions/sessionWriter.js'
-import { nativeLanes } from './helpers/nativeLanes.js'
+import { nativeLanes } from './helpers/memorySessionCoordination.js'
 import { describe, expect, it, vi } from 'vitest'
 import { OperatorConfigurationVersionSchema } from '@foreman-code/contracts'
 import { NativeHarnessFactories } from '../src/modules/harnesses/runtimeFactory.js'

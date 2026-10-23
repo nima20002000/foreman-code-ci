@@ -12,7 +12,7 @@ import type { NativeHistory } from '../harnesses/port.js'
 import type { WorkerConversationBinding } from '@foreman-code/contracts/remote-execution-rpc'
 import { assertWorkerChatInputSize } from './chatInputSize.js'
 import { operatorMessagePrompt } from './operatorMessagePrompt.js'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 
 import {
   applyOperatorChatSettings, operatorChatSettings, ConversationSchema, MessageSchema, OperatorConfigurationVersionSchema, OperatorConversationStateSchema,
@@ -52,6 +52,7 @@ import { recordNativeNonSubmission, type NativeNonSubmission } from './nativeNon
 import { OperatorConversationRecordSchema, publicOperatorConversation } from './operatorConversationRecord.js'
 import { legacyProviderAccountBinding, readProviderAccountBinding, saveProviderAccountBinding }
   from '../provider-accounts/acceptedBindings.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export type TurnPhase = 'accepted' | 'creating' | 'ready' | 'submitting' | 'submitted'
 export interface ConversationRow {
@@ -133,7 +134,7 @@ export function commandPayload(input: SendOperatorMessageRequest) {
     ...(input.attachments?.length ? { attachmentIdentity: messageAttachmentIdentity({ requestId: input.requestId, attachments: input.attachments }) } : {}) }
 }
 export function commandHash(input: SendOperatorMessageRequest): string {
-  return createHash('sha256').update(JSON.stringify(commandPayload(input))).digest('hex')
+  return sha256Hex(JSON.stringify(commandPayload(input)))
 }
 export function nativeCorrelation(conversationId: string, requestId: string): string {
   return `operator:${conversationId}:${requestId}`

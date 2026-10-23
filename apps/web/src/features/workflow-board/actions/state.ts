@@ -1,16 +1,12 @@
-import { useEffect, useMemo, useRef } from 'react'
-import { useStore } from 'zustand'
-import { createStore } from 'zustand/vanilla'
+import { useEffect, useRef, useState } from 'react'
 import { sessionGeneration, assertSession } from '../../../shared/api/sessionBoundary'
 import type { RunActionSelection } from './client'
 
 /** Per-mount presentation only: no Run, approval, permission or command receipts.
  * The parent is keyed by session and URL-selected Run. Query owns all requests. */
 export function useDisclosure() {
-  const store = useMemo(() => createStore<{ open: boolean; setOpen(open: boolean): void }>((set) => ({
-    open: false, setOpen: (open) => set({ open }),
-  })), [])
-  return [useStore(store, (state) => state.open), store.getState().setOpen] as const
+  const [open, setOpen] = useState(false)
+  return [open, setOpen as (open: boolean) => void] as const
 }
 export function useActionLifetime() {
   const generation = sessionGeneration()

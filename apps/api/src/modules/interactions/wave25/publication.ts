@@ -1,6 +1,5 @@
 import { readWorkflowClosure } from '../workflowClosure.js'
 import { assertReviewJobTerminalProofLocked } from '../reviewNativeProof.js'
-import { createHash } from 'node:crypto'
 import { approvalAttentionFacts } from './attention.js'
 import { DurableInteractionSchema, ReviewJobSchema, type DurableInteraction, type ReviewJob,
   type InteractionResponseValue } from '@foreman-code/contracts'
@@ -12,6 +11,7 @@ import type { GraphTransactionSql } from '../../run-graph/connection.js'
 import { identity, fail, lockInteraction, readContext, type ApprovalContext } from './context.js'
 import { publicReviewUnsettled } from '../../run-graph/publicLifecycle.js'
 import { runCleanupAllowed } from './cleanupAuthority.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 export function interactionFact(context: ApprovalContext, interaction: DurableInteraction,
   resumeState: 'not_started' | 'pending' | 'unknown' = interaction.status === 'canceled' ? 'unknown' : interaction.deliveryState === 'delivered' ? 'pending' : 'not_started'): GraphFact {
@@ -94,7 +94,7 @@ export const CANCELED_INTERACTION_RETIRED_SQL = `exists (
     and s.source_revision=i.revision
 )`
 export function canceledRetirementSourceId(id: string): string {
-  return 'canceled-interaction-' + createHash('sha256').update(id, 'utf8').digest('hex')
+  return 'canceled-interaction-' + sha256Hex(id)
 }
 
 /** Cancellation is negative authority, not proof of delivery failure, native

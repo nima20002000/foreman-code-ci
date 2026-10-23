@@ -4,8 +4,8 @@ import { RepeatGraphCurrentV3Schema } from '@foreman-code/contracts/wave25'
 import { withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 import { repeatStartPublication } from '../src/modules/run-graph/repeatStartPublication.js'
 import { insertRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
-import { graphFixture, graphHeaders, graphRpc, graphRpcValue, graphUrl } from './eng04-graph-composition-fixture.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
+import { graphFixture, graphHeaders, graphRpc, graphRpcValue, graphUrl } from './graph-composition-fixture.js'
 
 it.skipIf(!postgresEnabled)('keeps the real current HTTP response bounded as persisted activity and Run history grow', async () => {
   const db = await currentDatabase()

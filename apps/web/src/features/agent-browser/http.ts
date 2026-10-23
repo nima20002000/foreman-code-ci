@@ -1,5 +1,6 @@
-import { assertSession, installationHeaders, reloadChangedInstallation, sessionGeneration,
-  sessionIsSwitching, sessionSignal, SessionChangedError } from '../../shared/api/sessionBoundary'
+import { ApiError } from '../../shared/api/apiError'
+import { reloadChangedInstallation } from '../../shared/api/sessionBoundary'
+import { beginFencedOperation, installationHeaders, sendRaw } from '../../shared/api/transport'
 
 /** Transport only. D supplies canonical C0 serialization/parsing; no wire shape lives here. */
 export interface BrowserWireCodec<Arguments extends readonly unknown[], Result> {
@@ -19,9 +20,7 @@ export interface BrowserHttpOptions {
 export function createBrowserHttp(options: BrowserHttpOptions) {
   return async function call<Arguments extends readonly unknown[], Result>(method: string, path: string,
     codec: BrowserWireCodec<Arguments, Result>, args: Arguments, signal?: AbortSignal): Promise<Result> {
-    if (sessionIsSwitching()) throw new SessionChangedError()
-    const generation = sessionGeneration()
-    const requestSignal = signal ? AbortSignal.any([signal, sessionSignal()]) : sessionSignal()
+    const operation = beginFencedOperation({ signal })
     const encoded = codec.encode(...args)
     const url = new URL(path, options.origin ?? globalThis.location?.origin ?? 'http://localhost')
     if (encoded.query) url.search = encoded.query.toString()
@@ -29,16 +28,17 @@ export function createBrowserHttp(options: BrowserHttpOptions) {
     let body: BodyInit | undefined
     if (encoded.bytes) { body = new Uint8Array(encoded.bytes).buffer; headers.set('content-type', 'application/octet-stream') }
     else if (encoded.json !== undefined) { body = JSON.stringify(encoded.json); headers.set('content-type', 'application/json') }
-    const response = await (options.fetch ?? globalThis.fetch)(url, { method, credentials: 'omit', cache: 'no-store', headers, body, signal: requestSignal })
-    assertSession(generation); requestSignal.throwIfAborted()
+    const response = await sendRaw(url, operation, { method, cache: 'no-store', headers, body, fetch: options.fetch,
+      networkMessage: 'The browser request could not be completed.' })
     if (!response.ok) {
       const failure = await options.error(response)
-      assertSession(generation); requestSignal.throwIfAborted()
+      operation.check()
       if (failure.code) reloadChangedInstallation(failure.code)
-      throw Object.assign(new Error(failure.message), failure, { status: response.status })
+      throw new ApiError({ code: failure.code ?? 'HTTP_ERROR', message: failure.message,
+        ...(failure.outcome ? { details: { outcome: failure.outcome } } : {}) }, response.status)
     }
     const result = await codec.decode(response, args)
-    assertSession(generation); requestSignal.throwIfAborted()
+    operation.check()
     return result
   }
 }

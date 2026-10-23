@@ -11,14 +11,15 @@ import { readFileRetentionSnapshot } from '../../src/modules/files/retentionSnap
 import { FileByteStorage } from '../../src/modules/files/storage.js'
 import type { Pool } from 'pg'
 import { BugReportService } from '../../src/modules/bug-reports/service.js'
-import { HostCiService } from '../../src/modules/ci-host/service.js'
+import { HostCiService } from '@foreman-code/ci/service'
 import type { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
 import { RunCiAuthority } from '../../src/modules/jobs/ciAuthority.js'
+import { mainCiContext } from '../../src/modules/ci/context.js'
 
 /** Real domain services for every enabled Agent tool; external CI dispatch remains unavailable. */
 export function workerToolServices(pool: Pool, commands: PostgresCommandCoordinator) {
   const bugReports = new BugReportService(pool, commands)
-  const ci = new HostCiService(pool, commands, new RunCiAuthority(pool), {
+  const ci = new HostCiService(mainCiContext, pool, commands, new RunCiAuthority(pool), {
     capabilities: async () => ({ parts: true, integrationPartitions: true, affected: true }),
     resolve: async () => { throw new Error('This fixture does not publish CI commits.') },
   }, {

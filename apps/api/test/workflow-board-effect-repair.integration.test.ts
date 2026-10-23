@@ -6,8 +6,8 @@ import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import type { NativeHistory } from '../src/modules/harnesses/port.js'
 import type { MemoryBoardPort } from '../src/modules/collaboration/ports.js'
 import { DomainError } from '../src/modules/errors.js'
-import { checkpointRuntimeFixture } from './helpers/wave25Br1003Runtime.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
+import { postgresEnabled } from './helpers/database.js'
 
 afterEach(() => vi.restoreAllMocks())
 

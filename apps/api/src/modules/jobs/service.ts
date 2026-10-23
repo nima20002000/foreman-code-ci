@@ -7,7 +7,7 @@ import { JobWorkflowExecutionReferenceSchema } from '@foreman-code/contracts/job
 import { AcceptedWorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
 import { jobSpecDigests } from '@foreman-code/contracts/jobs-node'
 import type { RunInput } from '@foreman-code/contracts'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { z } from 'zod'
 import { JobArtifactSchema, JobLogPageSchema, JobStartSchema, type JobStart } from '@foreman-code/contracts/jobs'
@@ -39,7 +39,7 @@ import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { JobRepository, type JobSql } from './repository.js'
 import type { JobArtifactPort, JobDispatchPort, JobPreparationPort } from './ports.js'
 import type { JobQueueConfiguration } from './ports.js'
-import type { CiRuntimeProvisioner } from './ciRuntimeProvisioner.js'
+import type { CiRuntimeProvisioner } from '../ci/types.js'
 import { JobQueuePreparation } from './preparation.js'
 import { JobQueueTicketSchema, JobQueuedStartSchema, JobQueueCancelSchema, JobQueueLimitsSchema,
   JobAdmissionResultSchema, JobQueueListInputSchema, JobQueuePageSchema,
@@ -50,6 +50,7 @@ import { WorkerExecutionPolicy } from '../settings/workerExecution.js'
 import { acceptVerificationSpec } from './verificationAcceptance.js'
 import type { PostgresJobCancellationRecovery } from './cancellationRecovery.js'
 import type { JobCancellationRecoveryApply } from '@foreman-code/contracts/job-cancellation-recovery'
+import { sha256Hex } from '../../shared/hash.js'
 
 export { jobDigest } from './digest.js'
 function parse<T>(schema: z.ZodType<T>, input: unknown): T {
@@ -160,7 +161,7 @@ export class JobService {
       const result=await this.ports.artifacts.read(sql,live,workspaceId,id,fileId,revisionId,source)
       const artifact=JobArtifactSchema.parse(result.artifact)
       if(artifact.executionId!==id||artifact.fileId!==fileId||artifact.revisionId!==revisionId||artifact.state!=='available'
-        ||result.bytes.length!==artifact.byteSize||createHash('sha256').update(result.bytes).digest('hex')!==artifact.sha256) {
+        ||result.bytes.length!==artifact.byteSize||sha256Hex(result.bytes)!==artifact.sha256) {
         throw new DomainError('JOB_ARTIFACT_INVALID','The exact artifact bytes are missing, expired or corrupt.',409)
       }
       return {artifact,bytes:result.bytes}

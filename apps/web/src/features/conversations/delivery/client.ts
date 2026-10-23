@@ -1,26 +1,19 @@
-import { z } from 'zod'
 import {
   ChatSendRequestSchema, ChatStopRequestSchema, ChatQueueCancelRequestSchema, ChatDeliveryReceiptSchema,
-  ChatControlReceiptSchema, DeliveryTargetSchema, EngineChatReadbackSchema, OperatorConversationStateSchema,
+  ChatControlReceiptSchema, EngineChatReadbackSchema,
   type ChatSendRequest, type ChatStopRequest, type ChatQueueCancelRequest, type DeliveryTarget,
 } from '@foreman-code/contracts'
-import { ReadAgentChatResponseSchema } from '@foreman-code/contracts/agent-chat'
+import {
+  ChatDeliveryInputsReadbackSchema, ChatDeliveryReadbackSchema, ChatDeliveryReceiptsReadbackSchema,
+  type ChatDeliveryInputPage, type ChatDeliveryReadback,
+} from '@foreman-code/contracts/agent-chat'
 import { apiClient, ApiError, type RequestOptions } from '../../../shared/api/client'
 import { sameDeliveryTarget } from '../../workflow-chat/draft'
 
-const deliveryPresentationSchema = z.object({ state: EngineChatReadbackSchema.shape.state, capabilities: EngineChatReadbackSchema.shape.capabilities })
-  .extend({ nativeTurnId: z.string().optional() })
-const standaloneReadSchema = z.object({ target: DeliveryTargetSchema,
-  state: z.union([ReadAgentChatResponseSchema, OperatorConversationStateSchema]),
-  receipts: z.array(ChatDeliveryReceiptSchema), delivery: deliveryPresentationSchema })
-export const deliveryReadSchema = z.union([EngineChatReadbackSchema, standaloneReadSchema])
-const receiptReadSchema = z.object({ target: DeliveryTargetSchema, receipts: z.array(ChatDeliveryReceiptSchema) })
-const retainedReadSchema = z.object({ target: DeliveryTargetSchema,
-  deliveryInputs: ReadAgentChatResponseSchema.shape.deliveryInputs.unwrap() })
-export type RetainedInputPage = z.infer<typeof retainedReadSchema>['deliveryInputs']
+export type RetainedInputPage = ChatDeliveryInputPage
 export type RetainedInput = RetainedInputPage['items'][number]
 export type RetainedInputSelection = { cursor?: string; limit?: number; receiptId?: string; bodyCursor?: string }
-export type DeliveryReadback = z.infer<typeof deliveryReadSchema>
+export type DeliveryReadback = ChatDeliveryReadback
 
 export function chatDeliveryRoot(target: DeliveryTarget) {
   return target.kind === 'operator_conversation'
@@ -33,15 +26,15 @@ function verify<T extends { target: DeliveryTarget }>(target: DeliveryTarget, re
 }
 export const chatDeliveryClient = {
   async read(target: DeliveryTarget, options?: RequestOptions) {
-    return verify(target, await apiClient.request(`${chatDeliveryRoot(target)}/read`, deliveryReadSchema,
+    return verify(target, await apiClient.request(`${chatDeliveryRoot(target)}/read`, ChatDeliveryReadbackSchema,
       { ...options, method: 'POST', body: { target, limit: 50 } }))
   },
   async receipt(target: DeliveryTarget, commandId: string, options?: RequestOptions) {
-    return verify(target, await apiClient.request(`${chatDeliveryRoot(target)}/read`, receiptReadSchema,
+    return verify(target, await apiClient.request(`${chatDeliveryRoot(target)}/read`, ChatDeliveryReceiptsReadbackSchema,
       { ...options, method: 'POST', body: { target, commandId } }))
   },
   async receiptById(target: DeliveryTarget, receiptId: string, options?: RequestOptions) {
-    const result = verify(target, await apiClient.request(`${chatDeliveryRoot(target)}/read`, receiptReadSchema,
+    const result = verify(target, await apiClient.request(`${chatDeliveryRoot(target)}/read`, ChatDeliveryReceiptsReadbackSchema,
       { ...options, method: 'POST', body: { target, receiptId } }))
     if (result.receipts.some(receipt => receipt.id !== receiptId || !sameDeliveryTarget(receipt.target, target))) {
       throw new ApiError({ code: 'INVALID_RESPONSE', message: 'The requested delivery receipt did not match this target.' }, 409)
@@ -49,7 +42,7 @@ export const chatDeliveryClient = {
     return result
   },
   async inputs(target: DeliveryTarget, deliveryInputs: RetainedInputSelection = {}, options?: RequestOptions) {
-    const page = verify(target, await apiClient.request(`${chatDeliveryRoot(target)}/read`, retainedReadSchema,
+    const page = verify(target, await apiClient.request(`${chatDeliveryRoot(target)}/read`, ChatDeliveryInputsReadbackSchema,
       { ...options, method: 'POST', body: { target, deliveryInputs } })).deliveryInputs
     if (page.items.some(item => !sameDeliveryTarget(item.target, target))) {
       throw new ApiError({ code: 'INVALID_RESPONSE', message: 'Original inputs returned a different target.' }, 409)

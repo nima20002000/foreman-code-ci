@@ -9,7 +9,7 @@ import { GraphRunStateSchema, type AcceptedWorkflowRunV3 } from '@foreman-code/c
 import { beforeGraphCommit, ExclusiveGraphConnection, type GraphTransactionSql } from '../src/modules/run-graph/connection.js'
 import type { RunOwnership } from '../src/modules/runs/ownership.js'
 import type { RunStateUpdate } from '../src/modules/runs/port.js'
-import { startFixture } from './eng04-start-fixtures.js'
+import { startFixture } from './start-fixtures.js'
 
 // Real exclusive-connection/finalizer implementation; SQL, immutable readers and
 // canonical producers below are EXPLICIT doubles. Real PG coverage is separate.

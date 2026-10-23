@@ -6,7 +6,7 @@ import { HarnessExecutionSchema, type HarnessExecutionRequest } from '@foreman-c
 import { makeCurrentWorkflowFixture, parseChoiceResultEnvelope, type WorkflowChoice } from '@foreman-code/contracts/wave25'
 import { buildHarnessPrompt } from '../src/modules/harnesses/prompt.js'
 import { currentInitialPrompt } from '../src/modules/runs/currentRouting.js'
-import { candidateFor } from './helpers/wave25Agent3.js'
+import { candidateFor } from './helpers/workflowDatabase.js'
 import { repeatNativeObserver, type RepeatNativeObserverContext } from '../src/modules/runs/repeatRuntime.js'
 
 const directories: string[] = []

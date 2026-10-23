@@ -18,7 +18,7 @@ import { createProductionSources } from '../../src/modules/sources/production.js
 import { createSourceManifest, sourceSha256 } from '../../src/modules/sources/manifest.js'
 import { WorkspaceLocationService } from '../../src/modules/workspaces/location.js'
 import { registerJobRuntimeProfileRoutes } from '../../src/routes/jobRuntimeProfiles.js'
-import { currentDatabase } from './eng04CurrentDatabase.js'
+import { currentDatabase } from './database.js'
 import { jobSpec } from './jobFixture.js'
 import { verificationRuntimeFixture } from './verificationRuntimeFixture.js'
 

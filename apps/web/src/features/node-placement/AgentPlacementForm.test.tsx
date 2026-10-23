@@ -20,8 +20,8 @@ it('keeps selection local until Apply and includes only this node placement in i
   expect(apply).toBeEnabled()
   await userEvent.click(apply)
   expect(save).toHaveBeenCalledOnce()
-  expect(save.mock.calls[0]?.[4]).toEqual(pc)
-  expect(save.mock.calls[0]?.[0]).not.toHaveProperty('placement')
+  expect(save.mock.calls[0]?.[0]?.placement).toEqual(pc)
+  expect(save.mock.calls[0]?.[0]?.agent).not.toHaveProperty('placement')
 })
 it('preserves the exact placement revisions in retained form storage', () => {
   const form = AgentFormSchema.parse({ base: '{}', name: 'Worker', prompt: '', editor: { configuration: DEFAULT_HARNESS_DEFAULTS.codex, shellEnvironmentText: '{}', mcpText: '{}' }, placement })

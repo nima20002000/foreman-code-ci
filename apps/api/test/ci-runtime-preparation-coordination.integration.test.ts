@@ -2,12 +2,13 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { BuildComputerPrepareStatusSchema } from '@foreman-code/contracts'
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { useCiRuntimePreparationFixture } from './ci-runtime-preparation.test-support.js'
 import pg from 'pg'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { CiRuntimeProvisioner } from '../src/modules/jobs/ciRuntimeProvisioner.js'
+import { CiRuntimeProvisioner } from '@foreman-code/ci/ciRuntimeProvisioner'
 import { commit, qualifiedPreparationProfile } from './helpers/ciPreparationFixture.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 describe.skipIf(!postgresEnabled)('persisted runtime preparation coordination over authenticated MCP', () => {
   const { setup } = useCiRuntimePreparationFixture()
@@ -48,7 +49,7 @@ describe.skipIf(!postgresEnabled)('persisted runtime preparation coordination ov
         return fixture.profileService.list(...args)
       },
     }
-    const service = new CiRuntimeProvisioner(pool, profiles as never, fixture.sources as never,
+    const service = new CiRuntimeProvisioner(mainCiContext, pool, profiles as never, fixture.sources as never,
       () => fixture.endpoint, commands, { timing: { pollMs: 0,
         wait: () => new Promise(resolve => setImmediate(resolve)), now: () => new Date() } })
     try {

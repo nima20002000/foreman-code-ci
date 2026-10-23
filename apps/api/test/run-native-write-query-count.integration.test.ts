@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { HarnessExecutionSchema, type HarnessNativeEvent } from '@foreman-code/contracts'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 import { nativeStreamFixture } from './helpers/nativeStreamFixture.js'
 import { runtimeTimingChannel, type RuntimeTimingRecord } from '../src/infrastructure/runtimeTiming.js'
 

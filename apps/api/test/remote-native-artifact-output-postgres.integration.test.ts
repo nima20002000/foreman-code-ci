@@ -11,13 +11,14 @@ import { readLiveManagementPrincipal } from '../src/modules/access/liveManagemen
 import { requireAuthorization } from '../src/modules/access/policy.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const databaseUrl = process.env.TEST_DATABASE_URL
 const schema = `native_output_${randomUUID().replaceAll('-', '')}`
 const operation = 'remote.native-artifact.output'
 
 /** SQL receipt guards only; this does not manufacture a native artifact or qualify a host. */
-describe.skipIf(!databaseUrl)('original native artifact output receipt SQL guards', () => {
+describe.skipIf(!postgresEnabled)('original native artifact output receipt SQL guards', () => {
   let admin: pg.Pool, pool: pg.Pool
   beforeAll(async () => {
     const url = new URL(databaseUrl!)

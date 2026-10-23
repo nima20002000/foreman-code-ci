@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 import { WorkActivationInputSchema } from '@foreman-code/contracts/wave25'
 import { isWorkflowStart } from '../src/modules/harnesses/sessionStart.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { memoryWorkflow, memoryCall, workflowMemory, type MemoryRuntime } from './helpers/memoryWorkflow.js'
 
 it.runIf(postgresEnabled).each(['child', 'continuation'] as const)('keeps a late-linked parent unresolved during %s work and settles it afterward', async phase => {

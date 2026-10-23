@@ -6,7 +6,7 @@ import {
 } from '@foreman-code/contracts'
 
 import { Checkbox, SegmentedControl } from '../../shared/ui/nocturne'
-import { useWorkflowBoard } from '../workflow-board/context'
+import { useBoardAuthoring } from '../workflow-board/context'
 import { useCollaborationUISlots } from '../../shared/ui/collaborationSlots'
 
 type NodeChoice = 'default' | 'on' | 'off'
@@ -30,7 +30,7 @@ export function GraphqlToolsFields({ role, defaults, override, onChange, executi
   onChange(defaults: GraphqlAgentTool[] | undefined, override: GraphqlToolOverride | undefined): void
 }) {
   const sharedFields = useCollaborationUISlots()
-  const fields = useWorkflowBoard()?.collaborationFields ?? sharedFields
+  const fields = useBoardAuthoring()?.collaborationFields ?? sharedFields
   const memoryTools: GraphqlAgentTool[] = memoryBoardTools('write')
   const browserTools = fields?.nodeBrowser ? Object.keys(COLLABORATION_AGENT_TOOLS).filter(name => name.startsWith('browser_')) as GraphqlAgentTool[] : []
   const implemented: GraphqlAgentTool[] = [...memoryTools, ...browserTools]

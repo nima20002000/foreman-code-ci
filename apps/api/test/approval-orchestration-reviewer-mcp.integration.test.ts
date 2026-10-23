@@ -10,8 +10,8 @@ import { OperatorInteractionService } from '../src/modules/interactions/operator
 import { approvalResponse } from './helpers/approvalResponse.js'
 import { routedApprovalFixture } from './helpers/routedApprovalFixture.js'
 import { approvalReviewCuts } from './helpers/approvalReviewCuts.js'
-import { br1002At } from './helpers/wave25Br1002Cuts.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { br1002At } from './helpers/continuationCuts.js'
+import { postgresEnabled } from './helpers/database.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 import { codexApprovalRuntime } from './helpers/codexApprovalRuntime.js'
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { checkpointCut, productionFixtures, stageDelivered } from './helpers/approvalCheckpointProduction.js'
 
 describe.skipIf(!postgresEnabled)('approval recovery while another callback owns a delivered branch', () => {

@@ -13,11 +13,11 @@ import { RepeatRunRepository } from '../../src/modules/runs/repeatPostgres.js'
 import { repeatDigest } from '../../src/modules/runs/repeatResolution.js'
 import { canonicalRepeatEffect } from '../../src/modules/run-graph/repeatPublication.js'
 import { readWorkflowCheckpoint } from '../../src/modules/runs/repeatGraph.js'
-import { checkpointRuntimeFixture } from './wave25Br1003Runtime.js'
+import { checkpointRuntimeFixture } from './checkpointRuntime.js'
 import { approvalResponse } from './approvalResponse.js'
-import { agent3Database } from './wave25Agent3.js'
-import { reserveFromExitedParent } from './eng06LaunchReservation.testSupport.js'
-import { holdCrashCut, observeCrashTask } from './eng06CrashCut.testSupport.js'
+import { agent3Database } from './workflowDatabase.js'
+import { reserveFromExitedParent } from './launchReservation.testSupport.js'
+import { holdCrashCut, observeCrashTask } from './crashCut.testSupport.js'
 
 type Runtime = Awaited<ReturnType<typeof checkpointRuntimeFixture>>
 type Ports = {

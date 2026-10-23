@@ -1,11 +1,11 @@
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { PostgresAppInteractionService } from '../src/modules/interactions/app.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { buildApp } from '../src/app.js'
 import { workerToolServices } from './helpers/workerMcpServices.js'
-import { approvalDatabase } from './helpers/wave25ApprovalDatabase.js'
+import { approvalDatabase } from './helpers/approvalDatabase.js'
 
 const closes: Array<() => Promise<void>> = []
 afterEach(async () => { while (closes.length) await closes.pop()!() })

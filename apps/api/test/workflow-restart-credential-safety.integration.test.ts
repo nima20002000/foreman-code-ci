@@ -11,7 +11,7 @@ import { LOCAL_RUNNER_ID } from '../src/modules/workspaces/location.js'
 import type { RunOwnership } from '../src/modules/runs/ownership.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { readUntil } from './helpers/observableCondition.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
 type Runtime = Awaited<ReturnType<typeof currentOperatorIntegration>>

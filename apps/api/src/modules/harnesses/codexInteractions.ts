@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import {
   ApprovalResponseOptionSchema,
   CodexSessionCompatibilitySchema, DEFAULT_CODEX_ADVANCED_CONFIGURATION,
@@ -8,6 +7,7 @@ import {
 } from '@foreman-code/contracts'
 import { canonicalJsonNumericKeysFirstLegacy } from '@foreman-code/contracts/canonical-json'
 import { isObject, text, type JsonObject, type RequestId, type RpcRequest } from './codexStdioTransport.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 /** Process-local identity; numeric and string RPC IDs remain distinct. */
 export function codexRequestKey(generation: number, id: RequestId): string {
@@ -28,7 +28,7 @@ export function translateCodexInteraction(context: {
   const responses: Map<string, { option: ApprovalResponseOption; nativeResponse: JsonObject }> = new Map()
   const add = (option: Omit<ApprovalResponseOption, 'optionId'>, nativeResponse: JsonObject) => {
     if ((context.configuration.advanced?.sessionPersistence ?? DEFAULT_CODEX_ADVANCED_CONFIGURATION.sessionPersistence) === 'ephemeral' && option.semantic === 'allow_session') return
-    const optionId = `codex-${createHash('sha256').update(canonicalJsonNumericKeysFirstLegacy([nativeRequestId, nativeResponse])).digest('hex').slice(0, 24)}`
+    const optionId = `codex-${sha256Hex(canonicalJsonNumericKeysFirstLegacy([nativeRequestId, nativeResponse])).slice(0, 24)}`
     // Empty optional descriptions are omitted rather than violating the shared schema.
     const { scopeSummary, ...rest } = option
     const parsed = ApprovalResponseOptionSchema.parse({ optionId, ...rest, ...(scopeSummary?.trim() ? { scopeSummary } : {}) })

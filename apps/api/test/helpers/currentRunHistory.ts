@@ -5,8 +5,8 @@ import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
 import { WorkflowManagementService } from '../../src/modules/workflows/management.js'
-import { currentDatabase } from './eng04CurrentDatabase.js'
-import { insertCurrentRunFixture } from './eng04CurrentRunFixture.js'
+import { currentDatabase } from './database.js'
+import { insertCurrentRunFixture } from './currentRunFixture.js'
 
 /** Persisted read fixture. Workflow versions use the actual typed writer; the
  * queued Run uses canonical fixture publication, never a fake native result. */

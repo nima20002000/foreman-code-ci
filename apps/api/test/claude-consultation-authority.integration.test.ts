@@ -6,7 +6,7 @@ import { currentOperatorIntegration } from './helpers/currentOperatorIntegration
 import { ControlledWorkflowProvider } from './helpers/controlledWorkflowProvider.js'
 import { hierarchyRuntimeFixture, coordinationOutput } from './helpers/hierarchyRuntimeFixture.js'
 import { workflowChatCall, workflowChatTarget } from './helpers/workflowChatRequests.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('Claude consultation callback authority', () => {
   it('admits the exact mailbox subject while its delegation execution is closed and revokes it after the reply', async () => {

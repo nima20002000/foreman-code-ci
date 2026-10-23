@@ -1,7 +1,7 @@
-import { createHash } from 'node:crypto'
 import { appendFileSync, mkdirSync, renameSync, statSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { appErrorResourceIds, type AppErrorReport } from '@foreman-code/contracts'
+import { sha256Hex } from '../../shared/hash.js'
 
 /**
  * One append-only JSONL file of every error the API logs and every error the web app reports,
@@ -26,7 +26,7 @@ function topFrame(stack: string | undefined): string | undefined {
 
 export function appErrorFingerprint(entry: Pick<AppErrorEntry, 'source' | 'message' | 'stack'>): string {
   const message = entry.message.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '<id>').replace(/\d+/g, '#')
-  return createHash('sha256').update(`${entry.source}\n${message}\n${topFrame(entry.stack) ?? ''}`).digest('hex').slice(0, 16)
+  return sha256Hex(`${entry.source}\n${message}\n${topFrame(entry.stack) ?? ''}`).slice(0, 16)
 }
 
 export function recordAppError(entry: AppErrorEntry): void {

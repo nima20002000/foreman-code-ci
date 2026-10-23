@@ -10,7 +10,7 @@ import { WorkflowNativeProofServices } from '../src/modules/runs/workflowNativeP
 import type { StoredRepeatExecution } from '../src/modules/runs/repeatPostgres.js'
 import type { WorkflowNativeCapture } from '../src/modules/interactions/workflowNativeCapture.js'
 import type { RunOwnership } from '../src/modules/runs/ownership.js'
-import { nativeProofModel } from './eng04-native-proof-model.js'
+import { nativeProofModel } from './native-proof-model.js'
 
 afterEach(() => vi.restoreAllMocks())
 

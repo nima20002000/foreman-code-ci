@@ -3,7 +3,7 @@ import { withTransaction } from '../src/infrastructure/transaction.js'
 import { readWorkflowNativeChat } from '../src/modules/interactions/workflowChatNativeRead.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { workflowChatTarget } from './helpers/workflowChatRequests.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('bounded workflow native chat reads', () => {
   it('reads recent and older pages without visiting the full retained transcript', async () => {

@@ -168,6 +168,8 @@ export type JobExecution = z.infer<typeof JobExecutionSchema>
 export type JobLogChunk = z.infer<typeof JobLogChunkSchema>
 export type JobLogPage = z.infer<typeof JobLogPageSchema>
 export type JobArtifact = z.infer<typeof JobArtifactSchema>
+/** Management read of one execution's artifacts. */
+export const JobArtifactListSchema = z.object({ artifacts: z.array(JobArtifactSchema) })
 export type JobValidation = z.infer<typeof JobValidationSchema>
 export const JobAuthoringChoicesSchema = z.object({
   targets: z.array(z.object({id:IdSchema,label:z.string(),target:JobTargetSchema,ready:z.boolean(),reasons:z.array(z.string())}).strict()),

@@ -1,5 +1,4 @@
 import { sourceWorkingTreeComponents, sourceWorkingTreePath } from '../../sources/sourceTreePaths.js'
-import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { constants } from 'node:fs'
 import { open,realpath } from 'node:fs/promises'
@@ -27,6 +26,7 @@ import { RuntimeLeafAttestationSchema,assertRuntimeLeafPath } from './runtimeLea
 import type { NativeHistory } from '../../harnesses/port.js'
 import { encodeResultCopies, decodeResultCopies, physicalResultPaths, historyResultPaths } from './executionResultCodec.js'
 import { WorkflowPhysicalReadoutSnapshots, type PhysicalReadoutSelector } from './workflowPhysicalReadoutSnapshots.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 const unavailable = (options?: ErrorOptions): never => {
   throw new DomainError('REMOTE_NATIVE_PHYSICAL_UNAVAILABLE',
@@ -71,7 +71,7 @@ function freezeTree<T>(value:T):T {
   return value
 }
 export function remoteWorkflowSourceDigest(source: WorkflowOriginalNativeSource): string {
-  return createHash('sha256').update(canonicalGraphJson(source, REMOTE_NATIVE_SOURCE_LIMIT)).digest('hex')
+  return sha256Hex(canonicalGraphJson(source, REMOTE_NATIVE_SOURCE_LIMIT))
 }
 export function remoteWorkflowNativeHistory(value:NonNullable<RemoteWorkflowPhysicalReadout['history']>):NativeHistory {
   return {events:value.events,pendingInteractions:value.pendingInteractions,
@@ -279,7 +279,7 @@ export class InstalledWorkflowPhysicalReadouts {
     const dictionary = encodeResultCopies({ readout: parsed, source: input.source, placement: input.placement }, paths)
     const payloads = dictionary.results.map(value => {
       const serialized = canonicalGraphJson(value, DEVICE_JSON_CONTINUATION_LIMIT)
-      const digest = createHash('sha256').update(serialized).digest('hex')
+      const digest = sha256Hex(serialized)
       return { digest, value: this.results.get(digest)?.value ?? value, bytes: Buffer.byteLength(serialized) }
     })
     dictionary.results = payloads.map(payload => payload.value)

@@ -1,6 +1,6 @@
 import { CI_HOST_NAMESPACE, CiHostRequestSchema } from '@foreman-code/contracts'
 import { componentLogger } from '../diagnostics/logger.js'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import {
   DEVICE_APPLICATION_BUFFER_BYTES, DEVICE_APPLICATION_CHUNK_BYTES, DEVICE_APPLICATION_CHUNK_WINDOW,
   WORKER_MCP_CHUNK_WINDOW,
@@ -25,6 +25,7 @@ import {
   effectiveDeviceRequestPriority, deviceRequestIsCopyAuthorization,
 } from './deviceRequestQueue.js'
 import { operationProgressReporter, withOperationProgress } from '../operationProgress.js'
+import { sha256Hex } from '../../shared/hash.js'
 export { DeviceApplicationError } from './deviceApplicationError.js'
 
 /** A link whose authority was confirmed this recently keeps serving work while the database is slow or short of
@@ -81,7 +82,7 @@ export function extensionDescriptors(registrations: DeviceExtensionRegistration[
   })))
 }
 export function deviceNegotiationHash(extensions: DeviceNegotiatedExtension[]) {
-  return createHash('sha256').update(JSON.stringify(extensions)).digest('hex')
+  return sha256Hex(JSON.stringify(extensions))
 }
 /** One reader per authenticated epoch. Chunk ACKs attest receipt only, never task acceptance. */
 export class DeviceApplicationChannel {

@@ -25,8 +25,8 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--success, #3ecf8e);
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--success, #3ecf8e) 60%, transparent);
+  background: var(--success);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 60%, transparent);
   animation: workflow-running-pulse 1.6s ease-out infinite;
 }
 @keyframes workflow-running-pulse { to { box-shadow: 0 0 0 6px transparent; } }

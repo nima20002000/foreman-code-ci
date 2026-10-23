@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
-import { readback, recoveryFixture, assertRecoveryReceipts } from './helpers/eng06DRecovery.js'
+import { postgresEnabled } from './helpers/database.js'
+import { readback, recoveryFixture, assertRecoveryReceipts } from './helpers/recoveryFixture.js'
 import { forms, parked } from './helpers/recoveryReadback.js'
 
 afterEach(() => vi.restoreAllMocks())

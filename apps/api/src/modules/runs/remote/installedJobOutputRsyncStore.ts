@@ -10,6 +10,7 @@ import type { ResumableByteTransferService } from '../../byte-transfer/service.j
 import { anchored, identity, openPrivateRoot } from '../../sources/privateFilesystem.js'
 import { DomainError } from '../../errors.js'
 import type { RetainedJobOutputRsyncRecord, RetainedJobOutputRsyncStore } from './jobOutputRsyncSource.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 const RecordSchema = z.object({ intent: TransferIntentSchema, input: JobOutputPublicationInputSchema,
   operationId: z.string().min(1), specDigest: FileSha256Schema, closureEvidenceDigest: FileSha256Schema }).strict()
@@ -93,7 +94,7 @@ export async function createInstalledJobOutputRsyncStore(ports: InstalledJobOutp
       if (intent.direction !== 'to-main' || intent.byteClass !== 'artifact' || record.input.sha256 !== intent.sha256
         || record.input.byteSize !== intent.byteSize || captured.byteLength !== intent.byteSize) throw conflict()
       const immutableBytes = Buffer.from(captured)
-      if (createHash('sha256').update(immutableBytes).digest('hex') !== intent.sha256) throw conflict()
+      if (sha256Hex(immutableBytes) !== intent.sha256) throw conflict()
       await authorize(intent, signal)
       await ports.quota.reserve(intent, await ports.current(signal), { kind: 'rsync-source', byteSize: intent.byteSize * 2 })
       await locked(intent.transferId, async (dir, bytesPath, metadata, handles) => {

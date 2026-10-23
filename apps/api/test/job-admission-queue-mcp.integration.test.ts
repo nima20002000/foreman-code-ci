@@ -8,7 +8,7 @@ import { JobPendingAdmissionSchema, JobQueueTicketSchema, JobQueuePageSchema, Jo
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { DomainError } from '../src/modules/errors.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { ScheduleOperatorCapabilitiesSchema } from '../src/mcp/operator/tools/workflowSchedules.js'
 import { setupJobAdmissionQueue } from './helpers/jobAdmissionQueue.js'
 

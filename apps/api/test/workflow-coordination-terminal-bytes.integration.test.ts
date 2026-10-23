@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { COORDINATION_RESULT_PROTOCOL } from '@foreman-code/contracts'
 import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
-import { checkpointRuntimeFixture } from './helpers/wave25Br1003Runtime.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('workflow coordination terminal persistence', () => {
   it('retains canonical result bytes and their digest when a native execution completes', async () => {

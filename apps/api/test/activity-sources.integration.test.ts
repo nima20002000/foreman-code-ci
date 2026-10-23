@@ -6,10 +6,11 @@ import type { ActivityTextOperation } from '@foreman-code/contracts/activity-tex
 import { activityCommandSourcesMigration } from '../src/infrastructure/activityCommandSourcesMigration.js'
 import { activitySourcesMigration } from '../src/infrastructure/activitySourcesMigration.js'
 import { appendConversationTextOperation } from '../src/modules/conversations/conversationTextRepository.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const connectionString = process.env.TEST_DATABASE_URL
 // Root owns execution. This uses isolated schema and existing record tables, never native/provider I/O.
-describe.skipIf(!connectionString)('activity source records in PostgreSQL', () => {
+describe.skipIf(!postgresEnabled)('activity source records in PostgreSQL', () => {
   let admin: pg.Pool; let pool: pg.Pool; let schema: string
   beforeEach(async () => {
     admin = new pg.Pool({ connectionString }); schema = `activity_sources_${randomUUID().replaceAll('-', '')}`

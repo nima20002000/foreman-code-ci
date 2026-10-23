@@ -9,11 +9,12 @@ import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
 import { registerOperatorChatFixture, type OperatorChatFixture, waitFor } from './helpers/operatorChatFixture.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
+import { postgresEnabled } from './helpers/database.js'
 
 let fixture: OperatorChatFixture
 registerOperatorChatFixture(value => { fixture = value }, () => fixture?.chat, migratedDatabase)
 
-describe.skipIf(!process.env.TEST_DATABASE_URL)('Operator activity item reads', () => {
+describe.skipIf(!postgresEnabled)('Operator activity item reads', () => {
   it('reads persisted completion beyond the recent window through HTTP and MCP with ownership and grant checks', async () => {
     const { chat, access, repository, manager, pool } = fixture
     const issued = await access.issue({ name: 'activity reader', audience: 'operator',

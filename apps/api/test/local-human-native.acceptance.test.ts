@@ -9,7 +9,7 @@ import { inheritedAgentEnvironment, redactSecretText } from '../src/modules/harn
 import { nativePersistenceRedactor } from '../src/modules/interactions/nativePersistence.js'
 import { nativeHttpIsolation, type NativeHttpIsolationInput } from './helpers/nativeHttpIsolation.js'
 
-const enabled = process.env.RUN_REAL_HARNESS_TESTS === '1' || process.env.RUN_ENG03_C_NATIVE_TESTS === '1'
+const enabled = process.env.RUN_REAL_HARNESS_TESTS === '1' || process.env.RUN_NATIVE_LIFECYCLE_TESTS === '1'
 const databaseUrl = process.env.ENG03_A_TEST_DATABASE_URL ?? process.env.WAVE25_TEST_DATABASE_URL
   ?? process.env.TEST_DATABASE_URL
 

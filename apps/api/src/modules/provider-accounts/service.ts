@@ -1,6 +1,6 @@
 import type { z } from 'zod'
 import { withTransaction } from '../../infrastructure/transaction.js'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import {
   ProviderAccountApiKeyInputSchema, ProviderAccountCommandInputSchema,
@@ -36,19 +36,22 @@ import type { ResolvedProviderAccount, ProviderAccountResolver, ProviderAccountO
 import { legacyProviderAccountBinding, readProviderAccountBinding, type AccountBindingOwner } from './acceptedBindings.js'
 import type { HarnessConfiguration } from '@foreman-code/contracts'
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
+import { sha256Hex } from '../../shared/hash.js'
 
 export type { ResolvedProviderAccount, ProviderAccountResolver, ProviderAccountOperationNativePort, ProviderAccountCredentials }
 type CommandSource = 'http' | 'mcp'
 type Change = (snapshot: ProviderAccountsSnapshot, sql: GraphSqlClient) => Promise<void>
 
+/** Routes account work for another computer to that computer's scoped service. */
+export interface ProviderAccountRouting {
+  scope(principal: ManagementPrincipal, target: DeviceProvisioningTarget): Promise<ProviderAccountsService>
+  targets(principal: ManagementPrincipal): Promise<ProviderAccountTarget[]>
+  locate?(accountId: string, sql?: GraphSqlClient): Promise<ProviderAccountBinding | undefined>
+  resolve?(binding: ProviderAccountBinding, sql?: GraphSqlClient, signal?: AbortSignal): Promise<ResolvedProviderAccount | null>
+}
+
 export class ProviderAccountsService implements ProviderAccountResolver {
-  private routing?: {
-    scope(principal: ManagementPrincipal, target: DeviceProvisioningTarget): Promise<ProviderAccountsService>
-    targets(principal: ManagementPrincipal): Promise<ProviderAccountTarget[]>
-    locate?(accountId: string, sql?: GraphSqlClient): Promise<ProviderAccountBinding | undefined>
-    resolve?(binding: ProviderAccountBinding, sql?: GraphSqlClient, signal?: AbortSignal): Promise<ResolvedProviderAccount | null>
-  }
-  bindRouting(routing: NonNullable<ProviderAccountsService['routing']>): void { this.routing = routing }
+  private readonly routing: ProviderAccountRouting | undefined
 
   private async remote(principal: ManagementPrincipal, target?: DeviceProvisioningTarget) {
     if (!target || sameDeviceProvisioningTarget(target, await this.repository.target())) return undefined
@@ -66,13 +69,14 @@ export class ProviderAccountsService implements ProviderAccountResolver {
     private readonly commands: PostgresCommandCoordinator,
     private readonly targetAuthorization?: (sql: GraphSqlClient, principal: ManagementPrincipal, manage: boolean,
       accountId?: string) => Promise<void>,
+    /** Builds the routing to other computers' accounts; it receives this service as Main's local accounts. */
+    routing?: (local: ProviderAccountsService) => ProviderAccountRouting,
   ) {
     this.authentication = new ProviderAccountAuthenticationOperations(pool, repository, credentials, native, commands,
       (sql, principal, manage, accountId) => this.authorize(sql, principal,
         manage ? 'provider_accounts:manage' : 'provider_accounts:read', accountId))
+    this.routing = routing?.(this)
   }
-
-  bindTarget(reader: (sql: GraphSqlClient) => Promise<DeviceProvisioningTarget>): void { this.repository.bindTarget(reader) }
 
   async runtimeBinding(kind: AccountBindingOwner, id: string, configuration: HarnessConfiguration,
     selection?: HarnessProfileSelection): Promise<AcceptedProviderAccountBinding | undefined> {
@@ -700,7 +704,7 @@ export class ProviderAccountsService implements ProviderAccountResolver {
   provisionApiKey(principal: ManagementPrincipal, accountId: string, raw: unknown) {
     const input = ProviderAccountApiKeyInputSchema.parse(raw)
     const { apiKey, ...command } = input
-    const apiKeyDigest = createHash('sha256').update(apiKey).digest('hex')
+    const apiKeyDigest = sha256Hex(apiKey)
     let backup: Map<string, Buffer | null> | undefined
     return this.change(principal, 'http', 'provider.account.key.provision', command,
       { ...command, accountId, apiKeyDigest }, async (snapshot, sql) => {

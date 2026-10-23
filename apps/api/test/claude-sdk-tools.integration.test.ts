@@ -23,10 +23,10 @@ import { PostgresOperatorChatAuthority } from '../src/modules/conversations/oper
 import { NativeRollout } from '../src/modules/harnesses/nativeRollout.js'
 import { registerProductionFileStorage } from '../src/modules/files/production.js'
 import { productionFileTools } from '../src/modules/files/tools/production.js'
-import { nim2691TaskDatabase } from './helpers/nim2691Database.js'
+import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
 import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'
 import { readUntil } from './helpers/observableCondition.js'
-import { graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 import { productionClaudeFixture } from './support/claudeProduction.js'
 import { claudeSdkToolTransport } from './support/claudeSdkToolTransport.js'
 

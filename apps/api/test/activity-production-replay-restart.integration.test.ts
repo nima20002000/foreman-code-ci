@@ -5,7 +5,7 @@ import { vi } from 'vitest'
 import { RepeatRunRepository } from '../src/modules/runs/repeatPostgres.js'
 import * as workflowLifecycle from '../src/modules/runs/workflowLifecycle.js'
 import { afterEach, describe, expect, it } from 'vitest'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { closeActivityReplay, setup, eventually, completedRun } from './helpers/activityReplayFixture.js'
 
 afterEach(closeActivityReplay)

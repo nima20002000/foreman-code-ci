@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { withTransaction } from '../../infrastructure/transaction.js'
-import pg from 'pg'
+import type pg from 'pg'
+import { withDedicatedClient } from '../../infrastructure/pool.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import {
   CurrentJournalAdvanceInputSchema as GraphEditAdvanceInputSchema,
@@ -98,19 +99,16 @@ export class DurableEditIntentService<S extends EditStageScope, I extends Durabl
     })
   }
   private async withLease<T>(principalId: string, intentId: string, work: () => Promise<T>): Promise<T> {
-    const pool = new pg.Pool({ ...this.pool.options, max: 1, application_name: 'graphql-edit-intent' })
-    const client = await pool.connect().catch(async (error: unknown) => { await pool.end(); throw error })
     const key = `graph-edit-intent:${JSON.stringify([principalId, intentId])}`
-    let releaseError: Error | undefined
-    try {
+    return withDedicatedClient(this.pool.options, 'graphql-edit-intent', async (client) => {
       await client.query('select pg_advisory_lock(hashtext($1))', [key])
-      return await work()
-    } finally {
-      try { await client.query('select pg_advisory_unlock(hashtext($1))', [key]) }
-      catch { releaseError = new Error('Intent lease unlock failed.') }
-      client.release(releaseError)
-      await pool.end()
-    }
+      try {
+        return await work()
+      } finally {
+        // Closing the dedicated session right after this releases the lease even when the unlock fails.
+        await client.query('select pg_advisory_unlock(hashtext($1))', [key]).catch(ignoreError('db', 'unlock edit intent lease'))
+      }
+    })
   }
   private async load(client: Pick<pg.PoolClient, 'query'>, principalId: string,
     input: { workspaceId: string; workflowId: string; intentId: string }, lock = false): Promise<I> {

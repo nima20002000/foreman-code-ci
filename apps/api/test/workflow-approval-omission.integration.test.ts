@@ -9,10 +9,10 @@ import {
   makeCurrentWorkflowFixture,
 } from '@foreman-code/contracts/wave25'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
-import { graphHeaders } from './eng04-graph-composition-fixture.js'
+import { graphHeaders } from './graph-composition-fixture.js'
 import { setupWorkflowCreateIntegration } from './helpers/operatorWorkflowCreate.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 function nativeFixture() {
   const fixture = makeCurrentWorkflowFixture(randomUUID())

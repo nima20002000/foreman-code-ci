@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema, CurrentWorkflowSaveInputSchema,
   CurrentWorkflowSaveResultSchema } from '@foreman-code/contracts/wave25'
-import { writerFixture } from './eng04-writer-fixtures.js'
-import { graphRpcValue } from './eng04-graph-composition-fixture.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { writerFixture } from './writer-fixtures.js'
+import { graphRpcValue } from './graph-composition-fixture.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('work join routing and rounds', () => {
   it('saves and reads a choice feeding an all-join through authenticated Operator MCP', async () => {

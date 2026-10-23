@@ -11,7 +11,7 @@ import { assertSession, sessionGeneration } from '../../shared/api/sessionBounda
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
 import { CurrentRunDetails } from './RunDetails'
 import { readBoardRun, readBoardRuns, scopeForBoardRun } from './client'
-import { useWorkflowBoard } from './context'
+import { useBoardSelection } from './context'
 import { boardScope, useBoardUndo } from './boardUndo'
 
 import { boardRunListKey } from './keys'
@@ -31,7 +31,7 @@ async function refreshBoardRuns(client: QueryClient, workspaceId: string, workfl
 export function RunActivityPanel({ summaries, summariesReadAt = 0 }: {
   summaries: readonly WorkflowRunSummary[]; summariesReadAt?: number
 }) {
-  const board = useWorkflowBoard()!
+  const board = useBoardSelection()!
   const { workspaceId, workflowId, run: selected, selectRun } = board
   const client = useQueryClient()
   const request = useRef(0)
@@ -124,14 +124,14 @@ export function RunActivityPanel({ summaries, summariesReadAt = 0 }: {
     {selected ? <section className="board-run-detail" aria-label="Selected run">
       <header><h3>Run {shortRunId(selected.runId)}</h3>
         <Button size="sm" variant="ghost" onClick={() => { ++request.current; resetDiscovery(); selectRun() }}>Back to draft</Button></header>
-      <CurrentRunDetails key={JSON.stringify(selected)} scope={selected}
+      <CurrentRunDetails key={selected.runId} scope={selected}
         runActions={<RunActions workspaceId={selected.workspaceId} workflowId={selected.workflowId} runId={selected.runId} />} />
     </section> : null}
   </>
   return <div className="workflow-board-run-panel" aria-label="Run activity" data-testid="board-run-activity">
     <BoardChanges scope={boardScope(workspaceId, workflowId)} />
     {selected ? <>
-      <Activities key={JSON.stringify(selected)} scope={selected} />
+      <Activities key={selected.runId} scope={selected} />
       <details className="board-run-more"><summary>Run details and other runs</summary>{runParts}</details>
     </> : runParts}
   </div>

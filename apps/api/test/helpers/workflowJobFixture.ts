@@ -9,7 +9,7 @@ import { publicNodeProjectionFacts, readPublicNodeProjection } from '../../src/m
 import { PostgresWorkflowJobNodeStore, workflowJobStorePublication } from '../../src/modules/jobs/workflowStore.js'
 import type { WorkflowJobDriver, WorkflowJobLockedPort } from '../../src/modules/jobs/workflowRuntimePorts.js'
 import { repeatDigest, repeatId } from '../../src/modules/runs/repeatResolution.js'
-import { currentDatabase } from './eng04CurrentDatabase.js'
+import { currentDatabase } from './database.js'
 import { buildQueueFixture } from './buildComputerFixture.js'
 import { workflowSettlementFixture } from './workflowSettlementFixture.js'
 

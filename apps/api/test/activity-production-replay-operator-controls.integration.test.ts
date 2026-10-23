@@ -1,6 +1,6 @@
 import { OperatorConversationStateSchema } from '@foreman-code/contracts'
 import { afterEach, describe, expect, it } from 'vitest'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { closeActivityReplay, setup, eventually } from './helpers/activityReplayFixture.js'
 
 afterEach(closeActivityReplay)

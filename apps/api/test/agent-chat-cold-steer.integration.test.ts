@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { conversationDeliveryFixture } from '../src/modules/conversations/conversationDelivery.test-support.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('Agent chat prepared steer after Main restart', () => {
   it('attaches the retained live native turn before delivering a prepared steer', async () => {

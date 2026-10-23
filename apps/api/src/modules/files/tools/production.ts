@@ -12,7 +12,16 @@ import type { FileReferenceResolver } from './types.js'
 
 const registered = new WeakMap<FastifyInstance, AgentFileToolService>()
 
+/** Creates the file tools and mounts their MCP endpoint on a standalone API instance. */
 export function registerProductionFileTools(app: FastifyInstance, pool: pg.Pool, files: TemporaryFileService,
+  references?: FileReferenceResolver): AgentFileToolService {
+  const service = createProductionFileTools(app, pool, files, references)
+  registerFileToolsMcp(app, service)
+  return service
+}
+
+/** The file tools bound to one API instance. Their MCP endpoint mounts from `routes/registry.ts`. */
+export function createProductionFileTools(app: FastifyInstance, pool: pg.Pool, files: TemporaryFileService,
   references?: FileReferenceResolver): AgentFileToolService {
   if (registered.has(app)) throw new Error('File tools are already registered for this API.')
   const repository = new PostgresFileToolRepository(pool)
@@ -20,7 +29,6 @@ export function registerProductionFileTools(app: FastifyInstance, pool: pg.Pool,
   const sessions = new FileToolSessions(repository, (id) => access.currentOperator(id), new PostgresFileConversationAuthorization(pool))
   const artifacts = new FileToolArtifacts(repository, files.bytes, sessions)
   const service = new AgentFileToolService(files, sessions, artifacts, repository, references)
-  registerFileToolsMcp(app, service)
   registered.set(app, service)
   return service
 }

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { withTransaction } from './transaction.js'
 
 import {
@@ -9,9 +8,10 @@ import {
 } from '@foreman-code/contracts'
 import { WorkflowDefinitionV3Schema, WorkflowVersionV3Schema, ExecutableWorkflowV3Schema, canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import type pg from 'pg'
+import { sha256Hex } from '../shared/hash.js'
 
 function contentHash(value: unknown): string {
-  return `sha256:${createHash('sha256').update(canonicalGraphJson(value)).digest('hex')}`
+  return `sha256:${sha256Hex(canonicalGraphJson(value))}`
 }
 
 const seededAt = '2026-09-14T00:00:00.000Z'

@@ -1,5 +1,5 @@
 import { agentWorkflowVersion } from './agentWorkflowFixture.js'
-import { insertProviderRun, providerLaunchCredentials, providerAppEndpoint, stopProviderRun } from './wave25Br1003Runtime.js'
+import { insertProviderRun, providerLaunchCredentials, providerAppEndpoint, stopProviderRun } from './checkpointRuntime.js'
 import { codexMcpInspectorAdapter } from '../../src/modules/harnesses/codexMcpInspectorAdapter.js'
 import { CodexAppServerSessionManager } from '../../src/modules/harnesses/codexAppServer.js'
 import { createWorkflowNativeCaptureChannel } from '../../src/modules/interactions/workflowNativeCapture.js'
@@ -30,7 +30,7 @@ import { WorkspaceLocationService } from '../../src/modules/workspaces/location.
 import { deliveryFixture } from '../fixtures/codex-delivery.js'
 import { NativeResponseJournal } from '../../src/modules/harnesses/recovery/responseJournal.js'
 import { join } from 'node:path'
-import { agent3Database, seedAgent3 } from './wave25Agent3.js'
+import { agent3Database, seedAgent3 } from './workflowDatabase.js'
 
 /** Real Codex manager, stdio, workflow engine, SQL owner, checkpoint and delivery services.
  * The executable provider fixture substitutes model execution and installation qualification. */

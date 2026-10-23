@@ -15,7 +15,7 @@ import { requireAuthorization } from '../src/modules/access/policy.js'
 import { isWorkflowResultEffectFailure } from '../src/modules/runs/workflowResultEffectFailure.js'
 import { WorkflowCollaborationIntegration } from '../src/modules/collaboration/workflowIntegration.js'
 import type { BrowserLifecyclePort, MemoryBoardPort } from '../src/modules/collaboration/ports.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { workflowSettlementFixture } from './helpers/workflowSettlementFixture.js'
 
 /** Real migrations/Run owners/Save/admission and injected C0 A/B ports. The

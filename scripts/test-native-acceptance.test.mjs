@@ -105,7 +105,7 @@ test('acceptance retains the general test database fallback when no native datab
 
 test('the native gate includes local-human isolation and production recovery by default', () => {
   assert.deepEqual(nativeAcceptanceFiles([]), [
-    'test/eng03-c-native.acceptance.test.ts',
+    'test/native-lifecycle.acceptance.test.ts',
     'test/local-human-native.acceptance.test.ts',
     'test/local-human-native-recovery.acceptance.test.ts',
   ])
@@ -131,7 +131,7 @@ test('acceptance selects explicit API qualification files', () => {
 })
 
 test('acceptance runs a selected case and leaves the complete gate as its default', () => {
-  const files = ['test/eng03-c-native.acceptance.test.ts']
+  const files = ['test/native-lifecycle.acceptance.test.ts']
   const pattern = 'E03-A01 isolates a native approval wait from its progressing sibling'
   assert.deepEqual(nativeAcceptanceVitestArguments(files, { ENG03_A_TEST_NAME_PATTERN: pattern }),
     ['run', ...files, '--no-file-parallelism', '--testNamePattern', pattern])

@@ -1,6 +1,5 @@
-import { spawn } from 'node:child_process'
+import { spawnProcess } from '../../shared/process.js'
 import { constants } from 'node:os'
-import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
@@ -10,9 +9,10 @@ import { JobVerificationQuotaPoolSchema, type JobVerificationQuotaPool }
 import { RootBindingSchema, type RootBinding, type SourceProjectQuotaSlot }
   from '@foreman-code/contracts/source-materialization'
 import { DomainError } from '../errors.js'
-import { MAX_VERIFICATION_CONFIGURATION_BYTES } from './installedVerificationConfiguration.js'
-import { type InstalledRuntimeConfigurationLocation } from './installedRuntimeConfiguration.js'
+import { MAX_VERIFICATION_CONFIGURATION_BYTES, type InstalledRuntimeConfigurationLocation }
+  from '@foreman-code/contracts/installed-runtime-node'
 import { findRetainedRuntimeConfiguration } from './retainedRuntimeConfiguration.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export const JobProjectQuotaReadbackSchema = z.object({
   filesystemUuid: z.uuid().optional(),
@@ -32,10 +32,10 @@ export function isKernelQuotaDenial(errno: unknown): boolean {
 
 export const readJobProjectQuota: JobQuotaReader = async (pool, directory, signal) => {
   signal.throwIfAborted()
-  const hash = createHash('sha256').update(await readFile(pool.queryExecutable)).digest('hex')
+  const hash = sha256Hex(await readFile(pool.queryExecutable))
   if (hash !== pool.queryBinarySha256) throw new DomainError('JOB_QUOTA_CHANGED', 'Quota observer binary changed.', 409)
   const bytes = await new Promise<Buffer>((resolve, reject) => {
-    const child = spawn(pool.queryExecutable, [directory, pool.blockDevice], {
+    const child = spawnProcess(pool.queryExecutable, [directory, pool.blockDevice], {
       env: {}, stdio: ['ignore', 'pipe', 'pipe'], signal,
     })
     const chunks: Buffer[] = []

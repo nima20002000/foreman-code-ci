@@ -25,6 +25,7 @@ import { calls, emit, finish, fixtureQualification, input, until, type Fixture }
 import { fileRuntimeFixture } from './fixtures/codex-file-runtime-helpers.js'
 
 import { closeTestResources } from './support/cleanup.js'
+import { postgresEnabled } from './helpers/database.js'
 
 // Provider qualification and protocol responses are fixtures; OS containment is real.
 // Production manager selection, native session manager/bridge, receipt
@@ -49,7 +50,7 @@ const { productionOperatorManagers } = await import('../src/modules/harnesses/op
 const { buildApp } = await import('../src/app.js')
 const { PostgresCommandCoordinator } = await import('../src/modules/commands/postgres.js')
 const { WorkflowManagementService } = await import('../src/modules/workflows/management.js')
-const { checkpointRuntimeFixture } = await import('./helpers/wave25Br1003Runtime.js')
+const { checkpointRuntimeFixture } = await import('./helpers/checkpointRuntime.js')
 const { RunManagementService } = await import('../src/modules/runs/management.js')
 const { createCurrentNativeProductionFactory } = await import('../src/modules/runs/workflowProduction.js')
 const { WorkspaceManagementService } = await import('../src/modules/workspaces/management.js')
@@ -62,7 +63,7 @@ const connectionString = process.env.TEST_DATABASE_URL
 const digest = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 // Same constructor used by buildProductionApp; no alternate manager resolver or
 // fake attachment admission is supplied by these sends.
-describe.skipIf(!connectionString || process.platform === 'win32')('Operator management and file authority', () => {
+describe.skipIf(!postgresEnabled || process.platform === 'win32')('Operator management and file authority', () => {
   let pool: pg.Pool, f: Fixture, config: ApiConfig, vault: string, runtimeHome: string
   let workflowRuntime: Awaited<ReturnType<typeof checkpointRuntimeFixture>> | undefined
   let app: FastifyInstance

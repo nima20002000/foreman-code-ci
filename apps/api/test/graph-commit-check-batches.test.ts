@@ -2,10 +2,15 @@ import { describe, expect, it, vi } from 'vitest'
 import type pg from 'pg'
 import { beforeGraphCommit, beforeGraphCommitChecks, ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 
+/** A database session that only remembers how its last transaction ended. */
 function connection() {
-  const statements: string[] = []
-  const client = { query: async (text: string) => { statements.push(text); return { rows: [], rowCount: 0 } } } as unknown as pg.ClientBase
-  return { connection: new ExclusiveGraphConnection(client, () => {}), statements }
+  let outcome: 'open' | 'committed' | 'rolled back' | undefined
+  const ends = { commit: 'committed', rollback: 'rolled back' } as const
+  const client = { query: async (text: string) => {
+    outcome = text in ends ? ends[text as keyof typeof ends] : outcome ?? 'open'
+    return { rows: [], rowCount: 0 }
+  } } as unknown as pg.ClientBase
+  return { connection: new ExclusiveGraphConnection(client, () => {}), outcome: () => outcome }
 }
 
 describe('adjacent read-only graph commit checks', () => {
@@ -22,8 +27,7 @@ describe('adjacent read-only graph commit checks', () => {
         current = 'original'
       })).rejects.toThrow('fence changed')
       expect(verify).toHaveBeenCalledExactlyOnceWith(['original', 'different'])
-      expect(t.statements).not.toContain('commit')
-      expect(t.statements.at(-1)).toBe('rollback')
+      expect(t.outcome()).toBe('rolled back')
     } finally { await t.connection.close() }
   })
   it('keeps separate live checks on both sides of an intervening finalizer', async () => {
@@ -40,8 +44,7 @@ describe('adjacent read-only graph commit checks', () => {
         beforeGraphCommitChecks(sql, owner, 'original', verify)
       })).rejects.toThrow('fence changed')
       expect(order).toEqual(['check', 'mutation', 'check'])
-      expect(t.statements).not.toContain('commit')
-      expect(t.statements.at(-1)).toBe('rollback')
+      expect(t.outcome()).toBe('rolled back')
     } finally { await t.connection.close() }
   })
 })

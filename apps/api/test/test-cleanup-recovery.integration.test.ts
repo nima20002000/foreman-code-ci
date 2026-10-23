@@ -13,7 +13,7 @@ import { assertTestDatabase, completeTestResourceCleanup, dropFixtureDatabase, p
   registerTestResourceCleanup, removeFixtureDirectory, testAdminPool } from '../../../scripts/test-resources.mjs'
 import { groupUsed, stopGroup } from '../../../scripts/integration-process.mjs'
 import { NativeProcessRegistry } from '../src/modules/harnesses/recovery/processRegistry.js'
-import { agent3Database } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 
 const root = fileURLToPath(new URL('../../../', import.meta.url))
 const require = createRequire(import.meta.url)

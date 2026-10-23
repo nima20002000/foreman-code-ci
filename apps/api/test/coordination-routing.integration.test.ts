@@ -4,7 +4,7 @@ import { DEFAULT_CODEX_ADVANCED_CONFIGURATION } from '@foreman-code/contracts'
 import { makeCurrentWorkflowFixture, WorkActivationInputSchema } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { prepareCoordinationWorkflow } from './helpers/coordinationWorkflow.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 it.runIf(postgresEnabled).each(['choice', 'repeat', 'handoff'] as const)(
   'routes production %s results using the saved coordination protocol', async family => {

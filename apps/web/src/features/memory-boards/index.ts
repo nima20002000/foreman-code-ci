@@ -8,7 +8,7 @@ export { MemoryCard } from './MemoryCard'
 export { NotesStrip } from './NotesStrip'
 export { createMemoryBoardClient } from './client'
 export type {
-  MemoryBoardClient, MemoryWireSchemas, MemoryFilters, MemoryNodeOption, MemoryWorkHealth,
+  MemoryBoardClient, MemoryFilters, MemoryNodeOption, MemoryWorkHealth,
   MemoryBoardView, MemoryCardDetail, MemoryChange, MemoryChangesPage, MemoryReceipt,
   MemoryCommandRead, MemoryPage, MemoryStreamListeners, MemoryConnection, CardFilter, PageOptions,
 } from './ports'

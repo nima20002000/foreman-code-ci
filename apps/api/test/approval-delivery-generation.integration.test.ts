@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { approvalAtomicSetup, decision } from './helpers/approvalAtomic.js'
 
 const setup = approvalAtomicSetup()

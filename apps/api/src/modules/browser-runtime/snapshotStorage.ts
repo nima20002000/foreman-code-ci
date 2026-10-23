@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto'
 import { mkdir, open, readFile, rename, rm, lstat, readdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
@@ -7,6 +7,7 @@ import { DomainError } from '../errors.js'
 import { browserInputHash, browserOrigin, sameBrowserSnapshot } from '../browser-profiles/identity.js'
 import type { BrowserProfileSnapshotManifest, BrowserSnapshotTransfer, BrowserSnapshotIdentity } from '../browser-profiles/types.js'
 import { assertBrowserGenerationStopped, syncBrowserProfileTree } from './profileCheckpoint.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 /** This is private portable storage, not an API/domain schema. Secret values never leave encrypted byte paths. */
 export interface BrowserPortableState {
@@ -233,7 +234,7 @@ export class BrowserSnapshotStorage {
       const secretBytes = Buffer.from(canonicalJson(state))
       const encrypted = Buffer.concat([Buffer.from('FBP1'), size, header, nonce, cipher.update(secretBytes), cipher.final(), cipher.getAuthTag()])
       key.fill(0); secretBytes.fill(0)
-      const sha256 = createHash('sha256').update(encrypted).digest('hex')
+      const sha256 = sha256Hex(encrypted)
       const manifest = BrowserProfileSnapshotManifestSchema.parse({ snapshot: { ...metadata, sha256 },
         sourceComputerId: this.options.computerId, byteLength: encrypted.length, createdAt: new Date().toISOString(),
         origins: [...new Set([...state.origins, ...state.unsupportedState].map(value => value.origin))].sort(),
@@ -262,7 +263,7 @@ export class BrowserSnapshotStorage {
   private verify(transfer: BrowserSnapshotTransfer, bytes: Uint8Array): void {
     BrowserProfileSnapshotManifestSchema.parse(transfer.manifest)
     if (!sameBrowserSnapshot(transfer.snapshot, transfer.manifest.snapshot) || bytes.length !== transfer.manifest.byteLength
-      || createHash('sha256').update(bytes).digest('hex') !== transfer.snapshot.sha256) {
+      || sha256Hex(bytes) !== transfer.snapshot.sha256) {
       throw new DomainError('SNAPSHOT_MISMATCH', 'Browser snapshot bytes do not match the admitted identity.', 409)
     }
   }

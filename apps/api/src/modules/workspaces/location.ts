@@ -1,7 +1,6 @@
 export { requiredLocationAccess } from './locationAccess.js'
 import type { GraphSqlClient } from '../run-graph/connection.js'
 import { withTransaction } from '../../infrastructure/transaction.js'
-import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { constants } from 'node:fs'
 import { access, mkdir, realpath, rmdir, stat } from 'node:fs/promises'
@@ -30,6 +29,7 @@ import { DomainError } from '../errors.js'
 import { canonicalRuntimePath, pathsOverlap, withFilesystemDeadline } from './filesystem.js'
 import { WORKSPACE_FOLDER_LIFECYCLE_LOCK } from './projectFolderCleanup.js'
 import type { WorkspaceRootPolicyPort } from '../sources/rootPolicyPorts.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export const LOCAL_RUNNER_ID = 'runner-local'
 
@@ -42,7 +42,7 @@ interface LocationRow {
 }
 
 function identityHash(identity: LocationIdentity): string {
-  return `sha256:${createHash('sha256').update(`${identity.device}:${identity.inode}`).digest('hex')}`
+  return `sha256:${sha256Hex(`${identity.device}:${identity.inode}`)}`
 }
 
 function locationError(error: unknown, rootPath: string): DomainError {
@@ -56,19 +56,16 @@ function locationError(error: unknown, rootPath: string): DomainError {
 
 export class WorkspaceLocationService {
   private readonly managedRuntimeRoot: string | undefined
-  private rootPolicies: WorkspaceRootPolicyPort | undefined
 
   constructor(
     private readonly pool: pg.Pool,
     private readonly commands: PostgresCommandCoordinator,
     managedRuntimeRoot?: string,
     readonly runnerId = LOCAL_RUNNER_ID,
+    /** Computer root policies; they exist once startup has read Main's installation. */
+    private readonly rootPolicies: () => WorkspaceRootPolicyPort | undefined = () => undefined,
   ) {
     this.managedRuntimeRoot = managedRuntimeRoot ? resolve(managedRuntimeRoot) : undefined
-  }
-
-  setRootPolicies(policies: WorkspaceRootPolicyPort): void {
-    this.rootPolicies = policies
   }
 
   async createProjectFolder(principal: ManagementPrincipal, workspaceId: string, parentPath: string, name: string,
@@ -374,8 +371,9 @@ export class WorkspaceLocationService {
     try {
       const modern = WorkspaceLocationIdentitySchema.safeParse(row.execution_location_identity)
       if (modern.success && 'hostRef' in modern.data) {
-        if (!this.rootPolicies) throw new DomainError('ROOT_CONFIGURATION_UNAVAILABLE', 'Computer root inspection is unavailable.', 503)
-        const policies = await this.rootPolicies.read(sql, principal, workspaceId)
+        const rootPolicies = this.rootPolicies()
+        if (!rootPolicies) throw new DomainError('ROOT_CONFIGURATION_UNAVAILABLE', 'Computer root inspection is unavailable.', 503)
+        const policies = await rootPolicies.read(sql, principal, workspaceId)
         const current = policies.filter(policy => policy.bindingPurpose !== 'ci-enrollment'
           && policy.locationRevision === String(locationRevision)
           && (policy.hostRef.kind === 'main' ? this.runnerId : policy.applicationInstallationId) === executionLocation.runnerId)
@@ -389,7 +387,7 @@ export class WorkspaceLocationService {
           || policy.filesystem.mountId !== modern.data.mountId) {
           throw new DomainError('WORKSPACE_ROOT_BINDING_CONFLICT', 'Saved location and computer root binding disagree.', 409)
         }
-        await this.rootPolicies.inspect(sql, principal, policy)
+        await rootPolicies.inspect(sql, principal, policy)
       } else {
         await this.revalidateSnapshot(workspaceId, RunExecutionLocationSchema.parse({
           ...executionLocation,

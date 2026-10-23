@@ -16,15 +16,15 @@ import type { AgentReferenceContext } from '../src/modules/files/references/agen
 import { fileToolFixture } from './support/fileTools.js'
 import { absent, allocate, fil14Database, historical, owner, reread, save, sweep,
   type Fil14Database, type Runtime } from './helpers/fil14Lifecycle.js'
+import { postgresEnabled } from './helpers/database.js'
 
-const enabled = Boolean(process.env.TEST_DATABASE_URL)
 vi.mock('node:os', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:os')>()), homedir: () => process.env.HOME!,
 }))
 const at = '2026-09-28T01:00:00.000Z'
 const created = '2026-09-28T00:00:00.000Z'
 
-describe.skipIf(!enabled)('FIL-42 combined reference scope and Run provenance', () => {
+describe.skipIf(!postgresEnabled)('FIL-42 combined reference scope and Run provenance', () => {
   let admin: pg.Pool, pool: pg.Pool, schema: string
   let files: PostgresFileRepository, reads: PostgresReferenceReadRepository
   const content = new Map<string, Buffer>()
@@ -137,7 +137,7 @@ describe('FIL-42 file-tool mutation boundary', () => {
   })
 })
 
-describe.skipIf(!enabled)('FIL-42 combined retention and permanent files', () => {
+describe.skipIf(!postgresEnabled)('FIL-42 combined retention and permanent files', () => {
   let database: Fil14Database, runtime: Runtime
   beforeAll(async () => { database = await fil14Database(); runtime = await database.open() }, 60_000)
   afterAll(async () => { await database?.close() })

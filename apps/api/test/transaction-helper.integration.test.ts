@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import pg from 'pg'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { withClientTransaction, withTransaction } from '../src/infrastructure/transaction.js'
+import { withTransaction } from '../src/infrastructure/transaction.js'
 import { createFixtureSchema, dropFixtureSchema } from './helpers/testResources.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const connectionString = process.env.TEST_DATABASE_URL
-describe.skipIf(!connectionString)('shared transaction helper in PostgreSQL', () => {
+describe.skipIf(!postgresEnabled)('shared transaction helper in PostgreSQL', () => {
   let admin: pg.Pool; let pool: pg.Pool; let schema: string
   const rows = async () => (await pool.query<{ id: string }>('select id from items order by id')).rows.map(row => row.id)
   beforeEach(async () => {
@@ -82,9 +83,9 @@ describe.skipIf(!connectionString)('shared transaction helper in PostgreSQL', ()
   it('runs consecutive transactions on a caller-owned connection without releasing it', async () => {
     const client = await pool.connect()
     try {
-      await withClientTransaction(client, async () => { await client.query("insert into items values ('a')") })
+      await withTransaction({ client }, async () => { await client.query("insert into items values ('a')") })
       const original = new Error('second transaction failed')
-      await expect(withClientTransaction(client, async () => {
+      await expect(withTransaction({ client }, async () => {
         await client.query("insert into items values ('b')")
         throw original
       })).rejects.toBe(original)

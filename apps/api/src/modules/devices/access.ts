@@ -1,7 +1,7 @@
 import { DeviceSetupApproveInputSchema,DeviceSetupOptionsSchema,encodeWorkerEnrollmentCode,type DeviceSetupApproveInput,type DeviceSetupOptions } from '@foreman-code/contracts/device-setup'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import { verifiedWorkerIdentityRequest } from '@foreman-code/contracts/device-setup-node'
-import { createHash, createHmac, randomBytes, randomUUID, verify } from 'node:crypto'
+import { createHmac, randomBytes, randomUUID, verify } from 'node:crypto'
 import type pg from 'pg'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { authorizeDevice, DevicePairingRequestSchema, DeviceRegistrationSchema, revokeDevice, type DevicePrincipal, type DeviceRegistration, type DeviceScope, type DevicePairingRequest, MainDeviceIdentityPublicSchema, type MainDeviceIdentityPublic } from '@foreman-code/contracts/device-identity'
@@ -12,9 +12,10 @@ import { DomainError } from '../errors.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { initializePairedBuildComputer } from '../settings/buildComputers.js'
 import { DeviceAccessError } from './accessError.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export { DeviceAccessError }
-const digest = (value: string) => createHash('sha256').update(value).digest('hex')
+const digest = (value: string) => sha256Hex(value)
 export type PairDeviceInput = DevicePairingRequest
 export { pairingProof } from '@foreman-code/contracts/device-identity-node'
 interface DeviceRow { record: DeviceRegistration; public_key: string; credential_expires_at: Date }

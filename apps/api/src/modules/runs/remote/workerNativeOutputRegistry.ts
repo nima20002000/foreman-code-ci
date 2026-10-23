@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
 import { open, unlink, type FileHandle } from 'node:fs/promises'
 import { CodexHarnessConfigurationSchema, type CodexHarnessConfiguration } from '@foreman-code/contracts'
@@ -11,6 +11,7 @@ import { anchored, identity, openPrivateRoot } from '../../sources/privateFilesy
 import { DomainError } from '../../errors.js'
 import { captureWorkerNativeArtifactCallback, type WorkerNativeArtifactCallback,
   type WorkerNativeArtifactSnapshot, type WorkerNativeArtifactSource } from './workerNativeArtifactSender.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 export interface WorkerNativeOutputAuthority {
   /** HRT checks original Main mutation/publication grants and records audit facts.
@@ -54,7 +55,7 @@ type Entry = {
 type Command = { digest: string; pending?: Promise<WorkerNativeOutputReply>; reply?: WorkerNativeOutputReply }
 const denied = () => new DomainError('WORKER_NATIVE_OUTPUT_UNAVAILABLE', 'Qualified original worker output authority is unavailable.', 403)
 const conflict = () => new DomainError('WORKER_NATIVE_OUTPUT_CONFLICT', 'The original worker output registration or command changed.', 409)
-const digest = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex')
+const digest = (value: string | Uint8Array) => sha256Hex(value)
 async function fileStamp(handle: FileHandle): Promise<string> {
   const stat = await handle.stat({ bigint: true })
   if (!stat.isFile() || stat.nlink !== 1n || (stat.mode & 0o077n) !== 0n || stat.uid !== BigInt(process.getuid!())

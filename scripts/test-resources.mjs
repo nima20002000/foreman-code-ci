@@ -27,9 +27,9 @@ const hostCiRunId = process.env.FOREMAN_CODE_CI_TEST_ADMIN_URL === undefined
 const serverMarker = 'graphql-disposable-test-server'
 const rootMarker = '.graphql-test-owner.json'
 const cleanupDirectory = '.graphql-test-cleanup'
-const databaseVariables = ['DATABASE_URL', 'TEST_DATABASE_URL', 'SUBAGENT_CORE_ADMIN_DATABASE_URL',
-  'HRT_F03_DATABASE_URL', 'HRT_F14_ADMIN_DATABASE_URL', 'JOB_DISPATCH_DATABASE_URL',
-  'NIM2691_ADMIN_DATABASE_URL', 'ENG03_A_TEST_DATABASE_URL', 'WAVE25_TEST_DATABASE_URL']
+// Tests gate on and connect through TEST_DATABASE_URL. The native acceptance runner still reads its two older names.
+// Any other inherited *DATABASE_URL is pointed at the owned test database too, so no test can reach a real one.
+const databaseVariables = ['DATABASE_URL', 'TEST_DATABASE_URL', 'ENG03_A_TEST_DATABASE_URL', 'WAVE25_TEST_DATABASE_URL']
 
 export function requireTestServerUrl(value) {
   const url = new URL(value)
@@ -232,8 +232,7 @@ export function testEnvironment(environment, resource) {
   clean.NODE_OPTIONS = `--import=${fileURLToPath(new URL('./test-postgres-guard.mjs', import.meta.url))}`
   if (resource.template) clean.FOREMAN_CODE_TEST_DATABASE_TEMPLATE = JSON.stringify(resource.template)
   else delete clean.FOREMAN_CODE_TEST_DATABASE_TEMPLATE
-  return { ...clean, FOREMAN_CODE_TEST_ROOT: resource.directory, FOREMAN_CODE_TEST_OWNER: resource.token,
-    NIM2691_POSTGRES: '1' }
+  return { ...clean, FOREMAN_CODE_TEST_ROOT: resource.directory, FOREMAN_CODE_TEST_OWNER: resource.token }
 }
 
 function privateTestAuthenticationFile(filename) {

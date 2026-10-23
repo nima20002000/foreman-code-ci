@@ -5,7 +5,7 @@ import { operatorChatSettings, type OperatorConfigurationVersion } from '@forema
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { buildApp } from '../src/app.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { PostgresOperatorRepository } from '../src/modules/operators/postgres.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import { FoundationSettingsManagementService } from '../src/modules/settings/management.js'

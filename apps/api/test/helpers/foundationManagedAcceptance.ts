@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveResultSchema } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './currentOperatorIntegration.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { postgresEnabled } from './wave25Agent3.js'
+import { postgresEnabled } from './database.js'
 
 export function foundationManagedAcceptance(source: 'http' | 'mcp') {
   describe.skipIf(!postgresEnabled)(`Managed ${source} workflow acceptance`, () => {

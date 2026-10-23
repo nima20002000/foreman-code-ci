@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { assertWorkflowFailureReadback } from './helpers/workflowFailureReadback.js'
 import { requireJobPreparationDeadline } from '../src/modules/jobs/preparationDeadline.js'
 import type { WorkflowJobDriver } from '../src/modules/jobs/workflowRuntimePorts.js'

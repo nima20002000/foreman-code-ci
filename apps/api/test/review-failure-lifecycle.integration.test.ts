@@ -8,7 +8,7 @@ import { OperatorInteractionService } from '../src/modules/interactions/operator
 import { RunManagementService } from '../src/modules/runs/management.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { routedApprovalFixture } from './helpers/routedApprovalFixture.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 // Current accepted workflow occurrences and original provider evidence are
 // created by the shared fixture. Failure injection occurs at the owned job API.

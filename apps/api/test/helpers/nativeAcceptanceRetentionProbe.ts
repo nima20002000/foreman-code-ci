@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFile, writeFile } from 'node:fs/promises'
-import { runEng03NativeScenario, type Eng03NativeControl } from './eng03NativeAcceptance.js'
+import { runEng03NativeScenario, type Eng03NativeControl } from './nativeAcceptanceScenario.js'
 import { waitForStartedBranches } from './nativeAcceptanceState.js'
 import { ownedTestPath } from './testResources.js'
 

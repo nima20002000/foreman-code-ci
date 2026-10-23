@@ -1,9 +1,9 @@
-import { createHash } from 'node:crypto'
 import { lstatSync, opendirSync, rmdirSync, unlinkSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { NativeProcessObservationSchema } from '@foreman-code/contracts/remote-execution-entry-closure'
 import { bootIdentity, identityAlive } from './linuxIdentity.js'
 import { existingPrivateDirectory, readRecord, syncDirectory } from './storage.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 const retentionMs = 24 * 60 * 60 * 1000
 const sweepIntervalMs = 60 * 60 * 1000
@@ -115,7 +115,7 @@ export class NativeRegistryRetention {
     if (!parsed.success) return false
     const row = parsed.data
     if (row.lifecycle !== 'closed' || !row.closureEvidence
-      || createHash('sha256').update(row.owner).digest('hex') !== ownerKey) return false
+      || sha256Hex(row.owner) !== ownerKey) return false
     if (row.bootId === bootIdentity() && [row.guardian, row.provider].some(process => process && identityAlive(process))) {
       return false
     }

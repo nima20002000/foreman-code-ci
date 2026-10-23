@@ -38,7 +38,9 @@ import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js
 import { registerAgentChatRoutes } from '../src/routes/agentChat.js'
 import { registerFileRoutes } from '../src/routes/files.js'
 import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
-import { agent3Database, postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 /** Native I/O only is synthetic. These tests exercise real file allocations, disk
  * bytes, chat services, PostgreSQL receipts, authenticated HTTP and Operator MCP.
@@ -132,9 +134,9 @@ describe.skipIf(!postgresEnabled)('FIL-10b attachment-only admission and legacy 
     if (!present.rowCount) {
       const client = await database.pool.connect()
       try {
-        await client.query('begin'); await client.query(fileStorageMigration.sql)
-        await client.query('insert into application_migrations(version) values($1)', [fileStorageMigration.version]); await client.query('commit')
-      } catch (error) { await client.query('rollback'); throw error } finally { client.release() }
+        await beginTransaction(client); await client.query(fileStorageMigration.sql)
+        await client.query('insert into application_migrations(version) values($1)', [fileStorageMigration.version]); await commitTransaction(client)
+      } catch (error) { await rollbackTransaction(client); throw error } finally { client.release() }
     }
     root = await mkdtemp(join(homedir(), '.fil10b-test-'))
     fixture = await seedAgent3(database.pool, root, makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential'), { run: false })

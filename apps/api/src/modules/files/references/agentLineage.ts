@@ -1,7 +1,7 @@
-import { createHash } from 'node:crypto'
 import type { FileScope } from '@foreman-code/contracts/files'
 import { DomainError } from '../../errors.js'
 import type { AgentReferenceContext } from './agentTypes.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 export interface ReferenceExecutionIdentity {
   workspace_id: string
@@ -50,7 +50,7 @@ export function referenceContextKey(context: AgentReferenceContext): string {
     context.conversationId ?? null, context.runId ?? null, context.executionId ?? null, context.consultationId ?? null])
 }
 export function referenceCursorKey(principalId: string, context: AgentReferenceContext): string {
-  return createHash('sha256').update(JSON.stringify([principalId, referenceContextKey(context)])).digest('hex')
+  return sha256Hex(JSON.stringify([principalId, referenceContextKey(context)]))
 }
 
 export interface ReferenceCursor { phase: 0 | 1; cursor?: string }

@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest'
 import { AcceptedWorkflowRunV3Schema, RunWorktreeSchema } from '@foreman-code/contracts/wave25'
 import { RunWorktrees } from '../src/modules/runs/runWorktrees.js'
 import { systemGitWorktreePorts } from '../src/modules/sources/gitWorktree.js'
-import { agent3Database, postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { gitFixtureEnvironment } from './helpers/gitFixture.js'
 
 describe.skipIf(!postgresEnabled)('Run worktree allocation recovery', () => {

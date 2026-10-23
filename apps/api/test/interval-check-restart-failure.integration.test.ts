@@ -5,7 +5,7 @@ import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 import { startWhenReady } from './helpers/harnessInstallationUpdate.js'
 import { readUntil } from './helpers/observableCondition.js'
 import { remoteReviewProduction } from './helpers/remoteReviewProduction.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.runIf(postgresEnabled)('interval check failure during API restart', () => {
   it('records the interrupted check and starts the next check while graph work stays running', async () => {

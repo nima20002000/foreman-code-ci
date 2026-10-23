@@ -6,7 +6,7 @@ import { migratedDatabase } from './migratedDatabase.js'
 import { workflowJobFixture } from './workflowJobFixture.js'
 import { executeRepeatRuntime } from '../../src/modules/runs/repeatRuntime.js'
 import type { WorkflowJobDriver } from '../../src/modules/jobs/workflowRuntimePorts.js'
-import { graphRpcValue } from '../eng04-graph-composition-fixture.js'
+import { graphRpcValue } from '../graph-composition-fixture.js'
 
 type Fixture = Awaited<ReturnType<typeof workflowJobFixture>>
 export const timeout = 120000

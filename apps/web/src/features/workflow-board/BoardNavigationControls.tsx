@@ -5,14 +5,14 @@ import { ScheduleClockButton } from '../schedules'
 import { WorkflowFilesButton } from '../workflow-files'
 import { nextDraftApi } from '../graph/nextDraft/transport'
 import { boardDraftContextKey } from './keys'
-import { useWorkflowBoard } from './context'
+import { useBoardSelection } from './context'
 import { useBrowserSidebar } from './useBrowserSidebar'
 import { KanbanButton } from './kanban/KanbanButton'
 
 export function BoardNavigationControls({ workspaceId, workflowId, selection, runsLabel }: {
   workspaceId: string; workflowId: string; selection: ReturnType<typeof useSelectedRun>; runsLabel?: string
 }) {
-  const board = useWorkflowBoard()
+  const board = useBoardSelection()
   const browsers = useBrowserSidebar(workspaceId, workflowId)
   const saved = useQuery({ queryKey: boardDraftContextKey(workspaceId, workflowId),
     queryFn: ({ signal }) => nextDraftApi.context(workspaceId, workflowId, { signal }), staleTime: 3000 })

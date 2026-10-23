@@ -8,12 +8,13 @@ import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { HostCiService, type CiCommits, type HostCiComputer, type HostCiEndpoint } from '../src/modules/ci-host/service.js'
+import { HostCiService, type CiCommits, type HostCiComputer, type HostCiEndpoint } from '@foreman-code/ci/service'
 import { DeviceApplicationError } from '../src/modules/devices/deviceApplicationError.js'
 import { readServiceHealth } from '../src/modules/diagnostics/serviceHealth.js'
 import { CI_GET_ACTIONS, RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { deferred } from './helpers/deferred.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 let database: Awaited<ReturnType<typeof migratedDatabase>>
 beforeAll(async () => { database = await migratedDatabase() }, 60_000)
@@ -133,7 +134,7 @@ async function fixture(options: { state?: 'starting' | 'running'; expectedDurati
     },
   }
   const commands = new PostgresCommandCoordinator(pool)
-  const create = () => new HostCiService(pool, commands, new RunCiAuthority(pool), {} as CiCommits, endpoint)
+  const create = () => new HostCiService(mainCiContext, pool, commands, new RunCiAuthority(pool), {} as CiCommits, endpoint)
   let ci = create()
   const access = new PostgresAccessService(pool)
   const app = buildApp({ logger: false,

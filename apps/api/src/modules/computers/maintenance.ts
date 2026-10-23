@@ -1,4 +1,4 @@
-import { errorMessage } from '../../shared/errorMessage.js'
+import { errorMessage } from '@foreman-code/contracts/server-kit'
 import { readOperationalFailures } from '../diagnostics/logger.js'
 import { readServiceHealth } from '../diagnostics/serviceHealth.js'
 import { readClaudePlugins, claudeCliResult } from './claudePlugins.js'
@@ -15,7 +15,6 @@ import type { MaintenancePorts } from './maintenancePorts.js'
 import { DomainError } from '../errors.js'
 import { executableUnavailable } from './executableError.js'
 import { z } from 'zod'
-import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { access, mkdir, readFile, rename, statfs, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
@@ -29,6 +28,7 @@ import {
   type WorkerUpdateStatus,
   SyncedPluginSchema, type SyncedPlugin,
 } from '@foreman-code/contracts/computer-maintenance'
+import { runProcessSettled } from '../../shared/process.js'
 
 export type { MaintenancePorts }
 
@@ -894,19 +894,14 @@ export function systemMaintenancePorts(environment: NodeJS.ProcessEnv = process.
   const directories = [join(home, '.local', 'bin'), ...(environment.PATH ?? '').split(delimiter), '/usr/local/bin', '/usr/bin', '/bin']
     .filter((value, index, all) => value.startsWith('/') && all.indexOf(value) === index)
   const path = directories.join(delimiter)
-  const run: MaintenancePorts['run'] = (binary, args, options) => new Promise((resolve, reject) => {
-    execFile(binary, args, { signal: options.signal, timeout: options.timeoutMs, maxBuffer: 8 * 1024 * 1024,
-      encoding: 'utf8', env: { ...environment, PATH: path, NO_COLOR: '1', CI: '1', LC_ALL: 'C', ...options.environment } },
-    (error, stdout, stderr) => {
-      if (error && maintenanceError(error, '') !== error.message) {
-        reject(new Error(maintenanceError(error, 'Maintenance command failed.'), { cause: error }))
-        return
-      }
-      let code: number | null = 0
-      if (error) code = typeof error.code === 'number' ? error.code : null
-      resolve({ code, stdout, stderr })
-    })
-  })
+  const run: MaintenancePorts['run'] = async (binary, args, options) => {
+    const result = await runProcessSettled(binary, args, { signal: options.signal, timeoutMs: options.timeoutMs,
+      maxOutputBytes: 8 * 1024 * 1024, env: { ...environment, PATH: path, NO_COLOR: '1', CI: '1', LC_ALL: 'C', ...options.environment } })
+    if (result.error && maintenanceError(result.error, '') !== result.error.message) {
+      throw new Error(maintenanceError(result.error, 'Maintenance command failed.'), { cause: result.error })
+    }
+    return { code: result.code, stdout: result.stdout, stderr: result.stderr }
+  }
   const ports: MaintenancePorts = {
     environment,
     async find(name) {

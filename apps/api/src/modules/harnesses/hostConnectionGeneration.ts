@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto'
 import type { DeviceConnectionIdentity } from '@foreman-code/contracts/device-identity'
+import { sha256Hex } from '../../shared/hash.js'
 
 type HarnessBinding = Readonly<DeviceConnectionIdentity & { connectionEpoch: string }>
 
@@ -9,7 +9,7 @@ function generation(binding: HarnessBinding, scope: 'boot' | 'session'): string 
     binding.bootId,
   ]
   if (scope === 'session') components.push(binding.connectionEpoch, binding.connectionGeneration)
-  return `sha256:${createHash('sha256').update(JSON.stringify(components)).digest('hex')}`
+  return `sha256:${sha256Hex(JSON.stringify(components))}`
 }
 
 /** Harness facts survive transport reconnects within the same authenticated Worker boot. */

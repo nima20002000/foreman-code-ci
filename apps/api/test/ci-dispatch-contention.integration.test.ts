@@ -2,13 +2,14 @@ import { afterAll, beforeAll, expect, it } from 'vitest'
 import pg from 'pg'
 import { randomUUID } from 'node:crypto'
 import { CiRunRecordSchema } from '@foreman-code/contracts'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 import { deferred } from './helpers/deferred.js'
-import { withCiTicketLock } from '../src/modules/ci-host/dispatch.js'
+import { withCiTicketLock } from '@foreman-code/ci/dispatch'
 import { withTransaction, type SqlQuery } from '../src/infrastructure/transaction.js'
-import { sendCiDispatch, type CiDispatchState } from '../src/modules/ci-host/dispatchRecovery.js'
+import { sendCiDispatch, type CiDispatchState } from '@foreman-code/ci/dispatchRecovery'
 import type { CiRunRecord } from '@foreman-code/contracts'
-import type { HostCiComputer, HostCiEndpoint } from '../src/modules/ci-host/serviceTypes.js'
+import type { HostCiComputer, HostCiEndpoint } from '@foreman-code/ci/serviceTypes'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 let db: Awaited<ReturnType<typeof currentDatabase>>
 beforeAll(async () => {
@@ -21,7 +22,7 @@ afterAll(async () => { await db?.close() })
 it('commits database work and allows cancellation writes while a ticket waits for its host', async () => {
   const entered = deferred()
   const release = deferred()
-  const dispatch = withCiTicketLock(db.pool, 'ticket', async client => {
+  const dispatch = withCiTicketLock(mainCiContext, db.pool, 'ticket', async client => {
     await client.query("update dispatch_markers set value='dispatched' where id='ticket'")
     entered.resolve()
     await release.promise
@@ -36,8 +37,8 @@ it('commits database work and allows cancellation writes while a ticket waits fo
         .toEqual([{ value: 'dispatched' }])
       await cancellation.query("update dispatch_markers set value='cancellation requested' where id='ticket'")
     })
-    expect(await withCiTicketLock(db.pool, 'ticket', async () => 'duplicate')).toBeUndefined()
-    expect(await withCiTicketLock(db.pool, 'other-ticket', async () => 'independent')).toBe('independent')
+    expect(await withCiTicketLock(mainCiContext, db.pool, 'ticket', async () => 'duplicate')).toBeUndefined()
+    expect(await withCiTicketLock(mainCiContext, db.pool, 'other-ticket', async () => 'independent')).toBe('independent')
     release.resolve()
     expect(await dispatch).toBe('acknowledged')
     expect((await db.pool.query("select value from dispatch_markers where id='ticket'")).rows)
@@ -49,18 +50,18 @@ it('commits database work and allows cancellation writes while a ticket waits fo
 })
 
 it('releases ticket exclusion after both a successful callback and a failed callback', async () => {
-  await expect(withCiTicketLock(db.pool, 'retry-ticket', async () => {
+  await expect(withCiTicketLock(mainCiContext, db.pool, 'retry-ticket', async () => {
     throw new Error('Host unavailable')
   })).rejects.toThrow('Host unavailable')
-  expect(await withCiTicketLock(db.pool, 'retry-ticket', async () => 'retried')).toBe('retried')
-  expect(await withCiTicketLock(db.pool, 'retry-ticket', async () => 'finished')).toBe('finished')
+  expect(await withCiTicketLock(mainCiContext, db.pool, 'retry-ticket', async () => 'retried')).toBe('retried')
+  expect(await withCiTicketLock(mainCiContext, db.pool, 'retry-ticket', async () => 'finished')).toBe('finished')
 })
 
 it('releases every pooled connection during host waits while excluding another dispatcher', async () => {
   const otherPool = new pg.Pool({ ...db.pool.options })
   const entered = deferred()
   const release = deferred()
-  const dispatch = withCiTicketLock(db.pool, 'pooled-ticket', async sql => {
+  const dispatch = withCiTicketLock(mainCiContext, db.pool, 'pooled-ticket', async sql => {
     await sql.query('select 1')
     entered.resolve()
     await release.promise
@@ -70,11 +71,11 @@ it('releases every pooled connection during host waits while excluding another d
   try {
     await entered.promise
     expect(db.pool.totalCount - db.pool.idleCount).toBe(0)
-    expect(await withCiTicketLock(otherPool, 'pooled-ticket', async () => 'duplicate')).toBeUndefined()
-    expect(await withCiTicketLock(otherPool, 'independent-ticket', async () => 'independent')).toBe('independent')
+    expect(await withCiTicketLock(mainCiContext, otherPool, 'pooled-ticket', async () => 'duplicate')).toBeUndefined()
+    expect(await withCiTicketLock(mainCiContext, otherPool, 'independent-ticket', async () => 'independent')).toBe('independent')
     release.resolve()
     expect(await dispatch).toBe('acknowledged')
-    expect(await withCiTicketLock(otherPool, 'pooled-ticket', async () => 'retried')).toBe('retried')
+    expect(await withCiTicketLock(mainCiContext, otherPool, 'pooled-ticket', async () => 'retried')).toBe('retried')
   } finally {
     release.resolve()
     await outcome
@@ -90,25 +91,25 @@ it('recovers an expired dispatch claim and rejects writes from its previous owne
   let replacement: Promise<string | undefined> | undefined
   try {
     await db.pool.query("insert into dispatch_markers values('expired-ticket','queued')")
-    await withCiTicketLock(db.pool, 'expired-ticket', async sql => {
+    await withCiTicketLock(mainCiContext, db.pool, 'expired-ticket', async sql => {
       stale = sql
       await sql.query(`update ci_dispatch_claims set expires_at=clock_timestamp()-interval '1 second'
         where ticket_id=$1`, ['expired-ticket'])
-      replacement = withCiTicketLock(otherPool, 'expired-ticket', async () => {
+      replacement = withCiTicketLock(mainCiContext, otherPool, 'expired-ticket', async () => {
         entered.resolve()
         await release.promise
         return 'replacement'
       })
       await entered.promise
     })
-    expect(await withCiTicketLock(db.pool, 'expired-ticket', async () => 'duplicate')).toBeUndefined()
+    expect(await withCiTicketLock(mainCiContext, db.pool, 'expired-ticket', async () => 'duplicate')).toBeUndefined()
     await expect(stale!.query("update dispatch_markers set value='stale reply' where id='expired-ticket'"))
       .rejects.toMatchObject({ code: 'CI_DISPATCH_CLAIM_LOST' })
     expect((await db.pool.query("select value from dispatch_markers where id='expired-ticket'")).rows)
       .toEqual([{ value: 'queued' }])
     release.resolve()
     expect(await replacement).toBe('replacement')
-    expect(await withCiTicketLock(db.pool, 'expired-ticket', async () => 'retried')).toBe('retried')
+    expect(await withCiTicketLock(mainCiContext, db.pool, 'expired-ticket', async () => 'retried')).toBe('retried')
   } finally {
     release.resolve()
     if (replacement) await Promise.allSettled([replacement])

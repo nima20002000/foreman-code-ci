@@ -14,13 +14,14 @@ import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js
 import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 import { claudeConfiguration, registerOperatorChatFixture, type OperatorChatFixture } from './helpers/operatorChatFixture.js'
-import { seedAgent3 } from './helpers/wave25Agent3.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 let fixture: OperatorChatFixture
 let chat: OperatorChatService
 registerOperatorChatFixture(value => { fixture = value; chat = value.chat }, () => chat)
 
-describe.skipIf(!process.env.TEST_DATABASE_URL)('chat context windows before native session creation', () => {
+describe.skipIf(!postgresEnabled)('chat context windows before native session creation', () => {
   it.each(['codex', 'claude'] as const)('reads the selected %s window through HTTP and authenticated MCP', async harness => {
     const { pool, access, operators, repository, manager, authority, runtimeDirectory } = fixture
     const configuration = { ...(harness === 'claude' ? claudeConfiguration : DEFAULT_HARNESS_DEFAULTS.codex),

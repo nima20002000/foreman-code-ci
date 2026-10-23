@@ -4,7 +4,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, it, vi } from 'vitest'
 import { FilePageSchema } from '@foreman-code/contracts/files'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import {
   allocate, base, contentUrl, fil14Database, finalize, headers, markdown, owner, reread, upload,
   type Fil14Database, type Runtime,

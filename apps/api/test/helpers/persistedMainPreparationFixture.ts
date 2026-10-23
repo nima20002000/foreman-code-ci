@@ -5,14 +5,15 @@ import { buildApp } from '../../src/app.js'
 import type { OperatorServices } from '../../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
-import { CiRuntimeProvisioner } from '../../src/modules/jobs/ciRuntimeProvisioner.js'
-import { PostgresCiPreparationRepository } from '../../src/modules/jobs/ciPreparationRepository.js'
+import { CiRuntimeProvisioner } from '@foreman-code/ci/ciRuntimeProvisioner'
+import { PostgresCiPreparationRepository } from '@foreman-code/ci/ciPreparationRepository'
 import { JobOwnership } from '../../src/modules/jobs/ownership.js'
 import { buildComputerKey, buildComputerTarget } from '../../src/modules/settings/buildComputers.js'
 import { registerJobRuntimeProfileRoutes } from '../../src/routes/jobRuntimeProfiles.js'
-import { graphRpc } from '../eng04-graph-composition-fixture.js'
-import { currentDatabase } from './eng04CurrentDatabase.js'
+import { graphRpc } from '../graph-composition-fixture.js'
+import { currentDatabase } from './database.js'
 import { ciPreparationFixture, mainId } from './ciPreparationFixture.js'
+import { mainCiContext } from '../../src/modules/ci/context.js'
 
 export async function persistedMainPreparationFixture(database: Awaited<ReturnType<typeof currentDatabase>>,
   options: Parameters<typeof ciPreparationFixture>[0] & {
@@ -52,7 +53,7 @@ export async function persistedMainPreparationFixture(database: Awaited<ReturnTy
     const repository = new PostgresCiPreparationRepository(database.pool)
     let now = new Date()
     const create = async () => {
-      const service = new CiRuntimeProvisioner(database.pool, fixture.profileService as never,
+      const service = new CiRuntimeProvisioner(mainCiContext, database.pool, fixture.profileService as never,
         fixture.sources as never, () => { throw new Error('Main preparation cannot use a paired Worker') }, commands,
         { ...(options.acquire ? { acquire: options.acquire } : {}),
           timing: { pollMs: 0, now: () => now, wait: () => new Promise(resolve => setImmediate(resolve)) },

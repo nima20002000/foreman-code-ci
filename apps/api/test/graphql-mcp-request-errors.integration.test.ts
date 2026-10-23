@@ -4,7 +4,7 @@ import { ManagedWorkspaceSchema } from '@foreman-code/contracts/management'
 
 import { MAX_REFERENCE_MCP_BODY_BYTES } from '../src/modules/files/references/requests.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('authenticated MCP request parsing', () => {
   it('returns safe parser errors without dispatching or changing persisted state', async () => {

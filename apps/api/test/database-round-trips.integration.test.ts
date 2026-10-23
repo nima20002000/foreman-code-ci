@@ -9,9 +9,9 @@ import { RunOwnership } from '../src/modules/runs/ownership.js'
 import { withExclusiveGraphConnection, type GraphSqlClient } from '../src/modules/run-graph/connection.js'
 import { normalizeNativeProducerEvent } from '../src/modules/run-graph/nativeProducerNormalization.js'
 import { readRepeatGraphPinsLocked } from '../src/modules/run-graph/repeatProjectionRows.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 import { nativeStreamFixture } from './helpers/nativeStreamFixture.js'
-import { currentRepositoryFixture } from './helpers/wave25CurrentRepository.js'
+import { currentRepositoryFixture } from './helpers/currentRepository.js'
 
 let db: Awaited<ReturnType<typeof currentDatabase>>
 const owners: RunOwnership[] = []

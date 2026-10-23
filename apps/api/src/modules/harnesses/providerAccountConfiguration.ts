@@ -10,17 +10,14 @@ import { withTransaction } from '../../infrastructure/transaction.js'
 export { managedProviderEnvironment, pinnedCodexAccountEnvironment } from './providerAccountRuntime.js'
 import { AcceptedProviderAccountBindings } from '../provider-accounts/acceptedBindings.js'
 
+/** The host profile operations account configuration needs; HostHarnessOverrideService implements them. */
+export type AccountConfigurationProfiles = Pick<HostHarnessOverrideService,
+  'selectionForConfiguration' | 'prepareOperatorConfiguration' | 'validateSelection'>
+
 export class ProviderAccountConfigurationService {
   readonly acceptedBindings: AcceptedProviderAccountBindings
-  private profiles?: Pick<HostHarnessOverrideService,
-    'selectionForConfiguration' | 'prepareOperatorConfiguration' | 'validateSelection'>
-  constructor(private readonly accounts: ProviderAccountResolver) {
+  constructor(private readonly accounts: ProviderAccountResolver, private readonly profiles?: AccountConfigurationProfiles) {
     this.acceptedBindings = new AcceptedProviderAccountBindings(accounts)
-  }
-
-  bindProfiles(profiles: Pick<HostHarnessOverrideService,
-    'selectionForConfiguration' | 'prepareOperatorConfiguration' | 'validateSelection'>): void {
-    this.profiles = profiles
   }
 
   async prepareProfile(input: { principal: ManagementPrincipal; source: 'http' | 'mcp';

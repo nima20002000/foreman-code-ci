@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import pg from 'pg'
 import { expect, it } from 'vitest'
-import { nim2691TaskDatabase } from './helpers/nim2691Database.js'
+import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
 import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'
 import { completeTestResourceCleanup, dropFixtureDatabase, ownedTestDatabaseUrl,
   registerTestResourceCleanup, createTestDatabase, provisionTestResources,
@@ -119,8 +119,8 @@ it('acceptance bootstrap supplies an isolated database and removes it after succ
 }, 30_000)
 
 it.each([false, true])('reports leaked workflow callers and removes owned resources (work failed: %s)', async failed => {
-  const configured = process.env.NIM2691_ADMIN_DATABASE_URL
-  if (!configured) throw new Error('NIM2691_ADMIN_DATABASE_URL is required')
+  const configured = process.env.TEST_DATABASE_URL
+  if (!configured) throw new Error('TEST_DATABASE_URL is required')
   const admin = new pg.Pool({ connectionString: configured, max: 1 })
   const failure = new Error('Workflow verification failed')
   const directories: string[] = []

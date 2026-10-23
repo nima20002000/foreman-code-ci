@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import type pg from 'pg'
 import { JobArtifactSchema, type JobArtifact } from '@foreman-code/contracts/jobs'
@@ -7,7 +6,8 @@ import { fileStateAt } from '@foreman-code/contracts/files'
 import { DomainError } from '../../errors.js'
 import type { PostgresJobOutputAdmission } from './outputAdmission.js'
 import type { JobPublicationLedger } from './port.js'
-const digest=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex')
+import { sha256Hex } from '../../../shared/hash.js'
+const digest=(value:unknown)=>sha256Hex(JSON.stringify(value))
 
 /** Publication ACK is a finalized canonical readback, never byte finish or a caller flag. */
 export class JobOutputRsyncLifecycle {

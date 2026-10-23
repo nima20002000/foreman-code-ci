@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { CURRENT_WORKFLOW_TOOLS, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { graphHeaders, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { graphHeaders, graphRpcValue } from './graph-composition-fixture.js'
 import { assertSettled, corruptProof, definitionUrl, editThrough, meaningfulInput, parkBeforeNativeEntry,
-  rpc, stageThrough, versionCount, type Transport } from './helpers/eng07SaveAdmission.testSupport.js'
+  rpc, stageThrough, versionCount, type Transport } from './helpers/saveAdmission.testSupport.js'
 import { nativeFacts, recoveredFixture } from './helpers/saveAdmissionTransport.js'
 
 describe.skipIf(!postgresEnabled)('workflow Save after native recovery', () => {

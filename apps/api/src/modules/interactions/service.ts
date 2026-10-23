@@ -19,7 +19,6 @@ const message = (error: unknown) => error instanceof DomainError ? error.code : 
 /** One current authenticated decision/delivery/resume service. Transport source
  * and graph complexity never select another repository or approval protocol. */
 export class InteractionService {
-  useWorkDirectionActions(actions: WorkDirectionActions): void { this.interactions.directions.useActions(actions) }
   private atomicApprovalResume: AtomicApprovalResumeConsumer | undefined
   private prepareRequester: ((interaction: DurableInteraction) => Promise<void>) | undefined
   useApprovalPreparation(prepare: (interaction: DurableInteraction) => Promise<void>): void {
@@ -42,9 +41,12 @@ export class InteractionService {
   constructor(private readonly interactions: Wave25InteractionRepository,
     _budgets: PostgresApprovalBudgetRepository, private readonly nativeRuntime: InteractionNativeRuntime,
     _resumeGraph: (interaction: DurableInteraction) => Promise<void>, private readonly responseJournal?: NativeResponseJournal,
-    private readonly activityEvidence?: (interaction: DurableInteraction) => Promise<InteractionActivityEvidence>) {
+    private readonly activityEvidence?: (interaction: DurableInteraction) => Promise<InteractionActivityEvidence>,
+    /** Starts the continuation Run a work-direction answer asks for. */
+    workDirections?: WorkDirectionActions) {
     if (!(interactions instanceof Wave25InteractionRepository)) throw new DomainError(
       'APPROVAL_REPOSITORY_REQUIRED', 'The current original-source approval repository is required.', 503)
+    if (workDirections) interactions.directions.useActions(workDirections)
   }
   private resumeDelivered(interaction: DurableInteraction): Promise<void> {
     return resumeApproval(this.approvalDependencies(), interaction)

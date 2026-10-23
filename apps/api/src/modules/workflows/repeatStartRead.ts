@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { WorkspaceLocationIdentitySchema } from '@foreman-code/contracts/workspace-root-policies'
 import { ExecutionLocationSchema, type RunExecutionLocation } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -17,6 +16,7 @@ import {
   readImmutableWorkflowVersion, readImmutableAgentConfiguration, IMMUTABLE_WORKFLOW_VERSION_COLUMNS,
   type ImmutableWorkflowVersionRow, type ImmutableAgentConfigurationRow,
 } from './immutableRead.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 interface LocationRow {
   id: string; execution_location: unknown; execution_location_identity: unknown
@@ -57,7 +57,7 @@ export async function readLockedRepeatStartSnapshot(
   if (!stored.success || !identity.success || stored.data.runnerId !== location.runnerId
     || stored.data.rootPath !== location.rootPath || String(location.locationRevision) !== workspace.location_revision
     || location.locationRevision !== input.expectedLocationRevision
-    || location.identityHash !== `sha256:${createHash('sha256').update(`${identity.data.device}:${identity.data.inode}`).digest('hex')}`) {
+    || location.identityHash !== `sha256:${sha256Hex(`${identity.data.device}:${identity.data.inode}`)}`) {
     throw new DomainError('LOCATION_REVISION_CONFLICT', 'The prepared location does not match its exact stored identity.', 409)
   }
   const workflows = await client.query<{

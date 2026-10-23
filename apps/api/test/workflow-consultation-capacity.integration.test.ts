@@ -5,7 +5,7 @@ import { currentOperatorIntegration } from './helpers/currentOperatorIntegration
 import { hierarchyRuntimeFixture, coordinationOutput } from './helpers/hierarchyRuntimeFixture.js'
 import { ControlledWorkflowProvider } from './helpers/controlledWorkflowProvider.js'
 import { workflowChatCall, workflowChatTarget } from './helpers/workflowChatRequests.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('consultation execution capacity', () => {
   it('waits for the Run slot held by a worker before offering the admitted coordinator reply', async () => {

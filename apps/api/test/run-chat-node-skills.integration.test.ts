@@ -12,7 +12,7 @@ import { agentInstructionBundle } from '../src/modules/skills/instructions.js'
 import type { PostgresRunRepository } from '../src/modules/runs/postgres.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import { eventually } from './helpers/agentChatF5.js'
-import { agent3Database, candidateFor, seedAgent3 } from './helpers/wave25Agent3.js'
+import { agent3Database, candidateFor, seedAgent3 } from './helpers/workflowDatabase.js'
 
 function skill(skillId: string, instructions: string): ResolvedSkill {
   return { skillId, version: '1', instructions,

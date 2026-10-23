@@ -14,7 +14,7 @@ import { WorkerExecutionPolicy } from '../../src/modules/settings/workerExecutio
 import { createWorkspaceRootWorkerHandler } from '../../src/modules/sources/rootAttestation.js'
 import { sourceSha256 } from '../../src/modules/sources/manifest.js'
 import { WorkspaceBoundLocationService } from '../../src/modules/workspace-roots/service.js'
-import type { Sch11Fixture } from './sch11Fixture.js'
+import type { Sch11Fixture } from './scheduleFixture.js'
 import type { schedulePlacementFixture } from './schedulePlacementFixture.js'
 import { agentWorkflowVersion } from './agentWorkflowFixture.js'
 

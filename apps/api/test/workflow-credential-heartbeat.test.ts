@@ -12,7 +12,7 @@ import { createWorkflowNativeCaptureChannel } from '../src/modules/interactions/
 import type { WorkflowClosureStore } from '../src/modules/interactions/workflowClosure.js'
 import { ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 import type { RunOwnership } from '../src/modules/runs/ownership.js'
-import { nativeLanes } from './helpers/nativeLanes.js'
+import { nativeLanes } from './helpers/memorySessionCoordination.js'
 import { AppMcpRoutes } from '../src/modules/harnesses/appMcpRoutes.js'
 import { deferred } from './helpers/deferred.js'
 import { idleWorkflowControls, idleWorkflowRepeat } from './helpers/idleWorkflowControls.js'
@@ -54,6 +54,8 @@ function fixture() {
   }
   type CoordinatorArguments = ConstructorParameters<typeof ApprovalExecutionCoordinator>
   const runs = {
+    // These fixtures have no workflow memory board.
+    kanbanRecordMissing: async () => false,
     get: async () => ({ id: execution.runId, workspaceId: configuration.workspaceId }),
     updateExecution: async (next: HarnessExecution, _owner: RunOwnership, evidence: Parameters<typeof captures.verify.read>[0]) => {
       expect(captures.verify.read(evidence).execution.id).toBe(execution.id)

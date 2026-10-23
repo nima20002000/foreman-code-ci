@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { open, readFile, rename, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { parseArgs, isDeepStrictEqual } from 'node:util'
@@ -6,10 +6,11 @@ import { pathToFileURL } from 'node:url'
 import { z } from 'zod'
 import { captureInstalledRuntimeConfigurationRecord, InstalledJobRuntimeConfigurationRecordSchema }
   from '../modules/jobs/installedRuntimeHost.js'
-import { InstalledVerificationRuntimeCaptureInputSchema } from '../modules/jobs/installedVerificationConfiguration.js'
+import { InstalledVerificationRuntimeCaptureInputSchema } from '@foreman-code/contracts/installed-runtime-node'
 import { ignoreError } from '../modules/diagnostics/ignoredError.js'
+import { sha256Hex } from '../shared/hash.js'
 
-const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
+const sha256 = (bytes: Uint8Array) => sha256Hex(bytes)
 const ReviewedRefreshSchema = z.object({
   expectedConfigurationSha256: z.string().regex(/^[a-f0-9]{64}$/u),
   captureInput: InstalledVerificationRuntimeCaptureInputSchema,

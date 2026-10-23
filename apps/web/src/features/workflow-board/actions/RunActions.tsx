@@ -6,7 +6,7 @@ import type { ManagementAction } from '@foreman-code/contracts/management'
 import { ApiError } from '../../../shared/api/client'
 import { useLocalHumanAccessQuery } from '../../../shared/api/settingsExperience'
 import { sessionGeneration } from '../../../shared/api/sessionBoundary'
-import { useWorkflowBoard } from '../context'
+import { useBoardSelection } from '../context'
 import { currentRunKey } from '../currentRunQuery'
 import { canUseBoardAction } from '../permissions'
 import { assertActionScope, runActionsClient, type RunActionSelection } from './client'
@@ -21,7 +21,7 @@ import './actions.css'
 function SelectedRunActions({ selection, access }: {
   selection: RunActionSelection; access: ReturnType<typeof useLocalHumanAccessQuery>
 }) {
-  const cache = useQueryClient(), board = useWorkflowBoard()
+  const cache = useQueryClient(), board = useBoardSelection()
   const principal = access.isError ? undefined : access.data?.principal
   const livePrincipal = !!principal && Date.parse(principal.expiresAt) > Date.now()
   const allowed = (action: ManagementAction, creating = false) => livePrincipal && !!principal && canUseBoardAction(
@@ -108,7 +108,7 @@ function SelectedRunActions({ selection, access }: {
 /** The only public mount point. Selection is supplied by the URL-owned Board;
  * changing Run or principal tears down private Query observers and command forms. */
 export function RunActions(props: RunActionSelection) {
-  const access = useLocalHumanAccessQuery(), board = useWorkflowBoard()
+  const access = useLocalHumanAccessQuery(), board = useBoardSelection()
   return <SelectedRunActions key={JSON.stringify([sessionGeneration(), props.workspaceId, props.workflowId, props.runId,
     board?.workspaceId, board?.workflowId, board?.run?.runId, board?.run?.workflowVersionId, board?.run?.executionSemanticsVersion])}
     selection={props} access={access} />

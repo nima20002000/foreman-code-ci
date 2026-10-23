@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, expect, it, vi } from 'vitest'
 import { CanonicalRunGraphCurrentSchema, CANONICAL_RUN_GRAPH_MCP_TOOLS,
   type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
-import { graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { graphRpcValue } from './graph-composition-fixture.js'
 import { repeatStartPublication } from '../src/modules/run-graph/repeatStartPublication.js'
 import { requestRepeatRunStop } from '../src/modules/runs/repeatLifecycle.js'
 import { requireAuthorization } from '../src/modules/access/policy.js'
@@ -11,6 +11,7 @@ import { deferred } from './helpers/deferred.js'
 import {
   useSettlementFixtures, timeout, handoffs, seedDirectionWait, directionApi, type Fixture,
 } from './helpers/workflowSettlementTestSupport.js'
+import { postgresEnabled } from './helpers/database.js'
 
 // The fixture supplies completed native work; direction decisions, Start,
 // Stop, canonical publication and cleanup run against PostgreSQL.
@@ -37,7 +38,7 @@ async function stopAndCleanUp(f: Fixture, api: Awaited<ReturnType<typeof directi
     .toEqual([{ pending: false }])
 }
 
-describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('work direction continuation and Stop', () => {
+describe.skipIf(!postgresEnabled)('work direction continuation and Stop', () => {
   const withFixture = useSettlementFixtures()
   const graph = (value: WorkflowDefinitionV3): WorkflowDefinitionV3 => ({
     ...handoffs(1)(value), executionPolicy: { maxParallelism: 1, maxNodeExecutions: 1 },

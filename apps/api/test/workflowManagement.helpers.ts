@@ -19,8 +19,8 @@ import { RunManagementService } from '../src/modules/runs/management.js'
 import type { LangGraphWorkflowEngine } from '../src/modules/runs/engine.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { RunGraphReadService } from '../src/modules/run-graph/readService.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
-import { graphRpc, graphRpcValue, graphHeaders } from './eng04-graph-composition-fixture.js'
+import { currentDatabase } from './helpers/database.js'
+import { graphRpc, graphRpcValue, graphHeaders } from './graph-composition-fixture.js'
 
 // Each test owns a migrated schema and uses a failing engine to detect unauthorized native calls.
 export function useWorkflowManagementFixture() {

@@ -12,6 +12,7 @@ import { createClaudeNativeSessionManager } from '../src/modules/harnesses/claud
 import { createClaudeSdkRunner } from '../src/modules/harnesses/claudeSdk/runner.js'
 import { ClaudeBoundedQueue } from '../src/modules/harnesses/claudeSdk/queue.js'
 import { ChatManager, registerOperatorChatFixture, type OperatorChatFixture, waitFor } from './helpers/operatorChatFixture.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const connectionString = process.env.TEST_DATABASE_URL
 const nativeFailure = { outcome: 'failed' as const, error: { code: 'CLAUDE_NATIVE_RESULT_ERROR',
@@ -100,7 +101,7 @@ async function startSettlingClaude(claude: ReturnType<typeof settlingClaude>) {
   return conversation
 }
 
-describe.skipIf(!connectionString)('Operator failed-turn terminal persistence', () => {
+describe.skipIf(!postgresEnabled)('Operator failed-turn terminal persistence', () => {
   it('finishes a successful turn after retirement releases its exited runtime and cold resumes the following turn', async () => {
     const manager = Object.assign(new ChatManager(), {
       retireTurn: async () => ({ runtimeReleased: true as const }),

@@ -5,7 +5,7 @@ import { HostHarnessOverrideSchema } from '@foreman-code/contracts/harness-regis
 import { SourceRootRecordSchema } from '@foreman-code/contracts/source-admission'
 import { resolveBoundRootPlacement } from '../src/modules/placement/localMainPlacement.js'
 import { DomainError } from '../src/modules/errors.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { fixture, startInput, toolError } from './helpers/nodePlacementStartFixture.js'
 
 afterEach(() => vi.restoreAllMocks())

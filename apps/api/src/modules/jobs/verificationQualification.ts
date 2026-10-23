@@ -1,4 +1,4 @@
-import { errorMessage } from '../../shared/errorMessage.js'
+import { errorMessage } from '@foreman-code/contracts/server-kit'
 import { captureVerificationInventory } from '../../../../../scripts/verification-runner.mjs'
 import { constants } from 'node:fs'
 import { mkdir, open, readFile, readlink, rm, statfs, writeFile } from 'node:fs/promises'
@@ -18,7 +18,7 @@ import { JobVerificationQualificationCandidateSchema, JobVerificationRepositoryC
   from '@foreman-code/contracts/job-verification-runtime'
 import { readInstalledVerificationConfiguration } from './installedVerificationRuntime.js'
 import { readProtectedRuntimeFile,
-  type InstalledRuntimeConfigurationLocation } from './installedRuntimeConfiguration.js'
+  type InstalledRuntimeConfigurationLocation } from '@foreman-code/contracts/installed-runtime-node'
 import { podmanIsolationCreateArgv, ensureEmptyPodmanHooks, type PodmanIsolationInput } from './executorPodman.js'
 import { assertJobRuntimeEntryContext, jobQualificationFingerprint, runQualificationCommand,
   validateVerificationIsolationObservation, type JobQualificationAuthority, type QualificationNativeOwner }
@@ -30,13 +30,13 @@ import { JOB_GIT_ENVIRONMENT } from './privateGitMounts.js'
 import { jobDigest } from './digest.js'
 import { SourceMaterializationRecordSchema } from '@foreman-code/contracts/source-admission'
 import { sourceBindingHash } from '../sources/bindingHash.js'
-import { createHash } from 'node:crypto'
 import { qualificationExecution, publishFailedQualification } from './qualificationExecution.js'
 import { reserveVerificationReportSpace, readBoundedJobFile } from './executorOutputs.js'
 import { finalizeVerificationPublication } from './verificationPublication.js'
 import { interruptActiveQualification } from './qualificationCancellation.js'
 import type { QualificationReportPublisher } from './qualificationReports.js'
 import type { JobQualificationReport } from '@foreman-code/contracts/job-verification-runtime'
+import { sha256Hex } from '../../shared/hash.js'
 
 const reportLimits = { 'summary.json': 'summaryBytes', 'junit.xml': 'junitBytes',
   'vitest.json': 'vitestBytes', 'logs.tar.gz': 'logsArchiveBytes' } as const
@@ -289,9 +289,9 @@ export async function qualifyVerificationRuntime(input: {
           context.limits[reportLimits[file]])
         const artifact = await input.publishReport!(candidate, { context, closure, terminal, startedAt, materialization,
           path: `.logs/verification/${file}` as JobQualificationReport['path'],
-          sha256: createHash('sha256').update(bytes).digest('hex'), byteSize: bytes.length }, bytes)
+          sha256: sha256Hex(bytes), byteSize: bytes.length }, bytes)
         if (artifact.state !== 'available' || artifact.byteSize !== bytes.length
-          || artifact.sha256 !== createHash('sha256').update(bytes).digest('hex')) {
+          || artifact.sha256 !== sha256Hex(bytes)) {
           throw new Error('Canonical qualification report readback failed.')
         }
         artifacts.push(artifact)

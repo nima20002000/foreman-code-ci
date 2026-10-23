@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('Run ownership database fence', () => {
   let db: Awaited<ReturnType<typeof agent3Database>>

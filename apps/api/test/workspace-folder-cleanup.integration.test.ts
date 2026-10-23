@@ -13,7 +13,7 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { WorkspaceManagementService } from '../src/modules/workspaces/management.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('workspace folder cleanup across computers', () => {
   it.each(['another-computer', 'runner-local'])('respects physical references on %s through authenticated MCP', async runnerId => {

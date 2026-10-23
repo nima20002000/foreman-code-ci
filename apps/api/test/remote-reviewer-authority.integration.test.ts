@@ -9,7 +9,7 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { PostgresAppInteractionService } from '../src/modules/interactions/app.js'
 import { OperatorInteractionService } from '../src/modules/interactions/operator.js'
 import { routedApprovalFixture } from './helpers/routedApprovalFixture.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { approvalResponse } from './helpers/approvalResponse.js'
 
 afterEach(() => vi.restoreAllMocks())

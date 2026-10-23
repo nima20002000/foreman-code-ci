@@ -3,11 +3,12 @@ import { afterAll, beforeAll, expect, it } from 'vitest'
 import { CiRunRecordSchema, type CiHostRun } from '@foreman-code/contracts'
 import { createDatabase } from '../src/infrastructure/database.js'
 import { withCiDatabasePriority } from '../src/infrastructure/ciDatabasePriority.js'
-import { sendCiDispatch } from '../src/modules/ci-host/dispatchRecovery.js'
-import { CiDispatchDeadlineError, withCiDispatchDeadline } from '../src/modules/ci-host/dispatchDeadline.js'
-import type { HostCiComputer, HostCiEndpoint } from '../src/modules/ci-host/serviceTypes.js'
+import { sendCiDispatch } from '@foreman-code/ci/dispatchRecovery'
+import { CiDispatchDeadlineError, withCiDispatchDeadline } from '@foreman-code/ci/dispatchDeadline'
+import type { HostCiComputer, HostCiEndpoint } from '@foreman-code/ci/serviceTypes'
 import { deferred } from './helpers/deferred.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 let fixture: Awaited<ReturnType<typeof migratedDatabase>>
 beforeAll(async () => { fixture = await migratedDatabase() }, 60_000)
@@ -67,7 +68,7 @@ it.each(['start', 'discover', 'cancel'] as const)(
       await database.pool.query('insert into workspaces(id,record) values($1,$2)', [id, '{}'])
       await database.pool.query('insert into ci_runs(id,workspace_id,group_id,state,host_key,record) values($1,$2,$3,$4,$5,$6)',
         [id, id, run.groupId, run.state, computer.key, JSON.stringify(run)])
-      const pass = withCiDispatchDeadline(async () => {
+      const pass = withCiDispatchDeadline(mainCiContext, async () => {
         const pending = sendCiDispatch(services, run, computer)
         delivery = Promise.allSettled([pending]).then(results => results[0]!)
         await pending

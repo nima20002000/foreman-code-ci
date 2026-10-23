@@ -1,7 +1,8 @@
 import { OperatorConversationStateSchema, OperatorConversationStreamEventSchema,
   type OperatorConversationState, type OperatorConversationStreamEvent } from '@foreman-code/contracts'
 import { ApiError, apiClient } from './client'
-import { assertSession, sessionGeneration, sessionIsSwitching, sessionSignal } from './sessionBoundary'
+import { eventStreamsAvailable, openEventStreamScope, type EventStreamConnection } from './eventStream'
+import { sessionSignal } from './sessionBoundary'
 import { whileVisible } from './whileVisible'
 
 export type OperatorChatConnection = 'connecting' | 'connected' | 'reconnecting' | 'unavailable'
@@ -13,39 +14,25 @@ function subscribeOperatorChatNow(id: string, listeners: {
   recover?(): Promise<void>
   connection?(state: OperatorChatConnection): void
 }): () => void {
-  if (sessionIsSwitching()) return () => {}
-  if (typeof EventSource === 'undefined') {
+  const opened = openEventStreamScope()
+  if (!opened) return () => {}
+  const scope = opened
+  if (!eventStreamsAvailable()) {
+    scope.close()
     listeners.connection?.('unavailable')
     return () => {}
   }
-  const generation = sessionGeneration()
-  const signal = sessionSignal()
+  const valid = scope.valid, close = scope.close
   let ready = false
   let highWater = -1
-  let closed = false
   let retries = 0
   let recovering = false
-  let source: EventSource | undefined
+  let source: EventStreamConnection | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
   const seen = new Set<number>()
-  const bindings: Array<[string, EventListener]> = []
   const detach = () => {
-    for (const [type, listener] of bindings) source?.removeEventListener(type, listener)
-    bindings.length = 0
     source?.close()
     source = undefined
-  }
-  const close = () => {
-    if (closed) return
-    closed = true
-    clearTimeout(timer)
-    detach()
-    signal.removeEventListener('abort', close)
-    if (typeof window !== 'undefined') window.removeEventListener('online', schedule)
-  }
-  const valid = () => {
-    try { assertSession(generation); return !closed && !signal.aborted }
-    catch { close(); return false }
   }
   const recover = async () => {
     if (!valid() || typeof navigator !== 'undefined' && navigator.onLine === false) return
@@ -54,7 +41,7 @@ function subscribeOperatorChatNow(id: string, listeners: {
     try {
       if (listeners.recover) await listeners.recover()
       else {
-        const state = await apiClient.getOperatorConversation(id, { signal })
+        const state = await apiClient.getOperatorConversation(id, { signal: sessionSignal() })
         if (valid()) listeners.snapshot(state)
       }
       if (valid()) connect()
@@ -81,7 +68,7 @@ function subscribeOperatorChatNow(id: string, listeners: {
   const refresh = () => {
     if (!valid()) return
     ready = false
-    const terminal = source?.readyState === EventSource.CLOSED
+    const terminal = source?.source.readyState === EventSource.CLOSED
     listeners.connection?.(terminal ? 'unavailable' : 'reconnecting')
     if (valid()) listeners.reconnect()
     if (terminal) { detach(); schedule() }
@@ -91,13 +78,8 @@ function subscribeOperatorChatNow(id: string, listeners: {
     ready = false
     highWater = -1
     seen.clear()
-    const active = new EventSource(`/api/operator/conversations/${encodeURIComponent(id)}/events`)
-    source = active
-    const bind = (type: string, listener: EventListener) => {
-      const scoped: EventListener = event => { if (source === active && valid()) listener(event) }
-      bindings.push([type, scoped])
-      active.addEventListener(type, scoped)
-    }
+    const handlers: Record<string, EventListener> = {}
+    const bind = (type: string, listener: EventListener) => { handlers[type] = listener }
     bind('open', () => {
       ready = false
       highWater = -1
@@ -144,12 +126,16 @@ function subscribeOperatorChatNow(id: string, listeners: {
         if (valid()) listeners.connection?.('connected')
       } catch { refresh() }
     })
+    source = scope.connect(`/api/operator/conversations/${encodeURIComponent(id)}/events`, handlers)
     listeners.connection?.(retries ? 'reconnecting' : 'connecting')
   }
-  signal.addEventListener('abort', close, { once: true })
   if (typeof window !== 'undefined') window.addEventListener('online', schedule)
+  scope.onClose(() => {
+    clearTimeout(timer)
+    detach()
+    if (typeof window !== 'undefined') window.removeEventListener('online', schedule)
+  })
   connect()
-  if (signal.aborted) close()
   return close
 }
 

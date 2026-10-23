@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { JobInputRevisionSchema } from '@foreman-code/contracts/jobs'
 import { type JobExecutionRecord } from '@foreman-code/contracts/job-verification'
@@ -6,6 +5,7 @@ import { JobInputEntrySchema, JobInputManifestSchema, type JobInputEntry, type J
 import { jobInputSnapshotDigest, jobBuildInputManifestBytes } from '@foreman-code/contracts/job-inputs-node'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { DomainError } from '../../errors.js'
+import { sha256Hex } from '../../../shared/hash.js'
 export const inputHash=(value:unknown)=>commandInputHash(value).slice(7)
 export function recipient(execution:JobExecutionRecord) { return {workspaceId:execution.workspaceId,executionId:execution.id,attemptId:execution.attemptId,operationId:execution.operationId,
   owner:execution.owner,bindingHash:execution.acceptedSpec.bindingHash,specDigest:execution.acceptedSpec.specDigest,materializationId:execution.acceptedSpec.source.materializationId,materializationDigest:execution.acceptedSpec.source.materializationDigest} }
@@ -17,7 +17,7 @@ export function verificationContextBytes(manifest: Pick<JobInputManifest, 'verif
 export function verificationContextPin(manifest: Pick<JobInputManifest, 'verificationContext'>) {
   const bytes = verificationContextBytes(manifest)
   return bytes ? { relativePath: 'verification.json' as const,
-    sha256: createHash('sha256').update(bytes).digest('hex'), byteSize: bytes.length } : undefined
+    sha256: sha256Hex(bytes), byteSize: bytes.length } : undefined
 }
 export function makeManifest(execution:JobExecutionRecord,entries:JobInputEntry[],verificationContext?:JobInputManifest['verificationContext']):JobInputManifest {
   const systemBytes = verificationContextBytes({ verificationContext })
@@ -27,7 +27,7 @@ export function makeManifest(execution:JobExecutionRecord,entries:JobInputEntry[
     workflowInput:execution.acceptedSpec.workflowInput,entries,totalBytes,
     ...(verificationContext ? { verificationContext } : {})}
   const bytes=manifestBytes({...content,manifestSha256:'0'.repeat(64),manifestByteSize:0})
-  return JobInputManifestSchema.parse({...content,manifestSha256:createHash('sha256').update(bytes).digest('hex'),manifestByteSize:bytes.length})
+  return JobInputManifestSchema.parse({...content,manifestSha256:sha256Hex(bytes),manifestByteSize:bytes.length})
 }
 /** Workflow vectors remain exact accepted JSON. File pins must use the supported vector; unknown shapes fail closed. */
 export function workflowPins(execution:JobExecutionRecord) {

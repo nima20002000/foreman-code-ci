@@ -12,6 +12,7 @@ import { spawnOwnedStdioProcess } from '../process.js'
 import { passiveDriverPayloads } from '../payloadDiscovery.js'
 import { discoverLauncher } from '../hostDiscovery.js'
 import { CompatibilityCheckError } from './errors.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 export interface HarnessInstallation {
   executable: string
@@ -91,13 +92,13 @@ async function fingerprint(path: string, signal: AbortSignal): Promise<string> {
   if (JSON.stringify(metadata(before)) !== JSON.stringify(metadata(after))) {
     throw new CompatibilityCheckError('CLI_CHANGED', 'The CLI changed during inspection. Retry after the installation has finished.')
   }
-  return createHash('sha256').update(JSON.stringify([await realpath(path), metadata(after), hash.digest('hex')])).digest('hex')
+  return sha256Hex(JSON.stringify([await realpath(path), metadata(after), hash.digest('hex')]))
 }
 
 async function installationIdentity(binary: string, payloadPaths: readonly string[], signal: AbortSignal): Promise<string> {
   const paths = [...new Set([binary, ...payloadPaths])].sort()
   const fingerprints = await Promise.all(paths.map(path => fingerprint(path, signal)))
-  return createHash('sha256').update(JSON.stringify(fingerprints)).digest('hex')
+  return sha256Hex(JSON.stringify(fingerprints))
 }
 
 /** Only fixed version/schema commands call this. No shell, credentials, stdin prompts, or server. */

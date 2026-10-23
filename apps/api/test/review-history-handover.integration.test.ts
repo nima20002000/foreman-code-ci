@@ -7,8 +7,8 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { approvalResponse } from './helpers/approvalResponse.js'
 import { routedApprovalFixture } from './helpers/routedApprovalFixture.js'
 import { rejectableDeferred } from './helpers/deferred.js'
-import { br1002At } from './helpers/wave25Br1002Cuts.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { br1002At } from './helpers/continuationCuts.js'
+import { postgresEnabled } from './helpers/database.js'
 
 afterEach(() => vi.restoreAllMocks())
 

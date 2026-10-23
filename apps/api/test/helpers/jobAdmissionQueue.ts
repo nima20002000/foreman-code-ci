@@ -6,7 +6,7 @@ import { buildApp } from '../../src/app.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import type { JobService } from '../../src/modules/jobs/service.js'
 import { buildQueueFixture } from './buildComputerFixture.js'
-import { agent3Database } from './wave25Agent3.js'
+import { agent3Database } from './workflowDatabase.js'
 
 export function setupJobAdmissionQueue() {
   let database: Awaited<ReturnType<typeof agent3Database>>

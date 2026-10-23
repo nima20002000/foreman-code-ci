@@ -1,14 +1,15 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { GitCiCommits } from '../../src/modules/ci-host/commits.js'
-import { CloudCi } from '../../src/modules/ci-host/cloud.js'
-import { GitHubActionsProvider } from '../../src/modules/ci-host/cloudProviders.js'
-import { HostCiRunner, systemHostCiPorts, type HostCiPorts } from '../../src/modules/ci-host/runner.js'
-import type { HostCiComputer, HostCiEndpoint } from '../../src/modules/ci-host/service.js'
+import { GitCiCommits } from '@foreman-code/ci/commits'
+import { CloudCi } from '@foreman-code/ci/cloud'
+import { GitHubActionsProvider } from '@foreman-code/ci/cloudProviders'
+import { HostCiRunner, systemHostCiPorts, type HostCiPorts } from '@foreman-code/ci/runner'
+import type { HostCiComputer, HostCiEndpoint } from '@foreman-code/ci/service'
 import type { GitWorktreePorts } from '../../src/modules/sources/gitWorktree.js'
 import { gitFixtureEnvironment } from './gitFixture.js'
 import { deferred, type Deferred } from './deferred.js'
+import { mainCiContext } from '../../src/modules/ci/context.js'
 
 type CommandResult = Awaited<ReturnType<HostCiPorts['run']>>
 
@@ -22,7 +23,7 @@ export async function genericCiRepository(options: { lockfile?: string; integrat
   const origin = join(root, 'origin')
   const mirror = join(root, 'mirror')
   const bin = join(root, 'bin')
-  const system = systemHostCiPorts()
+  const system = systemHostCiPorts(mainCiContext)
   const environment = { ...gitFixtureEnvironment(), PATH: `${bin}:${process.env.PATH}` }
   const localUrl = (value: string) => {
     if (value.startsWith('https://') && value.endsWith('/octo/site.git')) return origin
@@ -112,10 +113,10 @@ process.exit(result.status ?? 1)
       }
       return system.run(file, args, settings)
     } }
-    const runner = new HostCiRunner(join(root, 'runner'), ports, environment)
+    const runner = new HostCiRunner(mainCiContext, join(root, 'runner'), ports, environment)
     const computer: HostCiComputer = { key: randomUUID(), hostRef: { kind: 'main', mainId: randomUUID() },
       label: 'Build computer', priority: 60 }
-    const cloud = new CloudCi(computer.hostRef.mainId, new GitHubActionsProvider(ports), async () => 'octo/site-ci',
+    const cloud = new CloudCi(mainCiContext, computer.hostRef.mainId, new GitHubActionsProvider(mainCiContext, ports), async () => 'octo/site-ci',
       join(root, 'cloud'), ports, git)
     const cloudAttempts: string[] = []
     const endpoint: HostCiEndpoint = {
@@ -131,7 +132,7 @@ process.exit(result.status ?? 1)
         return cloud.handle(request)
       },
     }
-    return { commits: new GitCiCommits(git), endpoint, cloudAttempts, commit: head.stdout.trim(),
+    return { commits: new GitCiCommits(mainCiContext, git), endpoint, cloudAttempts, commit: head.stdout.trim(),
       waitForCompletion(runId: string) {
         const completion = completions.get(runId)
         if (!completion) throw new Error('The fixture has not started this CI run.')

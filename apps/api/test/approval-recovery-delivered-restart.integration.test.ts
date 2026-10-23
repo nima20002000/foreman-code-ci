@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { postgresEnabled, readCurrentExecutions } from './helpers/wave25Agent3.js'
-import { approvalResponse } from './helpers/eng06ApprovalFaults.js'
+import { readCurrentExecutions } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
+import { approvalResponse } from './helpers/approvalFaults.js'
 import {
   createApprovalRecoverySetup,
   loseGraphAcknowledgement,

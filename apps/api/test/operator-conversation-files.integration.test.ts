@@ -23,7 +23,7 @@ import { PostgresOperatorRepository } from '../src/modules/operators/postgres.js
 import { registerProductionFileStorage } from '../src/modules/files/production.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import { deferred } from './helpers/deferred.js'
-import { agent3Database, seedAgent3 } from './helpers/wave25Agent3.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
 
 describe('Operator conversation file MCP parity', () => {
   let database: Awaited<ReturnType<typeof agent3Database>>

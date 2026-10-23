@@ -31,7 +31,7 @@ type OlderActivityRequest = {
 /** Run selection changes reset feed, scroll and older-page requests together. */
 export function Activities(props: ActivitiesProps) {
   return props.selection ? <SelectedActivities selection={props.selection} />
-    : <ActivityFeed key={JSON.stringify(props.scope)} scope={props.scope!} focusAgentId={props.focusAgentId} />
+    : <ActivityFeed key={props.scope?.runId} scope={props.scope!} focusAgentId={props.focusAgentId} />
 }
 
 function SelectedActivities({ selection }: { selection: SelectedRunState }) {

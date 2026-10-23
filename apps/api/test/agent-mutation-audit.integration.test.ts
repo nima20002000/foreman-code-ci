@@ -3,7 +3,7 @@ import { expect, it } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { AgentMutationResultSchema } from '@foreman-code/contracts/management'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 it.skipIf(!postgresEnabled)('persists the initiating Agent transport on success, failure and cross-transport replay', async () => {
   const f = await currentOperatorIntegration({ agentManagement: true })

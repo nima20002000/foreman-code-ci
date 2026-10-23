@@ -20,12 +20,12 @@ import type { AcceptedRepeatRunSnapshot } from '../src/modules/runs/repeatStartR
 // This unit boundary supplies a validated immutable snapshot, not execution
 // history. Actual SQL identity, live grants, HTTP/MCP and denial audit are covered
 // by these opt-in PostgreSQL integration fixtures:
-// eng05-run-inspection-saved-resolution.integration.test.ts
-// eng05-run-inspection-publication.integration.test.ts
+// run-inspection-saved-resolution.integration.test.ts
+// run-inspection-publication.integration.test.ts
 // run-inspection-fork-join.integration.test.ts
-// eng05-run-inspection-repeat.integration.test.ts
-// eng05-run-inspection-waiting.integration.test.ts
-// eng05-run-inspection-large-record.integration.test.ts
+// run-inspection-repeat.integration.test.ts
+// run-inspection-waiting.integration.test.ts
+// run-inspection-large-record.integration.test.ts
 vi.mock('../src/modules/runs/currentRead.js', () => ({ withCurrentRunRead: vi.fn() }))
 const f = makeCurrentWorkflowFixture('run-record-unit', 'single')
 const input = { workspaceId: f.scope.workspaceId, runId: f.run.id }

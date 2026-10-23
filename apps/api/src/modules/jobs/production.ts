@@ -6,7 +6,7 @@ import { createMainJobExecutionHost } from './mainExecution.js'
 import { createQualificationReportPublisher } from './qualificationReports.js'
 import { createVerificationSystemInput } from './verificationSystemInput.js'
 import { openMainJobJournal } from './mainJobJournal.js'
-import { createMainCiRuntime } from './mainCiRuntime.js'
+import { createMainCiRuntime } from '../ci/mainCiRuntime.js'
 import { jobCleanupOptions } from './lifecycle.js'
 import { JobExecutionRecordSchema } from '@foreman-code/contracts/job-verification'
 import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
@@ -420,3 +420,5 @@ export async function createProductionJobs(input: ProductionJobsInput) {
       if (failures.length) throw new AggregateError(failures, 'Job resources could not all close.')
     } }
 }
+
+export type ProductionJobs = Awaited<ReturnType<typeof createProductionJobs>>

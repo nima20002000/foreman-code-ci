@@ -1,6 +1,6 @@
 import { describe, it } from 'vitest'
-import { assertRevocationRejected } from './rh01-selected-run-admission.helpers.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { assertRevocationRejected } from './selected-run-admission.helpers.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const cases = [{ transport: 'mcp' as const, revocation: 'principal' as const, boundary: 'first-advisory' as const }]
 

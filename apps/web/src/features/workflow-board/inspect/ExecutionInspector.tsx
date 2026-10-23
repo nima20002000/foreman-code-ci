@@ -9,7 +9,7 @@ import {
 import { Alert, Button, Select } from '../../../shared/ui/nocturne'
 import { useProtectedAccessError } from '../../../shared/api/useProtectedAccessError'
 import { JobRunResult } from '../../jobs/JobRunResult'
-import { useWorkflowBoard } from '../context'
+import { useBoardSelection } from '../context'
 import { assertExecutionVersion } from '../runDetailsClient'
 import { useBindingPages, useExecutionPages, useExecutionQuery, executionPagesKey, bindingsPagesKey, refreshFirstInspectionPage } from './queries'
 import { useInspectionPresentation } from './presentation'
@@ -17,7 +17,7 @@ import { JsonValue, JsonDisclosure } from './JsonValue'
 import './inspection.css'
 
 export function ExecutionInspector({ scope, version }: { scope: RepeatGraphScopeV3; version: WorkflowVersionV3 }) {
-  const board = useWorkflowBoard(), cache = useQueryClient()
+  const board = useBoardSelection(), cache = useQueryClient()
   const inspection = board?.inspection ?? {}
   const selection = readRunInspectionKey(inspection.runExchangeKey)
   const relationship = version.definition.edges.find((edge) => edge.id === inspection.runRelationshipId)
@@ -94,7 +94,7 @@ export function ExecutionInspector({ scope, version }: { scope: RepeatGraphScope
         <Button size="sm" variant="ghost" disabled={pages.isFetching || !!denied}
           onClick={() => void refreshFirstInspectionPage(cache, executionPagesKey(scope, filters))}>Refresh executions</Button>
       </div>
-      {selection.executionId && !denied ? <ExactExecution key={JSON.stringify([scope, selection.executionId])}
+      {selection.executionId && !denied ? <ExactExecution key={selection.executionId}
         scope={scope} version={version} executionId={selection.executionId} nodeId={nodeId}
         occurrenceId={selection.occurrenceId} relationshipId={inspection.runRelationshipId} /> : null}
     </>}

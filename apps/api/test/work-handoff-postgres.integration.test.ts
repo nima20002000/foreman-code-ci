@@ -20,14 +20,14 @@ import { createWorkflowRepositoryServices } from '../src/modules/runs/workflowRe
 import { createWorkflowNativeCaptureChannel } from '../src/modules/interactions/workflowNativeCapture.js'
 import { markWorkNoticeUnknownLocked, trustedWorkNoticePrompt } from '../src/modules/runs/workHandoffNotice.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
-import { writerFixture } from './eng04-writer-fixtures.js'
-import { graphFixture, graphHeaders, graphRpcValue, graphUrl } from './eng04-graph-composition-fixture.js'
-import type { currentDatabase } from './helpers/eng04CurrentDatabase.js'
-import { nim2691TaskDatabase as taskDatabase } from './helpers/nim2691Database.js'
-import { digest, seedRun, text, transaction, type JsonObject } from './eng04-migration-fixtures.js'
+import { writerFixture } from './writer-fixtures.js'
+import { graphFixture, graphHeaders, graphRpcValue, graphUrl } from './graph-composition-fixture.js'
+import type { currentDatabase } from './helpers/database.js'
+import { nim2691TaskDatabase as taskDatabase } from './helpers/taskDatabase.js'
+import { digest, seedRun, text, transaction, type JsonObject } from './repeat-migration-fixtures.js'
+import { postgresEnabled } from './helpers/database.js'
 
-const enabled = process.env.NIM2691_POSTGRES === '1'
-const postgresDescribe = describe.skipIf(!enabled)
+const postgresDescribe = describe.skipIf(!postgresEnabled)
 
 function handoffVersion(version: JsonObject) {
   const definition = version.definition as JsonObject

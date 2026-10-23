@@ -3,10 +3,10 @@ import { beginTransaction, commitTransaction, finishTransactionTiming } from '..
 import { recoverGraphRollback } from './rollbackRecovery.js'
 import { ignoreError } from '../diagnostics/ignoredError.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { createHash } from 'node:crypto'
 import type pg from 'pg'
 import { RunGraphError } from './errors.js'
-import { isDatabaseTimeout } from '../../infrastructure/databaseTimeout.js'
+import { isDatabaseTimeout } from '../../infrastructure/databaseRetry.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export interface GraphSqlClient {
   query<R extends pg.QueryResultRow = pg.QueryResultRow>(text: string, values?: unknown[]): Promise<pg.QueryResult<R>>
@@ -65,7 +65,7 @@ function queryTimingFields(text: string) {
   return {
     operation: text.trimStart().match(/^(select|insert|update|delete|with)\b/i)?.[1]?.toLowerCase() ?? 'other',
     ...(runtimeTimingChannel.hasSubscribers ? {
-      statementId: createHash('sha256').update(text).digest('hex').slice(0, 16),
+      statementId: sha256Hex(text).slice(0, 16),
     } : {}),
   }
 }
@@ -106,7 +106,7 @@ export class ExclusiveGraphConnection implements GraphSqlClient {
     }
     let name = this.readPlans.get(text)
     if (!name && this.readPlans.size < 128) {
-      name = `foreman-read-${createHash('sha256').update(text).digest('hex').slice(0, 24)}`
+      name = `foreman-read-${sha256Hex(text).slice(0, 24)}`
       this.readPlans.set(text, name)
     }
     return name ? this.#client.query<R>({ name, text, values }) : this.#client.query<R>(text, values)

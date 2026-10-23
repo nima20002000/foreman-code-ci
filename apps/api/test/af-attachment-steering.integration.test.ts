@@ -5,7 +5,7 @@ import { z } from 'zod'
 import type { SendAgentChatMessageRequest } from '@foreman-code/contracts/agent-chat'
 import { afPublicationFixture } from './helpers/afPublicationFixture.js'
 import { withAfMcp } from './helpers/afMcp.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 // Valid 1x1 PNG. This tests admission, not native image rendering.
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')

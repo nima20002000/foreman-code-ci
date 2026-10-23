@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
-import { readback, recoveryFixture, runPath, scope, toolValue, assertRecoveryReceipts } from './helpers/eng06DRecovery.js'
+import { postgresEnabled } from './helpers/database.js'
+import { readback, recoveryFixture, runPath, scope, toolValue, assertRecoveryReceipts } from './helpers/recoveryFixture.js'
 import { forms, parked } from './helpers/recoveryReadback.js'
 
 afterEach(() => vi.restoreAllMocks())

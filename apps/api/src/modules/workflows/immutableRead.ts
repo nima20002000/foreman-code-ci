@@ -1,8 +1,8 @@
-import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { AgentConfigurationVersionSchema, type AgentConfigurationVersion } from '@foreman-code/contracts'
 import { SavedWorkflowVersionSchema, SavedWorkflowDefinitionSchema, canonicalGraphJson, type SavedWorkflowVersion } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../errors.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 /** Physical columns are authority too. A valid JSON body cannot impersonate a
  * different immutable row or be silently interpreted under another semantics. */
@@ -72,9 +72,9 @@ export function readImmutableWorkflowVersion(row: ImmutableWorkflowVersionRow,
   }
   // Hash the actual current definition, including optional-repeat presence.
   // Reading never fills an omitted field or retags a saved record.
-  const digest = cached?.digest ?? `sha256:${createHash('sha256').update(canonicalGraphJson({
+  const digest = cached?.digest ?? `sha256:${sha256Hex(canonicalGraphJson({
     definition: version.definition, configurations: version.agentConfigurationVersionIds, entryNodeId: version.entryNodeId,
-  })).digest('hex')}`
+  }))}`
   if (digest !== version.contentHash) throw new DomainError('WORKFLOW_VERSION_HASH_MISMATCH', 'The immutable workflow version content hash does not match.', 409)
   if (!cached) cacheWorkflowVersion(version, digest)
   return cached ? structuredClone(version) : version

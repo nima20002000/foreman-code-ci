@@ -8,8 +8,9 @@ import { PostgresOperatorRepository } from '../src/modules/operators/postgres.js
 import { useCodexChatDelivery } from './codex-chat-delivery.helpers.js'
 import { calls, processesForRequests, until } from './fixtures/codex-test-helpers.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
+import { postgresEnabled } from './helpers/database.js'
 
-describe.skipIf(!process.env.TEST_DATABASE_URL)('Operator warm Codex sessions', () => {
+describe.skipIf(!postgresEnabled)('Operator warm Codex sessions', () => {
   const f = useCodexChatDelivery()
   const processes = () => processesForRequests(f.native.directory, 'thread/start', 'thread/resume', 'turn/start')
   const idle = (id: string) => until(async () => (await f.readOperator(id)).turnState === 'idle' || undefined)

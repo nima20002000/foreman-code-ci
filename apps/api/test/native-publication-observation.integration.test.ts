@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { checkpointRuntimeFixture } from './helpers/wave25Br1003Runtime.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
+import { postgresEnabled } from './helpers/database.js'
 import { publicationSignal } from './helpers/publicationSignal.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
@@ -43,7 +43,7 @@ describe.skipIf(!postgresEnabled)('native publication observation', () => {
       expect(f.provider.counts).toMatchObject({ sessions: 2, starts: 2 })
     } finally {
       release.resolve()
-      await task.catch(() => undefined)
+      await task.catch(() => /* ignore: cleanup; the test body already awaited or asserted this outcome */ undefined)
     }
   }, 60_000)
 })

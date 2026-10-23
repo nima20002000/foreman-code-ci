@@ -12,7 +12,7 @@ import { sourceWorktreeMcpFixture } from './helpers/sourceWorktreeMcpFixture.js'
 import { seedRetainedSourceAttempt } from './helpers/retainedSourceAttempt.js'
 import { fixtureGit } from './helpers/workspaceRepository.js'
 import { readUntil } from './helpers/observableCondition.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.runIf(postgresEnabled)('loop node directory and native session retention through MCP', () => {
   it.each([

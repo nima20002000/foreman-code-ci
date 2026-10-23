@@ -193,7 +193,7 @@ Set the variable to the existing private input file without printing its content
 
 ```sh
 export FOREMAN_CODE_CROSS_COMPUTER_CI_INPUT="$SCENARIO_INPUT_FILE"
-corepack pnpm --filter @foreman-code/api exec vitest run --config vitest.cross-computer-ci.config.mjs
+corepack pnpm --filter @foreman-code/api exec vitest run --config vitest.live-production-ci.config.mjs
 ```
 
 The dedicated config selects only `test/cross-computer-ci.acceptance.test.ts`; it has no local application startup,

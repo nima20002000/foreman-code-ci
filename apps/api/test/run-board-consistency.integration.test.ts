@@ -9,7 +9,7 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { RunManagementService } from '../src/modules/runs/management.js'
 import { RunHistoryService } from '../src/modules/runs/history.js'
 import { intervalRuntime } from './helpers/intervalRuntime.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.runIf(postgresEnabled)('saved Board read consistency', () => {
   it.each(['http', 'mcp'] as const)('keeps one lifecycle and interval cut through %s', async transport => {

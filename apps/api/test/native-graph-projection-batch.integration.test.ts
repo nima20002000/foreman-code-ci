@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, it, vi } from 'vitest'
 import pg from 'pg'
 import type { HarnessNativeEvent } from '@foreman-code/contracts'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 import { nativeStreamFixture } from './helpers/nativeStreamFixture.js'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
 

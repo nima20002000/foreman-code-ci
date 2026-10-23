@@ -21,9 +21,9 @@ import { repeatStartPublication } from '../src/modules/run-graph/repeatStartPubl
 import { admitRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
 import { WorkerExecutionPolicy } from '../src/modules/settings/workerExecution.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { jobSpec } from './helpers/jobFixture.js'
-import { seedAgent3 } from './helpers/wave25Agent3.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
 import { buildQueueFixture } from './helpers/buildComputerFixture.js'
 import { JobComputerSelection } from '../src/modules/jobs/computerSelection.js'
 

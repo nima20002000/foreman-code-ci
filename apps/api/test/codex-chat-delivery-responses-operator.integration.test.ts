@@ -6,7 +6,7 @@ import { type OperatorConversationState, type InteractionResponseValue } from '@
 import { buildApp } from '../src/app.js'
 import { OperatorChatService } from '../src/modules/conversations/operatorChat.js'
 import { PostgresOperatorRepository } from '../src/modules/operators/postgres.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { calls, emit, until } from './fixtures/codex-test-helpers.js'
 import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
 import { useCodexChatDelivery } from './codex-chat-delivery.helpers.js'

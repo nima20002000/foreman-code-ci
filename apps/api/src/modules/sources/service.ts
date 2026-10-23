@@ -1,7 +1,7 @@
 import type { RetainedSourceFootprint, SourceStorageCapacity } from '@foreman-code/contracts/source-operations'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import type { SourceWorktreeRequest } from '@foreman-code/contracts/source-materialization'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import type pg from 'pg'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -44,6 +44,7 @@ import { retainRunSource } from './runSourceUse.js'
 import { authorizationReadSnapshot } from '../access/authorizationReadSnapshot.js'
 import { SourceCapacityErrorDetailsSchema } from '@foreman-code/contracts'
 import { retainedNodeReceipt, retainsNodeWorkingTree } from './retainedNodeSource.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export type { SourceExecutionHostPort }
 type Transport = 'http' | 'mcp'
@@ -349,7 +350,7 @@ export class PostgresSourceService implements SourceAdmissionPort {
       return location
     }
     return { runnerId: 'runner-local', rootPath: repository.clone, locationRevision: expectedLocationRevision,
-      identityHash: `sha256:${createHash('sha256').update(`github:${repository.repository}`).digest('hex')}` } satisfies RunExecutionLocation
+      identityHash: `sha256:${sha256Hex(`github:${repository.repository}`)}` } satisfies RunExecutionLocation
   }
   /** Main's own clone of the workspace's GitHub repository (fetched with this computer's gh sign-in). */
   git: GitWorktreePorts = systemGitWorktreePorts()

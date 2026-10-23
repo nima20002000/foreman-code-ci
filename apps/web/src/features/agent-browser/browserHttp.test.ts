@@ -5,6 +5,8 @@ import { BrowserProfileReplicaSchema, BrowserProfileSyncJobSchema } from '@forem
 import { createBrowserProfilesClient, type BrowserProfileCodecs } from '../browser-profiles/client'
 import { browserMswHandlers } from './testing'
 import { createBrowserHttp } from './http'
+import { browserRequestUncertain } from './errors'
+import { ApiError } from '../../shared/api/client'
 import { beginSessionChange, finishSessionChange } from '../../shared/api/sessionBoundary'
 import { deferred } from './testFixtures'
 import type { BrowserProfileCatalog } from '../browser-profiles/types'
@@ -115,4 +117,25 @@ it('uses the shared installation boundary and rejects a late decoded body after 
     beginSessionChange(); decoded.resolve({ value: 'private old metadata' })
     await expect(request).rejects.toHaveProperty('name', 'AbortError')
   } finally { finishSessionChange() }
+})
+
+it('rejects a failed response as an ApiError that keeps its status and known outcome', async () => {
+  const fetcher = vi.fn<typeof fetch>(async () => new Response('{}', { status: 409 }))
+  const call = createBrowserHttp({ fetch: fetcher, origin: 'http://localhost',
+    error: async () => ({ message: 'Another viewer controls this browser', code: 'CONTROL_TAKEN', outcome: 'rejected' }) })
+  const error: unknown = await call('POST', '/api/browser/sessions/open', { encode: () => ({}), decode: async () => undefined }, [])
+    .catch((failure: unknown) => failure)
+  expect(error).toBeInstanceOf(ApiError)
+  expect(error).toMatchObject({ status: 409, code: 'CONTROL_TAKEN', message: 'Another viewer controls this browser',
+    details: { outcome: 'rejected' } })
+  expect(browserRequestUncertain(error)).toBe(false)
+})
+
+it('reports a lost connection as an uncertain network failure', async () => {
+  const call = createBrowserHttp({ fetch: async () => { throw new TypeError('Failed to fetch') }, origin: 'http://localhost',
+    error: async () => ({ message: 'Rejected' }) })
+  const error: unknown = await call('GET', '/api/browser/sessions', { encode: () => ({}), decode: async () => undefined }, [])
+    .catch((failure: unknown) => failure)
+  expect(error).toMatchObject({ code: 'NETWORK_ERROR' })
+  expect(browserRequestUncertain(error)).toBe(true)
 })

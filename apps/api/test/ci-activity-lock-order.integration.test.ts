@@ -3,10 +3,10 @@ import { expect, it } from 'vitest'
 import { CiRunRecordSchema } from '@foreman-code/contracts'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { RunActivitiesService } from '../src/modules/runs/activities.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { deferred, rejectableDeferred } from './helpers/deferred.js'
-import { graphFixture } from './eng04-graph-composition-fixture.js'
+import { graphFixture } from './graph-composition-fixture.js'
 
 it('commits CI independently of held Run publication and delivers both activities in commit order', async () => {
   const db = await currentDatabase()

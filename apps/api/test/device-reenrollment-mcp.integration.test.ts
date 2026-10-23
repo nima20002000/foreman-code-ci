@@ -12,7 +12,7 @@ import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { PostgresDeviceAccessService } from '../src/modules/devices/access.js'
 import { loadOrCreateMainDeviceIdentity } from '../src/modules/devices/mainIdentity.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 
 it('re-enrolls a revoked computer through authenticated MCP with live revision checks and persisted readback', async () => {
   const db = await currentDatabase()

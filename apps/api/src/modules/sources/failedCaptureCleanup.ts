@@ -1,5 +1,5 @@
 import type pg from 'pg'
-import { withClientTransaction, rollbackTransaction } from '../../infrastructure/transaction.js'
+import { withTransaction, rollbackTransaction } from '../../infrastructure/transaction.js'
 import { DomainError } from '../errors.js'
 import { PostgresSourceReservations, type SourceReservation } from './reservations.js'
 import type { PrivateSourceSnapshotStore } from './store.js'
@@ -52,7 +52,7 @@ async function reconcileCapture(sql: pg.PoolClient, store: CaptureStore, candida
   const replayable = await canReplay(sql, store, candidate, row)
   const bytes = await store.retainedCaptureBytes(candidate.snapshot_id)
   const reservations = new PostgresSourceReservations()
-  const claimed = await withClientTransaction(sql, async () => {
+  const claimed = await withTransaction({ client: sql }, async () => {
     const storage = (await sql.query<{ locked: boolean }>(
       'select pg_try_advisory_xact_lock(hashtext($1)) as locked',
       [`source-storage:${row.record.scopeId}`])).rows[0]
@@ -68,7 +68,7 @@ async function reconcileCapture(sql: pg.PoolClient, store: CaptureStore, candida
   })
   if (!claimed?.expired) return
   await store.remove(candidate.snapshot_id)
-  await withClientTransaction(sql, async () => {
+  await withTransaction({ client: sql }, async () => {
     await reservations.reclaimed(sql, row.record, async () => true)
     await sql.query(`insert into management_audit(principal_id,source,action,target_key,outcome,details)
       values($1,'system','source.capture.release',$2,'succeeded',$3::jsonb)`,

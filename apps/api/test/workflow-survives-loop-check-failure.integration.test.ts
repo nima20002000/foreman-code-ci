@@ -4,7 +4,7 @@ import type { HarnessNativeEvent } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { faultWorkflowFixture } from './helpers/faultWorkflowFixture.js'
 import { readUntil } from './helpers/observableCondition.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.runIf(postgresEnabled)('workflow resilience to a failed loop check', () => {
   let fixture: Awaited<ReturnType<typeof faultWorkflowFixture>>

@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, it } from 'vitest'
 import { runCommand } from '../src/modules/harnesses/process.js'
 import { nativeHttpIsolation } from './helpers/nativeHttpIsolation.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('native process local-human isolation', { timeout: 60_000 }, () => {
   let database: Awaited<ReturnType<typeof agent3Database>>

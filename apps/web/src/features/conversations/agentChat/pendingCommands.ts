@@ -1,6 +1,7 @@
 import { hydrate, notifyManager, type QueryClient } from '@tanstack/react-query'
 import { SendAgentChatMessageRequestSchema } from '@foreman-code/contracts/agent-chat'
 import { ChatDeliveryReceiptSchema, type ChatDeliveryReceipt } from '@foreman-code/contracts'
+import { writeStoredCommand } from '../../../shared/api/commandOutbox'
 import { identityEpoch, protectedKey } from '../../../shared/api/protectedChatStorage'
 import { sessionIsSwitching } from '../../../shared/api/sessionBoundary'
 import { sameDeliveryTarget } from '../../workflow-chat/draft'
@@ -19,8 +20,7 @@ export function rememberPendingCommand(draftKey: string, command: SendCommand, r
   const value = JSON.stringify({ input: SendAgentChatMessageRequestSchema.parse(command.input),
     clearDraft: command.clearDraft, draftVersion: command.draftVersion, submittedAt: Date.now(),
     ...(receipt ? { receipt: ChatDeliveryReceiptSchema.parse(receipt) } : {}) })
-  window.localStorage.setItem(key, value)
-  if (window.localStorage.getItem(key) !== value) throw new Error(storageError)
+  writeStoredCommand(key, value, storageError)
   if (receipt) retireStoredReceipts(draftKey)
 }
 

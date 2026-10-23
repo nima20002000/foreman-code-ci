@@ -1,6 +1,6 @@
 import { expect } from 'vitest'
 import { WorkflowExecutionChatResolutionSchema } from '@foreman-code/contracts'
-import { graphRpc, graphRpcValue } from '../eng04-graph-composition-fixture.js'
+import { graphRpc, graphRpcValue } from '../graph-composition-fixture.js'
 import type { currentOperatorIntegration } from './currentOperatorIntegration.js'
 
 type Fixture = Awaited<ReturnType<typeof currentOperatorIntegration>>

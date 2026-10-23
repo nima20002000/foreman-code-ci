@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const dimensions = ['workspaceIds', 'workflowIds', 'runIds', 'mainIds', 'deviceIds',
   'applicationInstallationIds', 'providerAccountIds'] as const

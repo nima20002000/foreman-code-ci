@@ -5,9 +5,10 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { expect, it, vi } from 'vitest'
-import { HostCiRunner, systemHostCiPorts, type HostCiPorts } from '../src/modules/ci-host/runner.js'
+import { HostCiRunner, systemHostCiPorts, type HostCiPorts } from '@foreman-code/ci/runner'
 import { deferred, type Deferred } from './helpers/deferred.js'
 import { gitFixtureEnvironment } from './helpers/gitFixture.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 it.each(['workspace', 'standalone', 'custom patch directory', 'repository hook'])(
   'preserves a warm checkout dependency tree with pinned pnpm across CI requests (%s)', async layout => {
@@ -20,7 +21,7 @@ it.each(['workspace', 'standalone', 'custom patch directory', 'repository hook']
   const command = (file: string, args: string[]) => execute(file, args, {
     cwd: origin, env: environment, timeout: 10_000, killSignal: 'SIGKILL',
   })
-  const system = systemHostCiPorts()
+  const system = systemHostCiPorts(mainCiContext)
   const launched = new Map<string, Promise<unknown>>()
   const starts = new Map<string, Deferred<void>>()
   let runner: HostCiRunner | undefined
@@ -92,7 +93,7 @@ it.each(['workspace', 'standalone', 'custom patch directory', 'repository hook']
         return system.run(file, args, options)
       },
     }
-    runner = new HostCiRunner(join(root, 'runner'), ports, environment)
+    runner = new HostCiRunner(mainCiContext, join(root, 'runner'), ports, environment)
     const run = async () => {
       const runId = randomUUID()
       const script = join(root, 'runner/runs', runId, 'run.sh')

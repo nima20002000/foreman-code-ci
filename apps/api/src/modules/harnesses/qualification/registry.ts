@@ -1,10 +1,10 @@
-import { createHash } from 'node:crypto'
 import { access, readFile, realpath } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { delimiter, isAbsolute, resolve } from 'node:path'
 import type { CompatibilityHarness } from '@foreman-code/contracts'
 import { forgetQualifiedProfile, rememberQualifiedProfile, QUALIFICATION_TARGET_PROFILE } from './profiles.js'
 import type { HarnessQualificationRepository } from './repository.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 export class HarnessQualificationRegistry {
   constructor(private readonly repository: Pick<HarnessQualificationRepository, 'list' | 'find'>, private readonly revisions: Partial<Record<CompatibilityHarness, string>>) {}
@@ -31,7 +31,7 @@ export class HarnessQualificationRegistry {
       }
     }
     if (!resolved) throw new Error('The configured harness executable is unavailable.')
-    const sha256 = createHash('sha256').update(await readFile(resolved)).digest('hex')
+    const sha256 = sha256Hex(await readFile(resolved))
     return { binary: resolved, sha256 }
   }
 

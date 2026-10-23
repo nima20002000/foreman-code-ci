@@ -22,9 +22,10 @@ import * as nativeRetention from '../src/modules/harnesses/installedNativeQualif
 import { ProductionDeviceRuntime } from '../src/modules/devices/productionRuntime.js'
 import type { DeviceEndpoint } from '../src/modules/devices/deviceEndpoint.js'
 import { RunWorktrees } from '../src/modules/runs/runWorktrees.js'
-import { HostCiService, type CiCommits, type HostCiEndpoint } from '../src/modules/ci-host/service.js'
+import { HostCiService, type CiCommits, type HostCiEndpoint } from '@foreman-code/ci/service'
 import { CI_GET_ACTIONS } from '../src/modules/jobs/ciAuthority.js'
 import { requireAuthorization } from '../src/modules/access/policy.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 vi.mock('../src/app.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/app.js')>()
@@ -118,7 +119,7 @@ beforeEach(() => {
   // separate service graph, and no query/native process is needed for these checks.
   database = createDatabase(config.database)
   checkpoints = createCheckpointStore(config.database.connectionString, 'composition_checkpoints', config.database)
-  production = buildProductionApp(config, database, checkpoints, false)
+  production = buildProductionApp({ config, database, checkpoints, logger: false })
 })
 
 afterEach(async () => {
@@ -205,7 +206,7 @@ it('serves the Board and Operator CI list after production initializes CI, with 
     computers: vi.fn(async () => []),
     request: vi.fn(async () => { throw new Error('CI reads must use stored tickets') }),
   }
-  services.ci = new HostCiService(pool, new PostgresCommandCoordinator(pool), {
+  services.ci = new HostCiService(mainCiContext, pool, new PostgresCommandCoordinator(pool), {
     resolve: async (caller, workspaceId, actions) => {
       for (const action of actions) requireAuthorization(caller, action, { workspaceId: workspaceId! })
       return { principal: caller, workspaceId: workspaceId! }
@@ -245,7 +246,7 @@ it('retains Worker qualification against the outgoing profile-check channel', as
   vi.spyOn(ProductionDeviceRuntime.prototype, 'endpointForDomains').mockReturnValue(
     { captureRequest, currentBinding } as unknown as DeviceEndpoint)
   const run = vi.fn(async () => { throw new Error('Construction must not qualify a native runtime') })
-  production = buildProductionApp(config, database, checkpoints, false, undefined, undefined, { codex: { harness: 'codex', revision: 'fixture', run } })
+  production = buildProductionApp({ config, database, checkpoints, logger: false, qualificationSuites: { codex: { harness: 'codex', revision: 'fixture', run } } })
   expect(retained.mock.calls[0]![0].currentBinding(binding.deviceId)).toEqual(binding)
   expect(captureRequest).toHaveBeenCalledExactlyOnceWith(binding.deviceId, 'host-harness-check-v1')
   expect(currentBinding).not.toHaveBeenCalled()

@@ -6,7 +6,7 @@ import { WorkspaceRootListResultSchema } from '@foreman-code/contracts/workspace
 import { WorkspaceBoundLocationSetResultSchema } from '@foreman-code/contracts/workspace-bound-location'
 import { describe, expect, it } from 'vitest'
 import { sourceSha256 } from '../src/modules/sources/manifest.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { pairedAgentRootsFixture } from './helpers/pairedAgentRootsFixture.js'
 
 describe.skipIf(!postgresEnabled)('paired Agent workspace roots', () => {

@@ -22,6 +22,7 @@ export const JobWorkflowExecutionReferenceSchema=z.object({
   occurrenceId:GraphIdSchema.nullable(),occurrenceIndex:z.number().int().nonnegative(),
 }).strict()
 export type JobWorkflowExecutionReference=z.infer<typeof JobWorkflowExecutionReferenceSchema>
+export const JobWorkflowExecutionReferenceReadSchema=z.object({reference:JobWorkflowExecutionReferenceSchema})
 
 export const JobWorkflowAdmissionReferenceSchema=JobWorkflowExecutionReferenceSchema.omit({jobExecutionId:true})
 export type JobWorkflowAdmissionReference=z.infer<typeof JobWorkflowAdmissionReferenceSchema>

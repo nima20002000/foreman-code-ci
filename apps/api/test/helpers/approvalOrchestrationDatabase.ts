@@ -1,5 +1,5 @@
 import { afterAll, beforeAll } from 'vitest'
-import { agent3Database } from './wave25Agent3.js'
+import { agent3Database } from './workflowDatabase.js'
 
 /** Register a migrated database shared by cases with independent workflow identities. */
 export function approvalOrchestrationDatabase() {

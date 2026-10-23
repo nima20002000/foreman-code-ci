@@ -1,4 +1,4 @@
-import { fork } from "node:child_process";
+import { forkProcess } from "../../../shared/process.js";
 import { fileURLToPath } from "node:url";
 import { FORMAT_LIMITS } from "./policy.js";
 import type { FormatFailure, FormatJob, JobResult } from "./types.js";
@@ -12,7 +12,7 @@ export async function runIsolated(job: FormatJob, settings: WorkerSettings = {})
     let result: JobResult | undefined;
     let forced: FormatFailure | undefined;
     let closed = false;
-    const child = fork(fileURLToPath(entrypoint), [], {
+    const child = forkProcess(fileURLToPath(entrypoint), [], {
       execPath: process.execPath,
       execArgv: [
         `--max-old-space-size=${FORMAT_LIMITS.heapMiB}`, "--stack-size=512", "--disable-proto=throw", "--no-addons",

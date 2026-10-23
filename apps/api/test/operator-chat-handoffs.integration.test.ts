@@ -14,6 +14,7 @@ import { PostgresFoundationSettingsRepository } from '../src/modules/settings/fo
 import { FoundationSettingsManagementService } from '../src/modules/settings/management.js'
 import { buildApp } from '../src/app.js'
 import { registerOperatorChatFixture, type OperatorChatFixture, claudeConfiguration, prepareClaudeProfile, ChatManager, waitFor } from './helpers/operatorChatFixture.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const connectionString = process.env.TEST_DATABASE_URL
 
@@ -31,7 +32,7 @@ registerOperatorChatFixture(fixture => {
   ({ pool, access, owner, operators, repository, manager, authority, chat, runtimeDirectory } = fixture)
 }, () => chat)
 
-describe.skipIf(!connectionString)('Operator chat persistence and native binding with stubbed authority', () => {
+describe.skipIf(!postgresEnabled)('Operator chat persistence and native binding with stubbed authority', () => {
   it('changes harness in an empty conversation without a fork or inherited context', async () => {
     const claude = new ChatManager('claude')
     chat = new OperatorChatService(repository, operators,

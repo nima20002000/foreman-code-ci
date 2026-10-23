@@ -12,7 +12,7 @@ import { matchingDeliveryEvidence, responseValueDigest, type InteractionDelivery
 import type { GraphResumeClaim } from '../src/modules/interactions/deliveryPostgres.js'
 import { Wave25InteractionRepository } from '../src/modules/interactions/wave25/repository.js'
 import { SingleWriterSessionManager } from '../src/modules/interactions/sessionWriter.js'
-import { nativeLanes } from './helpers/nativeLanes.js'
+import { nativeLanes } from './helpers/memorySessionCoordination.js'
 import type { InteractionNativeRuntime } from '../src/modules/interactions/runtimePorts.js'
 import { InteractionService } from '../src/modules/interactions/service.js'
 import { deferred } from './helpers/deferred.js'

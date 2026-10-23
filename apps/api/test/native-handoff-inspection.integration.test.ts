@@ -12,11 +12,12 @@ import { RepeatRepositoryFactory } from '../src/modules/runs/repeatRepositoryHos
 import { workActivationSlotId } from '../src/modules/runs/repeatResolution.js'
 import { createWorkflowRepositoryServices } from '../src/modules/runs/workflowRepositoryServices.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
-import { graphFixture, graphHeaders, graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { graphFixture, graphHeaders, graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
-import { nim2691TaskDatabase } from './helpers/nim2691Database.js'
+import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
-describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('current handoff inspection over authenticated HTTP/MCP', () => {
+describe.skipIf(!postgresEnabled)('current handoff inspection over authenticated HTTP/MCP', () => {
   it('reads the persisted activation slot and denies another workspace without changing Run facts', async () => {
     await nim2691TaskDatabase(async (pool, directory) => {
       await applyApplicationMigrations(pool)

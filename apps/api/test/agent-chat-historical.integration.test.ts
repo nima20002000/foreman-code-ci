@@ -1,14 +1,14 @@
 import { compactJsonSchema } from '../src/mcp/shared/schemaCompaction.js'
 import { operatorCatalogNames, operatorCatalog } from './support/operatorCatalog.js'
 import { describe, expect, it, vi } from 'vitest'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { randomUUID } from 'node:crypto'
 import { OperatorToolSchemaResultSchema } from '@foreman-code/contracts/operator-mcp'
 import { AgentChatHistoryPageSchema, AgentChatTurnPageSchema, SendAgentChatMessageResponseSchema } from '@foreman-code/contracts/agent-chat'
 import { ReadSelectedRunChatResponseSchema } from '@foreman-code/contracts/selected-run-chat'
 import { RunStartV3ResultSchema } from '@foreman-code/contracts/wave25'
 import { eventually } from './helpers/agentChatF5.js'
-import { body, executions, oldRunRows, path, read, setup, terminal } from './sch06-agent-chat.helpers.js'
+import { body, executions, oldRunRows, path, read, setup, terminal } from './agent-chat-schedule.helpers.js'
 
 describe.skipIf(!postgresEnabled)('Selected historical Run chat PostgreSQL / HTTP / MCP', () => {
   it('removed Agent, two Runs, exact child forks, wrong-target receipts, read-only missing sessions, revoked caller, and immutable Run results', async () => {

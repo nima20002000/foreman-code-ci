@@ -14,9 +14,10 @@ import { prepareOperatorChatInput } from '../src/modules/collaboration/chatInput
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import { FoundationSettingsManagementService } from '../src/modules/settings/management.js'
 import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
-import { graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 import { ChatManager, claudeConfiguration, registerOperatorChatFixture,
   type OperatorChatFixture, waitFor } from './helpers/operatorChatFixture.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const connectionString = process.env.TEST_DATABASE_URL
 let pool: OperatorChatFixture['pool']
@@ -84,7 +85,7 @@ async function saveWorkerDefaults(profile: HarnessProfileSelection) {
   return saved.value
 }
 
-describe.skipIf(!connectionString)('Operator input size admission', () => {
+describe.skipIf(!postgresEnabled)('Operator input size admission', () => {
   it.each([
     { kind: 'UTF-8', initial: '界'.repeat(100_000), content: 'message '.repeat(95_000) },
     { kind: 'JSON escaping', initial: '\u0001'.repeat(100_000), content: 'message '.repeat(75_000) },

@@ -3,7 +3,7 @@ import { currentOperatorIntegration } from './helpers/currentOperatorIntegration
 import { prepareCoordinationWorkflow } from './helpers/coordinationWorkflow.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { memoryCall, memoryWorkflow } from './helpers/memoryWorkflow.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 import { memoryExecution } from '../src/modules/collaboration/memoryExecution.js'
 import { lockSelections } from '../src/modules/memory-boards/batch.js'

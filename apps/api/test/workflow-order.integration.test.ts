@@ -18,7 +18,7 @@ import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { WorkspaceManagementService } from '../src/modules/workspaces/management.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 
 async function workflowOrderFixture() {
   const database = await currentDatabase()

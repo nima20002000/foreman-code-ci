@@ -1,7 +1,7 @@
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import type pg from 'pg'
 import { expect, it } from 'vitest'
-import { deliveryFixture } from '../../../test/helpers/wave25ApprovalFixture.js'
+import { deliveryFixture } from '../../../test/helpers/approvalFixture.js'
 import { Wave25InteractionDeliveryRepository } from './wave25/delivery.js'
 import { responseValueDigest } from './delivery.js'
 

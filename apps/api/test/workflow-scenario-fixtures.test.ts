@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { COORDINATION_RESULT_PROTOCOL, parseCoordinationResult } from '@foreman-code/contracts'
 import { ExecutableWorkflowV3Schema, parseRepeatExitResultV1 } from '@foreman-code/contracts/wave25'
-import { scenarioFixture, scenarioIds } from './helpers/eng07BScenarios.js'
+import { scenarioFixture, scenarioIds } from './helpers/scenarioFixtures.js'
 
 describe('workflow scenario fixture integrity (no PostgreSQL required)', () => {
   it.each(scenarioIds)('%s pins every node/configuration and uses the one V3 contract', (id) => {

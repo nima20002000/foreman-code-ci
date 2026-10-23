@@ -12,7 +12,7 @@ import { PostgresWorkflowRepository } from '../workflows/postgres.js'
 import { pendingSessionControls } from '../harnesses/sessionControlDefaults.js'
 import type { NativeHarnessSessionManager, NativeInitialTurnInput, NativeSessionStart, NativeSteerInput,
   NativeTurnInput } from '../harnesses/port.js'
-import { agent3Database, seedAgent3 } from '../../../test/helpers/wave25Agent3.js'
+import { agent3Database, seedAgent3 } from '../../../test/helpers/workflowDatabase.js'
 import { ChatManager } from '../../../test/helpers/operatorChatFixture.js'
 import { AgentChatService, type AgentChatManagerFactory } from './agentChat.js'
 import { OperatorChatService, type NativeManagerResolver, type OperatorChatAuthority } from './operatorChat.js'

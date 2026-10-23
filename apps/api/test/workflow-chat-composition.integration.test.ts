@@ -9,7 +9,7 @@ import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { conversationDeliveryFixture } from '../src/modules/conversations/conversationDelivery.test-support.js'
 import { PostgresWorkflowChatRepository } from '../src/modules/workflow-chat/repository.js'
-import { agent3Database } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })

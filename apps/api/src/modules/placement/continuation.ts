@@ -3,7 +3,7 @@ import { AgentConfigurationVersionSchema, HarnessExecutionSchema } from '@forema
 import { AcceptedWorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
 import type { WorkspaceLocationService } from '../workspaces/location.js'
 import { continuationValidator } from '../runs/continuation.js'
-import { interactionConnection } from '../interactions/connection.js'
+import { deliveryTransactionClient } from '../interactions/connection.js'
 import { DomainError } from '../errors.js'
 import type { AcceptedExecutionBinding } from './nativeComposition.js'
 
@@ -20,7 +20,7 @@ export function placedContinuationValidator(pool: pg.Pool, locations: WorkspaceL
     const { signal, purpose } = options
     const binding = await managers.prepare(executionId)
     if (!binding) return local(executionId, signal)
-    const client = interactionConnection.getStore() ?? pool
+    const client = deliveryTransactionClient() ?? pool
     const rows = await client.query<{ execution: unknown; run: unknown; configuration: unknown; stopped: boolean; cleanup_pending: boolean }>(
       `select he.record as execution,r.record as run,c.record as configuration,
        r.stop_requested_at is not null as stopped,

@@ -1,11 +1,12 @@
 import type { SqlQuery } from '../../infrastructure/transaction.js'
-import { createHash, hkdfSync, randomUUID } from 'node:crypto'
+import { hkdfSync, randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { DeviceRegistrationSchema } from '@foreman-code/contracts/device-identity'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import type { BrowserPairingAuthority, BrowserInstallationBinding } from '../browser-profiles/keys.js'
 import { DomainError } from '../errors.js'
+import { sha256Digest } from '../../shared/hash.js'
 
 export function browserConnectionBinding(binding: DeviceSessionBinding): BrowserInstallationBinding {
   return { computerId: binding.deviceId, installationId: binding.workerInstallationId,
@@ -53,7 +54,7 @@ export class MainBrowserPairing implements BrowserPairingAuthority {
       const row = (await this.pool.query<{ private_key: string }>(
         "select record->>'privateKey' as private_key from device_main_identity where main_id=$1", [this.mainId()])).rows[0]
       if (!row?.private_key) throw new DomainError('BROWSER_KEY_UNAVAILABLE', 'Main browser key authority is unavailable.', 503)
-      secret = createHash('sha256').update(row.private_key).digest()
+      secret = sha256Digest(row.private_key)
     } else {
       const row = (await this.pool.query<{ credential_hash: string }>(
         'select credential_hash from device_registrations where id=$1', [binding.computerId])).rows[0]

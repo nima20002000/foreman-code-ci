@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { access, mkdtemp, readFile, readdir, realpath, rm, stat } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -17,6 +16,7 @@ import { passiveDriverPayloads } from './payloadDiscovery.js'
 import { PayloadFingerprintCache } from './payloadFingerprintCache.js'
 import type { NativeProcessRecovery } from './recovery/processRegistry.js'
 import type { CodexMethodMap } from './codexMethodTypes.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export type CodexClientMethod = keyof CodexMethodMap
 export { CODEX_RESPONSE_FIELDS, protocolFromBundle } from './codexProtocolBundle.js'
@@ -107,12 +107,12 @@ async function manifest(directory: string): Promise<string> {
         total += info.size
         if (++count > 2_000 || total > 64 * 1024 * 1024) throw new Error('Generated schemas exceeded their size limit.')
         const bytes = await readFile(join(directory, name))
-        entries.push(`${name} ${createHash('sha256').update(bytes).digest('hex')}`)
+        entries.push(`${name} ${sha256Hex(bytes)}`)
       } else throw new Error('Unexpected generated schema entry.')
     }
   }
   await walk('')
-  return createHash('sha256').update(entries.sort().join('\n') + '\n').digest('hex')
+  return sha256Hex(entries.sort().join('\n') + '\n')
 }
 
 const verifiedProtocols = new Map<string, QualifiedCodex>()

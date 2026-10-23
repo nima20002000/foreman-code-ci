@@ -1,6 +1,6 @@
 import { afterEach } from 'vitest'
-import { approvalDatabase } from './wave25ApprovalDatabase.js'
-import { graphParity } from './wave25R1GraphParity.js'
+import { approvalDatabase } from './approvalDatabase.js'
+import { graphParity } from './graphParity.js'
 
 export function reviewHeartbeatFixtures() {
   const closes: Array<() => Promise<void>> = []

@@ -9,13 +9,14 @@ import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { HostCiService, type HostCiComputer } from '../src/modules/ci-host/service.js'
-import { ProductionHostCiEndpoint } from '../src/modules/ci-host/endpoint.js'
-import { CircleStandby } from '../src/modules/ci-host/circleStandby.js'
-import type { CiUnitInventory } from '../src/modules/ci-host/parts.js'
+import { HostCiService, type HostCiComputer } from '@foreman-code/ci/service'
+import { ProductionHostCiEndpoint } from '@foreman-code/ci/endpoint'
+import { CircleStandby } from '@foreman-code/ci/circleStandby'
+import type { CiUnitInventory } from '@foreman-code/ci/parts'
 import { CI_GET_ACTIONS, CI_RUN_ACTIONS, RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { createTestPool } from './helpers/testPool.mjs'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 let database: Awaited<ReturnType<typeof migratedDatabase>>
 beforeAll(async () => { database = await migratedDatabase() }, 60_000)
@@ -47,7 +48,7 @@ async function fixture(options: { creditsRemaining?: number; creditRefused?: boo
     }))),
   ]
   const statusReads = new Map<string, number>()
-  const productionEndpoint = new ProductionHostCiEndpoint(pool, 'fixture', () => undefined,
+  const productionEndpoint = new ProductionHostCiEndpoint(mainCiContext, pool, 'fixture', () => undefined,
     { handle: async () => { throw new Error('Unexpected local runner request') } })
   const files = Array.from({ length: 901 }, (_, index) => `apps/api/test/feature-${index}.integration.test.ts`)
   const remaining = options.creditsRemaining
@@ -55,13 +56,13 @@ async function fixture(options: { creditsRemaining?: number; creditRefused?: boo
   const circleCredits = remaining === undefined ? undefined : { reading: async () => ({ credits: {
     total: 400_000, used: 400_000 - remaining, remaining, asOf: creditsAsOf,
   } }) }
-  const circleStandby = circleCredits && new CircleStandby(async () => ['alpha', 'beta'].map(owner => ({
+  const circleStandby = circleCredits && new CircleStandby(mainCiContext, async () => ['alpha', 'beta'].map(owner => ({
     owner, circleAccountId: 'default', role: 'primary' as const, ready: true, mirrorNames: new Set(['site-ci']),
   })), circleCredits)
   // CircleCI's own credit refusal marks orgs exhausted; usage estimates alone never do.
   if (options.creditRefused) for (const owner of ['alpha', 'beta']) await circleStandby!.recordCreditRefusal(owner)
   const commands = new PostgresCommandCoordinator(pool)
-  const ci = new HostCiService(pool, commands, new RunCiAuthority(pool), {
+  const ci = new HostCiService(mainCiContext, pool, commands, new RunCiAuthority(pool), {
     resolve: async () => 'a'.repeat(40),
     capabilities: async () => ({ parts: true, integrationPartitions: true, affected: true }),
     integrationInventory: async () => ({ files, durations: Object.fromEntries(files.map(file => [file, 120_000])) }),

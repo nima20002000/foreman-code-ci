@@ -11,7 +11,7 @@ import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { PostgresDeviceAccessService } from '../src/modules/devices/access.js'
 import { BuildComputerSettings } from '../src/modules/settings/buildComputers.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('paired computer build defaults', () => {
   it('sets defaults once and rebinds a re-paired target while preserving disabled settings and revisions through MCP', async () => {

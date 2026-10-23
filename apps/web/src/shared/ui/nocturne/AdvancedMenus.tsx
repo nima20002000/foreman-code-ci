@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Icon, type IconName } from './Icon'
 import { useFloatingSurface } from './useFloatingSurface'
+import { useOutsidePress } from '../useOutsidePress'
 import { cx } from './utils'
 
 interface BaseItem { id: string; label: string; description?: string; icon?: IconName; disabled?: boolean; shortcut?: string }
@@ -20,12 +21,7 @@ export function ActionMenu({ label, items, triggerLabel, icon = 'more', disabled
   const first = useRef<'first' | 'last'>('first')
   const id = useId()
   function close(restore = true) { setOpen(false); if (restore) trigger.current?.focus() }
-  useEffect(() => {
-    if (!open) return
-    function outside(event: PointerEvent) { if (event.target instanceof Node && !root.current?.contains(event.target)) setOpen(false) }
-    document.addEventListener('pointerdown', outside, true)
-    return () => document.removeEventListener('pointerdown', outside, true)
-  }, [open])
+  useOutsidePress(open, (target) => !!root.current?.contains(target), () => setOpen(false))
   function show(last = false) { if (disabled) return; first.current = last ? 'last' : 'first'; setOpen(true) }
   return <div ref={root} className={cx('n-action-menu', className)} onBlur={event => {
     if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) close(false)

@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { jobComputerHasCapacity } from '../src/modules/jobs/computerSelection.js'
 import { jobExecution } from './helpers/jobFixture.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { setupJobAdmissionQueue } from './helpers/jobAdmissionQueue.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 describe.skipIf(!postgresEnabled)('durable build admission queue: lifecycle', () => {
   const queue = setupJobAdmissionQueue()
@@ -21,12 +22,12 @@ describe.skipIf(!postgresEnabled)('durable build admission queue: lifecycle', ()
     const finish = async () => {
       const sql = await database.pool.connect()
       try {
-        await sql.query('begin')
+        await beginTransaction(sql)
         const current = await f.jobs.repository.queueTicket(sql, f.workspaceId, accepted.id, true)
         await f.jobs.repository.finishQueueTicket(sql, current, 'completed', finishedAt)
-        await sql.query('commit')
+        await commitTransaction(sql)
       } finally {
-        await sql.query('rollback')
+        await rollbackTransaction(sql)
         sql.release()
       }
     }

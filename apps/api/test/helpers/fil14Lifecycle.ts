@@ -34,8 +34,9 @@ import { TemporaryFileService } from '../../src/modules/files/service.js'
 import { FileByteStorage } from '../../src/modules/files/storage.js'
 import { PostgresOperatorRepository } from '../../src/modules/operators/postgres.js'
 import { registerFileRoutes } from '../../src/routes/files.js'
-import { agent3Database } from './wave25Agent3.js'
+import { agent3Database } from './workflowDatabase.js'
 import { fileMetadata } from './fileFixtures.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../../src/infrastructure/transaction.js'
 
 export const hour = 3_600_000
 export const markdown = { filename: 'same.md', mediaType: 'text/markdown' as const,
@@ -74,10 +75,10 @@ export async function fil14Database() {
       if ((await database.pool.query('select 1 from application_migrations where version=$1', [migration.version])).rowCount) continue
       const client = await database.pool.connect()
       try {
-        await client.query('begin'); await client.query(migration.sql)
+        await beginTransaction(client); await client.query(migration.sql)
         await client.query('insert into application_migrations(version) values($1)', [migration.version])
-        await client.query('commit')
-      } catch (error) { await client.query('rollback'); throw error } finally { client.release() }
+        await commitTransaction(client)
+      } catch (error) { await rollbackTransaction(client); throw error } finally { client.release() }
     }
     root = await mkdtemp(join(homedir(), '.fil14-lifecycle-'))
   } catch (error) {

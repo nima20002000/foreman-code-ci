@@ -4,14 +4,16 @@ import { compactCommandActivityMigration } from '../src/infrastructure/compactCo
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { readActivityCommands } from '../src/modules/conversations/activityCommands.js'
-import { nim2691TaskDatabase } from './helpers/nim2691Database.js'
+import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
 import { buildApp } from '../src/app.js'
 import { OperatorChatService, PostgresOperatorConversationRepository } from '../src/modules/conversations/operatorChat.js'
 import { PostgresOperatorRepository } from '../src/modules/operators/postgres.js'
-import { graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
+import { postgresEnabled } from './helpers/database.js'
+import { beginTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
-it.skipIf(process.env.NIM2691_POSTGRES !== '1').each(['pending', 'uncertain', 'completed'])('retains the newest %s control beside 200 completed PostgreSQL receipts', async (status) => {
+it.skipIf(!postgresEnabled).each(['pending', 'uncertain', 'completed'])('retains the newest %s control beside 200 completed PostgreSQL receipts', async (status) => {
     await nim2691TaskDatabase(async (pool) => {
       await applyApplicationMigrations(pool)
       const access = new PostgresAccessService(pool)
@@ -59,11 +61,11 @@ it.skipIf(process.env.NIM2691_POSTGRES !== '1').each(['pending', 'uncertain', 'c
     })
   }, 120000)
 
-it.skipIf(process.env.NIM2691_POSTGRES !== '1')('backfills compact receipt activity and follows result updates without changing stored outcomes', async () => {
+it.skipIf(!postgresEnabled)('backfills compact receipt activity and follows result updates without changing stored outcomes', async () => {
   await nim2691TaskDatabase(async pool => {
     const sql = await pool.connect()
     try {
-      await sql.query('begin')
+      await beginTransaction(sql)
       // Template databases already contain the migrated table; this fixture needs its pre-migration shape.
       const schema = `command_activity_${randomUUID().replaceAll('-', '')}`
       await sql.query(`create schema ${schema}`)
@@ -83,7 +85,7 @@ it.skipIf(process.env.NIM2691_POSTGRES !== '1')('backfills compact receipt activ
       expect((await read())[0]).toEqual({ result: settled, activity_status: 'completed', activity_control: outcome.acceptedControl,
         activity_acknowledgment: settled.providerAcknowledgment })
     } finally {
-      try { await sql.query('rollback') } finally { sql.release() }
+      try { await rollbackTransaction(sql) } finally { sql.release() }
     }
   })
 }, 120000)

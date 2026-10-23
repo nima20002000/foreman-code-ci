@@ -22,9 +22,9 @@ import type { DeviceEndpoint } from '../src/modules/devices/deviceEndpoint.js'
 import { DomainError } from '../src/modules/errors.js'
 import { legacyProviderAccountBinding } from '../src/modules/provider-accounts/acceptedBindings.js'
 import type { NativeCompactInput, NativeSessionStart } from '../src/modules/harnesses/port.js'
-import { agent3Database, seedAgent3 } from './helpers/wave25Agent3.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
 import { ChatManager } from './helpers/operatorChatFixture.js'
-import { graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 import { productionClaudeFixture } from './support/claudeProduction.js'
 
 it.each(['completed', 'failed'] as const)(
@@ -129,9 +129,8 @@ it.each(['completed', 'failed'] as const)(
       vi.spyOn(ProductionDeviceRuntime.prototype, 'endpointForDomains').mockReturnValue({
         captureRequest: () => channel,
       } as unknown as DeviceEndpoint)
-      production = buildProductionApp(config, { pool: db.pool, ping: async () => {}, migrate: async () => {},
-        close: async () => {} }, checkpoints, false, undefined, undefined, undefined,
-      { mode: 'native', claudeProfiles: nativeProfile.profiles })
+      production = buildProductionApp({ config, database: { pool: db.pool, ping: async () => {}, migrate: async () => {},
+        close: async () => {} }, checkpoints, logger: false, infrastructure: { mode: 'native', claudeProfiles: nativeProfile.profiles } })
       const target = { workspaceId: context.workspaceId, conversationId: conversation.id }
       const mcp = (token: string) => graphRpc(production!.app, token, 'tools/call', {
         name: 'agent_chat_controls_get', arguments: target })

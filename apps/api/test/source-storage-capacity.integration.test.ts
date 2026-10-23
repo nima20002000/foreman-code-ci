@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it } from 'vitest'
 import { PostgresSourceReservations } from '../src/modules/sources/reservations.js'
 import { sourceStorageCapacityFixture } from './helpers/sourceStorageCapacityFixture.js'
-import { agent3Database } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 
 let database: Awaited<ReturnType<typeof agent3Database>> | undefined

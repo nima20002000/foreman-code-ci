@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawnProcess } from '../../shared/process.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { createInterface } from 'node:readline'
 import { join } from 'node:path'
@@ -41,7 +41,7 @@ export async function runBrowserUseAction(runtime: BrowserRuntimeInstallation, a
 function runBridgeProcess(runtime: BrowserRuntimeInstallation, action: BrowserHostAction,
   dispatch: BrowserNativeDispatch, home: string): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    const child = spawn(runtime.pythonExecutable, ['-I', '-B', '-u', runtime.bridgeScript], {
+    const child = spawnProcess(runtime.pythonExecutable, ['-I', '-B', '-u', runtime.bridgeScript], {
       stdio: ['pipe', 'pipe', 'ignore'], cwd: runtime.rootDirectory,
       env: { PATH: `${join(runtime.rootDirectory, 'python', 'bin')}:/usr/bin:/bin`, LANG: 'C.UTF-8',
         HOME: home, BH_HOME: home, BH_AGENT_WORKSPACE: join(runtime.rootDirectory, 'empty-workspace'),

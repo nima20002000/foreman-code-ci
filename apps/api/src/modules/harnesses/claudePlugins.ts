@@ -1,5 +1,4 @@
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
-import { createHash } from 'node:crypto'
 import {
   ClaudePluginChangeInputSchema, ClaudePluginChangeResultSchema, ClaudePluginListInputSchema,
   ClaudePluginListResultSchema, ClaudePluginMarketplaceAddInputSchema, ClaudePluginMarketplaceAddResultSchema,
@@ -13,13 +12,14 @@ import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { claudeBinary, claudeCliResult, readClaudePlugins, type PluginPorts, type ClaudePluginCatalog } from '../computers/claudePlugins.js'
 import { DomainError } from '../errors.js'
 import { QualificationCache } from './qualificationCache.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 function revision(catalog: ClaudePluginCatalog): string {
   const plugins = catalog.plugins.filter(plugin => plugin.installed)
     .map(({ pluginId, version, enabled }) => ({ pluginId, version, enabled }))
     .sort((a, b) => a.pluginId.localeCompare(b.pluginId))
   const marketplaces = [...catalog.marketplaces].sort((a, b) => a.name.localeCompare(b.name))
-  return createHash('sha256').update(JSON.stringify({ plugins, marketplaces })).digest('hex')
+  return sha256Hex(JSON.stringify({ plugins, marketplaces }))
 }
 
 export class ClaudePluginSettingsService {

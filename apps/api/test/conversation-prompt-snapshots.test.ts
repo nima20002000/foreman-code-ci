@@ -19,7 +19,7 @@ import type { PostgresOperatorRepository } from '../src/modules/operators/postgr
 import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart, NativeTurnInput } from '../src/modules/harnesses/port.js'
 import type { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import { context, F1Native, F1Store, eventually } from './helpers/agentChatF1.js'
-import { memoryConversation, operator, ReviewManager } from './fixtures/agent1OperatorChat.js'
+import { memoryConversation, operator, ReviewManager } from './fixtures/operatorChatMemory.js'
 
 const snapshot = (text: string, revision = 1): PromptSettingSnapshot => ({
   value: { text }, revision, versionId: `prompt-${revision}`,

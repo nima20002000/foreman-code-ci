@@ -20,7 +20,8 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
 import { WorkflowScheduleService } from '../src/modules/schedules/service.js'
 import { ScheduleClearResultSchema, ScheduleOccurrencePageSchema } from '../src/modules/schedules/transportSchemas.js'
-import { agent3Database, postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const settings = { timezone: 'UTC', enabled: true, policy: 'latest_saved' as const }
 const weekly: ScheduleConfiguration = { ...settings, mode: 'weekly', weekdays: [1, 3], time: '10:00' }

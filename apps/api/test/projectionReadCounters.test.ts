@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { ProjectionDatabase, projectionScope } from './eng04-projection-fixture.js'
+import { ProjectionDatabase, projectionScope } from './projection-fixture.js'
 
 const scopeValues = [projectionScope.runId, projectionScope.workspaceId,
   projectionScope.workflowId, projectionScope.workflowVersionId]

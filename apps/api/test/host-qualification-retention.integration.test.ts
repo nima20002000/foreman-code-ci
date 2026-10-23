@@ -12,7 +12,7 @@ import type { HarnessQualification } from '@foreman-code/contracts/harness-quali
 import { HarnessQualificationRepository, readHostHarnessMeasurements } from '../src/modules/harnesses/qualification/repository.js'
 import { hostHarnessMeasurementsMigration } from '../src/infrastructure/hostHarnessMeasurementsMigration.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
-import { agent3Database } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 
 it('keeps Main and pinned Run measurements when a Worker or a later Main check qualifies the same binary', async () => {
   const db = await agent3Database()

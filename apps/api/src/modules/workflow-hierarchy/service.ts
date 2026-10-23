@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { createHash } from 'node:crypto'
 import type pg from 'pg'
 import { AgentIdentitySchema, WorkflowHierarchyReadInputSchema, WorkflowHierarchyReadResultSchema,
   WorkflowReportsReadInputSchema, WorkflowReportsPageSchema, WorkflowHierarchyChangeSchema,
@@ -16,6 +15,7 @@ import { IMMUTABLE_WORKFLOW_VERSION_COLUMNS, readImmutableWorkflowVersion, readP
   type ImmutableWorkflowVersionRow, type ImmutableAgentConfigurationRow } from '../workflows/immutableRead.js'
 import { updateWorkflowHierarchy } from './update.js'
 import { readHierarchyCoordinationLocked } from '../runs/hierarchyCoordinationRead.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 type Scope = { workspaceId: string; workflowId: string; runId?: string | undefined }
 function authorize(principal: ManagementPrincipal, scope: Scope) {
@@ -178,8 +178,8 @@ export class WorkflowHierarchyService {
       const executionRevisions = (await client.query<{ id: string; revision: string }>(
         'select id,activity_record_revision::text as revision from harness_executions where run_id=$1 and id=any($2::text[]) order by id',
         [input.runId, executions])).rows
-      const cursor = `sha256:${createHash('sha256').update(canonicalGraphJson({ run, revisions,
-        group: group ?? null, coordination: coordination ?? null, executions: executionRevisions })).digest('hex')}`
+      const cursor = `sha256:${sha256Hex(canonicalGraphJson({ run, revisions,
+        group: group ?? null, coordination: coordination ?? null, executions: executionRevisions }))}`
       return WorkflowHierarchyChangeSchema.parse({ runId: input.runId, workflowVersionId: version.id,
         revision: Number(revisions.reports ?? 0), cursor })
     }, { isolation: 'repeatable read' })

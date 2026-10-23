@@ -1,10 +1,10 @@
-import { createHash } from 'node:crypto'
 
 import { z } from 'zod'
 
 import { HarnessExecutionError } from './errors.js'
 import { isObject, object, type CodexProtocol, type JsonObject, type RpcRequest } from './codexStdioTransport.js'
 import type { CodexMethodMap } from './codexMethodTypes.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 const responseTypes: Record<Exclude<keyof CodexMethodMap, 'config/mcpServer/reload'>, string> = {
   initialize: 'InitializeResponse',
@@ -150,7 +150,7 @@ export function protocolFromBundle(bundle: JsonObject, providerVersion = 'unknow
     // Zod JSON-round-trips each input; unrelated definitions multiply startup work for every RPC validator.
     const document = { ...rewritten, $schema: schemaDialect,
       definitions: referencedDefinitions(rewritten, flattenedDefinitions) }
-    const identity = createHash('sha256').update(JSON.stringify(document)).digest('hex')
+    const identity = sha256Hex(JSON.stringify(document))
     let value = compiledSchemas.get(identity)
     if (!value) {
       value = z.fromJSONSchema(document)

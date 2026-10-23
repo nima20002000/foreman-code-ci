@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, expect, it } from 'vitest'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { finished, workHandoffFixture } from './helpers/workHandoffFixture.js'
 
 describe.skipIf(!postgresEnabled)('nested work returns', () => {

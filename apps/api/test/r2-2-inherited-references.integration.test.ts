@@ -17,7 +17,8 @@ import type { CodexFileCallResult, CodexFileHostLease } from '../src/modules/har
 import type { NativeHarnessSessionManager } from '../src/modules/harnesses/port.js'
 import { calls, emit, finish, fixtureQualification, input, until } from './fixtures/codex-test-helpers.js'
 import { fileRuntimeFixture } from './fixtures/codex-file-runtime-helpers.js'
-import { agent3Database, postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 // Codex uses a protocol fixture and a fail-closed materialization spy.
 vi.doMock('../src/modules/harnesses/codexProtocol.js', async () => {

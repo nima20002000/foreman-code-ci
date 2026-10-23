@@ -16,14 +16,15 @@ import type { OperatorServices } from '../../src/mcp/operator/types.js'
 import { DomainError } from '../../src/modules/errors.js'
 import { DeviceConnectionError } from '../../src/modules/devices/deviceWire.js'
 import { registerGraphqlMcp } from '../../src/mcp/unified/transport.js'
-import { CiRuntimeProvisioner } from '../../src/modules/jobs/ciRuntimeProvisioner.js'
-import { CiRuntimeWorker } from '../../src/modules/jobs/ciRuntimeWorker.js'
+import { CiRuntimeProvisioner } from '@foreman-code/ci/ciRuntimeProvisioner'
+import { CiRuntimeWorker } from '@foreman-code/ci/ciRuntimeWorker'
 import { buildComputerTarget } from '../../src/modules/settings/buildComputers.js'
 import { createVerificationProfile } from '../../src/modules/jobs/verificationProfiles.js'
 import { jobDigest } from '../../src/modules/jobs/digest.js'
 import { ciFixture } from './ciFixture.js'
 import { ciPreparationMemory } from './ciPreparationMemory.js'
 import { verificationCapacityFixture } from './verificationCapacityFixture.js'
+import { mainCiContext } from '../../src/modules/ci/context.js'
 
 export const mainId = '11111111-1111-4111-8111-111111111111'
 export const builder = '22222222-2222-4222-8222-222222222222'
@@ -208,7 +209,7 @@ export async function ciPreparationFixture(options: {
     now: () => new Date(),
   }
   const workerLifetime = new AbortController()
-  let worker = new CiRuntimeWorker(stateDirectories.worker, workerPorts as never, workerLifetime.signal)
+  let worker = new CiRuntimeWorker(mainCiContext, stateDirectories.worker, workerPorts as never, workerLifetime.signal)
   let restartedOperation: string | undefined
   let statusDrops = options.statusDrops ?? 0
   let ackLost = false
@@ -219,7 +220,7 @@ export async function ciPreparationFixture(options: {
       if (refreshRecord && restartedOperation !== refreshRecord.operationId) {
         await worker.close()
         restartedOperation = refreshRecord.operationId
-        worker = new CiRuntimeWorker(stateDirectories.worker, workerPorts as never, workerLifetime.signal)
+        worker = new CiRuntimeWorker(mainCiContext, stateDirectories.worker, workerPorts as never, workerLifetime.signal)
       }
       if (payload.operation === 'status' && statusDrops-- > 0) throw new DeviceConnectionError('transport')
       const state = await worker.handle(payload)
@@ -306,17 +307,17 @@ export async function ciPreparationFixture(options: {
   }
   // Main's own CI runtime restarts with Main after its refresh, like a Worker.
   const mainPorts = { ...workerPorts, managedRuntimeRoot: async () => stateDirectories.main }
-  let mainRuntime = new CiRuntimeWorker(stateDirectories.main, mainPorts as never, workerLifetime.signal)
+  let mainRuntime = new CiRuntimeWorker(mainCiContext, stateDirectories.main, mainPorts as never, workerLifetime.signal)
   let mainRestartedOperation: string | undefined
   const main = options.main === 'installed' ? () => ({ handle: async (payload: unknown) => {
     if (refreshRecord && mainRestartedOperation !== refreshRecord.operationId) {
       await mainRuntime.close()
       mainRestartedOperation = refreshRecord.operationId
-      mainRuntime = new CiRuntimeWorker(stateDirectories.main, mainPorts as never, workerLifetime.signal)
+      mainRuntime = new CiRuntimeWorker(mainCiContext, stateDirectories.main, mainPorts as never, workerLifetime.signal)
     }
     return mainRuntime.handle(payload)
   } }) : undefined
-  const createProvisioner = () => new CiRuntimeProvisioner(pool, profileService as never, sources as never,
+  const createProvisioner = () => new CiRuntimeProvisioner(mainCiContext, pool, profileService as never, sources as never,
     () => endpoint, commands, { ...memory, ...main ? { main } : {}, timing: { pollMs: 0,
       wait: () => new Promise(resolve => setImmediate(resolve)), now: () => new Date() } })
   const ciRuntime = createProvisioner()

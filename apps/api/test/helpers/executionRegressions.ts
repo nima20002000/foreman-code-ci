@@ -5,7 +5,7 @@ import { ManagementActionSchema } from '@foreman-code/contracts/management'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
 import { WorkflowManagementService } from '../../src/modules/workflows/management.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
-import { agent3Database, seedAgent3 } from './wave25Agent3.js'
+import { agent3Database, seedAgent3 } from './workflowDatabase.js'
 
 export async function executionRegressionDatabase() {
   const database = await agent3Database()

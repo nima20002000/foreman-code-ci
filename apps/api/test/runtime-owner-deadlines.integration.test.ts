@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { OperatorRuntimeOwner } from '../src/infrastructure/operatorRuntimeOwner.js'
 import { DomainError } from '../src/modules/errors.js'
 import { readUntil } from './helpers/observableCondition.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { deferred } from './helpers/deferred.js'
 
 async function stalledReplies(afterReady: number) {

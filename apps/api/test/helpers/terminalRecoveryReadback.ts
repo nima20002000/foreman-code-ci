@@ -1,6 +1,6 @@
 import { expect } from 'vitest'
 import { RUN_INSPECTION_TOOLS, RunVersionDetailSchema } from '@foreman-code/contracts/wave25'
-import { readback, readParity, recoveryFixture, scope, type Form } from './eng06DRecovery.js'
+import { readback, readParity, recoveryFixture, scope, type Form } from './recoveryFixture.js'
 
 // These are normal positive assertions, not expected-failure tests. In particular
 // d32a361 cold cleanup requires a scoped physical-disposal callback. The helper

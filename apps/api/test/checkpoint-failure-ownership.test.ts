@@ -1,7 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import { afterEach, expect, it, vi } from 'vitest'
 import { executeRepeatRuntime, type RepeatRuntimeLifecycle } from '../src/modules/runs/repeatRuntime.js'
-import { a1Scenario, graphHarness } from './helpers/eng04A1GraphHarness.js'
+import { a1Scenario, graphHarness } from './helpers/graphScenarioHarness.js'
 
 afterEach(() => vi.restoreAllMocks())
 

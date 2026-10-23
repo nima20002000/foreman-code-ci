@@ -20,6 +20,8 @@ import type { PodmanJobSupervisor } from '../src/modules/jobs/executorPodman.js'
 import { RemoteOperationJournal } from '../src/modules/runs/remote/operationJournal.js'
 import { RemoteJobExecutionHost } from '../src/modules/runs/remote/jobExecutionHost.js'
 import { jobSpec } from './helpers/jobFixture.js'
+import { postgresEnabled } from './helpers/database.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 vi.mock('../src/modules/jobs/executor.js', async importOriginal => ({
   ...await importOriginal<typeof import('../src/modules/jobs/executor.js')>(), executeJob: vi.fn(),
@@ -27,7 +29,7 @@ vi.mock('../src/modules/jobs/executor.js', async importOriginal => ({
 
 // Real migrations, authenticated MCP and persisted readback. Native execution
 // and source qualification are explicit doubles; no installed OCI claim.
-describe.skipIf(process.env.JOB_LIFECYCLE_POSTGRES !== '1' && !process.env.TEST_DATABASE_URL)('Job retained-log MCP readback', () => {
+describe.skipIf(!postgresEnabled)('Job retained-log MCP readback', () => {
   it('persists a failed final-log gap through completion and denies an ungranted MCP reader', async () => {
     const url = new URL(process.env.TEST_DATABASE_URL!)
     if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) throw new Error('Job lifecycle tests require loopback PostgreSQL')
@@ -86,11 +88,11 @@ describe.skipIf(process.env.JOB_LIFECYCLE_POSTGRES !== '1' && !process.env.TEST_
         observeReceipt: async receipt => {
           const sql = await db.connect()
           try {
-            await sql.query('begin')
+            await beginTransaction(sql)
             const original = await jobs.repository.execution(sql, workspaceId, execution.id, true)
             await projectJobReceiptLocked(sql, original, receipt, { verifyRequiredOutputs: async () => {} })
-            await sql.query('commit')
-          } catch (error) { await sql.query('rollback'); throw error } finally { sql.release() }
+            await commitTransaction(sql)
+          } catch (error) { await rollbackTransaction(sql); throw error } finally { sql.release() }
         },
       })
       await host.deliver(intent, execution); await host.drain()

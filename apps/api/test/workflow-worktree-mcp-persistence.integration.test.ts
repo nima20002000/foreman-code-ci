@@ -9,7 +9,7 @@ import {
   SavedManagedWorkflowSchema,
 } from '@foreman-code/contracts/wave25'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { setup, repository } from './helpers/workflowWorktreeMcp.js'
 

@@ -3,9 +3,10 @@ import type pg from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { RunStartV3Input } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../src/modules/errors.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
-import { sch11Minute, sch11Once } from './helpers/sch11ClockCases.js'
-import { sch11Fixture, type Sch11Database, type Sch11Fixture } from './helpers/sch11Fixture.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
+import { sch11Minute, sch11Once } from './helpers/scheduleClockCases.js'
+import { sch11Fixture, type Sch11Database, type Sch11Fixture } from './helpers/scheduleFixture.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
 async function reached<T>(signal: Promise<T>, work: Promise<void>): Promise<T> {

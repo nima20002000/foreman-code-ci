@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { faultWorkflowFixture, expectRecoveredFault } from './helpers/faultWorkflowFixture.js'
 import { readUntil } from './helpers/observableCondition.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.runIf(postgresEnabled)('workflow device reconnect', () => {
   let fixture: Awaited<ReturnType<typeof faultWorkflowFixture>>

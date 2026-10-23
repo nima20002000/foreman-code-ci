@@ -12,7 +12,8 @@ import { PostgresSourceOperationAuthority } from '../src/modules/sources/operati
 import { RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
 import { createFixtureSchema, dropFixtureSchema } from './helpers/testResources.js'
 import { createTestPool } from './helpers/testPool.mjs'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 // Readers of committed Run facts must answer while the Run owner holds its row locks.
 describe.skipIf(!postgresEnabled)('Run readers that do not queue behind the Run owner', () => {

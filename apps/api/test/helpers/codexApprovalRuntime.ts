@@ -1,5 +1,5 @@
 import { agentWorkflowVersion } from './agentWorkflowFixture.js'
-import { insertProviderRun, providerLaunchCredentials, stopProviderRun } from './wave25Br1003Runtime.js'
+import { insertProviderRun, providerLaunchCredentials, stopProviderRun } from './checkpointRuntime.js'
 import { codexMcpInspectorAdapter } from '../../src/modules/harnesses/codexMcpInspectorAdapter.js'
 import { createWorkflowNativeCaptureChannel } from '../../src/modules/interactions/workflowNativeCapture.js'
 import { createReviewNativeCaptureChannel } from '../../src/modules/interactions/reviewNativeCapture.js'
@@ -30,7 +30,7 @@ import { PostgresRunRepository } from '../../src/modules/runs/postgres.js'
 import { PostgresWorkflowRepository } from '../../src/modules/workflows/postgres.js'
 import { WorkspaceLocationService } from '../../src/modules/workspaces/location.js'
 import { CodexApprovalProvider, type ApprovalProviderOptions } from './codexApprovalProvider.js'
-import { agent3Database, seedAgent3 } from './wave25Agent3.js'
+import { agent3Database, seedAgent3 } from './workflowDatabase.js'
 import type { RepeatRepositoryServices } from '../../src/modules/runs/repeatRepositoryHost.js'
 
 /** Real SQL, workflow engine, Codex adapter, credentials and approval services with replayed provider IO. */

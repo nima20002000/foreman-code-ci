@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { isDeepStrictEqual as same } from 'node:util'
 import { AgentConfigurationVersionSchema, HarnessExecutionSchema, type NativeSessionReference } from '@foreman-code/contracts'
 import { REMOTE_NATIVE_SOURCE_LIMIT } from '@foreman-code/contracts/remote-workflow-physical'
@@ -25,6 +24,7 @@ import type { RunOwnership } from '../ownership.js'
 import { codexChatFileTools } from '../../harnesses/codexFiles/declarations.js'
 import type { PostgresArtifactPublicationAuthority } from './nativeArtifactAuthority.js'
 import { DomainError } from '../../errors.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 export const WORKFLOW_NATIVE_FILE_CONTEXT_OPERATION = 'remote.native-artifact.context'
 export const WORKFLOW_NATIVE_FILE_CONVERSATION_PREFIX = 'workflow-native-files:v1:'
@@ -55,7 +55,7 @@ const denied = (reason: string): never => {
     'The original running workflow file context is not proven or authorized.', 403, { reason })
 }
 const conflict = (): never => { throw new DomainError('NATIVE_ARTIFACT_CONTEXT_CONFLICT', 'The original workflow file-context admission differs.', 409) }
-const digest = (key: string) => createHash('sha256').update(key).digest('hex')
+const digest = (key: string) => sha256Hex(key)
 
 /** Private Main admission on the existing native/G1 transaction. No pool,
  * provider IO, human message, credentials, chat fork or synthetic native fact. */

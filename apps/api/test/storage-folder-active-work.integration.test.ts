@@ -17,9 +17,9 @@ import { insertRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
 import { WorkspaceStorageFolders } from '../src/modules/workspaces/storageFolders.js'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
-import { insertCurrentRunFixture } from './helpers/eng04CurrentRunFixture.js'
+import { insertCurrentRunFixture } from './helpers/currentRunFixture.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
-import { seedAgent3 } from './helpers/wave25Agent3.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
 import { sourceWorktreeMcpFixture } from './helpers/sourceWorktreeMcpFixture.js'
 
 let database: Awaited<ReturnType<typeof migratedDatabase>>

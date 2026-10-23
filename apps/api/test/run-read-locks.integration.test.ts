@@ -10,9 +10,10 @@ import { RunOwnership } from '../src/modules/runs/ownership.js'
 import { RepeatRepositoryFactory } from '../src/modules/runs/repeatRepositoryHost.js'
 import { createWorkflowRepositoryServices } from '../src/modules/runs/workflowRepositoryServices.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
-import { graphFixture, graphHeaders, graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { graphFixture, graphHeaders, graphRpc, graphRpcValue } from './graph-composition-fixture.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 async function fixture() {
   const db = await currentDatabase()
@@ -72,7 +73,7 @@ describe('authenticated Run reads during concurrent writes', () => {
       }))
       if (admitted.kind !== 'admitted') throw new Error('The fixture execution was not admitted')
       const baseline = await f.runs.get(caller.principal, run.workspaceId, run.id)
-      await blocker.query('begin')
+      await beginTransaction(blocker)
       await blocker.query('update runs set stop_requested_at=clock_timestamp() where id=$1', [run.id])
       await blocker.query('select run_id from run_graph_heads where run_id=$1 for update', [run.id])
       await blocker.query('select id from harness_executions where id=$1 for update', [admitted.execution.id])
@@ -105,7 +106,7 @@ describe('authenticated Run reads during concurrent writes', () => {
         url: `/api/management/workspaces/${run.workspaceId}/runs/${run.id}`,
         headers: graphHeaders(denied.token) })).statusCode).toBe(403)
       expect((await promptly(store.readExecution(admitted.execution.id))).execution).toEqual(admitted.execution)
-      await blocker.query('commit')
+      await commitTransaction(blocker)
       const persisted = await graphRpc(f.app, caller.token, 'tools/call', {
         name: RUN_INSPECTION_TOOLS.record, arguments: args,
       })
@@ -113,7 +114,7 @@ describe('authenticated Run reads during concurrent writes', () => {
       await f.graph.access.revoke(caller.principal.id)
       await expect(f.runs.get(caller.principal, run.workspaceId, run.id)).rejects.toMatchObject({ code: 'AUTH_REVOKED' })
     } finally {
-      await blocker.query('rollback')
+      await rollbackTransaction(blocker)
       blocker.release()
       await owner.release()
       await f.close()
@@ -126,7 +127,7 @@ describe('authenticated Run reads during concurrent writes', () => {
     const args = { workspaceId: run.workspaceId, runId: run.id }
     const blocker = await f.db.pool.connect()
     try {
-      await blocker.query('begin')
+      await beginTransaction(blocker)
       await blocker.query('lock table runs in access exclusive mode')
       for (const name of ['run_get', 'run_events_list', 'run_activities_get_v1'] as const) {
         const result = await graphRpc(f.app, f.graph.writer.token, 'tools/call', {
@@ -152,7 +153,7 @@ describe('authenticated Run reads during concurrent writes', () => {
         code: 'DATABASE_READ_TIMEOUT', details: { retryable: true, sqlState: '57014' },
       } })
     } finally {
-      await blocker.query('rollback')
+      await rollbackTransaction(blocker)
       blocker.release()
       await f.close()
     }

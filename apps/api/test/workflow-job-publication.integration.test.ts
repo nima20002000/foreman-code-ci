@@ -8,9 +8,9 @@ import {
 import { openRunGraphPublication } from '../src/modules/run-graph/publication.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { workflowJobAttemptIdentityMigration } from '../src/infrastructure/workflowJobAttemptIdentityMigration.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { workflowJobFixture } from './helpers/workflowJobFixture.js'
-import { graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { graphRpcValue } from './graph-composition-fixture.js'
 
 type Fixture = Awaited<ReturnType<typeof workflowJobFixture>>
 

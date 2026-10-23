@@ -1,10 +1,10 @@
-import { createHash } from 'node:crypto'
 import { RemoteOperationReceiptSchema, RemoteOwnerReconciliationSchema, type RemoteOwnerReconciliation, type RemoteOperationReceipt } from '@foreman-code/contracts/remote-execution'
 import { WorkerObservationSchema, DispatchIntentSchema, type WorkerObservation } from '@foreman-code/contracts/node-placement'
 import { canonicalGraphJson, sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { assertGraphTransaction, beforeGraphCommit, type GraphTransactionSql } from '../../run-graph/connection.js'
 import type { RunOwnership } from '../ownership.js'
 import { VerifiedRemoteEvidence } from './resultBridge.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 /** Accepted dispatch is immutable; current native grant renewal is a separate audited fact. */
 export async function readReconciledDispatchIntent(sql: Pick<GraphTransactionSql, 'query'>, operationId: string, lock = false) {
@@ -75,7 +75,7 @@ export async function persistVerifiedRemoteReceipt(sql: GraphTransactionSql, own
 export async function auditRejectedRemoteReceipt(sql: GraphTransactionSql, receipt: RemoteOperationReceipt, reason: string) {
   assertGraphTransaction(sql)
   // Hash only: rejected reports cannot persist arbitrary credential-bearing payloads.
-  const digest = createHash('sha256').update(canonicalGraphJson(receipt)).digest('hex')
+  const digest = sha256Hex(canonicalGraphJson(receipt))
   await sql.query('select operation_id from execution_dispatch_intents where operation_id=$1 for update', [receipt.intent.operationId])
   await sql.query(`insert into remote_execution_recovery_audit(operation_id,reason,evidence_digest)
     select operation_id,$2,$3 from execution_dispatch_intents where operation_id=$1`, [receipt.intent.operationId, reason.slice(0, 100), digest])

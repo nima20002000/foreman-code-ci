@@ -6,7 +6,7 @@ import { makeCurrentWorkflowFixture, WorkActivationInputSchema } from '@foreman-
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { ControlledWorkflowProvider } from './helpers/controlledWorkflowProvider.js'
 import { workflowChatCall, workflowChatTarget } from './helpers/workflowChatRequests.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { DomainError } from '../src/modules/errors.js'
 import { isWorkflowStart } from '../src/modules/harnesses/sessionStart.js'
 

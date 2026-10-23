@@ -4,7 +4,7 @@ import { DurableInteractionSchema, PendingNativeInteractionSchema, type Approval
   type CoordinatorConsultationBinding } from '@foreman-code/contracts'
 import { readCoordinatorCredentialAuthority } from '../../access/consultationAuthority.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { currentOperatorAuthority } from '../../access/runAuthority.js'
+import { currentOperatorAuthority, readRunAuthorizationPrincipal } from '../../access/runAuthority.js'
 import { requireAuthorization } from '../../access/policy.js'
 import { credentialAuthority } from '../../interactions/wave25/credentialAuthority.js'
 import { assertWorkflowCorrelation } from '../../runs/workResultRepair.js'
@@ -119,11 +119,11 @@ export class PostgresClaudeInteractionAuthority implements ClaudeInteractionAuth
     const run = 'run' in current ? current.run : { id: current.run_id,
       workspaceId: current.workspace_id, workflowId: current.workflow_id }
     if (run.id !== this.binding.runId || current.execution.attempt !== this.binding.attempt) denied()
-    const row = (await database.query<{ principal_id: string }>("select record->>'authorizationPrincipalId' as principal_id from runs where id=$1", [this.binding.runId])).rows[0]
-    if (!row?.principal_id) denied()
-    const principal = (await currentOperatorAuthority(database, row.principal_id)).principal
+    const row = await readRunAuthorizationPrincipal(database, this.binding.runId)
+    if (!row?.principalId) denied()
+    const principal = (await currentOperatorAuthority(database, row.principalId)).principal
     requireAuthorization(principal, 'runs:start', { workspaceId: run.workspaceId, workflowId: run.workflowId })
-    return { ownerPrincipalId: row.principal_id,
+    return { ownerPrincipalId: row.principalId,
       attemptId: consultation ? `consultation:${consultation.consultationId}` : String(current.execution.attempt) }
   }
   private async chat(expectedRequestId?: string): Promise<ChatRow> {

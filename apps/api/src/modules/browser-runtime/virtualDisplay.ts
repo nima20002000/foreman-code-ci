@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawnProcess } from '../../shared/process.js'
 import { existsSync } from 'node:fs'
 import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -50,7 +50,7 @@ export class BrowserVirtualDisplay {
     if (previous && this.alive(previous)) { this.current = previous; return previous.display }
     const executable = await findBrowserVirtualDisplay()
     if (!executable) throw new DomainError('BROWSER_RUNTIME_MISSING', 'Agent browsers on Linux need Xvfb. Install it with: sudo apt-get install xvfb', 503)
-    const child = spawn(executable, ['-displayfd', '3', '-screen', '0', '1440x900x24', '-nolisten', 'tcp'],
+    const child = spawnProcess(executable, ['-displayfd', '3', '-screen', '0', '1440x900x24', '-nolisten', 'tcp'],
       { stdio: ['ignore', 'ignore', 'pipe', 'pipe'] })
     let stderr = ''
     child.stderr?.setEncoding('utf8').on('data', (chunk: string) => { stderr = (stderr + chunk).slice(-400) })

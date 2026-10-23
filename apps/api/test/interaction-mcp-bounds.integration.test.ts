@@ -5,8 +5,8 @@ import { buildApp } from '../src/app.js'
 import { PostgresAppInteractionService } from '../src/modules/interactions/app.js'
 import { selectedMainMcpForward } from '../src/modules/placement/workerMcpRelay.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
-import { approvalDatabase } from './helpers/wave25ApprovalDatabase.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { approvalDatabase } from './helpers/approvalDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const closes: Array<() => Promise<unknown>> = []
 afterEach(async () => { while (closes.length) await closes.pop()!() })

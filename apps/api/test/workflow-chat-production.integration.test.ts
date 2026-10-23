@@ -4,7 +4,7 @@ import { expect, it } from 'vitest'
 import { WorkflowChatPostResponseSchema } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
-import { seedAgent3 } from './helpers/wave25Agent3.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
 import { access, address, database, project, production, registerProductionLifecycleFixture } from './helpers/productionLifecycleFixture.js'
 
 registerProductionLifecycleFixture()

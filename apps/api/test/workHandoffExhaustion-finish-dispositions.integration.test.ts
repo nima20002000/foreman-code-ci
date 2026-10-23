@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, expect, it } from 'vitest'
 import { trustedWorkNoticePrompt } from '../src/modules/runs/workHandoffNotice.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { finished, workHandoffFixture } from './helpers/workHandoffFixture.js'
 import { sharedWorkHandoffExhaustionDatabase } from './helpers/workHandoffExhaustionDatabase.js'
 

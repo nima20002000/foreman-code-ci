@@ -8,7 +8,7 @@ import type { StoredFile } from '../src/modules/files/repository.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { FileRetentionService } from '../src/modules/files/retention.js'
 import { FileByteStorage } from '../src/modules/files/storage.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { absent, allocate, base, candidate, collect, contentUrl, fil14Database, headers, historical, hour, markdown, owner, pins, reread, save, sweep, target, waitFor, type Fil14Database, type Owner, type Runtime } from './helpers/fil14Lifecycle.js'
 import { deferred } from './helpers/deferred.js'
 
@@ -59,7 +59,7 @@ describe.skipIf(!postgresEnabled)('FIL-14 retention, expiry and sweeper lifecycl
       const pid = (await blocker.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
       result = runtime.retention.save(who.principal, 'http', { commandId, expectedRevision: preference.revision,
         durationSeconds, applyToExisting: true })
-      void result.catch(() => undefined)
+      void result.catch(() => /* ignore: marks the promise handled; the test awaits it below */ undefined)
       await waitFor(async () => (await database.pool.query<{ waiting: boolean }>(`select exists(
         select 1 from pg_stat_activity where datname=current_database()
           and $1::int=any(pg_blocking_pids(pid)) and wait_event_type='Lock') as waiting`, [pid])).rows[0]!.waiting,
@@ -167,14 +167,14 @@ describe.skipIf(!postgresEnabled)('FIL-14 retention, expiry and sweeper lifecycl
         entered.resolve(); await release.promise
         return runtime.physical.remove(stored.storageKey)
       })
-      void cleaning.catch(() => undefined)
+      void cleaning.catch(() => /* ignore: marks the promise handled; the test awaits it below */ undefined)
       let saving: ReturnType<FileRetentionService['save']> | undefined
       try {
         await Promise.race([entered.promise, cleaning.then(() => assert.fail('Cleanup never reached guarded unlink'))])
         assert.equal((await reread(runtime, stored.value)).value.file.state, 'expired', 'Tombstone is durable before unlink')
         saving = runtime.retention.save(who.principal, 'http', { commandId: randomUUID(), expectedRevision: 0,
           durationSeconds, applyToExisting: true })
-        void saving.catch(() => undefined)
+        void saving.catch(() => /* ignore: marks the promise handled; the test awaits it below */ undefined)
         await waitFor(async () => (await database.pool.query<{ waiting: boolean }>(`select exists(
           select 1 from pg_stat_activity where application_name=$1 and wait_event_type='Lock'
             and cardinality(pg_blocking_pids(pid))>0) as waiting`, [runtime.applicationName])).rows[0]!.waiting,
@@ -286,7 +286,7 @@ describe.skipIf(!postgresEnabled)('FIL-14 retention, expiry and sweeper lifecycl
     const paused = await database.open({ bytes: new PausedBytes(database.root, MAX_FILE_BYTES) })
     // Calling .then starts injection now rather than leaving a lazy injection builder.
     const request = paused.app.inject({ method: 'GET', url: contentUrl(who, stored.value), headers: headers(who) }).then((reply) => reply)
-    void request.catch(() => undefined)
+    void request.catch(() => /* ignore: marks the promise handled; the test awaits it below */ undefined)
     try {
       await Promise.race([verified.promise, request.then(() => assert.fail('Download skipped the verification barrier'))])
       await save(runtime, who, 3600, true)

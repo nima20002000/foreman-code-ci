@@ -8,7 +8,6 @@ import { ConversationNativeAccess } from './modules/collaboration/conversationNa
 import { createProductionWorkflowChat } from './modules/collaboration/groupChatProduction.js'
 import { createMemoryBoardService } from './modules/memory-boards/production.js'
 import { memoryBoardAuthority } from './modules/collaboration/memoryBoardAuthority.js'
-import { requireRsyncTransferOwner } from './modules/byte-transfer/rsyncTransferOwner.js'
 import { WorkflowCollaborationIntegration, type WorkflowFeaturePorts } from './modules/collaboration/workflowIntegration.js'
 import { createWorkflowExecutionChatService } from './modules/collaboration/workflowChatProduction.js'
 import { MANAGED_MCP_NAMESPACE } from '@foreman-code/contracts/managed-mcp-channel'
@@ -16,40 +15,17 @@ import { isDatabasePoolTimeout } from '@foreman-code/contracts/failure'
 import { DeviceManagedMcp } from './modules/harnesses/deviceManagedMcp.js'
 import { RunWorktrees } from './modules/runs/runWorktrees.js'
 import { withTransaction } from './infrastructure/transaction.js'
-import { withCiDatabaseReservation } from './infrastructure/ciDatabasePriority.js'
 import { ComputerActivityService } from './modules/computers/activity.js'
-import { registerComputerActivityRoutes } from './routes/computerActivity.js'
 import { ComputerAccountsService } from './modules/computers/accounts.js'
 import {
   AGENT_SNAPSHOT_JSON_BYTES, AGENT_SNAPSHOT_NAMESPACE,
 } from '@foreman-code/contracts/source-materialization'
-import { agentFileReader } from './modules/ci-host/agentFileReader.js'
-import { CiRuntimeProvisioner } from './modules/jobs/ciRuntimeProvisioner.js'
-import { CiEnrollment } from './modules/jobs/ciEnrollment.js'
 import { startStateDeadlineSweeper } from './modules/diagnostics/stateDeadlines.js'
 import { reportServiceFailure, trackService } from './modules/diagnostics/serviceHealth.js'
-import { ProductionCiEnrollmentInventory } from './modules/jobs/ciEnrollmentInventory.js'
+import { ProductionCiEnrollmentInventory } from './modules/ci/enrollmentInventory.js'
 import { CI_HOST_NAMESPACE, CI_RUNTIME_NAMESPACE, DEFAULT_STUCK_EXECUTION_IDLE_MS } from '@foreman-code/contracts'
-import { HostCiService } from './modules/ci-host/service.js'
-import { GitCiCommits } from './modules/ci-host/commits.js'
-import { RunCiAuthority } from './modules/jobs/ciAuthority.js'
-import { ProductionHostCiEndpoint } from './modules/ci-host/endpoint.js'
-import { HostCiRunner, systemHostCiPorts } from './modules/ci-host/runner.js'
-import { CircleCreditUsage } from './modules/ci-host/circleCredits.js'
-import { CircleAccountDirectory } from './modules/ci-host/circleAccounts.js'
-import { CircleAccountsManagementService } from './modules/settings/circleAccounts.js'
-import { CircleCreditCache } from './modules/ci-host/circleCreditCache.js'
-import { circleOrganizations } from './modules/ci-host/circleOrganizations.js'
-import { CircleStandby } from './modules/ci-host/circleStandby.js'
-import { CircleAccountFleetStatus } from './modules/ci-host/circleAccountStatus.js'
-import { registerCircleAccountRoutes } from './routes/circleAccounts.js'
-import { homedir } from 'node:os'
-import { activeCiRuns, circleCiOrgs, cloudCis, runningCircleCiOwners, workspaceMirrorList, workspaceMirrors }
-  from './modules/ci-host/cloud.js'
-import { configuredReservedCloudSlots } from './modules/ci-host/cloudSlots.js'
-import { agentSnapshots, type ReadAgentFiles } from './modules/ci-host/agentSnapshots.js'
-import { registerComputerAccountsRoutes } from './routes/computerAccounts.js'
-import { registerComputerMaintenanceRoutes } from './routes/computerMaintenance.js'
+import { agentFileReader, CiEnrollment, CiRuntimeProvisioner, createCircleCi, createHostCi } from './modules/ci/mount.js'
+import type { CircleCreditUsage, CircleStandby, CloudCis, HostCiService, ReadAgentFiles } from './modules/ci/types.js'
 import { FleetMaintenanceService } from './modules/computers/fleet.js'
 import { computerConnectionsReader } from './modules/computers/connections.js'
 import { startWorkerPublicationSync } from './modules/computers/workerPublicationSync.js'
@@ -61,26 +37,21 @@ import { ComputerGitHubService } from './modules/computers/github.js'
 import { COMPUTER_MAINTENANCE_NAMESPACE, COMPUTER_MAINTENANCE_VERSION } from '@foreman-code/contracts/computer-maintenance'
 import { COMPUTER_ACCOUNTS_NAMESPACE, COMPUTER_SYNC_NAMESPACE, COMPUTER_GITHUB_NAMESPACE } from '@foreman-code/contracts/computer-accounts'
 import { ComputerSyncService } from './modules/computers/sync.js'
-import { registerComputerSyncRoutes } from './routes/computerSync.js'
 import { sessionStartDirectory } from './modules/harnesses/sessionStart.js'
 import { recoverPersistedClaudeCompaction } from './modules/harnesses/claudeSdk/recoverCompaction.js'
-import { registerBuildComputerRoutes } from './routes/buildComputers.js'
 import { ApprovedRootAllowlistSchema, WORKSPACE_ROOT_EXTENSION } from '@foreman-code/contracts/workspace-root-policies'
 import type { ClaudeHarnessConfiguration } from '@foreman-code/contracts/claude'
 import { readProductEnvironment } from '@foreman-code/contracts/product-environment'
 import { appLauncherPath, appMcpServerName } from './modules/harnesses/appMcpLauncher.js'
 import { createMainRsyncEntrypoint } from './modules/byte-transfer/installedEntrypoints.js'
 import { PostgresTrustedConnectionSetup } from './modules/devices/trustedConnectionSetup.js'
-import { registerTrustedConnectionRoutes } from './modules/devices/trustedConnectionManagement.js'
-import { requirePrincipal } from './modules/access/http.js'
-import { RsyncTransferAuthorizeRequestSchema } from '@foreman-code/contracts/byte-transfer'
 import type { AcceptedTransferAuthority } from './modules/byte-transfer/carrier.js'
 import type { InstalledMainRsyncProviders } from './modules/byte-transfer/productionComposition.js'
 import { createInstalledRsyncComposition } from './modules/byte-transfer/productionComposition.js'
 import { RSYNC_STAGE_EXTENSION, type TransferIntent } from '@foreman-code/contracts/byte-transfer'
 import { transferContextForBinding } from './modules/byte-transfer/carrier.js'
 import { JOB_RUNTIME_QUALIFICATION_EXTENSION } from '@foreman-code/contracts/job-runtime'
-import { interactionConnection } from './modules/interactions/connection.js'
+import { deliveryTransactionClient } from './modules/interactions/connection.js'
 import { createProductionRemoteWorkflow } from './modules/placement/productionRemoteWorkflow.js'
 import { remoteMcpPreflight } from './modules/placement/remoteMcpPreflight.js'
 import { closeCompletedWorkflowSources } from './modules/sources/workflowCleanup.js'
@@ -118,29 +89,20 @@ import { RESOURCE_TELEMETRY_CAPABILITY, type TrustedTelemetryContext } from '@fo
 import { createResourceTelemetryRuntime, type ResourceTelemetryRuntime } from './modules/resource-telemetry/runtime.js'
 import { createPassiveTelemetryAuthorities } from './modules/resource-telemetry/productionAuthority.js'
 import { createMainResourceTelemetryBindings } from './modules/resource-telemetry/ingestion/carrier.js'
-import { registerResourceTelemetryRoutes } from './routes/resourceTelemetry.js'
-import { registerResourceTelemetrySelectorRoutes } from './routes/resourceTelemetrySelector.js'
 import { WorkspaceBoundLocationService } from './modules/workspace-roots/service.js'
 import { ManagedWorkspaceRootService } from './modules/workspace-roots/managedRoot.js'
 import { bootstrapLocalMainWorkspaceRoot } from './modules/workspace-roots/localMainBootstrap.js'
 import { WorkspaceRepositoryService } from './modules/workspaces/repositoryService.js'
-import { registerWorkspaceRepositoryRoutes } from './routes/workspaceRepository.js'
-import { registerWorkspaceRootRoutes } from './modules/workspace-roots/transports.js'
 import { RemoteJobMainRpcRequestRecordSchema } from '@foreman-code/contracts/remote-job-execution'
 import { JOB_INPUT_NAMESPACE } from './modules/files/jobInputs/service.js'
 import { PostgresWorkflowJobNodeStore, workflowJobStorePublication } from './modules/jobs/workflowStore.js'
 import { createProductionJobs } from './modules/jobs/production.js'
 import type { OperatorServices } from './mcp/operator/types.js'
 import { WorkflowHierarchyService } from './modules/workflow-hierarchy/service.js'
-import { registerJobRoutes } from './routes/jobs.js'
-import { registerJobRuntimeProfileRoutes } from './routes/jobRuntimeProfiles.js'
-import { registerSourceRoutes } from './routes/sources.js'
 import { createClaudeProductionDiscovery } from './modules/harnesses/claudeSdk/bootstrap.js'
 import { productionClaudeMetadata } from './modules/harnesses/claudeSdk/productionMetadata.js'
 import { initializeNativeDefaults } from './modules/harnesses/initializeDefaults.js'
 import { qualifyClaudeNativeProfile } from './modules/harnesses/claudeSdk/nativeProfileQualification.js'
-import { installedClaudeProfilePin } from './modules/harnesses/claudeSdk/installedProfilePin.js'
-import { CLAUDE_PROFILE_CHECK_REVISION } from './modules/harnesses/claudeSdk/profileRevision.js'
 import { discoverInventoryLauncher } from './modules/harnesses/hostDiscovery.js'
 import { inventoryDriverPayloads } from './modules/harnesses/payloadDiscovery.js'
 import { runCommand } from './modules/harnesses/process.js'
@@ -150,7 +112,6 @@ import { ProviderAccountsService } from './modules/provider-accounts/service.js'
 import { ProviderAccountsRepository } from './modules/provider-accounts/repository.js'
 import { LocalProviderCredentials } from './modules/provider-accounts/localCredentials.js'
 import { createProductionAccountSelection } from './modules/provider-accounts/productionSelection.js'
-import { ProviderAccountWorkerAuthorityRequestSchema } from '@foreman-code/contracts/provider-accounts'
 import { createRemoteAccountServices } from './modules/provider-accounts/remoteServices.js'
 import { NativeProviderAccountCommands, type AccountNativeSelection } from './modules/provider-accounts/nativeCommands.js'
 import { NativeProviderAccountOperations } from './modules/provider-accounts/nativeOperations.js'
@@ -158,21 +119,15 @@ import { NativeAccountJournal } from './modules/provider-accounts/nativeJournal.
 import type { AcceptedProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
 import { ProviderAccountConfigurationService } from './modules/harnesses/providerAccountConfiguration.js'
 import { prepareClaudeWorkflowCredentials } from './modules/harnesses/claudeSdk/workflowCredentials.js'
-import { PostgresClaudeInteractionAuthority } from './modules/harnesses/claudeSdk/domainAuthority.js'
 import { productionSelectedProfileManager } from './modules/harnesses/selectedProfileProduction.js'
 import { createProductionWorkerConversations } from './modules/conversations/workerProduction.js'
 import { REMOTE_PREPARATION_EXTENSION, WorkerConversationCallbackSchema } from '@foreman-code/contracts/remote-execution-rpc'
 import { credentialAuthority } from './modules/interactions/wave25/credentialAuthority.js'
-import { readCoordinatorCredentialAuthority } from './modules/access/consultationAuthority.js'
 import type { GraphSqlClient } from './modules/run-graph/connection.js'
-import { currentOperatorAuthority } from './modules/access/runAuthority.js'
-import { requireAuthorization } from './modules/access/policy.js'
 import { AcceptedHarnessProfileAdmission, AcceptedClaudeProfileAdmission, type AcceptedProfileAuthority } from './modules/harnesses/instanceSettings/acceptedProfile.js'
 import { workflowProfileSelection } from './modules/harnesses/workflowProfileSelection.js'
-import { authorizeOperatorProfileObservation } from './modules/harnesses/operatorProfileObservation.js'
 import {
   HarnessExecutionRequestSchema,
-  OperatorConfigurationVersionSchema,
   RETIRED_OPENCODE_MESSAGE,
   type AgentDefaults,
 } from '@foreman-code/contracts'
@@ -215,14 +170,23 @@ import { join, resolve } from 'node:path'
 
 import type { ApiConfig } from './config.js'
 import { buildApp } from './app.js'
-import { registerProductionFileStorage } from './modules/files/production.js'
+import type { WorkspaceRootPolicyPort } from './modules/sources/rootPolicyPorts.js'
+import { createMainTransferAuthority, mainRsyncAuthorizationExtensions, routeMainRsyncAcknowledgements } from './modules/byte-transfer/mainTransferAuthority.js'
+import { createMainProviderAccountExtension } from './modules/provider-accounts/mainWorkerAuthority.js'
+import { mainProvisioningTarget, readMainProvisioningTarget } from './modules/provider-accounts/mainTarget.js'
+import { readMainInstallationId } from './modules/devices/mainIdentity.js'
+import { createProductionProfileAuthority } from './modules/harnesses/instanceSettings/productionProfileAuthority.js'
+import { deviceHostOverrideAuthority } from './modules/harnesses/instanceSettings/authority.js'
+import { createHarnessHost, type HarnessHost } from './composition/harnessHost.js'
+import { createProductionFileStorage, type ProductionFileStorage } from './modules/files/production.js'
+import { registerApiRoutes, type ApiRouteServices } from './routes/registry.js'
 import { createProductionWorkflowFileContexts } from './modules/runs/remote/workflowNativeFilesProduction.js'
 import {
   PostgresArtifactPublicationAuthority,
   PostgresAcceptedArtifactAttemptFence,
   type NativeArtifactAuthorityPorts,
 } from './modules/runs/remote/nativeArtifactAuthority.js'
-import { mountProductionWorkflowArtifacts } from './modules/runs/remote/workflowArtifactProduction.js'
+import { createProductionWorkflowArtifacts } from './modules/runs/remote/workflowArtifactProduction.js'
 import { createMainWorkflowArtifactTransferExtension } from './modules/runs/remote/workflowArtifactTransferProduction.js'
 import type { TemporaryFileService } from './modules/files/service.js'
 import { defaultFileStorageRoot } from './modules/files/storage.js'
@@ -231,7 +195,6 @@ import { codexChatHostDirectory, localCodexChatHost } from './modules/harnesses/
 import { productionFileTools } from './modules/files/tools/production.js'
 import { FileRetentionService } from './modules/files/retention.js'
 import { PostgresCommandReceiptRetention } from './modules/commands/receiptRetention.js'
-import { registerFileRetentionRoutes } from './routes/fileRetention.js'
 import { createOperatorExtensions } from './mcp/operator/extensions.js'
 import { NativeConfigurationService } from './modules/harnesses/nativeConfiguration.js'
 import { HarnessMcpSettingsService } from './modules/harnesses/mcpSettings.js'
@@ -287,7 +250,7 @@ import { PostgresAppInteractionService } from './modules/interactions/app.js'
 import { PostgresApprovalBudgetRepository } from './modules/interactions/budget.js'
 import { ApprovalExecutionCoordinator } from './modules/interactions/execution.js'
 import { PostgresWorkflowClosureStore } from './modules/interactions/workflowClosure.js'
-import { retryStartupDatabase } from './infrastructure/startupDatabase.js'
+import { retryStartupDatabase } from './infrastructure/databaseRetry.js'
 import { OperatorInteractionService } from './modules/interactions/operator.js'
 import { Wave25InteractionRepository as PostgresInteractionRepository } from './modules/interactions/wave25/repository.js'
 import { ExecutionScopedNativeSessionManagerResolver,
@@ -321,7 +284,6 @@ import { HarnessInstallationMonitor } from './modules/harnesses/installationMoni
 import { createInstalledNativeQualificationRetention } from './modules/harnesses/installedNativeQualificationRetention.js'
 import { HostHarnessOverrideService, type HostHarnessOverrideAuthority } from './modules/harnesses/instanceSettings/service.js'
 import { commandInputHash } from './modules/commands/postgres.js'
-import { authorizeDeviceHost, assertDeviceHostInstallation } from './modules/devices/hostAuthorization.js'
 
 /** The native owner supplies slot-specific installation and isolation qualification. */
 export type ProductionProviderAccountSelection = AccountNativeSelection & {
@@ -332,6 +294,8 @@ type ProductionMainInstallation = Awaited<ReturnType<ProductionDeviceRuntime['in
 
 interface ProductionComposition {
   collaborationPorts: WorkflowFeaturePorts | undefined
+  computerUpkeep: boolean
+  harnessHost: HarnessHost
   workflowCollaboration: WorkflowCollaborationIntegration
   config: ApiConfig
   database: ReturnType<typeof createDatabase>
@@ -346,6 +310,14 @@ interface ProductionComposition {
   mainBinaries: { readonly codexBinary: string }
   workerExecution: WorkerExecutionPolicy
   fileStorage: TemporaryFileService | undefined
+  files: ProductionFileStorage | undefined
+  routes: ApiRouteServices
+  /** Main's installation, once startup has read it. */
+  machine: ProductionMainInstallation | undefined
+  /** Computer root policies, once Main's own root is bootstrapped. */
+  rootPolicies: WorkspaceRootPolicyPort | undefined
+  /** Paired-device MCP management, once startup knows Main's installation. */
+  managedMcp: DeviceManagedMcp | undefined
   fileStorageRoot: string
   chatFileAdmissions: ProductionCodexChatFiles
   responseJournal: NativeResponseJournal
@@ -354,7 +326,7 @@ interface ProductionComposition {
   agentPlacement: AgentPlacementProducer | undefined
   agentPreparation: AgentExecutionPreparation | undefined
   executionAuthority: ReturnType<typeof createExecutionAuthorityExtension> | undefined
-  workflowArtifacts: ReturnType<typeof mountProductionWorkflowArtifacts> | undefined
+  workflowArtifacts: ReturnType<typeof createProductionWorkflowArtifacts> | undefined
   workflowPhysicalArtifacts: PostgresWorkflowPhysicalArtifacts | undefined
   artifactComposition: {
     mainId: string
@@ -454,7 +426,7 @@ interface ProductionComposition {
   conversationNativeAccess: ConversationNativeAccess
   workflowChat: ReturnType<typeof createProductionWorkflowChat>
   stopWorkflowChat?: () => void
-  cloudCis?: ReturnType<typeof cloudCis>
+  cloudCis?: CloudCis
   workerChats: ReturnType<typeof createProductionWorkerConversations>
   agentChatProfileSelection: (
     configuration: import('@foreman-code/contracts').AgentConfigurationVersion,
@@ -510,33 +482,31 @@ interface ProductionComposition {
   shutdown: () => Promise<void>
 }
 
+export interface ProductionAppOptions {
+  config: ApiConfig
+  database: ReturnType<typeof createDatabase>
+  checkpoints: CheckpointStore
+  /** The shared API logger by default; tests pass false. */
+  logger?: boolean | FastifyBaseLogger
+  createCurrentProduction?: CurrentRunProductionFactory
+  /** Trusted FIL-10 admission + execution-host ports; never populated from HTTP fields. */
+  codexChatFiles?: ProductionCodexChatFiles
+  qualificationSuites?: Record<CompatibilityHarness, QualificationSuite>
+  /** Native harness, device and transfer ports. `mode: 'replay'` injects recorded harness protocol. */
+  infrastructure?: ProductionHarnessInfrastructure
+  accountSelection?: ProductionProviderAccountSelection
+  collaborationPorts?: WorkflowFeaturePorts
+  /** Keeps harnesses, MCP servers and plugins current on every computer. Only the server entrypoint enables it. */
+  computerUpkeep?: boolean
+}
+
 /** The startup composition is shared with regression tests; infrastructure owns its lifecycle. */
-export function buildProductionApp(
-  config: ApiConfig,
-  database: ReturnType<typeof createDatabase>,
-  checkpoints: CheckpointStore,
-  // The shared API logger by default; tests pass false.
-  logger: boolean | FastifyBaseLogger = componentLogger('http'),
-  createCurrentProduction?: CurrentRunProductionFactory,
-  // Trusted FIL-10 admission + execution-host ports; never populated from HTTP fields.
-  codexChatFiles?: ProductionCodexChatFiles,
-  qualificationSuites?: Record<CompatibilityHarness, QualificationSuite>,
-  infrastructure?: ProductionHarnessInfrastructure,
-  accountSelection?: ProductionProviderAccountSelection,
-  collaborationPorts?: WorkflowFeaturePorts,
-) {
+export function buildProductionApp(options: ProductionAppOptions) {
   // Service callbacks read the same slots as later startup and shutdown stages.
   const composition = {
-    config,
-    database,
-    checkpoints,
-    logger,
-    createCurrentProduction,
-    codexChatFiles,
-    qualificationSuites,
-    infrastructure,
-    accountSelection,
-    collaborationPorts,
+    ...options,
+    logger: options.logger ?? componentLogger('http'),
+    computerUpkeep: options.computerUpkeep ?? false,
   } as ProductionComposition
   configureMainTransport(composition)
   configureDeviceRuntime(composition)
@@ -566,8 +536,10 @@ export function buildProductionApp(
     rsync: composition.rsync,
     shutdownPending: () => composition.lifecycle.pending(),
     registerFileStorage: () => {
-      composition.fileStorage ??= registerProductionFileStorage(composition.app, composition.database.pool, composition.config)
+      composition.files ??= createProductionFileStorage(composition.app, composition.database.pool, composition.config)
+      composition.fileStorage = composition.files.service
       composition.mountArtifacts()
+      registerApiRoutes(composition.app, productionRoutes(composition))
       return composition.fileStorage
     },
     startDeviceListener: () => composition.deviceRuntime.startListener(),
@@ -606,12 +578,7 @@ function configureMainTransport(composition: ProductionComposition) {
     resolve(config.harnesses.workspaceRoot, 'main-codex-selection.json'), systemMaintenancePorts())
   composition.mainBinaries = { get codexBinary() { return mainCodex.binary } }
   composition.workerExecution = new WorkerExecutionPolicy(config.workerExecution)
-  if (infrastructure?.mode === 'replay' && (!infrastructure.auxiliary
-    || !infrastructure.auxiliary.compatibility || !infrastructure.auxiliary.plugins
-    || !infrastructure.auxiliary.mcp?.codex
-    || !infrastructure.auxiliary.command || !infrastructure.auxiliary.recovery || !infrastructure.inventoryDiscovery || qualificationSuites)) {
-    throw new DomainError('HARNESS_REPLAY_INCOMPLETE', 'Replay must inject settings and probes and cannot run installed CLI qualification.', 500)
-  }
+  composition.harnessHost = createHarnessHost(infrastructure, qualificationSuites)
   const fileStorageRoot = composition.fileStorageRoot = config.fileStorageRoot ?? defaultFileStorageRoot()
   composition.chatFileAdmissions = codexChatFiles ?? postgresCodexChatFiles(database.pool, () => {
     if (!composition.fileStorage) throw new Error('Production file storage is not registered.')
@@ -622,26 +589,8 @@ function configureMainTransport(composition: ProductionComposition) {
     ?? new NativeProcessRegistry(resolve(config.harnesses.workspaceRoot, 'native-process-registry'))
   composition.access = new PostgresAccessService(database.pool)
   const inputAcknowledgements = composition.inputAcknowledgements = new Map<string, TransferIntent>()
-  const acceptedRsync = composition.acceptedRsync = {
-    async intent(id, binding) {
-      if (!composition.jobRuntime) throw new DomainError('RSYNC_COMPOSITION_UNAVAILABLE', 'Original Main source and Job transfer services have not initialized.', 503)
-      if (!isDeepStrictEqual(composition.deviceRuntime.endpointForDomains().captureRequest(binding.deviceId, RSYNC_STAGE_EXTENSION.namespace)?.binding, binding))
-        throw new DomainError('RSYNC_CONNECTION_CONFLICT', 'Transfer lookup requires the actual current rsync channel.', 403)
-      const operation = await requireRsyncTransferOwner(database.pool, id)
-      if (operation === 'source.package.admit') return composition.jobRuntime.transfers.intent(id, binding)
-      if (operation === 'job.inputs.bind') {
-        return composition.jobRuntime.inputs.main.authorizedTransfer(id, transferContextForBinding(binding))
-      }
-      const intent = await composition.jobRuntime.outputs.admission.intentForTransfer(id)
-      await composition.jobRuntime.outputs.admission.authorizeTransfer(intent, transferContextForBinding(binding))
-      return intent
-    },
-    async authorize(intent, context) {
-      const binding = composition.deviceRuntime.endpointForDomains().captureRequest(intent.deviceId, RSYNC_STAGE_EXTENSION.namespace)?.binding
-      if (!binding || !isDeepStrictEqual(transferContextForBinding(binding), context) || !isDeepStrictEqual(await acceptedRsync.intent(intent.transferId, binding), intent))
-        throw new DomainError('RSYNC_TRANSFER_DENIED', 'The original accepted transfer or authenticated generation changed.', 403)
-    },
-  }
+  const acceptedRsync = composition.acceptedRsync = createMainTransferAuthority({ pool: database.pool,
+    endpoint: () => composition.deviceRuntime.endpointForDomains(), jobs: () => composition.jobRuntime })
   const entrypoint: ProductionComposition['entrypoint'] = composition.entrypoint = infrastructure?.rsyncInstallation?.kind === 'configured' && !infrastructure.rsync
     ? createMainRsyncEntrypoint({ installation: infrastructure.rsyncInstallation, endpoint: () => composition.deviceRuntime.endpointForDomains(), accepted: acceptedRsync,
       setup: { checkAcceptedTransfer: (...args) => {
@@ -653,21 +602,9 @@ function configureMainTransport(composition: ProductionComposition) {
       } },
       ownership: () => rsync.kind === 'configured' ? rsync.ownership : undefined }) : undefined
   const installedRsync: ProductionComposition['installedRsync'] = composition.installedRsync = infrastructure?.rsync ?? entrypoint?.providers
-  const rsyncProviders: InstalledMainRsyncProviders | undefined=installedRsync?{...installedRsync,acknowledged:async(...args:Parameters<NonNullable<InstalledMainRsyncProviders['acknowledged']>>)=>{
-    const [intent,context]=args
-    const binding=composition.deviceRuntime.endpointForDomains().captureRequest(intent.deviceId,RSYNC_STAGE_EXTENSION.namespace)?.binding
-    if(!binding||!isDeepStrictEqual(transferContextForBinding(binding),context))throw new DomainError('RSYNC_CONNECTION_CONFLICT','Canonical ACK requires the original actual Main capture.',403)
-    if(intent.byteClass==='source'&&intent.direction==='to-worker'){
-      if(!composition.jobRuntime)throw new DomainError('SOURCE_RUNTIME_UNAVAILABLE','The original committed source lifecycle is unavailable.',503)
-      await composition.jobRuntime.lifecycle.acknowledged(intent,context)
-    }else if(intent.byteClass==='artifact'&&intent.direction==='to-main'&&composition.jobRuntime&&await composition.jobRuntime.outputs.ownsTransfer(intent.transferId)){
-      await composition.jobRuntime.outputs.admission.authorizeTransfer(intent,context)
-      await composition.jobRuntime.outputs.lifecycle.acknowledged(intent)
-    }else if(isDeepStrictEqual(inputAcknowledgements.get(intent.transferId),intent)){
-      if(!composition.jobRuntime)throw new DomainError('JOB_RUNTIME_UNAVAILABLE','The original input delivery authority is unavailable.',503)
-      await composition.jobRuntime.inputs.main.acknowledged(intent.transferId,binding)
-    }else await installedRsync.acknowledged(...args)
-  }}:undefined
+  const rsyncProviders = installedRsync ? routeMainRsyncAcknowledgements(installedRsync, {
+    endpoint: () => composition.deviceRuntime.endpointForDomains(), jobs: () => composition.jobRuntime,
+    inputAcknowledgements }) : undefined
   const rsync: ProductionComposition['rsync'] = composition.rsync = createInstalledRsyncComposition({ side: 'main', providers: rsyncProviders,
     current: deviceId => composition.deviceRuntime.endpointForDomains().captureRequest(deviceId, RSYNC_STAGE_EXTENSION.namespace)?.binding })
   composition.remoteTelemetry = createMainResourceTelemetryBindings(() => composition.telemetry?.service)
@@ -687,14 +624,7 @@ function configureDeviceRuntime(composition: ProductionComposition) {
     browserMedia: (request, socket, head) => composition.browserRemote.mediaUpgrade(request, socket, head),
     extensions: [
       remoteTelemetry.extension,
-      ...rsync.extensions.map(extension => ({ ...extension, role: 'duplex' as const, async handle(raw: unknown, context: import('./modules/devices/deviceApplicationChannel.js').DeviceExtensionContext) {
-        context.signal.throwIfAborted()
-        if (context.bytes !== undefined) throw new DomainError('RSYNC_TRANSFER_DENIED', 'Transfer authorization accepts metadata only.', 403)
-        const request = RsyncTransferAuthorizeRequestSchema.parse(raw)
-        const intent = await acceptedRsync.intent(request.transferId, context.binding)
-        context.signal.throwIfAborted()
-        return { payload: intent }
-      } })),
+      ...mainRsyncAuthorizationExtensions(rsync.extensions, acceptedRsync),
       { ...BROWSER_DEVICE_EXTENSION, handle: (payload, context) => composition.browserRemote.handle(payload, context) },
       { namespace: WORKSPACE_ROOT_EXTENSION.namespace, version: WORKSPACE_ROOT_EXTENSION.version, role: 'client', maxJsonBytes: WORKSPACE_ROOT_EXTENSION.maxPayloadBytes, maxBinaryBytes: 0 },
       { ...JOB_RUNTIME_QUALIFICATION_EXTENSION, role: 'duplex', async handle(payload, context) {
@@ -727,34 +657,8 @@ function configureDeviceRuntime(composition: ProductionComposition) {
       createMainWorkflowArtifactTransferExtension(() => composition.workflowArtifacts?.receiver,
         infrastructure?.deviceDomains?.extensions.find(value => value.namespace === BYTE_TRANSFER_NAMESPACE),()=>composition.jobRuntime?.outputs),
       { namespace: 'harness-discovery-v1', version: 1, role: 'client', maxJsonBytes: 1_048_576, maxBinaryBytes: 0 },
-      { namespace: 'provider-accounts-v1', version: 1, role: 'duplex', maxJsonBytes: 65_536, maxBinaryBytes: 0,
-        async handle(raw, context) {
-          const request = ProviderAccountWorkerAuthorityRequestSchema.parse(raw)
-          const target = request.kind === 'binding' ? request.binding.target : request.operation.binding.target
-          const current = deviceRuntime.endpointForDomains().currentBinding(context.binding.deviceId)
-          if (context.bytes !== undefined || !isDeepStrictEqual(current, context.binding)
-            || target.hostRef.kind !== 'device' || target.hostRef.deviceId !== context.binding.deviceId
-            || target.hostRef.mainId !== context.binding.mainId
-            || target.applicationInstallationId !== context.binding.workerInstallationId
-            || target.keyRevision !== context.binding.keyRevision
-            || target.authorizationRevision !== context.binding.authorizationRevision) {
-            throw new DomainError('ACCESS_DENIED', 'The original Worker account authority is unavailable.', 403)
-          }
-          let payload: { available: true } | { allowed: true }
-          if (request.kind === 'binding') {
-            const resolved = await composition.providerAccounts.resolve(request.binding.provider, request.binding.accountId,
-              { allowDefault: false, acceptedBinding: request.binding })
-            if (!resolved) throw new DomainError('PROVIDER_ACCOUNT_UNAVAILABLE', 'The accepted account is unavailable.', 409)
-            payload = { available: true }
-          } else {
-            await composition.providerAccounts.assertAuthenticationEligibility(request.operation)
-            payload = { allowed: true }
-          }
-          if (!isDeepStrictEqual(current, deviceRuntime.endpointForDomains().currentBinding(context.binding.deviceId))) {
-            throw new DomainError('ACCESS_DENIED', 'The original Worker account channel changed.', 403)
-          }
-          return { payload }
-        } },
+      createMainProviderAccountExtension({ accounts: () => composition.providerAccounts,
+        currentBinding: deviceId => deviceRuntime.endpointForDomains().currentBinding(deviceId) }),
       { namespace: COMPUTER_ACCOUNTS_NAMESPACE, version: 1, role: 'client', maxJsonBytes: 65_536, maxBinaryBytes: 0 },
       { namespace: COMPUTER_MAINTENANCE_NAMESPACE, version: COMPUTER_MAINTENANCE_VERSION, role: 'client', maxJsonBytes: 1_048_576, maxBinaryBytes: 0 },
       createProductionWorkerArtifactExtension({
@@ -874,20 +778,19 @@ function configureProviderAccounts(composition: ProductionComposition) {
       new NativeAccountJournal(resolve(config.harnesses.workspaceRoot, 'provider-account-operations')), processRegistry,
       input => providerAccounts.assertAuthenticationEligibility(input.operation))
     : accountCommands
+  // Main's own accounts belong to its installation: read from the database until startup knows it.
+  const mainTarget = async (sql: Parameters<typeof readMainProvisioningTarget>[0]) => composition.machine
+    ? mainProvisioningTarget(composition.machine.installationId) : readMainProvisioningTarget(sql)
   const providerAccounts: ProductionComposition['providerAccounts'] = composition.providerAccounts = new ProviderAccountsService(database.pool,
-    new ProviderAccountsRepository(database.pool, () => accountCredentials.hostId()), accountCredentials,
-    accountNative, commands)
-  providerAccounts.bindTarget(async sql => {
-    const row = (await sql.query<{ id: string }>(
-      'select id from application_installation where singleton=true')).rows[0]
-    if (!row) throw new DomainError('PROVIDER_ACCOUNT_TARGET_UNAVAILABLE', 'The canonical Main installation is unavailable.', 503)
-    return { hostRef: { kind: 'main', mainId: row.id }, applicationInstallationId: row.id,
-      keyRevision: null, authorizationRevision: null }
-  })
-  providerAccounts.bindRouting(createRemoteAccountServices({ pool: database.pool, commands, local: providerAccounts,
-    endpoint: () => deviceRuntime.endpointForDomains() }))
+    new ProviderAccountsRepository(database.pool, () => accountCredentials.hostId(), mainTarget), accountCredentials,
+    accountNative, commands, undefined, local => createRemoteAccountServices({ pool: database.pool, commands, local,
+      endpoint: () => deviceRuntime.endpointForDomains() }))
   composition.workflowAccountBindings = new Map<string, AcceptedProviderAccountBinding>()
-  composition.accountConfigurations = new ProviderAccountConfigurationService(providerAccounts)
+  composition.accountConfigurations = new ProviderAccountConfigurationService(providerAccounts, {
+    selectionForConfiguration: (...args) => composition.harnessInstances.selectionForConfiguration(...args),
+    prepareOperatorConfiguration: (...args) => composition.harnessInstances.prepareOperatorConfiguration(...args),
+    validateSelection: (...args) => composition.harnessInstances.validateSelection(...args),
+  })
   const workflowCapture = composition.workflowCapture = createWorkflowNativeCaptureChannel()
   composition.reviewCapture = createReviewNativeCaptureChannel()
   composition.memoryBoards = createMemoryBoardService(database.pool, memoryBoardAuthority)
@@ -1007,7 +910,8 @@ function configureWorkflowRepositories(composition: ProductionComposition) {
   composition.budgets = new PostgresApprovalBudgetRepository(database.pool)
   const projectRoot = composition.projectRoot = config.workspaceStorageRoot ?? workspaceStorageRoot()
   const runWorktrees = composition.runWorktrees = new RunWorktrees(database.pool, join(config.harnesses.workspaceRoot, 'run-worktrees'))
-  const locations = composition.locations = new WorkspaceLocationService(database.pool, commands, config.harnesses.workspaceRoot, 'runner-local')
+  const locations = composition.locations = new WorkspaceLocationService(database.pool, commands, config.harnesses.workspaceRoot, 'runner-local',
+    () => composition.rootPolicies)
   const workflows = composition.workflows = new PostgresWorkflowRepository(database.pool)
   const runs = composition.runs = new PostgresRunRepository(database.pool, workflows, locations,
     { runtimeRoot: config.harnesses.workspaceRoot, ...workflowRuntime, services: workflowServices }, async evidence => {
@@ -1122,7 +1026,7 @@ function configureHarnessQualifications(composition: ProductionComposition) {
       id: `configuration-check:${commandInputHash(configuration)}`, agentId: 'configuration-qualification', harness: configuration,
     }),
     ...(infrastructure?.inventoryDiscovery ? { installationDiscovery: infrastructure.inventoryDiscovery.launcher } : {}),
-    auxiliaryRecovery: (role) => processRegistry.scope(`${role}:${infrastructure?.mode === 'replay' ? infrastructure.codex.id() : randomUUID()}`),
+    auxiliaryRecovery: (role) => processRegistry.scope(`${role}:${composition.harnessHost.auxiliaryLaunchId()}`),
     admitRecovery: async (recovery) => { Object.assign(recovery, await processRegistry.reserveLaunch(recovery.owner)) },
     abandonRecovery: async (recovery) => { await processRegistry.abandonReservedLaunch(recovery) },
     claudeVersionCommand: infrastructure?.auxiliary?.command ?? runCommand,
@@ -1131,86 +1035,12 @@ function configureHarnessQualifications(composition: ProductionComposition) {
     },
   }, infrastructure)
   composition.hostSettings = new HarnessInstanceSettingsRepository(database.pool)
-  composition.hostAuthority = { async authorize(principal, action, hostRef, applicationInstallationId, client) {
-    if (client) { await authorizeDeviceHost(client, principal, action, hostRef, applicationInstallationId); return }
-    await withTransaction(database.pool, async (connection) => {
-      await authorizeDeviceHost(connection, principal, action, hostRef, applicationInstallationId)
-    })
-  } }
-  composition.profileAuthority = {
-    async authorize(binding, selector, client) {
-      binding.admissionSignal?.throwIfAborted()
-      if (binding.kind === 'workflow' && binding.purpose === 'consultation') {
-        if (!binding.consultation) throw new DomainError('HARNESS_PROFILE_OWNER_CONFLICT',
-          'The consultation profile requires its mailbox binding.', 409)
-        const current = await readCoordinatorCredentialAuthority(client, binding.consultation)
-        if (current.run_id !== binding.runId || current.execution.id !== binding.executionId
-          || current.execution.attempt !== binding.attempt) throw new DomainError('HARNESS_PROFILE_OWNER_CONFLICT',
-          'The consultation source attempt changed.', 409)
-        const owner = binding.getOwner()
-        if (!owner || owner.runId !== binding.runId) throw new DomainError('HARNESS_PROFILE_OWNER_CONFLICT',
-          'The consultation Run owner is unavailable.', 409)
-        owner.assertOwned()
-        const row = (await client.query<{ principal_id: string }>(
-          "select record->>'authorizationPrincipalId' as principal_id from runs where id=$1", [binding.runId])).rows[0]
-        if (!row) throw new DomainError('HARNESS_PROFILE_OWNER_CONFLICT', 'The accepted Run is unavailable.', 409)
-        const principal = (await currentOperatorAuthority(client, row.principal_id)).principal
-        requireAuthorization(principal, 'runs:start', { workspaceId: current.workspace_id, workflowId: current.workflow_id })
-      } else if (binding.kind === 'workflow') {
-        const current = await credentialAuthority(client, binding.executionId,
-          binding.purpose === 'reviewer' ? 'reviewer' : 'workflow')
-        if (current.run.id !== binding.runId || current.execution.attempt !== binding.attempt) throw new DomainError('HARNESS_PROFILE_OWNER_CONFLICT', 'The exact Run attempt changed.', 409)
-        if (!current.nativeSessionId && binding.purpose !== 'reviewer') {
-          const owner = binding.getOwner()
-          if (!owner || owner.runId !== binding.runId) throw new DomainError('HARNESS_PROFILE_OWNER_CONFLICT', 'The original native launch owner is unavailable.', 409)
-          owner.assertOwned(); await owner.readOneShotFence(owner.client)
-        }
-        const row = (await client.query<{ principal_id: string }>("select record->>'authorizationPrincipalId' as principal_id from runs where id=$1", [binding.runId])).rows[0]
-        if (!row?.principal_id) throw new DomainError('HARNESS_PROFILE_OWNER_CONFLICT', 'The accepted Run principal is unavailable.', 409)
-        const principal = (await currentOperatorAuthority(client, row.principal_id)).principal
-        requireAuthorization(principal, 'runs:start', { workspaceId: current.run.workspaceId, workflowId: current.run.workflowId })
-      } else if (binding.kind === 'operator-observation') {
-        await authorizeOperatorProfileObservation(client, binding, selector)
-      } else if (binding.kind === 'operator-inspection') {
-        const principal = await access.currentHarnessInspectionPrincipal(binding.principalId, client)
-        requireAuthorization(principal, 'harnesses:read')
-        await authorizeOperatorConfigurationRead(client, principal, binding.configurationVersionId)
-        const row = (await client.query<{ record: unknown }>('select record from operator_configuration_versions where id=$1 and operator_id=$2',
-          [binding.configurationVersionId, 'application-operator'])).rows[0]
-        const configuration = row ? OperatorConfigurationVersionSchema.parse(row.record) : undefined
-        if (!configuration || configuration.contentHash !== binding.configurationHash || !isDeepStrictEqual(configuration.harnessProfileSelection, selector)) {
-          throw new DomainError('HARNESS_PROFILE_OWNER_CONFLICT', 'The exact saved Operator configuration changed before its read-only inspection.', 409)
-        }
-      } else await new PostgresClaudeInteractionAuthority(client, binding, { nativeCallbackContext: () => undefined }).profileAdmission()
-      await assertDeviceHostInstallation(client, selector.target.hostRef, selector.target.applicationInstallationId)
-      binding.admissionSignal?.throwIfAborted()
-    },
-    async current(binding, value, client, options) {
-      if (value.driverId === 'claude') {
-        await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef,
-          value.target.applicationInstallationId)
-        if (value.target.hostRef.kind === 'device') {
-          const registry = harnessRegistry.pinOverride(value)
-          const proof = await hostProfileEvidence.latest(value.instanceId, value.revision, client)
-          const pin = installedClaudeProfilePin(value, registry, proof)
-          harnessRegistry.installations.assertCurrent(registry)
-          return { registry, pin, applicationInstallationId: value.target.applicationInstallationId,
-            suiteRevision: CLAUDE_PROFILE_CHECK_REVISION }
-        }
-        const current: AcceptedProfileAuthority<ClaudeProfileOwner>['current'] | undefined = infrastructure?.claudeCurrentProfile
-          ?? (infrastructure?.mode === 'replay' ? undefined : claudeDiscovery.current)
-        if (!current) throw new DomainError('HARNESS_REPLAY_INCOMPLETE', 'Claude replay requires its current installed profile metadata port.', 500)
-        return current(binding, value, client, options)
-      }
-      if (binding.kind !== 'operator-observation' && !await harnessRegistry.profileEvidence(value, client, options)) {
-        throw new DomainError('HARNESS_PROFILE_UNAVAILABLE', 'The exact accepted native profile proof is stale.', 409)
-      }
-      return { registry: harnessRegistry.pinOverride(value), applicationInstallationId: value.target.applicationInstallationId,
-        suiteRevision: `${value.driverId}-profile-check-v1` }
-    },
-    assertCurrent: binding => harnessRegistry.installations.assertCurrent(binding),
-    assertReady: profile => composition.hostProfileChecks.assertReady(profile),
-  }
+  composition.hostAuthority = deviceHostOverrideAuthority(database.pool)
+  composition.profileAuthority = createProductionProfileAuthority({ access, providerAccounts, registry: harnessRegistry,
+    evidence: hostProfileEvidence,
+    claudeCurrent: () => infrastructure?.claudeCurrentProfile
+      ?? (composition.harnessHost.installedClis ? claudeDiscovery.current : undefined),
+    checks: () => composition.hostProfileChecks })
 }
 
 function configureHarnessProfiles(composition: ProductionComposition) {
@@ -1244,7 +1074,7 @@ function configureHarnessProfiles(composition: ProductionComposition) {
   composition.claudeProfiles = infrastructure?.claudeProfiles ?? new AcceptedClaudeProfileAdmission<ClaudeProfileOwner>(hostSettings, hostProfileEvidence, profileAuthority)
   const hostProfileChecks = composition.hostProfileChecks = new HostHarnessInstanceProfileChecks(hostSettings, hostProfileEvidence, commands, hostAuthority,
     new ProductionHostHarnessProfileQualifier(harnessRegistry, nativeFactories, () => deviceRuntime.endpointForDomains(), config.harnesses.workspaceRoot,
-      infrastructure?.mode === 'replay' ? undefined : { async qualify(value, input) {
+      !composition.harnessHost.installedClis ? undefined : { async qualify(value, input) {
         const apiKey = await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef,
           value.target.applicationInstallationId)
         const current = await claudeDiscovery.currentForConfiguration(value, input.signal)
@@ -1289,7 +1119,6 @@ function configureHarnessProfiles(composition: ProductionComposition) {
   }, accountConfigurations, value => hostProfileChecks.checkAutomatically(
     value, harnessRegistry.pinOverride(value).installation,
   ))
-  accountConfigurations.bindProfiles(harnessInstances)
   composition.installationMonitor = new HarnessInstallationMonitor(harnessRegistry, hostProfileChecks,
     () => deviceRuntime.endpointForDomains(), async (binding, inventory) => {
       if (selectedSuites) await retainInstalledHarnessInventory({ registry: harnessRegistry,
@@ -1312,7 +1141,7 @@ function configureHarnessProfiles(composition: ProductionComposition) {
       else composition.app.log.error({ err: error }, 'Automatic harness installation checks failed')
     },
     infrastructure?.installationRefreshIntervalMs)
-  const claudeMetadata = infrastructure?.mode === 'replay' ? undefined : productionClaudeMetadata({ registry: harnessRegistry,
+  const claudeMetadata = !composition.harnessHost.installedClis ? undefined : productionClaudeMetadata({ registry: harnessRegistry,
     accounts: providerAccounts,
     ...(selectedAccounts.selectAccount ? { selectAccount: selectedAccounts.selectAccount } : {}),
     processes: processRegistry, factories: nativeFactories, settings: hostSettings, defaults: () => settings.getHarnessDefaults(), current: claudeDiscovery.currentForConfiguration })
@@ -1320,8 +1149,7 @@ function configureHarnessProfiles(composition: ProductionComposition) {
   const harnessCatalog = composition.harnessCatalog = new HarnessCatalogService(qualifier, settings, commands, config.harnesses.workspaceRoot, appMcpEndpoint)
   const nativeConfigurations = composition.nativeConfigurations = new NativeConfigurationService(
     config.harnesses.codexBinary, config.harnesses.workspaceRoot, nativeFactories, claudeMetadata, providerAccounts,
-    { mainId: async () => (await database.pool.query<{ id: string }>(
-      'select id from application_installation where singleton=true')).rows[0]?.id ?? '',
+    { mainId: async () => await readMainInstallationId(database.pool) ?? '',
     endpoint: () => deviceRuntime.endpointForDomains() },
   )
   composition.appRoutes = new AppMcpRoutes(database.pool, appMcpEndpoint, appLauncherPath(), () => composition.runtimeOwner)
@@ -1342,7 +1170,7 @@ function configureHarnessProfiles(composition: ProductionComposition) {
       codex: infrastructure?.auxiliary?.mcp.codex ?? new CodexMcpConnections(() => mainCodex.binary, config.harnesses.workspaceRoot, processRegistry.scope('settings:mcp:codex')),
     }, () => { harnessCatalog.invalidateChecks(); nativeConfigurations.invalidateOptions() }, async () => {
       await processRegistry.closeOwner('settings:mcp:codex')
-    }, appMcpEndpoint),
+    }, appMcpEndpoint, () => composition.managedMcp),
   }
   composition.launchScopes = new WeakMap<NativeHarnessSessionManager, NativeProcessRecovery>()
   composition.claudeLaunches = new WeakMap<NativeHarnessSessionManager, ReturnType<typeof productionClaudeManager>>()
@@ -1414,7 +1242,7 @@ function configureWorkflowManagers(composition: ProductionComposition) {
         binding: { kind: 'workflow', runId: context.runId, executionId: context.executionId, attempt: context.attempt, getOwner },
         ...(context.consultation ? { consultation: context.consultation } : {}),
         role: 'workflow', configuration, workingDirectory: context.workingDirectory, ownerAgentId: context.agentId,
-        recovery, appMcpAccess: 'scoped', mode: infrastructure?.mode ?? 'native',
+        recovery, appMcpAccess: 'scoped', mode: composition.harnessHost.mode,
         ...(infrastructure?.claudeClient ? { loadClient: infrastructure.claudeClient } : {}),
         inspectionStart: async () => {
           const owner = getOwner()
@@ -1462,7 +1290,7 @@ function configureWorkflowManagers(composition: ProductionComposition) {
   composition.validateContinuation = placedContinuationValidator(database.pool, locations, remoteWorkflow, {
     async assertCurrent(binding, signal, purpose) {
       signal?.throwIfAborted()
-      const sql = interactionConnection.getStore() ?? database.pool
+      const sql = deliveryTransactionClient() ?? database.pool
       if (!composition.agentPlacement) {
         throw new DomainError('AGENT_PLACEMENT_UNAVAILABLE', 'The current accepted placement authority is unavailable.', 503)
       }
@@ -1717,7 +1545,10 @@ function configureConversationManagers(composition: ProductionComposition) {
   )
   const interactions = composition.interactions = new InteractionService(
     repository, budgets, approvals, (interaction) => engine.resumeInteraction(interaction), responseJournal,
-    (interaction) => approvals.inspectInteractionActivity(interaction),
+    (interaction) => approvals.inspectInteractionActivity(interaction), {
+      start: (principal, source, input, options) => composition.operatorServices.runs.start(principal, source, input, options),
+      wake: () => engine.reconcile(),
+    },
   )
   registerApprovalCheckpointResume(interactions, engine)
   const operatorWorkingDirectory = composition.operatorWorkingDirectory = resolve(config.harnesses.workspaceRoot, 'operator')
@@ -1853,7 +1684,7 @@ function configureConversationManagers(composition: ProductionComposition) {
         ...(configuration.harnessProfileSelection ? { selector: configuration.harnessProfileSelection } : {}),
         binding: controlBinding, role: 'operator',
         configuration: configuration.harness, workingDirectory: operatorWorkingDirectory, ownerAgentId: configuration.operatorId,
-        recovery, appMcpAccess: fileInputs ? 'none' : 'scoped', mode: infrastructure?.mode ?? 'native',
+        recovery, appMcpAccess: fileInputs ? 'none' : 'scoped', mode: composition.harnessHost.mode,
         ...(fileInputs ? { files: { service: () => productionFileTools(composition.app), ...(infrastructure?.claudeFileSdk ? { sdk: infrastructure.claudeFileSdk } : {}) } } : {}),
         ...(infrastructure?.claudeClient ? { loadClient: infrastructure.claudeClient } : {}),
         inspectionStart: async () => {
@@ -2053,7 +1884,7 @@ function configureAgentChat(composition: ProductionComposition) {
         ...(selector ? { selector } : {}),
         binding: { kind: 'agent', conversationId, workspaceId: configuration.workspaceId, repository: agentConversations },
         role: 'agent-chat', configuration: harness, workingDirectory, ownerAgentId: configuration.agentId, recovery,
-        appMcpAccess, mode: infrastructure?.mode ?? 'native',
+        appMcpAccess, mode: composition.harnessHost.mode,
         files: { service: () => productionFileTools(composition.app), ...(infrastructure?.claudeFileSdk ? { sdk: infrastructure.claudeFileSdk } : {}) },
         ...(infrastructure?.claudeClient ? { loadClient: infrastructure.claudeClient } : {}),
         inspectionStart: async () => { throw new DomainError('CLAUDE_MANAGEMENT_MCP_FORBIDDEN', 'Agent chat has no management MCP inspection authority.', 403) },
@@ -2373,14 +2204,9 @@ function configureHttpApplication(composition: ProductionComposition) {
   })
   const runtimeServices = composition.runtimeServices = { ...operatorServices, extensions: operatorExtensions, harnessSettings }
   const localHuman = new PostgresLocalHumanAccess(database.pool, access)
-  interactions.useWorkDirectionActions({
-    start: (principal, source, input, options) => operatorServices.runs.start(principal, source, input, options),
-    wake: () => engine.reconcile(),
-  })
   const runtimeBuildIdentity = readRuntimeBuildIdentity()
-  const app = composition.app = buildApp({
+  const routes = composition.routes = {
     runtimeBuildIdentity: () => runtimeBuildIdentity,
-    ...(infrastructure?.closeInfrastructure ? { closeInfrastructure: infrastructure.closeInfrastructure } : {}),
     runtimeIdentity: async () => {
       const identity = await readRuntimeIdentity(database.pool,
         fileURLToPath(new URL('../../../', import.meta.url)), config.database.connectionString)
@@ -2398,10 +2224,21 @@ function configureHttpApplication(composition: ProductionComposition) {
         runtimeServices.computerSync?.sharedFolder(workspaceId, hostRef) ?? Promise.resolve(null) }) },
     workerArtifacts: () => composition.workflowArtifacts?.extension,
     mcpDetection: { pool: database.pool, service: detection },
-    logger,
-  })
+    production: { fileRetention: operatorServices.fileRetention },
+  } satisfies ApiRouteServices
+  const app = composition.app = buildApp({ ...routes, logger,
+    ...(infrastructure?.closeInfrastructure ? { closeInfrastructure: infrastructure.closeInfrastructure } : {}) })
   app.addHook('onClose', () => providerAccounts.close())
-  registerFileRetentionRoutes(app, operatorServices.fileRetention)
+}
+
+/** Every route group the production runtime has published so far. */
+function productionRoutes(composition: ProductionComposition): ApiRouteServices {
+  const { routes, runtimeServices } = composition
+  return { ...routes, production: { ...routes.production, files: composition.files,
+    workflowArtifacts: composition.workflowArtifacts, trustedConnections: composition.trustedConnections,
+    resourceTelemetry: runtimeServices.resourceTelemetry,
+    jobRuntimeProfiles: runtimeServices.jobRuntimeProfiles
+      ? { profiles: runtimeServices.jobRuntimeProfiles, ciRuntime: runtimeServices.ciRuntime } : undefined } }
 }
 
 function configureRuntimeLifecycle(composition: ProductionComposition) {
@@ -2440,7 +2277,7 @@ function configureRuntimeLifecycle(composition: ProductionComposition) {
     if (composition.workflowArtifacts || !composition.fileStorage || !composition.artifactComposition) return
     composition.workflowPhysicalArtifacts = new PostgresWorkflowPhysicalArtifacts(composition.artifactComposition.mainId,
       { authority: composition.artifactComposition.authority, files: composition.fileStorage.repository })
-    composition.workflowArtifacts = mountProductionWorkflowArtifacts({ app, pool: database.pool, files: composition.fileStorage,
+    composition.workflowArtifacts = createProductionWorkflowArtifacts({ app, pool: database.pool, files: composition.fileStorage,
       ...composition.artifactComposition, attempts: composition.artifactComposition.fence, commands, access,
       endpoint: deviceRuntime.endpointForDomains(), stagingRoot: resolve(fileStorageRoot, 'workflow-artifact-transfers') })
   }
@@ -2604,8 +2441,7 @@ function configureRuntimeStartup(composition: ProductionComposition) {
       await initializeRuntimeOwner(composition)
       const machine = await deviceRuntime.initializeFromRuntime(() => startupDatabase(() => readRuntimeIdentity(database.pool,
         fileURLToPath(new URL('../../../', import.meta.url)), config.database.connectionString)))
-      providerAccounts.bindTarget(async () => ({ hostRef: { kind: 'main', mainId: machine.installationId },
-        applicationInstallationId: machine.installationId, keyRevision: null, authorizationRevision: null }))
+      composition.machine = machine
       assertOpen()
       await composition.browser.start(machine.installationId)
       await initializeJobServices(composition, machine)
@@ -2620,7 +2456,7 @@ function configureRuntimeStartup(composition: ProductionComposition) {
   }
   app.addHook('onListen', async () => {
     composition.stopWorkflowChat ??= composition.workflowChat.start()
-    if (!composition.initialized || composition.closing || infrastructure?.mode === 'replay') return
+    if (!composition.initialized || composition.closing || !composition.harnessHost.installedClis) return
     composition.nativeDefaultsInitialization ??= (async () => {
       await initializeNativeDefaults({
         pool: database.pool,
@@ -2746,7 +2582,7 @@ async function initializeRuntimeOwner(composition: ProductionComposition) {
   await startupDatabase(() => remoteExecution.initialize())
   await entrypoint?.recover()
   assertOpen()
-  if (infrastructure?.mode !== 'replay') await mainCodex.initialize()
+  if (composition.harnessHost.installedClis) await mainCodex.initialize()
   assertOpen()
   const canonicalDirectory = await ensureOperatorRuntimeDirectory(config.harnesses.workspaceRoot)
   assertOpen()
@@ -2795,8 +2631,6 @@ async function initializeJobServices(composition: ProductionComposition, machine
 
   composition.trustedConnections = new PostgresTrustedConnectionSetup(database.pool, machine.installationId)
   runtimeServices.trustedConnections = composition.trustedConnections
-  registerTrustedConnectionRoutes(app, composition.trustedConnections,
-    async request => request.reauthorizeOperator ? request.reauthorizeOperator() : requirePrincipal(request))
   const activeNativeSession: SourceActiveNativeSessionReader = (sql, record) =>
     readSourceCurrentNativeSession(sql, record, approvals.passiveOwnedNativeSessions())
   const captureNativeSession: SourceNativeSessionCaptureReader = async record => {
@@ -2964,20 +2798,16 @@ async function initializeComputerServices(composition: ProductionComposition, ma
   const workspaceRoots = runtimeServices.workspaceRoots = new WorkspaceBoundLocationService(
     database.pool, commands, jobRuntime.policies,
   )
-  locations.setRootPolicies(jobRuntime.policies)
-  registerWorkspaceRootRoutes(app, runtimeServices.workspaceRoots)
+  composition.rootPolicies = jobRuntime.policies
   runtimeServices.sources = jobRuntime.sources
   runtimeServices.workspaceRepositories = new WorkspaceRepositoryService(database.pool, commands,
     runtimeServices.workspaces, runtimeServices.workspaceRoots, jobRuntime.policies, jobRuntime.sources,
     machine.installationId, projectRoot)
-  registerWorkspaceRepositoryRoutes(app, runtimeServices.workspaceRepositories)
   const { clouds, discoverClouds, circleCredits, circleStandby } = await initializeCircleCi(composition, machine)
   runtimeServices.computerActivity = new ComputerActivityService(database.pool, machine.installationId,
     id => deviceRuntime.presenceFor(id), commands, clouds, circleCredits)
-  registerComputerActivityRoutes(app, runtimeServices.computerActivity)
   runtimeServices.computerAccounts = new ComputerAccountsService(database.pool, machine.installationId,
     () => deviceRuntime.endpointForDomains(), commands)
-  registerComputerAccountsRoutes(app, runtimeServices.computerAccounts)
   runtimeServices.computerMaintenance = new FleetMaintenanceService(database.pool, machine.installationId,
     () => deviceRuntime.endpointForDomains(), commands, new ComputerMaintenance({ ...maintenancePorts, browserRuntime: {
       status: () => composition.browser.runtime.status(), retry: async () => {
@@ -3010,10 +2840,9 @@ async function initializeComputerServices(composition: ProductionComposition, ma
         ? (await pluginMarketplaces(maintenancePorts, mainCodex.binary, AbortSignal.timeout(60_000)))
           .flatMap(marketplace => marketplace.gitSource ? [{ name: marketplace.name, source: marketplace.gitSource }] : []) : [],
     })
-  registerComputerMaintenanceRoutes(app, runtimeServices.computerMaintenance)
   if (composition.closing) runtimeServices.computerMaintenance.stopAdmission()
-  // Keep harnesses current and Main's MCP servers and plugins on every computer. Never under the test runners.
-  if (!process.env.VITEST && process.env.NODE_ENV !== 'test' && process.env.FOREMAN_CODE_COMPUTER_UPKEEP !== '0') {
+  // Keep harnesses current and Main's MCP servers and plugins on every computer.
+  if (composition.computerUpkeep) {
     const upkeep = () => { void trackService('computer-upkeep', { cadenceMs: 6 * 60 * 60_000, deadlineMs: 2 * 60 * 60_000 },
       () => runtimeServices.computerMaintenance!.keepCurrent()).catch(error => app.log.warn({ err: error }, 'Computer upkeep failed')) }
     const firstUpkeep = setTimeout(upkeep, 120_000)
@@ -3041,7 +2870,6 @@ async function initializeComputerServices(composition: ProductionComposition, ma
       assertOpen()
       if (!runtimeOwner.active) throw new DomainError('NATIVE_RUNTIME_UNAVAILABLE', 'Shared file sync requires the runtime owner.', 503)
     })
-  registerComputerSyncRoutes(app, runtimeServices.computerSync)
   const syncTimer = setInterval(() => {
     void trackService('computer-sync', { cadenceMs: 30_000, deadlineMs: 10 * 60_000 },
       () => runtimeServices.computerSync!.poll()).catch(error => {
@@ -3052,7 +2880,6 @@ async function initializeComputerServices(composition: ProductionComposition, ma
   composition.stopSyncTimer = () => { clearInterval(syncTimer) }
   if (composition.closing) { composition.stopSyncTimer(); runtimeServices.computerSync.stopAdmission() }
   runtimeServices.buildComputers = jobRuntime.buildComputers
-  registerBuildComputerRoutes(app, jobRuntime.buildComputers)
   runtimeServices.jobs = jobRuntime.jobs
   const readAgentFiles = agentFileReader(() => deviceRuntime.endpointForDomains())
 
@@ -3061,48 +2888,17 @@ async function initializeComputerServices(composition: ProductionComposition, ma
 
 async function initializeCircleCi(composition: ProductionComposition, machine: ProductionMainInstallation) {
   const { database, foundationSettings, commands, runtimeServices, app } = composition
-  const registry = { list: async () => (await foundationSettings.getCircleAccounts()).value.accounts }
-  const directory = new CircleAccountDirectory(systemHostCiPorts(), registry)
-  const context = async (id: string) => {
-    const account = await directory.context(id)
-    if (!account) throw new DomainError('CI_CLOUD_UNAVAILABLE', 'This CircleCI login is no longer registered.', 409)
-    return account
-  }
-  const options = { activeRuns: () => activeCiRuns(database.pool) }
-  const mirrors = workspaceMirrors(database.pool)
-  const mirrorList = workspaceMirrorList(database.pool)
-  const clouds = cloudCis(machine.installationId, mirrors, {
-    ...options, primaryContext: await context('default'), explicitCircleOrgs: true,
-  })
-  const cache = new CircleCreditCache(join(homedir(), '.local/share/foreman-code/circleci-usage', 'usage.json'))
-  const circleCredits = new CircleCreditUsage(async id => (await context(id)).http, {
-    allowance: () => withCiDatabaseReservation(database.pool, async () => {
-      return (await foundationSettings.getCircleCreditAllowance()).value
-    }),
-    primaryOwner: async () => null,
-  }, { cache })
-  const circleStandby = new CircleStandby(() => circleOrganizations(clouds), circleCredits, cache)
-  const circleOrgs = circleCiOrgs(clouds, machine.installationId, mirrors, mirrorList, {
-    ...options, registry, context, standby: circleStandby, explicitPrimary: true,
-    runningOrganizations: runningCircleCiOwners(database.pool, machine.installationId),
-  })
-  runtimeServices.circleAccounts = new CircleAccountsManagementService(foundationSettings, commands,
-    new CircleAccountFleetStatus(database.pool, machine.installationId, directory, clouds, circleStandby), async id => {
-    directory.invalidate(id)
-    for (const cloud of clouds) if (cloud.provider.circleAccountId === id) cloud.invalidateReadiness()
-    await circleOrgs.refresh()
-    circleOrgs.invalidate()
-    await circleOrgs.refresh()
-  })
-  registerCircleAccountRoutes(app, runtimeServices.circleAccounts)
-  return { clouds, discoverClouds: () => circleOrgs.refresh(), circleCredits, circleStandby }
+  const { circleAccounts, ...circleCi } = await createCircleCi({ pool: database.pool, mainId: machine.installationId,
+    foundationSettings, commands })
+  runtimeServices.circleAccounts = circleAccounts
+  return circleCi
 }
 
 async function initializeCiServices(
   composition: ProductionComposition,
   machine: ProductionMainInstallation,
   computerServices: {
-    clouds: ReturnType<typeof cloudCis>
+    clouds: CloudCis
     discoverClouds: () => Promise<void>
     readAgentFiles: ReadAgentFiles
     workspaceRoots: WorkspaceBoundLocationService
@@ -3125,13 +2921,9 @@ async function initializeCiServices(
   } = composition
   const jobRuntime = composition.jobRuntime!
 
-  // CI runs directly on build computers (Main included) from GitHub, like self-hosted runners.
-  composition.hostCi = new HostCiService(database.pool, commands, new RunCiAuthority(database.pool), new GitCiCommits(),
-    new ProductionHostCiEndpoint(database.pool, machine.installationId, () => deviceRuntime.endpointForDomains(), new HostCiRunner(),
-      clouds, discoverClouds, workerExecution),
-    agentSnapshots(database.pool, readAgentFiles), {
-      reservedCloudSlots: configuredReservedCloudSlots(), circleCredits, circleStandby,
-    })
+  composition.hostCi = createHostCi({ pool: database.pool, mainId: machine.installationId, commands,
+    devices: () => deviceRuntime.endpointForDomains(), workerExecution, clouds, discoverClouds, readAgentFiles,
+    circleCredits, circleStandby })
   composition.hostCi.start()
   app.addHook('onClose', async () => { await composition.hostCi?.close() })
   const stopDeadlineSweeper = startStateDeadlineSweeper(database.pool, {
@@ -3161,9 +2953,6 @@ async function initializeCiServices(
   })
   await startupDatabase(() => runtimeServices.ciRuntime!.recover())
   jobRuntime.jobs.requestQueueWake()
-  registerSourceRoutes(app, jobRuntime.sources)
-  registerJobRoutes(app, jobRuntime.jobs)
-  registerJobRuntimeProfileRoutes(app, jobRuntime.profiles, runtimeServices.ciRuntime)
   assertOpen()
 
 }
@@ -3194,8 +2983,8 @@ async function initializeHarnessServices(composition: ProductionComposition, mac
     database,
   } = composition
 
-  harnessSettings.mcp.configureDevices(new DeviceManagedMcp(database.pool, machine.installationId,
-    () => deviceRuntime.endpointForDomains(), commands))
+  composition.managedMcp = new DeviceManagedMcp(database.pool, machine.installationId,
+    () => deviceRuntime.endpointForDomains(), commands)
   await startupDatabase(() => harnessRegistry.initialize(machine.installationId))
   assertOpen()
   if (processRegistry instanceof NativeProcessRegistry) {
@@ -3218,12 +3007,6 @@ async function initializeHarnessServices(composition: ProductionComposition, mac
       // A Main inside a container sees only its namespace, never the whole computer.
       wholeHostVisible: !existsSync('/.dockerenv') && !existsSync('/run/.containerenv'), signal: telemetryLifetime.signal })
     runtimeServices.resourceTelemetry = { reads: composition.telemetry.service, selectors: composition.telemetry.selectors }
-    const audit = { record: (principalId: string, source: 'http' | 'mcp', selectorKey: string) =>
-      commands.recordDenied(principalId, source, 'resource_telemetry_read', selectorKey) }
-    registerResourceTelemetryRoutes(app, composition.telemetry.service, audit)
-    registerResourceTelemetrySelectorRoutes(app, composition.telemetry.selectors, {
-      record: (principalId, source, selectorKey) => commands.recordDenied(principalId, source, 'resource_telemetry_selector_get', selectorKey),
-    })
     void composition.telemetry.completion.then(result => {
       if (result.kind !== 'failed') return
       reportServiceFailure('telemetry-collector', result.error)
@@ -3239,6 +3022,7 @@ async function initializeHarnessServices(composition: ProductionComposition, mac
   }
   harnessCompatibility.start()
   assertOpen()
+  registerApiRoutes(app, productionRoutes(composition))
   composition.initialized = true
   // Reconcile chat turns interrupted by the previous process; never blocks startup.
   void agentChat.recover().catch((error: unknown) => app.log.error({ err: error }, 'agent chat recovery failed'))

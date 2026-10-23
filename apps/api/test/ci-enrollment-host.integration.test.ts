@@ -2,10 +2,11 @@ import { randomUUID } from 'node:crypto'
 import { CiEnrollmentStateSchema } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { describe, expect, it, vi } from 'vitest'
-import { CiEnrollment } from '../src/modules/jobs/ciEnrollment.js'
+import { CiEnrollment } from '@foreman-code/ci/ciEnrollment'
 import { buildComputerKey } from '../src/modules/settings/buildComputers.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { ciEnrollmentFixture } from './ci-enrollment.test-support.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 describe.skipIf(!postgresEnabled)('Host CI enrollment', () => {
   const fixture = ciEnrollmentFixture()
@@ -48,7 +49,7 @@ describe.skipIf(!postgresEnabled)('Host CI enrollment', () => {
       expect(f.inventory.storage).not.toHaveBeenCalled()
       expect(f.inventory.root).not.toHaveBeenCalled()
       expect(await f.profiles.list(f.owner.principal, f.workspaceId)).toEqual(profiles)
-      const restarted = new CiEnrollment(f.db.pool, f.commands, f.profiles, f.preparation, f.inventory)
+      const restarted = new CiEnrollment(mainCiContext, f.db.pool, f.commands, f.profiles, f.preparation, f.inventory)
       expect(await restarted.read(f.owner.principal, { workspaceId: f.workspaceId })).toEqual(state)
       await restarted.close()
     } finally { await f.close() }

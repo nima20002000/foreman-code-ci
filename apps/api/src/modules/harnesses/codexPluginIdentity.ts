@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto'
 import { canonicalJsonNumericKeysFirstLegacy } from '@foreman-code/contracts/canonical-json'
 import { z } from 'zod'
+import { sha256Hex } from '../../shared/hash.js'
 
 const NativeEntry = z.object({ pluginId: z.string(), name: z.string(), marketplaceName: z.string(),
   version: z.string().nullable().optional(), installed: z.boolean(), enabled: z.boolean(),
@@ -12,7 +12,7 @@ export type PluginConfiguration = { file: string; userConfig: Record<string, unk
 
 /** Persisted plugin identities depend on the frozen numeric-keys-first legacy form. */
 export const pluginCanonical: (value: unknown) => string = canonicalJsonNumericKeysFirstLegacy
-export const pluginHash = (value: unknown): string => `sha256:${createHash('sha256').update(pluginCanonical(value)).digest('hex')}`
+export const pluginHash = (value: unknown): string => `sha256:${sha256Hex(pluginCanonical(value))}`
 export function pluginCatalogRevision(native: NativePluginCatalog, hints: readonly string[], configuration: PluginConfiguration, status: 'complete' | 'partial'): string {
   const normalized = [...native.installed, ...native.available].map((entry) => ({ ...entry, version: entry.version ?? null }))
     .sort((a, b) => pluginCanonical(a).localeCompare(pluginCanonical(b)))

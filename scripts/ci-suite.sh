@@ -140,11 +140,12 @@ unit_slice() {
 }
 
 # An exact restored build can bypass pnpm startup; misses keep the ordinary build path.
+# The CI package compiles against the contracts output, so it builds after contracts, even from a restored cache.
 build_contracts() {
-  if [ -n "${FOREMAN_CODE_CI_CONTRACTS_CACHE:-}" ] && node scripts/ci-contracts.mjs ready "$PWD"; then
-    return 0
+  if [ -z "${FOREMAN_CODE_CI_CONTRACTS_CACHE:-}" ] || ! node scripts/ci-contracts.mjs ready "$PWD"; then
+    pnpm --filter @foreman-code/contracts build || return $?
   fi
-  pnpm --filter @foreman-code/contracts build
+  pnpm --filter @foreman-code/ci build
 }
 
 # The deploy's "API full check" (scripts/local-production-runtime.mjs), so a commit that fails deploy fails typecheck.
@@ -167,16 +168,20 @@ unit_other() {
   reports="$(realpath -m "$state/unit-other")"
   node_reporter="$(realpath scripts/ci-node-test-reporter.mjs)"
   mkdir -p "$reports"
-  rm -f "$reports/contracts.json" "$reports/worker.json" "$reports/scripts.json"
+  rm -f "$reports/contracts.json" "$reports/ci.json" "$reports/worker.json" "$reports/scripts.json"
   build_contracts || return $?
   pnpm --filter @foreman-code/contracts test --reporter=default --reporter=json \
     "--outputFile.json=$reports/contracts.json" || code=$?
+  pnpm --filter @foreman-code/ci test --reporter=default --reporter=json \
+    "--outputFile.json=$reports/ci.json" || status=$?
+  if [ "$code" = 0 ]; then code="$status"; fi
+  status=0
   (cd apps/worker && node_tests "$reports/worker.json" test/*.test.mjs) || status=$?
   if [ "$code" = 0 ]; then code="$status"; fi
   status=0
   node_tests "$reports/scripts.json" 'scripts/**/*.test.mjs' || status=$?
   if [ "$code" = 0 ]; then code="$status"; fi
-  record_tests "$reports/contracts.json" "$reports/worker.json" "$reports/scripts.json" || { if [ "$code" = 0 ]; then code=1; fi; }
+  record_tests "$reports/contracts.json" "$reports/ci.json" "$reports/worker.json" "$reports/scripts.json" || { if [ "$code" = 0 ]; then code=1; fi; }
   return "$code"
 }
 

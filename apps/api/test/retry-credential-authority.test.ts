@@ -12,7 +12,7 @@ import { makeCurrentWorkflowFixture, WorkflowRunV3Schema, type WorkflowVersionV3
 import type { GraphSqlClient } from '../src/modules/run-graph/connection.js'
 import { credentialAuthority, assertWave25WorkerBinding } from '../src/modules/interactions/wave25/credentialAuthority.js'
 import { PostgresAppInteractionService } from '../src/modules/interactions/app.js'
-import { approvalFixture } from './helpers/wave25ApprovalFixture.js'
+import { approvalFixture } from './helpers/approvalFixture.js'
 
 /** Query rows only are synthetic. Use the current schemas and the actual
  * authority/binding predicates, including reviewer bootstrap validation. */

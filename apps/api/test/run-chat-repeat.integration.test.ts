@@ -5,9 +5,10 @@ import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import {
   allExecutions, historicalFixture, historicalRows, openHistoricalApi, readSelected, runA,
   selectedPath, sendAndFinish, targetFor, type HistoricalApi,
-} from './helpers/sch12HistoricalRuns.js'
-import { agent3Database, postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
-import { approvalFixture } from './helpers/wave25ApprovalFixture.js'
+} from './helpers/historicalRuns.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
+import { approvalFixture } from './helpers/approvalFixture.js'
 import { assertExactOrigin, expectProtocolDenial, retainedChatRows } from './helpers/historicalRunChat.js'
 
 afterEach(() => vi.restoreAllMocks())

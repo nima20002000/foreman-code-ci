@@ -30,6 +30,17 @@ import { harnessSwitchPreset, switchAgentHarness } from './harnessSwitch'
 import { AgentSkillsField } from '../skills/AgentSkillsField'
 import './agentSettingsPanel.css'
 
+/** What Save hands back: the edited Agent and this workflow node's own settings for it. */
+export type AgentSettingsSave = {
+  agent: Agent
+  initialPrompt?: string
+  executionPolicy: WorkflowExecutionPolicy
+  /** This node's change to the Agent's default Foreman Code MCP tools. */
+  nodeGraphqlTools?: GraphqlToolOverride
+  placement?: SavedNodePlacement
+  worktree?: AgentWorktreeSettings
+}
+
 type EditableAgentSettingsFormProps = {
   /** Inside an agent popover: the popover owns the title and close button. */
   embedded?: boolean
@@ -66,8 +77,7 @@ type EditableAgentSettingsFormProps = {
   onRemove?(): void
   /** Embedded on the Board: Save applies these settings and then saves the whole workflow. */
   onSaveWorkflow?(): void
-  onSave(agent: Agent, initialPrompt: string | undefined, executionPolicy: WorkflowExecutionPolicy,
-    nodeGraphqlTools: GraphqlToolOverride | undefined, placement?: SavedNodePlacement, worktree?: AgentWorktreeSettings): void
+  onSave(value: AgentSettingsSave): void
   executionPolicy?: WorkflowExecutionPolicy
   workflowNodeCount?: number
   workspaceId?: string
@@ -187,12 +197,12 @@ function useAgentSettingsForm({ agent, initialPrompt, nodeGraphqlTools, creation
       if (placement) SavedNodePlacementSchema.parse(placement)
       const worktree = branchPrefix.trim() ? AgentWorktreeSettingsSchema.parse({ branchPrefix: branchPrefix.trim() }) : undefined
       initialSnapshot.current = currentSnapshot
-      onSave({ ...agent, name: name.trim(), harness: nextConfiguration.harness, model: nextConfiguration.model,
+      onSave({ agent: { ...agent, name: name.trim(), harness: nextConfiguration.harness, model: nextConfiguration.model,
         effort: legacyEffortForHarness(nextConfiguration), fastMode: nextConfiguration.harness === 'codex' ? nextConfiguration.serviceTier === 'priority' : undefined,
         harnessConfiguration: nextConfiguration,
         ...(graphqlTools.defaults ? { graphqlTools: graphqlTools.defaults } : {}),
         prompt: instructions.trim() ? { system: instructions.trim() } : {}, assignedSkills: skills,
-      }, prompt.trim() || undefined, executionPolicy, graphqlTools.override, placement, worktree)
+      }, initialPrompt: prompt.trim() || undefined, executionPolicy, nodeGraphqlTools: graphqlTools.override, placement, worktree })
       return true
     } catch (failure) {
       initialSnapshot.current = previousSnapshot

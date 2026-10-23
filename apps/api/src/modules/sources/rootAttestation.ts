@@ -3,8 +3,7 @@ import { constants } from 'node:fs'
 import { open, access, opendir, realpath, type FileHandle } from 'node:fs/promises'
 import { join, relative, isAbsolute } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { execFile } from 'node:child_process'
-import { isDeepStrictEqual, promisify } from 'node:util'
+import { isDeepStrictEqual } from 'node:util'
 import {
   ApprovedRootAllowlistSchema, WorkspaceRootSelectionSchema, WorkspaceRootAttestationSchema, WorkspaceRootWorkerRequestSchema, WorkspaceRootPolicySchema,
   type ApprovedRootAllowlist, type WorkspaceRootSelection, type WorkspaceRootAttestation, type WorkspaceRootPolicy, type WorkspaceRootBrowseResult,
@@ -12,13 +11,13 @@ import {
 } from '@foreman-code/contracts/workspace-root-policies'
 import { anchored, directoryFlags, identity, openPrivateRoot, openChildDirectory } from './privateFilesystem.js'
 import { SourceError, sourceSha256 } from './manifest.js'
-
-const run = promisify(execFile)
+import { runProcess } from '../../shared/process.js'
 
 async function persistentFilesystemId(directory: FileHandle): Promise<string> {
   // statfs reads the filesystem ID through the parent's pinned handle; ext4 derives it from its UUID.
-  const { stdout } = await run('/usr/bin/stat', ['--file-system', '--format=%i',
-    `/proc/${process.pid}/fd/${directory.fd}`], { encoding: 'utf8', timeout: 5000, maxBuffer: 1024 })
+  // Node's fs.statfs does not report f_fsid, so this one value still comes from stat(1).
+  const { stdout } = await runProcess('/usr/bin/stat', ['--file-system', '--format=%i',
+    `/proc/${process.pid}/fd/${directory.fd}`], { timeoutMs: 5000, maxOutputBytes: 1024 })
   const filesystemId = stdout.trim()
   if (!/^[a-f0-9]{1,16}$/.test(filesystemId) || /^0+$/.test(filesystemId)) {
     throw new SourceError('ROOT_FILESYSTEM_UNSUPPORTED', 'A persistent filesystem identity is required.')

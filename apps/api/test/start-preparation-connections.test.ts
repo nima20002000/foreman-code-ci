@@ -2,7 +2,7 @@ import type pg from 'pg'
 import { afterEach, expect, it, vi } from 'vitest'
 import { AcceptedProviderAccountBindings } from '../src/modules/provider-accounts/acceptedBindings.js'
 import { admitRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
-import { startSqlFixture } from './eng04-start-fixtures.js'
+import { startSqlFixture } from './start-fixtures.js'
 
 afterEach(() => vi.useRealTimers())
 

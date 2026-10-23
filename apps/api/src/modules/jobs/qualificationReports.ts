@@ -1,6 +1,5 @@
 import { qualificationUnitWorkers, qualificationIntegrationShards } from '@foreman-code/contracts/job-verification-policy'
 import { withTransaction } from '../../infrastructure/transaction.js'
-import { createHash } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
@@ -19,6 +18,7 @@ import type { JobSql } from './repository.js'
 import { sourceBindingHash } from '../sources/bindingHash.js'
 import { jobDigest } from './digest.js'
 import { qualificationExecution } from './qualificationExecution.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export type QualificationReportPublisher = (candidate: JobQualificationCandidateRecord,
   report: JobQualificationReport, bytes: Uint8Array) => Promise<JobArtifact>
@@ -96,7 +96,7 @@ export function createQualificationReportPublisher(input: { pool: pg.Pool; stora
     assertCurrent: () => Promise<void>): Promise<JobArtifact> => {
     const report = JobQualificationReportSchema.parse(rawReport)
     const candidate = validateQualificationReport(raw, report)
-    if (report.byteSize !== bytes.byteLength || report.sha256 !== createHash('sha256').update(bytes).digest('hex')) {
+    if (report.byteSize !== bytes.byteLength || report.sha256 !== sha256Hex(bytes)) {
       throw new DomainError('JOB_QUALIFICATION_REPORT_CONFLICT', 'Diagnostic report bytes changed.', 409)
     }
     const execution = qualificationExecution(candidate, report)

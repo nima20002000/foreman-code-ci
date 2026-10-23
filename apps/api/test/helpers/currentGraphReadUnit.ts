@@ -1,7 +1,7 @@
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { RunGraphReadService } from '../../src/modules/run-graph/readService.js'
 import { canonicalRunGraphReadApi } from '../../src/modules/run-graph/repeatReadService.js'
-import { ProjectionDatabase, projectionScope } from '../eng04-projection-fixture.js'
+import { ProjectionDatabase, projectionScope } from '../projection-fixture.js'
 
 export const currentGraphRequest = { protocolVersion: 1 as const, scope: projectionScope }
 export function currentGraphPrincipal(read = true): ManagementPrincipal {

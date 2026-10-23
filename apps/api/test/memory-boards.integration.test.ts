@@ -6,7 +6,8 @@ import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { memoryBoardsMigration } from '../src/infrastructure/memoryBoardsMigration.js'
 import type { BoardSnapshot, ChangesPage, Page } from '../src/modules/memory-boards/types.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { memoryFixture } from '../src/modules/memory-boards/testing/fixture.js'
 
 describe.skipIf(!postgresEnabled)('Memory boards public persistence and engine ports',()=>{

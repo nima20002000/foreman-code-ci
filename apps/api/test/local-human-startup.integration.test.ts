@@ -7,7 +7,7 @@ import { createDatabase } from '../src/infrastructure/database.js'
 import { OperatorRuntimeOwner } from '../src/infrastructure/operatorRuntimeOwner.js'
 import { NativeConfigurationService } from '../src/modules/harnesses/nativeConfiguration.js'
 import { buildProductionApp } from '../src/production.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 
 it.skipIf(!postgresEnabled)('serves local human HTTP while native catalogs are pending and joins them on shutdown', async () => {
   const fixture = await currentDatabase()
@@ -33,7 +33,7 @@ it.skipIf(!postgresEnabled)('serves local human HTTP while native catalogs are p
     throw new Error('Provider catalog unavailable')
   })
   const releaseOwner = vi.spyOn(OperatorRuntimeOwner.prototype, 'close')
-  const production = buildProductionApp(config, database, checkpoints, false)
+  const production = buildProductionApp({ config, database, checkpoints, logger: false })
   production.app.addHook('preClose', async () => { stopping() })
   try {
     await checkpoints.setup()

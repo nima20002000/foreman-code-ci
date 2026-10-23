@@ -11,10 +11,11 @@ import { PostgresFoundationSettingsRepository } from '../src/modules/settings/fo
 import { OperatorChatService, PostgresOperatorConversationRepository } from '../src/modules/conversations/operatorChat.js'
 import { nativeCorrelation } from '../src/modules/conversations/operatorChatRepository.js'
 import type { NativeHarnessSessionManager, NativeHistory } from '../src/modules/harnesses/port.js'
-import { graphHeaders, graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
-import { nim2691TaskDatabase } from './helpers/nim2691Database.js'
+import { graphHeaders, graphRpc, graphRpcValue } from './graph-composition-fixture.js'
+import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
-it.skipIf(process.env.NIM2691_POSTGRES !== '1').each(['acknowledged', 'acknowledged-terminal', 'exact', 'wrong-choice', 'wrong-version', 'conflicting-proof'])('reconciles only %s Codex response evidence after outcome persistence fails once', async (proofCase) => {
+it.skipIf(!postgresEnabled).each(['acknowledged', 'acknowledged-terminal', 'exact', 'wrong-choice', 'wrong-version', 'conflicting-proof'])('reconciles only %s Codex response evidence after outcome persistence fails once', async (proofCase) => {
     await nim2691TaskDatabase(async (pool, directory) => {
       await applyApplicationMigrations(pool)
       const access = new PostgresAccessService(pool)

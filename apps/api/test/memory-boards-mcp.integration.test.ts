@@ -16,7 +16,8 @@ import { stripMcpInputSchemas } from '../src/mcp/shared/inputSchemas.js'
 import type { CardDetail, MutationReceipt } from '../src/modules/memory-boards/types.js'
 import { memoryFixture } from '../src/modules/memory-boards/testing/fixture.js'
 import { memoryTestRegistry } from '../src/modules/memory-boards/testing/mcpRegistry.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('Memory board HTTP and authenticated MCP parity',()=>{
   let database:Awaited<ReturnType<typeof agent3Database>>

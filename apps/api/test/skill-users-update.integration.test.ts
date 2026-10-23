@@ -23,8 +23,9 @@ import { OperatorAgentMutationService } from '../src/modules/workspaces/operator
 import { SkillCatalogService } from '../src/modules/skills/catalog.js'
 import { SkillUsageService } from '../src/modules/skills/usage.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
+import { postgresEnabled } from './helpers/database.js'
 
-it.skipIf(!process.env.TEST_DATABASE_URL)('moves Agents and their saved workflows to a skill\'s current version in one step', async () => {
+it.skipIf(!postgresEnabled)('moves Agents and their saved workflows to a skill\'s current version in one step', async () => {
   const connectionString = process.env.TEST_DATABASE_URL!
   const parsed = new URL(connectionString)
   if (!['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname) || !parsed.pathname.includes('test')) throw new Error('Use a disposable loopback test database')

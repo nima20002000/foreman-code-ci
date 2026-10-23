@@ -1,4 +1,5 @@
-import { spawn, type ChildProcess } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
+import { spawnProcess } from '../../shared/process.js'
 import { randomUUID } from 'node:crypto'
 import { GitHubLoginStateSchema, type GitHubLoginRequest, type GitHubLoginState } from '@foreman-code/contracts/computer-accounts'
 import { DomainError } from '../errors.js'
@@ -190,7 +191,7 @@ export class GitHubLoginRunner {
 export function systemGitHubPorts(environment: NodeJS.ProcessEnv = process.env): GitHubLoginPorts {
   return {
     probe: systemPorts(environment),
-    spawn: (binary, args) => spawn(binary, args, { stdio: ['pipe', 'pipe', 'pipe'],
+    spawn: (binary, args) => spawnProcess(binary, args, { stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...environment, BROWSER: 'false', NO_COLOR: '1' } }),
     now: Date.now,
   }

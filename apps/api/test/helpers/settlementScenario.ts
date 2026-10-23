@@ -3,8 +3,8 @@ import { expect, vi } from 'vitest'
 import { RunRecordDetailSchema, RUN_INSPECTION_TOOLS } from '@foreman-code/contracts/wave25'
 import { isSettlementPendingCheckpointError } from '../../src/modules/interactions/repeatNativeEvidence.js'
 import { readWorkflowCheckpoint } from '../../src/modules/runs/repeatGraph.js'
-import { scenarioFixture } from './eng07BScenarios.js'
-import { runPath, scenarioHarness } from './eng07BHarness.js'
+import { scenarioFixture } from './scenarioFixtures.js'
+import { runPath, scenarioHarness } from './scenarioHarness.js'
 import { waitForSuccessfulRunCleanup } from './runSettlement.testSupport.js'
 
 function latch() {
@@ -71,7 +71,7 @@ export async function assertCleanupWaitsForOriginalWriter(id: 'S3-01' | 'S3-05-e
     pending = waitForSuccessfulRunCleanup({ pool: f.base.db.pool, runId: started.scope.runId,
       readRecord: async () => { const value = await read(); readOnce.release(); return value } })
       .then((value) => { returned = true; return value })
-    void pending.catch(() => undefined) // The awaited promise below retains failure.
+    void pending.catch(() => /* ignore: marks the promise handled; the test awaits it below */ undefined) // The awaited promise below retains failure.
     await Promise.race([readOnce.promise, pending])
     // Drain promise reactions; the cleanup gate, not a wall-clock sleep, keeps
     // the real Run terminal with an unverified, still-pending cleanup intent.
@@ -90,7 +90,7 @@ export async function assertCleanupWaitsForOriginalWriter(id: 'S3-01' | 'S3-05-e
     expect(f.base.dispatchErrors).toEqual([])
   } finally {
     releaseCleanup.release()
-    await pending?.catch(() => undefined)
+    await pending?.catch(() => /* ignore: cleanup; the test body already awaited or asserted this outcome */ undefined)
     gate.mockRestore()
     await f.close()
   }

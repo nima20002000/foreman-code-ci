@@ -22,6 +22,7 @@ export type AgentChatDirectoryBinding = z.infer<typeof AgentChatDirectoryBinding
 import {
   RecordedAgentHarnessSchema, HarnessExecutionSchema, ExecutionResultSchema, IdSchema, MessageSchema, OperatorActivityCursorSchema,
   OperatorActivitySchema, PendingNativeInteractionSchema, TimestampSchema, SupportedHarnessConfigurationSchema,
+  OperatorConversationStateSchema,
 } from "./index.js";
 
 export const AgentChatControlsStateSchema = SessionControlStateSchema.extend({
@@ -429,6 +430,19 @@ export const ReadAgentChatResponseSchema = AgentChatStateSchema.extend({
   receipts: AgentChatTurnPageSchema.optional(),
   executionActivity: AgentChatExecutionActivityPageSchema.optional(),
 }).strict();
+
+/** POST .../deliveries/read: a Run chat's engine readback, or an Agent/Operator chat's state with its delivery state. */
+export const ChatDeliveryPresentationSchema = z.object({ state: EngineChatReadbackSchema.shape.state,
+  capabilities: EngineChatReadbackSchema.shape.capabilities, nativeTurnId: z.string().optional() });
+export const ChatDeliveryReadbackSchema = z.union([EngineChatReadbackSchema, z.object({ target: DeliveryTargetSchema,
+  state: z.union([ReadAgentChatResponseSchema, OperatorConversationStateSchema]),
+  receipts: z.array(ChatDeliveryReceiptSchema), delivery: ChatDeliveryPresentationSchema })]);
+/** The same read selected by commandId or receiptId. */
+export const ChatDeliveryReceiptsReadbackSchema = z.object({ target: DeliveryTargetSchema, receipts: z.array(ChatDeliveryReceiptSchema) });
+/** The same read selected by deliveryInputs. */
+export const ChatDeliveryInputsReadbackSchema = z.object({ target: DeliveryTargetSchema, deliveryInputs: ChatDeliveryInputPageSchema });
+export type ChatDeliveryReadback = z.infer<typeof ChatDeliveryReadbackSchema>;
+export type ChatDeliveryInputPage = z.infer<typeof ChatDeliveryInputPageSchema>;
 
 /**
  * GET .../conversations/:conversationId/events — SSE. Normally the first event is `snapshot`

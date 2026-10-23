@@ -7,8 +7,8 @@ import { Wave25WorkerCredentialService } from '../src/modules/interactions/wave2
 import { assertWave25WorkerBinding } from '../src/modules/interactions/wave25/credentialAuthority.js'
 import { beforeGraphCommit, ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 import { WorkflowNativeProofServices } from '../src/modules/runs/workflowNativeProof.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
-import { executionRows, readback, recoveryFixture } from './helpers/eng06DRecovery.js'
+import { postgresEnabled } from './helpers/database.js'
+import { executionRows, readback, recoveryFixture } from './helpers/recoveryFixture.js'
 
 afterEach(() => vi.restoreAllMocks())
 

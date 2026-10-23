@@ -17,7 +17,7 @@ import { RepeatRunRepository } from '../../src/modules/runs/repeatPostgres.js'
 import { ApprovalPostgresSaver } from '../../src/infrastructure/approvalCheckpointSaver.js'
 import { codexApprovalRuntime } from './codexApprovalRuntime.js'
 import { approvalResponse } from './approvalResponse.js'
-import { br1002At } from './wave25Br1002Cuts.js'
+import { br1002At } from './continuationCuts.js'
 import { agentWorkflowNode } from './agentWorkflowFixture.js'
 import { rejectableDeferred } from './deferred.js'
 

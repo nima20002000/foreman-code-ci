@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'vitest'
 import { type InteractionResponseValue } from '@foreman-code/contracts'
 import type { AgentChatState } from '@foreman-code/contracts/agent-chat'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { calls, emit, until } from './fixtures/codex-test-helpers.js'
 import { useCodexChatDelivery } from './codex-chat-delivery.helpers.js'
 

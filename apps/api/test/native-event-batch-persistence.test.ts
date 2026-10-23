@@ -14,7 +14,7 @@ import type { WorkflowNativeProofRecord } from '../src/modules/runs/workflowNati
 import { createWorkflowNativeCaptureChannel } from '../src/modules/interactions/workflowNativeCapture.js'
 import type { SingleWriterSessionManager, SessionWriteLease } from '../src/modules/interactions/sessionWriter.js'
 import { createProductionRemoteWorkflow } from '../src/modules/placement/productionRemoteWorkflow.js'
-import { unavailableRuntime } from './eng04-runtime-repository-fixture.js'
+import { unavailableRuntime } from './runtime-repository-fixture.js'
 
 afterEach(() => vi.restoreAllMocks())
 

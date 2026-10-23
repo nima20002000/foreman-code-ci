@@ -81,7 +81,7 @@ async function productionShutdownFixture() {
   const config = loadConfig({ DATABASE_URL: 'postgresql://graphql:graphql@127.0.0.1:5432/graphql_shutdown_fixture' })
   const database = createDatabase(config.database)
   const checkpoints = createCheckpointStore(config.database.connectionString, 'remote_shutdown_fixture', config.database)
-  const production = buildProductionApp(config, database, checkpoints, false)
+  const production = buildProductionApp({ config, database, checkpoints, logger: false })
   return { production, ownerClose, managerDispose, detach, admission, channels,
     async close() {
       // Expected lifecycle rejections are asserted before this fixture releases its idle pools.

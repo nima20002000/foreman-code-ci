@@ -6,8 +6,9 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { ScheduleGetResultSchema, ScheduleSaveResultSchema, scheduleUtcToLocalTime } from '@foreman-code/contracts/schedules'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
-import { sch11DomainState, sch11Fixture, type Sch11Database, type Sch11Fixture } from './helpers/sch11Fixture.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
+import { sch11DomainState, sch11Fixture, type Sch11Database, type Sch11Fixture } from './helpers/scheduleFixture.js'
 
 describe.skipIf(!postgresEnabled)('device-time and seconds authenticated HTTP/MCP parity', () => {
   let database: Sch11Database

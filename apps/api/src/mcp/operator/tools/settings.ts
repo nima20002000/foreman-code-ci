@@ -3,9 +3,9 @@ import { z } from 'zod'
 import { OperatorChatSetupSchema, OperatorChatSetupQuerySchema } from '@foreman-code/contracts'
 import { operatorChatTools } from './operatorChat.js'
 
+import type { StandardSchemaWithJSON } from '@modelcontextprotocol/server'
 import {
-  CircleAccountAddInputSchema, CircleAccountRemoveInputSchema, ManagedCircleAccountsSchema,
-  CircleAccountsUpdateResultSchema,
+  type OperatorToolName,
   WorkerExecutionSettingsSchema,
   ManagedRemoteExecutionSettingsSchema,
   RemoteExecutionSettingsUpdateInputSchema,
@@ -26,50 +26,22 @@ import {
   WorkflowDefaultsUpdateInputSchema,
   WorkflowDefaultsUpdateResultSchema,
 } from '@foreman-code/contracts/management'
-import { defineOperatorTool } from '../definition.js'
+import { defineOperatorTool, grants } from '../definition.js'
+import { CIRCLE_ACCOUNT_TOOL_SPECS, ciToolInputSchema } from '../../../modules/ci/tools.js'
 
 export const settingsTools = [
-  defineOperatorTool({
-    name: 'circle_accounts_list',
-    requires: [['settings:read', 'global']],
+  // CircleCI login settings: CI's own tool specs.
+  ...CIRCLE_ACCOUNT_TOOL_SPECS.map(spec => defineOperatorTool({
+    name: spec.name as OperatorToolName,
+    requires: grants(spec.requires.map(action => ({ action, scope: spec.scope }))),
     enabled: services => !!services.circleAccounts,
-    description: 'Read primary and standby CircleCI logins, organization status, observed authentication/readiness, '
-      + 'per-org scheduling role and estimated credits from the dispatch fleet. organizations contains saved bindings; '
-      + 'orgs includes automatically discovered primary organizations. Usage exports are sampled at most '
-      + 'every three hours and readings are usable for four hours from their export window end. '
-      + 'Local human setup provisions API tokens in private CLI profiles outside Foreman; no credentials are returned.',
-    inputSchema: z.object({}).strict(), outputSchema: ManagedCircleAccountsSchema,
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    run: context => context.services.circleAccounts!.get(context.principal),
-  }),
-  defineOperatorTool({
-    name: 'circle_account_add',
-    requires: [['settings:update', 'global']],
-    enabled: services => !!services.circleAccounts,
-    description: 'Register or update nonsecret CircleCI account metadata: one stable default primary login and '
-      + 'one second login, each with three distinct GitHub org owners. A second login with role primary takes CI jobs '
-      + 'alongside the default login; role standby waits until CircleCI refuses a primary org for credits. '
-      + 'An omitted role defaults to standby. '
-      + 'Missing local credentials do not prevent registration. Local human setup provisions the token outside '
-      + 'Foreman. No token argument is accepted. Omit expectedRevision for last write wins or supply it to reject '
-      + 'stale metadata; reuse commandId with identical input after an uncertain save. Read back with circle_accounts_list.',
-    // Retain strict validation so an accidental credential argument is rejected before command persistence.
-    inputSchema: { '~standard': CircleAccountAddInputSchema['~standard'] }, outputSchema: CircleAccountsUpdateResultSchema,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    run: (context, input) => context.services.circleAccounts!.add(context.principal, 'mcp', input),
-  }),
-  defineOperatorTool({
-    name: 'circle_account_remove',
-    requires: [['settings:update', 'global']],
-    enabled: services => !!services.circleAccounts,
-    description: 'Remove the standby CircleCI registration after assigned jobs and result collection settle. '
-      + 'The default primary identity cannot be removed. Historical records and private CLI profiles remain; '
-      + 'local human cleanup revokes the token separately. Optional expectedRevision rejects stale metadata; '
-      + 'commandId supports identical retries. Read back with circle_accounts_list.',
-    inputSchema: { '~standard': CircleAccountRemoveInputSchema['~standard'] }, outputSchema: CircleAccountsUpdateResultSchema,
-    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-    run: (context, input) => context.services.circleAccounts!.remove(context.principal, 'mcp', input),
-  }),
+    description: spec.description,
+    inputSchema: ciToolInputSchema(spec, 'operator') as StandardSchemaWithJSON,
+    outputSchema: spec.outputSchema as StandardSchemaWithJSON,
+    annotations: spec.annotations,
+    run: (context, input, { extra }) =>
+      spec.run(context.services.circleAccounts!, context.principal, input, { signal: extra.mcpReq.signal }),
+  })),
   defineOperatorTool({
     name: 'worker_execution_settings_get',
     requires: [['settings:read', 'global']],

@@ -4,7 +4,7 @@ import { CODEX_APPROVAL_OPTIONS_FIXTURE } from '@foreman-code/contracts'
 import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { agentChatKey, PostgresAgentChatRepository } from '../src/modules/conversations/agentChatRepository.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
-import { seedAgent3 } from './helpers/wave25Agent3.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
 
 describe('Agent chat receipt atomicity', () => {
   let database: Awaited<ReturnType<typeof migratedDatabase>>

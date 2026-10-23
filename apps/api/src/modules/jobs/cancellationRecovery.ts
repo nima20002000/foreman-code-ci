@@ -1,6 +1,6 @@
 import { JobRuntimeMeasurementRecordSchema } from '@foreman-code/contracts/job-verification-runtime'
 import { withTransaction } from '../../infrastructure/transaction.js'
-import { createHash, createPublicKey, randomUUID, sign, verify } from 'node:crypto'
+import { createPublicKey, randomUUID, sign, verify } from 'node:crypto'
 import { isDeepStrictEqual as same } from 'node:util'
 import type pg from 'pg'
 import { DeviceRegistrationSchema } from '@foreman-code/contracts/device-identity'
@@ -23,6 +23,7 @@ import { DomainError } from '../errors.js'
 import { JobRepository, type JobSql } from './repository.js'
 import type { PostgresJobDispatch } from './dispatch.js'
 import type { MainDeviceIdentity } from '../devices/mainIdentity.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 const PROPOSE = 'job.cancellation-recovery.propose'
 const APPROVE = 'job.cancellation-recovery.approve'
@@ -199,8 +200,7 @@ export class PostgresJobCancellationRecovery {
       || terminal.exitCode !== null || terminal.signal !== null
       || Date.parse(terminal.finishedAt) < Date.parse(grant.approvedAt)
       || Date.parse(receipt.observedAt) > Date.parse(grant.expiresAt)
-      || terminal.closureEvidenceDigest !== createHash('sha256')
-        .update(jobCancellationGrantMessage(grant)).digest('hex')
+      || terminal.closureEvidenceDigest !== sha256Hex(jobCancellationGrantMessage(grant))
       || !receipt.controls.some(command => command.commandId === grant.cancelCommandId && command.action.kind === 'stop')
       || !('deviceId' in connection) || target.hostRef.kind !== 'device'
       || connection.mainId !== grant.intent.mainId || connection.deviceId !== target.hostRef.deviceId

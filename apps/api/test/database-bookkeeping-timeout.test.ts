@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import type { NativeHarnessEvent, NativeSessionReference } from '@foreman-code/contracts'
 import { afterEach, expect, it, vi } from 'vitest'
-import { isDatabaseTimeout, retryDatabaseTimeout } from '../src/infrastructure/databaseTimeout.js'
+import { isDatabaseTimeout, retryDatabaseTimeout } from '../src/infrastructure/databaseRetry.js'
 import { DomainError } from '../src/modules/errors.js'
 import type { NativeHarnessSessionManager } from '../src/modules/harnesses/port.js'
 import { LeaseGuard, SingleWriterSessionManager } from '../src/modules/interactions/sessionWriter.js'
@@ -9,8 +9,8 @@ import { ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js
 import { RunGraphError } from '../src/modules/run-graph/errors.js'
 import { executeRepeatRuntime, type RepeatRuntimeLifecycle } from '../src/modules/runs/repeatRuntime.js'
 import { renewOwnedLeases } from '../src/modules/leases/ownerLeases.js'
-import { a1Scenario, graphHarness } from './helpers/eng04A1GraphHarness.js'
-import { nativeLanes } from './helpers/nativeLanes.js'
+import { a1Scenario, graphHarness } from './helpers/graphScenarioHarness.js'
+import { nativeLanes } from './helpers/memorySessionCoordination.js'
 
 afterEach(() => {
   vi.useRealTimers()

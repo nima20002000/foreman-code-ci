@@ -13,7 +13,7 @@ import { ComputerAccountsService } from '../src/modules/computers/accounts.js'
 import { computerConnectionsReader } from '../src/modules/computers/connections.js'
 import { FleetMaintenanceService, type FleetSources } from '../src/modules/computers/fleet.js'
 import { fakeComputer } from './helpers/fleetSync.js'
-import { agent3Database } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 
 it('reads persisted computer targets and their connections through MCP with the caller’s read authority', async () => {
   const database = await agent3Database()

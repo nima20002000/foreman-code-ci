@@ -3,7 +3,7 @@ import { test, vi } from 'vitest'
 import type { ReviewJob } from '@foreman-code/contracts'
 import { assertSameRepeatExecution, assertSameReviewJob, reviewPhysicallySettled } from '../src/modules/interactions/repeatObservation.js'
 import { repeatReviewerOccurrence } from '../src/modules/interactions/repeatReviewer.js'
-import { native2Fixture } from './eng04-native2-fixtures.js'
+import { native2Fixture } from './native-reviewer-fixtures.js'
 
 function reviewFixture() {
   const f = native2Fixture(); f.installResident(true)

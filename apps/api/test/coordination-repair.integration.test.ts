@@ -6,7 +6,7 @@ import { currentOperatorIntegration } from './helpers/currentOperatorIntegration
 import { prepareCoordinationWorkflow } from './helpers/coordinationWorkflow.js'
 import { correctiveNativeManager, type CorrectiveRequest } from './helpers/correctiveNativeManager.js'
 import { memoryCall, type MemoryRuntime } from './helpers/memoryWorkflow.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 it.runIf(postgresEnabled).each(['corrected', 'exhausted', 'board_rejected', 'board_exhausted'] as const)(
   'repairs a production coordination result in the same native session (%s)', async mode => {

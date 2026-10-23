@@ -12,10 +12,11 @@ import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { RunCiAuthority, CI_GET_ACTIONS, CI_RUN_ACTIONS } from '../src/modules/jobs/ciAuthority.js'
-import { HostCiService, type HostCiComputer, type HostCiEndpoint } from '../src/modules/ci-host/service.js'
-import { HostCiRunner, type HostCiPorts } from '../src/modules/ci-host/runner.js'
+import { HostCiService, type HostCiComputer, type HostCiEndpoint } from '@foreman-code/ci/service'
+import { HostCiRunner, type HostCiPorts } from '@foreman-code/ci/runner'
 import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 let database: Awaited<ReturnType<typeof migratedDatabase>>
 beforeAll(async () => { database = await migratedDatabase() }, 60_000)
@@ -51,7 +52,7 @@ async function fixture(realLogs = false) {
       }
       return { code: control.code, stdout: control.state, stderr: '' }
     } }
-  const runner = new HostCiRunner(root, ports, {})
+  const runner = new HostCiRunner(mainCiContext, root, ports, {})
   let dispatchGate: Promise<void> | undefined
   const endpoint: HostCiEndpoint = {
     computers: async () => { await dispatchGate; return computers },
@@ -76,7 +77,7 @@ async function fixture(realLogs = false) {
   }
   const access = new PostgresAccessService(database.pool)
   const commands = new PostgresCommandCoordinator(database.pool)
-  const ci = new HostCiService(database.pool, commands, new RunCiAuthority(database.pool), {
+  const ci = new HostCiService(mainCiContext, database.pool, commands, new RunCiAuthority(database.pool), {
     capabilities: async () => ({ parts: true, integrationPartitions: true, affected: true }),
     resolve: async () => 'a'.repeat(40),
   }, endpoint)

@@ -3,13 +3,13 @@ import { SessionPreferencesSchema, type SessionPreferences, type CompactionState
   type SessionControlCapabilities, type NativeSessionReference } from '@foreman-code/contracts'
 import { codexCollaborationMode, codexCompactionNotification } from '../codexSessionControls.js'
 import type { NativeCompactInput, NativeSessionStart } from '../port.js'
-import { createHash } from 'node:crypto'
 import { HarnessExecutionError } from '../errors.js'
 import { codexRequest } from '../codexProtocol.js'
 import { CodexRpcError, object, type JsonObject } from '../codexStdioTransport.js'
 import { advanced, threadParameters } from './support.js'
 import { CodexManagerConnection } from './connection.js'
 import { assertConsultationRebind } from '../consultationSession.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 export abstract class CodexManagerControls extends CodexManagerConnection {
   async configureSessionPreferences(preferences: SessionPreferences) {
@@ -63,7 +63,7 @@ export abstract class CodexManagerControls extends CodexManagerConnection {
     return { compact: { supported: compact, reason: compact ? null : 'Native compaction is unavailable in this schema.' },
       plan: { supported: plan, reason: plan ? null : 'Native Plan mode is unavailable in this schema.' },
       autoCompact: unsupported, autoCompactBudget: unsupported, contextBudgetReason, contextBudgets: budgets, contextProfiles: [],
-      modelCapacity: capacity, model: runtime.configuration.model, profileKey: createHash('sha256').update(runtime.configurationIdentity).digest('hex') }
+      modelCapacity: capacity, model: runtime.configuration.model, profileKey: sha256Hex(runtime.configurationIdentity) }
   }
 
   contextSnapshot(session: NativeSessionReference): ContextSnapshot | null {

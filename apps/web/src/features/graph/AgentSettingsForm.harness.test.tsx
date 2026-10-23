@@ -43,7 +43,7 @@ it('shows the saved native tools policy and retains it on a metadata save', asyn
   </QueryClientProvider>)
   await user.type(screen.getByRole('textbox', { name: 'Name' }), ' renamed')
   await user.click(screen.getByRole('button', { name: 'Save agent settings' }))
-  expect(onSave.mock.calls[0]![0].nativeTools).toEqual(saved.nativeTools)
+  expect(onSave.mock.calls[0]![0].agent.nativeTools).toEqual(saved.nativeTools)
 })
 
 it.each(['missing', 'incomplete', 'unavailable'] as const)(
@@ -69,7 +69,7 @@ it.each(['missing', 'incomplete', 'unavailable'] as const)(
     await user.type(screen.getByRole('textbox', { name: 'Name' }), 'Renamed coordinator')
     await user.click(screen.getByRole('button', { name: 'Save agent settings' }))
     expect(onSave).toHaveBeenCalledOnce()
-    expect(onSave.mock.calls[0]![0]).toMatchObject({ name: 'Renamed coordinator', harness: 'claude',
+    expect(onSave.mock.calls[0]![0].agent).toMatchObject({ name: 'Renamed coordinator', harness: 'claude',
       harnessConfiguration: savedClaudeConfiguration })
     expect(agent.harnessConfiguration).toEqual(savedClaudeConfiguration)
   },
@@ -86,7 +86,7 @@ it('keeps the saved harness visible when preset loading fails', async () => {
   expect(await screen.findByText('Provider presets could not be loaded.')).toBeVisible()
   await user.type(screen.getByRole('textbox', { name: 'Name' }), ' updated')
   await user.click(screen.getByRole('button', { name: 'Save agent settings' }))
-  expect(onSave.mock.calls[0]![0]).toMatchObject({ harness: 'claude', harnessConfiguration: savedClaudeConfiguration })
+  expect(onSave.mock.calls[0]![0].agent).toMatchObject({ harness: 'claude', harnessConfiguration: savedClaudeConfiguration })
 })
 
 it('requires unsupported saved Claude access to be corrected without substituting another harness', async () => {
@@ -101,7 +101,7 @@ it('requires unsupported saved Claude access to be corrected without substitutin
   expect(selector).toHaveValue('claude')
   await user.selectOptions(screen.getByRole('combobox', { name: 'Access' }), 'danger-full-access')
   await user.click(screen.getByRole('button', { name: 'Save agent settings' }))
-  expect(onSave.mock.calls[0]![0]).toMatchObject({ harness: 'claude', harnessConfiguration: savedClaudeConfiguration })
+  expect(onSave.mock.calls[0]![0].agent).toMatchObject({ harness: 'claude', harnessConfiguration: savedClaudeConfiguration })
 })
 
 it('offers configured Claude before native qualification and switches only after an explicit selection', async () => {
@@ -113,7 +113,7 @@ it('offers configured Claude before native qualification and switches only after
   await user.selectOptions(selector, 'claude')
   expect(selector).toHaveValue('claude')
   await user.click(screen.getByRole('button', { name: 'Save agent settings' }))
-  expect(onSave.mock.calls[0]![0]).toMatchObject({ harness: 'claude', harnessConfiguration: savedClaudeConfiguration })
+  expect(onSave.mock.calls[0]![0].agent).toMatchObject({ harness: 'claude', harnessConfiguration: savedClaudeConfiguration })
 })
 
 it('restores the saved Claude draft after switching away even without a global Claude preset', async () => {
@@ -126,6 +126,6 @@ it('restores the saved Claude draft after switching away even without a global C
   await user.selectOptions(screen.getByRole('combobox', { name: 'Harness' }), 'claude')
   expect(screen.getByRole('textbox', { name: 'Claude profile folder' })).toHaveValue('/edited/profile')
   await user.click(screen.getByRole('button', { name: 'Save agent settings' }))
-  expect(onSave.mock.calls[0]![0]).toMatchObject({ harness: 'claude',
+  expect(onSave.mock.calls[0]![0].agent).toMatchObject({ harness: 'claude',
     harnessConfiguration: { ...savedClaudeConfiguration, configDirectory: '/edited/profile' } })
 })

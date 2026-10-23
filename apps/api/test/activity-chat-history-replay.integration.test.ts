@@ -1,5 +1,5 @@
 import { afterEach, describe, it } from 'vitest'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { closeActivityReplay } from './helpers/activityReplayFixture.js'
 import { replayChatHistory } from './helpers/activityReplayChatHistory.js'
 

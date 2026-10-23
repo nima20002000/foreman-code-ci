@@ -9,7 +9,7 @@ import { repeatDigest, repeatExecutionIdentity, repeatSlotId, freezeRepeatEntry 
 import { repeatLaunchClaim, type RepeatNativeChange, type RepeatNativeEvidence } from '../src/modules/runs/repeatNativeRepository.js'
 import { createWorkflowNativeCaptureChannel, type WorkflowNativeCaptureInput } from '../src/modules/interactions/workflowNativeCapture.js'
 import { workflowNativeReservation } from '../src/modules/runs/workflowNativeEntry.js'
-import { nativeAt, nativeCompleted, nativeFixture } from './eng04-native-fixtures.js'
+import { nativeAt, nativeCompleted, nativeFixture } from './native-repeat-fixtures.js'
 
 // Exact approval/native acknowledgement is an explicit TEST DOUBLE here. The
 // integrated PostgreSQL/provider gate must exercise the real approval service.

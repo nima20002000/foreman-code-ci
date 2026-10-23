@@ -10,7 +10,7 @@ import { sessionGeneration } from '../../../shared/api/sessionBoundary'
 import { executionChatReadKey, executionChatScopeKey, executionChatSelectionKey, resolveExecutionChat,
   workflowExecutionChatClient, type WorkflowExecutionChatClient } from './client'
 import type { WorkflowExecutionChatSlotSelection, WorkflowExecutionChatViews } from './types'
-import { useWorkflowBoard } from '../../workflow-board/context'
+import { useBoardAuthoring } from '../../workflow-board/context'
 
 type Resolved=Extract<WorkflowExecutionChatResolution,{kind:'selected'}>
 function isPinned(selection:WorkflowExecutionChatSelection,resolved:Resolved) {
@@ -52,7 +52,7 @@ export function WorkflowExecutionChatAdapter({selection:raw,views}:{
   selection:WorkflowExecutionChatSlotSelection;views:WorkflowExecutionChatViews
 }) {
   const cache=useQueryClient()
-  const board=useWorkflowBoard()
+  const board=useBoardAuthoring()
   const {nodeId,onSelectTarget,onSelectRun,...pins}=raw
   // A draft node's Agent lets the server open its draft chat before the workflow is saved.
   const agentId=pins.runId?undefined:board?.draftNodeAgentId?.(nodeId)

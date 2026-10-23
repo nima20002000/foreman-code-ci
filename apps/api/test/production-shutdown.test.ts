@@ -34,7 +34,7 @@ beforeEach(() => {
   vi.spyOn(ExecutionScopedNativeSessionManagerResolver.prototype, 'dispose').mockResolvedValue()
   database = createDatabase(config.database)
   checkpoints = createCheckpointStore(config.database.connectionString, 'shutdown_fixture', config.database)
-  production = buildProductionApp(config, database, checkpoints, false)
+  production = buildProductionApp({ config, database, checkpoints, logger: false })
 })
 afterEach(async () => {
   // Rejections are asserted in the relevant test; these mocked fixtures hold no lock/native process.
@@ -56,7 +56,7 @@ describe('production shutdown composition', () => {
       kind: 'configured', extensions: [], rsyncWriters: { close },
     } as unknown as ReturnType<typeof rsyncComposition.createInstalledRsyncComposition>)
     const stopDevice = vi.spyOn(ProductionDeviceRuntime.prototype, 'stop')
-    production = buildProductionApp(config, database, checkpoints, false)
+    production = buildProductionApp({ config, database, checkpoints, logger: false })
     const closing = production.shutdown()
     try {
       await entered.promise

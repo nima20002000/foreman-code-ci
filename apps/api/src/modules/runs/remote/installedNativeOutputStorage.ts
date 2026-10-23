@@ -1,5 +1,5 @@
 import { constants } from 'node:fs'
-import { randomUUID, createHash } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { lstat, open, mkdir, rmdir, rename, readdir, type FileHandle } from 'node:fs/promises'
 import { relative, isAbsolute } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
@@ -11,6 +11,7 @@ import { MAX_FILE_BYTES } from '@foreman-code/contracts/files'
 import { BYTE_TRANSFER_POLICY } from '@foreman-code/contracts/byte-transfer'
 import { anchored, identity, openPrivateRoot, withPrivateDirectoryLock } from '../../sources/privateFilesystem.js'
 import { DomainError } from '../../errors.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 /** Captured by the actual admitted turn, never supplied in a native command. */
 export interface RemoteNativeOutputStorageOwner {
@@ -217,7 +218,7 @@ export async function createNativeOutputBudgetLedger(input: {
       if (!stat.isFile() || stat.nlink !== 1 || stat.mode & 0o077 || stat.uid !== process.getuid?.()
         || stat.size > BYTE_TRANSFER_POLICY.maxRecords * 16_384) throw unavailable()
       const envelope = z.object({ checksum: z.string().regex(/^[a-f0-9]{64}$/), payload: BudgetJournal }).strict().parse(JSON.parse(await file.readFile('utf8')))
-      if (createHash('sha256').update(JSON.stringify(envelope.payload)).digest('hex') !== envelope.checksum) throw unavailable()
+      if (sha256Hex(JSON.stringify(envelope.payload)) !== envelope.checksum) throw unavailable()
       const journal = envelope.payload
       if (!isDeepStrictEqual(journal.installation, installation) || !isDeepStrictEqual(journal.limits, limits)) throw unavailable()
       return journal
@@ -225,7 +226,7 @@ export async function createNativeOutputBudgetLedger(input: {
   }
   const save = async (root: FileHandle, files: Set<FileHandle>, journal: z.infer<typeof BudgetJournal>) => {
     const name = `.native-output-budget-${randomUUID()}.tmp`, payload = BudgetJournal.parse(journal)
-    const encoded = JSON.stringify({ checksum: createHash('sha256').update(JSON.stringify(payload)).digest('hex'), payload })
+    const encoded = JSON.stringify({ checksum: sha256Hex(JSON.stringify(payload)), payload })
     if (Buffer.byteLength(encoded) > BYTE_TRANSFER_POLICY.maxRecords * 16_384) throw unavailable()
     const file = await open(anchored(root, name), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600)
     files.add(file)

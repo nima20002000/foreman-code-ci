@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import type { HarnessNativeEvent } from '@foreman-code/contracts'
 import { RunSubagentMessageSchema, RunSubagentSchema, RunSubagentToolSchema, subagentCapabilities,
   type RunSubagent, type SubagentSource } from '@foreman-code/contracts/subagents'
@@ -6,8 +5,9 @@ import type { GraphSqlClient } from '../run-graph/connection.js'
 import { DomainError } from '../errors.js'
 import { sanitizeSubagentText, sanitizeSubagentValue } from './normalization.js'
 import type { SubagentChange, SubagentProjectionContext, SubagentStoredItem } from './types.js'
+import { sha256Hex } from '../../shared/hash.js'
 
-export const subagentId = (...identity: unknown[]) => createHash('sha256').update(JSON.stringify(identity)).digest('hex')
+export const subagentId = (...identity: unknown[]) => sha256Hex(JSON.stringify(identity))
 const terminal = (status: string) => ['completed', 'failed', 'canceled'].includes(status)
 export async function readChildren(sql: GraphSqlClient, runId: string, executionId?: string): Promise<RunSubagent[]> {
   const rows = (await sql.query<{ record: unknown }>('select record from run_subagents where run_id=$1 and ($2::text is null or parent_execution_id=$2) order by id limit 1001', [runId, executionId ?? null])).rows

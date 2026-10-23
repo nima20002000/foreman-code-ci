@@ -110,7 +110,7 @@ in different workspaces, A→B and A→B→A upload races, late list/download/re
 responses, native picker isolation, mismatched scopes/pins/hashes, zero-byte
 Markdown, and authenticated-session changes.
 
-`projectFilesBytes.test.ts` covers exact/chunked/empty bytes, SHA-256, truncation,
+`shared/api/bytes.test.ts` covers exact/chunked/empty bytes, SHA-256, truncation,
 overflow cancellation, stream failures, size validation, and aborting blocked reads.
 
 Run in a full checkout with the repository's pinned runtime:

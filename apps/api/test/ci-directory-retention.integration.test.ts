@@ -3,15 +3,16 @@ import { access, mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { CiGetOutputSchema, CiRunRecordSchema } from '@foreman-code/contracts'
 import { expect, it, vi } from 'vitest'
-import { ProductionHostCiEndpoint } from '../src/modules/ci-host/endpoint.js'
-import { HostCiRunner, type HostCiPorts } from '../src/modules/ci-host/runner.js'
-import { CloudCi } from '../src/modules/ci-host/cloud.js'
-import type { CloudProvider } from '../src/modules/ci-host/cloudProviders.js'
+import { ProductionHostCiEndpoint } from '@foreman-code/ci/endpoint'
+import { HostCiRunner, type HostCiPorts } from '@foreman-code/ci/runner'
+import { CloudCi } from '@foreman-code/ci/cloud'
+import type { CloudProvider } from '@foreman-code/ci/cloudProviders'
 import type { GitWorktreePorts } from '../src/modules/sources/gitWorktree.js'
-import type { HostCiComputer } from '../src/modules/ci-host/service.js'
+import type { HostCiComputer } from '@foreman-code/ci/service'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { fixture } from './helpers/hostCiMcpFixture.js'
 import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 it.each(['main', 'device', 'github', 'circleci'] as const)(
   'retains the newest 200 %s tickets, recent tickets and DB-active tickets without changing DB facts', async kind => {
@@ -29,13 +30,13 @@ it.each(['main', 'device', 'github', 'circleci'] as const)(
     const ports: HostCiPorts = { cpus: 8, memoryBytes: 16 * 2 ** 30,
       now: () => new Date('2026-10-14T00:00:00Z'),
       run: async () => ({ code: 0, stdout: 'active', stderr: '' }) }
-    const runner = new HostCiRunner(root, ports, {})
+    const runner = new HostCiRunner(mainCiContext, root, ports, {})
     const git: GitWorktreePorts = { cloneDirectory: () => root,
       git: async () => ({ code: 0, stdout: '', stderr: '' }) }
-    const cloud = new CloudCi(mainId, { id: kind === 'circleci' ? 'circleci' : 'github', cpus: ports.cpus, memoryBytes: ports.memoryBytes,
+    const cloud = new CloudCi(mainCiContext, mainId, { id: kind === 'circleci' ? 'circleci' : 'github', cpus: ports.cpus, memoryBytes: ports.memoryBytes,
       userSystemd: { supported: false, reason: 'Fixture provider' }, ready: async () => true } as CloudProvider,
       async () => null, root, ports, git)
-    const endpoint = new ProductionHostCiEndpoint(database.pool, mainId, () => ({
+    const endpoint = new ProductionHostCiEndpoint(mainCiContext, database.pool, mainId, () => ({
       capabilities: () => [], request: async (_id, _namespace, request) => ({ payload: await runner.handle(request) }),
     }), runner, hostRef.kind === 'cloud' ? [cloud] : [])
     const records: ReturnType<typeof CiRunRecordSchema.parse>[] = []

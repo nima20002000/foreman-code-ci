@@ -3,7 +3,7 @@ import { CodexAppServerSessionManager, f, managers, source, useCodexFixture } fr
 import { collect, emit, finish, state, until, calls } from './fixtures/codex-test-helpers.js'
 import { isCodexCapacityError } from '../src/modules/harnesses/codexCapacity.js'
 import { SingleWriterSessionManager } from '../src/modules/interactions/sessionWriter.js'
-import { nativeLanes } from './helpers/nativeLanes.js'
+import { nativeLanes } from './helpers/memorySessionCoordination.js'
 import type { NativeSessionReference } from '@foreman-code/contracts'
 
 describe('Codex capacity retry', () => {

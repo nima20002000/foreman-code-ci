@@ -5,7 +5,7 @@ import {
   CURRENT_WORKFLOW_TOOLS, CurrentEditReadResultSchema, CurrentRunDetailsSchema, CurrentWorkflowReadResultSchema,
 } from '@foreman-code/contracts/wave25'
 import { setupWorkflowCreateIntegration } from './helpers/operatorWorkflowCreate.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 function value(result: Parameters<typeof decodeMcpToolResult>[0] & { isError?: boolean | undefined }) {
   expect(result.isError, JSON.stringify(result)).not.toBe(true)

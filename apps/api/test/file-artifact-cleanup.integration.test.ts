@@ -25,7 +25,8 @@ import { bindingIdentity, digest, FileToolSessions } from '../src/modules/files/
 import { PostgresFileToolRepository } from '../src/modules/files/tools/postgres.js'
 import { AgentFileToolService } from '../src/modules/files/tools/service.js'
 import { ALL_FILE_TOOL_NAMES, type FileToolContext } from '../src/modules/files/tools/types.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const metadata = (bytes: Buffer) => ({ filename: 'source.md', mediaType: 'text/markdown' as const,
   byteSize: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') })

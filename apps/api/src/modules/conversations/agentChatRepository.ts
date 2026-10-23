@@ -8,7 +8,7 @@ import { assertAgentChatDirectoryAvailable } from './agentChatDirectory.js'
 import type { NativeMessageSubmission } from '../harnesses/port.js'
 import type { AcceptedChatInput } from './nativeChatInput.js'
 import { recordNativeNonSubmission, type NativeNonSubmission } from './nativeNonSubmission.js'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { messageAttachmentIdentity } from '@foreman-code/contracts/files'
 
@@ -33,6 +33,7 @@ import { AgentConfigurationVersionSchema, type AgentConfigurationVersion } from 
 import { legacyProviderAccountBinding, readProviderAccountBinding, type AcceptedProviderAccountBindings }
   from '../provider-accounts/acceptedBindings.js'
 import type { AcceptedProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
+import { sha256Hex } from '../../shared/hash.js'
 
 type Queryable = SqlQuery
 type State = NonNullable<Awaited<ReturnType<PostgresAgentChatRepository['state']>>>
@@ -125,10 +126,10 @@ export function agentChatCorrelation(conversationId: string, requestId: string):
 export function agentChatInputHash(input: Pick<SendAgentChatMessageRequest, 'content' | 'intent' | 'context' | 'expectedNativeTurnId'>
   & Partial<Pick<SendAgentChatMessageRequest, 'requestId' | 'attachments' | 'sessionMode'>>): string {
   // Keep untargeted receipt identities stable; a supplied native precondition is part of the command.
-  return createHash('sha256').update(JSON.stringify([input.content, input.intent, input.context,
+  return sha256Hex(JSON.stringify([input.content, input.intent, input.context,
     ...(input.expectedNativeTurnId === undefined ? [] : [input.expectedNativeTurnId]),
     ...(input.sessionMode ? [{ sessionMode: input.sessionMode }] : []),
-    ...(input.attachments?.length ? [{ attachmentIdentity: messageAttachmentIdentity({ requestId: input.requestId!, attachments: input.attachments }) }] : [])])).digest('hex')
+    ...(input.attachments?.length ? [{ attachmentIdentity: messageAttachmentIdentity({ requestId: input.requestId!, attachments: input.attachments }) }] : [])]))
 }
 
 export function agentConversation(row: AgentConversationRow): AgentConversation {

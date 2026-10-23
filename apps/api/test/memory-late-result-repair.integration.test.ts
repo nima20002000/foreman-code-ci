@@ -4,7 +4,7 @@ import { currentOperatorIntegration } from './helpers/currentOperatorIntegration
 import { prepareCoordinationWorkflow } from './helpers/coordinationWorkflow.js'
 import { correctiveNativeManager, type CorrectiveRequest } from './helpers/correctiveNativeManager.js'
 import { memoryCall, memoryWorkflow, type MemoryRuntime } from './helpers/memoryWorkflow.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 it.runIf(postgresEnabled).each([false, true])('repairs a late card conflict and completes native settlement (retry=%s)', async retrySettlement => {
   const fixture = memoryWorkflow('single')

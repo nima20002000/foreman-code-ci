@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
 import {
   AgentFileReadInputSchema, ConversationFileUploadInputSchema, MAX_FILE_BYTES, parseAgentFileReadResult,
@@ -17,6 +17,7 @@ import type { AllocationSession, FileAllocation, FileAllocationRepository, FileR
 import { fileListInput, fileScopeIdentity } from './requests.js'
 import type { FileByteStorage } from './storage.js'
 import { decodeReferenceBytes, readReferenceRange } from './references/bytes.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export interface FileScopeAuthorization<Target> {
   resolve(principal: ManagementPrincipal, target: Target, access: FileAccess, query?: FileQuery): Promise<FileScope>
@@ -87,10 +88,10 @@ export class FileStorageService<Target> {
     }
     if (scope.kind === 'job_execution') throw new DomainError('FILE_BYTE_CLASS_DENIED', 'Job artifacts require the explicit CI publication service.', 403)
     const request = FileUploadRequestSchema.parse(input)
-    const inputHash = createHash('sha256').update(JSON.stringify([fileScopeIdentity(scope), request.filename,
+    const inputHash = sha256Hex(JSON.stringify([fileScopeIdentity(scope), request.filename,
       request.mediaType, request.byteSize, request.sha256,
       // Keep existing human upload receipts byte-for-byte compatible.
-      ...(origin === 'upload' ? [] : [origin, publicationIdentity])])).digest('hex')
+      ...(origin === 'upload' ? [] : [origin, publicationIdentity])]))
     return this.repository.withAllocation(principal.id, request.requestId, async (session) => {
       const existing = await session.read()
       if (existing) {
@@ -133,8 +134,8 @@ export class FileStorageService<Target> {
       sha256: JobArtifactFileRevisionSchema.unwrap().shape.sha256,
       byteSize: JobArtifactFileRevisionSchema.unwrap().shape.byteSize }).strict().parse(input)
     const duration = JobArtifactRetentionSchema.parse(retentionSeconds)
-    const inputHash = createHash('sha256').update(JSON.stringify([fileScopeIdentity(scope), request.filename,
-      request.mediaType, request.byteSize, request.sha256, publicationIdentity, duration])).digest('hex')
+    const inputHash = sha256Hex(JSON.stringify([fileScopeIdentity(scope), request.filename,
+      request.mediaType, request.byteSize, request.sha256, publicationIdentity, duration]))
     return this.repository.withAllocation(principal.id, request.requestId, async session => {
       const prior = await session.read()
       if (prior) {

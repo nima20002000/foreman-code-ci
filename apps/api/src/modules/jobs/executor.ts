@@ -2,7 +2,6 @@ import { JobPreparationRetryError, retryJobPreparation } from './preparationRetr
 import { JOB_GIT_ENVIRONMENT, JOB_PRIVATE_GIT_LAYOUT, requireJobGitMounts } from './privateGitMounts.js'
 import { requireJobInputReceipt,JOB_INPUT_MANIFEST_CONTAINER_PATH,type VerifiedJobSource } from './inputs.js'
 import type { JobInputDeliveryReceipt } from '@foreman-code/contracts/job-inputs'
-import { createHash } from 'node:crypto'
 import { StringDecoder } from 'node:string_decoder'
 import { AcceptedJobSpecSchema, JobExecutionSchema, type AcceptedJobSpec, type PreparedJobSpec, type JobExecution } from '@foreman-code/contracts'
 import { jobSpecDigests } from '@foreman-code/contracts/jobs-node'
@@ -16,6 +15,7 @@ import type { z } from 'zod'
 import { JobVerificationRuntimeMeasurementSchema, type JobVerificationRuntimeMeasurement }
   from '@foreman-code/contracts/job-verification-runtime'
 import { JOB_VERIFICATION_OWNER_CONFIGURATION, JobVerificationDispatchValiditySchema, type JobNetworkPolicy } from '@foreman-code/contracts/job-verification-policy'
+import { sha256Hex } from '../../shared/hash.js'
 export { jobSpecDigests } from '@foreman-code/contracts/jobs-node'
 
 /** These ports are supplied by W08/W09/W07, never by the untrusted build. */
@@ -64,7 +64,7 @@ export function requireVerificationRuntime(
   if (dispatchAt !== spec.lifecycle.dispatchAt || Date.parse(dispatchAt) > now || Date.parse(measured.identity.approvalExpiresAt) <= now
     || Date.parse(measured.expiresAt) <= now) throw new Error('Original verification qualification expired or dispatch changed.')
   const fingerprint = measured.fingerprint
-  const digest = createHash('sha256').update(canonicalGraphJson(fingerprint)).digest('hex')
+  const digest = sha256Hex(canonicalGraphJson(fingerprint))
   const suite = measured.suites.find(value => value.suite === spec.verification.suite)
   const durations = [spec.policy.preparationTimeoutMs, spec.policy.serviceStartupTimeoutMs,
     spec.policy.executionTimeoutMs, spec.policy.cancellationGraceMs, spec.policy.publicationTimeoutMs,
@@ -185,7 +185,7 @@ export interface JobExecutorResult {
 export function jobSupervisorIdentity(execution: Pick<JobExecution, 'id' | 'attemptId' | 'operationId' | 'owner'> & {
   acceptedSpec: Pick<AcceptedJobSpec, 'specDigest'>
 }): string {
-  return `graphql-job-${createHash('sha256').update(JSON.stringify([execution.id, execution.attemptId, execution.operationId, execution.owner, execution.acceptedSpec.specDigest])).digest('hex')}`
+  return `graphql-job-${sha256Hex(JSON.stringify([execution.id, execution.attemptId, execution.operationId, execution.owner, execution.acceptedSpec.specDigest]))}`
 }
 
 function requireProfile(spec: AcceptedJobSpec, profile: QualifiedJobProfile | null): QualifiedJobProfile {

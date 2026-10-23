@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { spawn, type ChildProcess } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
+import { spawnProcess } from '../../shared/process.js'
 import { readFile, rm, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -174,7 +175,7 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
     const runtimeDirectory = await createBrowserRuntimeDirectory(this.options.actionDirectory)
     const env: NodeJS.ProcessEnv = { ...process.env, TMPDIR: runtimeDirectory?.temporaryDirectory ?? process.env.TMPDIR }
     if (display) { env.DISPLAY = display; delete env.WAYLAND_DISPLAY }
-    const processHandle = spawn(this.options.runtime.chromiumExecutable, args, { stdio: ['ignore', 'ignore', 'pipe'], env })
+    const processHandle = spawnProcess(this.options.runtime.chromiumExecutable, args, { stdio: ['ignore', 'ignore', 'pipe'], env })
     // Keep only Chromium's last fatal line, so a launch failure names its own cause.
     let fatal = ''
     processHandle.stderr?.setEncoding('utf8').on('data', (chunk: string) => {

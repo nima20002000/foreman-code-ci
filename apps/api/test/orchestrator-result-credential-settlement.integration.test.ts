@@ -4,8 +4,8 @@ import { COORDINATION_RESULT_PROTOCOL } from '@foreman-code/contracts'
 import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { Wave25WorkerCredentialService } from '../src/modules/interactions/wave25/credentials.js'
-import { checkpointRuntimeFixture } from './helpers/wave25Br1003Runtime.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('designated Orchestrator credential across marked result settlement', () => {
   it('keeps the original process credential through a terminal credential sweep until the original turn settles', async () => {

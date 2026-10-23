@@ -9,9 +9,9 @@ import { repeatExecutionIdentity, repeatId, workActivationSlotId } from '../src/
 import { workflowNativeReservation } from '../src/modules/runs/workflowNativeEntry.js'
 import { buildHarnessPrompt } from '../src/modules/harnesses/prompt.js'
 import { currentInitialPrompt } from '../src/modules/runs/currentRouting.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { finished, workHandoffFixture } from './helpers/workHandoffFixture.js'
-import { digest, text, transaction } from './eng04-migration-fixtures.js'
+import { digest, text, transaction } from './repeat-migration-fixtures.js'
 
 // Current readers need the whole current schema while historical inputs are staged, so only
 // the continuation upgrade is deferred. Its older redefinitions of shared functions must not

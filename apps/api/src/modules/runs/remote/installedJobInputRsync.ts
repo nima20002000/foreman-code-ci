@@ -1,7 +1,6 @@
 import { constants } from 'node:fs'
 import { open, readdir, type FileHandle } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util'
-import { createHash } from 'node:crypto'
 import { JobInputAdmissionSchema, JobInputDeliveryReceiptSchema, type JobInputAdmission } from '@foreman-code/contracts/job-inputs'
 import {
   TransferIntentSchema,
@@ -24,10 +23,11 @@ import { anchored, openPrivateRoot } from '../../sources/privateFilesystem.js'
 import { requireJobGitMounts, verifyJobGitMounts } from '../../jobs/privateGitMounts.js'
 import type { RemoteOperationJournal } from './operationJournal.js'
 import { DomainError } from '../../errors.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 type VerifiedSource = Awaited<ReturnType<JobSourcePort['verify']>>
 interface RetainedInput { operationId: string; admission: JobInputAdmission; source: VerifiedSource }
-const hash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
+const hash = (bytes: Uint8Array) => sha256Hex(bytes)
 const recordLimit = 2 * 1024 * 1024 // original admission plus verified-source metadata; no transfer bytes
 
 /** Durable original admission is separate from detached delivery and never serves bytes.

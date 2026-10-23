@@ -7,9 +7,10 @@ import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { HostCiService, type CiCommits, type HostCiComputer } from '../src/modules/ci-host/service.js'
+import { HostCiService, type CiCommits, type HostCiComputer } from '@foreman-code/ci/service'
 import { CI_GET_ACTIONS, RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 let database: Awaited<ReturnType<typeof migratedDatabase>>
 beforeAll(async () => { database = await migratedDatabase() }, 60_000)
@@ -65,7 +66,7 @@ async function fixture(gate: boolean, failure: 'observed' | 'persisted', stopCon
   const canceled: string[] = []
   const started: string[] = []
   const commands = new PostgresCommandCoordinator(pool)
-  const ci = new HostCiService(pool, commands, new RunCiAuthority(pool), {} as CiCommits, {
+  const ci = new HostCiService(mainCiContext, pool, commands, new RunCiAuthority(pool), {} as CiCommits, {
     computers: async () => computers,
     request: async (_computer, request) => {
       if (request.operation === 'status') return { operation: 'status', ready: true, reasons: [],

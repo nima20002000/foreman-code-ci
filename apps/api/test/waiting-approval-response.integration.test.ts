@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { approvalResponse } from './helpers/eng06ApprovalFaults.js'
+import { approvalResponse } from './helpers/approvalFaults.js'
 import { respondWaitingApproval } from './helpers/respondWaitingApproval.js'
 
 it.each(['http', 'mcp'] as const)('delivers a waiting approval through %s and resumes the requester', async transport => {

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import type { JobLogChunk } from '@foreman-code/contracts/jobs'
 import { componentLogger } from '../../diagnostics/logger.js'
 import { isDeepStrictEqual } from 'node:util'
@@ -15,8 +14,9 @@ import type { RemoteOperationJournal } from './operationJournal.js'
 import { jobContainerNonEntryObserved } from '../../jobs/executorJournal.js'
 import { logIgnoredError } from '../../diagnostics/ignoredError.js'
 import { isTransientExecutionError } from '../executionRetryPolicy.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
-const digest = (value: unknown) => createHash('sha256').update(canonicalGraphJson(value)).digest('hex')
+const digest = (value: unknown) => sha256Hex(canonicalGraphJson(value))
 type RuntimeSupervisor = JobSupervisor<JobExecutionRecord>
   & Pick<PodmanJobSupervisor<JobExecutionRecord>, 'reconcile' | 'stopExecution' | 'removeExecution'>
 type ReconciledJob = NonNullable<Awaited<ReturnType<RuntimeSupervisor['reconcile']>>>

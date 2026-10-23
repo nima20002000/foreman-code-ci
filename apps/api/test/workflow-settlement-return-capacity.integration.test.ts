@@ -7,6 +7,7 @@ import { assertWorkflowFailureReadback } from './helpers/workflowFailureReadback
 import {
   useSettlementFixtures, timeout, finish, handoffs, acceptedActivation, sourceAndRequest,
 } from './helpers/workflowSettlementTestSupport.js'
+import { postgresEnabled } from './helpers/database.js'
 
 // Native terminals and physical closure are explicit test inputs. Authenticated
 // Save/MCP reads, canonical publication, SQL transactions and settlement execute.
@@ -16,7 +17,7 @@ vi.mock('../src/modules/interactions/repeatNativeSettlement.js', async (importOr
   settleRepeatNativeExecutionWithProofLocked: vi.fn(async () => undefined),
 }))
 
-describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('workflow settlement return capacity', () => {
+describe.skipIf(!postgresEnabled)('workflow settlement return capacity', () => {
   const withFixture = useSettlementFixtures()
 
   it.each([false, true])('budgets denial continuations and reuses their reservation on replay (restart: %s)', async (restart) => {

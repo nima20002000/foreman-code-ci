@@ -4,29 +4,30 @@ import { join } from 'node:path'
 import { CiComputersOutputSchema, CiRunRecordSchema, type CiRunRecord } from '@foreman-code/contracts'
 import { ComputerActivityListSchema } from '@foreman-code/contracts/computer-activity'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { claimCiSlot } from '../src/modules/ci-host/cloudSlots.js'
-import { CircleStandby } from '../src/modules/ci-host/circleStandby.js'
-import { CircleCreditCache } from '../src/modules/ci-host/circleCreditCache.js'
-import type { HostCiComputer } from '../src/modules/ci-host/serviceTypes.js'
+import { claimCiSlot } from '@foreman-code/ci/cloudSlots'
+import { CircleStandby } from '@foreman-code/ci/circleStandby'
+import { CircleCreditCache } from '@foreman-code/ci/circleCreditCache'
+import type { HostCiComputer } from '@foreman-code/ci/serviceTypes'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
-import { CircleAccountsManagementService } from '../src/modules/settings/circleAccounts.js'
+import { CircleAccountsManagementService } from '@foreman-code/ci/circleAccountsManagement'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { CloudCi } from '../src/modules/ci-host/cloud.js'
-import { CircleCiProvider } from '../src/modules/ci-host/cloudProviders.js'
-import { CloudHttp } from '../src/modules/ci-host/cloudHttp.js'
-import { CircleCreditUsage } from '../src/modules/ci-host/circleCredits.js'
-import { ProductionHostCiEndpoint } from '../src/modules/ci-host/endpoint.js'
-import { HostCiService, type CiCommits } from '../src/modules/ci-host/service.js'
+import { CloudCi } from '@foreman-code/ci/cloud'
+import { CircleCiProvider } from '@foreman-code/ci/cloudProviders'
+import { CloudHttp } from '@foreman-code/ci/cloudHttp'
+import { CircleCreditUsage } from '@foreman-code/ci/circleCredits'
+import { ProductionHostCiEndpoint } from '@foreman-code/ci/endpoint'
+import { HostCiService, type CiCommits } from '@foreman-code/ci/service'
 import { ComputerActivityService } from '../src/modules/computers/activity.js'
 import { CI_GET_ACTIONS, RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
-import type { HostCiPorts } from '../src/modules/ci-host/runner.js'
+import type { HostCiPorts } from '@foreman-code/ci/runner'
 import { CircleAccountAddInputSchema, CircleAccountRemoveInputSchema } from '@foreman-code/contracts/management'
-import { expireCiRun } from '../src/modules/ci-host/deadlines.js'
+import { expireCiRun } from '@foreman-code/ci/deadlines'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 let database: Awaited<ReturnType<typeof migratedDatabase>>
 beforeAll(async () => { database = await migratedDatabase() }, 60_000)
@@ -71,7 +72,7 @@ async function accountService() {
   const caller = await access.issue({ name: 'Fixture Operator', audience: 'operator',
     expiresAt: new Date(Date.now() + 600_000), grants: [{ actions: ['settings:read', 'settings:update'], scope: {} }] })
   const settings = new PostgresFoundationSettingsRepository(database.pool)
-  const service = new CircleAccountsManagementService(settings, new PostgresCommandCoordinator(database.pool), {
+  const service = new CircleAccountsManagementService(mainCiContext, settings, new PostgresCommandCoordinator(database.pool), {
     read: async account => ({ tokenConfigured: false, ready: false, reasons: ['Setup needed.'],
       orgs: account.organizations.map(owner => ({ account: owner, circleAccountId: account.id, ready: false,
         running: 0, schedulingRole: 'standby', schedulingReason: 'Setup needed.', credits: null })) }),
@@ -89,7 +90,7 @@ it.each([false, true])('counts legacy and explicit primary aliases as the same p
   const named = slot(mainId, 'alpha')
   const occupied = await ticket(workspaceId, legacyFirst ? legacy : named)
   const queued = await ticket(workspaceId)
-  expect(await claimCiSlot(database.pool, queued, legacyFirst ? named : legacy, request(queued))).toBe('busy')
+  expect(await claimCiSlot(mainCiContext, database.pool, queued, legacyFirst ? named : legacy, request(queued))).toBe('busy')
   const rows = (await database.pool.query('select host_key,record from ci_runs where id=$1', [occupied.id])).rows
   expect(rows[0]).toMatchObject({ host_key: occupied.computer ? (legacyFirst ? legacy.key : named.key) : null,
     record: occupied })
@@ -103,7 +104,7 @@ it('keeps an old unnamed slot reserved when its database record predates the sav
   delete old.ciMirror
   await database.pool.query('update ci_runs set record=$2 where id=$1', [occupied.id, JSON.stringify(old)])
   const queued = await ticket(workspaceId)
-  expect(await claimCiSlot(database.pool, queued, slot(mainId, 'alpha'), request(queued))).toBe('busy')
+  expect(await claimCiSlot(mainCiContext, database.pool, queued, slot(mainId, 'alpha'), request(queued))).toBe('busy')
 })
 
 it('serializes concurrent alias claims and preserves the chosen login in saved records after reconstruction', async () => {
@@ -112,8 +113,8 @@ it('serializes concurrent alias claims and preserves the chosen login in saved r
   const first = await ticket(workspaceId)
   const second = await ticket(workspaceId)
   const results = await Promise.all([
-    claimCiSlot(database.pool, first, slot(mainId), request(first)),
-    claimCiSlot(database.pool, second, slot(mainId, 'alpha'), request(second)),
+    claimCiSlot(mainCiContext, database.pool, first, slot(mainId), request(first)),
+    claimCiSlot(mainCiContext, database.pool, second, slot(mainId, 'alpha'), request(second)),
   ])
   expect(results.filter(result => result === 'busy')).toHaveLength(1)
   expect(results.filter(result => result && result !== 'busy')).toHaveLength(1)
@@ -124,7 +125,7 @@ it('serializes concurrent alias claims and preserves the chosen login in saved r
       { id: 'default', label: 'Primary', role: 'primary', organizations: [] },
       { id: 'reserve', label: 'Reserve', role: 'standby', organizations: ['delta', 'epsilon', 'zeta'] },
     ] }, undefined, client))
-  expect(await claimCiSlot(database.pool, reserve, reserveSlot, request(reserve)))
+  expect(await claimCiSlot(mainCiContext, database.pool, reserve, reserveSlot, request(reserve)))
     .toMatchObject({ computer: { hostRef: reserveSlot.hostRef } })
   const saved = (await database.pool.query('select host_key,record from ci_runs where id=$1', [reserve.id])).rows[0]!
   expect(saved.host_key).toBe(reserveSlot.key)
@@ -134,8 +135,8 @@ it('serializes concurrent alias claims and preserves the chosen login in saved r
 it('shares provider-refusal and confirmed recovery policy across month boundaries and new-start checks', async () => {
   let now = Date.parse('2026-10-31T23:59:59Z')
   const remaining = 20_000
-  const cache = new CircleCreditCache()
-  const selector = new CircleStandby(async () => [
+  const cache = new CircleCreditCache(mainCiContext)
+  const selector = new CircleStandby(mainCiContext, async () => [
     { owner: 'alpha', circleAccountId: 'default', role: 'primary', ready: true, mirrorNames: new Set(['site-ci']) },
     { owner: 'delta', circleAccountId: 'reserve', role: 'standby', ready: true, mirrorNames: new Set(['site-ci']) },
   ], { reading: async (owner?: string) => now >= Date.parse('2026-11-01T00:00:00Z') ? { credits: null }
@@ -163,7 +164,7 @@ it('cannot claim a stale standby row after its registration has been removed', a
   const { service, caller } = await accountService()
   await service.remove(caller.principal, 'mcp', CircleAccountRemoveInputSchema.parse({ id: 'spare' }))
   const queued = await ticket(await workspace())
-  expect(await claimCiSlot(database.pool, queued, slot(randomUUID(), 'eta', 'spare'), request(queued))).toBeNull()
+  expect(await claimCiSlot(mainCiContext, database.pool, queued, slot(randomUUID(), 'eta', 'spare'), request(queued))).toBeNull()
   expect((await database.pool.query('select record from ci_runs where id=$1', [queued.id])).rows[0]!.record.state).toBe('queued')
 })
 
@@ -201,7 +202,7 @@ it('serializes removal and claims so either removal is refused or the stale clai
     ] }, undefined, client)
   })
   await locked
-  const claim = claimCiSlot(database.pool, queued, slot(randomUUID(), 'eta', 'spare'), request(queued))
+  const claim = claimCiSlot(mainCiContext, database.pool, queued, slot(randomUUID(), 'eta', 'spare'), request(queued))
   release()
   await removal
   expect(await claim).toBeNull()
@@ -213,7 +214,7 @@ it('reads persisted account assignments and credits through authenticated MCP af
   const pool = database.pool
   const ports: HostCiPorts = { now: () => new Date(), cpus: 4, memoryBytes: 2 ** 30,
     run: async () => ({ code: 0, stdout: '{}', stderr: '' }) }
-  const http = (id: string) => new CloudHttp(ports, 'circleci', { circleAccountId: id,
+  const http = (id: string) => new CloudHttp(mainCiContext, ports, 'circleci', { circleAccountId: id,
     circleToken: async () => 'fixture-token', fetch: async (input, init) => {
       const path = new URL(String(input)).pathname
       const owner = id === 'default' ? 'alpha' : 'delta'
@@ -224,30 +225,30 @@ it('reads persisted account assignments and credits through authenticated MCP af
     } })
   const usagePath = join(database.directory, 'circle-usage.json')
   let now = Date.now()
-  const credits = new CircleCreditUsage(http, {
+  const credits = new CircleCreditUsage(mainCiContext, http, {
     allowance: async () => ({ defaultMonthlyCredits: 400_000, accounts: {} }), primaryOwner: async () => null,
-  }, { cache: new CircleCreditCache(usagePath) })
+  }, { cache: new CircleCreditCache(mainCiContext, usagePath) })
   await Promise.all([credits.reading('alpha'), credits.reading('delta', 'reserve')])
   await vi.waitFor(async () => {
     expect((await credits.reading('alpha')).credits?.remaining).toBe(20_000)
     expect((await credits.reading('delta', 'reserve')).credits?.remaining).toBe(375_000)
   })
-  const clouds = ['default', 'reserve'].map(id => new CloudCi(mainId,
-    new CircleCiProvider(ports, { circleToken: async () => null }, {
+  const clouds = ['default', 'reserve'].map(id => new CloudCi(mainCiContext, mainId,
+    new CircleCiProvider(mainCiContext, ports, { circleToken: async () => null }, {
       owner: id === 'default' ? 'alpha' : 'delta', circleAccountId: id,
       role: id === 'default' ? 'primary' : 'standby', mirrorNames: new Set(['site-ci']),
     }), async () => 'alpha/site-ci', join(database.directory, 'clouds', id)))
-  const createSelector = () => new CircleStandby(async () => clouds.map(cloud => ({
+  const createSelector = () => new CircleStandby(mainCiContext, async () => clouds.map(cloud => ({
     owner: cloud.provider.account!.owner, circleAccountId: cloud.provider.circleAccountId!,
     role: cloud.provider.account!.role!, mirrorNames: cloud.provider.account!.mirrorNames, ready: true,
-  })), credits, new CircleCreditCache(usagePath), () => now)
+  })), credits, new CircleCreditCache(mainCiContext, usagePath), () => now)
   let selector = createSelector()
   await selector.recordCreditRefusal('alpha')
   for (const cloud of clouds) cloud.setCircleStandby(selector)
   const commands = new PostgresCommandCoordinator(pool)
-  const endpoint = new ProductionHostCiEndpoint(pool, mainId, () => undefined,
+  const endpoint = new ProductionHostCiEndpoint(mainCiContext, pool, mainId, () => undefined,
     { handle: async () => { throw new Error('Unexpected local execution.') } }, clouds)
-  const create = () => new HostCiService(pool, commands, new RunCiAuthority(pool), {} as CiCommits, endpoint,
+  const create = () => new HostCiService(mainCiContext, pool, commands, new RunCiAuthority(pool), {} as CiCommits, endpoint,
     undefined, { circleCredits: credits, circleStandby: selector })
   const access = new PostgresAccessService(pool)
   const caller = await access.issue({ name: 'Fixture Reader', audience: 'operator',
@@ -261,7 +262,7 @@ it('reads persisted account assignments and credits through authenticated MCP af
   ] }, undefined, client))
   const run = await ticket(workspaceId)
   const computer = slot(mainId, 'delta', 'reserve')
-  expect(await claimCiSlot(pool, run, computer, request(run))).toMatchObject({ state: 'starting' })
+  expect(await claimCiSlot(mainCiContext, pool, run, computer, request(run))).toMatchObject({ state: 'starting' })
   const services = { ci: create(), commands,
     computerActivity: new ComputerActivityService(pool, mainId, () => null, commands, clouds, credits) }
   const app = buildApp({ logger: false,

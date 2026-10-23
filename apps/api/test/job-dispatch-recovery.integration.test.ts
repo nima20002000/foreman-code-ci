@@ -16,11 +16,12 @@ import { PostgresJobDispatch } from '../src/modules/jobs/dispatch.js'
 import { JobService } from '../src/modules/jobs/service.js'
 import { WorkerExecutionPolicy } from '../src/modules/settings/workerExecution.js'
 import { RemoteJobCarrierDispatch } from '../src/modules/runs/remote/jobCarrierDispatch.js'
+import { postgresEnabled } from './helpers/database.js'
 
 // Own random schema on the explicitly selected loopback server. No physical
 // qualification/native entry or journal absence as proof of nonexecution.
-it.skipIf(!process.env.JOB_DISPATCH_DATABASE_URL).each(['fixed', 'auto'] as const)('reports retained delivery/reconciliation failures through HTTP and MCP without redispatch or fabricated cancellation (%s)', async placementMode => {
-  const connectionString = process.env.JOB_DISPATCH_DATABASE_URL!
+it.skipIf(!postgresEnabled).each(['fixed', 'auto'] as const)('reports retained delivery/reconciliation failures through HTTP and MCP without redispatch or fabricated cancellation (%s)', async placementMode => {
+  const connectionString = process.env.TEST_DATABASE_URL!
   if (!['localhost', '127.0.0.1', '[::1]'].includes(new URL(connectionString).hostname)) throw new Error('Use the authorized local PostgreSQL server.')
   const schema = `job_dispatch_${randomUUID().replaceAll('-', '')}`
   const admin = new pg.Pool({ connectionString, max: 1 })

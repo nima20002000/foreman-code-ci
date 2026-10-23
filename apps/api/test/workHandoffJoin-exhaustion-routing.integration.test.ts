@@ -1,5 +1,5 @@
 import { describe, it } from 'vitest'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { releasesRevisedJoinAfterExhaustion } from './helpers/workHandoffJoinExhaustion.js'
 
 describe.skipIf(!postgresEnabled)('work join routing and rounds', () => {

@@ -48,7 +48,7 @@ it('reclaims source and releases computer capacity after a disconnect outlasts t
     const bytes = Buffer.from('retained original source')
     const manifest = createSourceManifest({ version: 1, approvedSourceId: randomUUID(), snapshotId: randomUUID(),
       capturePolicy: 'exclusive-explicit-bytes-v1', executablePolicy: 'strip', deletions: [],
-      entries: [{ path: 'app.ts', kind: 'file', byteSize: bytes.length, sha256: sourceSha256(bytes), executable: false }] })
+      entries: [{ path: 'app.txt', kind: 'file', byteSize: bytes.length, sha256: sourceSha256(bytes), executable: false }] })
     const handle = await openPrivateRoot(root)
     const filesystem = await identity(handle)
     await handle.close()
@@ -103,7 +103,7 @@ it('reclaims source and releases computer capacity after a disconnect outlasts t
     expect(Number(retained.reserved_bytes)).toBeLessThan(reservation.reservedBytes)
     expect((await pool.query('select released_at from job_computer_selections')).rows[0].released_at).not.toBeNull()
     expect((await pool.query('select record from job_executions')).rows[0].record).toEqual(execution)
-    expect(await readFile(join(root, receipt.materializationId, 'tree/app.ts'))).toEqual(bytes)
+    expect(await readFile(join(root, receipt.materializationId, 'tree/app.txt'))).toEqual(bytes)
     expect(jobLifecycleSignal(execution, 'publication').aborted).toBe(true)
   } finally {
     await pool.end()

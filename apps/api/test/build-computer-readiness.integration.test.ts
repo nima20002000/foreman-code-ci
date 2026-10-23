@@ -18,7 +18,8 @@ import { BuildComputerSettings, buildComputerTarget } from '../src/modules/setti
 import { buildComputerReadiness } from '../src/modules/settings/buildComputerReadiness.js'
 import { WorkerExecutionPolicy } from '../src/modules/settings/workerExecution.js'
 import { jobComputerCapacityDecision } from '../src/modules/jobs/computerSelection.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { verificationCapacityFixture } from './helpers/verificationCapacityFixture.js'
 
 // Qualification I/O is supplied; settings, authorization and capacity use PostgreSQL and authenticated transports.

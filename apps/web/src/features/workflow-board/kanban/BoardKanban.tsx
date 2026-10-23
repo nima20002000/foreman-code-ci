@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Handle, NodeResizer, Position, type Edge, type EdgeProps, type Node, type NodeProps } from '@xyflow/react'
-import { MemoryBoardWireSchemas, type MemoryBoardScope, type MemoryCard as Card, type WorkflowKanbanFrame } from '@foreman-code/contracts'
+import { type MemoryBoardScope, type MemoryCard as Card, type WorkflowKanbanFrame } from '@foreman-code/contracts'
 import { Button, Icon } from '../../../shared/ui/nocturne'
 import '../dock/boardDock.css'
 import { useManagedWorkflowQuery } from '../../../shared/api/query'
@@ -11,12 +11,12 @@ import { errorMessage, statusLabels } from '../../memory-boards/presentation'
 import type { MemoryBoardView, MemoryChange, MemoryNodeOption } from '../../memory-boards/ports'
 import { PulseFlight, type EdgePulse } from '../../graph/SignalEdgeShape'
 import { useFloatingCurve } from '../../graph/signalEdge'
-import { useWorkflowBoard } from '../context'
+import { useBoardSelection } from '../context'
 import { kanbanScope, reportKanbanActivity, useKanbanActivity, type KanbanCardActivity } from './kanbanActivity'
 import { KanbanCardDialog } from './KanbanCardDialog'
 import './boardKanban.css'
 
-const client = createMemoryBoardClient(MemoryBoardWireSchemas)
+const client = createMemoryBoardClient()
 export const KANBAN_NODE_ID = 'board-kanban'
 const KANBAN_MIN = { width: 240, height: 160 }
 
@@ -44,7 +44,7 @@ export const BoardKanbanNode = memo(function BoardKanbanNode({ data }: NodeProps
 })
 
 function KanbanColumns({ workspaceId, workflowId }: { workspaceId: string; workflowId: string }) {
-  const board = useWorkflowBoard()
+  const board = useBoardSelection()
   const scope = useMemo<MemoryBoardScope>(() => ({ kind: 'workflow', workspaceId, workflowId }), [workspaceId, workflowId])
   const workflow = useManagedWorkflowQuery(workspaceId, workflowId)
   const graphNodes = useMemo(() => (workflow.data?.workflow.nodes ?? []).flatMap(node => node.kind === 'job' ? []

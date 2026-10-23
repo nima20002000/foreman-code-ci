@@ -13,10 +13,11 @@ import { admitRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
 import { repeatStartPublication } from '../src/modules/run-graph/repeatStartPublication.js'
 import { randomUUID } from 'node:crypto'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
-import type { currentDatabase } from './helpers/eng04CurrentDatabase.js'
-import { nim2691TaskDatabase } from './helpers/nim2691Database.js'
+import type { currentDatabase } from './helpers/database.js'
+import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
 import { graphFixture, graphHeaders, graphRpc, graphRpcValue,
-  type GraphFixture } from './eng04-graph-composition-fixture.js'
+  type GraphFixture } from './graph-composition-fixture.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const occurredAt = '2026-10-02T00:00:00.000Z'
 
@@ -63,7 +64,7 @@ function measuredActivities(pool: pg.Pool) {
     } }
 }
 
-describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('public Activities response and query cost', () => {
+describe.skipIf(!postgresEnabled)('public Activities response and query cost', () => {
   it('pages large audit rows in both directions without omissions over HTTP and authenticated MCP', async () => {
     await nim2691TaskDatabase(async (pool, directory) => {
       await applyApplicationMigrations(pool)

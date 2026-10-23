@@ -7,7 +7,7 @@ import type { RemoteOperationReceipt } from '@foreman-code/contracts/remote-exec
 import type { AcceptedExecutionBinding } from '../../placement/nativeComposition.js'
 import { ExclusiveGraphConnection } from '../../run-graph/connection.js'
 import type { RunOwnership } from '../ownership.js'
-import { approvalFixture } from '../../../../test/helpers/wave25ApprovalFixture.js'
+import { approvalFixture } from '../../../../test/helpers/approvalFixture.js'
 import { prepareRemoteOwnerControl } from './ownerControl.js'
 import { readAdmittedRemoteOwnerControl } from './ownerControlAdmission.js'
 

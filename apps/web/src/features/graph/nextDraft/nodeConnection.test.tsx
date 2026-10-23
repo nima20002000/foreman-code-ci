@@ -1,4 +1,3 @@
-import type { ContextType } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ReactFlowProvider } from '@xyflow/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -10,7 +9,7 @@ import { useGraphDraftStore } from '../store'
 import { fixture } from './core.cases'
 import { DraftCanvas } from './DraftCanvas'
 import { nextDraftKey } from './state'
-import { WorkflowBoardContext } from '../../workflow-board/context'
+import { WorkflowBoardProvider, type WorkflowBoardValue } from '../../workflow-board/context'
 
 const key = nextDraftKey('workspace', 'workflow')
 // Three Agents with no edges between them, so every connection in these tests is made by the person.
@@ -29,11 +28,11 @@ afterEach(() => {
 function mount() {
   const change = vi.fn(), geometry = vi.fn(), selectSidePanel = vi.fn()
   const board = { workspaceId: 'workspace', workflowId: 'workflow', inspection: {}, activeRuns: 0, selectSidePanel,
-    selectInspection: vi.fn(), selectRun: vi.fn(), openLocation: vi.fn(), openRuns: vi.fn() } as unknown as ContextType<typeof WorkflowBoardContext>
-  render(<QueryClientProvider client={new QueryClient()}><WorkflowBoardContext.Provider value={board}><GraphPresentationProvider><ReactFlowProvider><DraftCanvas draftKey={key} graph={context.draft.graph}
+    selectInspection: vi.fn(), selectRun: vi.fn(), openLocation: vi.fn(), openRuns: vi.fn() } as unknown as WorkflowBoardValue
+  render(<QueryClientProvider client={new QueryClient()}><WorkflowBoardProvider value={board}><GraphPresentationProvider><ReactFlowProvider><DraftCanvas draftKey={key} graph={context.draft.graph}
     agents={context.agents.map((item) => item.agent)} kind="execution" change={change} geometry={geometry}
     pending={vi.fn()} report={vi.fn()}
-    panels={(nodeId) => ({ chat: <p>{`Chat of ${nodeId}`}</p>, chatHasHeader: false, settings: null, info: null })} /></ReactFlowProvider></GraphPresentationProvider></WorkflowBoardContext.Provider></QueryClientProvider>)
+    panels={(nodeId) => ({ chat: <p>{`Chat of ${nodeId}`}</p>, chatHasHeader: false, settings: null, info: null })} /></ReactFlowProvider></GraphPresentationProvider></WorkflowBoardProvider></QueryClientProvider>)
   return { change, geometry, selectSidePanel }
 }
 const connected = (change: ReturnType<typeof vi.fn>): WorkflowDefinitionV3['edges'] =>

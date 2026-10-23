@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 import {
   CurrentEditReadResultSchema, CurrentWorkflowReadResultSchema, SavedManagedWorkflowSchema,
 } from '@foreman-code/contracts/wave25'
-import { graphHeaders, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { graphHeaders, graphRpcValue } from './graph-composition-fixture.js'
 import { useWorkflowManagementFixture } from './workflowManagement.helpers.js'
 
 const context = useWorkflowManagementFixture()

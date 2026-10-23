@@ -6,7 +6,7 @@ import * as credentials from '../src/modules/access/conversationCredentials.js'
 import type { BrowserSubjectDetails } from '../src/modules/collaboration/browserAuthority.js'
 import { createProductionBrowser } from '../src/modules/collaboration/browserComposition.js'
 import { CHAT_BROWSER_IDLE_MS } from '../src/modules/collaboration/chatBrowser.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 
 let db: Awaited<ReturnType<typeof currentDatabase>>
 const browsers: ReturnType<typeof createProductionBrowser>[] = []

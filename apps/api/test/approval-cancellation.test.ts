@@ -12,7 +12,7 @@ import {
 import { MemorySaver } from '@langchain/langgraph'
 import { it, vi } from 'vitest'
 import type pg from 'pg'
-import { nativeLanes } from './helpers/nativeLanes.js'
+import { nativeLanes } from './helpers/memorySessionCoordination.js'
 
 import { ApprovalExecutionCoordinator } from '../src/modules/interactions/execution.js'
 import { PostgresInteractionRepository } from '../src/modules/interactions/postgres.js'

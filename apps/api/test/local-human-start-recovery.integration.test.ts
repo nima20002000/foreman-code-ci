@@ -10,7 +10,7 @@ import { RunManagementService } from '../src/modules/runs/management.js'
 import { createCurrentNativeProductionFactory } from '../src/modules/runs/workflowProduction.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { browserOwnerUpgrade } from './helpers/browserOwnerUpgrade.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('local human Start recovery', { timeout: 60_000 }, () => {
   it.concurrent.each(['mapped owner', 'default development browser'] as const)(

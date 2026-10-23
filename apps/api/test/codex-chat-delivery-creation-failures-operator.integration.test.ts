@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'vitest'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { until } from './fixtures/codex-test-helpers.js'
 import { useCodexChatDelivery } from './codex-chat-delivery.helpers.js'
 

@@ -18,7 +18,7 @@ it('constructs the activity replay through production without installed inventor
   const database = createDatabase(config.database)
   const checkpoints = createCheckpointStore(config.database.connectionString, 'replay', config.database)
   try {
-    const production = buildProductionApp(config, database, checkpoints, false, undefined, undefined, undefined, infrastructure)
+    const production = buildProductionApp({ config, database, checkpoints, logger: false, infrastructure })
     try {
       const environment = { generation: 'recorded-environment', provenance: 'terminal' as const, cwd: '/recorded', path: '' }
       expect(await infrastructure.inventoryDiscovery!.launcher(config.harnesses.codexBinary, environment)).toMatchObject({
@@ -38,7 +38,7 @@ it('constructs the activity replay through production without installed inventor
     } finally { await production.app.close() }
     const incomplete = { ...infrastructure }
     delete incomplete.inventoryDiscovery
-    expect(() => buildProductionApp(config, database, checkpoints, false, undefined, undefined, undefined, incomplete))
+    expect(() => buildProductionApp({ config, database, checkpoints, logger: false, infrastructure: incomplete }))
       .toThrow('Replay must inject settings and probes and cannot run installed CLI qualification.')
   } finally { await Promise.all([database.close(), checkpoints.close()]) }
 })

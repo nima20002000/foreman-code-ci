@@ -7,6 +7,7 @@ import { artifactEdgeMigrationSql } from '../src/infrastructure/artifactEdgeMigr
 import { PostgresArtifactEdgeRepository } from '../src/modules/files/distributed/postgres.js'
 import { DomainError } from '../src/modules/errors.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
+import { postgresEnabled } from './helpers/database.js'
 const databaseUrl = process.env.TEST_DATABASE_URL
 const schema = `w09_edges_${randomUUID().replaceAll('-', '')}`
 const binding = (): ArtifactEdgeBinding => {
@@ -20,7 +21,7 @@ const binding = (): ArtifactEdgeBinding => {
     sender: { principalId: 'sender', grantId: 'a-grant', grantRevision: '1' }, receiver: { principalId: 'receiver', grantId: 'b-grant', grantRevision: '1' },
     access: 'read-only', acceptedAt: new Date().toISOString() }
 }
-describe.skipIf(!databaseUrl)('W09 canonical edge database fault fixtures', () => {
+describe.skipIf(!postgresEnabled)('W09 canonical edge database fault fixtures', () => {
   let admin: pg.Pool, pool: pg.Pool, repository: PostgresArtifactEdgeRepository
   beforeAll(async () => {
     const url = new URL(databaseUrl!)

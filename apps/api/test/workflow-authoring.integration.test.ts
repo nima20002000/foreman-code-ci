@@ -3,9 +3,9 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import {
   CURRENT_WORKFLOW_TOOLS, CurrentEditReadResultSchema, CurrentWorkflowSaveResultSchema,
 } from '@foreman-code/contracts/wave25'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
-import { graphRpcValue } from './eng04-graph-composition-fixture.js'
-import { writerFixture, type WriterFixture } from './eng04-writer-fixtures.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
+import { graphRpcValue } from './graph-composition-fixture.js'
+import { writerFixture, type WriterFixture } from './writer-fixtures.js'
 
 describe.skipIf(!postgresEnabled)('workflow authoring over authenticated MCP', () => {
   let database: Awaited<ReturnType<typeof currentDatabase>>

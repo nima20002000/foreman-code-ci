@@ -4,7 +4,7 @@ import { expect, it, vi } from 'vitest'
 import { makeCurrentWorkflowFixture, WorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
 import { buildApp } from '../src/app.js'
 import { DomainError } from '../src/modules/errors.js'
-import { withClientTransaction } from '../src/infrastructure/transaction.js'
+import { withTransaction } from '../src/infrastructure/transaction.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { requireAuthorization } from '../src/modules/access/policy.js'
@@ -14,8 +14,8 @@ import { RunManagementService } from '../src/modules/runs/management.js'
 import { createCurrentNativeProductionFactory } from '../src/modules/runs/workflowProduction.js'
 import { admitWorkflowStopIntent } from '../src/modules/runs/workflowStopAdmission.js'
 import type { CurrentStopContext } from '../src/modules/runs/currentProduction.js'
-import { graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
-import { checkpointRuntimeFixture, insertProviderRun } from './helpers/wave25Br1003Runtime.js'
+import { graphRpc, graphRpcValue } from './graph-composition-fixture.js'
+import { checkpointRuntimeFixture, insertProviderRun } from './helpers/checkpointRuntime.js'
 
 async function runtime() {
   const fixture = makeCurrentWorkflowFixture(randomUUID(), 'single')
@@ -110,7 +110,7 @@ it('replays an immutable Stop intent while another reader retains the saved inte
   const reader = await f.db.pool.connect()
   try {
     const first = await admitWorkflowStopIntent(f.db.pool, context)
-    await withClientTransaction(reader, async () => {
+    await withTransaction({ client: reader }, async () => {
       await reader.query('select record from workflow_stop_intents where run_id=$1 for share', [f.f.run.id])
       expect(await admitWorkflowStopIntent(pool, context)).toEqual(first)
       expect(await f.runs.getRepeatSnapshot(f.f.run.id)).toMatchObject({ stopRequested: true })

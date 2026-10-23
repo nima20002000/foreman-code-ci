@@ -38,7 +38,7 @@ import type { CodexFileHostLease } from '../../src/modules/harnesses/codexFiles/
 import type { NativeHarnessSessionManager, NativeHistory, NativeTurnInput } from '../../src/modules/harnesses/port.js'
 import { PostgresWorkflowRepository } from '../../src/modules/workflows/postgres.js'
 import { registerAgentChatRoutes } from '../../src/routes/agentChat.js'
-import { agent3Database, candidateFor, seedAgent3 } from './wave25Agent3.js'
+import { agent3Database, candidateFor, seedAgent3 } from './workflowDatabase.js'
 import { rejectableDeferred } from './deferred.js'
 
 export const pin = (value: FileWithRevision): MessageAttachmentRef => ({ fileId: value.file.fileId, revisionId: value.revision.revisionId })

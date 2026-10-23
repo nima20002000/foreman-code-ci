@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it, vi } from 'vitest'
 import { readPublicProjectionLocked } from '../src/modules/run-graph/compactSnapshot.js'
 import { readRepeatGraphCurrent } from '../src/modules/run-graph/repeatReader.js'
-import { ProjectionDatabase, projectionScope } from './eng04-projection-fixture.js'
+import { ProjectionDatabase, projectionScope } from './projection-fixture.js'
 
 describe('publication projection reader', () => {
   it('reads an admitted ordinary workflow without inventing native work', async () => {

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { JobInputDeviceRequestSchema, JobInputAdmissionSchema, type JobInputAdmission } from '@foreman-code/contracts/job-inputs'
 import type { JobExecutionRecord } from '@foreman-code/contracts/job-verification'
 import { JobExecutionRecordSchema } from '@foreman-code/contracts/job-verification'
@@ -12,7 +11,8 @@ import { JOB_INPUT_NAMESPACE } from './protocol.js'
 import { inputHash, recipient, manifestBytes, snapshotDigest, verificationContextPin } from './manifest.js'
 import { outputTransferContext } from '../jobs/workerProtocol.js'
 import { DomainError } from '../../errors.js'
-const hash=(bytes:Uint8Array)=>createHash('sha256').update(bytes).digest('hex')
+import { sha256Hex } from '../../../shared/hash.js'
+const hash=(bytes:Uint8Array)=>sha256Hex(bytes)
 export function jobInputDeviceExtension(service:CanonicalJobInputs):DeviceExtensionRegistration {
   return {namespace:JOB_INPUT_NAMESPACE,version:1,role:'server',maxJsonBytes:1024*1024,maxBinaryBytes:8192,handle:async(raw,context)=>{
     const request=JobInputDeviceRequestSchema.parse(raw),execution=JobExecutionRecordSchema.parse(await service.execution(request.method==='bind'?request.recipient.executionId:request.executionId)),target=execution.acceptedSpec.target

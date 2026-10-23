@@ -9,8 +9,8 @@ import { repeatNativeObserver } from '../src/modules/runs/repeatRuntime.js'
 import { RunnerAdmission } from '../src/modules/runs/runnerAdmission.js'
 import { buildRepeatGraph } from '../src/modules/runs/repeatGraph.js'
 import { repeatTerminalResolution } from '../src/modules/runs/repeatNode.js'
-import { native2Fixture } from './eng04-native2-fixtures.js'
-import { nativeCompleted } from './eng04-native-fixtures.js'
+import { native2Fixture } from './native-reviewer-fixtures.js'
+import { nativeCompleted } from './native-repeat-fixtures.js'
 
 it('honors saved workflow parallelism above the startup capacity default', async () => {
   const f = makeCurrentWorkflowFixture('parallel-starts', 'single')

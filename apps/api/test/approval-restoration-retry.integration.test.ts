@@ -1,7 +1,7 @@
 import { HarnessExecutionError } from '../src/modules/harnesses/errors.js'
 import { expect, it, vi } from 'vitest'
 import { createApprovalRecoverySetup, startWaiting } from './helpers/approvalRecovery.js'
-import { approvalResponse } from './helpers/eng06ApprovalFaults.js'
+import { approvalResponse } from './helpers/approvalFaults.js'
 
 const setup = createApprovalRecoverySetup()
 

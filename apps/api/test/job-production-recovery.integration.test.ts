@@ -13,7 +13,7 @@ import { buildComputerTarget } from '../src/modules/settings/buildComputers.js'
 import { RemoteOperationJournal } from '../src/modules/runs/remote/operationJournal.js'
 import { RemoteJobExecutionHost } from '../src/modules/runs/remote/jobExecutionHost.js'
 import type { RemoteJobDispatchIntent } from '@foreman-code/contracts/remote-job-execution'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { retainedJobFixture } from './helpers/retainedJobFixture.js'
 
 async function cancelThroughMcp(runtime: Awaited<ReturnType<typeof createProductionJobs>>,

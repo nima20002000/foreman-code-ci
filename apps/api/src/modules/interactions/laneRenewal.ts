@@ -1,5 +1,5 @@
 import type { SqlQuery } from '../../infrastructure/transaction.js'
-import { isDatabaseTimeout } from '../../infrastructure/databaseTimeout.js'
+import { isDatabaseTimeout } from '../../infrastructure/databaseRetry.js'
 import { DomainError } from '../errors.js'
 import type { LaneLeaseOwnership } from './coordination.js'
 

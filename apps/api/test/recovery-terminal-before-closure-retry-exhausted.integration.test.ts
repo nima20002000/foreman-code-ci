@@ -1,5 +1,5 @@
 import { describe, it } from 'vitest'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { recoverTerminalBeforeClosure, useCrashCutDatabase } from './helpers/restartCrashCuts.js'
 
 describe.skipIf(!postgresEnabled)('terminal recovery before native closure', () => {

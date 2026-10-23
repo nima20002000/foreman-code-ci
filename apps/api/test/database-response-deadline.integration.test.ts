@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it, vi } from 'vitest'
 import { createPool } from '../src/infrastructure/pool.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { holdPostgresResponses } from './helpers/postgresResponses.js'
 

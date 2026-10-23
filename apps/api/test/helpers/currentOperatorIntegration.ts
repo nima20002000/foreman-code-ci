@@ -27,7 +27,7 @@ import { PostgresFoundationSettingsRepository } from '../../src/modules/settings
 import { FoundationSettingsManagementService } from '../../src/modules/settings/management.js'
 import { PostgresOperatorRepository } from '../../src/modules/operators/postgres.js'
 import { RunGraphReadService } from '../../src/modules/run-graph/readService.js'
-import { checkpointRuntimeFixture } from './wave25Br1003Runtime.js'
+import { checkpointRuntimeFixture } from './checkpointRuntime.js'
 
 /** Real authenticated transport and qualified production binding over the shared
  * provider-boundary fixture. No fake engine Start/Stop receipt or native proof. */

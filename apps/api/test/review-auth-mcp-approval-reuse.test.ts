@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 import { ExecutableWorkflowV3Schema } from '@foreman-code/contracts/wave25'
 import { resolveImmutableApprovalRoute } from '../src/modules/workflows/approvalRoutes.js'
-import { approvalFixture } from './helpers/wave25ApprovalFixture.js'
+import { approvalFixture } from './helpers/approvalFixture.js'
 
 it('routes two Worker nodes sharing one Agent through their exact approval relationships', () => {
   const { version, configurations } = approvalFixture()

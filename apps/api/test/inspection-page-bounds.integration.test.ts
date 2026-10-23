@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { makeCurrentWorkflowFixture, RunExecutionsListInputSchema } from '@foreman-code/contracts/wave25'
 import { inspectionExecutionsQuery } from '../src/modules/runs/inspectionPageQuery.js'
-import { agent3Database, postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('inspection database page bounds', () => {
   it('returns only one page plus its lookahead across limits, node filters and cursor positions', async () => {

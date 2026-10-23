@@ -2,7 +2,7 @@ import pg from 'pg'
 import { expect, it, vi } from 'vitest'
 import type { GraphTransactionSql } from '../src/modules/run-graph/connection.js'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
-import { agent3Database } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { holdPostgresResponses } from './helpers/postgresResponses.js'
 
 it('allows the rollback fault fixture to acquire, exclude and replace a real Run owner', async () => {

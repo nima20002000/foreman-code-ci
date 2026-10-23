@@ -1,13 +1,13 @@
 import { defaultStringifySearch, useLocation, useRouter } from '@tanstack/react-router'
 import { readRunInspectionKey, runInspectionKey } from '@foreman-code/contracts/wave25'
 import type { SelectedRunState } from '../runs-selector/useSelectedRun'
-import { useWorkflowBoard } from '../workflow-board/context'
+import { useBoardSelection } from '../workflow-board/context'
 
 export function useRunNodeInspectionNavigation(selection: SelectedRunState) {
   const router = useRouter()
   const location = useLocation()
   const search = location.search as Record<string, unknown>
-  const board = useWorkflowBoard()
+  const board = useBoardSelection()
   const linkedNodeId = typeof search.runNodeId === 'string' ? search.runNodeId : undefined
   const exchange = typeof search.runExchangeKey === 'string' ? search.runExchangeKey : undefined
   const linkedExecutionId = readRunInspectionKey(exchange).executionId

@@ -1,7 +1,7 @@
-import { createHash } from 'node:crypto'
 import type { GraphActivity, NativeGraphCorrelationRecord, NativeGraphProjectionKey } from '@foreman-code/contracts/wave25'
 import { graphJsonBytes } from '@foreman-code/contracts/wave25'
 import { nativeAction, nativeObject, nativeString } from '../runs/nativeAction.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 /** Internal, bounded checkpoint. It contains protocol identities, never arguments/output/prose. */
 export const NATIVE_PROJECTION_LIMITS = Object.freeze({ operations: 128, messages: 128, identityLength: 1000, evidenceBytes: 32768, checkpointBytes: 120000 })
@@ -69,7 +69,7 @@ const identity = (value: unknown): string | undefined => {
 }
 const maximum = (left: string | null, right: string): string => left === null || BigInt(right) > BigInt(left) ? right : left
 export const nativeProjectionId = (kind: string, ...parts: unknown[]): string =>
-  `${kind}-${createHash('sha256').update(JSON.stringify(parts)).digest('hex')}`
+  `${kind}-${sha256Hex(JSON.stringify(parts))}`
 const bindingDigest = (binding: ProjectionBinding): string => nativeProjectionId('binding', binding.key.execution.executionId,
   binding.key.execution.workflowNodeId, binding.key.execution.agentId, binding.key.execution.agentConfigurationVersionId,
   binding.key.execution.attempt, binding.key.workKind, binding.key.workId, binding.provider, binding.nativeSessionId)

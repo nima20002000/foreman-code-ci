@@ -5,7 +5,7 @@ import pg from 'pg'
 import { expect, it } from 'vitest'
 import { OperatorRuntimeOwner } from '../src/infrastructure/operatorRuntimeOwner.js'
 import { createFixtureDatabase, dropFixtureDatabase } from './helpers/testResources.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 async function runCli(file: string, connectionString: string, args: string[] = []) {
   const child = spawn(process.execPath, ['--import', 'tsx', fileURLToPath(new URL(`../src/cli/${file}`, import.meta.url)), ...args], {

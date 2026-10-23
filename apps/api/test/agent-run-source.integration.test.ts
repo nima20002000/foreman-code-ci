@@ -14,8 +14,8 @@ import { AcceptedRepeatStartV1Schema, AcceptedWorkflowRunV3Schema,
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { acceptRunAuthority, bindRunAuthority, currentOperatorAuthority } from '../src/modules/access/runAuthority.js'
-import { GitCiCommits } from '../src/modules/ci-host/commits.js'
-import { HostCiService } from '../src/modules/ci-host/service.js'
+import { GitCiCommits } from '@foreman-code/ci/commits'
+import { HostCiService } from '@foreman-code/ci/service'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { PostgresAppInteractionService } from '../src/modules/interactions/app.js'
 import { CI_GET_ACTIONS, CI_RUN_ACTIONS, RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
@@ -25,9 +25,10 @@ import { insertRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
 import { snapshotAgentWorktree } from '../src/modules/sources/agentSnapshot.js'
 import { systemGitWorktreePorts } from '../src/modules/sources/gitWorktree.js'
 import { codexApprovalRuntime } from './helpers/codexApprovalRuntime.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { gitFixtureEnvironment } from './helpers/gitFixture.js'
 import { fixture, startInput, toolError } from './helpers/nodePlacementStartFixture.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -166,7 +167,7 @@ describe.runIf(postgresEnabled)('GitHub Run-start sources and Agent CI through a
         expect(executionId).toBe(interaction.executionId)
         return { baseCommit, ...await snapshotAgentWorktree(ports, { path: tree, baseCommit }, AbortSignal.timeout(30_000)) }
       })
-      const ci = new HostCiService(f.db.pool, commands, new RunCiAuthority(f.db.pool), new GitCiCommits(ports),
+      const ci = new HostCiService(mainCiContext, f.db.pool, commands, new RunCiAuthority(f.db.pool), new GitCiCommits(mainCiContext, ports),
         { computers: async () => [], request: async () => { throw new Error('No runner requested in admission test') } }, snapshots)
       const tools = workerToolServices(f.db.pool, commands)
       const { bugReports } = tools

@@ -7,7 +7,7 @@ import { isWorkflowStart } from '../src/modules/harnesses/sessionStart.js'
 import { LOCAL_RUNNER_ID } from '../src/modules/workspaces/location.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { memoryCall, type MemoryRuntime } from './helpers/memoryWorkflow.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 it.runIf(postgresEnabled)('pins the coordination protocol through production MCP Start and applies model board changes', async () => {
   const fixture = makeCurrentWorkflowFixture(randomUUID(), 'single')

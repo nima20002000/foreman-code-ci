@@ -8,13 +8,14 @@ import { AcceptedWorkflowRunV3Schema, CURRENT_WORKFLOW_TOOLS, CurrentWorkflowRea
 import { repeatRuntimeDirectory } from '../src/modules/runs/repeatRepositoryHost.js'
 import { RunWorktrees } from '../src/modules/runs/runWorktrees.js'
 import { systemGitWorktreePorts } from '../src/modules/sources/gitWorktree.js'
-import { graphHeaders, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { graphHeaders, graphRpcValue } from './graph-composition-fixture.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { assertSettled, definitionUrl, editThrough, meaningfulInput, rpc, saveThrough,
-  stageThrough, transports, versionCount } from './helpers/eng07SaveAdmission.testSupport.js'
+  stageThrough, transports, versionCount } from './helpers/saveAdmission.testSupport.js'
 import { gitFixtureEnvironment } from './helpers/gitFixture.js'
-import { postgresEnabled, readCurrentExecutions } from './helpers/wave25Agent3.js'
+import { readCurrentExecutions } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 for (const transport of transports) describe.skipIf(!postgresEnabled)(`Run worktree saves over ${transport}`, () => {
   it('saves a finished Run in its own worktree and blocks an unrelated execution directory', async () => {

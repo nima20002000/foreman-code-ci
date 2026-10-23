@@ -19,7 +19,7 @@ import { PostgresSourceService } from '../src/modules/sources/service.js'
 import type { RegisteredSourceRootPort } from '../src/modules/sources/admissionPorts.js'
 import { PrivateSourceSnapshotStore } from '../src/modules/sources/store.js'
 import { qualifiedGit } from '../src/modules/sources/capture.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 
 // Passive timings around the actual Git calls; no output consumer, process, pipe or deadline is substituted.
 const metrics = vi.hoisted(() => ({ active: false, gitMs: {} as Record<string, number>, gitCalls: {} as Record<string, number>, batchReadWaitMs: 0, hashMs: 0, sqlMs: 0, sqlCalls: 0, snapshotInsertMs: 0, snapshotInserts: 0 }))

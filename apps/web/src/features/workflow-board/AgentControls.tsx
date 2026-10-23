@@ -133,7 +133,7 @@ function BoardAgentSettingsVisit({ draftKey, edit, nodeId, close, remove, placem
     workspaceId={edit.graph.workspaceId} workflowApprovalHandler={edit.graph.approval?.handler}
     designatedOrchestrator={edit.graph.approval?.handler === 'orchestrator' && edit.graph.approval.designatedOrchestratorAgentId === agent.id}
     executionPolicy={edit.graph.executionPolicy} onClose={close} onRemove={remove} {...(saveWorkflow ? { onSaveWorkflow: saveWorkflow } : {})}
-    onSave={(next, prompt, _policy, graphqlTools, placement, worktree) => {
+    onSave={({ agent: next, initialPrompt: prompt, nodeGraphqlTools: graphqlTools, placement, worktree }) => {
       installAgent(draftKey, edit.instanceId, next, node.id, prompt, graphqlTools, placement, worktree)
       const saved = useGraphDraftStore.getState().nextDrafts[draftKey]?.graph.nodes.find(item => item.id === node.id)
       if (saved && saved.kind !== 'job') browserBaseline.current = { browser: saved.browser, graphqlTools: saved.graphqlTools }

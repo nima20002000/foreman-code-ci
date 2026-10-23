@@ -3,6 +3,7 @@ import { cx, nextEnabledIndex } from './utils'
 import { Icon, type IconName } from './Icon'
 import { Button } from './Button'
 import { useFloatingSurface } from './useFloatingSurface'
+import { useOutsidePress } from '../useOutsidePress'
 
 export interface TabItem { value: string; label: string; content: ReactNode; disabled?: boolean; badge?: string | number }
 export function Tabs({ label, value, onValueChange, items, className, keepMounted = true }:
@@ -79,12 +80,8 @@ export function DropdownMenu({ label, items, icon = 'more' }: { label: string; i
   useEffect(() => {
     if (!open) return
     refs.current[initialIndex.current]?.focus()
-    function outside(event: PointerEvent) {
-      if (event.target instanceof Node && !root.current?.contains(event.target)) setOpen(false)
-    }
-    document.addEventListener('pointerdown', outside, true)
-    return () => document.removeEventListener('pointerdown', outside, true)
   }, [open])
+  useOutsidePress(open, (target) => !!root.current?.contains(target), () => setOpen(false))
   function show(last = false) {
     const index = last ? nextEnabledIndex(0, -1, items.map((item) => Boolean(item.disabled))) : items.findIndex((item) => !item.disabled)
     if (index < 0) return

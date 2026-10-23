@@ -30,15 +30,16 @@ import { detectedClaudeProfilePath } from '../src/modules/harnesses/claudeSdk/pr
 import { PostgresSettingsRepository } from '../src/modules/settings/postgres.js'
 import { describeNativeFailure, type NativeFailureDetail } from './helpers/nativeFailureEvidence.js'
 import { LocalWorkflowArtifactAuthority } from '../src/modules/runs/remote/localWorkflowArtifactAuthority.js'
-import { nim2691TaskDatabase } from './helpers/nim2691Database.js'
+import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
 import { configureNativeAcceptanceMcp } from './helpers/nativeAcceptanceMcp.js'
 import { writeNativeAcceptanceEvidence } from './helpers/nativeAcceptanceEvidence.js'
 import { LocalNativeArtifactOutputSchema } from '../src/modules/runs/remote/nativeArtifactOutputs.js'
 import { NativeProcessRegistry } from '../src/modules/harnesses/recovery/processRegistry.js'
 import { WORKER_NATIVE_OUTPUT_TOOL_NAMES } from '@foreman-code/contracts/worker-native-output'
-import { graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { graphRpcValue } from './graph-composition-fixture.js'
+import { postgresEnabled } from './helpers/database.js'
 
-const enabled = process.env.NIM2691_REAL_NATIVE === '1' && process.env.NIM2691_POSTGRES === '1'
+const enabled = process.env.RUN_REAL_NATIVE_WORKFLOW_TESTS === '1' && postgresEnabled
 
 async function taskPort(): Promise<number> {
   const server = createServer()
@@ -209,7 +210,7 @@ describe.skipIf(!enabled)('NIM-2691 real native workflow qualification', () => {
           configDirectory: detectedClaudeProfilePath(), permissionMode: 'default', sandbox: 'read-only',
           tools: [], permissionRules: [], instructions: '', mcpServers: {},
         } })
-        production = buildProductionApp(config, database, checkpoints, false)
+        production = buildProductionApp({ config, database, checkpoints, logger: false })
         const startupErrors: Array<{ code: string; message: string; cause: string | null;
           inspectionCodes: string[]; probe: unknown }> = []
         const recordFailure = (error: unknown) => {
@@ -457,7 +458,7 @@ describe.skipIf(!enabled)('NIM-2691 real native workflow qualification', () => {
               await rollbackTransaction(artifactBoundary!)
               artifactBoundary!.release()
               artifactBoundary = undefined
-              production = buildProductionApp(config, database, checkpoints, false)
+              production = buildProductionApp({ config, database, checkpoints, logger: false })
               observeEngine(production)
               production.registerFileStorage()
               app = production.app
@@ -490,7 +491,7 @@ describe.skipIf(!enabled)('NIM-2691 real native workflow qualification', () => {
               expect(approvalNativeLaunch.guardian).toBeDefined()
               expect(approvalNativeLaunch.provider).toBeDefined()
               await production.shutdown()
-              production = buildProductionApp(config, database, checkpoints, false)
+              production = buildProductionApp({ config, database, checkpoints, logger: false })
               observeEngine(production)
               production.registerFileStorage()
               app = production.app

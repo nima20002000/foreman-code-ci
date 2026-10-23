@@ -12,7 +12,7 @@ import { JobService, jobDigest } from '../../src/modules/jobs/service.js'
 import { JobComputerSelection } from '../../src/modules/jobs/computerSelection.js'
 import { WorkerExecutionPolicy } from '../../src/modules/settings/workerExecution.js'
 import type { DeviceEndpoint } from '../../src/modules/devices/deviceEndpoint.js'
-import { currentDatabase } from './eng04CurrentDatabase.js'
+import { currentDatabase } from './database.js'
 import { retainedJobFixture } from './retainedJobFixture.js'
 import { verificationRuntimeFixture } from './verificationRuntimeFixture.js'
 

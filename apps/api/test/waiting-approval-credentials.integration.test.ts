@@ -1,7 +1,7 @@
 import { readUntil } from './helpers/observableCondition.js'
 import { expect, it, vi } from 'vitest'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { approvalResponse } from './helpers/eng06ApprovalFaults.js'
+import { approvalResponse } from './helpers/approvalFaults.js'
 import { renewOwnedLeases } from '../src/modules/leases/ownerLeases.js'
 import { Wave25WorkerCredentialService } from '../src/modules/interactions/wave25/credentials.js'
 import { APP_MCP_TOKEN_ENVIRONMENT_VARIABLE, WORKER_CREDENTIAL_RENEWAL_WINDOW_MS } from '../src/modules/access/workerCredentials.js'

@@ -1,6 +1,6 @@
 import { expect, vi } from 'vitest'
 import { RepeatGraphBatchV3Schema } from '@foreman-code/contracts/wave25'
-import { checkpointRuntimeFixture } from './wave25Br1003Runtime.js'
+import { checkpointRuntimeFixture } from './checkpointRuntime.js'
 import { approvalResponse } from './approvalResponse.js'
 import { DomainError } from '../../src/modules/errors.js'
 import { REPEAT_NATIVE_PENDING_MESSAGE, isSettlementPendingCheckpointError } from '../../src/modules/interactions/repeatNativeEvidence.js'

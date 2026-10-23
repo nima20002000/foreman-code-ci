@@ -1,8 +1,7 @@
 import { hierarchyWorkPrompt } from './hierarchyWorkPrompt.js'
-import { isDatabasePoolTimeout } from '../../infrastructure/databaseReadRetry.js'
-import { isDatabaseTimeout, retryDatabaseTimeout, retryDatabaseOperation } from '../../infrastructure/databaseTimeout.js'
+import { isDatabasePoolTimeout, isDatabaseTimeout, retryDatabaseTimeout, retryDatabaseOperation } from '../../infrastructure/databaseRetry.js'
 import { beginRuntimeTiming, timeRuntimeOperation } from '../../infrastructure/runtimeTiming.js'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { setTimeout as delay } from 'node:timers/promises'
 import { interrupt, isGraphInterrupt } from '@langchain/langgraph'
@@ -38,6 +37,7 @@ import { ExecutionLimiter } from './limiter.js'
 import { ZodError } from 'zod'
 import { componentLogger } from '../diagnostics/logger.js'
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 /** Adapt the existing exact-session native driver, not a second native runtime.
  * The shell supplies the same ApprovalExecutionCoordinator/SingleWriterSessionManager
@@ -360,7 +360,7 @@ export function repeatNativeObserver(context: RepeatNativeObserverContext):
 export function repeatExecutionDirectoryKey(executionId: string): string {
   if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(executionId)) return repeatConflict('REPEAT_EXECUTION_ID_INVALID')
   // Fixed-length opaque hash avoids reserved components and filesystem name limits.
-  return createHash('sha256').update(executionId).digest('hex')
+  return sha256Hex(executionId)
 }
 
 /** Call from the existing coordinator BEFORE either durable terminal observation.

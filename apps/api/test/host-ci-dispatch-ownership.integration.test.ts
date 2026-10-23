@@ -12,14 +12,15 @@ import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { RunCiAuthority, CI_GET_ACTIONS, CI_RUN_ACTIONS } from '../src/modules/jobs/ciAuthority.js'
-import { HostCiService, type HostCiComputer, type HostCiEndpoint } from '../src/modules/ci-host/service.js'
-import { HostCiRunner, type HostCiPorts } from '../src/modules/ci-host/runner.js'
-import { buildComputerIntegrationShards } from '../src/modules/ci-host/capacity.js'
-import { workspaceMirrors } from '../src/modules/ci-host/cloud.js'
+import { HostCiService, type HostCiComputer, type HostCiEndpoint } from '@foreman-code/ci/service'
+import { HostCiRunner, type HostCiPorts } from '@foreman-code/ci/runner'
+import { buildComputerIntegrationShards } from '@foreman-code/ci/capacity'
+import { workspaceMirrors } from '@foreman-code/ci/cloud'
 import { DomainError } from '../src/modules/errors.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'
 import { cloudCiLookupFixture } from './helpers/cloudCiLookupFixture.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 let database: Awaited<ReturnType<typeof migratedDatabase>>
 beforeAll(async () => { database = await migratedDatabase() }, 60_000)
@@ -139,7 +140,7 @@ async function fixture(executor?: HostCiEndpoint) {
     return typeof member === 'function' ? member.bind(target) : member
   } })
   const createService = () => {
-    const service = new HostCiService(servicePool, commands, new RunCiAuthority(pool), commits, executor ?? endpoint)
+    const service = new HostCiService(mainCiContext, servicePool, commands, new RunCiAuthority(pool), commits, executor ?? endpoint)
     vi.spyOn(service, 'start').mockImplementation(() => {})
     return service
   }
@@ -914,7 +915,7 @@ it('keeps overdue Host fetch cancellation pending until preparation closes and p
           `Id=${unit}\nLoadState=loaded\nActiveState=inactive\n`).join('\n') : ''
       return { code: 0, stdout: states, stderr: '' }
     } }
-  const runner = new HostCiRunner(root, ports, {})
+  const runner = new HostCiRunner(mainCiContext, root, ports, {})
   const computer: HostCiComputer = { key: 'fixture:builder', label: 'Builder', priority: 1,
     hostRef: { kind: 'main', mainId: 'fixture-main' } }
   let available = false
@@ -966,7 +967,7 @@ it('keeps overdue Host fetch cancellation pending until preparation closes and p
     expect((await f.read(ticket.ticketId)).state).toBe('canceled')
     expect((await f.pool.query('select state,host_key from ci_runs where id=$1', [ticket.ticketId])).rows[0])
       .toEqual({ state: 'canceled', host_key: null })
-    const recovered = new HostCiRunner(root, ports, {})
+    const recovered = new HostCiRunner(mainCiContext, root, ports, {})
     await expect(recovered.handle(original)).resolves.toMatchObject({ run: { state: 'canceled' } })
     expect(launches).toBe(0)
   } finally {

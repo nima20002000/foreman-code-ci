@@ -2,7 +2,7 @@ import type { DurableInteraction } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { expect } from 'vitest'
 import type { currentOperatorIntegration } from './currentOperatorIntegration.js'
-import { approvalResponse } from './eng06ApprovalFaults.js'
+import { approvalResponse } from './approvalFaults.js'
 
 export async function respondWaitingApproval(
   fixture: Awaited<ReturnType<typeof currentOperatorIntegration>>,

@@ -23,7 +23,7 @@ import { createSourceManifest, sourceSha256 } from '../../src/modules/sources/ma
 import { identity, openPrivateRoot } from '../../src/modules/sources/privateFilesystem.js'
 import { qualifyApprovedRootAllowlist } from '../../src/modules/sources/rootAttestation.js'
 import { buildQueueFixture } from './buildComputerFixture.js'
-import { agent3Database } from './wave25Agent3.js'
+import { agent3Database } from './workflowDatabase.js'
 
 export async function setupMaterializationReservationCleanup(storageCapacity: Partial<SourceStorageCapacity> = {}) {
   const database = await agent3Database()

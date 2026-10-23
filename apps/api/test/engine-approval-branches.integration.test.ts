@@ -1,5 +1,5 @@
 import { afterEach, describe, it, vi } from 'vitest'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { executeApprovalBranches } from './helpers/engineProviderCases.js'
 
 /** Actual engine, SQL owners, coordinator, capture and approval services.

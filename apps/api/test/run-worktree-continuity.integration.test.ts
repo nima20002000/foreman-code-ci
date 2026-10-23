@@ -9,7 +9,8 @@ import { canContinueWorkflowSession } from '../src/modules/runs/sessionContinuat
 import { systemGitWorktreePorts } from '../src/modules/sources/gitWorktree.js'
 import { PostgresWorkflowClosureStore } from '../src/modules/interactions/workflowClosure.js'
 import { deferred } from './helpers/deferred.js'
-import { agent3Database, postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { gitFixtureEnvironment } from './helpers/gitFixture.js'
 
 async function fixture() {

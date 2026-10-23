@@ -43,11 +43,12 @@ import type { PostgresSourceService } from '../src/modules/sources/service.js'
 import { jobDigest } from '../src/modules/jobs/digest.js'
 import { DomainError } from '../src/modules/errors.js'
 import { jobExecution, jobSpec } from './helpers/jobFixture.js'
+import { postgresEnabled } from './helpers/database.js'
 const databaseUrl=process.env.TEST_DATABASE_URL
 const digest=(v:Uint8Array|string)=>createHash('sha256').update(v).digest('hex')
 /** Root-only fixture: real canonical storage/ledger, live grants, actual CI HTTP and SDK MCP tools.
  * Qualified W07/container launch remains a separate real-device acceptance gate. */
-describe.skipIf(!databaseUrl).each(['fixed', 'auto', 'verification'] as const)('CI canonical artifact authenticated persistence (%s)', placementMode=>{
+describe.skipIf(!postgresEnabled).each(['fixed', 'auto', 'verification'] as const)('CI canonical artifact authenticated persistence (%s)', placementMode=>{
   const schema=`ci_artifacts_${randomUUID().replaceAll('-','')}`
   let admin:pg.Pool,pool:pg.Pool,root:string,app:FastifyInstance
   let address: string

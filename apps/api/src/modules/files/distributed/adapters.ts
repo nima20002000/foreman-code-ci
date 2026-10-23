@@ -42,6 +42,12 @@ export function createDistributedArtifactActions(edges: ArtifactEdgeService,
 export function registerDistributedArtifacts(app: FastifyInstance, edges: ArtifactEdgeService,
   publications: DistributedArtifactPublicationService, auth: DistributedArtifactEndpointAuthorization) {
   const actions = createDistributedArtifactActions(edges, publications, auth)
+  registerDistributedArtifactRoutes(app, actions, auth)
+  return actions
+}
+
+export function registerDistributedArtifactRoutes(app: FastifyInstance,
+  actions: ReturnType<typeof createDistributedArtifactActions>, auth: DistributedArtifactEndpointAuthorization): void {
   const { read, publish } = actions
   app.post('/api/artifact-inputs/read', { bodyLimit: 4096,
     onRequest: async (request) => { await auth.consumer(request) } }, async (request, reply) => {
@@ -75,5 +81,4 @@ export function registerDistributedArtifacts(app: FastifyInstance, edges: Artifa
     await server.connect(transport); reply.hijack()
     await transport.handleRequest(request.raw, reply.raw, request.body)
   })
-  return actions
 }

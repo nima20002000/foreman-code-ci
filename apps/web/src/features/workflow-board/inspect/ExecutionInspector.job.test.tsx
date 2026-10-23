@@ -6,7 +6,7 @@ import type { JobWorkflowExecutionReference } from '@foreman-code/contracts/job-
 import { runInspectionKey, type RepeatGraphScopeV3, type RunExecutionDetail, type RunExecutionSummary, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import { server } from '../../../mocks/server'
 import { definition, execution as jobFixture } from '../../jobs/fixtures'
-import { WorkflowBoardContext } from '../context'
+import { WorkflowBoardProvider } from '../context'
 import { ExecutionInspector } from './ExecutionInspector'
 
 // Component scenario with MSW for the Jobs API. The Run-inspection reads are stubbed at the query-hook
@@ -68,8 +68,8 @@ function tree(executionId: string, client: QueryClient) {
   const board = { workspaceId: scope.workspaceId, workflowId: scope.workflowId, run: scope, activeRuns: 0,
     inspection: { runNodeId: executionId === 'agent-exec' ? 'review' : 'build', runExchangeKey: runInspectionKey({ executionId }) },
     selectInspection: vi.fn(), selectRun: vi.fn(), openLocation: vi.fn(), openRuns: vi.fn() }
-  return <QueryClientProvider client={client}><WorkflowBoardContext.Provider value={board}>
-    <ExecutionInspector scope={scope} version={version} /></WorkflowBoardContext.Provider></QueryClientProvider>
+  return <QueryClientProvider client={client}><WorkflowBoardProvider value={board}>
+    <ExecutionInspector scope={scope} version={version} /></WorkflowBoardProvider></QueryClientProvider>
 }
 const client = () => new QueryClient({ defaultOptions: { queries: { retry: false } } })
 afterEach(() => { cleanup(); store.summaries.clear(); store.details.clear() })

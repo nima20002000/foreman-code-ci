@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { approvalFaultFixture, approvalResponse } from './helpers/eng06ApprovalFaults.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { approvalFaultFixture, approvalResponse } from './helpers/approvalFaults.js'
+import { postgresEnabled } from './helpers/database.js'
 import { restartCleanup } from './workflowApprovalRestart.test-support.js'
 
 const closes = restartCleanup()

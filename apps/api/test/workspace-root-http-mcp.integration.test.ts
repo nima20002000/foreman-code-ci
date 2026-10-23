@@ -8,7 +8,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { describe, expect, it, vi } from 'vitest'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
 import type { ApprovedRootAllowlist } from '@foreman-code/contracts/workspace-root-policies'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { workspaceRootDirectory } from './helpers/workspaceRootDirectory.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
@@ -61,8 +61,7 @@ describe.skipIf(!postgresEnabled)('W08 independent workspace root HTTP/MCP', () 
         })
       })
       const service = new WorkspaceBoundLocationService(db.pool, commands, policies)
-      const locations = new WorkspaceLocationService(db.pool, commands, runtimePath, 'runner-local')
-      locations.setRootPolicies(policies)
+      const locations = new WorkspaceLocationService(db.pool, commands, runtimePath, 'runner-local', () => policies)
       const workspaces = new WorkspaceManagementService(db.pool, commands, locations)
       const services = { commands, locations, workspaces, workspaceRoots: service } as unknown as OperatorServices
       app = buildApp({ logger: false,

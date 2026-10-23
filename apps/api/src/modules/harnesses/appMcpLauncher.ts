@@ -1,5 +1,5 @@
-import { createHash, randomUUID } from 'node:crypto'
-import { spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
+import { flockOpenFile } from '../../shared/fileLock.js'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join } from 'node:path'
@@ -8,6 +8,7 @@ import type { HarnessMcpConnection } from '@foreman-code/contracts/management'
 import { APP_MCP_SERVER_NAMES, APP_MCP_TOKEN_NAMES, PRODUCT_SLUG } from '@foreman-code/contracts/product'
 import { workerMcpRequestBudgetMs } from '../devices/workerMcpDeadline.js'
 import { bootIdentity } from './recovery/linuxIdentity.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 /** One native entry serves every role; the credential decides Operator, Orchestrator or Coder. */
 export const APP_MCP_SERVER_NAME = PRODUCT_SLUG
@@ -160,23 +161,7 @@ async function withLauncherLock<T>(
   try {
     signal.throwIfAborted()
     // Directory aliases share the same inode; the kernel releases the lock on process exit.
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn('/usr/bin/flock', ['--exclusive', '3'], {
-        stdio: ['ignore', 'ignore', 'ignore', directory.fd],
-      })
-      let processError: Error | undefined
-      const abort = () => { child.kill('SIGKILL') }
-      signal.addEventListener('abort', abort, { once: true })
-      child.once('error', error => { processError = error })
-      child.once('close', code => {
-        signal.removeEventListener('abort', abort)
-        if (signal.aborted) reject(signal.reason)
-        else if (processError) reject(processError)
-        else if (code === 0) resolve()
-        else reject(new Error('MCP launcher installation lock failed.'))
-      })
-      if (signal.aborted) abort()
-    })
+    if (await flockOpenFile(directory, { signal }) !== 0) throw new Error('MCP launcher installation lock failed.')
     signal.throwIfAborted()
     return await action(signal)
   } finally {
@@ -243,7 +228,7 @@ function routeMonotonicExpiry(expiresAt: string, now: () => number) {
 export async function registerAppRoute(
   token: string, endpoint: string, expiresAt: string, launcher = appLauncherPath(), options: AppMcpRouteOptions = {},
 ): Promise<AppMcpRouteRegistration> {
-  return registerAppRouteDigest(createHash('sha256').update(token).digest('hex'), endpoint, expiresAt, launcher,
+  return registerAppRouteDigest(sha256Hex(token), endpoint, expiresAt, launcher,
     undefined, options)
 }
 

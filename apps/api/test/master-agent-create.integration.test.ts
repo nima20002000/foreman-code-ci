@@ -4,7 +4,7 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { AgentDefaultsUpdateResultSchema, AgentMutationResultSchema, ManagedAgentDefaultsSchema,
   ManagedAgentDetailSchema } from '@foreman-code/contracts/management'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 
 it.skipIf(!postgresEnabled)('creates explicit Masters through HTTP and MCP from unchanged legacy defaults', async () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { RepeatGraphStateV3Schema } from '@foreman-code/contracts/wave25'
 import { repeatEffectFactsFromState } from '../src/modules/run-graph/repeatProjectionProof.js'
-import { ProjectionDatabase, projectionScope, projectionDigest } from './eng04-projection-fixture.js'
+import { ProjectionDatabase, projectionScope, projectionDigest } from './projection-fixture.js'
 
 function acceptedWorkState() {
   const identity = { workflowNodeId: 'work-node', executionId: 'work-execution', agentId: 'work-agent',

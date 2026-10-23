@@ -1,6 +1,6 @@
 import { expect } from 'vitest'
 import { fileReadbackApp } from './fileReadbackApp.js'
-import { graphHeaders, graphRpc, graphRpcValue } from '../eng04-graph-composition-fixture.js'
+import { graphHeaders, graphRpc, graphRpcValue } from '../graph-composition-fixture.js'
 import type { workflowSettlementFixture } from './workflowSettlementFixture.js'
 
 export async function assertWorkflowFailureReadback(f: Awaited<ReturnType<typeof workflowSettlementFixture>>,

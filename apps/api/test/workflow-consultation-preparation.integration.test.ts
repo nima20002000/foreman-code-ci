@@ -5,10 +5,10 @@ import { WorkflowExecutionChatService } from '../src/modules/collaboration/workf
 import { workflowChatInputPrompt } from '../src/modules/interactions/workflowChatInput.js'
 import { DomainError } from '../src/modules/errors.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
-import { checkpointRuntimeFixture } from './helpers/wave25Br1003Runtime.js'
-import { CheckpointTestProvider } from './helpers/wave25Br1003Provider.js'
+import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
+import { CheckpointTestProvider } from './helpers/checkpointProvider.js'
 import { hierarchyRuntimeFixture, coordinationOutput } from './helpers/hierarchyRuntimeFixture.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { deferred } from './helpers/deferred.js'
 
 afterEach(() => vi.restoreAllMocks())

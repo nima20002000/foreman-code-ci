@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, vi } from 'vitest'
 import { migratedDatabase } from './migratedDatabase.js'
-import { checkpointRuntimeFixture } from './wave25Br1003Runtime.js'
+import { checkpointRuntimeFixture } from './checkpointRuntime.js'
 
 export function cleanupDeliveryFixtures() {
   let db: Awaited<ReturnType<typeof migratedDatabase>>

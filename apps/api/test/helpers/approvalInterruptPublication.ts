@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { makeCurrentWorkflowFixture, RunStartV3ResultSchema } from '@foreman-code/contracts/wave25'
 import { afterEach, expect, vi } from 'vitest'
-import { graphRpc, graphRpcValue } from '../eng04-graph-composition-fixture.js'
+import { graphRpc, graphRpcValue } from '../graph-composition-fixture.js'
 import { streamingOperator } from './streamingRunOperator.js'
-import { checkpointRuntimeFixture } from './wave25Br1003Runtime.js'
+import { checkpointRuntimeFixture } from './checkpointRuntime.js'
 import { approvalResponse } from './approvalResponse.js'
-import { readCurrentExecutions } from './wave25Agent3.js'
-import { graphParity } from './wave25R1GraphParity.js'
+import { readCurrentExecutions } from './workflowDatabase.js'
+import { graphParity } from './graphParity.js'
 import { rejectableDeferred } from './deferred.js'
 
 const closes: Array<() => Promise<void>> = []

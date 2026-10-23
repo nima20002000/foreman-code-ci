@@ -1,7 +1,7 @@
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { runtimeProfileFixture } from './helpers/runtimeProfileMcpFixture.js'
 
 describe.skipIf(!postgresEnabled)('runtime profile authenticated HTTP/MCP parity', () => {

@@ -1,9 +1,10 @@
-import { spawn } from 'node:child_process'
 import { constants } from 'node:fs'
 import { link, open, readdir, rename, stat, unlink } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { bootIdentity, identityAlive, processIdentity } from '../../harnesses/recovery/linuxIdentity.js'
+import { flockOpenFile } from '../../../shared/fileLock.js'
+import { spawnProcess } from '../../../shared/process.js'
 
 const ServiceOwnerSchema = z.object({
   version: z.literal(1), ownerId: z.uuid(), bootId: z.uuid(),
@@ -13,6 +14,7 @@ const ServiceOwnerSchema = z.object({
 const VerificationOwnerSchema = z.object({ schemaVersion: z.literal(1), token: z.uuid(),
   pid: z.number().int().positive(), startTicks: z.string().regex(/^\d+$/), bootId: z.uuid() }).strict()
 
+// Node cannot take an fcntl lease (F_SETLEASE), so this probe stays in Python.
 const kernelLeaseProbe = `
 import errno, fcntl, signal, sys
 leased = False
@@ -37,7 +39,7 @@ async function proveOwnerInodeIdle(file: Awaited<ReturnType<typeof open>>): Prom
   // other processes or acquiring privileges. An exclusive inode lease fails
   // while any other reader or writer retains the legacy owner descriptor.
   return new Promise((resolve, reject) => {
-    const child = spawn('python3', ['-c', kernelLeaseProbe], {
+    const child = spawnProcess('python3', ['-c', kernelLeaseProbe], {
       stdio: ['ignore', 'ignore', 'ignore', file.fd],
     })
     child.once('error', error => {
@@ -90,16 +92,9 @@ export async function acquireJournalOwner(path: string) {
   let recovered = false
   try {
     // flock locks the inherited open file description, retained here after its child exits.
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn('/usr/bin/flock', ['--exclusive', '--nonblock', '3'], {
-        stdio: ['ignore', 'ignore', 'ignore', guard.fd],
-      })
-      child.once('error', reject)
-      child.once('close', code => {
-        if (code === 0) resolve()
-        else reject(Object.assign(new Error('Journal already owned'), { code: 'EEXIST' }))
-      })
-    })
+    if (await flockOpenFile(guard, { nonBlocking: true }) !== 0) {
+      throw Object.assign(new Error('Journal already owned'), { code: 'EEXIST' })
+    }
     const bootId = bootIdentity()
     try {
       const priorFile = await open(ownerPath, constants.O_RDONLY | constants.O_NOFOLLOW)

@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 
 import {
   ManagementGrantSchema,
@@ -16,9 +16,10 @@ import { intersectGrants } from './operatorDelegation.js'
 import { operatorChatGrants } from './operatorChatDelegation.js'
 import { currentOperatorAuthority } from './runAuthority.js'
 import { requireAuthorization } from './policy.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 function digest(token: string): string {
-  return createHash('sha256').update(token).digest('hex')
+  return sha256Hex(token)
 }
 
 function sameDigest(left: string, right: string): boolean {

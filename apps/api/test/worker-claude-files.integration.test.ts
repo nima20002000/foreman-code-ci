@@ -24,7 +24,8 @@ import { registerProductionFileStorage } from '../src/modules/files/production.j
 import { productionFileTools } from '../src/modules/files/tools/production.js'
 import { PostgresFileConversationAuthorization } from '../src/modules/files/authorization.js'
 import { workerConversationFixture } from '../src/modules/conversations/workerFixtures.test-support.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
 // Native frames are recorded; PostgreSQL admission, SDK MCP and the file service are production code.

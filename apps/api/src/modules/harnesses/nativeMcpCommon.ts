@@ -1,13 +1,13 @@
 import { APP_MCP_PATH, APP_MCP_SERVER_NAME, APP_MCP_TOKEN, APP_MCP_TIMEOUTS, LEGACY_APP_MCP_SERVER_NAMES, appLauncherConnection, appLauncherPath, appLauncherTokenName, isAppLauncher, isManagedLauncherCommand, isStaleAppLauncher, isSupportedAppMcpServerName, isSupportedAppMcpTokenName } from './appMcpLauncher.js'
 import { APP_MCP_SERVER_NAMES } from '@foreman-code/contracts/product'
-import { createHash } from 'node:crypto'
 import { basename, dirname, join } from 'node:path'
 import type { HarnessMcpChange, HarnessMcpConnection, HarnessMcpList, HarnessMcpManagedPreset } from '@foreman-code/contracts/management'
 import { canonicalJsonNumericKeysFirstLegacy } from '@foreman-code/contracts/canonical-json'
 import { DomainError } from '../errors.js'
+import { sha256Hex } from '../../shared/hash.js'
 export type JsonObject = Record<string, unknown>
 export const record = (value: unknown): JsonObject => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {}
-export const fingerprint = (value: unknown): string => `sha256:${createHash('sha256').update(canonicalJsonNumericKeysFirstLegacy(value)).digest('hex')}`
+export const fingerprint = (value: unknown): string => `sha256:${sha256Hex(canonicalJsonNumericKeysFirstLegacy(value))}`
 export interface NativeMcpSnapshot {
   harness: 'codex' | 'claude'; revision: string; effective: JsonObject; user: JsonObject
   userConfig: JsonObject; version: string; file: string

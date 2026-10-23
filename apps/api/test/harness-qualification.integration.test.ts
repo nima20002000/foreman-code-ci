@@ -33,6 +33,8 @@ import { nativeCompatibilityProbe } from '../src/modules/harnesses/compatibility
 import { runWithReadOnlyQualification, requireHarnessQualification } from '../src/modules/harnesses/qualification/gate.js'
 import type { QualificationSuite } from '../src/modules/harnesses/qualification/types.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
+import { postgresEnabled } from './helpers/database.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 it('registers the qualification migration after earlier blocks', () => {
   const prerequisite = migrations.indexOf(fileReferenceAccessMigration)
@@ -41,7 +43,7 @@ it('registers the qualification migration after earlier blocks', () => {
   expect(new Set(migrations.map((migration) => migration.version)).size).toBe(migrations.length)
 })
 
-it.skipIf(!process.env.TEST_DATABASE_URL)('reads compatibility through authenticated MCP, denying unauthorized retries', async () => {
+it.skipIf(!postgresEnabled)('reads compatibility through authenticated MCP, denying unauthorized retries', async () => {
   const admin = new pg.Pool({ connectionString: process.env.TEST_DATABASE_URL })
   const schema = `harness_qualification_${randomUUID().replaceAll('-', '')}`
   await createFixtureSchema(admin, schema)
@@ -192,12 +194,12 @@ it.skipIf(!process.env.TEST_DATABASE_URL)('reads compatibility through authentic
           binding, target: selected, binarySha256: launcherSha, record } })
       const client = await pool.connect()
       try {
-        await client.query('begin')
+        await beginTransaction(client)
         await installedSettings.append(client, writer.principal.id, 0, value)
         await installedProofs.append(client, checkId, value, proof)
-        await client.query('commit')
+        await commitTransaction(client)
       } catch (error) {
-        await client.query('rollback')
+        await rollbackTransaction(client)
         throw error
       } finally { client.release() }
       return record

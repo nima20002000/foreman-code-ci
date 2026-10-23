@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
-import { approvalResponse } from './helpers/eng06ApprovalFaults.js'
+import { postgresEnabled } from './helpers/database.js'
+import { approvalResponse } from './helpers/approvalFaults.js'
 import { createApprovalRecoverySetup, startWaiting } from './helpers/approvalRecovery.js'
 
 const setup = createApprovalRecoverySetup()

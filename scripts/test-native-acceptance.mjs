@@ -29,7 +29,7 @@ export function nativeAcceptanceConfiguration(environment) {
 
 export function nativeAcceptanceFiles(arguments_) {
   if (!arguments_.length) return [
-    'test/eng03-c-native.acceptance.test.ts',
+    'test/native-lifecycle.acceptance.test.ts',
     'test/local-human-native.acceptance.test.ts',
     'test/local-human-native-recovery.acceptance.test.ts',
   ]
@@ -218,8 +218,8 @@ async function executeNativeAcceptance(files) {
     configuration.evidenceRoot, async ({ environment: isolated, evidence }) => {
       const environment = nativeAcceptanceEnvironment(isolated)
       console.log(`[acceptance] Native evidence: ${evidence}`)
-      return runNativeAcceptance({ ...environment, RUN_ENG03_C_NATIVE_TESTS: '1',
-        RUN_REAL_HARNESS_TESTS: '1', NIM2691_REAL_NATIVE: '1', NIM2691_POSTGRES: '1' }, files)
+      return runNativeAcceptance({ ...environment, RUN_NATIVE_LIFECYCLE_TESTS: '1',
+        RUN_REAL_HARNESS_TESTS: '1', RUN_REAL_NATIVE_WORKFLOW_TESTS: '1' }, files)
     })
   return record.exitCode
 }

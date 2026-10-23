@@ -9,7 +9,7 @@ import { WorkConnectionLimitEditor } from './WorkConnectionLimitEditor'
 import { IntervalFields } from './IntervalFields'
 import { Button, Icon, IconButton, SegmentedControl, Select, Switch, TextField, type SelectOption } from '../../../shared/ui/nocturne'
 import { InfoHint } from '../../../shared/ui'
-import { useWorkflowBoard } from '../../workflow-board/context'
+import { useBoardAuthoring } from '../../workflow-board/context'
 import { useCollaborationUISlots } from '../../../shared/ui/collaborationSlots'
 
 export type EditGraph = (update: (graph: WorkflowDefinitionV3) => WorkflowDefinitionV3) => void
@@ -68,7 +68,7 @@ export function ApprovalFields({ graph, context, change, report, agentEdits }: {
 /** The node's browser switch and profile. */
 export function NodeBrowserField({ graph, node, change }: { graph: WorkflowDefinitionV3; node: DraftNode; change: EditGraph }) {
   const sharedFields = useCollaborationUISlots()
-  const fields = useWorkflowBoard()?.collaborationFields ?? sharedFields
+  const fields = useBoardAuthoring()?.collaborationFields ?? sharedFields
   if (node.kind === 'job') return null
   return fields?.nodeBrowser?.({ workspaceId: graph.workspaceId, workflowId: graph.id,
     nodeId: node.id, value: node.browser, onChange: browser => changeNode(change, node.id, current => {

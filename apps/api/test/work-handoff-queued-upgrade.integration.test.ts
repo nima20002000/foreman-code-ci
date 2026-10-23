@@ -5,8 +5,8 @@ import { WorkActivationIdentitySchema, WorkActivationInputSchema, WorkReturnSche
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { workReturnGroupMigration } from '../src/infrastructure/workReturnGroupMigration.js'
 import { repeatId } from '../src/modules/runs/repeatResolution.js'
-import { digest, text, transaction } from './eng04-migration-fixtures.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { digest, text, transaction } from './repeat-migration-fixtures.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { finished, workHandoffFixture } from './helpers/workHandoffFixture.js'
 
 async function queuedReturnsBeforeUpgrade(count: number) {

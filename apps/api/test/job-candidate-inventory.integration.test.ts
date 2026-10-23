@@ -14,10 +14,11 @@ import { buildComputerTarget } from '../src/modules/settings/buildComputers.js'
 import { WorkerExecutionPolicy } from '../src/modules/settings/workerExecution.js'
 import { sourceSha256 } from '../src/modules/sources/manifest.js'
 import type { DeviceEndpoint } from '../src/modules/devices/deviceEndpoint.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { retainedJobFixture } from './helpers/retainedJobFixture.js'
 import { buildComputerFixture, buildQueueConfigurationFixture } from './helpers/buildComputerFixture.js'
 import { jobRuntimeMetadataFixture } from './helpers/jobRuntimeMetadataFixture.js'
+import { beginTransaction, commitTransaction } from '../src/infrastructure/transaction.js'
 
 describe.skipIf(!postgresEnabled)('canonical build candidate inventory', () => {
   let database: Awaited<ReturnType<typeof currentDatabase>>
@@ -75,11 +76,11 @@ describe.skipIf(!postgresEnabled)('canonical build candidate inventory', () => {
       await f.runtime.jobs.cancel(principal, 'http', f.workspaceId, f.execution.id, randomUUID())
       const sql = await database.pool.connect()
       try {
-        await sql.query('begin')
+        await beginTransaction(sql)
         const claim = await f.placement.claim(sql, principal, f.definition, ticket)
         expect(claim.spec).toMatchObject({ target: f.spec.target,
           policy: { isolationPolicyId: f.profile.id, isolationPolicyRevision: 1 } })
-        await sql.query('commit')
+        await commitTransaction(sql)
         expect(await f.preparation.validate(sql, principal, f.workspaceId, claim.spec!))
           .toEqual({ valid: true, reasons: [], sideEffects: false })
         const original = f.metadata.get(f.profile.id)!
@@ -175,12 +176,12 @@ describe.skipIf(!postgresEnabled)('canonical build candidate inventory', () => {
       } else {
         const sql = await database.pool.connect()
         try {
-          await sql.query('begin')
+          await beginTransaction(sql)
           const claim = await f.placement.claim(sql, principal, definition,
             { executionId: randomUUID(), attemptId: randomUUID(), operationId: randomUUID() })
           expect(claim.spec?.target.hostRef).toEqual(computers[1]!.candidate.spec.target.hostRef)
           expect(claim.reasons).toEqual([])
-          await sql.query('commit')
+          await commitTransaction(sql)
         } finally { sql.release() }
       }
     } finally { await f.jobs.closeQueue(); await f.runtime.close() }

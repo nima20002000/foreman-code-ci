@@ -9,7 +9,7 @@ import { deviceRequestTimeoutMs } from '../src/modules/devices/deviceRequestRetr
 import { ApprovalExecutionCoordinator } from '../src/modules/interactions/execution.js'
 import { ExecutionScopedNativeSessionManagerResolver } from '../src/modules/interactions/runtimePorts.js'
 import type { RunOwnership } from '../src/modules/runs/ownership.js'
-import { nativeLanes } from './helpers/nativeLanes.js'
+import { nativeLanes } from './helpers/memorySessionCoordination.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
 vi.mock('../src/modules/interactions/retainedRemoteReviewer.js', () => {

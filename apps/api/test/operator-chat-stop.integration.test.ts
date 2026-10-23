@@ -11,6 +11,7 @@ import { createClaudeNativeSessionManager } from '../src/modules/harnesses/claud
 import { createClaudeSdkRunner } from '../src/modules/harnesses/claudeSdk/runner.js'
 import { ClaudeBoundedQueue } from '../src/modules/harnesses/claudeSdk/queue.js'
 import { registerOperatorChatFixture, type OperatorChatFixture, waitFor } from './helpers/operatorChatFixture.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const connectionString = process.env.TEST_DATABASE_URL
 
@@ -67,7 +68,7 @@ function interruptibleClaude() {
   return { manager, managers, interrupts }
 }
 
-describe.skipIf(!connectionString)('Operator chat Stop on Claude', () => {
+describe.skipIf(!postgresEnabled)('Operator chat Stop on Claude', () => {
   it('interrupts the exact Claude message over HTTP service and MCP, settles canceled and accepts the next message', async () => {
     const claude = interruptibleClaude()
     const harness = { harness: 'claude' as const, model: 'synthetic-claude', authMode: 'subscription' as const, configDirectory: '/synthetic/profile',

@@ -3,7 +3,7 @@ import { WorkActivationInputSchema } from '@foreman-code/contracts/wave25'
 import { HarnessExecutionError } from '../src/modules/harnesses/errors.js'
 import { isWorkflowStart } from '../src/modules/harnesses/sessionStart.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { memoryWorkflow, workflowMemory, type MemoryRuntime } from './helpers/memoryWorkflow.js'
 
 it.runIf(postgresEnabled)('launches a technical retry of a review continuation on its existing card binding', async () => {

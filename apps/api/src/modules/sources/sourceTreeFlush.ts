@@ -1,10 +1,10 @@
-import { spawn } from 'node:child_process'
 import type { FileHandle } from 'node:fs/promises'
 import { SourceError } from './manifest.js'
 import { componentLogger } from '../diagnostics/logger.js'
+import { spawnProcess } from '../../shared/process.js'
 
-// Data waits run on inherited original write descriptors, retaining their writeback
-// error cursors. On journaled ext4, directory fsync forces a full metadata commit.
+// Node has no sync_file_range, syncfs or ioctl, so this helper stays in Python. Data waits run on inherited original
+// write descriptors, retaining their writeback error cursors. On journaled ext4, directory fsync forces a full metadata commit.
 const script = String.raw`
 import ctypes
 import fcntl
@@ -101,7 +101,7 @@ export async function flushSourceTree(tree: FileHandle, signal: AbortSignal,
   const files = operation.mode === 'data' ? operation.files : []
   const started = performance.now()
   const flushed = await new Promise<boolean>((resolve, reject) => {
-    const child = spawn('/usr/bin/python3', ['-I', '-S', '-c', script, operation.mode, String(files.length)], {
+    const child = spawnProcess('/usr/bin/python3', ['-I', '-S', '-c', script, operation.mode, String(files.length)], {
       stdio: ['ignore', 'ignore', 'ignore', tree.fd, ...files], signal, killSignal: 'SIGKILL',
     })
     let failure: Error | undefined

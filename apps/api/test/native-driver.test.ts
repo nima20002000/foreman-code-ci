@@ -5,7 +5,7 @@ import { REPEAT_NATIVE_PENDING_MESSAGE } from '../src/modules/interactions/repea
 import { ExecutionLimiter } from '../src/modules/runs/limiter.js'
 import { repeatNodeAction, repeatTerminalResolution, type RepeatAcceptance } from '../src/modules/runs/repeatNode.js'
 import { repeatExecutionDriver } from '../src/modules/runs/repeatRuntime.js'
-import { nativeCompleted, nativeFixture, nativeStored } from './eng04-native-fixtures.js'
+import { nativeCompleted, nativeFixture, nativeStored } from './native-repeat-fixtures.js'
 
 function setup(completed = true) {
   const f = nativeFixture()

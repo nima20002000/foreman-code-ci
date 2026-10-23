@@ -5,6 +5,7 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import { FoundationSettingsManagementService } from '../src/modules/settings/management.js'
 import { registerOperatorChatFixture, type OperatorChatFixture, claudeConfiguration, waitFor } from './helpers/operatorChatFixture.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const connectionString = process.env.TEST_DATABASE_URL
 
@@ -20,7 +21,7 @@ registerOperatorChatFixture(fixture => {
   ({ pool, access, owner, operators, repository, manager, chat } = fixture)
 }, () => chat)
 
-describe.skipIf(!connectionString)('Operator chat persistence and native binding with stubbed authority', () => {
+describe.skipIf(!postgresEnabled)('Operator chat persistence and native binding with stubbed authority', () => {
   it('accepts next-message settings atomically, resumes the same harness, and binds retries to those settings', async () => {
     const conversation = await chat.create(owner)
     const first = { requestId: 'settings-first', content: 'First message', settings: operatorChatSettings(DEFAULT_HARNESS_DEFAULTS.codex) }

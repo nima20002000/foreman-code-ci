@@ -711,7 +711,7 @@ test('database gates and storage paths use the current owned slot, overriding in
     for (const name of Object.keys(inherited).filter(key => key.endsWith('DATABASE_URL'))) {
       assert.equal(environment[name], slot.databaseUrl)
     }
-    assert.equal(environment.NIM2691_POSTGRES, '1')
+    assert.equal(environment.TEST_DATABASE_URL, slot.databaseUrl)
     assert.equal(environment.TMPDIR, join(slot.directory, 'tmp'))
     assert.ok(environment.HOME.startsWith(slot.directory + '/'))
     assert.ok(environment.CODEX_HOME.startsWith(slot.directory + '/'))
@@ -1102,7 +1102,7 @@ for (const [name, reservedReview] of [
   ['historical workflow version pins', 'apps/api/test/workflow-historical-version-pins.integration.test.ts'],
   ['source snapshot retention', 'apps/api/test/source-snapshot-retention.integration.test.ts'],
   ...terminalRecoveryFiles.map(file => [`terminal recovery (${file})`, file]),
-  ['six-node checkpoint routing', 'apps/api/test/eng03-b-durability-routing.integration.test.ts'],
+  ['six-node checkpoint routing', 'apps/api/test/workflow-durability-routing.integration.test.ts'],
 ]) test(`${name} runs without competing integration or gate processes`, async () => {
   const ordinary = 'apps/api/test/ordinary.integration.test.ts'
   const active = new Set()

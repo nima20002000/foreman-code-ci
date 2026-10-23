@@ -9,7 +9,8 @@ import {
 import { SavedManagedWorkflowPageSchema, SavedManagedWorkflowSchema } from '@foreman-code/contracts/wave25'
 import { describe, expect, it, vi } from 'vitest'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { selectedMainMcpForward } from '../src/modules/placement/workerMcpRelay.js'
 
 describe.skipIf(!postgresEnabled)('Operator context over authenticated MCP', () => {

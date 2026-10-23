@@ -9,7 +9,7 @@ import { RunOwnership } from '../../src/modules/runs/ownership.js'
 import { RepeatRunRepository, type RepeatRepositoryHost } from '../../src/modules/runs/repeatPostgres.js'
 import { repeatId } from '../../src/modules/runs/repeatResolution.js'
 import { markWorkNoticeDeliveredLocked } from '../../src/modules/runs/workHandoffNotice.js'
-import { digest, text, transaction } from '../eng04-migration-fixtures.js'
+import { digest, text, transaction } from '../repeat-migration-fixtures.js'
 
 export async function workHandoffFixture(pool: pg.Pool, suffix: string,
   configure: (version: ReturnType<typeof makeCurrentWorkflowFixture>['version']) => WorkflowVersionV3) {

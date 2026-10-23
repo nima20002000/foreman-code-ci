@@ -10,21 +10,22 @@ import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { CircleAccountDirectory } from '../src/modules/ci-host/circleAccounts.js'
-import { CircleAccountFleetStatus } from '../src/modules/ci-host/circleAccountStatus.js'
-import { CircleCiAccounts } from '../src/modules/ci-host/circleCiAccounts.js'
-import { circleOrganizations } from '../src/modules/ci-host/circleOrganizations.js'
-import { CircleStandby, circleOrgKey } from '../src/modules/ci-host/circleStandby.js'
-import { CloudCi } from '../src/modules/ci-host/cloud.js'
-import { CircleCiProvider } from '../src/modules/ci-host/cloudProviders.js'
-import type { HostCiPorts } from '../src/modules/ci-host/runner.js'
-import { CircleAccountsManagementService } from '../src/modules/settings/circleAccounts.js'
+import { CircleAccountDirectory } from '@foreman-code/ci/circleAccounts'
+import { CircleAccountFleetStatus } from '@foreman-code/ci/circleAccountStatus'
+import { CircleCiAccounts } from '@foreman-code/ci/circleCiAccounts'
+import { circleOrganizations } from '@foreman-code/ci/circleOrganizations'
+import { CircleStandby, circleOrgKey } from '@foreman-code/ci/circleStandby'
+import { CloudCi } from '@foreman-code/ci/cloud'
+import { CircleCiProvider } from '@foreman-code/ci/cloudProviders'
+import type { HostCiPorts } from '@foreman-code/ci/runner'
+import { CircleAccountsManagementService } from '@foreman-code/ci/circleAccountsManagement'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import { deferred } from './helpers/deferred.js'
-import type { CircleAccountStatusReader } from '../src/modules/ci-host/circleAccounts.js'
-import { claimCiSlot } from '../src/modules/ci-host/cloudSlots.js'
+import type { CircleAccountStatusReader } from '@foreman-code/ci/circleAccounts'
+import { claimCiSlot } from '@foreman-code/ci/cloudSlots'
 import { CiRunRecordSchema } from '@foreman-code/contracts'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const close of cleanups.splice(0).reverse()) await close() })
@@ -47,10 +48,10 @@ async function fixture() {
   async function app(status?: CircleAccountStatusReader) {
     const repository = new PostgresFoundationSettingsRepository(db.pool)
     const commands = new PostgresCommandCoordinator(db.pool)
-    const directory = new CircleAccountDirectory({ run: vi.fn(), now: () => new Date(), cpus: 4, memoryBytes: 2 ** 30 },
+    const directory = new CircleAccountDirectory(mainCiContext, { run: vi.fn(), now: () => new Date(), cpus: 4, memoryBytes: 2 ** 30 },
       { list: async () => (await repository.getCircleAccounts()).value.accounts },
       { configRoot: credentials, environment: { CIRCLE_TOKEN: 'fixture-primary' } })
-    const circleAccounts = new CircleAccountsManagementService(repository, commands, status ?? directory, async id => {
+    const circleAccounts = new CircleAccountsManagementService(mainCiContext, repository, commands, status ?? directory, async id => {
       expect((await repository.getCircleAccounts()).revision).toBeGreaterThan(0)
       directory.invalidate(id)
       changes.push(id)
@@ -106,7 +107,7 @@ it('reads discovered primary status and renames the account through MCP and HTTP
       }
       throw new Error(`Unexpected fixture command: ${file} ${args[0]}`)
     } }
-  const directory = new CircleAccountDirectory(ports, registry, {
+  const directory = new CircleAccountDirectory(mainCiContext, ports, registry, {
     configRoot: join(f.db.directory, 'primary-config'), environment: { CIRCLE_TOKEN: 'fixture-primary' },
   })
   const context = async (id: string) => {
@@ -115,15 +116,15 @@ it('reads discovered primary status and renames the account through MCP and HTTP
     return selected
   }
   const clouds: CloudCi[] = []
-  const discovery = new CircleCiAccounts(ports, async () => ['fixture-alpha/site-ci'], async account => {
+  const discovery = new CircleCiAccounts(mainCiContext, ports, async () => ['fixture-alpha/site-ci'], async account => {
     const selected = await context(account.circleAccountId ?? 'default')
-    clouds.push(new CloudCi('fixture-main', new CircleCiProvider(selected.ports, { http: selected.http }, account),
+    clouds.push(new CloudCi(mainCiContext, 'fixture-main', new CircleCiProvider(mainCiContext, selected.ports, { http: selected.http }, account),
       async () => 'fixture-alpha/site-ci', join(f.db.directory, account.owner)))
   }, { registry, context, explicitPrimary: true })
   await discovery.refresh()
   await Promise.all(clouds.map(cloud => cloud.ready()))
   const credits = { total: 400_000, used: 10_000, remaining: 390_000, asOf: new Date().toISOString() }
-  const standby = new CircleStandby(() => circleOrganizations(clouds), { reading: async () => ({ credits }) })
+  const standby = new CircleStandby(mainCiContext, () => circleOrganizations(clouds), { reading: async () => ({ credits }) })
   const app = await f.app(new CircleAccountFleetStatus(f.db.pool, 'fixture-main', directory, clouds, standby))
   const owner = await f.issue(['settings:read', 'settings:update'])
   const client = await app.connect(owner.token)
@@ -339,7 +340,7 @@ it.each(['add', 'remove'] as const)('releases the account registry lock before e
     const hostRef = { kind: 'cloud' as const, mainId: 'fixture-main', provider: 'circleci' as const,
       circleAccountId: 'reserve', account: 'fixture-delta', slot: 0 }
     let settled = false
-    claim = claimCiSlot(f.db.pool, run, { key: 'fixture-main:cloud:circleci~reserve@fixture-delta:0',
+    claim = claimCiSlot(mainCiContext, f.db.pool, run, { key: 'fixture-main:cloud:circleci~reserve@fixture-delta:0',
       label: 'Fixture standby', priority: 1, hostRef }, { operation: 'start', runId: run.id,
       repository: run.repository, ciMirror: run.ciMirror, commit: run.commit, suite: run.suite, scope: run.scope,
     }).then(result => { settled = true; return result })

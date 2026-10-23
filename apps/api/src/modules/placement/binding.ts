@@ -1,13 +1,13 @@
-import { createHash } from 'node:crypto'
 import { posix } from 'node:path'
 import {
   AcceptedNodePlacementSchema, DispatchIntentSchema, type AcceptedNodePlacement, type DispatchIntent,
 } from '@foreman-code/contracts/node-placement'
 import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../errors.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export function placementDigest(value: unknown): string {
-  return createHash('sha256').update(canonicalGraphJson(value)).digest('hex')
+  return sha256Hex(canonicalGraphJson(value))
 }
 export function directoryIdentityHash(hostRef: AcceptedNodePlacement['hostRef'], device: string, inode: string): string {
   return placementDigest({ hostRef, device, inode })

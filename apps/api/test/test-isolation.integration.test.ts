@@ -5,7 +5,7 @@ import pg from 'pg'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { createFixtureDatabase, createFixtureSchema, dropFixtureDatabase, dropFixtureSchema } from './helpers/testResources.js'
 import { assertOwnedExecutionDestinations } from './helpers/testResources.js'
-import { candidateFor, seedAgent3 } from './helpers/wave25Agent3.js'
+import { candidateFor, seedAgent3 } from './helpers/workflowDatabase.js'
 import { createTestDatabase, createTestRoot, dropTestDatabase, removeTestRoot, resetTestDatabase,
   testAdminPool, testAdminUrl } from '../../../scripts/test-resources.mjs'
 import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'

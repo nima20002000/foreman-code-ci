@@ -22,7 +22,8 @@ import { PostgresOperatorActivityRepository } from '../src/modules/conversations
 import { OPERATOR_HISTORY_PAGE_BYTES, OPERATOR_SNAPSHOT_MESSAGE_BYTES, PostgresOperatorConversationRepository } from '../src/modules/conversations/operatorChatRepository.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import { AgentChatF5Native, approval } from './helpers/agentChatF5.js'
-import { agent3Database, postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 /** Opt-in PostgreSQL and authenticated HTTP/MCP. Native ports are substitutes, never real providers. */
 describe.skipIf(!postgresEnabled)('G4 PostgreSQL / HTTP / MCP regressions', () => {

@@ -1,13 +1,10 @@
-import { execFile, spawn } from 'node:child_process'
-import { promisify } from 'node:util'
 import { createHash, randomUUID } from 'node:crypto'
 import { realpath } from 'node:fs/promises'
 import type { SourceManifest, SourceEntry } from '@foreman-code/contracts/source-materialization'
 import { createSourceManifest, SOURCE_LIMITS, SourceError, sourcePath, sourceSha256, verifySourceBytes } from './manifest.js'
 import type { ExclusiveSourceCapture } from './ports.js'
 import { DomainError } from '../errors.js'
-const execute = promisify(execFile)
-const gitEnvironment = { PATH: '/usr/bin:/bin', HOME: '/nonexistent', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0', GIT_NO_REPLACE_OBJECTS: '1' }
+import { runIsolatedGit, spawnIsolatedGit } from '../../shared/git.js'
 export interface SourceSnapshotSink {
   /** Writes quarantined, detached bytes into the source namespace, never file revisions. */
   write(snapshotId: string, entry: SourceEntry, bytes: Uint8Array): Promise<void>
@@ -16,11 +13,7 @@ export interface SourceSnapshotSink {
   abort(snapshotId: string): Promise<void>
 }
 export async function qualifiedGit(root: string, args: string[], maxBuffer = 2 * 1024 * 1024, signal?: AbortSignal): Promise<Buffer> {
-  const result = await execute('/usr/bin/git', ['--no-replace-objects', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', root, ...args], {
-    encoding: 'buffer', maxBuffer, timeout: SOURCE_LIMITS.preparationMs, ...(signal ? { signal } : {}),
-    env: gitEnvironment,
-  })
-  return result.stdout
+  return runIsolatedGit(root, args, { maxOutputBytes: maxBuffer, timeoutMs: SOURCE_LIMITS.preparationMs, ...(signal ? { signal } : {}) })
 }
 /** Inventory the pinned commit, never the index or working tree. Capture verifies its objects separately. */
 export async function approvedGitTreePaths(root: string, commit: string): Promise<string[]> {
@@ -39,8 +32,7 @@ export async function approvedGitTreePaths(root: string, commit: string): Promis
 }
 /** One bounded process verifies every exact commit/tree/blob in the capture. */
 function gitObjectReader(root: string, objectFormat: string, signal: AbortSignal) {
-  const child = spawn('/usr/bin/git', ['--no-replace-objects', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', root, 'cat-file', '--batch'],
-    { env: gitEnvironment, signal, stdio: ['pipe', 'pipe', 'pipe'] })
+  const child = spawnIsolatedGit(root, ['cat-file', '--batch'], signal)
   let closed = false
   const exited = new Promise<void>(resolve => child.once('close', () => { closed = true; resolve() }))
   const finished = new Promise<void>((resolve, reject) => {

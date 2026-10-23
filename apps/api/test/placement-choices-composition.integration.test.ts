@@ -12,8 +12,8 @@ import { loadConfig } from '../src/config.js'
 import { createCheckpointStore } from '../src/infrastructure/checkpoints.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { ProductionPlacementChoiceDiscovery } from '../src/modules/placement/choiceDiscovery.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
-import { seedAgent3 } from './helpers/wave25Agent3.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
 
 /** Real production composition, PostgreSQL and bearer MCP; destination inventory is synthetic, with no native execution. */
 describe.skipIf(!postgresEnabled)('saved placement discovery and clearing through the production server', () => {
@@ -54,8 +54,8 @@ describe.skipIf(!postgresEnabled)('saved placement discovery and clearing throug
       const denied = await access.issue({ name: 'Placement reader without paths', audience: 'operator',
         expiresAt: new Date(Date.now() + 600_000), grants: [{ actions: ['workflows:read'],
           scope: { workspaceIds: [input.workspaceId] } }] })
-      production = buildProductionApp(config, { pool: db.pool, ping: async () => { await db.pool.query('select 1') },
-        migrate: async () => {}, close: db.close }, checkpoints, false)
+      production = buildProductionApp({ config, database: { pool: db.pool, ping: async () => { await db.pool.query('select 1') },
+        migrate: async () => {}, close: db.close }, checkpoints, logger: false })
       const address = await production.app.listen({ host: '127.0.0.1', port: 0 })
       async function connect(token: string) {
         const client = new Client({ name: 'placement-composition', version: '1' })

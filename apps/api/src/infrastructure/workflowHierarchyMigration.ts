@@ -1,5 +1,5 @@
 /** Append-only projections retain the exact Run/version and accepted source identity. */
-export const workflowHierarchyMigration = { version: 2026102101, sql: String.raw`
+export const workflowHierarchyMigration = { version: 2026102100, sql: String.raw`
 create table run_hierarchy_reports (
   id text primary key,
   sequence bigint generated always as identity unique,

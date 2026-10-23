@@ -1,5 +1,5 @@
 import { timeRuntimeOperation } from '../../src/infrastructure/runtimeTiming.js'
-import type { Eng03NativeControl } from './eng03NativeAcceptance.js'
+import type { Eng03NativeControl } from './nativeAcceptanceScenario.js'
 
 export async function waitForStartedBranches({ pool, runId, nodeIds, runs, publicationChanged }: Eng03NativeControl) {
   const deadline = Date.now() + 120_000

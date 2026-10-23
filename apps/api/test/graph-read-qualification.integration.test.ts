@@ -7,10 +7,10 @@ import {
   type CanonicalRunGraphScope,
 } from '@foreman-code/contracts/wave25'
 import { withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
-import { currentDatabase as agent3Database, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase as agent3Database, postgresEnabled } from './helpers/database.js'
 import {
   graphFixture, graphHeaders, graphRpc, graphRpcValue, changeRunState, ownedGraph,
-  privateCanary, type GraphFixture, type GraphTestDatabase, graphCatalogNames } from './eng04-graph-composition-fixture.js'
+  privateCanary, type GraphFixture, type GraphTestDatabase, graphCatalogNames } from './graph-composition-fixture.js'
 
 type Kind = 'current' | 'snapshot' | 'events'
 const kinds = ['current', 'snapshot', 'events'] as const

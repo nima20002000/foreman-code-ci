@@ -15,8 +15,8 @@ import { qualifiedGit } from '../../src/modules/sources/capture.js'
 import { sourceSha256 } from '../../src/modules/sources/manifest.js'
 import { WorkspaceBoundLocationService } from '../../src/modules/workspace-roots/service.js'
 import { WorkflowManagementService } from '../../src/modules/workflows/management.js'
-import { sch11Actions, type Sch11Fixture } from './sch11Fixture.js'
-import { sch11Once } from './sch11ClockCases.js'
+import { sch11Actions, type Sch11Fixture } from './scheduleFixture.js'
+import { sch11Once } from './scheduleClockCases.js'
 import { scheduleHarnessFixture } from './scheduleHarnessFixture.js'
 
 /** Admission uses persisted authorities and physical host discovery. */

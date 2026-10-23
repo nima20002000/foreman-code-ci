@@ -46,8 +46,7 @@ it('leaves pool capacity for automatic profile setup while Agent mutations queue
     let preparing = 0
     let availableCapacity = Infinity
     const accounts = new ProviderAccountConfigurationService({ resolve: async () => ({ accountId,
-      homePath: home, authMode: 'subscription' }) })
-    accounts.bindProfiles({
+      homePath: home, authMode: 'subscription' }) }, {
       selectionForConfiguration: async () => ready ? selection : undefined,
       validateSelection: profiles.validateSelection.bind(profiles),
       prepareOperatorConfiguration: async () => {

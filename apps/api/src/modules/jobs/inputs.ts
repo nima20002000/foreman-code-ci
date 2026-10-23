@@ -13,13 +13,14 @@ import type { JobExecutionRecord } from '@foreman-code/contracts/job-verificatio
 import { identity } from '../sources/privateFilesystem.js'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import type { VerifiedJobGitMounts } from './privateGitMounts.js'
+import { sha256Hex } from '../../shared/hash.js'
 export type VerifiedJobSource={ privateRepositoryRoot: string; directoryIdentityHash: string; privateGit: true; diskQuotaBytes: number; gitMounts?:VerifiedJobGitMounts }
 /** Supplied only by W09's canonical authorization/transfer/materialization adapter. */
 export interface JobAcceptedInputPort {
   prepare(execution:JobExecutionRecord,source:VerifiedJobSource,signal:AbortSignal):Promise<JobInputDeliveryReceipt>
 }
 export const JOB_INPUT_MANIFEST_CONTAINER_PATH=`/workspace/${JOB_INPUT_DIRECTORY}/manifest.json` as const
-const hash=(bytes:Uint8Array)=>createHash('sha256').update(bytes).digest('hex')
+const hash=(bytes:Uint8Array)=>sha256Hex(bytes)
 function deny(message:string):never {throw new Error(`Accepted job inputs rejected: ${message}`)}
 /** Pin checks before native claim. The concrete OCI supervisor also checks the
  * actual retained bytes with verifyJobInputDirectory immediately before create. */

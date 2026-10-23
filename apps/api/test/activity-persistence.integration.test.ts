@@ -9,10 +9,11 @@ import { agentActivitySnapshot } from '../src/modules/conversations/activitySnap
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { activitySnapshotMigration } from '../src/infrastructure/activitySnapshotMigration.js'
 import { compactCommandActivityMigration } from '../src/infrastructure/compactCommandActivityMigration.js'
+import { postgresEnabled } from './helpers/database.js'
 
 // Orchestrator executes against its owned disposable TEST_DATABASE_URL. No provider I/O.
 const connectionString = process.env.TEST_DATABASE_URL
-describe.skipIf(!connectionString)('activity transaction fencing in PostgreSQL', () => {
+describe.skipIf(!postgresEnabled)('activity transaction fencing in PostgreSQL', () => {
   let admin: pg.Pool; let pool: pg.Pool; let repository: PostgresOperatorActivityRepository; let schema: string
   beforeEach(async () => {
     admin = new pg.Pool({ connectionString }); schema = `activity_${randomUUID().replaceAll('-', '')}`

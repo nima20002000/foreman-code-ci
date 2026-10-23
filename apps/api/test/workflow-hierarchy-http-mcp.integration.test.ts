@@ -8,8 +8,8 @@ import { CurrentManagedWorkflowSchema, CurrentWorkflowSaveResultSchema, SavedMan
   CURRENT_WORKFLOW_TOOLS, CurrentEditReadResultSchema, WorkflowHierarchyUpdateResultSchema,
   type CurrentEditStageInput, type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
-import { graphHeaders, graphRpc, graphRpcValue, graphCatalogNames } from './eng04-graph-composition-fixture.js'
+import { postgresEnabled } from './helpers/database.js'
+import { graphHeaders, graphRpc, graphRpcValue, graphCatalogNames } from './graph-composition-fixture.js'
 
 type AppFixture = Awaited<ReturnType<typeof currentOperatorIntegration>>
 type SavedWorkflow = ReturnType<typeof CurrentWorkflowSaveResultSchema.parse>['value']

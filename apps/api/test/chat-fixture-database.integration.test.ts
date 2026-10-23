@@ -7,8 +7,8 @@ import {
 } from './helpers/activityReplayFixture.js'
 import {
   historicalFixture, openHistoricalApi, readSnapshot, runA, targetFor, type HistoricalApi,
-} from './helpers/sch12HistoricalRuns.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+} from './helpers/historicalRuns.js'
+import { postgresEnabled } from './helpers/database.js'
 
 afterEach(async () => {
   try { await closeActivityReplay() } finally { vi.restoreAllMocks() }

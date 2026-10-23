@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { ciGrantMigration } from '../src/infrastructure/ciGrantMigration.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 
 let database: Awaited<ReturnType<typeof currentDatabase>>
 beforeAll(async () => { database = await currentDatabase({ beforeMigration: ciGrantMigration.version }) }, 60_000)

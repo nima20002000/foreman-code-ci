@@ -113,8 +113,7 @@ describe('provider account execution selection', () => {
 
   it('requires caller harness grants when preparing a managed Claude account profile', async () => {
     const accounts = new ProviderAccountConfigurationService(resolver({ accountId: first,
-      homePath: '/accounts/first/home', authMode: 'subscription' }))
-    accounts.bindProfiles(new HostHarnessOverrideService({} as never, {} as never,
+      homePath: '/accounts/first/home', authMode: 'subscription' }), new HostHarnessOverrideService({} as never, {} as never,
       { authorize: async () => undefined }, async () => null))
     const configuration = await accounts.resolve({ ...claude, accountId: first })
     await expect(accounts.profile({ principal: { id: 'reader', name: 'Reader', audience: 'operator',

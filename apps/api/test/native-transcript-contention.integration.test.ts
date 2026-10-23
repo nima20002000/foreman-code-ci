@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 import { nativeStreamFixture } from './helpers/nativeStreamFixture.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 

@@ -8,7 +8,7 @@ import type { NativeHarnessSessionManager } from '../src/modules/harnesses/port.
 import type { NativeDeliveryOutcome, NativeResponseDeliveryEvidence } from '../src/modules/interactions/delivery.js'
 import { Wave25InteractionRepository } from '../src/modules/interactions/wave25/repository.js'
 import { SingleWriterSessionManager } from '../src/modules/interactions/sessionWriter.js'
-import { nativeLanes } from './helpers/nativeLanes.js'
+import { nativeLanes } from './helpers/memorySessionCoordination.js'
 
 import { PostgresInteractionRepository } from '../src/modules/interactions/postgres.js'
 import { InteractionService } from '../src/modules/interactions/service.js'

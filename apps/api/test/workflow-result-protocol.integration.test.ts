@@ -4,10 +4,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { COORDINATION_RESULT_PROTOCOL, type HarnessExecutionRequest } from '@foreman-code/contracts'
 import { makeCurrentWorkflowFixture, RunStartV3ResultSchema, type RunStartV3Input } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { checkpointRuntimeFixture } from './helpers/wave25Br1003Runtime.js'
+import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
 import { hierarchyRuntimeFixture, coordinationOutput } from './helpers/hierarchyRuntimeFixture.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
-import { graphHeaders, graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { postgresEnabled } from './helpers/database.js'
+import { graphHeaders, graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 
 afterEach(() => vi.restoreAllMocks())
 

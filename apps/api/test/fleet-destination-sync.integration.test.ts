@@ -11,7 +11,8 @@ import { FleetMaintenanceService } from '../src/modules/computers/fleet.js'
 import { ComputerMaintenance } from '../src/modules/computers/maintenance.js'
 import { fakeFleet, settle } from './helpers/fleetSync.js'
 import { fleetPluginId, versionedComputer } from './helpers/fleetPluginVersions.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('destination sync through authenticated Operator MCP', () => {
   let database: Awaited<ReturnType<typeof agent3Database>>

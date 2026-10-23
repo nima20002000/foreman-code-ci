@@ -1,5 +1,3 @@
-import { CiActivitySchema, CiRunRecordSchema, type CiActivity } from '@foreman-code/contracts'
-
 /** Each execution that requested a ticket supplies its own Run and Agent identity. The initiator and shared-requester
  * paths are separate indexed lookups from this Run's executions, so the read never scans the workspace's tickets. */
 export const AGENT_CI_SNAPSHOT_SQL = `with requesters as materialized (
@@ -21,13 +19,3 @@ export const AGENT_CI_SNAPSHOT_SQL = `with requesters as materialized (
       and c.record->>'groupId'=c.group_id::text and c.record->>'state'=c.state and e.pinned,false) as pinned
   from requested m join ci_runs c on c.id=m.id join requesters e on e.id=m.execution_id
   order by c.created_at,c.id,e.id limit 16001`
-
-export function ciActivityFromRecord(record: unknown): CiActivity {
-  const run = CiRunRecordSchema.parse(record)
-  return CiActivitySchema.parse({
-    id: run.id, groupId: run.groupId, suite: run.suite, part: run.part, partition: run.partition,
-    state: run.state, queuedAt: run.queuedAt, startedAt: run.startedAt, finishedAt: run.finishedAt,
-    computer: run.computer ? { ...run.computer, label: run.computer.label.slice(0, 100) } : null,
-    step: run.step?.slice(0, 80) ?? null, exitCode: run.exitCode,
-  })
-}

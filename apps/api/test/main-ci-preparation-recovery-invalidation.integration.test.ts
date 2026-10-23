@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { mainPreparationRecoverySuite } from './helpers/mainPreparationRecoverySuite.js'
 import { randomUUID } from 'node:crypto'
 import { rejectableDeferred } from './helpers/deferred.js'

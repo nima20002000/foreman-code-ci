@@ -8,12 +8,13 @@ import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { HostCiService, type CiCommits } from '../src/modules/ci-host/service.js'
+import { HostCiService, type CiCommits } from '@foreman-code/ci/service'
 import { CI_GET_ACTIONS, CI_RUN_ACTIONS, RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { createTestPool } from './helpers/testPool.mjs'
 import { expectCiPreparationOutsideTransaction } from './helpers/ciPreparationTransactions.js'
 import { ciRunReadback } from './helpers/ciRunReadback.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 let database: Awaited<ReturnType<typeof migratedDatabase>>
 beforeAll(async () => { database = await migratedDatabase() }, 60_000)
@@ -53,7 +54,7 @@ async function fixture(overrides: Partial<CiCommits>) {
   }
   const access = new PostgresAccessService(pool)
   const commands = new PostgresCommandCoordinator(pool)
-  const ci = new HostCiService(pool, commands, new RunCiAuthority(pool), commits, {
+  const ci = new HostCiService(mainCiContext, pool, commands, new RunCiAuthority(pool), commits, {
     computers: async () => [], request: async () => { throw new Error('No executor is configured') },
   })
   const app = buildApp({ logger: false,

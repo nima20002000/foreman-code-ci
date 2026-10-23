@@ -1,10 +1,10 @@
-import { createHash } from 'node:crypto'
 import { canonicalJson, type CoordinatorConsultationBinding, type NativeHarnessEvent,
   type NativeSessionReference } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
 import type { GraphTransactionSql } from '../run-graph/connection.js'
 import type { NativeHistory } from '../harnesses/port.js'
 import type { SessionWriteLease } from './sessionWriter.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 /** Captured by the existing coordinator, never obtained from a chat request. */
 export interface ConsultationWriter {
@@ -47,7 +47,7 @@ export async function appendConsultationNativeLocked(sql: GraphTransactionSql, w
   await assertConsultationWriterLocked(sql, writer)
   for (const event of input.events) {
     const record = canonicalJson(event)
-    const sourceId = createHash('sha256').update(record).digest('hex')
+    const sourceId = sha256Hex(record)
     await sql.query(`insert into run_coordinator_native_events(consultation_id,run_id,source_id,record,created_at)
       values($1,$2,$3,$4::jsonb,$5) on conflict(consultation_id,source_id) do nothing`,
     [writer.binding.consultationId, writer.binding.runId, sourceId, record, input.now])

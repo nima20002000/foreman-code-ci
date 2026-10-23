@@ -1,5 +1,6 @@
-import { spawn } from 'node:child_process'
-import { underDeadline } from '../processDeadline.js'
+import { underDeadline } from '@foreman-code/contracts/server-kit'
+import { safeGitArguments } from '../../shared/git.js'
+import { spawnProcess } from '../../shared/process.js'
 
 export interface GitProcessOptions {
   cwd?: string
@@ -19,19 +20,20 @@ export interface GitProcessResult {
   interrupted?: { startedAt: number }
 }
 
-/** All Git children share the transfer's file limit, cache lock and deadline, including after an API process exits;
+/** Git with the API's private umask, under a supervisor deadline, without hooks or fsmonitor.
+ * All Git children share the transfer's file limit, cache lock and deadline, including after an API process exits;
  * the deadline ends the whole process group, so the kernel then releases the inherited locks. */
 export function runGitProcess(args: string[], options: GitProcessOptions,
   environment: NodeJS.ProcessEnv): Promise<GitProcessResult> {
   return new Promise(resolve => {
-    const command = ['/bin/sh', '-c', 'umask 077 && exec git "$@"', 'git', ...args]
+    const command = ['/bin/sh', '-c', 'umask 077 && exec git "$@"', 'git', ...safeGitArguments(args)]
     const limited = options.maximumFileBytes !== undefined
     const executable = limited ? '/usr/bin/prlimit' : command.shift()!
     const childArgs = limited
       ? [`--fsize=${options.maximumFileBytes}:${options.maximumFileBytes}`, '--', ...command] : command
     const [supervisor, supervised] = underDeadline(options.timeoutMs ?? 15 * 60_000, executable, childArgs)
     const startedAt = Date.now()
-    const child = spawn(supervisor, supervised, {
+    const child = spawnProcess(supervisor, supervised, {
       ...(options.cwd ? { cwd: options.cwd } : {}),
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe',

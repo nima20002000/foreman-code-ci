@@ -1,7 +1,8 @@
 import { timeRuntimeOperation } from '../../diagnostics/runtimeTiming.js'
 import { isDeepStrictEqual } from 'node:util'
-import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import type { ChildProcess, ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawnProcess } from '../../../shared/process.js'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { lstatSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { connect, type Socket } from 'node:net'
 import { constants } from 'node:os'
@@ -23,6 +24,7 @@ import { archivedClosure, archivedRetirement } from './registryArchive.js'
 import { prepareRegistryRetirement, pruneClosedObservation, retireRegistrations } from './registryRetirement.js'
 import { registryOperation } from './registryOperations.js'
 import { NativeRegistryRetention } from './nativeRetention.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 export interface NativeProcessRecovery {
   root: string
@@ -46,7 +48,7 @@ export interface NativeProcessExit { exitCode: number | null; exitSignal: NodeJS
 const owned = new WeakMap<ChildProcess, { scope: NativeProcessRecovery; id: string; closed?: boolean;
   exit?: NativeProcessExit; receiptError?: Error; restartDetachable?: true }>()
 const closing = new Map<string, Promise<void>>()
-const key = (owner: string) => createHash('sha256').update(owner).digest('hex')
+const key = (owner: string) => sha256Hex(owner)
 const socketName = (id: string) => `\0graphql-native-${id}`
 
 function ownerOperation(scope: NativeProcessRecovery): string {
@@ -721,7 +723,7 @@ function spawnNativeProcessUnobserved(binary: string, args: string[], options: {
   reconnectableStdio?: true
   claudeSessionScope?: import('../claudeSdk/port.js').ClaudeSessionScope
 }): ChildProcessWithoutNullStreams {
-  if (!options.recovery || process.platform !== 'linux') return spawn(binary, args, {
+  if (!options.recovery || process.platform !== 'linux') return spawnProcess(binary, args, {
     cwd: options.cwd, env: options.env, detached: process.platform !== 'win32',
     stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
   })
@@ -729,7 +731,7 @@ function spawnNativeProcessUnobserved(binary: string, args: string[], options: {
   const launch = takeLaunch(scope)
   const { id } = launch
   const directory = join(privateDirectory(scope.root), key(scope.owner), id)
-  const child = spawn(process.execPath, ['-e', NATIVE_GUARDIAN_SOURCE], {
+  const child = spawnProcess(process.execPath, ['-e', NATIVE_GUARDIAN_SOURCE], {
     cwd: directory, env: {}, detached: true, stdio: ['pipe', 'pipe', 'pipe', 'ipc'], windowsHide: true,
   }) as ChildProcessWithoutNullStreams
   // Observe startup errors before sending configuration or exposing the child to the adapter.

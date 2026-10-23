@@ -11,7 +11,7 @@ import { type JobExecutionRecord } from '@foreman-code/contracts/job-verificatio
 import type { DeviceEndpoint } from '../../devices/deviceEndpoint.js'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import { isDeepStrictEqual } from 'node:util'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { PostgresCommandCoordinator } from '../../commands/postgres.js'
 import { JobRepository, type JobSql } from '../../jobs/repository.js'
 import type { FileByteStorage, FileReadSnapshot } from '../storage.js'
@@ -22,6 +22,7 @@ import type { JobInputAuthority } from './authority.js'
 import { inputHash, makeManifest, manifestBytes, recipient, snapshotDigest, verificationContextBytes, verificationContextPin } from './manifest.js'
 import { outputTransferContext } from '../jobs/outputAdmission.js'
 import { JOB_INPUT_NAMESPACE } from './protocol.js'
+import { sha256Hex } from '../../../shared/hash.js'
 export { JOB_INPUT_NAMESPACE } from './protocol.js'
 /** Main canonical pin/grant authority. Neither callers nor workers supply paths or bytes. */
 export class CanonicalJobInputs {
@@ -70,7 +71,7 @@ export class CanonicalJobInputs {
         const source=(await sql.query<{root_id:string;binding_revision:string}>('select root_id,binding_revision::text from source_execution_materializations where materialization_id=$1 and execution_id=$2 and attempt_id=$3 for share',[execution.acceptedSpec.source.materializationId,execution.id,execution.attemptId])).rows[0]
         if(!source)throw new DomainError('JOB_INPUT_ROOT_MISSING','The actual accepted input destination is not materialized.',409)
         const descriptors=[{relativePath:'manifest.json',sha256:manifest.manifestSha256,byteSize:manifest.manifestByteSize},
-          {relativePath:'workflow-input.json',sha256:createHash('sha256').update(JSON.stringify(manifest.workflowInput)).digest('hex'),byteSize:Buffer.byteLength(JSON.stringify(manifest.workflowInput))},
+          {relativePath:'workflow-input.json',sha256:sha256Hex(JSON.stringify(manifest.workflowInput)),byteSize:Buffer.byteLength(JSON.stringify(manifest.workflowInput))},
           ...entries.map(entry=>({relativePath:entry.relativePath,sha256:entry.pin.sha256,byteSize:entry.pin.byteSize})),
           ...(verificationContextPin(manifest) ? [verificationContextPin(manifest)!] : [])]
         return JobInputAdmissionSchema.parse({version:1,manifest,principalId:current.principal.id,principalGrantsDigest:inputHash(current.principal.grants),issuedAt:this.clock().toISOString(),
@@ -191,7 +192,7 @@ export class CanonicalJobInputs {
   private deliveryReceipt(execution:JobExecutionRecord,admission:JobInputAdmission,raw:unknown):JobInputDeliveryReceipt {
     const receipt=JobInputDeliveryReceiptSchema.parse(raw)
     const files=[{relativePath:'manifest.json',sha256:admission.manifest.manifestSha256,byteSize:admission.manifest.manifestByteSize},
-      {relativePath:'workflow-input.json',sha256:createHash('sha256').update(JSON.stringify(admission.manifest.workflowInput)).digest('hex'),byteSize:Buffer.byteLength(JSON.stringify(admission.manifest.workflowInput))},
+      {relativePath:'workflow-input.json',sha256:sha256Hex(JSON.stringify(admission.manifest.workflowInput)),byteSize:Buffer.byteLength(JSON.stringify(admission.manifest.workflowInput))},
       ...admission.manifest.entries.map(entry=>({relativePath:entry.relativePath,sha256:entry.pin.sha256,byteSize:entry.pin.byteSize}))]
     if(!isDeepStrictEqual(receipt.recipient,recipient(execution))||receipt.bindingId!==admission.manifest.bindingId
       ||receipt.inputSnapshotDigest!==admission.manifest.inputSnapshotDigest||receipt.manifestSha256!==admission.manifest.manifestSha256

@@ -4,7 +4,7 @@ import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { memoryBoardTools, newAgentGraphqlTools, type GraphqlAgentTool } from '@foreman-code/contracts'
-import { WorkflowBoardContext } from '../workflow-board/context'
+import { WorkflowBoardProvider } from '../workflow-board/context'
 import { GraphqlToolsFields } from './GraphqlToolsFields'
 import { NodeWorkflowFields } from './nextDraft/AuthoringFields'
 import { fixture } from './nextDraft/core.cases'
@@ -26,7 +26,7 @@ function FieldsFixture() {
       <button onClick={() => props.onChange({ enabled: true, profileId: 'chosen-profile' })}>Use chosen browser</button>
     </section>,
   }
-  return <WorkflowBoardContext.Provider value={{ workspaceId: 'workspace', workflowId: 'workflow',
+  return <WorkflowBoardProvider value={{ workspaceId: 'workspace', workflowId: 'workflow',
     inspection: {}, selectInspection: () => undefined, selectRun: () => undefined,
     openLocation: () => undefined, openRuns: () => undefined, activeRuns: 0, collaborationFields: fields }}>
     <GraphqlToolsFields role="coder" defaults={tools} override={undefined} executionReadOnly
@@ -35,7 +35,7 @@ function FieldsFixture() {
     <output aria-label="Selected tools">{tools.join(', ')}</output>
     <output aria-label="Browser tools">{JSON.stringify(node.kind !== 'job' ? node.graphqlTools : null)}</output>
     <output aria-label="Browser draft">{JSON.stringify(node.kind !== 'job' ? node.browser : null)}</output>
-  </WorkflowBoardContext.Provider>
+  </WorkflowBoardProvider>
 }
 it('mounts feature-owned controls on the ordinary tool and node draft values without a separate save', async () => {
   render(<FieldsFixture />)

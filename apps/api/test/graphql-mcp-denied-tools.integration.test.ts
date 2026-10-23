@@ -11,7 +11,7 @@ import { SkillUsageService } from '../src/modules/skills/usage.js'
 import { OperatorAgentMutationService } from '../src/modules/workspaces/operatorAgents.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('authenticated calls to hidden MCP tools', () => {
   it('audits every grant-hidden tool once and distinguishes unknown names without side effects', async () => {

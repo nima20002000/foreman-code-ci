@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 import { DEFAULT_HARNESS_DEFAULTS, type NativeSessionReference, type OperatorConfigurationVersion } from '@foreman-code/contracts'
 import { OperatorChatService, type OperatorChatAuthority } from '../src/modules/conversations/operatorChat.js'
 import type { PostgresOperatorRepository } from '../src/modules/operators/postgres.js'
-import { eventually, memoryConversation, operator, ReviewManager } from './fixtures/agent1OperatorChat.js'
+import { eventually, memoryConversation, operator, ReviewManager } from './fixtures/operatorChatMemory.js'
 
 const configuration: OperatorConfigurationVersion = {
   id: 'operator-v1', operatorId: 'operator-one', version: 1, harness: DEFAULT_HARNESS_DEFAULTS.codex,

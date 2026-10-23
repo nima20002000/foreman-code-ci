@@ -1,11 +1,12 @@
 import type { SqlQuery } from '../../infrastructure/transaction.js'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { AgentDefaultsSchema, DEFAULT_AGENT_DEFAULTS, applyOperatorChatSettings, OperatorConfigurationVersionSchema, withAdvancedDefaults,
   type HarnessConfiguration, type OperatorConfigurationVersion, type SendOperatorMessageRequest } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
 import type { ProviderAccountConfigurationService } from '../harnesses/providerAccountConfiguration.js'
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
+import { sha256Hex } from '../../shared/hash.js'
 
 type Queryable = SqlQuery
 async function version(query: Queryable, id: string): Promise<OperatorConfigurationVersion> {
@@ -81,8 +82,8 @@ export async function acceptOperatorConfiguration(query: Queryable, current: Ope
   await query.query('select pg_advisory_xact_lock(hashtext($1))', ['application-operator'])
   const latest = await query.query<{ version: number }>('select coalesce(max(version),0)+1 as version from operator_configuration_versions where operator_id=$1', [base.operatorId])
   const accepted = OperatorConfigurationVersionSchema.parse({ ...candidate, id: randomUUID(), version: Number(latest.rows[0]!.version),
-    contentHash: `sha256:${createHash('sha256').update(JSON.stringify({ harness, showThinking,
-      ...(harnessProfileSelection ? { harnessProfileSelection } : {}) })).digest('hex')}`, createdAt: new Date().toISOString() })
+    contentHash: `sha256:${sha256Hex(JSON.stringify({ harness, showThinking,
+      ...(harnessProfileSelection ? { harnessProfileSelection } : {}) }))}`, createdAt: new Date().toISOString() })
   await query.query('insert into operator_configuration_versions (id,operator_id,version,record) values ($1,$2,$3,$4::jsonb)',
     [accepted.id, accepted.operatorId, accepted.version, JSON.stringify(accepted)])
   return accepted

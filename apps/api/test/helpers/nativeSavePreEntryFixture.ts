@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll } from 'vitest'
 import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
-import { agent3Database } from './wave25Agent3.js'
+import { agent3Database } from './workflowDatabase.js'
 import { currentOperatorIntegration } from './currentOperatorIntegration.js'
 
 export function nativeSavePreEntryFixtures() {

@@ -1,6 +1,6 @@
-import { errorMessage } from '../../../shared/errorMessage.js'
+import { errorMessage } from '@foreman-code/contracts/server-kit'
 import { asRecord } from '../../../shared/records.js'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Options } from '@anthropic-ai/claude-agent-sdk'
@@ -15,8 +15,9 @@ import { createClaudeSdkRunner } from './runner.js'
 import type { ClaudeSdkClient, ClaudeSdkSession } from './port.js'
 import { ClaudeFullAccessConfigurationSchema } from '@foreman-code/contracts/claude'
 import { CLAUDE_PROFILE_CHECK_REVISION } from './profileRevision.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
-const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
+const digest = (value: unknown) => sha256Hex(JSON.stringify(value))
 const exists = async (path: string) => readFile(path).then(() => true, () => false)
 
 /** Finite real subscription scenarios run only from the explicit authenticated
@@ -202,7 +203,7 @@ export async function qualifyClaudeNativeProfile(input: {
   evidence.passedChecks = [...passed]
   const evidenceId = join(directory, 'evidence.json'), bytes = JSON.stringify(evidence)
   await writeFile(evidenceId, bytes, { mode: 0o600 })
-  const evidenceSha256 = createHash('sha256').update(bytes).digest('hex')
+  const evidenceSha256 = sha256Hex(bytes)
   const claudeProof: ClaudeQualificationProof = { pin: input.pin, observedTools,
     checks: Object.fromEntries(CLAUDE_QUALIFICATION_CHECKS.map(check => [check, passed.has(check)
       ? { state: 'passed', source: 'native_scenario', evidenceId, evidenceSha256 } : { state: 'unverified' }])) }

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, expect, it, vi } from 'vitest'
 import { runtimeTimingChannel, type RuntimeTimingRecord } from '../src/infrastructure/runtimeTiming.js'
 import { useSettlementFixtures, timeout, finish, handoffs, acceptedActivation } from './helpers/workflowSettlementTestSupport.js'
+import { postgresEnabled } from './helpers/database.js'
 
 // The fixture supplies native closure; repository, publication and result guards execute against PostgreSQL.
 vi.mock('../src/modules/interactions/repeatNativeSettlement.js', async (importOriginal) => ({
@@ -20,7 +21,7 @@ async function measure<T>(work: () => Promise<T>) {
   finally { runtimeTimingChannel.unsubscribe(record) }
 }
 
-describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('work Run write statements', () => {
+describe.skipIf(!postgresEnabled)('work Run write statements', () => {
   const withFixture = useSettlementFixtures()
 
   it('admits one activation within a bounded statement budget and reuses its frozen execution', async () => {

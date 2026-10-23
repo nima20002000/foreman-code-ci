@@ -9,7 +9,7 @@ import { LOCAL_RUNNER_ID } from '../src/modules/workspaces/location.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { deferred } from './helpers/deferred.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 type Runtime = Awaited<ReturnType<typeof currentOperatorIntegration>>
 

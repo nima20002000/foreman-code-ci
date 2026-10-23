@@ -7,7 +7,8 @@ import { PostgresApprovalBudgetRepository } from '../src/modules/interactions/bu
 import { acceptRunAuthority, bindRunAuthority } from '../src/modules/access/runAuthority.js'
 import { Wave25WorkerCredentialService } from '../src/modules/interactions/wave25/credentials.js'
 import { createTestPool } from './helpers/testPool.mjs'
-import { agent3Database, candidateFor, postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
+import { agent3Database, candidateFor, seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('CI authority reads beside credential admission', () => {
   it('resolves live Worker CI reads while publication locks the Run, execution and credential rows', async () => {

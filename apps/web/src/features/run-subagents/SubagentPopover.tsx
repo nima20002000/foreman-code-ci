@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon, IconButton } from '../../shared/ui/nocturne'
+import { useOutsidePress } from '../../shared/ui/useOutsidePress'
 
 export function SubagentPopover({ anchor, title, description, busy, onClose, children, footer }: {
   anchor: RefObject<HTMLElement | null>
@@ -39,29 +40,17 @@ export function SubagentPopover({ anchor, title, description, busy, onClose, chi
     return () => cancelAnimationFrame(frame)
   }, [anchor])
   useEffect(() => { heading.current?.focus({ preventScroll: true }) }, [])
+  useOutsidePress(true, (target) => !!surface.current?.contains(target)
+    || !!(target instanceof Element && target.closest('.run-subagent-orb, dialog[open], .n-menu, [role=listbox]')),
+  () => { if (!busy) onClose() }, { requireOutsideRelease: true })
   useEffect(() => {
-    let outsidePress = false
-    const isOutside = (target: EventTarget | null) => target instanceof Node
-      && !surface.current?.contains(target)
-      && !(target instanceof Element && target.closest('.run-subagent-orb, dialog[open], .n-menu, [role=listbox]'))
-    const onPointerDown = (event: PointerEvent) => { outsidePress = isOutside(event.target) }
-    const onClick = (event: MouseEvent) => {
-      if (!busy && outsidePress && isOutside(event.target)) onClose()
-      outsidePress = false
-    }
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented || document.querySelector('dialog[open]')) return
       event.preventDefault()
       if (!busy) onClose()
     }
-    document.addEventListener('pointerdown', onPointerDown, true)
-    document.addEventListener('click', onClick, true)
     window.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown, true)
-      document.removeEventListener('click', onClick, true)
-      window.removeEventListener('keydown', onKeyDown)
-    }
+    return () => window.removeEventListener('keydown', onKeyDown)
   }, [busy, onClose])
   return createPortal(<section ref={surface} className="n-agent-popover run-subagent-panel nodrag nopan nowheel"
     role="dialog" aria-modal="false" aria-busy={busy || undefined} aria-labelledby={`${id}-title`}

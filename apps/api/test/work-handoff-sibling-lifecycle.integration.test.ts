@@ -6,7 +6,7 @@ import { EXECUTION_INFRASTRUCTURE_RETRY_WINDOW_MS } from '../src/modules/runs/ex
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { deferred } from './helpers/deferred.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { handoffOutput, workHandoffSiblings } from './helpers/workHandoffSiblings.js'
 
 afterEach(() => {

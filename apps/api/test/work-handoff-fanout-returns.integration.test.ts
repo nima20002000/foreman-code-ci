@@ -7,7 +7,7 @@ import { DomainError } from '../src/modules/errors.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { deferred } from './helpers/deferred.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 afterEach(() => vi.restoreAllMocks())
 

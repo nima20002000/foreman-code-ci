@@ -4,10 +4,11 @@ import { describe, expect, it } from 'vitest'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { RepeatRunRepository } from '../src/modules/runs/repeatPostgres.js'
 import { repeatDigest } from '../src/modules/runs/repeatResolution.js'
-import { nim2691TaskDatabase as taskDatabase } from './helpers/nim2691Database.js'
+import { nim2691TaskDatabase as taskDatabase } from './helpers/taskDatabase.js'
 import { acceptedReview, acquireOwner } from './work-handoff-delivery-postgres.test-support.js'
+import { postgresEnabled } from './helpers/database.js'
 
-const postgresDescribe = describe.skipIf(process.env.NIM2691_POSTGRES !== '1')
+const postgresDescribe = describe.skipIf(!postgresEnabled)
 postgresDescribe('handoff delivery accepted review', () => {
   it.each([false, true])('waits for a closing caller after accepted-review recovery (work failed: %s)', async failed => {
     let caller: pg.Client | undefined

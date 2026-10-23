@@ -18,7 +18,7 @@ import { readConversationPublicationReceipts } from '../src/modules/conversation
 import { registerProductionFileStorage } from '../src/modules/files/production.js'
 import { productionFileTools } from '../src/modules/files/tools/production.js'
 import { productionClaudeFileAdmission } from '../src/modules/harnesses/claudeSdk/fileProduction.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('Operator Claude publication recovery', () => {
   let db: Awaited<ReturnType<typeof migratedDatabase>>

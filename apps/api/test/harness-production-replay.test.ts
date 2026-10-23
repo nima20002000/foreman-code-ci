@@ -85,7 +85,7 @@ it('replays native creation through production construction and the real manager
   const database = createDatabase(config.database)
   const checkpoints = createCheckpointStore(config.database.connectionString, 'replay', config.database)
   vi.spyOn(ProviderAccountsService.prototype, 'resolve').mockResolvedValue(null)
-  const production = buildProductionApp(config, database, checkpoints, false, undefined, undefined, undefined, infrastructure)
+  const production = buildProductionApp({ config, database, checkpoints, logger: false, infrastructure })
   try {
     const resolver = composition.resolvers[0]!
     const allocation = resolver.resolve({ executionId: source.request.executionId,

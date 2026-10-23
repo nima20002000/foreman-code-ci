@@ -61,7 +61,7 @@ export const exclusiveIntegrationFiles = [startupFile,
   'apps/api/test/main-codex-qualification-restart.integration.test.ts',
   'apps/api/test/main-codex-qualification-partial-version.integration.test.ts',
   // Checkpoint routing must settle within its fixed deadline under CI load.
-  'apps/api/test/eng03-b-durability-routing.integration.test.ts',
+  'apps/api/test/workflow-durability-routing.integration.test.ts',
   // Pending settlement and sibling approval resume share a fixed completion deadline.
   'apps/api/test/engine-pending-sibling-settlement.integration.test.ts',
   // Two sequential native executions must settle within the fixed completion deadline.

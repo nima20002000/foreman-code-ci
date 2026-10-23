@@ -8,13 +8,14 @@ import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { fixture } from '../src/modules/ci-host/cloud.testSupport.js'
-import { saveCloudRun } from '../src/modules/ci-host/cloudJournal.js'
-import { ProductionHostCiEndpoint } from '../src/modules/ci-host/endpoint.js'
-import { HostCiService, type CiCommits, type HostCiComputer } from '../src/modules/ci-host/service.js'
+import { fixture } from './ci-host/cloud.testSupport.js'
+import { saveCloudRun } from '@foreman-code/ci/cloudJournal'
+import { ProductionHostCiEndpoint } from '@foreman-code/ci/endpoint'
+import { HostCiService, type CiCommits, type HostCiComputer } from '@foreman-code/ci/service'
 import { DeviceApplicationError } from '../src/modules/devices/deviceApplicationError.js'
 import { CI_GET_ACTIONS, RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 let database: Awaited<ReturnType<typeof migratedDatabase>>
 beforeAll(async () => { database = await migratedDatabase() }, 60_000)
@@ -73,7 +74,7 @@ it.each(['github', 'circleci', 'device', 'offline-device'] as const)(
     values($1,$2,$3,$4,$5,$6::jsonb)`,
   [runId, workspaceId, record.groupId, record.state, computer.key, JSON.stringify(record)])
   let observations = 0
-  const remote = new ProductionHostCiEndpoint(database.pool, 'main-1', () => ({
+  const remote = new ProductionHostCiEndpoint(mainCiContext, database.pool, 'main-1', () => ({
     capabilities: () => [], request: async (_id, _namespace, input) => {
       if ((input as { operation: string }).operation === 'status') {
         return { payload: { operation: 'status', ready: true, reasons: [], cpuCount: 4,
@@ -83,7 +84,7 @@ it.each(['github', 'circleci', 'device', 'offline-device'] as const)(
     },
   }), { handle: async () => { throw new Error('Unexpected local executor request') } })
   const commands = new PostgresCommandCoordinator(database.pool)
-  const ci = new HostCiService(database.pool, commands, new RunCiAuthority(database.pool), {} as CiCommits, {
+  const ci = new HostCiService(mainCiContext, database.pool, commands, new RunCiAuthority(database.pool), {} as CiCommits, {
     computers: async () => [computer], request: async (_computer, request) => {
       if (request.operation !== 'status') observations++
       return device ? remote.request(computer, request) : f.reopen().handle(request)

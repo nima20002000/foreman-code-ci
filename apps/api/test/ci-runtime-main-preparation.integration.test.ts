@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
-import { CiPreparationRecordSchema, PostgresCiPreparationRepository } from '../src/modules/jobs/ciPreparationRepository.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { CiPreparationRecordSchema, PostgresCiPreparationRepository } from '@foreman-code/ci/ciPreparationRepository'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { verificationCapacityFixture } from './helpers/verificationCapacityFixture.js'
 
 describe.skipIf(!postgresEnabled)('CI runtime preparations on Main', () => {

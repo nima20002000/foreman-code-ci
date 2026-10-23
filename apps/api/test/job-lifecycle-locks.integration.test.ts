@@ -20,10 +20,11 @@ import { assertGraphTransaction } from '../src/modules/run-graph/connection.js'
 import { repeatDigest, repeatSlotId } from '../src/modules/runs/repeatResolution.js'
 import { jobExecution } from './helpers/jobFixture.js'
 import { deferred } from './helpers/deferred.js'
+import { postgresEnabled } from './helpers/database.js'
 
 // A task-owned database with only the rows needed by the actual lock/read paths.
 // This proves PostgreSQL ordering, not application migration or native execution.
-describe.skipIf(process.env.JOB_LIFECYCLE_POSTGRES !== '1' && !process.env.TEST_DATABASE_URL)('Run/Job production lock order', () => {
+describe.skipIf(!postgresEnabled)('Run/Job production lock order', () => {
   it('polling and trusted receipt ingestion complete on independent owner sessions', async () => {
     const url = new URL(process.env.TEST_DATABASE_URL!)
     if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) throw new Error('Job lifecycle tests require loopback PostgreSQL')

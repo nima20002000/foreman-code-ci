@@ -5,7 +5,7 @@ import {
 } from '@foreman-code/contracts/schedules'
 import { planDueSchedule } from '../src/modules/schedules/dispatchPlan.js'
 import { WorkflowScheduleDispatcher } from '../src/modules/schedules/dispatcher.js'
-import { sch11ClockCases, sch11Minute, sch11Once, sch11Settings } from './helpers/sch11ClockCases.js'
+import { sch11ClockCases, sch11Minute, sch11Once, sch11Settings } from './helpers/scheduleClockCases.js'
 import { deferred } from './helpers/deferred.js'
 
 const scope = { workspaceId: 'sch11-workspace', workflowId: 'sch11-workflow' }

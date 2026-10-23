@@ -2,9 +2,9 @@ import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import { access, open, realpath } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { createRequire } from 'node:module'
-import { createHash } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { inventoryPayloadFingerprints, type PayloadFingerprintCache } from './payloadFingerprintCache.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 // @openai/codex 0.154.0 bin/codex.js; only this measured launcher algorithm is supported.
 const codexNpmLauncher = { bytes: 8790, sha256: '61b0194f3bb6534439c8d26a3ed57d0805f84b884588b761795323eeb92fcf70' }
@@ -23,7 +23,7 @@ export async function passiveDriverPayloads(driver: string, launcher: string,
     if (driver !== 'codex' || (await file.stat()).size !== codexNpmLauncher.bytes) return { complete: false, paths: [] }
     const digest = fingerprintCache
       ? await fingerprintCache.fingerprint(launcher)
-      : createHash('sha256').update(await file.readFile()).digest('hex')
+      : sha256Hex(await file.readFile())
     if (digest !== codexNpmLauncher.sha256) return { complete: false, paths: [] }
   } finally {
     await file.close()

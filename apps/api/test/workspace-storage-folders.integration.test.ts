@@ -1,6 +1,6 @@
 import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
-import { seedAgent3 } from './helpers/wave25Agent3.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 import { callWorkspaceTool } from './helpers/workspaceMcp.js'

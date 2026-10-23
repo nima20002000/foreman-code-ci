@@ -14,7 +14,7 @@ import { server } from '../../../mocks/server'
 import { digestCurrentValue, readRunExecution } from '../runDetailsClient'
 import { currentRunKey, useCurrentRunQuery } from '../currentRunQuery'
 import { useSelectedRunRecord } from '../runFacts'
-import { WorkflowBoardContext } from '../context'
+import { WorkflowBoardProvider } from '../context'
 import { inspectionBoardFixture } from './inspectionFixtures'
 import { executionPagesKey, bindingsPagesKey, useExecutionPages, useBindingPages, refreshFirstInspectionPage } from './queries'
 
@@ -194,10 +194,10 @@ describe('explicit paged inspection Query ownership', () => {
   it('lets cache-only canvas subscribers observe facts without replacing the fetch owner', async () => {
     const scope = fixture.runs.before.scope
     function context({ children }: { children: ReactNode }) {
-      return <QueryClientProvider client={cache}><WorkflowBoardContext.Provider value={{
+      return <QueryClientProvider client={cache}><WorkflowBoardProvider value={{
         workspaceId: scope.workspaceId, workflowId: scope.workflowId, run: scope, inspection: {}, activeRuns: 0,
         selectRun: () => undefined, selectInspection: () => undefined, openLocation: () => undefined, openRuns: () => undefined,
-      }}>{children}</WorkflowBoardContext.Provider></QueryClientProvider>
+      }}>{children}</WorkflowBoardProvider></QueryClientProvider>
     }
     const subscriber = renderHook(() => useSelectedRunRecord(), { wrapper: context })
     expect(subscriber.result.current).toBeUndefined()

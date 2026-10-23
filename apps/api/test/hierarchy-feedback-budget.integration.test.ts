@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { AgentConfigurationVersionSchema, type HarnessExecutionRequest } from '@foreman-code/contracts'
 import { WorkActivationInputSchema } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { checkpointRuntimeFixture } from './helpers/wave25Br1003Runtime.js'
+import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
 import { hierarchyRuntimeFixture, coordinationOutput } from './helpers/hierarchyRuntimeFixture.js'
 import { ControlledWorkflowProvider } from './helpers/controlledWorkflowProvider.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 function batchFixture() {
   const fixture = hierarchyRuntimeFixture({ maximum: 21 })

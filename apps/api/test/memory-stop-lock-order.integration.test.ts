@@ -7,7 +7,7 @@ import { settleMemoryRunLocked } from '../src/modules/runs/memoryRunSettlement.j
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { deferred } from './helpers/deferred.js'
 import { memoryWorkflow, workflowMemory } from './helpers/memoryWorkflow.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 it.runIf(postgresEnabled)('settles Stop alongside an in-flight work update without a lock-order deadlock', async () => {
   const fixture = memoryWorkflow('parallel')

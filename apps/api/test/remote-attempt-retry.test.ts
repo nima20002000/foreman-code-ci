@@ -6,7 +6,7 @@ import { transientExecutionFailure } from '../src/modules/runs/executionRetryPol
 import { ExecutionLimiter } from '../src/modules/runs/limiter.js'
 import { repeatNodeAction, repeatTerminalResolution } from '../src/modules/runs/repeatNode.js'
 import { repeatExecutionDriver } from '../src/modules/runs/repeatRuntime.js'
-import { nativeCompleted, nativeFixture, nativeStored } from './eng04-native-fixtures.js'
+import { nativeCompleted, nativeFixture, nativeStored } from './native-repeat-fixtures.js'
 
 afterEach(() => vi.unstubAllEnvs())
 

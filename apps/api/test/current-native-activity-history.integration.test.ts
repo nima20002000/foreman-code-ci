@@ -3,7 +3,7 @@ import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { withExclusiveGraphConnection, type GraphTransactionSql } from '../src/modules/run-graph/connection.js'
 import { readCurrentNativeActivities } from '../src/modules/run-graph/currentActivity.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 
 const tables = [
   'harness_executions', 'run_repeat_executions', 'run_repeat_occurrences',

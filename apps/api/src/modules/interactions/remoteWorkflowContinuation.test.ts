@@ -5,7 +5,7 @@ import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-exe
 import { ExclusiveGraphConnection } from '../run-graph/connection.js'
 import type { RunOwnership } from '../runs/ownership.js'
 import { readExecutionPlacement } from '../placement/persistence.js'
-import { recoveryExecution, recoveryIdentity } from '../../../test/helpers/eng06Recovery.testSupport.js'
+import { recoveryExecution, recoveryIdentity } from '../../../test/helpers/recoveryExecution.testSupport.js'
 import { readRemoteWorkflowContinuation, readWorkflowClosure } from './workflowClosure.js'
 
 vi.mock('../placement/persistence.js', () => ({ readExecutionPlacement: vi.fn() }))

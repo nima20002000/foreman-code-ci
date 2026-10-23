@@ -7,7 +7,7 @@ import {
   RUN_INSPECTION_TOOLS, RunExecutionDetailSchema, RunExecutionsPageSchema, RunExecutionBindingsPageSchema, RunRecordDetailSchema, makeCurrentWorkflowFixture,
 } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import {
   requestScope, reader, allExecutions, parity, path, value, terminal, resaveChangingRepeat, denied,
 } from './helpers/runInspection.js'

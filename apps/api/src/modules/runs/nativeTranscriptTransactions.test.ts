@@ -10,7 +10,7 @@ import * as lifecycle from './repeatLifecycle.js'
 import { PostgresRunRepository } from './postgres.js'
 import type { RunOwnership } from './ownership.js'
 import { WorkflowNativeProofServices } from './workflowNativeProof.js'
-import { currentRepositoryFixture, unavailableRuntime } from '../../../test/eng04-runtime-repository-fixture.js'
+import { currentRepositoryFixture, unavailableRuntime } from '../../../test/runtime-repository-fixture.js'
 import { rejectableDeferred } from '../../../test/helpers/deferred.js'
 
 afterEach(() => vi.restoreAllMocks())

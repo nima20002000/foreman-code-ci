@@ -10,13 +10,13 @@ import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { applyApplicationMigrations, migrations } from '../src/infrastructure/migrations.js'
 import { agentCiActivityMigration } from '../src/infrastructure/agentCiActivityMigration.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
-import { PostgresCiPreparationRepository } from '../src/modules/jobs/ciPreparationRepository.js'
+import { PostgresCiPreparationRepository } from '@foreman-code/ci/ciPreparationRepository'
 import { withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 import { BuildComputerSettings, readBuildComputerPreference } from '../src/modules/settings/buildComputers.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { ciMigrationFixture } from './helpers/ciMigrationFixture.js'
 import { builder, mainId } from './helpers/ciPreparationFixture.js'
-import { graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 
 const ledger = async (database: Awaited<ReturnType<typeof currentDatabase>>) =>
   (await database.pool.query('select version,applied_at from application_migrations order by version')).rows

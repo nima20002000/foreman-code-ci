@@ -18,7 +18,7 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { createProductionJobs } from '../src/modules/jobs/production.js'
 import { createJobRuntimeProfileService } from '../src/modules/jobs/runtimeProfileFactory.js'
 import { createInstalledJobRuntimeHost, readProtectedRuntimeConfiguration } from '../src/modules/jobs/installedRuntimeHost.js'
-import { InstalledVerificationRuntimeConfigurationSchema, MAX_VERIFICATION_CONFIGURATION_BYTES } from '../src/modules/jobs/installedVerificationConfiguration.js'
+import { InstalledVerificationRuntimeConfigurationSchema, MAX_VERIFICATION_CONFIGURATION_BYTES } from '@foreman-code/contracts/installed-runtime-node'
 import { NativeProcessRegistry } from '../src/modules/harnesses/recovery/processRegistry.js'
 import { RemoteOperationJournal } from '../src/modules/runs/remote/operationJournal.js'
 import { ApprovedRootAllowlistSchema, WorkspaceRootPolicySchema } from '@foreman-code/contracts/workspace-root-policies'
@@ -30,7 +30,7 @@ import { openPrivateRoot, identity } from '../src/modules/sources/privateFilesys
 import { sourceSha256 } from '../src/modules/sources/manifest.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { registerJobRuntimeProfileRoutes } from '../src/routes/jobRuntimeProfiles.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 
 /** Requires an installed image, offline seed, real enforced quota pool and reviewed source/profile inputs. */
 describe('installed ordinary verification qualification through authenticated MCP', () => {

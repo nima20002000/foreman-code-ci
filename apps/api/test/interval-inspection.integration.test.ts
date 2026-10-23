@@ -11,7 +11,7 @@ import { RunManagementService } from '../src/modules/runs/management.js'
 import { RepeatRunRepository } from '../src/modules/runs/repeatPostgres.js'
 import { deferred } from './helpers/deferred.js'
 import { intervalRuntime } from './helpers/intervalRuntime.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.runIf(postgresEnabled)('interval execution inspection', () => {
   it('reads admitted queued, running and completed check inputs through HTTP and authenticated MCP', async () => {

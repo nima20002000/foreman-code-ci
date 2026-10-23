@@ -3,7 +3,7 @@ import { afterAll, beforeAll, expect, it, vi } from 'vitest'
 import { agentChatFixtures } from '@foreman-code/contracts/agent-chat'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { AgentChatCommands } from '../src/modules/conversations/agentChatCommands.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 let database: Awaited<ReturnType<typeof migratedDatabase>>
 beforeAll(async () => { if (postgresEnabled) database = await migratedDatabase() })

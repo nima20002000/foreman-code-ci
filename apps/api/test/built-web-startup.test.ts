@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { afterAll, afterEach, expect, it, vi } from 'vitest'
 import { buildApp } from '../src/app.js'
-import { retryStartupDatabase } from '../src/infrastructure/startupDatabase.js'
+import { retryStartupDatabase } from '../src/infrastructure/databaseRetry.js'
 
 const requireStatic = createRequire(createRequire(import.meta.url).resolve('@fastify/static'))
 const glob = requireStatic('glob') as { glob: (...args: unknown[]) => Promise<string[]> }

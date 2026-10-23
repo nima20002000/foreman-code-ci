@@ -12,7 +12,8 @@ import { toolFailure, toolResult } from '../../../mcp/shared/results.js'
 import type { PostgresCommandCoordinator } from '../../commands/postgres.js'
 import { DomainError } from '../../errors.js'
 import { createProductionDistributedArtifacts } from '../../files/production.js'
-import { registerDistributedArtifacts, type DistributedArtifactEndpointAuthorization } from '../../files/distributed/adapters.js'
+import { createDistributedArtifactActions, registerDistributedArtifactRoutes,
+  type DistributedArtifactEndpointAuthorization } from '../../files/distributed/adapters.js'
 import { createWorkflowArtifactReceiver } from './workflowArtifactReceiver.js'
 import type { PostgresArtifactPublicationAuthority } from './nativeArtifactAuthority.js'
 
@@ -22,12 +23,24 @@ const ToolCall = z.object({ jsonrpc: z.literal('2.0'), id: z.union([z.string(), 
 const denied = () => new DomainError('WORKFLOW_ARTIFACT_TOOL_DENIED', 'This original workflow does not authorize the requested artifact tool.', 403)
 const denial = (error: unknown) => error instanceof ZodError || error instanceof DomainError && error.status >= 400 && error.status < 500
 
-export function mountProductionWorkflowArtifacts(input: Parameters<typeof createWorkflowArtifactReceiver>[0] & {
+type ProductionWorkflowArtifactInput = Parameters<typeof createWorkflowArtifactReceiver>[0] & {
   app: FastifyInstance; files: Parameters<typeof createProductionDistributedArtifacts>[0]['files'];
   attempts: Parameters<typeof createProductionDistributedArtifacts>[0]['attempts'];
   authority: PostgresArtifactPublicationAuthority;
   commands: Pick<PostgresCommandCoordinator, 'recordDenied'>
-}) {
+}
+
+export type ProductionWorkflowArtifacts = ReturnType<typeof createProductionWorkflowArtifacts>
+
+/** Mounts workflow artifacts and their routes on a standalone API instance. */
+export function mountProductionWorkflowArtifacts(input: ProductionWorkflowArtifactInput) {
+  const mounted = createProductionWorkflowArtifacts(input)
+  mounted.registerRoutes(input.app)
+  return mounted
+}
+
+/** The workflow artifact services. Their HTTP and MCP endpoints mount from `routes/registry.ts`. */
+export function createProductionWorkflowArtifacts(input: ProductionWorkflowArtifactInput) {
   const receiver = createWorkflowArtifactReceiver(input)
   const artifacts = createProductionDistributedArtifacts({ ...input, authority: input.authority,
     readAuthority: { authorize: (accepted, sql) => input.authority.authorizePublication(accepted, sql) },
@@ -60,14 +73,7 @@ export function mountProductionWorkflowArtifacts(input: Parameters<typeof create
   }
   const endpoints: Readonly<Record<string, string>> = { '/mcp/artifact-transfers': names[0],
     '/mcp/artifact-publications': names[1], '/mcp/artifact-inputs': names[2] }
-  input.app.addHook('preHandler', async (request, reply) => {
-    const expected = endpoints[request.routeOptions.url ?? ''], call = ToolCall.safeParse(request.body)
-    if (expected && call.success && call.data.params.name !== expected) {
-      await audit(request, call.data.params.name)
-      return reply.send({ jsonrpc: '2.0', id: call.data.id, result: toolFailure(denied()) })
-    }
-  })
-  const actions = registerDistributedArtifacts(input.app, artifacts.edges, artifacts.publications, auth)
+  const actions = createDistributedArtifactActions(artifacts.edges, artifacts.publications, auth)
   const admit = (request: FastifyRequest, raw: unknown, source: 'http' | 'mcp') =>
     authorize(request, names[0], () => receiver.admit(request, WorkflowArtifactTransferInputSchema.parse(raw), source))
   const registerTransferTool = (server: McpServer, request: FastifyRequest) => {
@@ -76,16 +82,26 @@ export function mountProductionWorkflowArtifacts(input: Parameters<typeof create
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     }, async raw => { try { return toolResult(await admit(request, raw, 'mcp')) } catch (error) { return toolFailure(error) } })
   }
-  input.app.post('/api/artifact-transfers', { bodyLimit: 4096, onRequest: async request => { await auth.producer(request) } },
-    async (request, reply) => { reply.header('cache-control', 'no-store'); return admit(request, request.body, 'http') })
-  input.app.post('/mcp/artifact-transfers', { bodyLimit: 16384, onRequest: async request => { await auth.producer(request) } }, async (request, reply) => {
-    const server = new McpServer({ name: 'graphql-artifact-transfers', version: '1.0.0' })
-    registerTransferTool(server, request)
-    const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined })
-    reply.raw.once('close', () => { void settleObserved('http', 'close disconnected MCP resources', [transport.close(), server.close()]) })
-    reply.header('cache-control', 'no-store'); await server.connect(transport); reply.hijack()
-    await transport.handleRequest(request.raw, reply.raw, request.body)
-  })
+  const registerRoutes = (app: FastifyInstance): void => {
+    app.addHook('preHandler', async (request, reply) => {
+      const expected = endpoints[request.routeOptions.url ?? ''], call = ToolCall.safeParse(request.body)
+      if (expected && call.success && call.data.params.name !== expected) {
+        await audit(request, call.data.params.name)
+        return reply.send({ jsonrpc: '2.0', id: call.data.id, result: toolFailure(denied()) })
+      }
+    })
+    registerDistributedArtifactRoutes(app, actions, auth)
+    app.post('/api/artifact-transfers', { bodyLimit: 4096, onRequest: async request => { await auth.producer(request) } },
+      async (request, reply) => { reply.header('cache-control', 'no-store'); return admit(request, request.body, 'http') })
+    app.post('/mcp/artifact-transfers', { bodyLimit: 16384, onRequest: async request => { await auth.producer(request) } }, async (request, reply) => {
+      const server = new McpServer({ name: 'graphql-artifact-transfers', version: '1.0.0' })
+      registerTransferTool(server, request)
+      const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined })
+      reply.raw.once('close', () => { void settleObserved('http', 'close disconnected MCP resources', [transport.close(), server.close()]) })
+      reply.header('cache-control', 'no-store'); await server.connect(transport); reply.hijack()
+      await transport.handleRequest(request.raw, reply.raw, request.body)
+    })
+  }
   const permission = async (request: FastifyRequest, name: string) => {
     if (name === names[2]) await consumer(request)
     else await publisher(request)
@@ -123,5 +139,5 @@ export function mountProductionWorkflowArtifacts(input: Parameters<typeof create
       }
     },
   }
-  return { receiver, artifacts, extension }
+  return { receiver, artifacts, extension, registerRoutes }
 }

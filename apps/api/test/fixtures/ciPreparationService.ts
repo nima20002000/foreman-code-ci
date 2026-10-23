@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { CiRuntimeWorker } from '../../src/modules/jobs/ciRuntimeWorker.js'
-import { closeCiRuntimeCommand, runCiRuntimeCommand } from '../../src/modules/jobs/ciRuntimeCommands.js'
+import { CiRuntimeWorker } from '@foreman-code/ci/ciRuntimeWorker'
+import { closeCiRuntimeCommand, runCiRuntimeCommand } from '@foreman-code/ci/ciRuntimeCommands'
+import { mainCiContext } from '../../src/modules/ci/context.js'
 
 interface Input {
   directory: string
@@ -21,7 +22,7 @@ const input = JSON.parse(await readFile(process.argv[2]!, 'utf8')) as Input
 const lifetime = new AbortController()
 const podman = (argv: string[], signal = lifetime.signal) =>
   runCiRuntimeCommand(input.podman, ['--remote=false', ...argv], { env: input.environment, signal })
-const worker = new CiRuntimeWorker(input.directory, {
+const worker = new CiRuntimeWorker(mainCiContext, input.directory, {
   git: { cloneDirectory: () => input.directory, git: async () => ({ code: 0, stdout: '', stderr: '' }) },
   managedRuntimeRoot: async () => input.directory,
   currentRuntimePaths: async () => [], lastRefresh: async () => null, now: () => new Date(),

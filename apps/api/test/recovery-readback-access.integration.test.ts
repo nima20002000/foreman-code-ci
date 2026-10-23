@@ -1,8 +1,8 @@
 import { operatorCatalog } from './support/operatorCatalog.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RUN_INSPECTION_TOOLS, RunRecordDetailSchema } from '@foreman-code/contracts/wave25'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
-import { readback, readParity, recoveryFixture, runPath, scope, type RecoveryFixture, type Transport } from './helpers/eng06DRecovery.js'
+import { postgresEnabled } from './helpers/database.js'
+import { readback, readParity, recoveryFixture, runPath, scope, type RecoveryFixture, type Transport } from './helpers/recoveryFixture.js'
 import { forms } from './helpers/recoveryReadback.js'
 
 function errorCode(result: unknown) {

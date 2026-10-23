@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { fileToolsMigration } from '../src/modules/files/tools/migration.js'
 import { PostgresFileToolRepository } from '../src/modules/files/tools/postgres.js'
 import type { ArtifactSnapshot, FileToolArtifact } from '../src/modules/files/tools/types.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const databaseUrl = process.env.TEST_DATABASE_URL
 const schema = `fil05b_${randomUUID().replaceAll('-', '')}`
@@ -15,7 +16,7 @@ function snapshot(artifactId: string, text = ''): ArtifactSnapshot {
     sha256: createHash('sha256').update(text).digest('hex'), origin: 'agent_output', createdAt: now } }
 }
 
-describe.skipIf(!databaseUrl)('FIL-05b PostgreSQL snapshot guards', () => {
+describe.skipIf(!postgresEnabled)('FIL-05b PostgreSQL snapshot guards', () => {
   let admin: pg.Pool | undefined, pool: pg.Pool | undefined
   let first: PostgresFileToolRepository, second: PostgresFileToolRepository
   beforeAll(async () => {

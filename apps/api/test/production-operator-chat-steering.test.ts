@@ -23,7 +23,7 @@ it('offers live steering to production Codex Operator chats and not to Claude ch
   const config = loadConfig({ DATABASE_URL: 'postgresql://unused:unused@127.0.0.1:1/operator_chat_steering' })
   const database = createDatabase(config.database)
   const checkpoints = createCheckpointStore(config.database.connectionString, 'operator_chat_steering', config.database)
-  const production = buildProductionApp(config, database, checkpoints, false)
+  const production = buildProductionApp({ config, database, checkpoints, logger: false })
   try {
     expect(composition.resolvers).toHaveLength(1)
     const resolver = composition.resolvers[0]!

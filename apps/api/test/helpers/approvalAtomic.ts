@@ -1,5 +1,5 @@
 import { afterEach } from 'vitest'
-import { approvalDatabase } from './wave25ApprovalDatabase.js'
+import { approvalDatabase } from './approvalDatabase.js'
 
 type Fixture = Awaited<ReturnType<typeof approvalDatabase>>
 

@@ -27,9 +27,9 @@ import { sourceBindingHash, sourceMaterializationDigest } from '../src/modules/s
 import { sourceCwdAttestationDigest } from '../src/modules/sources/workingDirectory.js'
 import { PostgresSourceReservations } from '../src/modules/sources/reservations.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { insertCurrentRunFixture } from './helpers/eng04CurrentRunFixture.js'
+import { insertCurrentRunFixture } from './helpers/currentRunFixture.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 it.skipIf(!postgresEnabled)('reads persisted native branch and CWD through authenticated MCP and denies a locationless reader',
   async () => {

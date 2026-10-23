@@ -4,10 +4,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GetInteractionResponseSchema, ListInteractionsResponseSchema, RespondToInteractionRequestSchema, RespondToInteractionResponseSchema } from '@foreman-code/contracts'
 import { ManagedInteractionPageSchema } from '@foreman-code/contracts/management'
 import { RepeatGraphSnapshotV3Schema, RunExecutionsPageSchema, RunRecordDetailSchema } from '@foreman-code/contracts/wave25'
-import { postgresEnabled } from './wave25Agent3.js'
-import { scenarioFixture, type ScenarioId } from './eng07BScenarios.js'
-import { runPath, scenarioHarness, type Harness, type Started, type Via } from './eng07BHarness.js'
-import { assertScenarioEvidence } from './eng07BEvidence.js'
+import { postgresEnabled } from './database.js'
+import { scenarioFixture, type ScenarioId } from './scenarioFixtures.js'
+import { runPath, scenarioHarness, type Harness, type Started, type Via } from './scenarioHarness.js'
+import { assertScenarioEvidence } from './scenarioEvidence.js'
 
 async function approveThroughHttp(f: Harness, started: Started) {
   const { workspaceId, workflowId, runId } = started.scope
@@ -78,7 +78,7 @@ async function approveThroughHttp(f: Harness, started: Started) {
   // and replay after delivery/ACK while the first response is still in flight.
   const successor = f.scenario.nodes[2]!, releaseSuccessor = f.hold(successor.id)
   const response = f.http('POST', path, input, '')
-  void response.catch(() => undefined) // Keep failures handled until the awaited read below.
+  void response.catch(() => /* ignore: marks the promise handled; the test awaits it below */ undefined) // Keep failures handled until the awaited read below.
   try {
     await f.waitUntilParked(started.scope, successor.id)
     const active = RunRecordDetailSchema.parse(await f.http('GET', `${runPath(started.scope)}/record`))
@@ -94,7 +94,7 @@ async function approveThroughHttp(f: Harness, started: Started) {
     expect(f.base.provider.counts.responses).toBe(1)
   } finally {
     releaseSuccessor()
-    await response.catch(() => undefined)
+    await response.catch(() => /* ignore: cleanup; the test body already awaited or asserted this outcome */ undefined)
   }
   const decision = RespondToInteractionResponseSchema.parse(await response)
   expect(decision).toMatchObject({ replayed: false,

@@ -16,7 +16,7 @@ import { createClaudeSdkCallbacks } from '../src/modules/harnesses/claudeSdk/sdk
 import {
   createClaudeNativeSessionManager, type ClaudeMessageTurnInput, type ClaudeNativeSessionManager,
 } from '../src/modules/harnesses/claudeSdk/sessionManager.js'
-import { agent3Database, seedAgent3 } from './helpers/wave25Agent3.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
 
 async function drain(events: AsyncIterable<NativeHarnessEvent>) {
   const values: NativeHarnessEvent[] = []

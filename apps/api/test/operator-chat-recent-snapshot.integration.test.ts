@@ -5,8 +5,9 @@ import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { OPERATOR_SNAPSHOT_MESSAGE_BYTES } from '../src/modules/conversations/operatorChatRepository.js'
 import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
-import { graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 import { registerOperatorChatFixture, type OperatorChatFixture } from './helpers/operatorChatFixture.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const connectionString = process.env.TEST_DATABASE_URL
 let pool: OperatorChatFixture['pool']
@@ -19,7 +20,7 @@ registerOperatorChatFixture(fixture => {
   ({ pool, access, owner, repository, chat } = fixture)
 }, () => chat)
 
-describe.skipIf(!connectionString)('Operator recent snapshot newest message retention', () => {
+describe.skipIf(!postgresEnabled)('Operator recent snapshot newest message retention', () => {
   it('retains an oversized newest message through HTTP and MCP with accurate earlier-history metadata', async () => {
     const writer = await access.issue({ name: 'large snapshot owner', audience: 'operator', grants: owner.grants,
       expiresAt: new Date(Date.now() + 600_000) })

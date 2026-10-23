@@ -9,7 +9,7 @@ import { componentLogger, enableAppErrorLog, enableFileLogging } from './infrast
 import { readRuntimeBuildIdentity } from './infrastructure/runtimeIdentity.js'
 import { trackInFlightRequests } from './infrastructure/inFlightRequests.js'
 import { installProcessLifecycleLogging } from './infrastructure/processLifecycle.js'
-import { retryStartupDatabase, runBackgroundPassAtStartup } from './infrastructure/startupDatabase.js'
+import { retryStartupDatabase, runBackgroundPassAtStartup } from './infrastructure/databaseRetry.js'
 import { readTestResourcesIdentity } from './infrastructure/testRuntimeResources.js'
 import { join } from 'node:path'
 
@@ -57,10 +57,13 @@ async function main() {
     config.database,
   )
   const { app, prepareSchema, initialize, reconcile, drainShutdown, startDeviceListener, registerFileStorage, rsync,
-    shutdownPending } = buildProductionApp(config, database, checkpoints,
-    componentLogger('http'), undefined, undefined,
-    { codex: codexQualificationSuite },
-    {
+    shutdownPending } = buildProductionApp({
+    config, database, checkpoints,
+    logger: componentLogger('http'),
+    qualificationSuites: { codex: codexQualificationSuite },
+    // Keeps harnesses, MCP servers and plugins current on every computer; never under the test runners.
+    computerUpkeep: !process.env.VITEST && process.env.NODE_ENV !== 'test' && process.env.FOREMAN_CODE_COMPUTER_UPKEEP !== '0',
+    infrastructure: {
       mode: 'native',
       rsyncInstallation,
       closeInfrastructure: async () => {
@@ -70,7 +73,8 @@ async function main() {
         if (failures.length) throw new AggregateError(failures, 'Infrastructure shutdown was incomplete.')
         lifecycle.info('api stopped')
       },
-    })
+    },
+  })
   let reconciliationTimer: NodeJS.Timeout | undefined
   const startup = new AbortController()
   const engineLog = componentLogger('engine')

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { nativeCorrelation } from '../src/modules/conversations/operatorChatRepository.js'
 import { DomainError } from '../src/modules/errors.js'
 import { registerOperatorChatFixture, type OperatorChatFixture, waitFor } from './helpers/operatorChatFixture.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const connectionString = process.env.TEST_DATABASE_URL
 
@@ -18,7 +19,7 @@ registerOperatorChatFixture(fixture => {
   ({ pool, access, owner, repository, manager, authority, chat } = fixture)
 }, () => chat)
 
-describe.skipIf(!connectionString)('Operator chat persistence and native binding with stubbed authority', () => {
+describe.skipIf(!postgresEnabled)('Operator chat persistence and native binding with stubbed authority', () => {
   it('blocks an existing native session when its Operator MCP installation is removed', async () => {
     const conversation = await chat.create(owner)
     await chat.send(conversation.id, { requestId: 'before-removal', content: 'Hello' }, owner)

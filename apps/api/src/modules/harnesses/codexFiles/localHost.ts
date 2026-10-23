@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
 import { lstat, mkdir, mkdtemp, open, realpath, rm } from 'node:fs/promises'
 import { dirname, extname, join, resolve } from 'node:path'
@@ -6,6 +6,7 @@ import { DomainError } from '../../errors.js'
 import { pathsOverlap } from '../../workspaces/filesystem.js'
 import { collectCodexFileBytes } from './bytes.js'
 import type { CodexFileHostLease, RegisteredCodexCopy } from './port.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 /** Read-only delivery directory outside Codex's workspace-write roots. Working-copy
  * edits go through FIL-05b; this lease never exposes a mutable host path. */
@@ -31,7 +32,7 @@ export async function localCodexChatHost(fileStorageRoot: string): Promise<Codex
     async materialize(input): Promise<RegisteredCodexCopy> {
       if (closed || input.writable) throw new Error('CODEX_MUTABLE_HOST_PATH_DENIED')
       const data = await collectCodexFileBytes(input.bytes, input.byteSize)
-      if (data.length !== input.byteSize || createHash('sha256').update(data).digest('hex') !== input.sha256) {
+      if (data.length !== input.byteSize || sha256Hex(data) !== input.sha256) {
         throw new Error('CODEX_FILE_BYTES_CHANGED')
       }
       const registrationId = randomUUID()

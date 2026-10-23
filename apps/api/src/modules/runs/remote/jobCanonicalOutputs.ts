@@ -1,5 +1,4 @@
 import { jobLifecycleSignal } from '../../jobs/lifecycle.js'
-import { createHash } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { isDeepStrictEqual } from 'node:util'
 import type pg from 'pg'
@@ -16,6 +15,7 @@ import type { VerifiedArtifactReader } from '../../files/distributed/publication
 import type { RemoteJobOperationReceiptRecord } from '@foreman-code/contracts/remote-job-execution'
 import type { RemoteOperationJournal } from './operationJournal.js'
 import type { JobSql } from '../../jobs/repository.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 /** Concrete main canonical adapter + verified original transfer reader; no alternate byte store. */
 export function createJobCanonicalOutputs(input: { pool: pg.Pool; storageRoot: string; excludedRoots?: readonly string[];
@@ -57,10 +57,10 @@ export function createLocalJobCanonicalOutputs(input: { pool: pg.Pool; storageRo
         signal.throwIfAborted()
         const declared = execution.acceptedSpec.outputs.find(value => value.path === output.path)
         if (!declared) throw new Error('Undeclared local job output')
-        const bytes = Buffer.from(output.bytes), sha256 = createHash('sha256').update(bytes).digest('hex')
+        const bytes = Buffer.from(output.bytes), sha256 = sha256Hex(bytes)
         const commandId = await input.journal.jobOutputCommand(execution.operationId, { path: output.path, mediaType: declared.mediaType, sha256, byteSize: bytes.length })
         const request: JobOutputPublicationInput = { workspaceId: execution.workspaceId, executionId: execution.id, attemptId: execution.attemptId,
-          owner: execution.owner, commandId, path: output.path, mediaType: declared.mediaType, sha256: createHash('sha256').update(bytes).digest('hex'), byteSize: bytes.length }
+          owner: execution.owner, commandId, path: output.path, mediaType: declared.mediaType, sha256: sha256Hex(bytes), byteSize: bytes.length }
         if (sealed.size >= 4 || [...sealed.values()].reduce((sum,value) => sum+value.bytes.length,bytes.length) > 64*1024*1024) throw new Error('Main output sealing capacity exhausted')
         sealed.set(commandId, { input: request, specDigest: execution.acceptedSpec.specDigest, bytes })
         try { await artifacts.publishAccepted(request) } finally { sealed.delete(commandId) }

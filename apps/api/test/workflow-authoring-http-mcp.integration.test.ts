@@ -21,9 +21,9 @@ import { RunManagementService } from '../src/modules/runs/management.js'
 import type { LangGraphWorkflowEngine } from '../src/modules/runs/engine.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { RunGraphReadService } from '../src/modules/run-graph/readService.js'
-import { currentDatabase as agent3Database, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
-import { graphRpc, graphRpcValue, graphHeaders } from './eng04-graph-composition-fixture.js'
-import { insertCurrentRunFixture as insertFixtureRepeatRun } from './helpers/eng04CurrentRunFixture.js'
+import { currentDatabase as agent3Database, postgresEnabled } from './helpers/database.js'
+import { graphRpc, graphRpcValue, graphHeaders } from './graph-composition-fixture.js'
+import { insertCurrentRunFixture as insertFixtureRepeatRun } from './helpers/currentRunFixture.js'
 
 /** Real migrated PostgreSQL, issued bearer auth, typed writer, command/audit and
  * stateless Operator MCP. The engine below is a FAILING tripwire only for denied

@@ -12,7 +12,20 @@ test('ticket, wave, lane and agent segments are rejected', () => {
   }
 })
 
-test('only test files outside the allowlist are reported', () => {
+test('only test files and test-directory helpers outside the allowlist are reported', () => {
   const files = ['a/pr3-old.test.ts', 'a/pr4-new.test.ts', 'a/pr5-helper.ts']
   assert.deepEqual(ticketNamedTests(files, new Set(['a/pr3-old.test.ts'])), ['a/pr4-new.test.ts'])
+})
+
+test('helpers, fixtures and directories under a test directory are named after behavior', () => {
+  const files = ['apps/api/test/helpers/wave25Agent3.ts', 'apps/api/test/eng04-start-fixtures.ts',
+    'apps/api/test/wave25/nativeProjection.test.ts', 'apps/api/test/wave25/nativeProjection.cases.ts',
+    'apps/api/test/eng04-a/repeat.test.ts', 'packages/x/tests/support/sch11Fixture.mjs',
+    'apps/api/test/helpers/workflowDatabase.ts', 'apps/api/test/native-projection/nativeProjection.cases.ts',
+    'apps/api/test/evidence/eng03-a-internal-preliminary.json', 'packages/contracts/src/wave25/eng04-shared-fixture.ts',
+    'packages/contracts/src/wave25/repeat.test.ts']
+  assert.deepEqual(ticketNamedTests(files, new Set()), ['apps/api/test/helpers/wave25Agent3.ts',
+    'apps/api/test/eng04-start-fixtures.ts', 'apps/api/test/wave25/nativeProjection.test.ts',
+    'apps/api/test/wave25/nativeProjection.cases.ts', 'apps/api/test/eng04-a/repeat.test.ts',
+    'packages/x/tests/support/sch11Fixture.mjs'])
 })

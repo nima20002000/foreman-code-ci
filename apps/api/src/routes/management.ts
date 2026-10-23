@@ -1,18 +1,4 @@
-import { registerCircleAccountRoutes } from './circleAccounts.js'
-import { registerComputerActivityRoutes } from './computerActivity.js'
-import { registerBugReportRoutes } from './bugReports.js'
-import { registerHostCiRoutes } from './hostCi.js'
-import { registerComputerAccountsRoutes } from './computerAccounts.js'
-import { registerComputerMaintenanceRoutes } from './computerMaintenance.js'
-import { registerComputerSyncRoutes } from './computerSync.js'
-import { registerBuildComputerRoutes } from './buildComputers.js'
 import { registerRunSubagentRoutes } from './runSubagents.js'
-import { registerHarnessRegistryRoutes } from '../modules/harnesses/registryManagement.js'
-import { registerDeviceManagementRoutes } from '../modules/devices/management.js'
-import { registerWorkspaceRepositoryRoutes } from './workspaceRepository.js'
-import { registerWorkspaceRootRoutes } from '../modules/workspace-roots/transports.js'
-import { registerSourceRoutes } from './sources.js'
-import { registerJobRoutes } from './jobs.js'
 import { CurrentWorkflowCreateInputSchema, RunActivitiesInputSchema,
   RunHandoffsReadInputSchema } from '@foreman-code/contracts/wave25'
 import { AgentCreateInputSchema, AgentUpdateInputSchema } from '@foreman-code/contracts/management'
@@ -87,21 +73,8 @@ function page(query: Query) {
   }
 }
 
+/** Workspace, workflow, Agent, harness, settings and Run management. Optional groups mount from `registry.ts`. */
 export function registerManagementRoutes(app: FastifyInstance, services: OperatorServices): void {
-  registerHostCiRoutes(app, services)
-  if (services.circleAccounts) registerCircleAccountRoutes(app, services.circleAccounts)
-  if (services.bugReports) registerBugReportRoutes(app, services.bugReports)
-  if (services.harnessRegistry) registerHarnessRegistryRoutes(app, services.harnessRegistry, async request => requirePrincipal(request))
-  if (services.computerActivity) registerComputerActivityRoutes(app, services.computerActivity)
-  if (services.computerAccounts) registerComputerAccountsRoutes(app, services.computerAccounts)
-  if (services.computerMaintenance) registerComputerMaintenanceRoutes(app, services.computerMaintenance)
-  if (services.computerSync) registerComputerSyncRoutes(app, services.computerSync)
-  if (services.buildComputers) registerBuildComputerRoutes(app, services.buildComputers)
-  if (services.devices) registerDeviceManagementRoutes(app, services.devices, async request => requirePrincipal(request))
-  if (services.workspaceRepositories) registerWorkspaceRepositoryRoutes(app, services.workspaceRepositories)
-  if (services.workspaceRoots) registerWorkspaceRootRoutes(app, services.workspaceRoots)
-  if (services.sources) registerSourceRoutes(app, services.sources)
-  if (services.jobs) registerJobRoutes(app, services.jobs)
   registerCurrentWorkflowRoutes(app, services.workflows, services.runs)
   registerCurrentVersionReadRoutes(app, services)
   registerRunInspectionRoutes(app, services)

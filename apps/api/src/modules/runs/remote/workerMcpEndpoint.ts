@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from 'node:crypto'
+import { timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:http'
 import { registerAppRoute } from '../../harnesses/appMcpLauncher.js'
 import type { ChildProcessEnvironment } from '../../harnesses/port.js'
@@ -11,6 +11,7 @@ import { componentLogger } from '../../diagnostics/logger.js'
 import { DeviceApplicationError, deviceApplicationFailure } from '../../devices/deviceApplicationError.js'
 import { DeviceConnectionError } from '../../devices/deviceWire.js'
 import { leaseFailureCause, renewOwnedLeases } from '../../leases/ownerLeases.js'
+import { sha256Digest } from '../../../shared/hash.js'
 
 const PublicationCall = z.object({ jsonrpc: z.literal('2.0'), id: z.union([z.string(), z.number().int()]),
   method: z.literal('tools/call'), params: z.object({ name: z.literal('files.publish_transferred_result'),
@@ -116,7 +117,7 @@ export async function createUnboundWorkerMcpEndpoint(input: WorkerMcpEndpointOpt
       response.setHeader('cache-control', 'no-store')
       const lease = bound
       if (closing || signal.aborted || !lease || Date.parse(lease.expiresAt) <= now()
-        || !timingSafeEqual(lease.digest, createHash('sha256').update(request.headers.authorization ?? '').digest())) {
+        || !timingSafeEqual(lease.digest, sha256Digest(request.headers.authorization ?? ''))) {
         response.writeHead(401); response.end(); return
       }
       if (request.method !== 'POST' || request.url !== '/mcp') { response.writeHead(405); response.end(); return }
@@ -196,7 +197,7 @@ export async function createUnboundWorkerMcpEndpoint(input: WorkerMcpEndpointOpt
         throw new Error('The private worker MCP listener closed.')
       }
       unregister = release
-      bound = { relay, digest: createHash('sha256').update(`Bearer ${token}`).digest(), expiresAt: relay.expiresAt }
+      bound = { relay, digest: sha256Digest(`Bearer ${token}`), expiresAt: relay.expiresAt }
       renewWhileBound(bound)
       log.info({ agentId: relay.environment.agentId, launcher: input.launcher, expiresAt: relay.expiresAt },
         'Worker MCP launcher route registered')

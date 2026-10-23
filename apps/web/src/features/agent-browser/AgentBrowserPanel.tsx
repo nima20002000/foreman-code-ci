@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button, Icon, IconButton, TextField } from '../../shared/ui/nocturne'
+import { useOutsidePress } from '../../shared/ui/useOutsidePress'
 import { BrowserController } from './controller'
 import { BrowserViewer } from './BrowserViewer'
 import { BrowserSessionActions } from './BrowserSessionActions'
@@ -174,18 +175,14 @@ export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
     mounted.current = true
     retiringForTab.current = false
     void controller.start()
-    const outside = (event: globalThis.PointerEvent) => {
-      if (event.target instanceof Node && !surface.current?.contains(event.target)) void controller.release()
-    }
     // Leaving the browser (clicking elsewhere or switching windows) hands control back to the agent.
     const blur = () => { void controller.release() }
-    document.addEventListener('pointerdown', outside)
     window.addEventListener('blur', blur)
     return () => {
       mounted.current = false
       const retiringVisit = ++effectVisit.current
       const retiringTab = retiringForTab.current
-      document.removeEventListener('pointerdown', outside); window.removeEventListener('blur', blur)
+      window.removeEventListener('blur', blur)
       // StrictMode replays setup immediately; replaced controllers still need to close their old view.
       queueMicrotask(() => {
         if (effectVisit.current !== retiringVisit && view.current?.controller === controller) return
@@ -194,6 +191,7 @@ export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
       })
     }
   }, [controller])
+  useOutsidePress(true, (target) => !!surface.current?.contains(target), () => { void controller.release() }, { capture: false })
   const mutation = useMutation({ mutationFn: async (request: ViewerMutation) => {
       if (request.epoch === undefined) {
         const control = await controller.acquire()

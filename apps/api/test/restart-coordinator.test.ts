@@ -4,7 +4,7 @@ import { AgentConfigurationVersionSchema, DEFAULT_HARNESS_DEFAULTS } from '@fore
 import { ApprovalExecutionCoordinator } from '../src/modules/interactions/execution.js'
 import { readWorkflowClosure } from '../src/modules/interactions/workflowClosure.js'
 import { currentRestartUnit } from './helpers/currentRestartUnit.js'
-import { recoveryDatabase, recoveryExecution } from './helpers/eng06Recovery.testSupport.js'
+import { recoveryDatabase, recoveryExecution } from './helpers/recoveryExecution.testSupport.js'
 
 type CoordinatorArgs = ConstructorParameters<typeof ApprovalExecutionCoordinator>
 

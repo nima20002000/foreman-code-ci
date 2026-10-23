@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import WebSocket from 'ws'
 import { deviceTlsOptions } from '@foreman-code/contracts/device-tls-node'
 import { ManagementPrincipalSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -21,6 +20,7 @@ import { browserHostMediaCodec } from './browserMediaCodecs.js'
 import { BrowserByteTransfers } from './browserByteTransfers.js'
 import { DomainError } from '../errors.js'
 import { prepareOrReconcileSettled } from './settledBrowserPreparation.js'
+import { sha256Digest } from '../../shared/hash.js'
 
 type Host = Awaited<ReturnType<typeof createBrowserHost>>
 interface Runtime {
@@ -74,7 +74,7 @@ export function createInstalledBrowserComposition(options: {
       const now = current()
       if (saved.workerInstallationId !== binding.installationId || saved.keyRevision !== now.keyRevision
         || saved.authorizationRevision !== now.authorizationRevision) throw new DomainError('BROWSER_PAIRING_CHANGED', 'The paired browser credential changed.', 403)
-      return browserWrappingKey(createHash('sha256').update(saved.credential).digest(), binding)
+      return browserWrappingKey(sha256Digest(saved.credential), binding)
     },
   }
   const invocation = new WeakMap<ManagementPrincipal, string>()

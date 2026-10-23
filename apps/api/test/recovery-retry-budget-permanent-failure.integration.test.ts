@@ -3,7 +3,7 @@ import { attempts, describeRetryBudget, occurrences } from './helpers/retryBudge
 import {
   executionRows, readback, recoveryFixture, assertOriginalFailure,
   type Form,
-} from './helpers/eng06DRecovery.js'
+} from './helpers/recoveryFixture.js'
 
 const forms: Form[] = ['repeat', 'sequential']
 

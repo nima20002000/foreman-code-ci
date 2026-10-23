@@ -7,7 +7,7 @@ import type { AcceptedRepeatRunSnapshot } from '../src/modules/runs/repeatStartR
 import * as executions from '../src/modules/runs/repeatExecutionRead.js'
 import * as snapshots from '../src/modules/runs/repeatStartRead.js'
 import { assertSettlementLocked } from '../src/modules/runs/repeatSettlementServices.js'
-import { nativeProofModel } from './eng04-native-proof-model.js'
+import { nativeProofModel } from './native-proof-model.js'
 
 /** Owner and accepted-snapshot/occurrence readers are explicit MODEL doubles.
  * The service, G1, native settlement and durable closure reader execute. This

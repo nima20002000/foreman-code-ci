@@ -1,5 +1,4 @@
 import { jobLifecycleSignal } from '../../jobs/lifecycle.js'
-import { createHash } from 'node:crypto'
 import type { JobArtifact } from '@foreman-code/contracts/jobs'
 import type { JobExecutionRecord } from '@foreman-code/contracts/job-verification'
 import type { TransferIntent, ByteTransferPort } from '@foreman-code/contracts/byte-transfer'
@@ -10,6 +9,7 @@ import { DeviceApplicationError } from '../../devices/deviceApplicationError.js'
 import { WorkerJobOutputApplication, WorkerJobOutputReceiver, type WorkerJobOutputChannel } from '../../files/jobs/outputChannel.js'
 import { ResumableByteTransferSender, type TransferSenderConnection } from '../../byte-transfer/sender.js'
 import type { RemoteOperationJournal } from './operationJournal.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 /** Worker metadata and sealed bytes share its existing selected-main signed carrier. */
 export function createWorkerJobOutputCollector(channel: WorkerJobOutputChannel, connection: TransferSenderConnection, journal: RemoteOperationJournal,rsync?:WorkerJobOutputRsyncPort) {
@@ -53,7 +53,7 @@ export function createRemoteJobOutputCollector(receiver: ByteTransferPort, conne
       signal.throwIfAborted()
       const declared = execution.acceptedSpec.outputs.find(value => value.path === output.path)
       if (!declared) throw new Error('Undeclared job output')
-      const bytes = Buffer.from(output.bytes), sha256 = createHash('sha256').update(bytes).digest('hex')
+      const bytes = Buffer.from(output.bytes), sha256 = sha256Hex(bytes)
       const input: JobOutputPublicationInput = { workspaceId: execution.workspaceId, executionId: execution.id, attemptId: execution.attemptId,
         owner: execution.owner, commandId: await journal.jobOutputCommand(execution.operationId, { path: output.path, mediaType: declared.mediaType, sha256, byteSize: bytes.length }), path: output.path, mediaType: declared.mediaType, sha256, byteSize: bytes.length }
       const intent = await main.admit(input, signal)

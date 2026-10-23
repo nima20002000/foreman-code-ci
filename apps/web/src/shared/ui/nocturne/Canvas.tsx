@@ -4,6 +4,7 @@ import { Icon, type IconName } from './Icon'
 import { IconButton } from './Button'
 import { cx } from './utils'
 import { useHoverControls } from '../useHoverControls'
+import { useOutsidePress } from '../useOutsidePress'
 
 /** Visual state only. Feature code maps runtime facts to one of these; the canvas never infers progress. */
 export type AgentNodeState = 'idle' | 'queued' | 'running' | 'waiting' | 'approved' | 'completed' | 'failed' | 'unavailable'
@@ -176,22 +177,16 @@ export function AgentPopover({ open, anchor, title, subtitle, icon = 'bot', harn
       if (document.querySelector('dialog[open]')) return
       event.preventDefault(); close.current()
     }
-    const onPointer = (event: globalThis.MouseEvent) => {
-      const target = event.target as Node | null
-      if (!target || surface.current?.contains(target) || owner?.contains(target)) return
-      if (target instanceof Element && target.closest('dialog[open], .n-menu, [role=listbox]')) return
-      close.current()
-    }
     window.addEventListener('keydown', onKey)
-    document.addEventListener('mousedown', onPointer, true)
     return () => {
       cancelAnimationFrame(frame)
       window.removeEventListener('keydown', onKey)
-      document.removeEventListener('mousedown', onPointer, true)
       const active = document.activeElement
       if (trigger?.isConnected && (!active || active === document.body || !active.isConnected)) trigger.focus({ preventScroll: true })
     }
   }, [open, anchor])
+  useOutsidePress(open, (target) => !!surface.current?.contains(target) || !!anchor.current?.closest('.n-agent')?.contains(target)
+    || !!(target instanceof Element && target.closest('dialog[open], .n-menu, [role=listbox]')), () => close.current(), { event: 'mousedown' })
   if (!open || typeof document === 'undefined') return null
   const known = harness === 'codex' || harness === 'claude' ? harness : 'neutral'
   return createPortal(<section ref={surface} className={cx('n-agent-popover nodrag nowheel', className)} data-harness={known} data-panel={panel}

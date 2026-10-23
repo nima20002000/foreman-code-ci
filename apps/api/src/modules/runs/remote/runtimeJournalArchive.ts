@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { opendir, readFile } from 'node:fs/promises'
 import { z } from 'zod'
 import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-execution'
@@ -6,6 +5,7 @@ import { RemoteJobOperationReceiptRecordSchema } from '@foreman-code/contracts/r
 import { QualificationReceiptSchema } from '../../jobs/qualificationJournal.js'
 import { JobNativeOwnerSchema } from '../../jobs/executorJournal.js'
 import { SourcePreparationClosureSchema } from '@foreman-code/contracts/source-admission'
+import { sha256Hex } from '../../../shared/hash.js'
 
 const ArchiveSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('workflow'), receipt: RemoteOperationReceiptSchema }).strict(),
@@ -15,7 +15,7 @@ const ArchiveSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('qualification'), receipt: QualificationReceiptSchema }).strict(),
 ])
 const TombstoneSchema = z.object({ operationId: z.string(), digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict()
-const hash = (value: string) => createHash('sha256').update(value).digest('hex')
+const hash = (value: string) => sha256Hex(value)
 export const RUNTIME_JOURNAL_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 
 /** Cold records and identity tombstones live outside the bounded recovery snapshot. */

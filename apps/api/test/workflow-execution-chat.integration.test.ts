@@ -4,8 +4,8 @@ import { WorkActivationInputSchema } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { hierarchyRuntimeFixture, coordinationOutput } from './helpers/hierarchyRuntimeFixture.js'
 import { readHierarchyCoordinationLocked } from '../src/modules/runs/hierarchyCoordinationRead.js'
-import { graphHeaders, graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { graphHeaders, graphRpc, graphRpcValue } from './graph-composition-fixture.js'
+import { postgresEnabled } from './helpers/database.js'
 import { openHierarchyEvents } from './helpers/hierarchyHttpStream.js'
 
 describe.skipIf(!postgresEnabled)('Run-owned execution chat over HTTP and MCP', () => {

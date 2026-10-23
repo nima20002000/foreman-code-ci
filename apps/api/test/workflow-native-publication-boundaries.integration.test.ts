@@ -3,8 +3,8 @@ import type { HarnessNativeEvent, NativeHarnessEvent } from '@foreman-code/contr
 import { appendNormalizedNativeEvent } from '../src/modules/runs/nativeEvents.js'
 import { normalizeNativeProducerEvent } from '../src/modules/run-graph/nativeProducerNormalization.js'
 import { PostgresInteractionCoordinationRepository } from '../src/modules/interactions/coordination.js'
-import { checkpointRuntimeFixture } from './helpers/wave25Br1003Runtime.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
+import { postgresEnabled } from './helpers/database.js'
 
 afterEach(() => vi.restoreAllMocks())
 

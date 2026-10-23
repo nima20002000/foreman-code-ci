@@ -5,9 +5,9 @@ import { expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAppInteractionService } from '../src/modules/interactions/app.js'
-import { approvalDatabase } from './helpers/wave25ApprovalDatabase.js'
+import { approvalDatabase } from './helpers/approvalDatabase.js'
 import { approvalResponse } from './helpers/approvalResponse.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { workerToolServices } from './helpers/workerMcpServices.js'
 
 it.skipIf(!postgresEnabled)('preserves the Master identity and designated reviewer authority through authenticated MCP', async () => {

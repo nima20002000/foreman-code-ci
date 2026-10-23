@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { withTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -18,6 +17,7 @@ import { decideDueSchedule, planDueSchedule, type DueScheduleStep } from './disp
 import { PostgresWorkflowScheduleRepository } from './postgres.js'
 import type { ScheduleStartGuard } from '../runs/repeatStartAdmission.js'
 import type { RepeatStartPreparation } from '../runs/repeatStartAdmission.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 interface PreparedStart {
   kind: 'start'
@@ -223,7 +223,7 @@ export class PostgresScheduleDispatcher {
     const version = readImmutableWorkflowVersion(versionRow, { workspaceId: schedule.workspaceId,
       workflowId: schedule.workflowId, id: row.current_version_id })
     return RunStartV3InputSchema.parse({ workspaceId: schedule.workspaceId, workflowId: schedule.workflowId,
-      commandId: `schedule-v1:${createHash('sha256').update(scheduleOccurrenceId(schedule.workflowId, dueAt)).digest('hex')}`,
+      commandId: `schedule-v1:${sha256Hex(scheduleOccurrenceId(schedule.workflowId, dueAt))}`,
       executionSemanticsVersion: 3, workflowVersionId: version.id, expectedWorkflowRevision: Number(row.revision),
       expectedAgentConfigurationVersionIds: version.agentConfigurationVersionIds,
       expectedLocationRevision: Number(row.location_revision), input: {} })

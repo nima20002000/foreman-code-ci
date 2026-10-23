@@ -15,10 +15,10 @@ import { finishWorkflowCleanup, persistWorkDirectionWait, requestWorkflowCleanup
 import { WorkspaceLocationService } from '../../src/modules/workspaces/location.js'
 import { markRepeatRunRunning } from '../../src/modules/runs/repeatLifecycle.js'
 import { repeatDigest, repeatId } from '../../src/modules/runs/repeatResolution.js'
-import { insertCurrentRunFixture } from './eng04CurrentRunFixture.js'
-import type { currentDatabase } from './eng04CurrentDatabase.js'
-import { writerFixture, type WriterFixture } from '../eng04-writer-fixtures.js'
-import { graphHeaders } from '../eng04-graph-composition-fixture.js'
+import { insertCurrentRunFixture } from './currentRunFixture.js'
+import type { currentDatabase } from './database.js'
+import { writerFixture, type WriterFixture } from '../writer-fixtures.js'
+import { graphHeaders } from '../graph-composition-fixture.js'
 import { createWorkflowCollaborationHooks } from '../../src/modules/collaboration/workflowHooks.js'
 
 /** Actual typed Save, canonical publication, owner, repository and completion

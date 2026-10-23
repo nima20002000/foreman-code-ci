@@ -17,13 +17,12 @@ it('retains an explicitly selected Worker Claude profile and its live grant vali
   const selection: HarnessProfileSelection = { instanceId: randomUUID(), instanceRevision: 'saved-revision',
     target: { hostRef: target.hostRef, applicationInstallationId: target.applicationInstallationId,
       harnessInstallationId: 'qualified-native', installationFingerprint: 'qualified-fingerprint' } }
-  const accounts = new ProviderAccountConfigurationService({ resolve: async () => ({ accountId, homePath: '',
-    authMode: 'subscription', binding: { kind: 'slot', provider: 'claude', accountId, target,
-      profileRef: 'worker-profile', bindingRevision: 1, subject: null } }) })
   const validateSelection = vi.fn(async () => {})
   const profiles = { validateSelection, selectionForConfiguration: vi.fn(async () => undefined),
     prepareOperatorConfiguration: vi.fn(async () => undefined) }
-  accounts.bindProfiles(profiles)
+  const accounts = new ProviderAccountConfigurationService({ resolve: async () => ({ accountId, homePath: '',
+    authMode: 'subscription', binding: { kind: 'slot', provider: 'claude', accountId, target,
+      profileRef: 'worker-profile', bindingRevision: 1, subject: null } }) }, profiles)
   const principal: ManagementPrincipal = { id: randomUUID(), name: 'Profile reader', audience: 'operator',
     expiresAt: '2099-01-01T00:00:00.000Z', revokedAt: null, grants: [] }
   const input = { configuration, selection, principal, source: 'mcp' as const,
@@ -47,9 +46,8 @@ it('checks the local Claude profile again when a new Agent finds none qualified'
   const rechecked: HarnessProfileSelection = { instanceId: randomUUID(), instanceRevision: '6',
     target: { hostRef: { kind: 'main', mainId }, applicationInstallationId: mainId,
       harnessInstallationId: 'installed-native', installationFingerprint: 'installed-fingerprint' } }
-  const accounts = new ProviderAccountConfigurationService({ resolve: async () => null })
   const prepareOperatorConfiguration = vi.fn(async () => rechecked as HarnessProfileSelection | undefined)
-  accounts.bindProfiles({ validateSelection: vi.fn(async () => {}),
+  const accounts = new ProviderAccountConfigurationService({ resolve: async () => null }, { validateSelection: vi.fn(async () => {}),
     selectionForConfiguration: vi.fn(async () => undefined), prepareOperatorConfiguration })
   const input = { configuration, principal: { id: randomUUID(), name: 'Board', audience: 'operator' as const,
     expiresAt: '2099-01-01T00:00:00.000Z', revokedAt: null, grants: [] }, source: 'http' as const,

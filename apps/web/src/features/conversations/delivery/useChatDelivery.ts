@@ -6,7 +6,7 @@ import { ApiError } from '../../../shared/api/client'
 import { isApiAccessError } from '../../../shared/api/accessError'
 import { identityEpoch, protectedKey } from '../../../shared/api/protectedChatStorage'
 import { assertSession, sessionGeneration } from '../../../shared/api/sessionBoundary'
-import { chatDeliveryClient } from './client'
+import { chatDeliveryClient, type DeliveryReadback } from './client'
 import { deliveryAction, type DeliveryPresentation } from './deliveryAction'
 import { useChatControl } from './useChatControl'
 import { acceptDeliveryReadback } from './deliveryReadback'
@@ -49,17 +49,17 @@ export function useChatDelivery(target: DeliveryTarget | undefined, enabled: boo
       void cache.cancelQueries({ queryKey: protectedQuery }); cache.removeQueries({ queryKey: protectedQuery })
     }
   }
-  const query = useQuery({ queryKey, enabled: enabled && !!selected && denial !== key,
-    refetchInterval: ({ state: { data } }) => options.pollMs && data
-      && ('delivery' in data ? data.delivery.state : data.state) !== 'idle' ? options.pollMs : false,
-    queryFn: async ({ signal }) => {
+  const query = useQuery<DeliveryReadback>({ queryKey, enabled: enabled && !!selected && denial !== key,
+    queryFn: async ({ signal }): Promise<DeliveryReadback> => {
       try {
         const result = await chatDeliveryClient.read(selected!, { signal }); signal.throwIfAborted(); assertSession(generation)
-        const accepted = acceptDeliveryReadback(cache.getQueryData<Awaited<ReturnType<typeof chatDeliveryClient.read>>>(queryKey), result)
+        const accepted = acceptDeliveryReadback(cache.getQueryData<DeliveryReadback>(queryKey), result)
         setDenial(undefined); return accepted
       }
       catch (error) { if (isApiAccessError(error)) deny(error); throw error }
-    } })
+    },
+    refetchInterval: ({ state: { data } }) => options.pollMs && data
+      && ('delivery' in data ? data.delivery.state : data.state) !== 'idle' ? options.pollMs : false })
   const refresh = query.refetch
   useEffect(() => {
     if (enabled && selected && denial !== key) {

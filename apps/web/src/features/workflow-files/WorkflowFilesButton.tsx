@@ -9,6 +9,7 @@ import { Icon } from '../../shared/ui/nocturne/Icon'
 import { TextField } from '../../shared/ui/nocturne/Fields'
 import { TrashIconButton } from '../../shared/ui/ResourceCard'
 import { useFloatingSurface } from '../../shared/ui/nocturne/useFloatingSurface'
+import { useOutsidePress } from '../../shared/ui/useOutsidePress'
 import { useFileDrop } from '../../shared/ui/useFileDrop'
 import { sessionGeneration } from '../../shared/api/sessionBoundary'
 import { ATTACHMENT_ACCEPT, inspectAttachment } from '../attachments/attachmentFiles'
@@ -42,24 +43,9 @@ function ScopedWorkflowFilesButton({ workspaceId, workflowId, readOnly = false, 
   const id = useId()
   useFloatingSurface(open, trigger, surface, 340, 'end')
 
-  useEffect(() => {
-    if (!open) return
-    surface.current?.focus()
-    let startedOutside = false
-    const outside = (target: EventTarget | null) => target instanceof Node
-      && !trigger.current?.contains(target) && !surface.current?.contains(target)
-    const down = (event: PointerEvent) => { startedOutside = outside(event.target) }
-    const click = (event: MouseEvent) => {
-      if (startedOutside && outside(event.target) && !store.getState().removal) setOpen(false)
-      startedOutside = false
-    }
-    document.addEventListener('pointerdown', down, true)
-    document.addEventListener('click', click, true)
-    return () => {
-      document.removeEventListener('pointerdown', down, true)
-      document.removeEventListener('click', click, true)
-    }
-  }, [open, setOpen, store])
+  useEffect(() => { if (open) surface.current?.focus() }, [open])
+  useOutsidePress(open, (target) => !!trigger.current?.contains(target) || !!surface.current?.contains(target),
+    () => { if (!store.getState().removal) setOpen(false) }, { requireOutsideRelease: true })
 
   function close() { setOpen(false); trigger.current?.focus() }
   function askRemove(row: FileWithRevision) {

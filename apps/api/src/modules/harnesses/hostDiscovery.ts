@@ -1,10 +1,10 @@
 import { constants } from 'node:fs'
 import { access, lstat, open, realpath, stat } from 'node:fs/promises'
-import { createHash } from 'node:crypto'
 import { isAbsolute, join, resolve } from 'node:path'
-import { spawn } from 'node:child_process'
+import { spawnProcess } from '../../shared/process.js'
 import { inventoryPayloadFingerprints, type PayloadFingerprintCache } from './payloadFingerprintCache.js'
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export interface TargetEnvironment {
   readonly generation: string
@@ -96,7 +96,7 @@ export async function discoverLauncher(requested: string, environment: TargetEnv
       evidence.payloadFingerprints = fingerprints
       // Identity is the installed bytes in launch order, not where they live: the same SDK under another
       // content-addressed dependency folder is not a new installation.
-      evidence.fingerprint = createHash('sha256').update(JSON.stringify(fingerprints.map(entry => entry.fingerprint))).digest('hex')
+      evidence.fingerprint = sha256Hex(JSON.stringify(fingerprints.map(entry => entry.fingerprint)))
       evidence.status = 'installed'
       return evidence
     } catch (error) {
@@ -126,7 +126,7 @@ export function probeTrustedVersion(input: {
     if (input.environment[key] !== undefined) environment[key] = input.environment[key]
   }
   return new Promise((resolveProbe) => {
-    const child = spawn(input.launcher, ['--version'], { cwd: input.neutralCwd, env: environment, stdio: ['ignore', 'pipe', 'pipe'], detached: true, shell: false })
+    const child = spawnProcess(input.launcher, ['--version'], { cwd: input.neutralCwd, env: environment, stdio: ['ignore', 'pipe', 'pipe'], detached: true, shell: false })
     let stdout = ''; let stderr = ''; let bytes = 0
     let status: VersionProbeResult['status'] = 'observed'
     const stop = () => {

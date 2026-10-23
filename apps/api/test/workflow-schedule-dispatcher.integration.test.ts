@@ -19,7 +19,8 @@ import { WorkflowScheduleService } from '../src/modules/schedules/service.js'
 import { ScheduleOccurrencePageSchema } from '../src/modules/schedules/transportSchemas.js'
 import { LOCAL_RUNNER_ID, WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
-import { agent3Database, postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
 const settings = { timezone: 'UTC', enabled: true, policy: 'latest_saved' as const }

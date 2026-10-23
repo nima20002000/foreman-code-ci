@@ -4,7 +4,7 @@ import { attempts, describeRetryBudget, occurrences, sameSlot } from './retryBud
 import {
   executionRows, fullRunInput, readback, recoveryFixture, toolValue, assertOriginalFailure,
   type Form,
-} from './eng06DRecovery.js'
+} from './recoveryFixture.js'
 
 export function describeFullRunRetryBudget(
   forms: Form[],

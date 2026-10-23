@@ -15,6 +15,7 @@ import { DomainError } from '../src/modules/errors.js'
 import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
 import { HarnessExecutionError } from '../src/modules/harnesses/errors.js'
 import { registerOperatorChatFixture, type OperatorChatFixture, ChatManager, waitFor } from './helpers/operatorChatFixture.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const connectionString = process.env.TEST_DATABASE_URL
 
@@ -32,7 +33,7 @@ registerOperatorChatFixture(fixture => {
   ({ pool, access, owner, operators, repository, manager, authority, chat, runtimeDirectory } = fixture)
 }, () => chat)
 
-describe.skipIf(!connectionString)('Operator chat persistence and native binding with stubbed authority', () => {
+describe.skipIf(!postgresEnabled)('Operator chat persistence and native binding with stubbed authority', () => {
   it.each(['codex', 'claude'] as const)('reads saved %s controls through HTTP and MCP after unload and restart', async harness => {
     const configuration = harness === 'claude' ? {
       harness: 'claude' as const, model: 'fixture-model', authMode: 'subscription' as const,

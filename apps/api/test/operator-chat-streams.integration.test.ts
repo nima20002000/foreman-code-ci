@@ -1,5 +1,5 @@
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 import { createStreamFixture } from './claude-streams.testSupport.js'
 import { type OperatorConversationState } from '@foreman-code/contracts'
 import { describe, expect, it, vi } from 'vitest'
@@ -8,6 +8,7 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { buildApp } from '../src/app.js'
 import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
 import { registerOperatorChatFixture, type OperatorChatFixture, waitFor } from './helpers/operatorChatFixture.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const connectionString = process.env.TEST_DATABASE_URL
 
@@ -24,7 +25,7 @@ registerOperatorChatFixture(fixture => {
   ({ pool, access, owner, operators, repository, authority, chat, runtimeDirectory } = fixture)
 }, () => chat)
 
-describe.skipIf(!connectionString)('Operator chat bounded Claude streams', () => {
+describe.skipIf(!postgresEnabled)('Operator chat bounded Claude streams', () => {
   it('preserves truncation in persisted messages, HTTP, SSE data and authenticated MCP', async () => {
     const f = createStreamFixture({ workingDirectory: runtimeDirectory })
     await operators.update({ harness: 'claude', model: 'fixture', authMode: 'subscription', configDirectory: '/profile',

@@ -7,7 +7,7 @@ import { it } from 'vitest'
 import { DomainError } from '../src/modules/errors.js'
 import { ReviewEvidenceTracker, reviewTurnEvidence } from '../src/modules/interactions/reviewerEvidence.js'
 import { LeaseGuard, ownedEvents, SingleWriterSessionManager } from '../src/modules/interactions/sessionWriter.js'
-import { nativeLanes } from './helpers/nativeLanes.js'
+import { nativeLanes } from './helpers/memorySessionCoordination.js'
 import { correlationId, event, permission, providerId, reviewerFixture, session, terminal, sourceTerminal } from './helpers/reviewerAudit.js'
 
 it('reads the current capacity attempt without treating retained earlier turn IDs as conflicts', () => {

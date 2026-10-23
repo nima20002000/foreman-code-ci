@@ -19,7 +19,7 @@ import { ProductionDeviceRuntime } from '../src/modules/devices/productionRuntim
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import { RemoteExecutionSettingsService } from '../src/modules/settings/remoteExecution.js'
 import { WorkerExecutionPolicy } from '../src/modules/settings/workerExecution.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 
 const execute = promisify(execFile)
 async function unusedPort(): Promise<number> {

@@ -16,7 +16,8 @@ import { ComputerMaintenance, systemMaintenancePorts, type MaintenancePorts } fr
 import { MainCodexSelection } from '../src/modules/computers/installedCodexSelection.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { fakeComputer, settle } from './helpers/fleetSync.js'
 
 // Queued maintenance tasks settle in the background; the 1 s expect.poll default is too short on a loaded machine.

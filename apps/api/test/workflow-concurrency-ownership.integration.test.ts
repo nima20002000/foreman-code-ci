@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 import { WorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
-import { insertProviderRun } from './helpers/wave25Br1003Runtime.js'
+import { insertProviderRun } from './helpers/checkpointRuntime.js'
 import { workflowConcurrencyFixture } from './helpers/workflowConcurrencyFixture.js'
 
 const createRuntime = workflowConcurrencyFixture()

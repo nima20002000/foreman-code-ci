@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { CiPreparationRecordSchema } from '../../src/modules/jobs/ciPreparationRepository.js'
+import { CiPreparationRecordSchema } from '@foreman-code/ci/ciPreparationRepository'
 import { buildComputerKey, buildComputerTarget } from '../../src/modules/settings/buildComputers.js'
 import { workflowAuthoringMigration } from '../../src/infrastructure/workflowAuthoringMigration.js'
 import { withTransaction } from '../../src/infrastructure/transaction.js'
-import { graphFixture } from '../eng04-graph-composition-fixture.js'
-import { currentDatabase } from './eng04CurrentDatabase.js'
+import { graphFixture } from '../graph-composition-fixture.js'
+import { currentDatabase } from './database.js'
 import { commit, builder, mainId, preparationProfile, qualifiedPreparationProfile } from './ciPreparationFixture.js'
 
 export async function ciMigrationFixture(database: Awaited<ReturnType<typeof currentDatabase>>) {

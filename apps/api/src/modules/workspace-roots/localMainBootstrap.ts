@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import { mkdir, open } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
@@ -11,9 +10,10 @@ import { sourceSha256 } from '../sources/manifest.js'
 import { workspaceRootHostScope, type PostgresWorkspaceRootPolicies } from '../sources/rootPolicies.js'
 import { workspaceStorageRoot } from '../workspaces/storage.js'
 import { pathsOverlap } from '../workspaces/filesystem.js'
+import { sha256Digest } from '../../shared/hash.js'
 
 function storageBaseId(mainId: string, storageRoot: string): string {
-  const bytes = createHash('sha256').update(`graphql:main-workspace-storage:v1:${mainId}:${storageRoot}`).digest().subarray(0, 16)
+  const bytes = sha256Digest(`graphql:main-workspace-storage:v1:${mainId}:${storageRoot}`).subarray(0, 16)
   bytes[6] = (bytes[6]! & 0x0f) | 0x50
   bytes[8] = (bytes[8]! & 0x3f) | 0x80
   const hex = bytes.toString('hex')

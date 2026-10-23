@@ -15,8 +15,8 @@ import { workerConversationFixture } from '../src/modules/conversations/workerFi
 import { workerClaudeReplacementFixture } from '../src/modules/conversations/workerClaudeReplacement.test-support.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import { readSystemPromptSetting } from '../src/modules/settings/foundation.js'
-import { agent3Database, seedAgent3 } from './helpers/wave25Agent3.js'
-import { graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 import { deferred } from './helpers/deferred.js'
 
 it('preserves remote Claude cold recovery, ownership and non-delivery through authenticated Operator MCP', async () => {

@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 import { RunActivitiesPageSchema } from '@foreman-code/contracts/wave25'
 import { attempts, describeRetryBudget, sameSlot } from './helpers/retryBudget.js'
-import { executionRows, readback, recoveryFixture, scope, toolValue, type RecoveryFixture } from './helpers/eng06DRecovery.js'
+import { executionRows, readback, recoveryFixture, scope, toolValue, type RecoveryFixture } from './helpers/recoveryFixture.js'
 
 const dropped = { outcome: 'failed', error: { code: 'CODEX_APP_SERVER_DISCONNECTED', retryable: true } }
 

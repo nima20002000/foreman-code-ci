@@ -29,7 +29,7 @@ import { sourceBindingHash, sourceMaterializationDigest } from '../src/modules/s
 import { PrivateSourceMaterializer, releaseMaterializationClaim } from '../src/modules/sources/materialization.js'
 import { openPrivateRoot, identity } from '../src/modules/sources/privateFilesystem.js'
 import { RemoteOperationJournal } from '../src/modules/runs/remote/operationJournal.js'
-import { agent3Database } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { jobExecution, jobSpec } from './helpers/jobFixture.js'
 
 // Real PostgreSQL, authenticated HTTP/MCP, Ed25519 signatures, durable journal,

@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { createRequire, isBuiltin } from 'node:module';
 import {
   assertWorkerSnapshotSource, rsyncWriterEntrypoint, schemaWorkerEntrypoint,
-  verificationScripts, workerContractAliases, workerEntryPoints,
+  verificationScripts, workerEntryPoints, workerPackageAliases,
 } from './worker-snapshot-policy.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -41,7 +41,7 @@ function snapshotSource(path) {
 async function requirePinnedSource(path) {
   if (!snapshotSource(path).equals(await readFile(join(root, path)))) throw new Error(`Uncommitted build control input: ${path}`);
 }
-for (const path of ['scripts/build-worker-artifact.mjs', 'scripts/worker-artifact-files.mjs', 'packages/contracts/package.json', 'packages/contracts/src/productEnvironment.mjs', 'apps/worker/package.json', 'package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml']) await requirePinnedSource(path);
+for (const path of ['scripts/build-worker-artifact.mjs', 'scripts/worker-artifact-files.mjs', 'packages/contracts/package.json', 'apps/ci/package.json', 'packages/contracts/src/productEnvironment.mjs', 'apps/worker/package.json', 'package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml']) await requirePinnedSource(path);
 await requirePinnedSource('scripts/quota-helper-abi.mjs');
 await requirePinnedSource('scripts/worker-snapshot-policy.mjs');
 await requirePinnedSource('apps/worker/artifacts/licenses/cfworker.txt');
@@ -68,7 +68,8 @@ if (runtime && (runtime.format !== 1 || runtime.runtime !== 'node' || runtime.pl
 // Fresh directories only: never mix files from another release or ship credentials.
 const output = resolve(outputDirectory); await mkdir(output, { mode: 0o700 }); await mkdir(join(output, 'src'));
 const buildOptions = { absWorkingDir: root, outdir: join(output, 'src'), outExtension: { '.js': '.mjs' }, bundle: true, platform: 'node', format: 'esm', target: 'node22', metafile: true, sourcemap: false, packages: 'bundle', external: ['sharp'],
-  alias: workerContractAliases(JSON.parse(snapshotSource('packages/contracts/package.json')).exports),
+  alias: workerPackageAliases({ contracts: JSON.parse(snapshotSource('packages/contracts/package.json')).exports,
+    ci: JSON.parse(snapshotSource('apps/ci/package.json')).exports }),
   plugins: [{ name: 'committed-source-snapshot', setup(builder) {
     builder.onResolve({ filter: /.*/ }, input => { assertWorkerDependency(input.path); });
     builder.onLoad({ filter: /\.(?:[cm]?[jt]s|json)$/ }, (input) => {

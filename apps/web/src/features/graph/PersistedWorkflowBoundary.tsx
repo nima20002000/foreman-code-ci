@@ -9,7 +9,7 @@ import { nextDraftKey } from './nextDraft/state'
 import { useGraphDraftStore } from './store'
 import { editIntentCommandKey } from './nextDraft/useGraphEditIntent'
 import type { BoardUpdateFailure } from '../workflow-board/BoardAlerts'
-import { useWorkflowBoard } from '../workflow-board/context'
+import { useBoardSelection } from '../workflow-board/context'
 import { BoardLoading } from '../workflow-board/BoardLoading'
 
 /** Persisted execution tags are explicit. No default, conversion, complexity
@@ -26,7 +26,7 @@ export function PersistedWorkflowBoundary({ workspaceId, workflowId, workflow, u
   return <AuthoringBoundary workspaceId={workspaceId} workflowId={workflowId} updateFailures={updateFailures} />
 }
 function AuthoringBoundary({ workspaceId, workflowId, updateFailures = [] }: { workspaceId: string; workflowId: string; updateFailures?: readonly BoardUpdateFailure[] }) {
-  const authoringActive = useWorkflowBoard()?.authoringActive !== false
+  const authoringActive = useBoardSelection()?.authoringActive !== false
   const key = nextDraftKey(workspaceId, workflowId)
   const edit = useGraphDraftStore((state) => state.nextDrafts[key])
   const saving = useIsMutating({ mutationKey: editIntentCommandKey(key), exact: true }) > 0

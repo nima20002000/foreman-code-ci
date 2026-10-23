@@ -1,6 +1,6 @@
 import { afterEach, describe, it, vi } from 'vitest'
 import { runHandoffApproval } from './helpers/handoffApproval.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 afterEach(() => vi.restoreAllMocks())
 

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
@@ -9,6 +8,7 @@ import {
 } from '@foreman-code/contracts/provider-accounts'
 import { DomainError } from '../errors.js'
 import { privateDirectory, readRecord, recordObject, syncDirectory, writeRecord } from '../harnesses/recovery/storage.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export interface NativeAccountRecord {
   operation: ProviderAccountAuthenticationOperation
@@ -29,9 +29,9 @@ export class NativeAccountJournal {
   constructor(root: string) { this.root = privateDirectory(root) }
 
   owner(operation: Pick<ProviderAccountAuthenticationOperation, 'binding'>): string {
-    const key = createHash('sha256').update(JSON.stringify([
+    const key = sha256Hex(JSON.stringify([
       operation.binding.target, operation.binding.provider, operation.binding.accountId,
-    ])).digest('hex')
+    ]))
     return `provider-account:${key}`
   }
 

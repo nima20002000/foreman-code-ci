@@ -1,9 +1,8 @@
-import { errorMessage } from '../../shared/errorMessage.js'
+import { errorMessage } from '@foreman-code/contracts/server-kit'
 import type { ChildProcess } from 'node:child_process'
 import { constants } from 'node:fs'
 import { open, readdir, lstat, realpath, statfs, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { createHash } from 'node:crypto'
 import { isDeepStrictEqual as same } from 'node:util'
 import { JobRuntimeNativeAdmissionRecordSchema, JobQualificationCandidateRecordSchema,
   JobVerificationQualificationCandidateSchema, JobQualificationClosureSchema, type JobRuntimeNativeAdmissionRecord, type JobQualificationCandidateRecord }
@@ -24,6 +23,7 @@ import { jobSupervisorIdentity } from './executor.js'
 import { jobQualificationFingerprint, createQualificationNativeOwner, fingerprintQualificationPath,
   qualifyJobRuntime, jobRuntimeMeasurement, runQualificationCommand, type JobQualificationAuthority } from './qualification.js'
 import type { JobRuntimeQualificationResult } from './runtimeProfilePorts.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 /** Samples the original Job boundary; no host-wide memory/CPU estimate is substituted for its cgroup. */
 export async function measureVerificationResourceUsage(input: {
@@ -102,7 +102,7 @@ export async function measureVerificationResourceUsage(input: {
     memoryPeakBytes, pids, cpuUsageMicroseconds,
     pressure: allocatedBytes >= resources.limits.diskBytes || mutableInodes >= resources.mutableInodes
       || pids >= resources.limits.pidsLimit || memoryPeakBytes >= resources.limits.memoryBytes }
-  return { ...sample, evidenceDigest: createHash('sha256').update(JSON.stringify(sample)).digest('hex') }
+  return { ...sample, evidenceDigest: sha256Hex(JSON.stringify(sample)) }
 }
 
 export interface InstalledJobQualificationReservation {

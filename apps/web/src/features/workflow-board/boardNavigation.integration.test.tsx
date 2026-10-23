@@ -13,7 +13,7 @@ import { NextDraftEditor } from '../graph/nextDraft/NextDraftEditor'
 import { nextDraftKey } from '../graph/nextDraft/state'
 import { fixture } from '../graph/nextDraft/core.cases'
 import { useGraphDraftStore } from '../graph/store'
-import { WorkflowBoardContext } from './context'
+import { WorkflowBoardProvider } from './context'
 
 const mounts = vi.hoisted(() => ({ canvas: 0, disposed: 0 }))
 vi.mock('../graph/nextDraft/DraftCanvas', () => ({
@@ -36,13 +36,13 @@ function Harness() {
   const location = useLocation(), navigate = useNavigate()
   const selected = resolveWorkflowBoardLocation(location.pathname, location.search)
   const workflowId = selected.workflowId!
-  return <WorkflowBoardContext.Provider value={{ workspaceId: 'workspace', workflowId, run: selected.run,
+  return <WorkflowBoardProvider value={{ workspaceId: 'workspace', workflowId, run: selected.run,
     inspection: {}, selectInspection: () => undefined, openLocation: () => undefined, openRuns: () => undefined, activeRuns: 0,
     selectRun: (run) => { void navigate({ to: '/workspaces/$workspaceId', params: { workspaceId: 'workspace' }, search: boardSearchForRun(selected.search, workflowId, run) }) },
   }}>
     <p data-testid="selected-run">{selected.run ? `${selected.run.runId}:${selected.run.workflowVersionId}` : 'No Run selected'}</p>
     <NextDraftEditor key={JSON.stringify(['workspace', workflowId])} workspaceId="workspace" workflowId={workflowId} />
-  </WorkflowBoardContext.Provider>
+  </WorkflowBoardProvider>
 }
 function setup() {
   const root = createRootRoute({ component: () => <UnsavedChangesProvider><Outlet /></UnsavedChangesProvider> })

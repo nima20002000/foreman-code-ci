@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveResultSchema } from '@foreman-code/contracts/wave25'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 
 function value(result: { isError?: boolean | undefined; structuredContent?: unknown }) {

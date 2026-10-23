@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import type { ExecutionResult, HarnessExecution, RunInput } from '@foreman-code/contracts'
 import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import type {
@@ -9,6 +8,7 @@ import type {
 
 import { DomainError } from '../errors.js'
 import { compileExecutionTopology, decideExecutionAdmission, type ExecutionTopology } from './topology.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export type RepeatScope = RepeatOccurrenceIdentityV1['scope']
 export interface RepeatNodeRef { nodeId: string; occurrence: RepeatOccurrenceIdentityV1 | null }
@@ -58,10 +58,10 @@ export function repeatConflict(code: string): never {
   throw new DomainError(code, 'The repeat operation conflicts with its pinned durable evidence.', 409)
 }
 export function repeatDigest(value: unknown, maxBytes?: number): string {
-  return `sha256:${createHash('sha256').update(canonicalGraphJson(value, maxBytes)).digest('hex')}`
+  return `sha256:${sha256Hex(canonicalGraphJson(value, maxBytes))}`
 }
 export function repeatId(kind: string, ...parts: (string | number)[]): string {
-  return `${kind}-${createHash('sha256').update(canonicalGraphJson(parts)).digest('hex')}`
+  return `${kind}-${sha256Hex(canonicalGraphJson(parts))}`
 }
 export function sameRepeatValue(left: unknown, right: unknown): boolean {
   // An absent optional field is not JSON; it only equals another absent field.

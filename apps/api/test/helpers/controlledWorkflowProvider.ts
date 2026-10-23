@@ -2,7 +2,7 @@ import type { ExecutionResult, HarnessExecutionRequest, NativeHarnessEvent, Nati
 import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart } from '../../src/modules/harnesses/port.js'
 import type { NativeManagerResolutionContext } from '../../src/modules/interactions/runtimePorts.js'
 import { hasWorkflowRequest } from '../../src/modules/harnesses/sessionStart.js'
-import { CheckpointTestProvider } from './wave25Br1003Provider.js'
+import { CheckpointTestProvider } from './checkpointProvider.js'
 import { deferred } from './deferred.js'
 
 type Output = NonNullable<ExecutionResult['output']>

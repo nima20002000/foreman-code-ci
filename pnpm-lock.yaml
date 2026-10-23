@@ -25,6 +25,9 @@ importers:
       '@fastify/static':
         specifier: 10.1.6
         version: 10.1.6
+      '@foreman-code/ci':
+        specifier: workspace:*
+        version: link:../ci
       '@foreman-code/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -110,6 +113,49 @@ importers:
       tsx:
         specifier: 4.23.15
         version: 4.23.15
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      typescript-eslint:
+        specifier: 8.70.0
+        version: 8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@5.9.3)
+      vitest:
+        specifier: 5.0.5
+        version: 5.0.5(@types/node@26.5.1)(jsdom@30.0.1)(msw@2.15.0(@types/node@26.5.1)(typescript@5.9.3))(vite@8.3.4(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.0))
+
+  apps/ci:
+    dependencies:
+      '@foreman-code/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      fastify:
+        specifier: 5.12.7
+        version: 5.12.7
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
+      zod:
+        specifier: 4.6.3
+        version: 4.6.3
+    devDependencies:
+      '@eslint/js':
+        specifier: 10.0.1
+        version: 10.0.1(eslint@10.10.0(jiti@2.7.0))
+      '@types/node':
+        specifier: 26.5.1
+        version: 26.5.1
+      '@types/pg':
+        specifier: 8.20.0
+        version: 8.20.0
+      eslint:
+        specifier: 10.10.0
+        version: 10.10.0(jiti@2.7.0)
+      globals:
+        specifier: 17.12.0
+        version: 17.12.0
+      pg:
+        specifier: 8.23.0
+        version: 8.23.0
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -222,6 +268,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@foreman-code/ci':
+        specifier: workspace:*
+        version: link:../ci
       '@foreman-code/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts

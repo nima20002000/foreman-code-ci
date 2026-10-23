@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 import { nativeStreamFixture } from './helpers/nativeStreamFixture.js'
 import { openNativeBatch, closeNativeBatch } from '../src/modules/run-graph/nativeBatch.js'
 import { flushNativeGraphRows } from '../src/modules/run-graph/nativeWriter.js'

@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto'
 import { MAX_AGENT_INSTRUCTIONS_BYTES, type AgentConfigurationVersion, type AssignedSkill, type ResolvedSkill } from '@foreman-code/contracts'
 import { HarnessExecutionError } from '../harnesses/errors.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 /** Board Agent and application-level Operator configurations share one composition rule. */
 interface InstructionSource {
@@ -18,7 +18,7 @@ export interface AgentInstructionBundle {
 }
 
 export function skillHash(value: string): string {
-  return `sha256:${createHash('sha256').update(value, 'utf8').digest('hex')}`
+  return `sha256:${sha256Hex(value)}`
 }
 
 /** Never resolve a mutable catalog from a running execution or silently drop missing content. */

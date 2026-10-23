@@ -3,10 +3,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
 import { CURRENT_WORKFLOW_TOOLS, CurrentEditReadResultSchema, CurrentWorkflowSaveResultSchema,
   } from '@foreman-code/contracts/wave25'
-import { writerFixture } from './eng04-writer-fixtures.js'
-import { graphHeaders, graphRpcValue } from './eng04-graph-composition-fixture.js'
-import { insertCurrentRunFixture } from './helpers/eng04CurrentRunFixture.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { writerFixture } from './writer-fixtures.js'
+import { graphHeaders, graphRpcValue } from './graph-composition-fixture.js'
+import { insertCurrentRunFixture } from './helpers/currentRunFixture.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 
 async function insertActiveRun(f: Awaited<ReturnType<typeof writerFixture>>,
   saved: ReturnType<typeof CurrentWorkflowSaveResultSchema.parse>['value']) {

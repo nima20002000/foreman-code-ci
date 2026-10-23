@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, expect, it } from 'vitest'
 import { makeCurrentWorkflowFixture, WorkActivationInputSchema } from '@foreman-code/contracts/wave25'
 import { runWorkHandoffWithRestart, workHandoffRuntimeFixture } from './helpers/workHandoffRuntimeFixture.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { finished } from './helpers/workHandoffFixture.js'
 
 describe.skipIf(!postgresEnabled)('exhausted saved work routes: multiple-routes', () => {

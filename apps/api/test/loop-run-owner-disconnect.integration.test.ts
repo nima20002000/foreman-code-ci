@@ -4,7 +4,7 @@ import type { HarnessExecution } from '@foreman-code/contracts'
 import { startWhenReady } from './helpers/harnessInstallationUpdate.js'
 import { readUntil } from './helpers/observableCondition.js'
 import { remoteReviewProduction } from './helpers/remoteReviewProduction.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 const tickIndex = (execution: HarnessExecution) => (execution.input as { tick?: { index: number } }).tick?.index
 const lastTick = (executions: HarnessExecution[]) => Math.max(0, ...executions.map(execution => tickIndex(execution) ?? 0))

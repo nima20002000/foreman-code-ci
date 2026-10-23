@@ -1,6 +1,7 @@
 import { SendOperatorMessageRequestSchema, type SendOperatorMessageRequest, type OperatorChatSettings } from '@foreman-code/contracts'
 import type { MessageAttachmentRef } from '@foreman-code/contracts/files'
 import { sameAttachmentRefs } from '../conversations/chatAttachmentAttempt'
+import { readStoredCommand, withCommandLock, writeStoredCommand } from '../../shared/api/commandOutbox'
 import { protectedKey } from '../../shared/api/protectedChatStorage'
 import { assertSession, sessionGeneration, sessionIsSwitching, sessionSignal, SessionChangedError } from '../../shared/api/sessionBoundary'
 
@@ -13,8 +14,8 @@ type PendingMessage = { command?: SendOperatorMessageRequest; error?: string; se
 
 function readKey(key: string): PendingMessage {
   try {
-    const value = window.localStorage.getItem(key)
-    if (value === null) return {}
+    const value = readStoredCommand(key, storageError)
+    if (value === undefined) return {}
     const saved = JSON.parse(value)
     const current = saved?.version === 2
     const command = SendOperatorMessageRequestSchema.safeParse(current ? saved.request : saved?.command ?? saved)
@@ -34,9 +35,7 @@ function readKey(key: string): PendingMessage {
 function writeKey(key: string, command: SendOperatorMessageRequest, ledger: AttemptLedger, sendFailure?: string): void {
   // Deliberately not a v1 `command` envelope: older tabs must fail closed rather
   // than discard a v2 command using their last-error/message-string heuristic.
-  const value = JSON.stringify({ version: 2, request: command, ledger, ...(sendFailure ? { sendFailure } : {}) })
-  window.localStorage.setItem(key, value)
-  if (window.localStorage.getItem(key) !== value) throw new Error(storageError)
+  writeStoredCommand(key, JSON.stringify({ version: 2, request: command, ledger, ...(sendFailure ? { sendFailure } : {}) }), storageError)
 }
 
 export function readPendingOperatorMessage(id: string): PendingMessage {
@@ -80,19 +79,17 @@ export function discardDefinitivelyRejectedOperatorMessage(id: string, requestId
   return exclusive(id, (key) => {
     const pending = readKey(key)
     if (pending.error || pending.command?.requestId !== requestId || !pending.definitiveFailure) return false
-    window.localStorage.removeItem(key)
+    writeStoredCommand(key, undefined, storageError)
     return true
   })
 }
 
 /** Cross-document exclusion, not a same-tab mutex or a read/write/read storage guess. */
-async function exclusive<T>(id: string, work: (key: string) => T): Promise<T> {
+function exclusive<T>(id: string, work: (key: string) => T): Promise<T> {
   if (sessionIsSwitching()) throw new SessionChangedError()
   const generation = sessionGeneration()
   const key = protectedKey('outbox', id)
-  const locks = globalThis.navigator?.locks
-  if (!locks) throw new Error('This browser cannot safely coordinate Operator messages across tabs. Use a browser with Web Locks enabled in a secure context.')
-  return locks.request(outboxLock, { mode: 'exclusive', signal: sessionSignal() }, () => {
+  return withCommandLock(outboxLock, () => {
     const check = () => {
       assertSession(generation)
       // Storage events may not have reached this tab yet. Compare the durable
@@ -103,7 +100,8 @@ async function exclusive<T>(id: string, work: (key: string) => T): Promise<T> {
     const value = work(key) // Synchronous, bounded storage work only; no HTTP under this lock.
     check()
     return value
-  })
+  }, { signal: sessionSignal(),
+    unavailable: 'This browser cannot safely coordinate Operator messages across tabs. Use a browser with Web Locks enabled in a secure context.' })
 }
 
 /** Reserve once before submission. Every tab and every lost-response retry reuses that identity. */
@@ -141,7 +139,7 @@ export function acknowledgeOperatorMessage(id: string, requestId: string): Promi
     const pending = readKey(key)
     if (pending.error) throw new Error(pending.error)
     if (pending.command?.requestId !== requestId) return false
-    window.localStorage.removeItem(key)
+    writeStoredCommand(key, undefined, storageError)
     return true
   })
 }

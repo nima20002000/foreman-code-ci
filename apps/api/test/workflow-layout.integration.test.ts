@@ -12,9 +12,9 @@ import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
-import { currentDatabase as agent3Database, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
-import { graphRpc, graphRpcValue, graphHeaders } from './eng04-graph-composition-fixture.js'
-import { insertCurrentRunFixture as insertFixtureRepeatRun } from './helpers/eng04CurrentRunFixture.js'
+import { currentDatabase as agent3Database, postgresEnabled } from './helpers/database.js'
+import { graphRpc, graphRpcValue, graphHeaders } from './graph-composition-fixture.js'
+import { insertCurrentRunFixture as insertFixtureRepeatRun } from './helpers/currentRunFixture.js'
 
 /** Real migrated PostgreSQL, issued bearer auth, typed writer, command/audit and
  * stateless Operator MCP. No native engine is composed; the active Run is an

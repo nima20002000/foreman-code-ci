@@ -1,7 +1,6 @@
 /** Public Claude session manager contracts and the internal state shapes its modules share. */
 import type { CompactionState, ContextSnapshot, SessionPreferences, AgentHarness, ExecutionResult, NativeHarnessEvent,
   NativeSessionReference } from '@foreman-code/contracts'
-import { createHash } from 'node:crypto'
 import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart, NativeTurnInput } from '../port.js'
 import type { NativeMcpHttpCredentialAcknowledgement } from '../mcpDetection.js'
 import type { ResponseAvailabilityInspector } from '../responseAvailability.js'
@@ -10,6 +9,7 @@ import type { ClaudeLiveCallbackReader, ClaudeNativeCallbackContext, ClaudeCallb
   ClaudePendingNotification } from './callbackAvailability.js'
 import { ClaudeBoundedQueue } from './queue.js'
 import type { ClaudeSdkRunner, ClaudeSdkSession, ClaudeSessionScope } from './port.js'
+import { sha256Digest } from '../../../shared/hash.js'
 
 /** Message receipts are distinct from native turns. The shared port consumes this additive seam. */
 export interface ClaudeMessageSubmission {
@@ -33,7 +33,7 @@ export interface ClaudeSessionQualification {
 }
 /** Stable client identity permits read-only recovery; it is not a native receipt before observation. */
 export function claudePromptUuid(correlationId: string): string {
-  const bytes = createHash('sha256').update(JSON.stringify(['graphql-claude-message-v2', correlationId])).digest().subarray(0, 16)
+  const bytes = sha256Digest(JSON.stringify(['graphql-claude-message-v2', correlationId])).subarray(0, 16)
   bytes[6] = (bytes[6]! & 0x0f) | 0x50
   bytes[8] = (bytes[8]! & 0x3f) | 0x80
   const hex = bytes.toString('hex')

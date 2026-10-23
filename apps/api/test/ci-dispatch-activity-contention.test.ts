@@ -3,13 +3,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { CiRunRecordSchema, type CiHostRequest } from '@foreman-code/contracts'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
-import { claimCiDispatch } from '../src/modules/ci-host/dispatch.js'
-import type { HostCiComputer } from '../src/modules/ci-host/serviceTypes.js'
+import { claimCiDispatch } from '@foreman-code/ci/dispatch'
+import type { HostCiComputer } from '@foreman-code/ci/serviceTypes'
 import { RunActivitiesService } from '../src/modules/runs/activities.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { deferred, rejectableDeferred } from './helpers/deferred.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
-import { graphFixture } from './eng04-graph-composition-fixture.js'
+import { currentDatabase } from './helpers/database.js'
+import { graphFixture } from './graph-composition-fixture.js'
 
 describe('CI dispatch activity concurrency', () => {
   let db: Awaited<ReturnType<typeof currentDatabase>>

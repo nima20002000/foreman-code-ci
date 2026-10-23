@@ -2,16 +2,17 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { createDatabase } from '../src/infrastructure/database.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
-import { CircleAccountDirectory } from '../src/modules/ci-host/circleAccounts.js'
-import { CircleCiAccounts } from '../src/modules/ci-host/circleCiAccounts.js'
-import { CloudCi } from '../src/modules/ci-host/cloud.js'
-import { CircleCiProvider, GitHubActionsProvider } from '../src/modules/ci-host/cloudProviders.js'
-import { CiDispatchDeadlineError, withCiDispatchDeadline } from '../src/modules/ci-host/dispatchDeadline.js'
-import { ProductionHostCiEndpoint } from '../src/modules/ci-host/endpoint.js'
-import type { HostCiPorts } from '../src/modules/ci-host/runner.js'
-import type { HostCiComputer } from '../src/modules/ci-host/serviceTypes.js'
+import { CircleAccountDirectory } from '@foreman-code/ci/circleAccounts'
+import { CircleCiAccounts } from '@foreman-code/ci/circleCiAccounts'
+import { CloudCi } from '@foreman-code/ci/cloud'
+import { CircleCiProvider, GitHubActionsProvider } from '@foreman-code/ci/cloudProviders'
+import { CiDispatchDeadlineError, withCiDispatchDeadline } from '@foreman-code/ci/dispatchDeadline'
+import { ProductionHostCiEndpoint } from '@foreman-code/ci/endpoint'
+import type { HostCiPorts } from '@foreman-code/ci/runner'
+import type { HostCiComputer } from '@foreman-code/ci/serviceTypes'
 import { deferred } from './helpers/deferred.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 let fixture: Awaited<ReturnType<typeof migratedDatabase>>
 beforeAll(async () => { fixture = await migratedDatabase() }, 60_000)
@@ -42,7 +43,7 @@ it.each(['ended', 'expired'] as const)(
         throw new Error(`Unexpected fixture command: ${file} ${args[0]}`)
       },
     }
-    const directory = new CircleAccountDirectory(ports, registry, {
+    const directory = new CircleAccountDirectory(mainCiContext, ports, registry, {
       configRoot: join(fixture.directory, outcome, 'config'), environment: { CIRCLE_TOKEN: 'fixture-primary-token' },
     })
     const context = async (id: string) => {
@@ -51,19 +52,19 @@ it.each(['ended', 'expired'] as const)(
       return account
     }
     const primaryContext = await context('default')
-    const primary = new CircleCiProvider(primaryContext.ports, { http: primaryContext.http })
+    const primary = new CircleCiProvider(mainCiContext, primaryContext.ports, { http: primaryContext.http })
     primary.recoveryOnly = true
     const mirrors = async () => 'fixture-alpha/site-ci'
-    const clouds = [new CloudCi('fixture-main', new GitHubActionsProvider(ports), mirrors,
-      join(fixture.directory, outcome, 'github')), new CloudCi('fixture-main', primary, mirrors,
+    const clouds = [new CloudCi(mainCiContext, 'fixture-main', new GitHubActionsProvider(mainCiContext, ports), mirrors,
+      join(fixture.directory, outcome, 'github')), new CloudCi(mainCiContext, 'fixture-main', primary, mirrors,
       join(fixture.directory, outcome, 'recovery'))]
-    const discovery = new CircleCiAccounts(ports, async () => [await mirrors()], async account => {
+    const discovery = new CircleCiAccounts(mainCiContext, ports, async () => [await mirrors()], async account => {
       const selected = await context(account.circleAccountId ?? 'default')
-      clouds.push(new CloudCi('fixture-main', new CircleCiProvider(selected.ports, { http: selected.http }, account),
+      clouds.push(new CloudCi(mainCiContext, 'fixture-main', new CircleCiProvider(mainCiContext, selected.ports, { http: selected.http }, account),
         mirrors, join(fixture.directory, outcome, account.owner)))
     }, { registry, context, explicitPrimary: true })
     let refreshing: Promise<void> | undefined
-    const endpoint = new ProductionHostCiEndpoint(database.pool, 'fixture-main', () => undefined, {
+    const endpoint = new ProductionHostCiEndpoint(mainCiContext, database.pool, 'fixture-main', () => undefined, {
       handle: async () => { throw new Error('Unexpected local executor request') },
     }, clouds, () => { refreshing = discovery.refresh(); return refreshing })
     let initial: HostCiComputer[] = []
@@ -71,7 +72,7 @@ it.each(['ended', 'expired'] as const)(
       expect((await settings.getCircleAccounts()).value.accounts).toMatchObject([
         { id: 'default', role: 'primary', organizations: [] },
       ])
-      const dispatch = withCiDispatchDeadline(async () => {
+      const dispatch = withCiDispatchDeadline(mainCiContext, async () => {
         initial = await endpoint.computers()
         await entered.promise
         if (outcome === 'expired') await resumeDispatch.promise

@@ -1,5 +1,3 @@
-import { installationHeaders, reloadChangedInstallation } from '../../shared/api/sessionBoundary'
-import { ApiErrorResponseSchema } from '@foreman-code/contracts'
 import {
   FileReferenceMutationResultSchema, FilePageSchema, FileWithRevisionSchema, MessageAttachmentRefSchema,
   PermanentFileScopeSchema, WorkflowReferenceFileScopeSchema,
@@ -7,9 +5,10 @@ import {
   type PermanentFileScope, type WorkflowReferenceFileScope,
 } from '@foreman-code/contracts/files'
 import { apiClient, ApiError } from '../../shared/api/client'
+import { ByteLengthError, readExactBytes, readUploadBytes, sha256Hex } from '../../shared/api/bytes'
 import {
-  assertSession, sessionGeneration, sessionIsSwitching, sessionSignal, SessionChangedError,
-} from '../../shared/api/sessionBoundary'
+  apiErrorFromResponse, apiUrl, beginFencedOperation, installationHeaders, sendRaw, type FencedOperation,
+} from '../../shared/api/transport'
 import { inspectAttachment } from '../attachments/attachmentFiles'
 import { referenceFilesRoot, referenceScopeKey } from './workflowFilesModel'
 
@@ -57,56 +56,19 @@ function resultRow(value: unknown, scope: PermanentFileScope, ref?: MessageAttac
   return parseRow(parsed.data.value, scope, ref)
 }
 
-function requestContext(signal: AbortSignal) {
-  if (sessionIsSwitching()) throw new SessionChangedError()
-  const generation = sessionGeneration()
-  const combined = AbortSignal.any([signal, sessionSignal(), AbortSignal.timeout(120_000)])
-  const check = () => { assertSession(generation); combined.throwIfAborted() }
-  check()
-  return { signal: combined, check }
+function requestContext(signal: AbortSignal): FencedOperation {
+  const operation = beginFencedOperation({ signal, timeoutMs: 120_000 })
+  operation.check()
+  return operation
 }
 
-function fileBytes(file: File, signal: AbortSignal): Promise<ArrayBuffer> {
-  signal.throwIfAborted()
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    const abort = () => { reader.abort(); reject(signal.reason) }
-    reader.onload = () => resolve(reader.result as ArrayBuffer)
-    reader.onerror = () => reject(reader.error)
-    reader.onabort = () => reject(signal.reason ?? new DOMException('Upload canceled.', 'AbortError'))
-    reader.onloadend = () => signal.removeEventListener('abort', abort)
-    signal.addEventListener('abort', abort, { once: true })
-    reader.readAsArrayBuffer(file)
+/** apiClient is JSON-only. Raw PUT/download go through the shared transport. */
+async function rawRequest(path: string, context: FencedOperation, init: RequestInit): Promise<Response> {
+  const response = await sendRaw(apiUrl(path), context, {
+    ...init, headers: installationHeaders(init.headers), cache: 'no-store', redirect: 'error',
+    networkMessage: 'The file request could not be completed.',
   })
-}
-
-async function sha256(bytes: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', bytes)
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
-}
-
-/** apiClient is JSON-only. Raw PUT/download stay inside this same-origin,
- * session-fenced feature boundary (as in attachmentClient), interceptable by MSW. */
-async function rawRequest(path: string, context: ReturnType<typeof requestContext>, init: RequestInit): Promise<Response> {
-  context.check()
-  let response: Response
-  try {
-    response = await fetch(new URL(path, globalThis.location?.origin ?? 'http://localhost'), {
-      ...init, headers: installationHeaders(init.headers), credentials: 'omit', cache: 'no-store', redirect: 'error', signal: context.signal,
-    })
-  } catch (error) {
-    context.check()
-    if (error instanceof Error && error.name === 'AbortError') throw error
-    throw new ApiError({ code: 'NETWORK_ERROR', message: 'The file request could not be completed.' }, undefined, { cause: error })
-  }
-  context.check()
-  if (!response.ok) {
-    const parsed = ApiErrorResponseSchema.safeParse(await response.json().catch(() => /* ignore: a body that is not JSON fails the schema */ undefined))
-    context.check()
-    if (parsed.success) reloadChangedInstallation(parsed.data.error.code)
-    throw new ApiError(parsed.success ? parsed.data.error
-      : { code: 'HTTP_ERROR', message: 'The file request failed.' }, response.status)
-  }
+  if (!response.ok) throw await apiErrorFromResponse(response, context, 'The file request failed.')
   return response
 }
 
@@ -132,9 +94,9 @@ export function createWorkflowFilesHttpClient(): WorkflowFilesClient {
       const context = requestContext(input.signal)
       const inspected = inspectAttachment(input.file)
       if (!inspected.ok) throw new ApiError({ code: 'INVALID_REQUEST', message: inspected.issue.message })
-      const bytes = await fileBytes(input.file, context.signal)
+      const bytes = await readUploadBytes(input.file, context.signal)
       context.check()
-      const hash = await sha256(bytes)
+      const hash = await sha256Hex(bytes)
       context.check()
       const metadata = { requestId: input.requestId, filename: inspected.filename, mediaType: inspected.mediaType,
         byteSize: input.file.size, sha256: hash }
@@ -192,23 +154,11 @@ export function createWorkflowFilesHttpClient(): WorkflowFilesClient {
       }
       if (!response.body) throw invalidResponse()
       // The shared metadata bounds allocation to 25 MiB. Do not buffer an unbounded blob().
-      const bytes = new Uint8Array(row.revision.byteSize)
-      const reader = response.body.getReader()
-      let received = 0
-      try {
-        for (;;) {
-          const { done, value } = await reader.read()
-          context.check()
-          if (done) break
-          if (received + value.byteLength > bytes.byteLength) throw invalidResponse()
-          bytes.set(value, received)
-          received += value.byteLength
-        }
-      } finally {
-        await reader.cancel().catch(() => /* ignore: the stream is already closed or failed */ undefined)
-        reader.releaseLock()
-      }
-      if (received !== bytes.byteLength || await sha256(bytes.buffer) !== row.revision.sha256) throw invalidResponse()
+      const bytes = await readExactBytes(response, row.revision.byteSize, context.signal).catch((error: unknown) => {
+        context.check()
+        throw error instanceof ByteLengthError ? invalidResponse() : error
+      })
+      if (await sha256Hex(bytes) !== row.revision.sha256) throw invalidResponse()
       context.check()
       return new Blob([bytes], { type: row.revision.mediaType })
     },

@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { randomUUID } from 'node:crypto'
 import { SendAgentChatMessageResponseSchema } from '@foreman-code/contracts/agent-chat'
 import { eventually } from './helpers/agentChatF5.js'
 import { withChatReadClock } from './helpers/chatReadClock.js'
-import { body, executions, oldRunRows, read, setup, terminal, dispatchScheduledRun } from './sch06-agent-chat.helpers.js'
+import { body, executions, oldRunRows, read, setup, terminal, dispatchScheduledRun } from './agent-chat-schedule.helpers.js'
 
 describe.skipIf(!postgresEnabled)('Selected Run chat PostgreSQL / HTTP / MCP', () => {
   it.each(['manual', 'schedule'] as const)('reads %s Run computer evidence and a persisted execution chat through HTTP and MCP', async (trigger) => {

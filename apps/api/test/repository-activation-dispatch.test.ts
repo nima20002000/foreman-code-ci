@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type pg from 'pg'
 import { PostgresRunRepository, runRepositorySemantics } from '../src/modules/runs/postgres.js'
 import type { RunOwnership } from '../src/modules/runs/ownership.js'
-import { unavailableRuntime, currentRepositoryFixture } from './eng04-runtime-repository-fixture.js'
+import { unavailableRuntime, currentRepositoryFixture } from './runtime-repository-fixture.js'
 
 // Snapshot delegation is doubled here; the PostgreSQL suite tests real reads.
 function fixture() {

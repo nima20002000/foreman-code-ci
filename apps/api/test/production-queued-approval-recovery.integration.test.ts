@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { productionFixtures, response, checkpointCut, expireAbandonedClaims, recover } from './helpers/approvalCheckpointProduction.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 

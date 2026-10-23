@@ -2,7 +2,7 @@ import type pg from 'pg'
 import { describe, expect, it } from 'vitest'
 import { RunGraphReadService } from '../src/modules/run-graph/readService.js'
 import { currentGraphPrincipal, currentGraphRequest } from './helpers/currentGraphReadUnit.js'
-import { ProjectionDatabase } from './eng04-projection-fixture.js'
+import { ProjectionDatabase } from './projection-fixture.js'
 
 /** A graph read whose pool fails the first statement matching `failing`, like a saturated or restarted database. */
 async function readerFailingOn(failing: RegExp, failure: Error) {

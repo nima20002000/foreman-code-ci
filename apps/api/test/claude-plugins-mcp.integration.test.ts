@@ -11,7 +11,8 @@ import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { ClaudePluginSettingsService } from '../src/modules/harnesses/claudePlugins.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { claudePluginPorts } from './helpers/claudePluginPorts.js'
 
 describe.skipIf(!postgresEnabled)('Claude plugins through authenticated Operator MCP', () => {

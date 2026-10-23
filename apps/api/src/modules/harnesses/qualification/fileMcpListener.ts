@@ -1,15 +1,16 @@
-import { createHash, timingSafeEqual } from 'node:crypto'
+import { timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:http'
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node'
 import { MAX_FILE_WRITE_BYTES } from '@foreman-code/contracts/files'
 import { createFileMcpServer, type FileMcpService } from '../../files/tools/mcpServer.js'
 import { DomainError } from '../../errors.js'
+import { sha256Digest } from '../../../shared/hash.js'
 
 /** Temporary native qualification tools use the same file MCP server as the app. */
 export async function createQualificationFileMcpListener(service: FileMcpService, token: string, options: {
   observeRequest?: (request: { method: string; body: unknown }) => (statusCode: number) => void
 } = {}) {
-  const credential = createHash('sha256').update(`Bearer ${token}`).digest()
+  const credential = sha256Digest(`Bearer ${token}`)
   const active = new Set<Promise<void>>()
   const failures: unknown[] = []
   let closing = false
@@ -17,7 +18,7 @@ export async function createQualificationFileMcpListener(service: FileMcpService
   const listener = createServer((request, response) => {
     const task = (async () => {
       const authorized = timingSafeEqual(credential,
-        createHash('sha256').update(request.headers.authorization ?? '').digest())
+        sha256Digest(request.headers.authorization ?? ''))
       response.setHeader('cache-control', 'no-store')
       if (closing || !authorized) {
         response.writeHead(401)

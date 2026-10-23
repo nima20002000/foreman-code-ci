@@ -7,7 +7,7 @@ import { WorkflowRunSummarySchema, type WorkflowRunSummary } from '@foreman-code
 import { WorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
 import { server } from '../../mocks/server'
 import { currentWorkflowFixture } from '../../shared/mocks/currentWorkflow'
-import { WorkflowBoardContext } from './context'
+import { WorkflowBoardProvider } from './context'
 import { boardRunListKey } from './keys'
 import { RunActivityPanel } from './RunActivityPanel'
 import { shortRunId } from './runFacts'
@@ -32,10 +32,10 @@ function mount(summaries: readonly WorkflowRunSummary[] = [], existingClient?: Q
   if (!clients.includes(client)) clients.push(client)
   const selectRun = vi.fn()
   const view = (items: readonly WorkflowRunSummary[]) => <QueryClientProvider client={client}>
-    <WorkflowBoardContext.Provider value={{ workspaceId, workflowId, inspection: {}, activeRuns: 0, selectRun,
+    <WorkflowBoardProvider value={{ workspaceId, workflowId, inspection: {}, activeRuns: 0, selectRun,
       selectInspection: vi.fn(), openLocation: vi.fn(), openRuns: vi.fn() }}>
       <RunActivityPanel summaries={items} />
-    </WorkflowBoardContext.Provider>
+    </WorkflowBoardProvider>
   </QueryClientProvider>
   const rendered = render(view(summaries))
   return { client, selectRun, unmount: rendered.unmount,

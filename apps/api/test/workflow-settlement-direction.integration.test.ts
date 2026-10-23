@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, expect, it, vi } from 'vitest'
 import type { ExecutionResult, HarnessExecution } from '@foreman-code/contracts'
 import { CANONICAL_RUN_GRAPH_MCP_TOOLS, CanonicalRunGraphCurrentSchema } from '@foreman-code/contracts/wave25'
-import { graphRpcValue } from './eng04-graph-composition-fixture.js'
+import { graphRpcValue } from './graph-composition-fixture.js'
 import { InteractionService } from '../src/modules/interactions/service.js'
 import { Wave25InteractionRepository } from '../src/modules/interactions/wave25/repository.js'
 import { PostgresApprovalBudgetRepository } from '../src/modules/interactions/budget.js'
@@ -11,6 +11,7 @@ import { workDirectionInteractionId } from '../src/modules/runs/workDirectionInt
 import {
   useSettlementFixtures, timeout, handoffs, seedDirectionWait, directionApi,
 } from './helpers/workflowSettlementTestSupport.js'
+import { postgresEnabled } from './helpers/database.js'
 
 // Native terminals and physical closure are explicit test inputs. Authenticated
 // Save/MCP reads, canonical publication, SQL transactions and settlement execute.
@@ -20,7 +21,7 @@ vi.mock('../src/modules/interactions/repeatNativeSettlement.js', async (importOr
   settleRepeatNativeExecutionWithProofLocked: vi.fn(async () => undefined),
 }))
 
-describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('workflow settlement direction', () => {
+describe.skipIf(!postgresEnabled)('workflow settlement direction', () => {
   const withFixture = useSettlementFixtures()
 
   it.each(['finish', 'continue', 'stop'] as const)(
@@ -73,8 +74,8 @@ describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('workflow settlement direc
             expect(await api.repository.get(interaction.id)).toMatchObject({ status: 'delivered',
               continuationRunId: expect.any(String) })
             const restarted = new InteractionService(new Wave25InteractionRepository(f.db.pool),
-              new PostgresApprovalBudgetRepository(f.db.pool), {} as never, async () => undefined)
-            restarted.useWorkDirectionActions({ start: api.start, wake: async () => undefined })
+              new PostgresApprovalBudgetRepository(f.db.pool), {} as never, async () => undefined, undefined, undefined,
+              { start: api.start, wake: async () => undefined })
             expect((await restarted.recover({ limit: 20 })).errors).toEqual([])
             expect((await restarted.recover({ limit: 20 })).errors).toEqual([])
           }

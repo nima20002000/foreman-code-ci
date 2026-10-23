@@ -3,7 +3,7 @@ import { admitRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
 import { START_PREPARATION_TIMEOUT_MS } from '../src/modules/runs/startPreparation.js'
 import { SOURCE_LIMITS } from '../src/modules/sources/manifest.js'
 import { RUN_START_LOCK_WAIT_MS } from '../src/modules/runs/startLocks.js'
-import { startSqlFixture } from './eng04-start-fixtures.js'
+import { startSqlFixture } from './start-fixtures.js'
 
 describe('Start preparation deadline', () => {
   it.each(['http', 'mcp'] as const)('%s admits a Run after source preparation exceeds the lock-wait budget', async source => {

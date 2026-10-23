@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { faultWorkflowFixture, expectBoundedNodeFault } from './helpers/faultWorkflowFixture.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.runIf(postgresEnabled)('native interruption without an answer', () => {
   let fixture: Awaited<ReturnType<typeof faultWorkflowFixture>>

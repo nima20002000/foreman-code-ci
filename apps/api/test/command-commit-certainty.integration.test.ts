@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { expect, it, vi } from 'vitest'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
-import { agent3Database } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 
 it('audits a lost commit reply as uncertain and resolves an identical retry through its persisted receipt', async () => {
   const db = await agent3Database()

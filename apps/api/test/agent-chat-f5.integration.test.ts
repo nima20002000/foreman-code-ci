@@ -17,7 +17,8 @@ import { PostgresOperatorConversationRepository } from '../src/modules/conversat
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { AgentChatF5Native, eventually } from './helpers/agentChatF5.js'
-import { agent3Database, postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { deferred } from './helpers/deferred.js'
 
 /** Opt-in real SQL/authenticated transports; native I/O remains a deterministic substitute. */

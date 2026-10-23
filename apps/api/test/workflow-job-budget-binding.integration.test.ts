@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, expect, it, vi } from 'vitest'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import type { WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 import { readWorkflowJobSourceLocked } from '../src/modules/jobs/workflowSource.js'
 import { snapshot, timeout, useWorkflowJobBudgetFixture } from './helpers/workflowJobBudgetFixture.js'

@@ -4,7 +4,7 @@ import { currentOperatorIntegration } from './helpers/currentOperatorIntegration
 import { prepareCoordinationWorkflow } from './helpers/coordinationWorkflow.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { memoryCall, memoryWorkflow, type MemoryRuntime } from './helpers/memoryWorkflow.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 
 it.runIf(postgresEnabled)('applies interval board effects without creating an unsettled business obligation', async () => {
   const fixture = memoryWorkflow('single')

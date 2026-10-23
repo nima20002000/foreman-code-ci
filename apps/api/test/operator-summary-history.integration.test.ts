@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest'
 import { PostgresOperatorConversationRepository } from '../src/modules/conversations/operatorChatRepository.js'
 import { PostgresOperatorRepository } from '../src/modules/operators/postgres.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+import { currentDatabase } from './helpers/database.js'
 
 type Plan = { 'Rows Removed by Filter'?: number; Plans?: Plan[] }
 function filteredRows(plan: Plan): number {

@@ -19,7 +19,7 @@ import { withQualificationIdentity } from '../../src/modules/harnesses/qualifica
 import { runWithReadOnlyQualification } from '../../src/modules/harnesses/qualification/gate.js'
 import { scopedCompatibilityProbe } from '../../src/modules/harnesses/compatibility/scopedProbe.js'
 import { PostgresSettingsRepository } from '../../src/modules/settings/postgres.js'
-import type { Sch11Fixture } from './sch11Fixture.js'
+import type { Sch11Fixture } from './scheduleFixture.js'
 import { completeTestResourceCleanup, registerTestResourceCleanup } from '../../../../scripts/test-resources.mjs'
 import { writeNativeAcceptanceEvidence } from './nativeAcceptanceEvidence.js'
 

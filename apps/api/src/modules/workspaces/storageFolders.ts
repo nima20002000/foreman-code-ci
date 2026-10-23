@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { lstat, readdir, realpath, rm } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import type pg from 'pg'
@@ -14,9 +13,10 @@ import { activeAgentChatDirectories } from '../conversations/activeAgentChats.js
 import { WORKSPACE_FOLDER_LIFECYCLE_LOCK, continuingRunDirectories } from './projectFolderCleanup.js'
 import { lockWorkspaceFolders } from './folderLocks.js'
 import { withGitDirectoryDependencies } from './gitDirectoryDependencies.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 function identity(details: { dev: bigint; ino: bigint }): string {
-  return 'sha256:' + createHash('sha256').update(`${details.dev}:${details.ino}`).digest('hex')
+  return 'sha256:' + sha256Hex(`${details.dev}:${details.ino}`)
 }
 
 type FolderReference = { path: string; kind: 'workspace' | 'archived_workspace' | 'owned_folder' | 'active_run' | 'defaults'; registered: boolean }

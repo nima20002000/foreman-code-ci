@@ -9,7 +9,7 @@ import { WorkerConversationHost } from '../src/modules/conversations/workerHost.
 import { WorkerConversationJournal } from '../src/modules/conversations/workerJournal.js'
 import { WorkerConversationManager } from '../src/modules/conversations/workerManager.js'
 import { workerConversationFixture } from '../src/modules/conversations/workerFixtures.test-support.js'
-import { memoryConversation, operator } from './fixtures/agent1OperatorChat.js'
+import { memoryConversation, operator } from './fixtures/operatorChatMemory.js'
 
 it('recovers and stops the original Claude initial input before settling cancellation after Main restarts', async () => {
   const f = workerConversationFixture('operator', 'claude')

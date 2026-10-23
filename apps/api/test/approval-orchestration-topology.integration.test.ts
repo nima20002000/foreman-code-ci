@@ -1,5 +1,5 @@
 import { approvalOrchestrationDatabase } from './helpers/approvalOrchestrationDatabase.js'
-import { approvalFixture } from './helpers/wave25ApprovalFixture.js'
+import { approvalFixture } from './helpers/approvalFixture.js'
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
@@ -7,7 +7,8 @@ import { ManagementActionSchema } from '@foreman-code/contracts/management'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
-import { postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 afterEach(() => vi.restoreAllMocks())
 describe.skipIf(!postgresEnabled)('current durable approval orchestration', () => {

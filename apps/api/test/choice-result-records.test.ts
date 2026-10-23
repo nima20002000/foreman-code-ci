@@ -10,7 +10,7 @@ import { currentUnitSnapshot } from './helpers/currentUnitSnapshot.js'
 import {
   br2001Fixture, br2001InvalidTexts, br2001Providers, br2001Terminal, br2001Text,
   type Br2001Provider,
-} from './helpers/wave25Br2001Choice.js'
+} from './helpers/choiceProviders.js'
 
 /** The removed putNodeResolution/oneShotResolution seam is now the current
  * accepted-result readback: it independently re-parses the raw carrier, compares

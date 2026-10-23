@@ -38,6 +38,7 @@ import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connec
 import type { SourceMaterializationRecord } from '@foreman-code/contracts/source-admission'
 import type { JobSql } from '../src/modules/jobs/repository.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
+import { postgresEnabled } from './helpers/database.js'
 const databaseUrl=process.env.TEST_DATABASE_URL,schema=`job_output_${randomUUID().replaceAll('-','')}`
 const hash=(v:Uint8Array|string)=>createHash('sha256').update(v).digest('hex')
 function queue() {
@@ -51,7 +52,7 @@ function queue() {
 /** Root-only DB contract fixture. Pairing, current W07 session, actual main PostgreSQL
  * ownership and B sender/receiver are real; source/native observations are explicit
  * fixture facts, not a claim of physical laptop/container acceptance. */
-describe.skipIf(!databaseUrl)('main-issued authenticated job output transfer receipts',()=>{
+describe.skipIf(!postgresEnabled)('main-issued authenticated job output transfer receipts',()=>{
   let admin:pg.Pool,pool:pg.Pool,storage:string,staging:string,endpoint:DeviceEndpoint,ownership:JobOwnership|undefined
   let actual:ReturnType<typeof createAdmittedJobOutputs>,access:PostgresDeviceAccessService,binding:DeviceSessionBinding,credential:string,endpointTask:Promise<void>
   let app:FastifyInstance,address:string,mcpClient:Client|undefined,incoming:ReturnType<typeof queue>,outgoing:ReturnType<typeof queue>

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import { isDeepStrictEqual } from 'node:util'
@@ -20,6 +19,7 @@ import { ProviderAccountsRepository } from './repository.js'
 import { ProviderAccountsService, type ProviderAccountCredentials, type ProviderAccountOperationNativePort } from './service.js'
 import { ProviderAccountWorkerCarrier } from './workerCarrier.js'
 import { assertAccountUnused } from './authenticationOperations.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export async function authorizeAccountTarget(sql: GraphSqlClient, principal: ManagementPrincipal,
   target: DeviceProvisioningTarget, manage: boolean, accountId?: string): Promise<void> {
@@ -42,10 +42,8 @@ export function createRemoteAccountServices(input: {
   endpoint(): Pick<DeviceEndpoint, 'captureRequest' | 'currentBinding' | 'capabilities'>
 }) {
   const repository = (target: DeviceProvisioningTarget) => {
-    const key = createHash('sha256').update(JSON.stringify(target)).digest('hex')
-    const value = new ProviderAccountsRepository(input.pool, async () => `worker:${key}`)
-    value.bindTarget(async () => target)
-    return value
+    const key = sha256Hex(JSON.stringify(target))
+    return new ProviderAccountsRepository(input.pool, async () => `worker:${key}`, async () => target)
   }
   const carrier = new ProviderAccountWorkerCarrier(input.endpoint, async (principal, target, request) => {
     let id: string | undefined

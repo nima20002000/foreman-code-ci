@@ -4,19 +4,20 @@ import { createDatabase } from '../src/infrastructure/database.js'
 import { withCiDatabasePriority, withCiDatabaseReservation,
   withoutCiDatabaseReservation } from '../src/infrastructure/ciDatabasePriority.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
-import { CircleCreditCache, circleCreditKey, circleMonthStart } from '../src/modules/ci-host/circleCreditCache.js'
-import { CircleCreditUsage } from '../src/modules/ci-host/circleCredits.js'
-import { CloudHttp } from '../src/modules/ci-host/cloudHttp.js'
-import { CircleStandby, circleOrgKey } from '../src/modules/ci-host/circleStandby.js'
-import { CiDispatchDeadlineError, withCiDispatchDeadline } from '../src/modules/ci-host/dispatchDeadline.js'
+import { CircleCreditCache, circleCreditKey, circleMonthStart } from '@foreman-code/ci/circleCreditCache'
+import { CircleCreditUsage } from '@foreman-code/ci/circleCredits'
+import { CloudHttp } from '@foreman-code/ci/cloudHttp'
+import { CircleStandby, circleOrgKey } from '@foreman-code/ci/circleStandby'
+import { CiDispatchDeadlineError, withCiDispatchDeadline } from '@foreman-code/ci/dispatchDeadline'
 import { deferred } from './helpers/deferred.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 it('shares a slow credit-policy read with start admission without inheriting the expired scheduling pass', async () => {
   const fixture = await migratedDatabase()
   const database = createDatabase({ connectionString: fixture.databaseUrl, maxConnections: 4, connectionTimeoutMs: 1000 })
   const repository = new PostgresFoundationSettingsRepository(database.pool)
-  const cache = new CircleCreditCache()
+  const cache = new CircleCreditCache(mainCiContext)
   const now = Date.now()
   const at = new Date(now).toISOString()
   const release = deferred()
@@ -29,16 +30,16 @@ it('shares a slow credit-policy read with start admission without inheriting the
       states[circleCreditKey('fixture-org')] = { attempts: [], lastAttemptAt: now,
         snapshot: { basis: 'compute', used: 0, asOf: at, windowEnd: at, periodStart: circleMonthStart(now) } }
     })
-    const usage = new CircleCreditUsage(() => { throw new Error('Unexpected fixture export') }, {
+    const usage = new CircleCreditUsage(mainCiContext, () => { throw new Error('Unexpected fixture export') }, {
       allowance: () => withCiDatabaseReservation(database.pool, async () => (await repository.getCircleCreditAllowance()).value),
       primaryOwner: async () => 'fixture-org',
     }, { cache, now: () => now })
-    const selector = new CircleStandby(async () => [{ owner: 'fixture-org', circleAccountId: 'default',
+    const selector = new CircleStandby(mainCiContext, async () => [{ owner: 'fixture-org', circleAccountId: 'default',
       role: 'primary', ready: true, mirrorNames: new Set(['ci-mirror']) }], usage, cache, () => now)
     lock = cache.transaction(async () => { await release.promise })
     held.push(...await Promise.all(Array.from({ length: 4 }, () => database.pool.connect())))
     let evaluation: ReturnType<CircleStandby['roles']> | undefined
-    const pass = withCiDispatchDeadline(async () => {
+    const pass = withCiDispatchDeadline(mainCiContext, async () => {
       evaluation = withoutCiDatabaseReservation(() => selector.roles('ci-mirror'))
       await finishPass.promise
     })
@@ -73,7 +74,7 @@ it('finishes a background usage export after the read that requested it ends', a
   const entered = deferred()
   const release = deferred()
   const now = Date.now()
-  const http = new CloudHttp({ run: async () => { throw new Error('Unexpected fixture CLI request') },
+  const http = new CloudHttp(mainCiContext, { run: async () => { throw new Error('Unexpected fixture CLI request') },
     now: () => new Date(now), cpus: 4, memoryBytes: 2 ** 30 }, 'circleci', {
     circleToken: async () => 'fixture-token', fetch: async (input, init) => {
       const url = new URL(String(input))
@@ -88,7 +89,7 @@ it('finishes a background usage export after the read that requested it ends', a
       throw new Error(`Unexpected fixture HTTP request: ${url.pathname}`)
     },
   })
-  const usage = new CircleCreditUsage(async () => {
+  const usage = new CircleCreditUsage(mainCiContext, async () => {
     entered.resolve()
     await release.promise
     await repository.getCircleAccounts()
@@ -96,7 +97,7 @@ it('finishes a background usage export after the read that requested it ends', a
   }, { allowance: async () => (await repository.getCircleCreditAllowance()).value,
     primaryOwner: async () => 'fixture-org' }, { now: () => now })
   try {
-    await withCiDispatchDeadline(async () => {
+    await withCiDispatchDeadline(mainCiContext, async () => {
       expect((await usage.reading('fixture-org')).credits).toBeNull()
       await entered.promise
     })

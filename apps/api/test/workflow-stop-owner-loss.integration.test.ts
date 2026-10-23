@@ -13,9 +13,9 @@ import { isWorkflowStart } from '../src/modules/harnesses/sessionStart.js'
 import { RunManagementService } from '../src/modules/runs/management.js'
 import { createCurrentNativeProductionFactory } from '../src/modules/runs/workflowProduction.js'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
-import { graphHeaders, graphRpc, graphRpcValue } from './eng04-graph-composition-fixture.js'
-import { reserveFromExitedParent } from './helpers/eng06LaunchReservation.testSupport.js'
-import { checkpointRuntimeFixture } from './helpers/wave25Br1003Runtime.js'
+import { graphHeaders, graphRpc, graphRpcValue } from './graph-composition-fixture.js'
+import { reserveFromExitedParent } from './helpers/launchReservation.testSupport.js'
+import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
 
 async function runtime() {
   const recover = vi.fn((id: string, signal: AbortSignal) => registry.closeOwner(`execution:${id}`, signal))

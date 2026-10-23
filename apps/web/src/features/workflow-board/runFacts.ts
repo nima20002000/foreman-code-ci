@@ -5,13 +5,13 @@ import type { RepeatGraphCurrentV3 } from '@foreman-code/contracts/wave25'
 import type { AgentNodeState, Tone } from '../../shared/ui/nocturne'
 import { sessionGeneration } from '../../shared/api/sessionBoundary'
 import { currentRunKey } from './currentRunQuery'
-import { useWorkflowBoard } from './context'
+import { useBoardSelection } from './context'
 import { checkingView, pinnedNodeStates, runningIntervalChecks, type PinnedNodeDisplayCut } from './inspect/pinnedTopology'
 
 /** Cache-only subscriber: no Query observer with a competing queryFn. Only
  * CurrentRunObserver owns current-state fetching and invalidation/refetch work. */
 export function useSelectedRunQueryState() {
-  const scope = useWorkflowBoard()?.run, cache = useQueryClient(), generation = sessionGeneration()
+  const scope = useBoardSelection()?.run, cache = useQueryClient(), generation = sessionGeneration()
   const { workspaceId, workflowId, runId, workflowVersionId, executionSemanticsVersion } = scope ?? {}
   const key = useMemo(() => workspaceId && workflowId && runId && workflowVersionId && executionSemanticsVersion === 3
     ? currentRunKey({ workspaceId, workflowId, runId, workflowVersionId, executionSemanticsVersion }, generation) : undefined,

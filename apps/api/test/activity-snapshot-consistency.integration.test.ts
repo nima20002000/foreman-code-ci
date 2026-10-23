@@ -2,8 +2,8 @@ import type pg from 'pg'
 import { describe, expect, it } from 'vitest'
 import { agentChatKey, PostgresAgentChatRepository } from '../src/modules/conversations/agentChatRepository.js'
 import { PostgresOperatorActivityRepository } from '../src/modules/conversations/operatorActivityRepository.js'
-import { graphFixture } from './eng04-graph-composition-fixture.js'
-import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { graphFixture } from './graph-composition-fixture.js'
+import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 
 describe.skipIf(!postgresEnabled)('conversation snapshot consistency', () => {

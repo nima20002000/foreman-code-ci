@@ -1,5 +1,4 @@
 import { synchronizeGroupDelivery } from './workflowGroupReceipts.js'
-import { createHash } from 'node:crypto'
 import {
   canonicalJson, ChatControlReceiptSchema, ChatDeliveryReceiptSchema, ChatSendRequestSchema,
   CoordinatorConsultationBindingSchema, DeliveryTargetSchema, ExecutionRefSchema,
@@ -8,9 +7,10 @@ import {
 import { DomainError } from '../errors.js'
 import { assertGraphTransaction, type GraphSqlClient, type GraphTransactionSql } from '../run-graph/connection.js'
 import type { WorkflowChatLockedTarget, WorkflowChatNativeTarget, WorkflowChatTarget, WorkflowControlCommand } from './workflowControlTypes.js'
+import { sha256CanonicalJsonHex } from '../../shared/hash.js'
 
 export function controlDigest(value: unknown): string {
-  return createHash('sha256').update(canonicalJson(value)).digest('hex')
+  return sha256CanonicalJsonHex(value)
 }
 export function controlId(kind: string, ...parts: string[]): string {
   return `${kind}-${controlDigest(parts)}`

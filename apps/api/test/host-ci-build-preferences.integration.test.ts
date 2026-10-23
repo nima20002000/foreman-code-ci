@@ -11,14 +11,15 @@ import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { ProductionHostCiEndpoint } from '../src/modules/ci-host/endpoint.js'
-import { HostCiService } from '../src/modules/ci-host/service.js'
+import { ProductionHostCiEndpoint } from '@foreman-code/ci/endpoint'
+import { HostCiService } from '@foreman-code/ci/service'
 import { CI_GET_ACTIONS, CI_RUN_ACTIONS, RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
 import { WorkerExecutionPolicy } from '../src/modules/settings/workerExecution.js'
 import { BuildComputerSettings } from '../src/modules/settings/buildComputers.js'
 import { buildComputerFixture } from './helpers/buildComputerFixture.js'
 import { deferred } from './helpers/deferred.js'
-import { agent3Database } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 it('honors persisted MCP build participation and priority while retaining assigned run control', async () => {
   const db = await agent3Database()
@@ -76,7 +77,7 @@ it('honors persisted MCP build participation and priority while retaining assign
       }
       return { operation: 'read', run: entry.run, text: '', nextOffset: input.afterOffset }
     }
-    const endpoint = new ProductionHostCiEndpoint(db.pool, mainId, () => ({
+    const endpoint = new ProductionHostCiEndpoint(mainCiContext, db.pool, mainId, () => ({
       capabilities: () => [{ namespace: CI_HOST_NAMESPACE, mainCanRequest: true }],
       request: async (deviceId, _namespace, payload) => ({ payload: await request(deviceId, CiHostRequestSchema.parse(payload)) }),
     }), { handle: input => request('main', CiHostRequestSchema.parse(input)) }, [], undefined,
@@ -86,7 +87,7 @@ it('honors persisted MCP build participation and priority while retaining assign
       state: 'ready', reasons: [], remoteExecutionEnabled: true,
     }))
     const access = new PostgresAccessService(db.pool)
-    ci = new HostCiService(db.pool, commands, new RunCiAuthority(db.pool), {
+    ci = new HostCiService(mainCiContext, db.pool, commands, new RunCiAuthority(db.pool), {
       capabilities: async () => ({ parts: true, integrationPartitions: true, affected: true }),
       resolve: async () => 'a'.repeat(40),
     }, endpoint)

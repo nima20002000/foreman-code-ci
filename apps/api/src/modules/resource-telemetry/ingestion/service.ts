@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { ManagementPrincipalSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import {
   RESOURCE_TELEMETRY_CAPABILITY, TELEMETRY_LIMITS, TelemetryCollectedBatchSchema, TelemetryHostSchema,
@@ -10,6 +10,7 @@ import {
 } from '@foreman-code/contracts/resource-telemetry'
 import type { TelemetryOwnedTargetFacts, TelemetryTargetAuthority } from './ports.js'
 import type { TelemetryClock, TelemetryOwnershipReader, TelemetryOwnershipView, TelemetryReadAuthority, TelemetrySessionReader } from './ports.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 export type IngestReceipt = { status: 'accepted' | 'duplicate'; sampleId: string; gaps: string }
 interface CachedRow { latest: TelemetrySample; lastKnown: TelemetrySample | null; issuedMonoMs: number;
@@ -23,7 +24,7 @@ interface DeviceState { context: TrustedTelemetryContext; identity: TelemetryIde
   rows: Map<string, RetainedRow> }
 export class TelemetryRejected extends Error { constructor(readonly reason: string, options?: ErrorOptions) { super(`Telemetry rejected: ${reason}`, options) } }
 const contextKey = (context: TrustedTelemetryContext) => telemetryCanonical(context)
-const digest = (value: unknown) => createHash('sha256').update(telemetryCanonical(value)).digest('hex')
+const digest = (value: unknown) => sha256Hex(telemetryCanonical(value))
 const identityKey = (identity: TelemetryIdentity) => telemetryCanonical(identity)
 /** No transport, database, collector start or execution mutation lives in this service. */
 export class ResourceTelemetryService implements TelemetryReadService<ManagementPrincipal> {

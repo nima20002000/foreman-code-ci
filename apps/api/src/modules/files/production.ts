@@ -20,7 +20,9 @@ import { PostgresFileRepository } from './postgres.js'
 import { TemporaryFileService } from './service.js'
 import { readFileRetentionSnapshot } from './retentionSnapshot.js'
 import { defaultFileStorageRoot, FileByteStorage } from './storage.js'
-import { registerProductionFileTools } from './tools/production.js'
+import { createProductionFileTools } from './tools/production.js'
+import { registerFileToolsMcp } from './tools/mcp.js'
+import type { AgentFileToolService } from './tools/service.js'
 import { agentFileReferenceResolver } from './tools/referenceResolver.js'
 import type { FileReferenceResolver } from './tools/types.js'
 import { ManagedFileCleanupBytes } from './cleanup/bytes.js'
@@ -35,9 +37,26 @@ import { PostgresNativeArtifactOutputRepository } from '../runs/remote/nativeArt
 
 const productionStores = new WeakSet<TemporaryFileService>()
 
-// referenceResolver is FIL-37's agent read seam; FIL-36's human reference service is composed below.
+/** The file services bound to one API instance. Their HTTP routes mount from `routes/registry.ts`. */
+export interface ProductionFileStorage {
+  service: TemporaryFileService
+  references: FileReferenceService
+  tools: AgentFileToolService
+}
+
+/** Mounts file storage and its routes on a standalone API instance. */
 export function registerProductionFileStorage(app: FastifyInstance, pool: pg.Pool, config: ApiConfig,
   referenceResolver?: FileReferenceResolver): TemporaryFileService {
+  const storage = createProductionFileStorage(app, pool, config, referenceResolver)
+  registerFileRoutes(app, storage.service)
+  registerFileReferenceRoutes(app, storage.references)
+  registerFileToolsMcp(app, storage.tools)
+  return storage.service
+}
+
+// referenceResolver is FIL-37's agent read seam; FIL-36's human reference service is composed below.
+export function createProductionFileStorage(app: FastifyInstance, pool: pg.Pool, config: ApiConfig,
+  referenceResolver?: FileReferenceResolver): ProductionFileStorage {
   const repository = new PostgresFileRepository(pool, readFileRetentionSnapshot)
   const bytes = new FileByteStorage(config.fileStorageRoot ?? defaultFileStorageRoot(), MAX_FILE_BYTES,
     [config.harnesses.workspaceRoot, config.workspaceStorageRoot ?? workspaceStorageRoot()])
@@ -54,15 +73,13 @@ export function registerProductionFileStorage(app: FastifyInstance, pool: pg.Poo
     reads: new PostgresReferenceReadRepository(pool),
   })
   app.decorate('agentReferenceService', agentReferences)
-  registerFileRoutes(app, service)
-  registerFileReferenceRoutes(app, references)
-  registerProductionFileTools(app, pool, service, referenceResolver ?? agentFileReferenceResolver(agentReferences, repository, bytes))
+  const tools = createProductionFileTools(app, pool, service, referenceResolver ?? agentFileReferenceResolver(agentReferences, repository, bytes))
   const cleanup = new TemporaryFileCleanupSweeper(new PostgresFileCleanupRepository(pool),
     new ManagedFileCleanupBytes(bytes), (error, context) => app.log.warn({ err: error, ...context }, 'temporary file cleanup failed'))
   app.addHook('onReady', async () => { await bytes.initialize(); cleanup.start() })
   // Drain the sweeper before server.ts's onClose hooks dispose the shared pool.
   app.addHook('preClose', () => cleanup.stop())
-  return service
+  return { service, references, tools }
 }
 
 /** Publication and recovery share the original canonical store, ledger and

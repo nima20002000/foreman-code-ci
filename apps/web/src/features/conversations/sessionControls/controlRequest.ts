@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { SessionControlRequestSchema, compactionBlocksSend, type SessionControlState, type SessionControlRequest } from '@foreman-code/contracts'
 import { protectedKey } from '../../../shared/api/protectedChatStorage'
-import { assertSession, sessionGeneration, sessionSignal } from '../../../shared/api/sessionBoundary'
+import { readStoredCommand, withCommandLock, writeStoredCommand } from '../../../shared/api/commandOutbox'
+import { sessionSignal } from '../../../shared/api/sessionBoundary'
 import { useConversationDraftStore } from '../conversationDraftStore'
 
 const PendingControlSchema = z.object({
@@ -10,21 +11,18 @@ const PendingControlSchema = z.object({
 }).strict()
 export type PendingControl = z.infer<typeof PendingControlSchema>
 
+const unavailable = 'Session control storage is unavailable. No control was sent.'
 function storageKey(scope: string) { return protectedKey('outbox', `session-control:${scope}`) }
 export function pendingControl(scope: string): PendingControl | null {
-  const raw = localStorage.getItem(storageKey(scope))
-  return raw === null ? null : PendingControlSchema.parse(JSON.parse(raw))
+  const raw = readStoredCommand(storageKey(scope), unavailable)
+  return raw === undefined ? null : PendingControlSchema.parse(JSON.parse(raw))
 }
 type ControlChange = SessionControlRequest extends infer Request ? Request extends SessionControlRequest
   ? Omit<Request, 'requestId' | 'expectedRevision'> : never : never
 
-async function exclusive<T>(scope: string, work: () => T): Promise<T> {
-  const generation = sessionGeneration()
-  const key = storageKey(scope)
-  return navigator.locks.request(key, { mode: 'exclusive', signal: sessionSignal() }, () => {
-    assertSession(generation)
-    return work()
-  })
+function exclusive<T>(scope: string, work: () => T): Promise<T> {
+  return withCommandLock(storageKey(scope), work, { signal: sessionSignal(),
+    unavailable: 'This browser cannot safely coordinate session controls across tabs. No control was sent.' })
 }
 
 export function reservePendingControl(scope: string, input: ControlChange, expectedRevision: number,
@@ -41,14 +39,14 @@ export function reservePendingControl(scope: string, input: ControlChange, expec
     }
     const control = pending ?? { request: { ...input, requestId: crypto.randomUUID(), expectedRevision },
       ...(draft ? { draft } : {}) }
-    localStorage.setItem(storageKey(scope), JSON.stringify(PendingControlSchema.parse(control)))
+    writeStoredCommand(storageKey(scope), JSON.stringify(PendingControlSchema.parse(control)), unavailable)
     return control
   })
 }
 
 export function clearPendingControl(scope: string, requestId: string): Promise<void> {
   return exclusive(scope, () => {
-    if (pendingControl(scope)?.request.requestId === requestId) localStorage.removeItem(storageKey(scope))
+    if (pendingControl(scope)?.request.requestId === requestId) writeStoredCommand(storageKey(scope), undefined, unavailable)
   })
 }
 
@@ -68,6 +66,6 @@ export function recoverPendingControl(scope: string, state: SessionControlState)
       if (state.lastRequestId !== request.requestId && state.completedRequestId !== request.requestId) return
       if (draft) useConversationDraftStore.getState().clearDraft(draft.key, draft.content)
     }
-    localStorage.removeItem(storageKey(scope))
+    writeStoredCommand(storageKey(scope), undefined, unavailable)
   })
 }

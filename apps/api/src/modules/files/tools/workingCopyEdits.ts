@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
 import { mkdtemp, open, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -15,6 +14,7 @@ import type { FileToolArtifacts } from './artifacts.js'
 import type { FileToolSessions } from './context.js'
 import { completedBytes } from './transfers.js'
 import type { ArtifactSnapshot, AuthorizedFileCaller, FileEditToolName, FileToolArtifact } from './types.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 type WorkingCopy = FileToolArtifact & { snapshot: ArtifactSnapshot }
 const unsupported = () => new DomainError('FILE_FORMAT_EDIT_UNSUPPORTED', 'That edit is not supported for this working copy.', 422)
@@ -117,7 +117,7 @@ export class FileWorkingCopyEditor {
     const stream = await this.bytes.download(snapshot.storageKey, snapshot.revision)
     let data: Buffer
     try { data = await completedBytes(stream, MAX_FILE_WRITE_BYTES) } finally { stream.destroy() }
-    if (data.length !== snapshot.revision.byteSize || createHash('sha256').update(data).digest('hex') !== snapshot.revision.sha256) {
+    if (data.length !== snapshot.revision.byteSize || sha256Hex(data) !== snapshot.revision.sha256) {
       throw new DomainError('FILE_BYTES_UNAVAILABLE', 'The working snapshot bytes do not match their revision.', 410)
     }
     await this.sessions.authenticate(token, 'files.apply_format_edit')

@@ -35,7 +35,7 @@ import { qualifyApprovedRootAllowlist } from '../../src/modules/sources/rootAtte
 import { RemoteOperationReceiptSchema, RemoteOwnerControlSchema } from '@foreman-code/contracts/remote-execution'
 import { InstalledWorkflowRecovery } from '../../src/modules/runs/remote/installedWorkflowRecovery.js'
 import { privateFixtureDirectory } from './privateFixtureDirectory.js'
-import { seedAgent3 } from './wave25Agent3.js'
+import { seedAgent3 } from './workflowDatabase.js'
 import { migratedDatabase } from './migratedDatabase.js'
 import { buildRemoteReviewWorkerRelease, createRemoteReviewProvider, createRemoteReviewTls,
   createRemoteReviewClaudeInventory } from './remoteReviewProvider.js'

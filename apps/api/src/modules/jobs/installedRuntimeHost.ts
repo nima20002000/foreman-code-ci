@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
 import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
@@ -14,7 +13,6 @@ import { JobRuntimeFingerprintRecordSchema, InstalledJobRuntimeDescriptorRecordS
   from '@foreman-code/contracts/job-verification-runtime'
 import { inspectInstalledVerificationCandidate, inspectInstalledVerificationRuntime,
   captureInstalledVerificationRuntimeConfiguration, readInstalledVerificationConfiguration } from './installedVerificationRuntime.js'
-import type { InstalledVerificationRuntimeConfiguration } from './installedVerificationConfiguration.js'
 import { qualifyVerificationRuntime } from './verificationQualification.js'
 import { DeviceRegistrationSchema } from '@foreman-code/contracts/device-identity'
 import { DeviceSessionBindingSchema, type DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
@@ -28,12 +26,14 @@ import type { JobSql } from './repository.js'
 import { InstalledJobRuntimeConfigurationSchema, InstalledJobRuntimeCaptureInputSchema, InstalledJobRuntimeCaptureInputRecordSchema,
   readProtectedRuntimeConfiguration, installedRuntimeUnavailable as unavailable, type InstalledJobRuntimeConfiguration,
   type InstalledJobRuntimeCaptureInput, type InstalledRuntimeConfigurationLocation, type InstalledRuntimeObservedHost,
-} from './installedRuntimeConfiguration.js'
+  type InstalledVerificationRuntimeConfiguration,
+} from '@foreman-code/contracts/installed-runtime-node'
+import { sha256Hex } from '../../shared/hash.js'
 export { InstalledJobRuntimeConfigurationSchema, InstalledJobRuntimeCaptureInputSchema, InstalledJobRuntimeCaptureInputRecordSchema,
   InstalledJobRuntimeRefreshInputSchema, InstalledJobRuntimeConfigurationRecordSchema, readProtectedRuntimeConfiguration,
   readProtectedRuntimeFile, type InstalledJobRuntimeConfiguration, type InstalledJobRuntimeCaptureInput,
   type InstalledRuntimeConfigurationLocation, type InstalledRuntimeObservedHost,
-} from './installedRuntimeConfiguration.js'
+} from '@foreman-code/contracts/installed-runtime-node'
 
 export async function captureInstalledRuntimeConfigurationRecord(
   input: z.infer<typeof InstalledJobRuntimeCaptureInputRecordSchema>,
@@ -58,7 +58,7 @@ export interface InstalledRuntimeHostDependencies {
     authority: JobQualificationAuthority
   }>
 }
-const hash = (value: unknown) => createHash('sha256').update(canonicalGraphJson(value)).digest('hex')
+const hash = (value: unknown) => sha256Hex(canonicalGraphJson(value))
 
 /** Installer-only passive capture. The existing source binding and approved
  * image/toolchain remain inputs; binary, boot and configuration pins are read

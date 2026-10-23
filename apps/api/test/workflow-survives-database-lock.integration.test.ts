@@ -4,7 +4,8 @@ import { faultWorkflowFixture, expectSuccessfulFaultRecovery } from './helpers/f
 import { readOperationalFailures } from '../src/modules/diagnostics/operationalFailures.js'
 import { deferred } from './helpers/deferred.js'
 import { readUntil } from './helpers/observableCondition.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { createTestPool } from './helpers/testPool.mjs'
 
 describe.runIf(postgresEnabled)('workflow reporting under database contention', () => {

@@ -1,6 +1,5 @@
-import { execFile } from 'node:child_process'
 import { constants } from 'node:os'
-import { promisify } from 'node:util'
+import { runProcess } from '../../shared/process.js'
 
 const renameProgram = `
 import ctypes, errno, os, sys
@@ -23,8 +22,9 @@ if rename(AT_FDCWD, os.fsencode(sys.argv[1]), AT_FDCWD, os.fsencode(sys.argv[2])
 /** Returns false on collision; unsupported atomic moves fail without copying. */
 export async function renameDirectory(source: string, destination: string): Promise<boolean> {
   try {
-    // Node rename can replace an empty directory. The kernel checks exclusivity atomically.
-    await promisify(execFile)('python3', ['-I', '-c', renameProgram, source, destination])
+    // Node rename can replace an empty directory and has no renameat2(RENAME_NOREPLACE), so Python makes the call;
+    // the kernel checks exclusivity atomically.
+    await runProcess('python3', ['-I', '-c', renameProgram, source, destination], { timeoutMs: 60_000, maxOutputBytes: 1024 * 1024 })
     return true
   } catch (error) {
     if ((error as { code?: unknown }).code === constants.errno.EEXIST) return false

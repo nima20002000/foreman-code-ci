@@ -16,11 +16,13 @@ import { JobComputerSelection, releaseUnstartedJobComputer } from '../src/module
 import { PostgresSourceReservations } from '../src/modules/sources/reservations.js'
 import { JobService } from '../src/modules/jobs/service.js'
 import { DomainError } from '../src/modules/errors.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { buildComputerFixture, buildQueueConfigurationFixture } from './helpers/buildComputerFixture.js'
 import { JobAdmissionResultSchema } from '@foreman-code/contracts/job-admission'
 import { BuildComputerBatchResultSchema, BuildComputerStatusSchema } from '@foreman-code/contracts/build-computers'
 import { JobDefinitionSchema, JobExecutionSchema, type JobDefinition, type ResolvedJobDefinitionSpec } from '@foreman-code/contracts/jobs'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 // Real settings/command/admission SQL and authenticated transports; runtime/source I/O is a bounded fixture.
 describe.skipIf(!postgresEnabled)('automatic build computer admission and settings parity', () => {
@@ -224,7 +226,7 @@ describe.skipIf(!postgresEnabled)('automatic build computer admission and settin
     const sql = await database.pool.connect()
     let saving: ReturnType<BuildComputerSettings['updateBatch']> | undefined
     try {
-      await sql.query('begin')
+      await beginTransaction(sql)
       const first = await f.settings.preference(sql, f.computers[0]!.target)
       expect(first.buildPriority).toBe(100)
       saving = f.settings.updateBatch(writer.principal, 'http', { commandId: randomUUID(),
@@ -239,13 +241,13 @@ describe.skipIf(!postgresEnabled)('automatic build computer admission and settin
       const identity = { executionId: randomUUID(), attemptId: randomUUID(), operationId: randomUUID() }
       const claim = await f.placement.claim(sql, writer.principal, definition, identity)
       expect(claim.spec?.target).toEqual(f.computers[0]!.candidate.spec.target)
-      await sql.query('commit')
+      await commitTransaction(sql)
       await saving
       const after = await f.jobs.start(writer.principal, 'http', f.workspaceId,
         { commandId: randomUUID(), definitionId: definition.id, expectedRevision: 1 })
       expect(after.acceptedSpec.target).toEqual(f.computers[2]!.candidate.spec.target)
     } finally {
-      await sql.query('rollback')
+      await rollbackTransaction(sql)
       sql.release()
       await saving
     }
@@ -450,11 +452,11 @@ describe.skipIf(!postgresEnabled)('automatic build computer admission and settin
       originalOperation = row.operation_id
       const sql = await database.pool.connect()
       try {
-        await sql.query('begin')
+        await beginTransaction(sql)
         await new PostgresSourceReservations(async () => sourceStorageCapacityFixture()).reserve(sql,
           { ...f.computers[0]!.candidate.sourceReservation,
             ownerKind: 'materialization', ownerId: originalOperation! })
-        await sql.query('commit')
+        await commitTransaction(sql)
       } finally { sql.release() }
       throw new DomainError('SOURCE_TRANSFER_PENDING', 'Transfer interrupted', 503)
     })
@@ -489,9 +491,9 @@ describe.skipIf(!postgresEnabled)('automatic build computer admission and settin
     const identity = { executionId: randomUUID(), attemptId: randomUUID(), operationId: randomUUID() }
     const sql = await database.pool.connect()
     try {
-      await sql.query('begin')
+      await beginTransaction(sql)
       await f.jobs.resolveDefinition(sql, writer.principal, definition, identity)
-      await sql.query('commit')
+      await commitTransaction(sql)
     } finally { sql.release() }
     await f.enroll(1, true, 100)
     const prepared = await f.jobs.prepareDefinition(database.pool, writer.principal, definition, identity)

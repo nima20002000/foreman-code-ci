@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { DeviceConnectionError } from '../src/modules/devices/deviceWire.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { ciEnrollmentFixture } from './ci-enrollment.test-support.js'
 
 describe.skipIf(!postgresEnabled)('CI enrollment reconnect recovery', () => {

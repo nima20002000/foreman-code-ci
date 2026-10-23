@@ -11,7 +11,10 @@ import { RunBoardSlot, useRunBoardShown } from '../run-board'
 import { useRunSummaries, useSelectedRun, useSelectedRunSnapshot } from '../runs-selector'
 import { isRunAccessError } from '../runs-selector/query'
 import { BoardNavigationControls } from './BoardNavigationControls'
-import { WorkflowBoardContext, type WorkflowAuthoringActions } from './context'
+import {
+  BoardAuthoringContext, BoardHostsContext, BoardSelectionContext,
+  type WorkflowAuthoringActions, type WorkflowBoardAuthoring, type WorkflowBoardSelection,
+} from './context'
 import { ActivitiesPopover } from './ActivitiesPopover'
 import { RunActivityPanel } from './RunActivityPanel'
 import { useWorkflowSidePanel } from './useWorkflowSidePanel'
@@ -128,19 +131,21 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
     if (liveRunId) void selectLiveRun(liveRunId)
   }, [current, listed.isSuccess, liveRunId, selectLiveRun])
   // History is rendered only by RunBoardSlot. Do not feed legacy Run pins to the
-  // hidden editor/SelectedRunCanvas, or fabricate missing version/semantics pins.
-  const value = useMemo(() => ({ workspaceId, workflowId, selectRun: chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent,
-    sidePanel: side.panel, selectedPanelNodeId: side.agentSelection?.nodeId, selectSidePanel: selectPanel, sidePanelHost, runCaptionHost, memoryOpen: side.memoryOpen,
+  // hidden editor, or fabricate missing version/semantics pins.
+  const value = useMemo<WorkflowBoardSelection>(() => ({ workspaceId, workflowId, selectRun: chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent,
+    sidePanel: side.panel, selectedPanelNodeId: side.agentSelection?.nodeId, selectSidePanel: selectPanel, memoryOpen: side.memoryOpen,
+    openMemoryCard: (cardId: string) => setMemoryOpen(true, cardId),
+    canvasVisible: side.view === 'graph', teamNodeId: side.teamNodeId, selectTeam: side.selectTeam,
+    openLocation: () => setLocationOpen(true), openRuns: () => setRunsOpen(true), activeRuns, liveRunId, authoringActive: current,
+    navigationControls: current && side.view === 'graph' ? <BoardNavigationControls workspaceId={workspaceId} workflowId={workflowId} selection={navigationSelection} /> : undefined,
+  }), [workspaceId, workflowId, chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent, activeRuns, liveRunId, setRunsOpen, setLocationOpen, navigationSelection, current, side.view, side.panel, side.agentSelection?.nodeId, selectPanel, side.memoryOpen, setMemoryOpen, side.teamNodeId, side.selectTeam])
+  const hosts = useMemo(() => ({ sidePanelHost, runCaptionHost }), [sidePanelHost, runCaptionHost])
+  const authoring = useMemo<WorkflowBoardAuthoring>(() => ({ registerAuthoringActions,
     // A shown Run moves agents exactly as the draft Board does (owner rule: one Board, the same rules).
     moveDraftNodes: authoringActions?.moveNodes,
-    openMemoryCard: (cardId: string) => setMemoryOpen(true, cardId),
-    executionChatMounted: !!collaborationSlots?.executionChat,
-    canvasVisible: side.view === 'graph', teamNodeId: side.teamNodeId, selectTeam: side.selectTeam,
-    collaborationFields: collaborationSlots,
-    openLocation: () => setLocationOpen(true), openRuns: () => setRunsOpen(true), activeRuns, liveRunId, authoringActive: current, registerAuthoringActions,
+    executionChatMounted: !!collaborationSlots?.executionChat, collaborationFields: collaborationSlots,
     ...(current && authoringActions ? { saveChatAgent: authoringActions.saveChatAgent, draftNodeAgentId: authoringActions.draftNodeAgentId, draftNodeBrowser: authoringActions.draftNodeBrowser } : {}),
-    navigationControls: current && side.view === 'graph' ? <BoardNavigationControls workspaceId={workspaceId} workflowId={workflowId} selection={navigationSelection} /> : undefined,
-  }), [workspaceId, workflowId, chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent, activeRuns, liveRunId, setRunsOpen, setLocationOpen, navigationSelection, current, side.view, side.panel, side.agentSelection?.nodeId, selectPanel, sidePanelHost, runCaptionHost, side.memoryOpen, setMemoryOpen, side.teamNodeId, side.selectTeam, collaborationSlots, registerAuthoringActions, authoringActions])
+  }), [registerAuthoringActions, authoringActions, collaborationSlots, current])
   const detailsValue = useMemo(() => detailsScope ? { ...value, run: detailsScope } : value, [value, detailsScope])
   const authoringEvent = (event: SyntheticEvent) => {
     if (event.target instanceof Element && event.target.closest('.workflow-floating-panel')) return
@@ -174,10 +179,11 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
         {detailsScope && !runUnreadable ? <IconButton label="Activities" onClick={() => setRunsOpen(true)}><Icon name="history" size={16} /></IconButton> : null}
         <IconButton label="Group chat" onClick={() => side.selectPanel({ kind: 'group_chat' })}><Icon name="chat" size={16} /></IconButton>
         {runControlsScope ?
-          <SelectedRunControls key={JSON.stringify(boardSelection.identity)} visible={!side.memoryOpen}
+          <SelectedRunControls key={boardSelection.identity.runId} visible={!side.memoryOpen}
             scope={runControlsScope} /> : null}
       </header> : null
-  return <WorkflowBoardContext.Provider value={value}><PanelHeaderSlotContext.Provider value={panelHeaderSlot}><PanelFooterSlotContext.Provider value={panelFooterSlot}>
+  return <BoardSelectionContext.Provider value={value}><BoardHostsContext.Provider value={hosts}><BoardAuthoringContext.Provider value={authoring}>
+    <PanelHeaderSlotContext.Provider value={panelHeaderSlot}><PanelFooterSlotContext.Provider value={panelFooterSlot}>
     <div ref={toolbar} className="unified-workflow-board" data-testid="unified-workflow-board" style={{ flexDirection: 'column' }}>
       <nav className="workflow-collaboration-toolbar" aria-label="Workflow views">
         <span>{legacyRun || pickedRunId ? 'Selected Run' : 'Editing draft'}</span>
@@ -220,11 +226,11 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
           onCard={collaborationSlots?.reportCard} />}
       </section> : null}
       </div>
-      {detailsScope ? <WorkflowBoardContext.Provider value={detailsValue}>
+      {detailsScope ? <BoardSelectionContext.Provider value={detailsValue}>
         <ActivitiesPopover open={runsOpen} onClose={() => setRunsOpen(false)} findAnchor={findActivitiesButton}>
           <RunActivityPanel summaries={summaries} summariesReadAt={summariesReadAt} />
         </ActivitiesPopover>
-      </WorkflowBoardContext.Provider> : null}
+      </BoardSelectionContext.Provider> : null}
       <WorkflowSidePanel scope={side.scope} workspaceId={workspaceId} workflowId={workflowId}
         workflowVersionId={legacyRun?.workflowVersionId ?? (picked?.kind === 'available' ? picked.workflowVersionId : undefined)}
         opener={side.opener} runId={legacyRun?.runId ?? pickedRunId} selection={side.panel} agentSelection={side.agentSelection} onSelect={selectPanel} bodyRef={setSidePanelHost} headerSlotRef={setPanelHeaderSlot} footerSlotRef={setPanelFooterSlot}
@@ -237,5 +243,6 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
       {side.memoryOpen && <MemoryBoardSurface scope={{ kind: 'workflow', workspaceId, workflowId }}
           scopeName="Workflow" dialog={{ open: true, onOpenChange: side.setMemoryOpen, historicalRun: Boolean(legacyRun || pickedRunId) }} />}
     </div>
-  </PanelFooterSlotContext.Provider></PanelHeaderSlotContext.Provider></WorkflowBoardContext.Provider>
+  </PanelFooterSlotContext.Provider></PanelHeaderSlotContext.Provider>
+  </BoardAuthoringContext.Provider></BoardHostsContext.Provider></BoardSelectionContext.Provider>
 }

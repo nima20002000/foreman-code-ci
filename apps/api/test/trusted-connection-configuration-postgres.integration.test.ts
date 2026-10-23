@@ -13,12 +13,13 @@ import { PostgresTrustedConnectionSetup } from '../src/modules/devices/trustedCo
 import { registerTrustedConnectionRoutes } from '../src/modules/devices/trustedConnectionManagement.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import type { ManagementGrant } from '@foreman-code/contracts/management'
+import { postgresEnabled } from './helpers/database.js'
 
 const url = process.env.TEST_DATABASE_URL
 const grants: ManagementGrant[] = [{ actions: ['settings:read', 'settings:update'], scope: {} }]
 const origin = 'http://127.0.0.1:5173'
 const browser = { host: '127.0.0.1:3000', origin }
-describe.skipIf(!url)('trusted connection configuration through authenticated MCP (PostgreSQL)', () => {
+describe.skipIf(!postgresEnabled)('trusted connection configuration through authenticated MCP (PostgreSQL)', () => {
   let admin: pg.Pool, pool: pg.Pool, access: PostgresAccessService, app: ReturnType<typeof buildApp>, address: string
   let owner: Awaited<ReturnType<PostgresAccessService['issue']>>
   const schema = `connection_configuration_${randomUUID().replaceAll('-', '')}`, mainId = randomUUID(), clients: Client[] = []

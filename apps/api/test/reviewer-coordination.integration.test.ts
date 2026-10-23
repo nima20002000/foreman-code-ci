@@ -2,7 +2,7 @@ import { PostgresInteractionCoordinationRepository } from '../src/modules/intera
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import type { ReviewJob } from '@foreman-code/contracts'
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { routedApprovalFixture } from './helpers/routedApprovalFixture.js'
 
 afterEach(() => vi.restoreAllMocks())

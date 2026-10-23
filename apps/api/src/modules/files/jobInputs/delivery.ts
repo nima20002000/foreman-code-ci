@@ -12,7 +12,8 @@ import {
 import type { JobExecutionRecord } from '@foreman-code/contracts/job-verification'
 import { DomainError } from '../../errors.js'
 import { inputHash, recipient, snapshotDigest, verificationContextPin } from './manifest.js'
-const hash=(bytes:Uint8Array)=>createHash('sha256').update(bytes).digest('hex')
+import { sha256Hex } from '../../../shared/hash.js'
+const hash=(bytes:Uint8Array)=>sha256Hex(bytes)
 async function identity(handle:FileHandle){const stat=await handle.stat(),info=await readFile(`/proc/self/fdinfo/${handle.fd}`,'utf8'),mountId=/^mnt_id:\s*(\d+)$/m.exec(info)?.[1];if(!mountId)throw new Error('Input destination mount identity is unavailable.');return {device:String(stat.dev),inode:String(stat.ino),mountId}}
 async function directory(path:string){const handle=await open(path,constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW);const stat=await handle.stat();if(!stat.isDirectory()||(process.getuid&&stat.uid!==process.getuid())){await handle.close();throw new Error('Input destination must be an owned directory.')}return handle}
 export interface JobInputDeliverySource {

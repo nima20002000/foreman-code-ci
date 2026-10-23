@@ -6,7 +6,7 @@ import { RunPlacementGetResultSchema } from '@foreman-code/contracts/placement-r
 import { SourceRootListResultSchema } from '@foreman-code/contracts/source-admission'
 import { WorkspaceBoundLocationSetResultSchema } from '@foreman-code/contracts/workspace-bound-location'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { fixture, startInput, toolError } from './helpers/nodePlacementStartFixture.js'
 
 afterEach(() => vi.restoreAllMocks())

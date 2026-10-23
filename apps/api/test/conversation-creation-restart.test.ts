@@ -13,7 +13,7 @@ import { WorkerConversationManager } from '../src/modules/conversations/workerMa
 import { MainWorkerConversationBridge } from '../src/modules/conversations/workerBridge.js'
 import { workerConversationFixture } from '../src/modules/conversations/workerFixtures.test-support.js'
 import type { NativeHarnessSessionManager, NativeSessionStart, NativeInitialTurnInput } from '../src/modules/harnesses/port.js'
-import { memoryConversation, operator } from './fixtures/agent1OperatorChat.js'
+import { memoryConversation, operator } from './fixtures/operatorChatMemory.js'
 import { chatWorkflowVersionRow, isCurrentVersionRead, isRunVersionRead, isSavedVersionRead } from './helpers/chatWorkflowVersion.js'
 import { memorySessionControlPool } from './support/sessionControls.js'
 import { SessionControlStore } from '../src/modules/conversations/sessionControls/store.js'

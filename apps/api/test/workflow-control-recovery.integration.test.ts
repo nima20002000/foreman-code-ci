@@ -6,7 +6,7 @@ import { currentOperatorIntegration } from './helpers/currentOperatorIntegration
 import { hierarchyRuntimeFixture, coordinationOutput } from './helpers/hierarchyRuntimeFixture.js'
 import { ControlledWorkflowProvider } from './helpers/controlledWorkflowProvider.js'
 import { workflowChatCall, workflowChatTarget } from './helpers/workflowChatRequests.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { WorkflowExecutionChatService } from '../src/modules/collaboration/workflowChatService.js'
 import { validateWorkflowChatAdmission } from '../src/modules/collaboration/workflowChatProduction.js'
 import { readHierarchyCoordinationLocked } from '../src/modules/runs/hierarchyCoordinationRead.js'

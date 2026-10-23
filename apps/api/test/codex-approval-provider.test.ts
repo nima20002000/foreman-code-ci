@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { CodexAppServerSessionManager } from '../src/modules/harnesses/codexAppServer.js'
 import { matchingDeliveryEvidence } from '../src/modules/interactions/delivery.js'
 import { input } from './fixtures/codex-test-helpers.js'
-import { deliveryFixture } from './helpers/wave25ApprovalFixture.js'
+import { deliveryFixture } from './helpers/approvalFixture.js'
 import { CodexApprovalProvider } from './helpers/codexApprovalProvider.js'
 
 function fixture(executionId: string, completion: 'notifications' | 'history' = 'notifications') {

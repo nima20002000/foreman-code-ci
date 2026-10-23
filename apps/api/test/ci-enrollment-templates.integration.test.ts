@@ -4,10 +4,11 @@ import { Client } from '@modelcontextprotocol/client'
 import { CiEnrollmentStateSchema } from '@foreman-code/contracts'
 import { jobPolicyRequirementsRecord } from '@foreman-code/contracts/job-verification'
 import { describe, expect, it, vi } from 'vitest'
-import { CiEnrollment } from '../src/modules/jobs/ciEnrollment.js'
+import { CiEnrollment } from '@foreman-code/ci/ciEnrollment'
 import { buildComputerFixture } from './helpers/buildComputerFixture.js'
-import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { ciEnrollmentFixture } from './ci-enrollment.test-support.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 describe.skipIf(!postgresEnabled)('automatic CI enrollment: templates', () => {
   const fixture = ciEnrollmentFixture()
@@ -70,7 +71,7 @@ describe.skipIf(!postgresEnabled)('automatic CI enrollment: templates', () => {
         const persisted = (await f.db.pool.query<{ state: unknown }>(
           'select state from ci_enrollment_computers where workspace_id=$1', [workspaceId])).rows
         expect(persisted.map(row => row.state)).toEqual(expect.arrayContaining(readback.computers))
-        const restarted = new CiEnrollment(f.db.pool, f.commands, f.profiles, f.preparation, f.inventory)
+        const restarted = new CiEnrollment(mainCiContext, f.db.pool, f.commands, f.profiles, f.preparation, f.inventory)
         try {
           expect(await restarted.read(reader.principal, { workspaceId })).toEqual(readback)
         } finally {

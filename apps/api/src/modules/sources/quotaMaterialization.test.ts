@@ -36,7 +36,7 @@ async function fixture(slotCount = 2) {
   const bytes = Buffer.from('same accepted source')
   const manifest = createSourceManifest({ version: 1, snapshotId: randomUUID(), approvedSourceId: randomUUID(),
     capturePolicy: 'exclusive-explicit-bytes-v1', executablePolicy: 'strip', deletions: [],
-    entries: [{ path: 'src/index.ts', kind: 'file', byteSize: bytes.length,
+    entries: [{ path: 'src/notes.txt', kind: 'file', byteSize: bytes.length,
       sha256: sourceSha256(bytes), executable: false }] })
   const directory = await openPrivateRoot(root)
   const filesystem = await identity(directory)
@@ -130,7 +130,7 @@ describe('per-Job source quota ownership', () => {
     expect(new Set(receipts.map(receipt => receipt.quota!.namespace)).size).toBe(count)
     for (const [index, receipt] of receipts.entries()) {
       expect(await f.materializer().recover(f.binding, attempts[index]!)).toEqual(receipt)
-      expect(await readFile(join(sourceMaterializationParent(receipt), 'tree/src/index.ts'))).toEqual(f.bytes)
+      expect(await readFile(join(sourceMaterializationParent(receipt), 'tree/src/notes.txt'))).toEqual(f.bytes)
     }
     await expect(f.materializer().prepare({ manifest: f.manifest, binding: f.binding, attempt: f.attempt() }))
       .rejects.toMatchObject({ code: 'SOURCE_CAPACITY' })
@@ -202,7 +202,7 @@ describe('per-Job source quota ownership', () => {
       await root.close()
     }
     const recovered = await f.materializer().prepare({ manifest: f.manifest, binding: f.binding, attempt })
-    expect(await readFile(join(sourceMaterializationParent(recovered), 'tree/src/index.ts'))).toEqual(f.bytes)
+    expect(await readFile(join(sourceMaterializationParent(recovered), 'tree/src/notes.txt'))).toEqual(f.bytes)
   })
 
   it('retains quota after cleanup interruption and resumes within the original absolute budget after restart', async () => {
@@ -227,7 +227,7 @@ describe('per-Job source quota ownership', () => {
       AbortSignal.timeout(deadlineAt - Date.now()))
     const successor = await f.materializer().prepare({ manifest: f.manifest, binding: f.binding, attempt: f.attempt() })
     expect(successor.quota).toEqual(receipt.quota)
-    expect(await readFile(join(sourceMaterializationParent(successor), 'tree/src/index.ts'))).toEqual(f.bytes)
+    expect(await readFile(join(sourceMaterializationParent(successor), 'tree/src/notes.txt'))).toEqual(f.bytes)
   })
 
   it('releases a closed execution quota after its cleanup deadline without renewing execution or publication', async () => {
@@ -275,13 +275,13 @@ describe('per-Job source quota ownership', () => {
     const successor = await f.materializer().prepare({ manifest: f.manifest, binding: f.binding, attempt: f.attempt() })
     expect(successor.quota).toEqual(first.quota)
     await releaseMaterializationClaim(first, async () => 'released', f.quota)
-    expect(await readFile(join(sourceMaterializationParent(successor), 'tree/src/index.ts'))).toEqual(f.bytes)
+    expect(await readFile(join(sourceMaterializationParent(successor), 'tree/src/notes.txt'))).toEqual(f.bytes)
   })
 
   it('validates the original source before a signed filesystem-recovery quota reclaim', async () => {
     const f = await fixture(1)
     const receipt = await f.materializer().prepare({ manifest: f.manifest, binding: f.binding, attempt: f.attempt() })
-    const source = join(sourceMaterializationParent(receipt), 'tree/src/index.ts')
+    const source = join(sourceMaterializationParent(receipt), 'tree/src/notes.txt')
     await writeFile(source, 'replaced original source')
     await expect(releaseMaterializationClaimForCancellation(receipt, f.binding.filesystem,
       async () => 'released', new AbortController().signal, f.quota)).rejects.toThrow()

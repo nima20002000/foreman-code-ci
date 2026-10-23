@@ -1,9 +1,8 @@
-import { createHash } from 'node:crypto'
-import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import type { NativeSessionReference } from '@foreman-code/contracts'
 import type { CodexFileCall, CodexFileCallResult } from './port.js'
 import type { CodexFileTurn } from './turn.js'
 import { warnCodexFileError } from './errorLog.js'
+import { sha256CanonicalJsonHex } from '../../../shared/hash.js'
 
 export type PreparedCodexFileTurn = Pick<CodexFileTurn,
   'allowedTools' | 'nativeInput' | 'activate' | 'call' | 'publications' | 'close'>
@@ -27,7 +26,7 @@ const refused = (): CodexFileCallResult => ({ success: false,
   contentItems: [{ type: 'inputText', text: 'File operation unavailable or denied.' }],
 })
 function identity(value: unknown): string {
-  return createHash('sha256').update(canonicalJson(value)).digest('hex')
+  return sha256CanonicalJsonHex(value)
 }
 
 /** Local executable registration, separate from Codex's thread-level schema

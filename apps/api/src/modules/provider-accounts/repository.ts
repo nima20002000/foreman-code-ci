@@ -9,10 +9,9 @@ import { DeviceProvisioningTargetSchema, sameDeviceProvisioningTarget,
   type DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 
 export class ProviderAccountsRepository {
-  private targetReader?: (sql: GraphSqlClient) => Promise<DeviceProvisioningTarget>
-  constructor(private readonly pool: pg.Pool, private readonly hostId: () => Promise<string>) {}
-
-  bindTarget(reader: (sql: GraphSqlClient) => Promise<DeviceProvisioningTarget>): void { this.targetReader = reader }
+  /** `targetReader` names the computer these accounts belong to; without it they belong to `hostId` on Main. */
+  constructor(private readonly pool: pg.Pool, private readonly hostId: () => Promise<string>,
+    private readonly targetReader?: (sql: GraphSqlClient) => Promise<DeviceProvisioningTarget>) {}
 
   async target(sql: GraphSqlClient = this.pool): Promise<DeviceProvisioningTarget> {
     if (this.targetReader) return DeviceProvisioningTargetSchema.parse(await this.targetReader(sql))

@@ -1,0 +1,19 @@
+import { open, type FileHandle } from 'node:fs/promises'
+import { directoryFlags, type CiContext } from './environment.js'
+
+/** Native entry and reconciliation share a kernel lock, including across Worker restarts. */
+export async function withHostCiRunLock<T>(context: CiContext, directory: string, work: (guard: FileHandle) => Promise<T>,
+  options: { nonBlocking?: boolean; signal?: AbortSignal | undefined } = {}): Promise<T | undefined> {
+  const handle = await open(directory, directoryFlags)
+  try {
+    return await context.platform.withPrivateDirectoryLock(handle, work, options)
+  } catch (error) {
+    if (options.nonBlocking && context.platform.isSourceError(error) && error.code === 'SOURCE_CLAIM_LOCK_FAILED') {
+      // A live preparation or launch owns the directory; its cancellation marker remains pending.
+      return undefined
+    }
+    throw error
+  } finally {
+    await handle.close()
+  }
+}

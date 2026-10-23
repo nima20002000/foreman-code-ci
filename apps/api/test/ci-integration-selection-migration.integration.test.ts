@@ -4,10 +4,11 @@ import { CiRunRecordSchema, type CiRunRecord } from '@foreman-code/contracts'
 import { ciIntegrationSelectionMigration } from '../src/infrastructure/ciIntegrationSelectionMigration.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
-import { readQueuedCiRuns } from '../src/modules/ci-host/queuedRuns.js'
+import { readQueuedCiRuns } from '@foreman-code/ci/queuedRuns'
 import { ciGroupSharing, joinCiRequest, registerCiRequest, releaseCiRequester }
-  from '../src/modules/ci-host/requestSharing.js'
-import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
+  from '@foreman-code/ci/requestSharing'
+import { currentDatabase } from './helpers/database.js'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 it.each(['running', 'passed'].flatMap(state => [false, true].map(initiatorLeft => ({ state, initiatorLeft }))))(
   'restarts all legacy partitions and retains sharing with a $state sibling; initiator left: $initiatorLeft',
@@ -39,8 +40,8 @@ it.each(['running', 'passed'].flatMap(state => [false, true].map(initiatorLeft =
       expect(await joinCiRequest(client, workspaceId, requestKey, other, 'join-other')).not.toBeNull()
       expect(await joinCiRequest(client, workspaceId, requestKey, detached, 'join-detached')).not.toBeNull()
     })
-    expect(await releaseCiRequester(db.pool, original[0]!, detached)).toBe(2)
-    if (initiatorLeft) expect(await releaseCiRequester(db.pool, original[0]!, initiator)).toBe(1)
+    expect(await releaseCiRequester(mainCiContext, db.pool, original[0]!, detached)).toBe(2)
+    if (initiatorLeft) expect(await releaseCiRequester(mainCiContext, db.pool, original[0]!, initiator)).toBe(1)
     await applyApplicationMigrations(db.pool)
     const rows = (await db.pool.query<{ record: CiRunRecord }>('select record from ci_runs')).rows
       .map(row => CiRunRecordSchema.parse(row.record))
@@ -58,7 +59,7 @@ it.each(['running', 'passed'].flatMap(state => [false, true].map(initiatorLeft =
     expect(queued.coverage.get(replacements[0]!.groupId)).toMatchObject({ changedFiles: [], reason: expect.any(String) })
     for (const run of replacements) expect(queued.durations.get(run.id)).toEqual(durations)
     const replacement = replacements.find(run => run.partition!.index === 0)!
-    expect(await releaseCiRequester(db.pool, replacement, initiator)).toBe(1)
+    expect(await releaseCiRequester(mainCiContext, db.pool, replacement, initiator)).toBe(1)
     const sharing = await ciGroupSharing(db.pool, workspaceId, replacement.groupId)
     expect(sharing?.requesters).toEqual([
       { ...initiator, initiator: true, active: false },

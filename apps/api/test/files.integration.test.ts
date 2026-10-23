@@ -21,8 +21,10 @@ import type { AllocationSession, AllocationState } from '../src/modules/files/re
 import { TemporaryFileService } from '../src/modules/files/service.js'
 import { FileByteStorage } from '../src/modules/files/storage.js'
 import { registerFileRoutes } from '../src/routes/files.js'
-import { agent3Database, postgresEnabled } from './helpers/wave25Agent3.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 import { fileFixtures, fileMetadata } from './helpers/fileFixtures.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 /** Real authenticated HTTP, PostgreSQL allocations and disk bytes; no native sessions or paid models. */
 describe.skipIf(!postgresEnabled)('FIL-03 temporary file HTTP and repository integration', () => {
@@ -39,9 +41,9 @@ describe.skipIf(!postgresEnabled)('FIL-03 temporary file HTTP and repository int
     if (!applied.rowCount) {
       const client = await database.pool.connect()
       try {
-        await client.query('begin'); await client.query(fileStorageMigration.sql)
-        await client.query('insert into application_migrations(version) values($1)', [fileStorageMigration.version]); await client.query('commit')
-      } catch (error) { await client.query('rollback'); throw error } finally { client.release() }
+        await beginTransaction(client); await client.query(fileStorageMigration.sql)
+        await client.query('insert into application_migrations(version) values($1)', [fileStorageMigration.version]); await commitTransaction(client)
+      } catch (error) { await rollbackTransaction(client); throw error } finally { client.release() }
     }
     root = await mkdtemp(join(homedir(), '.fil03-http-test-'))
     access = new PostgresAccessService(database.pool)

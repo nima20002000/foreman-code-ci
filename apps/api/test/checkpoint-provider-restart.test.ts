@@ -1,7 +1,7 @@
 import { HarnessExecutionRequestSchema, type NativeHarnessEvent } from '@foreman-code/contracts'
 import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { expect, it } from 'vitest'
-import { CheckpointTestProvider } from './helpers/wave25Br1003Provider.js'
+import { CheckpointTestProvider } from './helpers/checkpointProvider.js'
 
 async function collectEvents(stream: AsyncIterable<NativeHarnessEvent>): Promise<NativeHarnessEvent[]> {
   const events: NativeHarnessEvent[] = []

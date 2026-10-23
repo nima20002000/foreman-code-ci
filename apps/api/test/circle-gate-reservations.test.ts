@@ -6,9 +6,10 @@ import { withTransaction } from '../src/infrastructure/transaction.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import type { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import type { CiAuthority } from '../src/modules/jobs/ciAuthority.js'
-import { HostCiService, type CiCommits } from '../src/modules/ci-host/service.js'
-import { CircleStandby } from '../src/modules/ci-host/circleStandby.js'
-import type { HostCiComputer, HostCiEndpoint } from '../src/modules/ci-host/serviceTypes.js'
+import { HostCiService, type CiCommits } from '@foreman-code/ci/service'
+import { CircleStandby } from '@foreman-code/ci/circleStandby'
+import type { HostCiComputer, HostCiEndpoint } from '@foreman-code/ci/serviceTypes'
+import { mainCiContext } from '../src/modules/ci/context.js'
 
 it('reserves ordinary cloud capacity on active standby orgs instead of exhausted primaries', async () => {
   const db = await migratedDatabase()
@@ -45,7 +46,7 @@ it('reserves ordinary cloud capacity on active standby orgs instead of exhausted
       await db.pool.query('insert into ci_runs(id,workspace_id,group_id,state,record) values($1,$2,$3,$4,$5)',
         [run.id, run.workspaceId, run.groupId, run.state, JSON.stringify(run)])
     }
-    const selector = new CircleStandby(async () => owners.map((owner, index) => ({ owner,
+    const selector = new CircleStandby(mainCiContext, async () => owners.map((owner, index) => ({ owner,
       circleAccountId: index < 3 ? 'default' : 'reserve', role: index < 3 ? 'primary' : 'standby', ready: true,
       mirrorNames: new Set(['ci-mirror']),
     })), { reading: async owner => ({ credits: { total: 400_000,
@@ -70,7 +71,7 @@ it('reserves ordinary cloud capacity on active standby orgs instead of exhausted
           logBytes: 0, message: run.message } }
       },
     }
-    service = new HostCiService(db.pool, {} as PostgresCommandCoordinator, {} as CiAuthority, {} as CiCommits,
+    service = new HostCiService(mainCiContext, db.pool, {} as PostgresCommandCoordinator, {} as CiAuthority, {} as CiCommits,
       endpoint, undefined, { circleStandby: selector, reservedCloudSlots: 4 })
     await service.dispatch()
     await service.drain()

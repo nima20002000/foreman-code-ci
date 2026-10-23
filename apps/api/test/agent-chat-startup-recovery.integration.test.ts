@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { conversationDeliveryFixture } from '../src/modules/conversations/conversationDelivery.test-support.js'
-import { postgresEnabled, seedAgent3 } from './helpers/wave25Agent3.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
+import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('Agent chat startup recovery isolation', () => {
   it.each(['restoreUnsettled', 'unconfirmedSteers'] as const)(

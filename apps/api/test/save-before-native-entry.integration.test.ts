@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { nativeSavePreEntryFixtures } from './helpers/nativeSavePreEntryFixture.js'
 import { assertSettled, editThrough, meaningfulInput, parkBeforeNativeEntry,
-  saveThrough, stageThrough, versionCount, type Transport } from './helpers/eng07SaveAdmission.testSupport.js'
+  saveThrough, stageThrough, versionCount, type Transport } from './helpers/saveAdmission.testSupport.js'
 import { assertNewVersionOnly, nativeFacts } from './helpers/saveAdmissionTransport.js'
 
 describe.skipIf(!postgresEnabled)('workflow Save before native entry', () => {

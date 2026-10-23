@@ -58,3 +58,8 @@ export const MemoryBoardSearchSchema = z.object({
 
 export type MemoryWorkPageInfo = z.infer<typeof MemoryWorkPageInfoSchema>;
 export type MemoryWorkSummary = z.infer<typeof MemoryWorkSummarySchema>;
+export type MemoryBoardChange = z.infer<typeof MemoryBoardChangeSchema>;
+export type MemoryBoardView = z.infer<typeof MemoryBoardViewSchema>;
+export type MemoryCardDetail = z.infer<typeof MemoryCardDetailSchema>;
+export type MemoryBoardCommandRead = z.infer<typeof MemoryBoardCommandReadSchema>;
+export type MemoryBoardChangesPage = z.infer<typeof MemoryBoardWireSchemas.changes>;

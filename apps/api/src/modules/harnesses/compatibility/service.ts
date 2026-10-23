@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import {
   HarnessCompatibilitySchema, type CompatibilityHarness, type HarnessCompatibility,
@@ -9,6 +9,7 @@ import type { PostgresCommandCoordinator } from '../../commands/postgres.js'
 import { FileCompatibilityCache, type CompatibilityCache, type CompatibilityCacheEntry } from './cache.js'
 import { CompatibilityCheckError, compatibilityReason } from './errors.js'
 import { nativeCompatibilityProbe, type CompatibilityProbe, type HarnessInstallation } from './probe.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 const COMPATIBILITY_CHECKER_REVISION = 'runtime-contracts-v2'
 const HARNESSES = ['codex'] as const
@@ -22,10 +23,10 @@ export interface CompatibilityOptions {
   timeoutMs?: number
 }
 export function compatibilityCacheKey(harness: CompatibilityHarness, installation: HarnessInstallation, revision: string): string {
-  return createHash('sha256').update(JSON.stringify([
+  return sha256Hex(JSON.stringify([
     harness, installation.identity, installation.installationFingerprint ?? null, installation.version, process.platform, process.arch,
     process.version, revision,
-  ])).digest('hex')
+  ]))
 }
 async function cacheOperation<T>(work: Promise<T>): Promise<T> {
   let timer: NodeJS.Timeout | undefined

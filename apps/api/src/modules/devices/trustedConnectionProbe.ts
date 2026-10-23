@@ -1,21 +1,20 @@
-import { execFile } from 'node:child_process'
 import { isIP } from 'node:net'
 import { networkInterfaces, userInfo } from 'node:os'
 import { z } from 'zod'
 
 import { ConnectionProbeSchema, HostDiscoverySchema, TrustedEndpointSchema, type ConnectionProbe, type HostDiscovery, type TrustedEndpoint } from '@foreman-code/contracts/trusted-device-connection'
+import { runProcessSettled } from '../../shared/process.js'
 export { ConnectionProbeSchema, HostDiscoverySchema, TrustedEndpointSchema } from '@foreman-code/contracts/trusted-device-connection'
 export type { ConnectionProbe, HostDiscovery, TrustedEndpoint } from '@foreman-code/contracts/trusted-device-connection'
 const AddressSchema = z.string().max(253).refine(value => isIP(value) !== 0 || /^(?=.{1,253}$)[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$/.test(value))
 export interface CommandResult { code: number | null; stdout: string; stderr: string; failure?: 'missing' | 'timeout' | 'unavailable' }
 export type ReadinessRunner = (executable: string, args: string[]) => Promise<CommandResult>
 /** No shell, stdin, agent forwarding, interactive authentication, or unbounded output. */
-export const runReadinessCommand: ReadinessRunner = (executable, args) => new Promise(resolve => {
-  execFile(executable, args, { encoding: 'utf8', timeout: 10_000, maxBuffer: 128 * 1024, windowsHide: true }, (error, stdout, stderr) => {
-    resolve({ code: error ? typeof error.code === 'number' ? error.code : null : 0, stdout, stderr,
-      ...(error ? { failure: error.code === 'ENOENT' ? 'missing' : error.killed ? 'timeout' : 'unavailable' } as const : {}) })
-  })
-})
+export const runReadinessCommand: ReadinessRunner = async (executable, args) => {
+  const { code, stdout, stderr, error } = await runProcessSettled(executable, args, { timeoutMs: 10_000, maxOutputBytes: 128 * 1024, windowsHide: true })
+  return { code, stdout, stderr,
+    ...(error ? { failure: error.code === 'ENOENT' ? 'missing' : error.killed ? 'timeout' : 'unavailable' } as const : {}) }
+}
 async function executable(runner: ReadinessRunner, name: string, flag: string) {
   const result = await runner(name, [flag])
   const version = (result.stdout || result.stderr).split('\n')[0]?.trim().slice(0, 256) || null

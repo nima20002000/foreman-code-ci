@@ -3,7 +3,7 @@ import { NativeSessionLaneSchema } from '@foreman-code/contracts'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { prepareCoordinationWorkflow } from './helpers/coordinationWorkflow.js'
 import { memoryWorkflow, type MemoryRuntime } from './helpers/memoryWorkflow.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import type { WorkflowNativeProofRecord } from '../src/modules/runs/workflowNativeProof.js'
 
 it.runIf(postgresEnabled).each([false, true])('publishes settled output under its authenticated writer (retry=%s)', async retry => {

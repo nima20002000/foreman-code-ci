@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { JobQueuePageSchema, type JobQueueTicket } from '@foreman-code/contracts/job-admission'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { postgresEnabled } from './helpers/database.js'
 import { setupJobAdmissionQueue } from './helpers/jobAdmissionQueue.js'
 
 describe.skipIf(!postgresEnabled)('durable build admission queue: pagination', () => {

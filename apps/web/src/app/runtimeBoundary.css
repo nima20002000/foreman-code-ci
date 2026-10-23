@@ -9,7 +9,7 @@
   z-index: 1000; padding: 6px 6px 6px 14px; border: 1px solid var(--border);
   border-radius: 999px; background: var(--surface); color: var(--text-muted); font-size: 12.5px;
   box-shadow: 0 6px 24px color-mix(in srgb, black 25%, transparent); }
-.runtime-reconnecting::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--warning, #d9a441);
+.runtime-reconnecting::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--warning);
   animation: runtime-pulse 1.2s ease-in-out infinite; }
 .runtime-reconnecting .n-button { border-radius: 999px; }
 @keyframes runtime-pulse { 50% { opacity: .35; } }

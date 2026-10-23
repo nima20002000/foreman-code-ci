@@ -1,7 +1,6 @@
 import { logIgnoredError } from '../../diagnostics/ignoredError.js'
 /** Native callbacks and notifications: staging, translation, interactions and turn resources. */
 import { codexCompactionNotification, codexContextSnapshot } from '../codexSessionControls.js'
-import { createHash } from 'node:crypto'
 import type { ExecutionResult } from '@foreman-code/contracts'
 import { HarnessExecutionError } from '../errors.js'
 import { CODEX_NATIVE_OUTPUT_TOOL_ALIASES } from '../codexNativeOutput.js'
@@ -15,6 +14,7 @@ import type { WaitingRequest, ResolvedRequest, StartingTurn, Runtime } from './t
 import { MAX_EVENTS, MAX_EVENT_BYTES, MAX_STAGED, MAX_INTERACTIONS, requestKey, itemNotificationKey,
   stagedNativeOutputTerminal } from './support.js'
 import { CodexManagerPreparation } from './preparation.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 export abstract class CodexManagerEvents extends CodexManagerPreparation {
   protected finishTurnResources(runtime: Runtime): Promise<void> {
@@ -61,7 +61,7 @@ export abstract class CodexManagerEvents extends CodexManagerPreparation {
     if (!['inProgress', 'completed', 'failed', 'interrupted'].includes(String(turn.status))) return
     for (const value of turn.items) {
       if (isObject(value) && text(value.id) && !['userMessage', 'agentMessage'].includes(String(value.type))) {
-        const fingerprint = createHash('sha256').update(canonicalJsonNumericKeysFirstLegacy(['snapshot', turn.id, value])).digest('hex')
+        const fingerprint = sha256Hex(canonicalJsonNumericKeysFirstLegacy(['snapshot', turn.id, value]))
         if (!runtime.seenNotifications.has(fingerprint)) {
           runtime.seenNotifications.add(fingerprint)
           if (runtime.seenNotifications.size > MAX_EVENTS) runtime.seenNotifications.delete(runtime.seenNotifications.values().next().value!)
@@ -132,7 +132,7 @@ export abstract class CodexManagerEvents extends CodexManagerPreparation {
         return
       }
     }
-    const signature = createHash('sha256').update(canonicalJsonNumericKeysFirstLegacy([request.method, params])).digest('hex')
+    const signature = sha256Hex(canonicalJsonNumericKeysFirstLegacy([request.method, params]))
     const existing = runtime.interactions.get(key)
     const resolved = runtime.resolvedRequests.get(key)
     const file = runtime.fileRequests.get(key)
@@ -200,7 +200,7 @@ export abstract class CodexManagerEvents extends CodexManagerPreparation {
     const transport = runtime.transport
     const generation = runtime.generation
     const key = requestKey(generation, request.id)
-    const signature = createHash('sha256').update(canonicalJsonNumericKeysFirstLegacy([request.method, params])).digest('hex')
+    const signature = sha256Hex(canonicalJsonNumericKeysFirstLegacy([request.method, params]))
     const prior = runtime.fileRequests.get(key)
     if (prior?.pending || prior?.conflictingIdentity) return
     if ([...runtime.resolvedRequests.values()].filter((entry) => entry.pending).length >= MAX_INTERACTIONS) {

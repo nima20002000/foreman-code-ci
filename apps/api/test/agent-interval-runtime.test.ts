@@ -4,7 +4,7 @@ import { DomainError } from '../src/modules/errors.js'
 import { executeRepeatRuntime, type RepeatRuntimeLifecycle } from '../src/modules/runs/repeatRuntime.js'
 import type { RepeatExecutionDriver } from '../src/modules/runs/repeatNode.js'
 import type { RepeatTickAdmission } from '../src/modules/runs/repeatPostgres.js'
-import { a1Scenario, graphHarness } from './helpers/eng04A1GraphHarness.js'
+import { a1Scenario, graphHarness } from './helpers/graphScenarioHarness.js'
 import { deferred } from './helpers/deferred.js'
 
 const untilAborted = (signal: AbortSignal) => new Promise<never>((_resolve, reject) => {

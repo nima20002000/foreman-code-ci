@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 
 import {
   AgentConfigurationVersionSchema,
@@ -18,6 +18,7 @@ import { DomainError } from '../errors.js'
 import { assertClaudeFullAccess } from '../harnesses/nativeWorkflowConfiguration.js'
 import { resolveAssignedSkills } from '../skills/catalog.js'
 import { composeInstructionText, instructionsTooLarge } from '../skills/instructions.js'
+import { sha256Hex } from '../../shared/hash.js'
 
 export function configurationInput(
   workspaceId: string,
@@ -148,7 +149,7 @@ export async function saveAgentConfiguration(
     await validateProfileSelection(nextConfiguration.harnessProfileSelection, nextConfiguration.harness, client)
   }
   const nextInput = await pinnedConfigurationContent(client, workspaceId, nextConfiguration, current)
-  const nextHash = `sha256:${createHash('sha256').update(JSON.stringify(nextInput)).digest('hex')}`
+  const nextHash = `sha256:${sha256Hex(JSON.stringify(nextInput))}`
   const now = new Date().toISOString()
 
   if (!existing) {

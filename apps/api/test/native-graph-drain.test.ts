@@ -4,7 +4,7 @@ import { cleanupTimeoutMs } from '../src/modules/interactions/cleanup.js'
 import { DomainError } from '../src/modules/errors.js'
 import { executeRepeatRuntime, type RepeatRuntimeLifecycle } from '../src/modules/runs/repeatRuntime.js'
 import { WorkExecutionFailure } from '../src/modules/runs/workExecutionFailure.js'
-import { a1Scenario, graphHarness } from './helpers/eng04A1GraphHarness.js'
+import { a1Scenario, graphHarness } from './helpers/graphScenarioHarness.js'
 
 // Real LangGraph/checkpointer; native and persistence are deterministic unit ports.
 it('keeps a healthy sibling observing beyond the cleanup deadline during a pending native boundary', async () => {

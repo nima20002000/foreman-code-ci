@@ -12,7 +12,7 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { approvalResponse } from './helpers/approvalResponse.js'
 import { routedApprovalFixture } from './helpers/routedApprovalFixture.js'
 import { readUntil } from './helpers/observableCondition.js'
-import { seedAgent3 } from './helpers/wave25Agent3.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
 
 afterEach(() => vi.restoreAllMocks())
 

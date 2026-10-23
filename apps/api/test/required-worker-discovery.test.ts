@@ -3,7 +3,7 @@ import { DeviceApplicationAdmissionError, DeviceApplicationError } from '../src/
 import { HarnessInstallationMonitor } from '../src/modules/harnesses/installationMonitor.js'
 import { admitRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
 import { SOURCE_LIMITS } from '../src/modules/sources/manifest.js'
-import { startSqlFixture } from './eng04-start-fixtures.js'
+import { startSqlFixture } from './start-fixtures.js'
 
 afterEach(() => vi.useRealTimers())
 

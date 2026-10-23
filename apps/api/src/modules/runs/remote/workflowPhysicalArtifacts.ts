@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { isDeepStrictEqual as same } from 'node:util'
 import { ArtifactAttemptSchema } from '@foreman-code/contracts/artifact-edges'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
@@ -19,6 +18,7 @@ import { NativeArtifactOutputSchema, type NativeArtifactOutput } from './nativeA
 import { DomainError } from '../../errors.js'
 import { remoteWorkflowHasTurn } from '@foreman-code/contracts/remote-execution'
 import { workflowArtifactResult } from '../workflowCoordinationResult.js'
+import { sha256Hex } from '../../../shared/hash.js'
 
 export interface WorkflowPhysicalArtifactsPort {
   assertPublications(sql: GraphTransactionSql, readout: RemoteWorkflowPhysicalReadout, binding: Readonly<DeviceSessionBinding>): Promise<void>
@@ -31,7 +31,7 @@ interface Ports {
 }
 const unavailable = (): never => { throw new DomainError('REMOTE_ARTIFACT_PHYSICAL_UNAVAILABLE',
   'Exact original declared canonical publications and artifact evidence are required.', 409) }
-const hash = (text: string) => createHash('sha256').update(text).digest('hex')
+const hash = (text: string) => sha256Hex(text)
 /** SQL metadata companion to the original physical verifier. Canonical byte validation
  * remains outside G1 in W09 adoption; echoed worker pins are never an input here. */
 export class PostgresWorkflowPhysicalArtifacts implements WorkflowPhysicalArtifactsPort {

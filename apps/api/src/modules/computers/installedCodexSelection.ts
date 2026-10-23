@@ -1,4 +1,3 @@
-import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
 import { access, open, readdir, rename, rm } from 'node:fs/promises'
@@ -9,6 +8,7 @@ import type { MaintenancePorts } from './maintenancePorts.js'
 import {
   readInstalledWorkflowConfiguration, type InstalledWorkflowConfigurationLocation,
 } from '../runs/remote/installedWorkflowConfiguration.js'
+import { hostEnvironment, runProcessSettled } from '../../shared/process.js'
 
 /** Where `npm install --global --prefix ~/.local @openai/codex` puts the platform's native Codex binaries. */
 function nativeCodexScope(home: string) {
@@ -38,15 +38,12 @@ async function installedNativeCodex(home: string): Promise<string> {
   return executable[0]!
 }
 
-function reportedVersion(binary: string, signal: AbortSignal): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFile(binary, ['--version'], { signal, timeout: 15_000, encoding: 'utf8', env: { ...process.env, NO_COLOR: '1' } },
-      (error, stdout) => {
-        const version = stdout.trim()
-        if (error || !/^codex-cli \d+\.\d+\.\d+/u.test(version)) reject(new Error('The updated Codex binary did not report its version.'))
-        else resolve(version)
-      })
-  })
+async function reportedVersion(binary: string, signal: AbortSignal): Promise<string> {
+  const result = await runProcessSettled(binary, ['--version'], { signal, timeoutMs: 15_000, maxOutputBytes: 1024 * 1024,
+    env: { ...hostEnvironment(), NO_COLOR: '1' } })
+  const version = result.stdout.trim()
+  if (result.error || !/^codex-cli \d+\.\d+\.\d+/u.test(version)) throw new Error('The updated Codex binary did not report its version.')
+  return version
 }
 
 const MainSelectionSchema = z.object({

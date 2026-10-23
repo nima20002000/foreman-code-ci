@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { AgentChatStateSchema, SendAgentChatMessageRequestSchema, agentChatFixtures } from "./agentChat.js";
+import { AgentChatStateSchema, ChatDeliveryReadbackSchema, SendAgentChatMessageRequestSchema, agentChatFixtures } from "./agentChat.js";
 import { ReadSelectedRunChatResponseSchema } from './selectedRunChat.js';
 import { CHAT_MAX_MESSAGE_JSON_BYTES } from './chatInput.js';
 
@@ -53,4 +53,12 @@ it('accepts pasted logs within the encoded request budget and rejects character,
     'x'.repeat(CHAT_MAX_MESSAGE_JSON_BYTES - 2)]) {
     expect(SendAgentChatMessageRequestSchema.safeParse({ ...request, content: oversized }).success).toBe(false);
   }
+});
+
+it('validates an Agent chat delivery readback and its delivery state', () => {
+  const target = { kind: 'agent_conversation', conversationId: 'conversation', agent: agentChatFixtures.empty.context };
+  const state = { target, state: agentChatFixtures.empty, receipts: [],
+    delivery: { state: 'idle', capabilities: { steer: 'unavailable', queue: true, interruptAndSend: false } } };
+  expect(ChatDeliveryReadbackSchema.parse(state)).toEqual(state);
+  expect(ChatDeliveryReadbackSchema.safeParse({ ...state, delivery: { ...state.delivery, state: 'invalid' } }).success).toBe(false);
 });

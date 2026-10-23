@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest'
 import { EXECUTION_INFRASTRUCTURE_RETRY_WINDOW_MS } from '../src/modules/runs/executionRetryPolicy.js'
 import { workflowConcurrencyFixture } from './helpers/workflowConcurrencyFixture.js'
-import { readCurrentExecutions } from './helpers/wave25Agent3.js'
+import { readCurrentExecutions } from './helpers/workflowDatabase.js'
 
 const createRuntime = workflowConcurrencyFixture()
 
