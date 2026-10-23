@@ -14,7 +14,7 @@ import { transact } from './transaction.js'
 import { fail, isCurrentApprovalRun, readContext, runFor, requireLeaseAtCommit, type ApprovalContext } from './context.js'
 import { acknowledgementId, reviewEvidence } from './nativeEvidence.js'
 import { reviewFact, sourceForReview } from './publication.js'
-import { assertCurrentWorkerBinding } from './credentialAuthority.js'
+import { assertWave25WorkerBinding } from './credentialAuthority.js'
 import { stopForReviewFailure } from './stop.js'
 import { runCleanupAllowed } from './cleanupAuthority.js'
 import { renewReviewLease } from './reviewLease.js'
@@ -49,7 +49,7 @@ function settlementDigest(job: ReviewJob): string {
 }
 
 /** Same queue/session lanes and ReviewJob authority; only current mutations use G1. */
-export class CurrentInteractionCoordinationRepository extends PostgresInteractionCoordinationRepository {
+export class Wave25InteractionCoordinationRepository extends PostgresInteractionCoordinationRepository {
   constructor(private readonly approvalPool: pg.Pool, private readonly nativeProofs?: ReviewNativeProofServices) { super(approvalPool) }
   assertOriginalNativeComposition(): void {
     if (!(this.nativeProofs instanceof ReviewNativeProofServices)) return fail('REVIEW_ORIGINAL_SOURCE_REQUIRED')
@@ -361,7 +361,7 @@ export class CurrentInteractionCoordinationRepository extends PostgresInteractio
       "select principal_id from worker_credential_bindings where execution_id=$1 and purpose='reviewer' and revoked_at is null", [executionId])).rows
     let reviewerActive = false
     for (const binding of bindings) {
-      try { await assertCurrentWorkerBinding(this.approvalPool, binding.principal_id); reviewerActive = true; break } catch { /* ignore: no cached credential grants authority. */ }
+      try { await assertWave25WorkerBinding(this.approvalPool, binding.principal_id); reviewerActive = true; break } catch { /* ignore: no cached credential grants authority. */ }
     }
     return { ...session, reviewerActive }
   }

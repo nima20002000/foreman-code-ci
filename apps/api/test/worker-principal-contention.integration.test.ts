@@ -1,6 +1,6 @@
 import { beforeEach, expect, it } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { CurrentWorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
+import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
 import { lockActiveWorkerPrincipal } from '../src/modules/access/workerLifecycle.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { workerCredentialBudgetFixture } from './helpers/workerCredentialBudgetFixture.js'
@@ -16,7 +16,7 @@ beforeEach(async () => {
 })
 
 async function worker() {
-  const credentials = new CurrentWorkerCredentialService(f.pool, f.access, 60_000)
+  const credentials = new Wave25WorkerCredentialService(f.pool, f.access, 60_000)
   const issued = await credentials.issueForExecution(f.execution.id)
   const principal = await f.access.authenticate(issued.environment.variables.GRAPHQL_MCP_TOKEN!, 'worker')
   return { credentials, issued, principal }

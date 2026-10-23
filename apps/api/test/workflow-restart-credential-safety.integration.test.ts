@@ -5,7 +5,7 @@ import { WorkspaceLocationSetResultSchema } from '@foreman-code/contracts/manage
 import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveResultSchema, RunStartCurrentResultSchema,
   SavedRunDetailsSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import type { NativeHarnessSessionManager } from '../src/modules/harnesses/port.js'
-import { CurrentWorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
+import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
 import { databaseCredentialDeadline } from '../src/modules/access/credentialLifetime.js'
 import { LOCAL_RUNNER_ID } from '../src/modules/workspaces/location.js'
 import type { RunOwnership } from '../src/modules/runs/ownership.js'
@@ -102,9 +102,9 @@ describe.runIf(postgresEnabled)('restart credential safety', () => {
   it('joins an in-flight heartbeat renewal without canceling or replacing the native execution', async () => {
     const runtime = await activeWorkflow()
     const release = rejectableDeferred()
-    const issue = CurrentWorkerCredentialService.prototype.issueForExecution
-    const issued = vi.spyOn(CurrentWorkerCredentialService.prototype, 'issueForExecution')
-      .mockImplementation(async function (this: CurrentWorkerCredentialService, id) {
+    const issue = Wave25WorkerCredentialService.prototype.issueForExecution
+    const issued = vi.spyOn(Wave25WorkerCredentialService.prototype, 'issueForExecution')
+      .mockImplementation(async function (this: Wave25WorkerCredentialService, id) {
         const credential = await issue.call(this, id)
         const requestedAt = performance.now()
         const shortened = (await runtime.db.pool.query<{ expires_at: Date; database_now: Date }>(
@@ -114,10 +114,10 @@ describe.runIf(postgresEnabled)('restart credential safety', () => {
         return { ...credential, expiresAt: shortened.expires_at.toISOString(),
           renewalDeadline: databaseCredentialDeadline(shortened.expires_at, shortened.database_now, requestedAt) }
       })
-    const renew = CurrentWorkerCredentialService.prototype.renewForExecution
+    const renew = Wave25WorkerCredentialService.prototype.renewForExecution
     let calls = 0
-    const renewal = vi.spyOn(CurrentWorkerCredentialService.prototype, 'renewForExecution')
-      .mockImplementation(async function (this: CurrentWorkerCredentialService, id, credential) {
+    const renewal = vi.spyOn(Wave25WorkerCredentialService.prototype, 'renewForExecution')
+      .mockImplementation(async function (this: Wave25WorkerCredentialService, id, credential) {
         calls++
         if (calls === 1) {
           await release.promise
@@ -239,7 +239,7 @@ describe.runIf(postgresEnabled)('restart credential safety', () => {
   it.each(['connection failure', 'revoked worker'] as const)(
     'does not preserve a Worker after a %s during renewal', async failure => {
       const runtime = await activeWorkflow()
-      const renewal = vi.spyOn(CurrentWorkerCredentialService.prototype, 'renewForExecution')
+      const renewal = vi.spyOn(Wave25WorkerCredentialService.prototype, 'renewForExecution')
       let principalId: string | undefined
       try {
         const active = await start(runtime)

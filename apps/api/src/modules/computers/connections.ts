@@ -1,4 +1,3 @@
-import { harnessMaintenanceCapabilities } from '../harnesses/index.js'
 import type { ComputerAccounts } from '@foreman-code/contracts/computer-accounts'
 import type { ComputerConnections } from '@foreman-code/contracts/computer-maintenance'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
@@ -29,7 +28,7 @@ export function computerConnectionsReader(accounts: AccountsReader, mcp: McpRead
     const key = `${target.applicationInstallationId}:${target.authorizationRevision ?? 0}:${harness}`
     const cached = cache.get(key)
     if (cached && now() - cached.at < CACHE_MS) return cached.value
-    const read: Promise<Preset> = harnessMaintenanceCapabilities(harness).mcp.read === 'user_config' && target.hostRef.kind === 'main' && mcp.readMainClaudeServers
+    const read: Promise<Preset> = harness === 'claude' && target.hostRef.kind === 'main' && mcp.readMainClaudeServers
       ? mcp.readMainClaudeServers().then(servers => managedStatus({ harness: 'claude', user: servers, effective: servers,
         revision: fingerprint(servers), userConfig: {}, version: '', file: '' }, 'graphql'))
       : mcp.list(principal, harness, target.hostRef).then(list => list.presets?.graphql ?? null)

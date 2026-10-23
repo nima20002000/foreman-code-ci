@@ -1,5 +1,5 @@
 export { createMainCiRuntime } from './mainCiRuntime.js'
 export { RunCiAuthority } from './runAuthority.js'
 export { expireOverdueCiRuns } from './values.js'
-export { countRunningCloudCi, readRunningHostCiJobs, RUN_ACTIVITY_CI_JOIN_SQL, EXECUTION_CI_SUMMARY_SQL } from './reads.js'
+export { countRunningCloudCi, readRunningHostCiJobs } from './reads.js'
 export type { CiEnrollment, CiRuntimeProvisioner } from './types.js'
