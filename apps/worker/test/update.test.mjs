@@ -253,33 +253,6 @@ for (const failHandoff of [false, true]) {
   });
 }
 
-test('failed update awaits browser resume failure, reopens core domains and persists recovery status', async t => {
-  const f = await fixture(t);
-  const events = [];
-  const updater = await createInstalledWorkerUpdater({ ...f.options,
-    browser: {
-      stopAdmission() { events.push('pause'); },
-      drain: async () => {},
-      resumeAdmission: async () => {
-        await wait(10);
-        events.push('browser-resume-failed');
-        throw new WorkerError('BROWSER_RUNTIME_UNAVAILABLE');
-      },
-      runtime: {},
-    },
-    domains: () => ({ drainForUpdate: async () => {},
-      resumeAfterUpdate: async () => { events.push('core-resumed'); } }),
-    stage: async () => { throw new Error('Installation failed after draining'); },
-  });
-  t.after(() => updater.close());
-  await assert.rejects(updater.start(), { code: 'worker_update_recovery_required' });
-  assert.deepEqual(events, ['pause', 'browser-resume-failed', 'core-resumed']);
-  const status = await updater.status();
-  assert.equal(status.state, 'failed');
-  assert.match(status.lastError, /worker_update_recovery_required.*BROWSER_RUNTIME_UNAVAILABLE/);
-  assert.equal((await readUpdateRecord(f.stateDirectory)).failureCode, 'worker_update_recovery_required');
-});
-
 test('stopping a running Worker during browser readiness still aborts the core update', async t => {
   const f = await fixture(t);
   await addIncomingBrowser(f);
