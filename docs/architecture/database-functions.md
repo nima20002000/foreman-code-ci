@@ -399,10 +399,10 @@ SQL that only uses a code as data (a default written into a record) is not liste
 
 Decision (#25): the SQL function is the canonical home of each rule, because a trigger holds for every writer.
 `infrastructure/databaseErrors.ts` maps the 25 known raised codes to safe 409 `DomainError`s at the owning
-`withTransaction` boundary, after rollback/recovery. Unknown errors keep their identity. Joined work leaves
-mapping to its transaction owner. The write path no longer revalidates its computed repeat decision and successor;
-SQL validates those at COMMIT. TypeScript retains parsing, computation, read-side evidence checks and pre-checks
-whose callers recover within the same transaction. Matching a code alone does not make a check redundant.
+`withTransaction` boundary and command-session failure boundary, after rollback/recovery and compensation.
+Unknown errors keep their identity; joined work leaves mapping to its owner. The write path no longer revalidates
+its computed repeat decision and successor; SQL validates those at COMMIT. TypeScript retains parsing, computation,
+read-side evidence checks and recoverable in-transaction pre-checks. Matching a code alone does not make a check redundant.
 
 | Code | SQL functions | TypeScript |
 |---|---|---|
