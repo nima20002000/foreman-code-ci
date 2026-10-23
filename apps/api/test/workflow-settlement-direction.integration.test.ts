@@ -9,7 +9,7 @@ import { PostgresApprovalBudgetRepository } from '../src/modules/interactions/bu
 import { RespondToInteractionResponseSchema, WorkDirectionRequestSchema } from '@foreman-code/contracts'
 import { workDirectionInteractionId } from '../src/modules/runs/workDirectionInteraction.js'
 import {
-  useSettlementFixtures, timeout, handoffs, seedDirectionWait, directionApi,
+  useSettlementFixtures, timeout, handoffs, runtime, directionApi,
 } from './helpers/workflowSettlementTestSupport.js'
 
 // Native terminals and physical closure are explicit test inputs. Authenticated
@@ -31,7 +31,9 @@ describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('workflow settlement direc
         const result: ExecutionResult = { outcome: 'succeeded', output: {
           routing: { kind: 'finish' }, data: { latestDeliverable: { revision: 1 }, remainingFindings: ['Review is incomplete'] },
         } }
-        await seedDirectionWait(f, result)
+        await runtime(f, async (execution) => {
+          if (execution.state !== 'completed') await f.finish(execution.id, result)
+        })()
         const api = await directionApi(f)
         try {
           const listed = await api.call('interaction_list', { runId: f.run.id, status: 'pending', limit: 10 })

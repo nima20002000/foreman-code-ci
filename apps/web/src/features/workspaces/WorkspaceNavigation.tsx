@@ -437,11 +437,10 @@ export function WorkspaceNavigation({
           id: workspaceId,
           name: detailsQuery.data.workspace.name,
         })
-        if (workspacePagination && workspaces?.length) next.length = workspaces.length
       }
       return next
     },
-    [detailsQuery.data?.workspace, workspaces, workspaceId, workspaceOverviewActive, workspacePagination],
+    [detailsQuery.data?.workspace, workspaces, workspaceId, workspaceOverviewActive],
   )
 
   const entryItems = useMemo(

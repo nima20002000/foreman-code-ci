@@ -25,6 +25,7 @@ function SetupBrowser(props: BrowserSetupDialogProps) {
   const [closeId] = useState(() => crypto.randomUUID())
   const [tabId, setTabId] = useState<string | null>(null)
   const [connection, setConnection] = useState(0)
+  const reconnectAttempts = useRef(0)
   const [denied, setDenied] = useState(false)
   const active = useRef(true)
   const mounted = useRef(false)
@@ -89,7 +90,8 @@ function SetupBrowser(props: BrowserSetupDialogProps) {
       })
     }
   }, [closeId])
-  const tab = read.data?.tabs.find(item => item.tabId === (tabId ?? read.data.session.selectedTabId))
+  const tab = read.data && (read.data.tabs.find(item => item.tabId === tabId)
+    ?? read.data.tabs.find(item => item.tabId === read.data.session.selectedTabId) ?? read.data.tabs[0])
   const accessDenied = denied || browserAccessDenied(read.error)
   return <Dialog open size="xl" title={`Set up ${props.profileName} · ${props.computerName}`} busy={close.isPending}
     onOpenChange={open => { if (!open) close.mutate() }} closeLabel="Close setup browser"
@@ -98,13 +100,13 @@ function SetupBrowser(props: BrowserSetupDialogProps) {
     {accessDenied ? <p role="alert" className="browser-profile-note">The browser is unavailable right now.</p>
       : read.isPending ? <p role="status" className="browser-profile-note">Opening the browser…</p>
         : read.error ? <p role="alert">{browserErrorMessage(read.error)}</p>
-          : read.data && tab ? <BrowserSessionPanel key={`${tab.tabId}:${connection}`} port={props.port} files={props.files} initial={read.data}
+          : read.data && tab ? <BrowserSessionPanel key={tab.tabId} connectionVisit={connection} port={props.port} files={props.files} initial={read.data}
             tab={tab} viewerId={viewerId} readOnly={false} computerName={props.computerName} setup
             onRead={result => queryClient.setQueryData(key, result)} onSelectTab={setTabId} keepControlOnTabChange={() => true}
             onRefresh={() => { if (mounted.current) void read.refetch() }}
             onCleanupError={message => { if (active.current) props.onCleanupError(message) }}
             onDenied={() => { setDenied(true); queryClient.removeQueries({ queryKey: key }) }}
-            onReconnect={reconnect} /> : <p className="browser-profile-note">No browser tab is open.</p>}
+            onReconnect={reconnect} reconnectAttempts={reconnectAttempts} /> : <p className="browser-profile-note">No browser tab is open.</p>}
     {read.data && !accessDenied ? <OriginConfirmation profileId={props.session.profileId} computerId={props.session.computerId}
       profiles={props.profiles} /> : null}
     {cleanupError || close.error ? <p role="alert">{cleanupError ?? browserErrorMessage(close.error)}</p> : null}

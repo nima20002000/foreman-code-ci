@@ -61,7 +61,9 @@ export class BrowserBroker implements BrowserLifecyclePort {
       const owner = [...this.sessions.values()].find(value => value.record.session.profileId === profileId
         && value.record.session.browserGeneration === generation
         && value.record.leases.some(lease => lease.targetId === openerTargetId))
-      if (!owner || owner.record.closing || owner.record.session.state === 'closed') {
+      const atLimit = owner?.record.session.subject && owner.record.control.state === 'agent'
+        && owner.record.leases.length >= (owner.record.maxTabs ?? DEFAULT_AGENT_BROWSER_TABS)
+      if (!owner || owner.record.closing || owner.record.session.state === 'closed' || atLimit) {
         await options.driver.closeTab(profileId, generation, tab.targetId)
         return
       }
@@ -267,7 +269,9 @@ export class BrowserBroker implements BrowserLifecyclePort {
         return { kind: 'unavailable', reason: 'disabled', retryable: false }
       }
       const preparationKey = `preparation:${key}:${input.commandId}`
-      const preparationHash = browserInputHash({ ...input, readOnly: binding.readOnly })
+      // The tab limit can change on an open session without changing its saved assignment.
+      const preparationHash = browserInputHash({ ...input, browser: { enabled: input.browser.enabled,
+        profileId: input.browser.profileId }, readOnly: binding.readOnly })
       const preparation = await this.options.journal.read(preparationKey)
       if (preparation && preparation.inputHash !== preparationHash) throw new DomainError('COMMAND_ID_CONFLICT', 'This preparation command belongs to a different saved assignment.', 409)
       if (!preparation) await this.options.journal.write(preparationKey, { inputHash: preparationHash, state: 'reserved' })
@@ -588,16 +592,20 @@ export class BrowserBroker implements BrowserLifecyclePort {
         await this.persist(live); return structuredClone(control)
       }
       try {
+        let dialogOpen = false
         for (const { lease } of live.record.leases) {
           const dispatch = this.transitionDispatch(live, lease.tabId, transitionEpoch)
           await this.options.driver.releasePressed(dispatch)
           await dispatch('Foreman.resumeManagedDialogs')
           const observed = await this.options.driver.observe(dispatch)
+          dialogOpen ||= !!observed.dialog
           lease.title = observed.title; lease.url = observed.url
         }
         if (control.epoch !== transitionEpoch || live.record.closing) return structuredClone(control)
         control.state = live.record.session.subject ? 'agent' : 'paused'; control.controllingViewerId = null
-        control.reason = live.record.session.subject ? null : 'Browser ready for you — click to continue.'
+        control.reason = dialogOpen ? 'Resolve the current dialog to continue.'
+          : live.record.session.subject ? null : 'Browser ready for you — click to continue.'
+        live.dialogBarrier = dialogOpen
         live.record.session.state = 'ready'; live.lastInput.clear(); await this.persist(live)
         if (live.record.session.subject) live.gate.open()
       } catch {
@@ -703,24 +711,26 @@ export class BrowserBroker implements BrowserLifecyclePort {
   }
 
   async createTab(input: { sessionId: string; actor: BrowserActor; commandId: string }) {
-    const live = this.requireSession(input.sessionId)
-    if (live.record.readOnly && input.actor.kind === 'agent') throw new DomainError('READ_ONLY', 'This agent cannot create browser tabs.', 403)
-    const limit = live.record.maxTabs ?? DEFAULT_AGENT_BROWSER_TABS
-    if (input.actor.kind === 'agent' && live.record.leases.length >= limit && !await this.options.journal.read(`${input.sessionId}:tab-create:${input.commandId}`)) {
-      throw new DomainError('BROWSER_TAB_LIMIT', `You already have ${live.record.leases.length} of your ${limit} allowed tabs open. `
-        + 'Navigate one of them (browser_action navigate) or close one before opening another.', 409)
-    }
-    await this.assertCurrent(live)
-    const created = await this.command(`${input.sessionId}:tab-create:${input.commandId}`, input, async markEffect => {
-      const tab = await live.gate.dispatch(input.actor.kind === 'agent', () => this.assertActor(live, input.actor),
-        () => { markEffect(); return this.options.driver.createTab(live.record.session.profileId, input.actor.browserGeneration) })
-      const lease: BrowserTabLease = { id: this.id(), sessionId: input.sessionId, tabId: this.id(),
-        browserGeneration: input.actor.browserGeneration, title: tab.title, url: tab.url }
-      live.record.leases.push({ lease, targetId: tab.targetId })
-      if (input.actor.kind === 'agent' || live.record.session.selectedTabId === null) live.record.session.selectedTabId = lease.tabId
-      await this.persist(live); return { tabId: lease.tabId }
+    return this.controlOperation(`tab-create:${input.sessionId}`, async () => {
+      const live = this.requireSession(input.sessionId)
+      if (live.record.readOnly && input.actor.kind === 'agent') throw new DomainError('READ_ONLY', 'This agent cannot create browser tabs.', 403)
+      const limit = live.record.maxTabs ?? DEFAULT_AGENT_BROWSER_TABS
+      if (input.actor.kind === 'agent' && live.record.leases.length >= limit && !await this.options.journal.read(`${input.sessionId}:tab-create:${input.commandId}`)) {
+        throw new DomainError('BROWSER_TAB_LIMIT', `You already have ${live.record.leases.length} of your ${limit} allowed tabs open. `
+          + 'Navigate one of them (browser_action navigate) or close one before opening another.', 409)
+      }
+      await this.assertCurrent(live)
+      const created = await this.command(`${input.sessionId}:tab-create:${input.commandId}`, input, async markEffect => {
+        const tab = await live.gate.dispatch(input.actor.kind === 'agent', () => this.assertActor(live, input.actor),
+          () => { markEffect(); return this.options.driver.createTab(live.record.session.profileId, input.actor.browserGeneration) })
+        const lease: BrowserTabLease = { id: this.id(), sessionId: input.sessionId, tabId: this.id(),
+          browserGeneration: input.actor.browserGeneration, title: tab.title, url: tab.url }
+        live.record.leases.push({ lease, targetId: tab.targetId })
+        if (input.actor.kind === 'agent' || live.record.session.selectedTabId === null) live.record.session.selectedTabId = lease.tabId
+        await this.persist(live); return { tabId: lease.tabId }
+      })
+      return { ...this.read(input.sessionId), createdTabId: created.tabId }
     })
-    return { ...this.read(input.sessionId), createdTabId: created.tabId }
   }
 
   async selectTab(input: { sessionId: string; tabId: string; actor: BrowserActor; commandId: string }) {
