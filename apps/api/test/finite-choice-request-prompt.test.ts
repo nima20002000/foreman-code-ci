@@ -110,7 +110,8 @@ describe('BR1-007: immutable finite choices reach the actual request builder', (
     const prompt = currentInitialPrompt(node, false, true)!
     expect(prompt.startsWith(`${node.initialPrompt}\n\n`)).toBe(true)
     expect(prompt).toContain('Use [] when the assigned work is complete.')
-    expect(prompt).toContain('fails the Run with them as the reason (a Master waits for owner direction instead)')
+    expect(prompt).toContain('fails the Run with them as the reason; it does not mean successful completion')
+    expect(prompt).not.toContain('owner direction')
     expect(prompt).toContain('intentionally deferred checks assigned to another lane')
     expect(prompt).toContain('They are remainingFindings only when they leave an assigned task requirement unresolved.')
     expect(prompt).toContain('report its existing commit and verification status in latestDeliverable')
