@@ -7,10 +7,10 @@ import { AgentFilePublishInputSchema, AgentFilePublishResultSchema, type AgentFi
 import { TransferIntentSchema } from '@foreman-code/contracts/byte-transfer'
 import { WORKER_MCP_REQUEST_MAX_BYTES, WorkerMcpRelayResponseSchema } from '@foreman-code/contracts/worker-mcp-relay'
 import { z } from 'zod'
-import { componentLogger } from '../../diagnostics/index.js'
+import { componentLogger } from '../../diagnostics/logger.js'
 import { DeviceApplicationError, deviceApplicationFailure } from '../../devices/deviceApplicationError.js'
 import { DeviceConnectionError } from '../../devices/deviceWire.js'
-import { leaseFailureCause, renewOwnedLeases } from '../../leases/index.js'
+import { leaseFailureCause, renewOwnedLeases } from '../../leases/ownerLeases.js'
 import { sha256Digest } from '../../../shared/hash.js'
 
 const PublicationCall = z.object({ jsonrpc: z.literal('2.0'), id: z.union([z.string(), z.number().int()]),

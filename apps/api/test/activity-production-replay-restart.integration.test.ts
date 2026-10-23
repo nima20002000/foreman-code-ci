@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { ManualRunStartResultSchema, SavedRunDetailsSchema } from '@foreman-code/contracts/current'
+import { ManualRunStartResultSchema, SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
 import { vi } from 'vitest'
 import { RepeatRunRepository } from '../src/modules/runs/repeatPostgres.js'
 import * as workflowLifecycle from '../src/modules/runs/workflowLifecycle.js'

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema, CurrentWorkflowSaveInputSchema,
-  CurrentWorkflowSaveResultSchema } from '@foreman-code/contracts/current'
+  CurrentWorkflowSaveResultSchema } from '@foreman-code/contracts/wave25'
 import { writerFixture } from './writer-fixtures.js'
 import { graphRpcValue } from './graph-composition-fixture.js'
 import { currentDatabase, postgresEnabled } from './helpers/database.js'

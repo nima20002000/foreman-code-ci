@@ -31,7 +31,7 @@ it('ignores extra authenticated MCP arguments before persistence and retries wit
     const readback = await readonly.callTool({ name: 'system_prompt_get', arguments: { explanation: 'ignored' } })
     expect(ManagedPromptSettingSchema.parse(decodeMcpToolResult(readback))).toEqual(saved.value)
     expect(await database.repository.getSystemPrompt()).toEqual(saved.value)
-    const detail = decodeMcpToolResult(await editor.callTool({ name: 'tool_schema', arguments: {
+    const detail = decodeMcpToolResult(await editor.callTool({ name: 'operator_tool_schema_get', arguments: {
       name: 'system_prompt_update', explanation: 'ignored',
     } })) as { inputSchema: { additionalProperties?: boolean }; description: string }
     expect(detail.inputSchema.additionalProperties).not.toBe(false)

@@ -102,7 +102,7 @@ retention application, tombstones and exclusion of permanent references. No loca
 file metadata or bytes are edited by this component. FIL-40 already exposes the same
 get/preview/save service through `file_retention_get`, `file_retention_preview` and
 `file_retention_save`. No additional MCP capability is introduced here. The frozen
-capability-enum discovery gap reported in `docs/history/FIL-40-BACKEND.md` is unchanged.
+capability-enum discovery gap reported in `docs/FIL-40-BACKEND.md` is unchanged.
 
 ## Accessibility and layout
 

@@ -3,10 +3,10 @@ import { test, vi } from 'vitest'
 import type { ReviewJob } from '@foreman-code/contracts'
 import { assertSameRepeatExecution, assertSameReviewJob, reviewPhysicallySettled } from '../src/modules/interactions/repeatObservation.js'
 import { repeatReviewerOccurrence } from '../src/modules/interactions/repeatReviewer.js'
-import { nativeReviewerFixture } from './native-reviewer-fixtures.js'
+import { native2Fixture } from './native-reviewer-fixtures.js'
 
 function reviewFixture() {
-  const f = nativeReviewerFixture(); f.installResident(true)
+  const f = native2Fixture(); f.installResident(true)
   const job: ReviewJob = { id: 'review-job-occurrence-1', interactionId: 'interaction-requester-occurrence-1',
     reviewerAgentId: f.get().agentId, attempt: 1, state: 'completed', provider: 'codex', nativeSessionId: f.session.nativeSessionId,
     correlationId: 'review-correlation-occurrence-1', providerTurnOrMessageId: 'turn-native2-exact',
@@ -105,7 +105,7 @@ test('NATIVE-2 execution-ID-only finishReview is not a v3 occurrence barrier', a
 })
 
 test('NATIVE-2 reviewer selection keys an in-block reviewer to the same occurrence', () => {
-  const f = nativeReviewerFixture()
+  const f = native2Fixture()
   assert.equal(repeatReviewerOccurrence(f.fixture.version, f.fixture.ref, 'work'), f.fixture.occurrence.identity.occurrenceId)
   assert.equal(repeatReviewerOccurrence(f.fixture.version, f.fixture.ref, 'done'), null)
   assert.throws(() => repeatReviewerOccurrence(f.fixture.version, { nodeId: 'done', occurrence: null }, 'work'),

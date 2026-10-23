@@ -8,14 +8,14 @@ import type { NodePlacementChoice, NodePlacementChoicesInput, NodePlacementChoic
 import { SavedNodePlacementSchema } from '@foreman-code/contracts/node-placement'
 import { SourceRootRecordSchema, type SourceRootRecord } from '@foreman-code/contracts/source-admission'
 import type { WorkspaceRootPolicy } from '@foreman-code/contracts/workspace-root-policies'
-import { sameWorkflowValue } from '@foreman-code/contracts/current'
+import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { commandInputHash } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
 import type { SourceAdmissionPort } from '../sources/admissionPorts.js'
 import type { WorkspaceRootPolicyPort } from '../sources/rootPolicyPorts.js'
 import { provisionPairedAgentRoots, type PairedRootServices } from './pairedRoots.js'
 import type { PlacementChoiceDiscovery } from './choicesService.js'
-import { computerNameKey, readComputerNames } from '../computers/index.js'
+import { computerNameKey, readComputerNames } from '../computers/names.js'
 import { computerAvailabilityFailure, type ComputerAvailability } from './computerAvailability.js'
 
 type DiscoveryServices = PairedRootServices & {

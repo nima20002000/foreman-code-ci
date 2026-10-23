@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import type { WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
+import type { WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 import { announceBoardChange, boardScope, clearBoardRedo, describeDraftChange, pendingBoardAction, popBoardAction,
   popBoardRedo, publishDraftDepth, recordBoardAction, useBoardUndo } from './boardUndo'
 
 const scope = boardScope('workspace', 'workflow')
-const graph = (patch: Partial<WorkflowDefinitionCurrent> = {}) => ({ id: 'workflow', workspaceId: 'workspace', name: 'Tasks',
+const graph = (patch: Partial<WorkflowDefinitionV3> = {}) => ({ id: 'workflow', workspaceId: 'workspace', name: 'Tasks',
   executionSemanticsVersion: 3, entryNodeId: 'a', executionCondition: { kind: 'manual' },
-  nodes: [{ kind: 'agent', id: 'a', agentId: 'agent', name: 'Lead', position: { x: 0, y: 0 } }], edges: [], ...patch }) as WorkflowDefinitionCurrent
+  nodes: [{ kind: 'agent', id: 'a', agentId: 'agent', name: 'Lead', position: { x: 0, y: 0 } }], edges: [], ...patch }) as WorkflowDefinitionV3
 
 beforeEach(() => useBoardUndo.setState({ actions: {}, redo: {}, changes: {}, depth: {}, notice: undefined }))
 

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { JobWorkflowNodeSchema } from '@foreman-code/contracts/job-workflow'
-import { WorkflowDefinitionCurrentSchema, WorkflowExecutionPolicySchema,
-  CurrentAgentWorkflowNodeSchema, RepeatBlockV1Schema } from '@foreman-code/contracts/current'
+import { WorkflowDefinitionV3Schema, WorkflowExecutionPolicySchema,
+  CurrentAgentWorkflowNodeSchema, RepeatBlockV1Schema } from '@foreman-code/contracts/wave25'
 
 // Form snapshots are not executable definitions. They may contain an unfinished
 // selection, partial outcome text or an invalid numeric field. Strict shared V3
@@ -21,7 +21,7 @@ const FormBlock = z.object({ ...RepeatBlockV1Schema.shape,
   id: z.string(), nodeIds: z.array(z.string()), entryNodeId: z.string(), exitNodeId: z.string(),
   maxOccurrences: FormNumber, repeatOutcome: z.string(), earlyExitOutcome: z.string(), limitExit: FormTarget,
 }).strict()
-export const LocalWorkflowFormSchema = z.object({ ...WorkflowDefinitionCurrentSchema.shape,
+export const LocalWorkflowFormSchema = z.object({ ...WorkflowDefinitionV3Schema.shape,
   nodes: z.array(FormNode), entryNodeId: z.string().nullable(),
   executionPolicy: WorkflowExecutionPolicySchema.extend({ maxParallelism: FormNumber,
     maxNodeExecutions: FormNumber, agentActiveTimeoutMs: FormNumber.optional() }).optional(),

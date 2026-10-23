@@ -1,6 +1,6 @@
 import { registerRunSubagentRoutes } from './runSubagents.js'
 import { CurrentWorkflowCreateInputSchema, RunActivitiesInputSchema,
-  RunHandoffsReadInputSchema } from '@foreman-code/contracts/current'
+  RunHandoffsReadInputSchema } from '@foreman-code/contracts/wave25'
 import { AgentCreateInputSchema, AgentUpdateInputSchema } from '@foreman-code/contracts/management'
 import { registerCurrentWorkflowRoutes } from './currentWorkflow.js'
 import { registerRunInspectionRoutes } from './runInspection.js'
@@ -44,7 +44,7 @@ import {
   WorkspaceLocationValidateInputSchema,
   WorkflowDefaultsUpdateInputSchema,
 } from '@foreman-code/contracts/management'
-import { ManualRunStartInputSchema } from '@foreman-code/contracts/current'
+import { ManualRunStartInputSchema } from '@foreman-code/contracts/wave25'
 import { requireLocalHuman, requirePrincipal } from '../modules/access/http.js'
 import type { OperatorServices } from '../mcp/operator/types.js'
 import { DomainError } from '../modules/errors.js'

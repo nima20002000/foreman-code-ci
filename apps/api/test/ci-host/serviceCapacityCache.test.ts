@@ -24,8 +24,7 @@ function fixture() {
   const pool = { query: vi.fn(async (sql: string, parameters?: unknown[]) => {
     if (sql.includes('from workspaces')) return { rows: [{ record: workspace }] }
     if (sql.includes('count(*)')) return { rows: [{ host_key: 'fixture-host', count: occupied }] }
-    // Only the Run insert binds nine values (record at position 3).
-    if (parameters?.length === 9) {
+    if (sql.startsWith('insert into ci_runs')) {
       records.push(CiRunRecordSchema.parse(JSON.parse(parameters![3] as string)))
     }
     return { rows: [], rowCount: 1 }

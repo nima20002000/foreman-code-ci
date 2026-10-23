@@ -6,7 +6,7 @@ import type { AgentConversationRow, PostgresAgentChatRepository } from '../src/m
 import { workerConversationFixture } from '../src/modules/conversations/workerFixtures.test-support.js'
 import { CodexAppServerSessionManager } from '../src/modules/harnesses/codexAppServer.js'
 import { createAdmittedNativeManager } from '../src/modules/harnesses/admittedManager.js'
-import { WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
+import { WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
 import { graphSourceDigest } from '../src/modules/run-graph/publication.js'
 import { currentUnitSnapshot } from './helpers/currentUnitSnapshot.js'
 import { memorySessionControlPool } from './support/sessionControls.js'
@@ -15,15 +15,14 @@ import { memorySessionControlPool } from './support/sessionControls.js'
 function savedVersionPool(configuration: { id: string; workspaceId: string; agentId: string },
   pool: ReturnType<typeof memorySessionControlPool>) {
   const snapshot = currentUnitSnapshot('creation-state-loss', 'single')
-  const version = WorkflowVersionCurrentSchema.parse({ ...snapshot.version, workspaceId: configuration.workspaceId,
+  const version = WorkflowVersionV3Schema.parse({ ...snapshot.version, workspaceId: configuration.workspaceId,
     workflowId: 'workflow', entryNodeId: 'node', agentConfigurationVersionIds: { [configuration.agentId]: configuration.id },
     definition: { ...snapshot.version.definition, id: 'workflow', workspaceId: configuration.workspaceId, entryNodeId: 'node',
       nodes: [{ id: 'node', agentId: configuration.agentId, name: 'Agent' }] } })
   version.contentHash = graphSourceDigest({ definition: version.definition,
     configurations: version.agentConfigurationVersionIds, entryNodeId: version.entryNodeId })
   return { async query(text: string, values: unknown[] = []) {
-    // The current saved Version read binds the workspace and workflow ids; session control statements bind a conversation.
-    if (values.length === 2 && values[0] === version.workspaceId && values[1] === version.workflowId) {
+    if (text.includes('join workflow_versions version on version.id = workflow.current_version_id')) {
       return { rows: [{ id: version.id, workspace_id: version.workspaceId, workflow_id: version.workflowId, version: version.version,
         entry_node_id: version.entryNodeId, execution_semantics_version: 3, record: version }], rowCount: 1 }
     }

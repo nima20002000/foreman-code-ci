@@ -10,7 +10,7 @@ import {
 } from '@foreman-code/contracts'
 import type { AgentChatContext, AgentChatOrigin, AgentChatTurn } from '@foreman-code/contracts/agent-chat'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 
 import { AgentChatService, type AgentChatManagerFactory } from '../src/modules/conversations/agentChat.js'
 import { agentChatKey, type AgentConversationRow, PostgresAgentChatRepository } from '../src/modules/conversations/agentChatRepository.js'
@@ -193,34 +193,32 @@ async function setup(options: { ephemeral?: boolean; stored?: boolean; origin?: 
     if (isCurrentVersionRead(sql)) return { rows: values[0] === versionRow.workspace_id && values[1] === versionRow.workflow_id ? [versionRow] : [] }
     if (isSavedVersionRead(sql)) return { rows: values[0] === versionRow.id ? [versionRow] : [] }
     if (isRunVersionRead(sql)) return { rows: values[0] === fixture.run.id ? [{ workflow_version_id: fixture.run.workflowVersionId }] : [] }
-    // Beyond the saved Version reads above, statements are told apart by their bound values: the chat lookup binds six
-    // (scope and execution), the source transcript four, and the Agent configuration and native session pointer two each.
-    // A single bound value is the live principal id; the conversation's session controls bind a conversation id and find none.
-    if (values.length === 6) {
+    if (sql.startsWith('select record from conversation_session_controls where conversation_id=$1')) return { rows: [] }
+    if (sql.startsWith('select current_configuration_version_id from agents')) return { rows:
+      values[0] === configuration.workspaceId && values[1] === configuration.agentId
+        ? [{ current_configuration_version_id: configuration.id }] : [] }
+    if (sql.includes('from management_principals')) return { rows: values[0] === principal.id
+      ? [{ id: principal.id, name: principal.name, audience: principal.audience, grants: principal.grants,
+        expires_at: new Date(principal.expiresAt), revoked_at: null, delegated_from: null }] : [] }
+    if (sql.startsWith("select * from operator_conversations where kind='agent'")) {
       const row = repository.row
       return { rows: row && JSON.stringify(values) === JSON.stringify([row.workspace_id, row.workflow_id,
         row.origin_run_id, row.workflow_node_id, row.agent_id, row.origin_execution_id]) ? [row] : [] }
     }
-    if (values.length === 4) {
+    if (sql.startsWith('select s.reference from execution_native_sessions')) {
+      const origin = repository.row?.record.origin
+      return { rows: origin?.kind === 'run_execution' && values[0] === origin.executionId && values[1] === origin.runId
+        ? [{ reference: { harness: native.harness, providerVersion: (await native.capabilities()).providerVersion,
+          nativeSessionId: origin.sourceNativeSessionId } }] : [] }
+    }
+    if (sql.includes('from harness_native_events')) {
       const execution = source.find(item => item.id === values[0] && item.runId === values[1]
         && item.workflowNodeId === values[2] && item.agentId === values[3])
       return { rows: execution ? [{ item_key: 'source-reply', role: 'assistant',
         content: `Transcript for ${execution.id}`, original_bytes: 0, complete: true,
         sequence: '1', revision: '1' }] : [] }
     }
-    if (values.length === 2) {
-      if (values[0] === configuration.workspaceId && values[1] === configuration.agentId) {
-        return { rows: [{ current_configuration_version_id: configuration.id }] }
-      }
-      const origin = repository.row?.record.origin
-      return { rows: origin?.kind === 'run_execution' && values[0] === origin.executionId && values[1] === origin.runId
-        ? [{ reference: { harness: native.harness, providerVersion: (await native.capabilities()).providerVersion,
-          nativeSessionId: origin.sourceNativeSessionId } }] : [] }
-    }
-    if (values.length === 1) return { rows: values[0] === principal.id
-      ? [{ id: principal.id, name: principal.name, audience: principal.audience, grants: principal.grants,
-        expires_at: new Date(principal.expiresAt), revoked_at: null, delegated_from: null }] : [] }
-    throw new Error(`Unscripted F3 statement binding ${values.length} values`)
+    throw new Error(`Unscripted F3 SQL: ${sql}`)
   }
   const pool = { query, connect: async () => ({ query, release() {} }) } as unknown as pg.Pool
   function service() {

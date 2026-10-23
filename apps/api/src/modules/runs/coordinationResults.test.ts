@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 import { HarnessExecutionSchema, parseCoordinationResult, type CoordinationResultContext } from '@foreman-code/contracts'
 import { parseWorkflowArtifactResult } from '@foreman-code/contracts/workflow-artifact-result'
-import { makeCurrentWorkflowFixture, parseWorkHandoffResult, parseRepeatExitResultV1 } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture, parseWorkHandoffResult, parseRepeatExitResultV1 } from '@foreman-code/contracts/wave25'
 import { workflowExecutionRequest } from './workflowExecutionRequest.js'
 import { normalizeRepeatTerminal } from './repeatNode.js'
 import { parseCurrentChoiceResult } from './currentRouting.js'

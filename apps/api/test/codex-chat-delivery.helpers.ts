@@ -8,7 +8,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { afterEach, beforeEach } from 'vitest'
 import { AgentConfigurationVersionSchema, DEFAULT_HARNESS_DEFAULTS, operatorChatSettings, type OperatorConversationState } from '@foreman-code/contracts'
 import type { AgentChatState, SendAgentChatMessageRequest } from '@foreman-code/contracts/agent-chat'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
@@ -23,14 +23,13 @@ import { createAdmittedNativeManager } from '../src/modules/harnesses/admittedMa
 import type { NativeHarnessSessionManager } from '../src/modules/harnesses/port.js'
 import type { CodexChatFiles } from '../src/modules/harnesses/codexFiles/runtime.js'
 import { CodexStdioTransport } from '../src/modules/harnesses/codexStdioTransport.js'
-import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
 import { deliveryFixture } from './fixtures/codex-delivery.js'
 import { until } from './fixtures/codex-test-helpers.js'
 import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
 
 export function useCodexChatDelivery(options: { manualLateReplies?: boolean } = {}) {
-  let database: Awaited<ReturnType<typeof migratedDatabase>>
+  let database: Awaited<ReturnType<typeof agent3Database>>
   let native: Awaited<ReturnType<typeof deliveryFixture>>
   let agentChat: AgentChatService
   let operatorChat: OperatorChatService
@@ -56,7 +55,7 @@ export function useCodexChatDelivery(options: { manualLateReplies?: boolean } = 
     model: 'test-model', reasoningEffort: 'low' as const, serviceTier: 'standard' as const }
 
   beforeEach(async () => {
-    database = await migratedDatabase()
+    database = await agent3Database()
     native = await deliveryFixture()
     const source = await readFile(native.binary, 'utf8')
     await writeFile(native.binary, source
@@ -113,7 +112,7 @@ export function useCodexChatDelivery(options: { manualLateReplies?: boolean } = 
       ...configuration, harness: { ...DEFAULT_HARNESS_DEFAULTS.codex, model: 'test-model',
         reasoningEffort: 'low', sandbox: 'read-only', serviceTier: 'standard' },
     }))
-    const saved = await seedWorkflowFixture(database.pool, native.directory, fixture, { run: false })
+    const saved = await seedAgent3(database.pool, native.directory, fixture, { run: false })
     const node = saved.version.definition.nodes[0]!
     workspaceId = saved.scope.workspaceId
     context = { workflowId: saved.scope.workflowId, workflowNodeId: node.id, agentId: node.agentId }

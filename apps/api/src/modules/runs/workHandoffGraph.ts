@@ -1,5 +1,6 @@
-import { Annotation, Command, END, Send, START, StateGraph, type BaseCheckpointSaver } from '../../infrastructure/langgraph.js'
-import { WorkflowVersionCurrentSchema, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
+import { Annotation, Command, END, Send, START, StateGraph } from '@langchain/langgraph'
+import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint'
+import { WorkflowVersionV3Schema, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import { repeatConflict } from './repeatResolution.js'
 
 const WorkState = Annotation.Root({ runId: Annotation<string>() })
@@ -18,11 +19,11 @@ export interface WorkHandoffGraphPort {
  * work turns. Send carries an activation ID only; SQL remains the authority for
  * input, result, native session, quota and side-effect receipts. */
 export function buildWorkHandoffGraph(input: {
-  runId: string; version: WorkflowVersionCurrent; port: WorkHandoffGraphPort
+  runId: string; version: WorkflowVersionV3; port: WorkHandoffGraphPort
   checkpointer: BaseCheckpointSaver; signal: AbortSignal
   track?: (task: Promise<readonly string[]>) => void
 }) {
-  const version = WorkflowVersionCurrentSchema.parse(input.version)
+  const version = WorkflowVersionV3Schema.parse(input.version)
   if (!version.definition.handoffs || version.definition.repeat) return repeatConflict('WORK_POLICY_PIN_CONFLICT')
   const send = (activationId: string) => new Send('activation', { runId: input.runId, activationId })
   const graph = new StateGraph(WorkState)

@@ -1,10 +1,10 @@
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import type { GraphTransactionSql } from '../run-graph/connection.js'
 import { graphSourceDigest } from '../run-graph/graphDigest.js'
 import { assertRepeatCanonicalReceiptsLocked, requireRepeatCanonicalReceiptBeforeCommit } from '../run-graph/repeatReceipts.js'
 import type { WorkflowNativeProofRecord } from './workflowNativeProof.js'
 
 /** Transcript sources attach to the committed head without changing the graph or its public projection. */
-export async function retainNativeTranscriptSources(sql: SqlTransaction,
+export async function retainNativeTranscriptSources(sql: GraphTransactionSql,
   records: readonly WorkflowNativeProofRecord[]) {
   const scope = records[0]!.scope
   const receipts = records.map(record => {

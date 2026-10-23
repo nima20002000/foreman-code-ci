@@ -1,4 +1,4 @@
-import type { RunGraphErrorCode } from '@foreman-code/contracts/current'
+import type { RunGraphErrorCode } from '@foreman-code/contracts/wave25'
 
 /** Never forward database errors, native bodies, paths or caller-supplied messages. */
 export class RunGraphError extends Error {

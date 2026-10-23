@@ -206,7 +206,7 @@ async function main() {
   const contracts = join(release, 'apps/api/node_modules/@foreman-code/contracts/dist')
   const { ManagementActionSchema, LocalHumanAccessSchema, WorkspaceUpdateInputSchema } =
     await import(pathToFileURL(join(contracts, 'management/index.js')))
-  const { makeCurrentWorkflowFixture } = await import(pathToFileURL(join(contracts, 'current/index.js')))
+  const { makeCurrentWorkflowFixture } = await import(pathToFileURL(join(contracts, 'wave25/index.js')))
   const { PostgresAccessService } = await import(pathToFileURL(join(release, 'apps/api/dist/modules/access/postgres.js')))
   const recoveryModules = join(release, 'apps/api/dist/modules/harnesses/recovery')
   const { NativeProcessRegistry } = await import(pathToFileURL(join(recoveryModules, 'processRegistry.js')))

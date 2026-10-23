@@ -3,11 +3,10 @@ import type pg from 'pg'
 import { ChatDeliveryReceiptSchema, CoordinatorConsultationBindingSchema, EngineChatReadbackSchema,
   WorkflowExecutionChatReadRequestSchema, validateEngineChatReadback,
   type ChatDeliveryReceipt, type CoordinatorConsultationBinding, type EngineChatReadback } from '@foreman-code/contracts'
-import { readLiveManagementPrincipal } from '../access/index.js'
-import { requireAuthorization } from '../access/index.js'
+import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
+import { requireAuthorization } from '../access/policy.js'
 import { DomainError } from '../errors.js'
-import { withExclusiveGraphConnection } from '../run-graph/index.js'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import { withExclusiveGraphConnection, type GraphSqlClient } from '../run-graph/connection.js'
 import type { Principal } from './ports.js'
 import { asWorkflowChatTarget, controlDigest, workflowTargetRunId } from './workflowControlRecords.js'
 import { readWorkflowChatIdentity } from './workflowChatIdentity.js'
@@ -31,7 +30,7 @@ export function authorizeWorkflowChat(principal: Principal, target: WorkflowChat
   requireAuthorization(principal, action, scope)
 }
 export async function withWorkflowChatRead<T>(pool: pg.Pool, principal: Principal, target: WorkflowChatTarget,
-  action: 'agent_chat:read' | 'agent_chat:write' | 'agent_chat:cancel', work: (sql: SqlQuery) => Promise<T>): Promise<T> {
+  action: 'agent_chat:read' | 'agent_chat:write' | 'agent_chat:cancel', work: (sql: GraphSqlClient) => Promise<T>): Promise<T> {
   authorizeWorkflowChat(principal, target, action)
   return withExclusiveGraphConnection(pool, connection => connection.transaction(async sql => {
     authorizeWorkflowChat(await readLiveManagementPrincipal(sql, principal.id), target, action)
@@ -39,7 +38,7 @@ export async function withWorkflowChatRead<T>(pool: pg.Pool, principal: Principa
   }, true))
 }
 
-async function receiptPage(sql: SqlQuery, target: WorkflowChatTarget, cursor: PageCursor, limit: number) {
+async function receiptPage(sql: GraphSqlClient, target: WorkflowChatTarget, cursor: PageCursor, limit: number) {
   const candidates = cursor.receiptsDone ? [] : (await sql.query<{ bytes: number; sequence: string }>(
     `select octet_length(receipt::text) as bytes,sequence::text from run_chat_commands where run_id=$1 and target_key=$2 and kind='delivery'
       and ($3::bigint is null or sequence<$3) order by sequence desc limit $4`,
@@ -61,13 +60,13 @@ async function receiptPage(sql: SqlQuery, target: WorkflowChatTarget, cursor: Pa
   return { receipts: page.map(row => ChatDeliveryReceiptSchema.parse(row.receipt)).reverse(),
     hasMore, before: hasMore ? page.at(-1)!.sequence : null, revision: Number(revision) }
 }
-async function currentBindings(sql: SqlQuery, target: WorkflowChatTarget): Promise<CoordinatorConsultationBinding[]> {
+async function currentBindings(sql: GraphSqlClient, target: WorkflowChatTarget): Promise<CoordinatorConsultationBinding[]> {
   if (target.kind !== 'workflow_coordinator') return []
   return (await sql.query<{ binding: unknown }>(`select binding from run_coordinator_consultations
     where run_id=$1 and waiting_activation_id=$2 order by created_at desc,id desc limit 100`,
   [target.runId, target.waitingActivationId])).rows.map(row => CoordinatorConsultationBindingSchema.parse(row.binding))
 }
-async function pageBindings(sql: SqlQuery, target: WorkflowChatTarget, readback: EngineChatReadback) {
+async function pageBindings(sql: GraphSqlClient, target: WorkflowChatTarget, readback: EngineChatReadback) {
   if (target.kind !== 'workflow_coordinator') return []
   const ids = new Set(readback.messages.flatMap(message => message.provenance.kind === 'consultation'
     ? [message.provenance.binding.consultationId] : []))
@@ -113,7 +112,7 @@ export async function readWorkflowExecutionChat(pool: pg.Pool, owner: WorkflowCh
   })
 }
 
-export async function readWorkflowDeliveryReceipt(sql: SqlQuery, id: string): Promise<ChatDeliveryReceipt | undefined> {
+export async function readWorkflowDeliveryReceipt(sql: GraphSqlClient, id: string): Promise<ChatDeliveryReceipt | undefined> {
   const row = (await sql.query<{ receipt: unknown }>('select receipt from run_chat_commands where id=$1 and kind=\'delivery\'', [id])).rows[0]
   return row ? ChatDeliveryReceiptSchema.parse(row.receipt) : undefined
 }

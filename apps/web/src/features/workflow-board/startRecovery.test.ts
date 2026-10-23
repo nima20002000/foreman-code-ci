@@ -1,14 +1,14 @@
 import { beforeEach, expect, it } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { server } from '../../mocks/server'
-import { RunStartCurrentInputSchema } from '@foreman-code/contracts/current'
-import { nextDraftKey } from '../board-core'
-import { boardCurrentFixture } from './v3Fixture.testSupport'
+import { RunStartV3InputSchema } from '@foreman-code/contracts/wave25'
+import { nextDraftKey } from '../graph/nextDraft/state'
+import { boardV3Fixture } from './v3Fixture.testSupport'
 import { boardStartJournalKey, readBoardStart, reserveBoardStart } from './startOutbox'
 import { recoverBoardStart } from './startRecovery'
 
-const fixture = boardCurrentFixture()
-const request = RunStartCurrentInputSchema.parse({ workspaceId: fixture.scope.workspaceId,
+const fixture = boardV3Fixture()
+const request = RunStartV3InputSchema.parse({ workspaceId: fixture.scope.workspaceId,
   workflowId: fixture.scope.workflowId, workflowVersionId: fixture.scope.workflowVersionId, executionSemanticsVersion: 3,
   expectedWorkflowRevision: 7, expectedAgentConfigurationVersionIds: fixture.version.agentConfigurationVersionIds,
   expectedLocationRevision: fixture.run.executionLocation?.locationRevision,

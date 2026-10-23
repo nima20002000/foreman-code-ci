@@ -8,8 +8,8 @@ import { anchored, directoryFlags, openChildDirectory, openPrivateRoot } from '.
 import { qualifyApprovedRootAllowlist, verifyApprovedRootAllowlist } from '../sources/rootAttestation.js'
 import { sourceSha256 } from '../sources/manifest.js'
 import { workspaceRootHostScope, type PostgresWorkspaceRootPolicies } from '../sources/rootPolicies.js'
-import { workspaceStorageRoot } from '../workspaces/index.js'
-import { pathsOverlap } from '../workspaces/index.js'
+import { workspaceStorageRoot } from '../workspaces/storage.js'
+import { pathsOverlap } from '../workspaces/filesystem.js'
 import { sha256Digest } from '../../shared/hash.js'
 
 function storageBaseId(mainId: string, storageRoot: string): string {

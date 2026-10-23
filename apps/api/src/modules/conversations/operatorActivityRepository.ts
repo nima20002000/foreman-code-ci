@@ -2,7 +2,7 @@ import { OperatorActivityPageSchema, OperatorActivityQuerySchema, OperatorActivi
 import { withTransaction } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import type { NativeMessageSubmission } from '../harnesses/port.js'
-import type { NativePersistenceRedactor } from '../interactions/index.js'
+import type { NativePersistenceRedactor } from '../interactions/nativePersistence.js'
 import { settleKnownActivity } from './settleKnownActivity.js'
 import { conversationActivityKey } from './activityIdentity.js'
 import { assertConversationCursor, withConversationPageRead } from './activityCursor.js'

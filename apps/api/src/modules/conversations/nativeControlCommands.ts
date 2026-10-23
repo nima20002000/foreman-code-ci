@@ -7,10 +7,10 @@ import type { ActivityScope, NativeSessionReference } from '@foreman-code/contra
 import type { NativeMessageSubmission } from '@foreman-code/contracts/claude'
 
 import { commandInputHash } from '../commands/postgres.js'
-import { expiredCommandResult } from '../commands/index.js'
+import { expiredCommandResult } from '../commands/receiptRetention.js'
 import { DomainError } from '../errors.js'
 import { HarnessExecutionError } from '../harnesses/errors.js'
-import { responseValueDigest } from '../interactions/index.js'
+import { responseValueDigest } from '../interactions/delivery.js'
 
 type Outcome<State> = { acceptedControl?: AcceptedChatResponseControl; providerAcknowledgment?: ChatResponseAcknowledgment } & (
   | { status: 'pending' | 'uncertain' }

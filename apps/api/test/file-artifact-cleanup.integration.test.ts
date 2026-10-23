@@ -25,7 +25,7 @@ import { bindingIdentity, digest, FileToolSessions } from '../src/modules/files/
 import { PostgresFileToolRepository } from '../src/modules/files/tools/postgres.js'
 import { AgentFileToolService } from '../src/modules/files/tools/service.js'
 import { ALL_FILE_TOOL_NAMES, type FileToolContext } from '../src/modules/files/tools/types.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 const metadata = (bytes: Buffer) => ({ filename: 'source.md', mediaType: 'text/markdown' as const,
@@ -34,11 +34,11 @@ const metadata = (bytes: Buffer) => ({ filename: 'source.md', mediaType: 'text/m
 // Real PostgreSQL transactions, file services and filesystem. No model/native session or fake
 // sweeper. Every case has its own private byte root; the existing helper guards TEST_DATABASE_URL.
 describe.skipIf(!postgresEnabled)('FIL-01 artifact byte lifecycle', () => {
-  let database: Awaited<ReturnType<typeof migratedDatabase>>
+  let database: Awaited<ReturnType<typeof agent3Database>>
   let access: PostgresAccessService
   let operator: Awaited<ReturnType<PostgresOperatorRepository['ensure']>>
   beforeAll(async () => {
-    database = await migratedDatabase()
+    database = await agent3Database()
     access = new PostgresAccessService(database.pool)
     operator = await new PostgresOperatorRepository(database.pool).ensure()
   }, 30_000)

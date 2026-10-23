@@ -6,7 +6,7 @@ import { AgentChatTurnSchema, type AgentChatContext, type AgentChatExecutionActi
 import { JobWorkflowNodeSchema } from '@foreman-code/contracts/job-workflow'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { RunBoardSnapshotSchema } from '@foreman-code/contracts/run-snapshots'
-import { makeCurrentWorkflowFixture, type SavedWorkflowVersion } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture, type SavedWorkflowVersion } from '@foreman-code/contracts/wave25'
 import { AgentChatService } from '../src/modules/conversations/agentChat.js'
 import { agentChatKey, type AgentConversationRow, type PostgresAgentChatRepository } from '../src/modules/conversations/agentChatRepository.js'
 import { PostgresOperatorConversationRepository } from '../src/modules/conversations/operatorChatRepository.js'

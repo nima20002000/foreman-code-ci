@@ -25,7 +25,7 @@ import { assertWorktreeReceipt, verifyWorktreeBranch } from './worktreeRequest.j
 import { systemGitWorktreePorts, type GitWorktreePorts, type WorktreeRequest } from './gitWorktree.js'
 import { sourceWorkingTreePath } from './sourceTreePaths.js'
 import type { SourceOperationOwner } from '@foreman-code/contracts/source-operations'
-import { componentLogger } from '../diagnostics/index.js'
+import { componentLogger } from '../diagnostics/logger.js'
 import { reconcileSecondaryAllocation, preserveReleasedPreparationClaim } from './secondaryAllocation.js'
 import { openSnapshotReference } from './snapshotReference.js'
 import { verifyRetainedWorkingTree } from './retainedWorkingTree.js'

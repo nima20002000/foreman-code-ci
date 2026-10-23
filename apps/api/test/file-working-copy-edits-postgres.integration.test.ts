@@ -2,7 +2,7 @@ import { createFixtureSchema, dropFixtureSchema } from './helpers/testResources.
 import { createHash, randomUUID } from 'node:crypto'
 import pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { fileToolsMigration } from '../src/infrastructure/fileToolsMigration.js'
+import { fileToolsMigration } from '../src/modules/files/tools/migration.js'
 import { PostgresFileToolRepository } from '../src/modules/files/tools/postgres.js'
 import type { ArtifactSnapshot, FileToolArtifact } from '../src/modules/files/tools/types.js'
 import { postgresEnabled } from './helpers/database.js'

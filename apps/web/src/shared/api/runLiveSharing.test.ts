@@ -1,10 +1,10 @@
 import { QueryClient, QueryObserver } from '@tanstack/react-query'
 import { type RunNodeLiveActivity } from '@foreman-code/contracts'
-import { type CurrentRunDetails as GetRunResponse } from '@foreman-code/contracts/current'
+import { type CurrentRunDetails as GetRunResponse } from '@foreman-code/contracts/wave25'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { keepLatestRunResponse, shareRunResponseOrSelection } from './runLiveCache'
 import { makeSyntheticRun } from '../../features/graph/fixtures/scaleData'
-import { selectGraphNodeActivity } from '../../features/graph'
+import { selectGraphNodeActivity } from '../../features/graph/runtimeIndex'
 
 const scope = { workspaceId: 'synthetic-workspace', workflowId: 'synthetic-workflow', runId: 'synthetic-run',
   workflowVersionId: 'synthetic-version', overlayAllowed: true }

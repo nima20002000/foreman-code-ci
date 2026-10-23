@@ -1,15 +1,15 @@
-import { latestDefaultCommit, runWorkspaceGit } from '../sources/index.js'
+import { latestDefaultCommit, runWorkspaceGit } from '../sources/defaultBranch.js'
 import { withTransaction } from '../../infrastructure/transaction.js'
-export { latestDefaultCommit } from '../sources/index.js'
-import { removeCommittedWorktree } from '../sources/index.js'
+export { latestDefaultCommit } from '../sources/defaultBranch.js'
+import { removeCommittedWorktree } from '../sources/worktreeCleanup.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { access, mkdir, open, rename } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import type pg from 'pg'
-import { RunWorktreeSchema, type RunWorktree, type AcceptedWorkflowRunCurrent } from '@foreman-code/contracts/current'
-import { ensureWorktreeGitIdentity, systemGitWorktreePorts, type GitWorktreePorts } from '../sources/index.js'
-import { directoryFlags, withPrivateDirectoryLock } from '../sources/index.js'
+import { RunWorktreeSchema, type RunWorktree, type AcceptedWorkflowRunV3 } from '@foreman-code/contracts/wave25'
+import { ensureWorktreeGitIdentity, systemGitWorktreePorts, type GitWorktreePorts } from '../sources/gitWorktree.js'
+import { directoryFlags, withPrivateDirectoryLock } from '../sources/privateFilesystem.js'
 import { DomainError } from '../errors.js'
 import { reuseRunCheckout, runWorktreeCleanupCondition, type WorktreeAllocationRow } from './runWorktreeLifecycle.js'
 import { sha256Hex } from '../../shared/hash.js'
@@ -61,7 +61,7 @@ export class RunWorktrees {
     }
   }
 
-  private async inspectAllocation(sql: Sql, run: AcceptedWorkflowRunCurrent, allocationId: string) {
+  private async inspectAllocation(sql: Sql, run: AcceptedWorkflowRunV3, allocationId: string) {
     const previous = await this.read(sql, run.id, allocationId)
     if (previous) {
       if (previous.record.state === 'removed') {
@@ -107,7 +107,7 @@ export class RunWorktrees {
     await this.update(sql, runId, allocationId, tree.record)
   }
 
-  private async reserveAllocation(run: AcceptedWorkflowRunCurrent, allocationId: string, signal: AbortSignal) {
+  private async reserveAllocation(run: AcceptedWorkflowRunV3, allocationId: string, signal: AbortSignal) {
     const root = run.executionLocation.rootPath
     const probe = await this.ports.git(['rev-parse', '--show-toplevel'], { cwd: root, signal })
     if (probe.code !== 0) {
@@ -131,14 +131,14 @@ export class RunWorktrees {
     })
   }
 
-  private checkoutIdentity(run: AcceptedWorkflowRunCurrent, allocationId: string) {
+  private checkoutIdentity(run: AcceptedWorkflowRunV3, allocationId: string) {
     const namespace = sha256Hex(run.workspaceId)
     const name = createHash('sha256').update(run.id).update('\0').update(allocationId).digest('hex')
     const branch = `foreman/run-${name}`
     return { branch, checkoutRoot: join(this.managedRoot, namespace, branch.slice('foreman/'.length)) }
   }
 
-  async prepare(run: AcceptedWorkflowRunCurrent, signal = AbortSignal.timeout(60_000),
+  async prepare(run: AcceptedWorkflowRunV3, signal = AbortSignal.timeout(60_000),
     executionId = ''): Promise<RunWorktree | undefined> {
     return this.exclusive(`execution:${run.id}\0${executionId}`, signal, async () => {
       const state = await this.coordinate(run.id, sql => this.inspectAllocation(sql, run, executionId))

@@ -2,7 +2,7 @@ import type pg from 'pg'
 import { describe, expect, it, vi } from 'vitest'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { SavedNodePlacementSchema } from '@foreman-code/contracts/node-placement'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { RunPlacementReadService } from '../src/modules/placement/readService.js'
 
 function fixture() {

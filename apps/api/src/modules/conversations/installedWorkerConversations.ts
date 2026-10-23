@@ -1,5 +1,5 @@
 import type { ProviderAccountResolver } from '../provider-accounts/service.js'
-import { assertWorkerProviderAccountBinding } from '../provider-accounts/index.js'
+import { assertWorkerProviderAccountBinding } from '../provider-accounts/workerOperations.js'
 import { managedProviderEnvironment, resolveRuntimeProviderAccount } from '../harnesses/providerAccountRuntime.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
@@ -38,7 +38,6 @@ import { recoverWorkerConversation } from './recoverWorkerConversation.js'
 import { join } from 'node:path'
 import { workerConversationAccountOwner } from './workerAccountSession.js'
 import { workerConversationSessionStart } from './workerConversationStart.js'
-import { hostEnvironment } from '../../shared/process.js'
 
 function unavailable(message: string): never {
   throw new DomainError('WORKER_CONVERSATION_UNAVAILABLE', message, 409)
@@ -76,7 +75,7 @@ function createInstalledConversationAllocator(input: InstalledWorkerConversation
     const accountOwner = await workerConversationAccountOwner(binding, conversationJournal, source())
     const account = await resolveRuntimeProviderAccount(input.accounts, 'codex', configuration.harness.accountId,
       input.registry.scope(accountOwner), undefined, binding.accountBinding)
-    const environment = account ? managedProviderEnvironment(hostEnvironment(), account, 'codex') : hostEnvironment()
+    const environment = account ? managedProviderEnvironment(process.env, account, 'codex') : process.env
     const directory = await installedConversationDirectory({ binding, configuration, approvedRoots: input.approvedRoots })
     const reader = createInstalledConversationNativeReader({ binding, configuration, connection,
       current: input.current, signal: () => input.signal, suiteRevision: input.codexSuiteRevision,

@@ -2,12 +2,11 @@ import {
   AgentConfigurationVersionSchema, AgentSubjectSchema, BoardDigestSchema, effectiveGraphqlTools,
   type AgentSubject, type BoardDigest, type HarnessExecution, type LogicalWorkRef,
 } from '@foreman-code/contracts'
-import { AcceptedWorkflowRunCurrentSchema, type AcceptedWorkflowRunCurrent,
-  type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
-import { sameWorkflowValue } from '@foreman-code/contracts/current'
+import { AcceptedWorkflowRunV3Schema, type AcceptedWorkflowRunV3,
+  type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../errors.js'
-import { assertGraphTransaction, beforeGraphCommit } from '../run-graph/index.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { assertGraphTransaction, beforeGraphCommit, type GraphTransactionSql } from '../run-graph/connection.js'
 import type { RunOwnership } from '../runs/ownership.js'
 import type { MemoryBoardPort } from './ports.js'
 import { readWorkflowCollaborationBindingLocked } from './workflowHooks.js'
@@ -18,7 +17,7 @@ export interface WorkflowPreparationIdentity { subject: AgentSubject; work: Logi
 /** Run owner/fence and original execution identity are checked before and after
  * outside-transaction feature preparation. The persisted input is never edited. */
 export async function withWorkflowPreparation<T>(owner: RunOwnership, execution: HarnessExecution,
-  active: boolean, work: (sql: SqlTransaction, run: AcceptedWorkflowRunCurrent,
+  active: boolean, work: (sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
     state: { stopped: boolean; cleanup: boolean }) => Promise<T>): Promise<T> {
   owner.assertOwned()
   if (owner.runId !== execution.runId) throw new DomainError('GRAPH_SCOPE_MISMATCH', 'Preparation belongs to another Run.', 409)
@@ -28,7 +27,7 @@ export async function withWorkflowPreparation<T>(owner: RunOwnership, execution:
         exists(select 1 from run_cleanup_intents c where c.run_id=r.id and c.pending) as cleanup
         from runs r where r.id=$1 for update`, [execution.runId])).rows[0]
     if (!row) throw new DomainError('RUN_NOT_FOUND', 'The preparation Run is unavailable.', 404)
-    const run = AcceptedWorkflowRunCurrentSchema.parse(row.record)
+    const run = AcceptedWorkflowRunV3Schema.parse(row.record)
     if (active && (row.stopped || row.cleanup || !isOpenRunState(run.executionState))) {
       throw new DomainError('GRAPH_STOP_CONFLICT', 'The Run no longer admits preparation.', 409)
     }
@@ -48,8 +47,8 @@ export async function withWorkflowPreparation<T>(owner: RunOwnership, execution:
   })
 }
 
-export async function workflowPreparationIdentityLocked(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent,
-  version: WorkflowVersionCurrent, execution: HarnessExecution): Promise<WorkflowPreparationIdentity | undefined> {
+export async function workflowPreparationIdentityLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
+  version: WorkflowVersionV3, execution: HarnessExecution): Promise<WorkflowPreparationIdentity | undefined> {
   assertGraphTransaction(sql)
   const binding = await readWorkflowCollaborationBindingLocked(sql, { run, version, execution,
     sourceEventKey: `execution:${execution.id}:collaboration-preparation` })
@@ -57,7 +56,7 @@ export async function workflowPreparationIdentityLocked(sql: SqlTransaction, run
     execution: binding.execution }), work: binding.work } : undefined
 }
 
-export async function retainWorkflowPreparationLocked(sql: SqlTransaction, execution: HarnessExecution,
+export async function retainWorkflowPreparationLocked(sql: GraphTransactionSql, execution: HarnessExecution,
   identity: WorkflowPreparationIdentity): Promise<void> {
   await sql.query(`insert into workflow_collaboration_preparations(execution_id,run_id,subject,work)
     values($1,$2,$3::jsonb,$4::jsonb) on conflict(execution_id) do nothing`,
@@ -75,7 +74,7 @@ export async function retainWorkflowPreparationLocked(sql: SqlTransaction, execu
 export class WorkflowMemoryContext {
   constructor(private readonly memoryBoards?: MemoryBoardPort) {}
 
-  async prepare(owner: RunOwnership, run: AcceptedWorkflowRunCurrent, version: WorkflowVersionCurrent,
+  async prepare(owner: RunOwnership, run: AcceptedWorkflowRunV3, version: WorkflowVersionV3,
     execution: HarnessExecution): Promise<void> {
     if (!this.memoryBoards) return
     const identity = await withWorkflowPreparation(owner, execution, true, async (sql, actualRun) => {
@@ -121,7 +120,7 @@ export class WorkflowMemoryContext {
   }
 }
 
-export async function readWorkflowCollaborationPromptLocked(sql: SqlTransaction,
+export async function readWorkflowCollaborationPromptLocked(sql: GraphTransactionSql,
   executionId: string): Promise<string | undefined> {
   const row = (await sql.query<{ board_digest: unknown }>(
     'select board_digest from workflow_collaboration_preparations where execution_id=$1', [executionId])).rows[0]

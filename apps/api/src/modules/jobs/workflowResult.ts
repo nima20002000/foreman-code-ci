@@ -4,15 +4,15 @@ import {
   parseRepeatExitResultV1,
   validateRepeatDecisionV1,
   type RepeatOccurrenceIdentityV1,
-  type WorkflowVersionCurrent,
-} from '@foreman-code/contracts/current'
+  type WorkflowVersionV3,
+} from '@foreman-code/contracts/wave25'
 import type { JobArtifact } from '@foreman-code/contracts/jobs'
 import type { JobExecutionRecord } from '@foreman-code/contracts/job-verification'
 import { JobWorkflowNodeSchema } from '@foreman-code/contracts/job-workflow'
 import { blockForNode, repeatConflict, repeatDigest, repeatId, type RepeatNodeRef, type RepeatResolution } from '../runs/repeatResolution.js'
 
 /** Generated from actual job truth, never a fabricated provider turn or HarnessExecution. */
-export function workflowJobResult(version:WorkflowVersionCurrent,ref:RepeatNodeRef,execution:JobExecutionRecord,artifacts:readonly JobArtifact[]):{result:ExecutionResult;resolution:RepeatResolution} {
+export function workflowJobResult(version:WorkflowVersionV3,ref:RepeatNodeRef,execution:JobExecutionRecord,artifacts:readonly JobArtifact[]):{result:ExecutionResult;resolution:RepeatResolution} {
   const node=JobWorkflowNodeSchema.parse(version.definition.nodes.find(node=>node.id===ref.nodeId))
   if(execution.workflow?.runId!==ref.occurrence?.scope.runId&&ref.occurrence!==null)repeatConflict('JOB_WORKFLOW_PIN_CONFLICT')
   if(execution.workflow?.workflowId!==version.workflowId||execution.workflow.nodeId!==node.id||execution.acceptedSpec.definitionId!==node.jobDefinitionId||execution.acceptedSpec.definitionVersionId!==node.jobDefinitionVersionId)repeatConflict('JOB_WORKFLOW_PIN_CONFLICT')
@@ -36,7 +36,7 @@ export function workflowJobResult(version:WorkflowVersionCurrent,ref:RepeatNodeR
 export function workflowJobIdentity(execution:JobExecutionRecord,node:{id:string;jobDefinitionId:string;jobDefinitionVersionId:string},occurrence:RepeatOccurrenceIdentityV1|null) {
   return {kind:'job' as const,workflowNodeId:node.id,executionId:execution.id,jobDefinitionId:node.jobDefinitionId,jobDefinitionVersionId:node.jobDefinitionVersionId,attempt:1,occurrence}
 }
-export function workflowJobRepeatDecision(version:WorkflowVersionCurrent,occurrence:import('@foreman-code/contracts/current').RepeatOccurrenceV1,execution:JobExecutionRecord,result:ExecutionResult,decidedAt:string) {
+export function workflowJobRepeatDecision(version:WorkflowVersionV3,occurrence:import('@foreman-code/contracts/wave25').RepeatOccurrenceV1,execution:JobExecutionRecord,result:ExecutionResult,decidedAt:string) {
   const block=version.definition.repeat!.blocks.find(block=>block.id===occurrence.identity.blockId)!
   const node=JobWorkflowNodeSchema.parse(version.definition.nodes.find(node=>node.id===block.exitNodeId))
   const envelope=parseRepeatExitResultV1(result,node.choice!)

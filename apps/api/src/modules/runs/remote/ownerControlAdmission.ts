@@ -1,10 +1,9 @@
-import { sameWorkflowValue } from '@foreman-code/contracts/current'
+import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { RemoteOwnerControlSchema, type RemoteOwnerControl } from '@foreman-code/contracts/remote-execution'
 import type { InteractionDeliveryClaim } from '../../interactions/delivery.js'
-import { assertInteractionNativeDispatchLocked, assertInteractionReservedRetryLocked } from '../../interactions/current/delivery.js'
+import { assertInteractionNativeDispatchLocked, assertInteractionReservedRetryLocked } from '../../interactions/wave25/delivery.js'
 import type { AcceptedExecutionBinding } from '../../placement/nativeComposition.js'
-import { assertGraphTransaction } from '../../run-graph/connection.js'
-import type { SqlTransaction } from '../../../infrastructure/transaction.js'
+import { assertGraphTransaction, type GraphTransactionSql } from '../../run-graph/connection.js'
 import type { RunOwnership } from '../ownership.js'
 import { DomainError } from '../../errors.js'
 import { prepareRemoteOwnerControl, type RemoteControlInput } from './ownerControl.js'
@@ -12,7 +11,7 @@ import { selectedInteractionResponse } from '../../interactions/delivery.js'
 
 /** SQL-only admission. The caller delivers only after this G1 transaction COMMITs.
  * A committed admission is reconciliation-only even when its network ACK was lost. */
-export async function admitRemoteOwnerControl(sql: SqlTransaction, owner: RunOwnership,
+export async function admitRemoteOwnerControl(sql: GraphTransactionSql, owner: RunOwnership,
   binding: AcceptedExecutionBinding, input: RemoteControlInput, claim?: InteractionDeliveryClaim): Promise<RemoteOwnerControl> {
   assertGraphTransaction(sql)
   if (input.kind === 'stop' || input.workflowControl) return prepareRemoteOwnerControl(sql, owner, binding, input)
@@ -42,7 +41,7 @@ export async function admitRemoteOwnerControl(sql: SqlTransaction, owner: RunOwn
 }
 
 /** Retained command readback only. This never permits another provider/native write. */
-export async function readAdmittedRemoteOwnerControl(sql: SqlTransaction, owner: RunOwnership,
+export async function readAdmittedRemoteOwnerControl(sql: GraphTransactionSql, owner: RunOwnership,
   binding: AcceptedExecutionBinding, claim: InteractionDeliveryClaim): Promise<RemoteOwnerControl | undefined> {
   assertGraphTransaction(sql); owner.assertOwned()
   if (owner.runId !== binding.intent.runId || claim.interaction.runId !== owner.runId
@@ -62,7 +61,7 @@ export async function readAdmittedRemoteOwnerControl(sql: SqlTransaction, owner:
   return control
 }
 
-export async function authorizeReservedRemoteResponse(sql: SqlTransaction, owner: RunOwnership,
+export async function authorizeReservedRemoteResponse(sql: GraphTransactionSql, owner: RunOwnership,
   binding: AcceptedExecutionBinding, claim: InteractionDeliveryClaim, command: RemoteOwnerControl): Promise<void> {
   const stored = await readAdmittedRemoteOwnerControl(sql, owner, binding, claim)
   if (!stored || !sameWorkflowValue(stored, command)) {

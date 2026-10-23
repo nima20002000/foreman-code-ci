@@ -1,5 +1,5 @@
 import type { ReadObservation } from '@foreman-code/contracts'
-import { HarnessExecutionError } from '../../shared/harnessExecutionError.js'
+import { HarnessExecutionError } from '../harnesses/errors.js'
 
 /** Error codes identify the cause without exposing provider output, paths or credentials. */
 export function failedReadObservation(previous: ReadObservation | undefined, error: unknown,

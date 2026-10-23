@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { postgresEnabled } from './helpers/database.js'
-import { CURRENT_WORKFLOW_TOOLS, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { CURRENT_WORKFLOW_TOOLS, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { graphHeaders, graphRpcValue } from './graph-composition-fixture.js'
 import { assertSettled, corruptProof, definitionUrl, editThrough, meaningfulInput, parkBeforeNativeEntry,

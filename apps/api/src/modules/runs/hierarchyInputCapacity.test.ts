@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { HierarchyWorkGroupSchema, WorkActivationIdentitySchema, WorkActivationInputSchema,
-  WorkReturnSchema } from '@foreman-code/contracts/current'
+  WorkReturnSchema } from '@foreman-code/contracts/wave25'
 import { hasHierarchyParentInputCapacity } from './hierarchyInputCapacity.js'
 
 function fixture(count: number) {

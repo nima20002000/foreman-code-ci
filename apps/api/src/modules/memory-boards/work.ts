@@ -4,7 +4,7 @@ import type {
   MemoryCardWorkClaim, MemoryCardWorkSelection,
 } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import type { GraphTransactionSql } from '../run-graph/connection.js'
 import type { MemoryBoardAuthority, MutationContext, Operation } from './types.js'
 import { invalid, nodeKey, same, scopeContains, workKey } from './identity.js'
 
@@ -44,7 +44,7 @@ export function validateCardState(card: MemoryCard, before?: MemoryCard): void {
     invalid('Blocked, waiting-for-user, dropped and reopened tasks need a reason.')
   }
 }
-export async function validateLinks(tx: SqlTransaction, authority: MemoryBoardAuthority,
+export async function validateLinks(tx: GraphTransactionSql, authority: MemoryBoardAuthority,
   scope: MemoryBoardScope, card: MemoryCard): Promise<void> {
   const links = [...card.linkedNodes, ...(card.assignee ? [card.assignee] : [])]
   if (new Set(card.linkedNodes.map(nodeKey)).size !== card.linkedNodes.length) invalid('Duplicate task links are not allowed.')
@@ -74,7 +74,7 @@ export function resolveTerminalWork(card: MemoryCard, before: MemoryCard | undef
   }
   if (card.status === 'done') for (const claim of claims) if (claim.state === 'armed') claim.state = 'canceled'
 }
-export async function selectWork(tx: SqlTransaction, authority: MemoryBoardAuthority, scope: MemoryBoardScope,
+export async function selectWork(tx: GraphTransactionSql, authority: MemoryBoardAuthority, scope: MemoryBoardScope,
   card: MemoryCard, selections: MemoryCardWorkSelection[] | undefined, context: MutationContext,
   existing: MemoryCardWorkBinding[], claims: MemoryCardWorkClaim[], creating: boolean): Promise<void> {
   let chosen = selections

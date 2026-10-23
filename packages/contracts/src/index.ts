@@ -9,7 +9,7 @@ import { RecordedAgentHarnessSchema } from './harnessIdentity.js';
 export * from './harnessIdentity.js';
 import { OptionalTimestampFields } from './schemaPrimitives.js';
 import { optionalCommandId } from './management/commands.js'
-import { refineChatPrompt } from './chatInput.js'
+import { refineChatMessageSize } from './chatInput.js'
 export * from './chatInput.js'
 import { FailureClassSchema } from './failure.js'
 import { SourceCapacityErrorDetailsSchema } from './sourceCapacity.js'
@@ -31,7 +31,7 @@ import { CLAUDE_FULL_ACCESS_REQUIRED, ClaudeEffortSchema, ClaudeFullAccessConfig
 import { changeCodexSandbox } from './harnessEditing.js';
 export * from './claude.js';
 export * from './claudeQualification.js';
-import { RunStartCurrentInputSchema } from "./current/startRequest.js";
+import { RunStartV3InputSchema } from "./wave25/startRequest.js";
 import { InteractionActivityProjectionSchema, NativeInteractionResponseAvailabilitySchema } from "./interaction-activity.js";
 import { z } from "zod";
 import { McpCredentialArrangementSchema } from './mcpDetection.js';
@@ -45,16 +45,16 @@ export type { Id, Timestamp } from "./schemaPrimitives.js";
 import {
   ApprovalHandlerSchema, AcceptedWorkflowApprovalConfigurationSchema,
   ExecutionConditionSchema,
-  WorkflowDefinitionCurrentSchema, ExecutionSemanticsVersionSchema,
-} from "./current/workflowShape.js";
+  WorkflowDefinitionV3Schema, ExecutionSemanticsVersionSchema,
+} from "./wave25/workflowShape.js";
 export {
   ApprovalHandlerSchema, AcceptedWorkflowApprovalConfigurationSchema, WorkflowApprovalConfigurationSchema, ExecutionConditionSchema, WorkflowExecutionPolicySchema,
   ChoiceOutcomeSchema, ChoiceTargetSchema, WorkflowChoiceSchema, WorkflowRelationshipSchema,
-} from "./current/workflowShape.js";
+} from "./wave25/workflowShape.js";
 export type {
   ApprovalHandler, WorkflowApprovalConfiguration, WorkflowExecutionPolicy, WorkflowChoice, WorkflowRelationship,
-} from "./current/workflowShape.js";
-import type { ApprovalHandler } from "./current/workflowShape.js";
+} from "./wave25/workflowShape.js";
+import type { ApprovalHandler } from "./wave25/workflowShape.js";
 import type { RunLiveActivity } from "./runLiveActivity.js";
 import { RunStopCauseSchema } from "./runStopCause.js";
 import { GraphqlToolDefaultsSchema, graphqlToolsOutsideRole } from "./graphqlMcpTools.js";
@@ -291,11 +291,6 @@ export const SupportedHarnessConfigurationSchema = z.discriminatedUnion("harness
   CodexHarnessConfigurationSchema,
   ClaudeFullAccessConfigurationSchema,
 ]);
-
-/** A retired (saved OpenCode) configuration never gets write access; Codex and Claude follow their sandbox. */
-export function isReadOnlyHarnessConfiguration(configuration: HarnessConfiguration): boolean {
-  return configuration.harness === "opencode" || configuration.sandbox === "read-only";
-}
 
 /** Preserve native variants in harnessConfiguration; this is only a legacy display projection. */
 export function projectHarnessEffort(configuration: HarnessConfiguration): AgentEffort | undefined {
@@ -745,8 +740,8 @@ export const AgentSchema = z
   .strict();
 export type Agent = z.infer<typeof AgentSchema>;
 
-export type WorkflowDefinition = import('./current/workflowShape.js').WorkflowDefinitionCurrent;
-export type WorkflowVersion = import('./current/workflowSchemas.js').WorkflowVersionCurrent;
+export type WorkflowDefinition = import('./wave25/workflowShape.js').WorkflowDefinitionV3;
+export type WorkflowVersion = import('./wave25/workflowSchemas.js').WorkflowVersionV3;
 
 /** Immutable prompt, skill, model and harness settings used to start a native session. */
 export const AgentConfigurationVersionSchema = z
@@ -1249,7 +1244,7 @@ export const ServiceHealthSchema = z
 export type ServiceHealth = z.infer<typeof ServiceHealthSchema>;
 
 /** The same explicit V3 request as HTTP/Operator MCP; no unpinned Start DTO. */
-export const CreateRunRequestSchema = RunStartCurrentInputSchema;
+export const CreateRunRequestSchema = RunStartV3InputSchema;
 
 export const GetRunRequestSchema = z
   .object({ workspaceId: IdSchema, runId: IdSchema })
@@ -1269,7 +1264,7 @@ export const WorkspaceDetailsRecordFields = {
   runners: z.array(RunnerSummarySchema).optional(),
 };
 const WorkspaceDetailsSchema = z.object({ ...WorkspaceDetailsRecordFields,
-  workflows: z.array(WorkflowDefinitionCurrentSchema) }).strict();
+  workflows: z.array(WorkflowDefinitionV3Schema) }).strict();
 export type WorkspaceDetails = z.infer<typeof WorkspaceDetailsSchema>;
 
 export const WorkspaceDetailsRequestSchema = z
@@ -1291,13 +1286,13 @@ export const GetWorkflowRequestSchema = z
   .strict();
 export type GetWorkflowRequest = z.infer<typeof GetWorkflowRequestSchema>;
 export const GetWorkflowResponseSchema = z
-  .object({ workflow: WorkflowDefinitionCurrentSchema })
+  .object({ workflow: WorkflowDefinitionV3Schema })
   .strict();
 
 export const SaveWorkflowRequestSchema = z
   .object({
     workspaceId: IdSchema,
-    workflow: WorkflowDefinitionCurrentSchema,
+    workflow: WorkflowDefinitionV3Schema,
     agents: z.array(AgentSchema).optional(),
   })
   .strict()
@@ -1312,7 +1307,7 @@ export const SaveWorkflowRequestSchema = z
   });
 export const SaveWorkflowResponseSchema = z
   .object({
-    workflow: WorkflowDefinitionCurrentSchema,
+    workflow: WorkflowDefinitionV3Schema,
     agents: z.array(AgentSchema).optional(),
   })
   .strict();
@@ -1499,7 +1494,11 @@ export const SendOperatorMessageRequestSchema = z.object({
   defaultsRevision: z.number().int().nonnegative().optional(),
   /** Read an existing receipt without creating or relaunching native work. Not part of command identity. */
   recovery: z.literal("receipt").optional(),
-}).strict().superRefine((value, context) => refineChatPrompt(value, context, { size: value.recovery !== 'receipt' }));
+}).strict().refine((value) => value.content.length > 0 || value.attachments.length > 0, {
+  path: ["content"], message: "Message requires text or an attachment.",
+}).superRefine((value, context) => {
+  if (value.recovery !== 'receipt') refineChatMessageSize(value, context)
+});
 export const SendOperatorMessageResponseSchema = z.union([
   z.object({ state: OperatorConversationStateSchema, replayed: z.boolean() }).strict(),
   z.object({ state: OperatorConversationStateSchema.optional(), receipt: ChatDeliveryReceiptSchema, replayed: z.boolean() }).strict(),

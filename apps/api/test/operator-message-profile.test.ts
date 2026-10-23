@@ -15,18 +15,12 @@ function fixture() {
     harness: DEFAULT_HARNESS_DEFAULTS.codex, contentHash: 'sha256:unit-source', createdAt: '2026-10-02T00:00:00Z' }
   const published: OperatorConfigurationVersion = { ...current, id: 'saved-claude-default', version: 2, harness, harnessProfileSelection: selector }
   const inserted: OperatorConfigurationVersion[] = []
-  // Reads are told apart by their bound values. The Operator id is also the advisory lock key, so reads bound to it are
-  // told apart by order: lock, saved default, lock, next version.
-  let operatorReads = 0
-  const query = { query: vi.fn(async (_sql: string, args: unknown[] = []) => {
-    if (args.length === 4) inserted.push(JSON.parse(String(args[3])))
-    if (args.length === 1 && args[0] === 'agent-defaults-v1') return { rows: [{ revision: 5, record: { ...DEFAULT_AGENT_DEFAULTS,
-      operator: { ...DEFAULT_AGENT_DEFAULTS.operator, harness, harnessProfileSelection: selector } } }] }
-    if (args.length === 1 && args[0] === current.operatorId) {
-      operatorReads++
-      return { rows: operatorReads === 2 ? [{ record: published }] : operatorReads === 4 ? [{ version: 3 }] : [] }
-    }
-    return { rows: [] }
+  const query = { query: vi.fn(async (sql: string, args?: unknown[]) => {
+    if (sql.includes('insert into operator_configuration_versions')) inserted.push(JSON.parse(String(args![3])))
+    return { rows: sql.includes('from application_settings') ? [{ revision: 5, record: { ...DEFAULT_AGENT_DEFAULTS,
+      operator: { ...DEFAULT_AGENT_DEFAULTS.operator, harness, harnessProfileSelection: selector } } }]
+      : sql.includes('join operator_configuration_versions') ? [{ record: published }]
+      : sql.includes('max(version)') ? [{ version: 3 }] : [] }
   }) } as unknown as pg.PoolClient
   const input = { requestId: 'unit-request', content: 'Unit content.', configurationVersionId: current.id,
     defaultsRevision: 5, settings: operatorChatSettings(harness) }

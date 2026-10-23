@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { z } from 'zod'
 import { DeliveryTargetSchema, type DeliveryTarget } from '@foreman-code/contracts'
 import { protectedKey } from '../../../shared/api/protectedChatStorage'
-import { sameDeliveryTarget } from '../../workflow-chat'
+import { sameDeliveryTarget } from '../../workflow-chat/draft'
 
 const pinSchema = z.object({ target: DeliveryTargetSchema, nativeTurnId: z.string().optional() })
 type Pin = z.infer<typeof pinSchema>

@@ -1,6 +1,6 @@
 import type { ManagementAction, ManagementPrincipal } from '@foreman-code/contracts/management'
-import type { ChannelScope } from '../workflow-chat/index.js'
-import { requireAuthorization } from '../access/index.js'
+import type { ChannelScope } from '../workflow-chat/model.js'
+import { requireAuthorization } from '../access/policy.js'
 import { DomainError } from '../errors.js'
 
 /** Scoped Agent chat uses its own saved subject; it never enters the Operator policy. */

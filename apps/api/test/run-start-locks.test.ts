@@ -1,20 +1,20 @@
 import type pg from 'pg'
 import { describe, expect, it, vi } from 'vitest'
 import { waitForRunStartLock } from '../src/modules/runs/startLocks.js'
-import type { SqlQuery } from '../src/infrastructure/transaction.js'
+import type { GraphSqlClient } from '../src/modules/run-graph/connection.js'
 
 describe('Start lock waiting', () => {
   it('retries contention until the transaction owns the lock', async () => {
     const query = vi.fn()
       .mockResolvedValueOnce({ rows: [{ locked: false }] })
       .mockResolvedValueOnce({ rows: [{ locked: true }] })
-    await waitForRunStartLock({ query } as SqlQuery, 'admission:runner:test-runner')
+    await waitForRunStartLock({ query } as GraphSqlClient, 'admission:runner:test-runner')
     expect(query).toHaveBeenCalledTimes(2)
   })
 
   it('reports a retryable conflict when the shared lock deadline expires', async () => {
     const query = vi.fn().mockResolvedValue({ rows: [{ locked: false }] })
-    await expect(waitForRunStartLock({ query } as SqlQuery, 'admission:workspace:test-workspace',
+    await expect(waitForRunStartLock({ query } as GraphSqlClient, 'admission:workspace:test-workspace',
       { deadline: performance.now() - 1 })).rejects.toMatchObject({ code: 'RUN_START_BUSY', status: 409 })
   })
 
@@ -23,7 +23,7 @@ describe('Start lock waiting', () => {
     const reason = new Error('Schedule dispatch canceled')
     controller.abort(reason)
     const query = vi.fn()
-    await expect(waitForRunStartLock({ query } as SqlQuery, 'admission:runner:test-runner',
+    await expect(waitForRunStartLock({ query } as GraphSqlClient, 'admission:runner:test-runner',
       { deadline: performance.now() + 30_000, signal: controller.signal })).rejects.toBe(reason)
     expect(query).not.toHaveBeenCalled()
   })
@@ -32,7 +32,7 @@ describe('Start lock waiting', () => {
     const controller = new AbortController()
     const reason = new Error('Schedule dispatch canceled')
     const query = vi.fn().mockResolvedValue({ rows: [{ locked: false }] })
-    const waiting = waitForRunStartLock({ query } as SqlQuery, 'admission:runner:test-runner',
+    const waiting = waitForRunStartLock({ query } as GraphSqlClient, 'admission:runner:test-runner',
       { deadline: performance.now() + 30_000, signal: controller.signal })
     const rejected = expect(waiting).rejects.toBe(reason)
     await Promise.resolve()

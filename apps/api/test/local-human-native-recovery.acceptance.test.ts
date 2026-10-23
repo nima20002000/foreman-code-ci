@@ -25,7 +25,7 @@ import type { LocalHumanRecoveryInput } from './helpers/localHumanRecoveryChild.
 import { readUntil } from './helpers/observableCondition.js'
 import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'
 
-const databaseUrl = process.env.TEST_DATABASE_URL
+const databaseUrl = process.env.ENG03_A_TEST_DATABASE_URL ?? process.env.TEST_DATABASE_URL
 const enabled = Boolean(databaseUrl) && process.env.RUN_REAL_HARNESS_TESTS === '1'
 
 describe.skipIf(!enabled)('local human production native recovery', { timeout: 240_000 }, () => {

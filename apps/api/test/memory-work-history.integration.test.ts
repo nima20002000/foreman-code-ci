@@ -4,14 +4,14 @@ import type { MemoryCardWorkSelection } from '@foreman-code/contracts'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { memoryFixture } from '../src/modules/memory-boards/testing/fixture.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { deferred } from './helpers/deferred.js'
 
-let db: Awaited<ReturnType<typeof migratedDatabase>>
+let db: Awaited<ReturnType<typeof agent3Database>>
 beforeAll(async () => {
   if (!postgresEnabled) return
-  db = await migratedDatabase()
+  db = await agent3Database()
   await withTransaction(db.pool, async tx => {
     await tx.query('create table memory_test_owner(id text primary key,record jsonb not null)')
     await tx.query('create table memory_test_facts(id text primary key,record jsonb not null)')

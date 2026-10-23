@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { NodeResolutionSchema, WorkflowVersionCurrentSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { NodeResolutionSchema, WorkflowVersionV3Schema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 
 import { compileExecutionTopology, decideExecutionAdmission } from '../src/modules/runs/topology.js'
 
@@ -16,7 +16,7 @@ describe('current LangGraph topology validation', () => {
     f.entry.position = { x: 900, y: 0 }
     f.left.position = { x: 0, y: 0 }
     f.version.definition.edges.reverse()
-    const topology = compileExecutionTopology(WorkflowVersionCurrentSchema.parse(f.version))
+    const topology = compileExecutionTopology(WorkflowVersionV3Schema.parse(f.version))
     expect(topology.entryNodeId).toBe(f.entry.id)
     expect(topology.outgoing.get(f.entry.id)?.map((edge) => edge.target)).toEqual([f.left.id, f.right.id])
     expect(topology.incoming.get(f.join.id)?.map((edge) => edge.source)).toEqual([f.left.id, f.right.id])
@@ -26,14 +26,14 @@ describe('current LangGraph topology validation', () => {
   it.each(['source', 'target'] as const)('rejects an unknown edge %s before building adjacency', (endpoint) => {
     const f = fixture()
     f.version.definition.edges[0]![endpoint] = 'missing-node'
-    expect(() => WorkflowVersionCurrentSchema.parse(f.version)).toThrow('relationships require distinct existing endpoints')
+    expect(() => WorkflowVersionV3Schema.parse(f.version)).toThrow('relationships require distinct existing endpoints')
     expect(() => compileExecutionTopology(f.version)).toThrow('invalid identity or endpoints')
   })
 
   it('retains all-required fan-in when the optional all-join annotation is omitted', () => {
     const f = fixture()
     delete f.join.join
-    const topology = compileExecutionTopology(WorkflowVersionCurrentSchema.parse(f.version))
+    const topology = compileExecutionTopology(WorkflowVersionV3Schema.parse(f.version))
     expect(topology.incoming.get(f.join.id)?.map((edge) => edge.source)).toEqual([f.left.id, f.right.id])
     const resolutions = new Map<string, ReturnType<typeof NodeResolutionSchema.parse>>()
     expect(decideExecutionAdmission(topology, f.join.id, resolutions)).toEqual({ kind: 'waiting' })
@@ -58,13 +58,13 @@ describe('current LangGraph topology validation', () => {
   it('rejects an authored cycle instead of treating it as a terminal graph', () => {
     const f = fixture()
     f.version.definition.edges.push({ id: 'back-edge', kind: 'execution', source: f.join.id, target: f.left.id })
-    expect(() => WorkflowVersionCurrentSchema.parse(f.version)).toThrow('execution relationships must form an acyclic graph')
+    expect(() => WorkflowVersionV3Schema.parse(f.version)).toThrow('execution relationships must form an acyclic graph')
     expect(() => compileExecutionTopology(f.version)).toThrow('only explicit finite block boundaries may repeat')
   })
 
   it('accepts explicit finite repeat without introducing a back-edge into the DAG', () => {
     const { version } = makeCurrentWorkflowFixture('topology-repeat', 'repeat')
-    const topology = compileExecutionTopology(WorkflowVersionCurrentSchema.parse(version))
+    const topology = compileExecutionTopology(WorkflowVersionV3Schema.parse(version))
     expect(topology.order).toEqual(version.definition.nodes.map((node) => node.id))
     expect(version.definition.repeat?.blocks[0]?.maxOccurrences).toBe(3)
   })
@@ -75,20 +75,20 @@ describe('current LangGraph topology validation', () => {
     const invalid = { ...version, definition: { ...version.definition, edges: [{ ...edge,
       route: { outcomes: ['succeeded'], result: { path: ['approved'], operator: 'equals', value: true } },
     }, ...rest] } }
-    expect(() => WorkflowVersionCurrentSchema.parse(invalid)).toThrow()
-    expect(WorkflowVersionCurrentSchema.safeParse(makeCurrentWorkflowFixture('named-choice', 'conditional').version).success).toBe(true)
+    expect(() => WorkflowVersionV3Schema.parse(invalid)).toThrow()
+    expect(WorkflowVersionV3Schema.safeParse(makeCurrentWorkflowFixture('named-choice', 'conditional').version).success).toBe(true)
   })
 
   it('accepts repeated Agents with exact pins and rejects a mismatched distinct Agent count', () => {
     const f = fixture()
-    expect(() => WorkflowVersionCurrentSchema.parse(f.version)).not.toThrow()
+    expect(() => WorkflowVersionV3Schema.parse(f.version)).not.toThrow()
     const replacedAgentId = f.join.agentId
     f.join.agentId = f.right.agentId
     delete f.version.agentConfigurationVersionIds[replacedAgentId]
     f.version.definition.requiredAgentCount = new Set(f.version.definition.nodes.map((node) => node.agentId)).size
-    expect(() => WorkflowVersionCurrentSchema.parse(f.version)).not.toThrow()
+    expect(() => WorkflowVersionV3Schema.parse(f.version)).not.toThrow()
     const other = fixture()
     other.version.definition.requiredAgentCount = other.version.definition.nodes.length - 1
-    expect(() => WorkflowVersionCurrentSchema.parse(other.version)).toThrow('requiredAgentCount does not match the topology')
+    expect(() => WorkflowVersionV3Schema.parse(other.version)).toThrow('requiredAgentCount does not match the topology')
   })
 })

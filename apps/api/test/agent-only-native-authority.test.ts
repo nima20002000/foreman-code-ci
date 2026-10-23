@@ -3,16 +3,16 @@ import { describe, expect, it, vi } from 'vitest'
 import { AgentSchema, HarnessExecutionSchema } from '@foreman-code/contracts'
 import { JobWorkflowNodeSchema } from '@foreman-code/contracts/job-workflow'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { makeCurrentWorkflowFixture, type CurrentEditSaveInput, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture, type CurrentEditSaveInput, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import { prepareCurrentStagedAgents } from '../src/modules/graph-drafts/currentStagedAgents.js'
-import { identity, readContext } from '../src/modules/interactions/current/context.js'
-import type { SqlQuery } from '../src/infrastructure/transaction.js'
+import { identity, readContext } from '../src/modules/interactions/wave25/context.js'
+import type { GraphSqlClient } from '../src/modules/run-graph/connection.js'
 import { deliveryFixture } from './helpers/approvalFixture.js'
 
 /** Scripted read ports exercise current contracts and domain predicates, not SQL integration. */
 function fixture() {
   const saved = makeCurrentWorkflowFixture('agent-only-authority')
-  const version: WorkflowVersionCurrent = saved.version
+  const version: WorkflowVersionV3 = saved.version
   const job = JobWorkflowNodeSchema.parse({ kind: 'job', id: 'native-authority-job-node', name: 'Build',
     jobDefinitionId: 'native-authority-job', jobDefinitionRevision: 2, jobDefinitionVersionId: 'native-authority-job-version' })
   version.definition.nodes.unshift(job)
@@ -24,15 +24,13 @@ function fixture() {
   const interaction = { ...deliveryFixture().interaction, workspaceId: saved.run.workspaceId,
     workflowId: saved.run.workflowId, runId: saved.run.id, executionId: requester.id,
     requestingAgentId: requester.agentId, nativeSessionId: requester.nativeSessionId!, approval: saved.run.approval }
-  // Reads are told apart by their bound values: the Run id, the Run and execution ids, the interaction id, or (for the
-  // staging locks) only an Agent lock key.
-  const query = vi.fn(async (_text: string, values: unknown[] = []) => {
-    if (values.length === 1 && values[0] === saved.run.id) return { rows: [{ run: saved.run, version, stopped: false }], rowCount: 1 }
-    if (values.length === 2 && values[0] === saved.run.id && values[1] === requester.id) return { rows: [{ record: requester, closed: false }], rowCount: 1 }
-    if (values.length === 1 && values[0] === interaction.id) return { rows: [{ approval_relationship_id: null,
+  const query = vi.fn(async (text: string, values: unknown[] = []) => {
+    if (text.includes('r.record as run')) return { rows: [{ run: saved.run, version, stopped: false }], rowCount: 1 }
+    if (text.includes('from harness_executions')) return { rows: [{ record: requester, closed: false }], rowCount: 1 }
+    if (text.includes('approval_relationship_id')) return { rows: [{ approval_relationship_id: null,
       approval_reviewer_execution_id: null }], rowCount: 1 }
-    if (values.length === 1 && typeof values[0] === 'string') return { rows: [], rowCount: 1 }
-    throw new Error(`Unexpected read-only authority query (${values.length} parameters)`)
+    if (text.includes('pg_advisory_xact_lock')) return { rows: [], rowCount: 1 }
+    throw new Error(`Unexpected read-only authority query (${values.length} parameters): ${text}`)
   })
   const principal: ManagementPrincipal = { id: 'staged-agent-author', name: 'Author', audience: 'operator',
     revokedAt: null, expiresAt: '2099-01-01T00:00:00.000Z',
@@ -42,7 +40,7 @@ function fixture() {
     expectedWorkflowVersionId: version.id, expectedAgentConfigurationVersionIds: version.agentConfigurationVersionIds,
     graph: version.definition }
   return { ...saved, version, job, requester, interaction, query, principal, input,
-    sql: { query } as unknown as SqlQuery, client: { query } as unknown as pg.PoolClient }
+    sql: { query } as unknown as GraphSqlClient, client: { query } as unknown as pg.PoolClient }
 }
 
 describe('Agent-only native approval and staged configuration boundaries', () => {
@@ -62,7 +60,7 @@ describe('Agent-only native approval and staged configuration boundaries', () =>
     const f = fixture()
     f.requester.workflowNodeId = f.job.id
     await expect(readContext(f.sql, f.interaction)).rejects.toMatchObject({ code: 'APPROVAL_REQUESTER_MISMATCH' })
-    expect(f.query.mock.calls.some(([, values]) => values?.[0] === f.interaction.id)).toBe(false)
+    expect(f.query.mock.calls.some(([sql]) => sql.includes('approval_relationship_id'))).toBe(false)
   })
 
   it('keeps staged planning pins limited to authored Agents and locks no synthetic Job Agent', async () => {

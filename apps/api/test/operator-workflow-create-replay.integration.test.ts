@@ -4,7 +4,7 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import {
   CurrentWorkflowCreateInputSchema, CurrentWorkflowReadResultSchema, CurrentWorkflowSaveResultSchema,
   SavedManagedWorkflowCommandResultSchema, makeCurrentWorkflowFixture,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import { initialSave, setupWorkflowCreateIntegration } from './helpers/operatorWorkflowCreate.js'
 
 const currentOperatorIntegration = setupWorkflowCreateIntegration()
@@ -29,12 +29,14 @@ it.each([
       ...('description' in metadata ? { description: metadata.description } : {}),
       initialSave: initialSave(f.f.version.definition, f.f.version.agentConfigurationVersionIds),
     })
-    const schema = await call('tool_schema', { name: 'workflow_create' })
-    expect((schema as { inputSchema: { properties: object } }).inputSchema.properties).toHaveProperty('initialSave')
-    expect(schema).toMatchObject({
+    const catalog = await f.client.listTools()
+    expect(catalog.tools.find(tool => tool.name === 'workflow_create')?.inputSchema.properties)
+      .toHaveProperty('initialSave')
+    const schema = await call('operator_tool_schema_get', { name: 'workflow_create' })
+    expect(schema).toMatchObject({ permissionRequirements: {
+      actions: expect.arrayContaining(['workflows:create']),
       detail: expect.stringContaining('graph:read/edit/save'),
-      permissionRequirements: { actions: expect.arrayContaining(['workflows:create']) },
-    })
+    } })
     const capabilities = await call('operator_get_capabilities', {})
     expect(capabilities).toMatchObject({ runtimeLimits: expect.arrayContaining([
       expect.objectContaining({ feature: 'workflow_create_initial_save' }),

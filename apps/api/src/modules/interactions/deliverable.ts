@@ -3,7 +3,7 @@ import {
   OUTPUT_MISMATCH_CODE, OUTPUT_REFERENCE_KEYWORD, OUTPUT_REFERENCE_UNKNOWN_CODE, OUTPUT_SCHEMA_INVALID_CODE,
   checkDeliverable, deliverableReferences,
   type DeliverableIssue, type OutputReferenceKind, type OutputSchema,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import { HarnessExecutionError } from '../harnesses/errors.js'
 
 /** Where a workflow Agent's deliverable sits in its successful result: text is the plain final answer;

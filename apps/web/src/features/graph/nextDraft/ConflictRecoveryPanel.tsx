@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { Button, ConfirmDialog } from '../../../shared/ui/nocturne'
 import { useGraphDraftStore } from '../store'
-import { nodeTitle, type ConflictRecovery, type NextDraftEdit } from '../../board-core'
+import { nodeTitle } from './model'
 import { discardConflictRecovery, readConflictRecoveries } from './editIntentStorage'
+import type { ConflictRecovery, NextDraftEdit } from './state'
 
 export function ConflictRecoveryPanel({ draftKey, edit, pending, report }: {
   draftKey: string; edit: NextDraftEdit; pending: boolean; report(error: unknown): void

@@ -57,9 +57,9 @@
       "types": "./dist/agentChat.d.ts",
       "import": "./dist/agentChat.js"
     },
-    "./current": {
-      "types": "./dist/current/index.d.ts",
-      "import": "./dist/current/index.js"
+    "./wave25": {
+      "types": "./dist/wave25/index.d.ts",
+      "import": "./dist/wave25/index.js"
     },
     "./harness-qualification": {
       "types": "./dist/harnessQualification.d.ts",

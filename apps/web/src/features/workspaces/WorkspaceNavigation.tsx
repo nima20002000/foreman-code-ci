@@ -17,7 +17,7 @@ import {
   PanelsTopLeft,
   Workflow,
 } from 'lucide-react'
-import { WorkspaceFolderPicker } from '../settings'
+import { WorkspaceFolderPicker } from '../settings/WorkspaceFolderPicker'
 import { LoadMore } from '../../shared/ui/LoadMore'
 import type { ComponentProps } from 'react'
 import type { Workspace } from '@foreman-code/contracts'

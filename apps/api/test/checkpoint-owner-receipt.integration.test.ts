@@ -2,13 +2,13 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { RunOwnership } from '../src/modules/runs/ownership.js'
 import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
 import { approvalResponse } from './helpers/approvalResponse.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import type { DurableInteraction } from '@foreman-code/contracts'
 import { rejectableDeferred } from './helpers/deferred.js'
 
 const closes: Array<() => Promise<void>> = []
-let database: Awaited<ReturnType<typeof migratedDatabase>>
+let database: Awaited<ReturnType<typeof agent3Database>>
 afterEach(async () => {
   try { while (closes.length) await closes.pop()!() } finally { vi.restoreAllMocks() }
 }, 60_000)
@@ -33,7 +33,7 @@ async function expireAbandonedClaims(f: Awaited<ReturnType<typeof fixture>>) {
 }
 
 describe.skipIf(!postgresEnabled)('BR1-003: actual current checkpoint and Run-owner receipt transaction', () => {
-  beforeAll(async () => { database = await migratedDatabase() }, 60_000)
+  beforeAll(async () => { database = await agent3Database() }, 60_000)
   afterAll(async () => { await database?.close() }, 60_000)
 
   it('rolls back task-local writes and graph.resume together before commit', async () => {

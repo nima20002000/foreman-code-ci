@@ -5,9 +5,9 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { agentChatKey, PostgresAgentChatRepository } from '../src/modules/conversations/agentChatRepository.js'
-import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { deferred } from './helpers/deferred.js'
 import { rollbackTransaction } from '../src/infrastructure/transaction.js'
@@ -19,7 +19,7 @@ describe.skipIf(!postgresEnabled)('G2 A2-PF-06: acknowledgement / unknown Postgr
   let seeded: ReturnType<typeof makeCurrentWorkflowFixture>
   beforeAll(async () => {
     database = await migratedDatabase()
-    seeded = await seedWorkflowFixture(database.pool, database.directory, makeCurrentWorkflowFixture(`g2-${randomUUID()}`, 'single'), { run: false })
+    seeded = await seedAgent3(database.pool, database.directory, makeCurrentWorkflowFixture(`g2-${randomUUID()}`, 'single'), { run: false })
   })
   beforeEach(async () => {
     await database.pool.query(`delete from operator_conversations where kind='agent' and workspace_id=$1`, [seeded.scope.workspaceId])

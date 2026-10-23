@@ -1,12 +1,12 @@
 import { agentWorkflowVersion } from './agentWorkflowFixture.js'
 import { AgentConfigurationVersionSchema, HarnessExecutionSchema, type HarnessExecution } from '@foreman-code/contracts'
-import { ExecutableWorkflowCurrentSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { ExecutableWorkflowV3Schema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 
-export const choiceProviders = ['codex', 'claude'] as const
-export type ChoiceProvider = typeof choiceProviders[number]
+export const br2001Providers = ['codex', 'claude'] as const
+export type Br2001Provider = typeof br2001Providers[number]
 
 /** Synthetic immutable records only; no model, permission or rollout settings are written. */
-export function choiceProviderFixture(provider: ChoiceProvider, suffix: string) {
+export function br2001Fixture(provider: Br2001Provider, suffix: string) {
   const fixture = makeCurrentWorkflowFixture(suffix)
   if (provider === 'claude') fixture.configurations = fixture.configurations.map(configuration =>
     AgentConfigurationVersionSchema.parse({ ...configuration, harness: {
@@ -15,7 +15,7 @@ export function choiceProviderFixture(provider: ChoiceProvider, suffix: string) 
       tools: [], permissionRules: [], instructions: '', mcpServers: {},
     } }))
 
-  fixture.version = agentWorkflowVersion(ExecutableWorkflowCurrentSchema.parse({
+  fixture.version = agentWorkflowVersion(ExecutableWorkflowV3Schema.parse({
     configurations: fixture.configurations,
     version: { ...fixture.version, definition: { ...fixture.version.definition,
       nodes: fixture.version.definition.nodes.map((node, index) => index === 0 ? {
@@ -34,11 +34,11 @@ export function choiceProviderFixture(provider: ChoiceProvider, suffix: string) 
   return { ...fixture, executions }
 }
 
-export function choiceProviderText(outcome = 'pass', data: unknown = null): string {
+export function br2001Text(outcome = 'pass', data: unknown = null): string {
   return JSON.stringify({ routing: { outcome }, data })
 }
 
-export function choiceProviderTerminal(execution: HarnessExecution, provider: ChoiceProvider, text: string) {
+export function br2001Terminal(execution: HarnessExecution, provider: Br2001Provider, text: string) {
   const session = { harness: provider, providerVersion: 'synthetic-br2-001-no-native-call',
     nativeSessionId: `${provider}-${execution.id}` }
   const result = { outcome: 'succeeded' as const, output: { text } }
@@ -48,20 +48,20 @@ export function choiceProviderTerminal(execution: HarnessExecution, provider: Ch
   }) }
 }
 
-export const invalidChoiceTexts = [
+export const br2001InvalidTexts = [
   { name: 'ordinary prose', text: 'The review passed.' },
-  { name: 'prose around JSON', text: `Result: ${choiceProviderText()} All done.` },
-  { name: 'Markdown', text: `\`\`\`json\n${choiceProviderText()}\n\`\`\`` },
+  { name: 'prose around JSON', text: `Result: ${br2001Text()} All done.` },
+  { name: 'Markdown', text: `\`\`\`json\n${br2001Text()}\n\`\`\`` },
   { name: 'partial JSON', text: '{"routing":{"outcome":"pass"},"data":' },
   { name: 'extra envelope field', text: '{"routing":{"outcome":"pass"},"data":null,"extra":true}' },
   { name: 'extra routing field', text: '{"routing":{"outcome":"pass","edgeId":"other"},"data":null}' },
-  { name: 'undeclared outcome', text: choiceProviderText('undeclared') },
+  { name: 'undeclared outcome', text: br2001Text('undeclared') },
   { name: 'missing data', text: '{"routing":{"outcome":"pass"}}' },
-  { name: 'second JSON value', text: `${choiceProviderText()}${choiceProviderText('issues')}` },
-  { name: 'double encoded JSON', text: JSON.stringify(choiceProviderText()) },
+  { name: 'second JSON value', text: `${br2001Text()}${br2001Text('issues')}` },
+  { name: 'double encoded JSON', text: JSON.stringify(br2001Text()) },
   { name: 'empty text', text: '' },
   { name: 'null instead of envelope', text: 'null' },
-  { name: 'oversized text', text: choiceProviderText('pass', 'x'.repeat(64 * 1024)) },
-  { name: 'oversized JSON whitespace', text: ' '.repeat(64 * 1024) + choiceProviderText() },
-  { name: 'oversized UTF-8 below character limit', text: choiceProviderText('pass', '😀'.repeat(17000)) },
+  { name: 'oversized text', text: br2001Text('pass', 'x'.repeat(64 * 1024)) },
+  { name: 'oversized JSON whitespace', text: ' '.repeat(64 * 1024) + br2001Text() },
+  { name: 'oversized UTF-8 below character limit', text: br2001Text('pass', '😀'.repeat(17000)) },
 ] as const

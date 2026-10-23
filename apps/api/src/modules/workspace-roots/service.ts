@@ -6,13 +6,13 @@ import { WorkspaceRootListResultSchema, WorkspaceRootSelectionSchema, WorkspaceR
 import { WorkspaceBoundLocationGetInputSchema, WorkspaceBoundLocationSetInputSchema, WorkspaceBoundLocationReadbackSchema,
   WorkspaceBoundLocationValidationSchema, WorkspaceBoundLocationBrowseResultSchema, type WorkspaceBoundLocationReadback, type WorkspaceBoundLocationSetInput } from '@foreman-code/contracts/workspace-bound-location'
 import { WorkspaceRootConfigurationAdoptSchema } from '@foreman-code/contracts/workspace-bound-location'
-import { sameWorkflowValue } from '@foreman-code/contracts/current'
+import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { authorizeSource } from '../sources/authority.js'
-import { requireAuthorization } from '../access/index.js'
-import { readLiveManagementPrincipal } from '../access/index.js'
-import type { PostgresCommandCoordinator } from '../commands/index.js'
+import { requireAuthorization } from '../access/policy.js'
+import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
+import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
-import { WORKSPACE_FOLDER_LIFECYCLE_LOCK } from '../workspaces/index.js'
+import { WORKSPACE_FOLDER_LIFECYCLE_LOCK } from '../workspaces/projectFolderCleanup.js'
 import type { AuthorizedWorkspaceRoot, WorkspaceRootPolicyPort } from '../sources/rootPolicyPorts.js'
 
 type Sql = Pick<pg.PoolClient, 'query'>

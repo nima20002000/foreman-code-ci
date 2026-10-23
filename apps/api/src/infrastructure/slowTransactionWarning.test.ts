@@ -1,7 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import type pg from 'pg'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import * as diagnostics from './logger.js'
+import * as diagnostics from '../modules/diagnostics/logger.js'
 import { ExclusiveGraphConnection, beforeGraphCommit } from '../modules/run-graph/connection.js'
 import { withTransaction } from './transaction.js'
 

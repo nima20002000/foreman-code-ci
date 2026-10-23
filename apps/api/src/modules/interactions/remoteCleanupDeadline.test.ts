@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { HarnessExecution, NativeSessionReference } from '@foreman-code/contracts'
-import { nativeReviewerFixture } from '../../../test/native-reviewer-fixtures.js'
+import { native2Fixture } from '../../../test/native-reviewer-fixtures.js'
 import { ExclusiveGraphConnection } from '../run-graph/connection.js'
 import type { RunOwnership } from '../runs/ownership.js'
 import { ApprovalExecutionCoordinator } from './execution.js'
@@ -22,7 +22,7 @@ afterEach(async () => {
 })
 
 function residentFixture(completed = true) {
-  const f = nativeReviewerFixture(completed)
+  const f = native2Fixture(completed)
   connections.push(f.connection)
   f.resident.context.acceptedPlacement = { hostRef: { kind: 'device' } }
   Object.assign(f.owner, { retain: () => async () => {}, release: async () => {} })
@@ -73,7 +73,7 @@ it('aborts an expired remote close and lets the same captured lifetime retry', a
 })
 
 it('preserves the five-second deadline for a captured local lifetime', async () => {
-  const f = nativeReviewerFixture()
+  const f = native2Fixture()
   connections.push(f.connection)
   f.installResident()
   Object.assign(f.manager, { close: async (_session: NativeSessionReference, signal?: AbortSignal) => {
@@ -110,7 +110,7 @@ it.each(['close', 'closeForRestart', 'dispose'] as const)(
 )
 
 function recoveryFixture(terminal: boolean, durationMs: number) {
-  const f = nativeReviewerFixture(terminal)
+  const f = native2Fixture(terminal)
   connections.push(f.connection)
   const failure = { outcome: 'failed' as const,
     error: { code: 'EXECUTION_INTERRUPTED', message: 'Native attempt interrupted', retryable: true } }

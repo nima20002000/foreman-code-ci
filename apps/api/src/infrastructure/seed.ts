@@ -6,7 +6,7 @@ import {
   WorkspaceSchema,
   type AgentConfigurationVersion,
 } from '@foreman-code/contracts'
-import { WorkflowDefinitionCurrentSchema, WorkflowVersionCurrentSchema, ExecutableWorkflowCurrentSchema, canonicalGraphJson } from '@foreman-code/contracts/current'
+import { WorkflowDefinitionV3Schema, WorkflowVersionV3Schema, ExecutableWorkflowV3Schema, canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import type pg from 'pg'
 import { sha256Hex } from '../shared/hash.js'
 
@@ -143,7 +143,7 @@ const agents = [
   }),
 ]
 
-const workflow = WorkflowDefinitionCurrentSchema.parse({
+const workflow = WorkflowDefinitionV3Schema.parse({
   id: 'workflow-content-pipeline',
   workspaceId: workspace.id,
   executionSemanticsVersion: 3,
@@ -183,7 +183,7 @@ const workflow = WorkflowDefinitionCurrentSchema.parse({
 const agentConfigurationVersionIds = Object.fromEntries(
   parsedConfigurations.map((configuration) => [configuration.agentId, configuration.id]),
 )
-const workflowVersion = WorkflowVersionCurrentSchema.parse({
+const workflowVersion = WorkflowVersionV3Schema.parse({
   id: `${workflow.id}-v1`,
   workspaceId: workspace.id,
   workflowId: workflow.id,
@@ -199,7 +199,7 @@ const workflowVersion = WorkflowVersionCurrentSchema.parse({
 
 // Bootstrap proves the same topology, exact configuration pins and native
 // approval policy as saved V3 reads. Ordinary workflows do not need a repeat.
-ExecutableWorkflowCurrentSchema.parse({ version: workflowVersion, configurations: parsedConfigurations })
+ExecutableWorkflowV3Schema.parse({ version: workflowVersion, configurations: parsedConfigurations })
 
 export async function ensureAcceptanceSeed(pool: pg.Pool): Promise<void> {
   return withTransaction(pool, async (client) => {

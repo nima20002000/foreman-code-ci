@@ -4,7 +4,7 @@ import pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { HarnessExecution } from '@foreman-code/contracts'
 import { makeCurrentWorkflowFixture, canonicalGraphJson, WorkActivationInputSchema,
-  type AcceptedWorkflowRunCurrent } from '@foreman-code/contracts/current'
+  type AcceptedWorkflowRunV3 } from '@foreman-code/contracts/wave25'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
 import type { RemoteWorkflowPhysicalReadout } from '@foreman-code/contracts/remote-workflow-physical'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
@@ -38,7 +38,7 @@ function facts(handoff = false) {
   const principalId = 'sql-owner-'+randomUUID(), nativeSessionId = 'sql-native-'+randomUUID()
   const f = makeCurrentWorkflowFixture('artifact-acceptance-'+randomUUID(), 'single'), node = f.version.definition.nodes[0]!
   node.artifactOutputs = { version: 1, outputKeys: ['z', 'a'] }
-  const run = { ...f.run, authorizationPrincipalId: principalId } as AcceptedWorkflowRunCurrent
+  const run = { ...f.run, authorizationPrincipalId: principalId } as AcceptedWorkflowRunV3
   const mainId = randomUUID(), deviceId = randomUUID(), workerInstallationId = randomUUID(), digest = 'a'.repeat(64)
   const execution: HarnessExecution = { id: randomUUID(), runId: run.id, workflowNodeId: node.id, agentId: node.agentId,
     agentConfigurationVersionId: f.version.agentConfigurationVersionIds[node.agentId]!, attempt: 1, state: 'completed',

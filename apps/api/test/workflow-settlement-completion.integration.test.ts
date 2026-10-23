@@ -1,7 +1,7 @@
 import { MemorySaver } from '@langchain/langgraph'
 import { describe, expect, it, vi } from 'vitest'
 import type { ExecutionResult, HarnessExecution } from '@foreman-code/contracts'
-import { CANONICAL_RUN_GRAPH_MCP_TOOLS, CanonicalRunGraphCurrentSchema } from '@foreman-code/contracts/current'
+import { CANONICAL_RUN_GRAPH_MCP_TOOLS, CanonicalRunGraphCurrentSchema } from '@foreman-code/contracts/wave25'
 import { graphRpcValue } from './graph-composition-fixture.js'
 import { hasWorkDirectionWait } from '../src/modules/runs/workflowLifecycle.js'
 import {

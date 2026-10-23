@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { WorkActivationInputSchema } from '@foreman-code/contracts/current'
+import { WorkActivationInputSchema } from '@foreman-code/contracts/wave25'
 import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
 import { hierarchyRuntimeFixture, coordinationOutput } from './helpers/hierarchyRuntimeFixture.js'
 import { postgresEnabled } from './helpers/database.js'

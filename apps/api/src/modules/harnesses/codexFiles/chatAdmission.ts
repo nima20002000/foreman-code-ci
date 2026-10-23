@@ -8,7 +8,7 @@ import { PostgresFileConversationAuthorization } from '../../files/authorization
 import type { TemporaryFileService } from '../../files/service.js'
 import { bindingIdentity } from '../../files/tools/context.js'
 import { fileScopeIdentity } from '../../files/requests.js'
-import { PostgresWorkflowRepository } from '../../workflows/index.js'
+import { PostgresWorkflowRepository } from '../../workflows/postgres.js'
 import { DomainError } from '../../errors.js'
 import { MessagePublicationRefsSchema } from '../../conversations/messagePublications.js'
 import { codexChatFileTools } from './declarations.js'

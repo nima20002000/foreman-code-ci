@@ -12,7 +12,7 @@ import { workflowArtifactTransferManifestDigest } from '@foreman-code/contracts/
 import { bearerToken, type PostgresAccessService } from '../../access/postgres.js'
 import { lockActiveWorkerPrincipal } from '../../access/workerLifecycle.js'
 import { workerScopesForAction } from '../../access/appPolicy.js'
-import { PostgresCommandCoordinator } from '../../commands/index.js'
+import { PostgresCommandCoordinator } from '../../commands/postgres.js'
 import { BYTE_TRANSFER_NAMESPACE, createEndpointTransferReceiver, transferContextForBinding, type AcceptedTransferAuthority, type TransferOperation } from '../../byte-transfer/carrier.js'
 import type { DeviceEndpoint } from '../../devices/deviceEndpoint.js'
 import type { DistributedArtifactEndpointAuthorization } from '../../files/distributed/adapters.js'

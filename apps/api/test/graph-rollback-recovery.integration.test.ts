@@ -1,12 +1,12 @@
 import pg from 'pg'
 import { expect, it, vi } from 'vitest'
-import type { SqlTransaction } from '../src/infrastructure/transaction.js'
+import type { GraphTransactionSql } from '../src/modules/run-graph/connection.js'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { holdPostgresResponses } from './helpers/postgresResponses.js'
 
 it('allows the rollback fault fixture to acquire, exclude and replace a real Run owner', async () => {
-  const db = await migratedDatabase()
+  const db = await agent3Database()
   const responses = await holdPostgresResponses(process.env.TEST_DATABASE_URL!)
   const pool = new pg.Pool({ ...db.pool.options, query_timeout: 100 })
   let owner: RunOwnership | undefined
@@ -30,7 +30,7 @@ it('allows the rollback fault fixture to acquire, exclude and replace a real Run
 }, 60_000)
 
 it('releases a real Run owner and its advisory lock while rollback replies remain unavailable', async () => {
-  const db = await migratedDatabase()
+  const db = await agent3Database()
   const responses = await holdPostgresResponses(process.env.TEST_DATABASE_URL!)
   const pool = new pg.Pool({ ...db.pool.options, query_timeout: 100 })
   const lost = vi.fn()
@@ -42,7 +42,7 @@ it('releases a real Run owner and its advisory lock while rollback replies remai
     const runId = owner.runId
     const connection = owner.oneShotConnection()
     let queryFailure: unknown
-    const work = vi.fn(async (sql: SqlTransaction) => {
+    const work = vi.fn(async (sql: GraphTransactionSql) => {
       await sql.query('select 1')
       responses.hold()
       try {

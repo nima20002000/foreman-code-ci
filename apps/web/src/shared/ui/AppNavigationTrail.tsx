@@ -4,7 +4,7 @@ import { ArrowLeft, ChevronRight } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { cachedWorkflowName, cachedWorkspaceName, useManagedWorkflowQuery, useManagedWorkspaceQuery } from '../api/query'
 import { useAccessFailureLatch } from '../api/useAccessFailureLatch'
-import { harnessNames, harnessSections, rolePresentation } from '../../features/settings'
+import { harnessNames, harnessSections, rolePresentation } from '../../features/settings/settingsPresentation'
 import { AppNavigationHistoryContext } from './appNavigationHistoryContext'
 import './appNavigationTrail.css'
 

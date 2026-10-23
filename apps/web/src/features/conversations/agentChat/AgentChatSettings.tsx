@@ -6,7 +6,7 @@ import { queryKeys, useHarnessDefaultsQuery, useManagedAgentsQuery } from '../..
 import { updateManagedAgent } from '../../../shared/api/client'
 import { errorMessage } from '../../../shared/errorMessage'
 import { useLocalHumanAccessQuery } from '../../../shared/api/settingsExperience'
-import { canUseBoardAction } from '../../workflow-board'
+import { canUseBoardAction } from '../../workflow-board/permissions'
 import { OperatorComposerSettings } from '../../operator-chat/OperatorComposerSettings'
 import './agentChatSettings.css'
 

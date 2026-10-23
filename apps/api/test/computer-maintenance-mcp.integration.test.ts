@@ -1,7 +1,9 @@
+import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   COMPUTER_MAINTENANCE_NAMESPACE, ComputerMaintenanceListSchema, ComputerMaintenanceStartResultSchema, MaintenanceRequestSchema,
@@ -14,10 +16,9 @@ import { ComputerMaintenance, systemMaintenancePorts, type MaintenancePorts } fr
 import { MainCodexSelection } from '../src/modules/computers/installedCodexSelection.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { fakeComputer, settle } from './helpers/fleetSync.js'
-import { computerMaintenanceHttp } from './support/computerMaintenanceHttp.js'
 
 // Queued maintenance tasks settle in the background; the 1 s expect.poll default is too short on a loaded machine.
 const POLL = { timeout: 10_000 }
@@ -28,15 +29,17 @@ const status = (codex: string): MaintenanceStatus => ({ observedAt: new Date().t
 const task = (start: MaintenanceTaskStart) => ({ id: randomUUID(), kind: start.kind, state: 'running' as const,
   startedAt: new Date().toISOString(), finishedAt: null, summary: 'Running…', outputTail: '' })
 
-describe.skipIf(!postgresEnabled)('computer maintenance through the HTTP API', () => {
-  let database: Awaited<ReturnType<typeof migratedDatabase>>
+describe.skipIf(!postgresEnabled)('computer maintenance through Operator MCP', () => {
+  let database: Awaited<ReturnType<typeof agent3Database>>
   const apps: ReturnType<typeof buildApp>[] = []
+  const clients: Client[] = []
   const homes: string[] = []
-  beforeAll(async () => { database = await migratedDatabase() }, 60000)
+  beforeAll(async () => { database = await agent3Database() }, 60000)
   beforeEach(async () => {
     await database.pool.query('delete from device_registrations')
   })
   afterAll(async () => {
+    await Promise.allSettled(clients.map(client => client.close()))
     await Promise.allSettled(apps.map(app => app.close()))
     await database?.close()
     await Promise.all(homes.map(home => rm(home, { recursive: true, force: true })))
@@ -72,22 +75,36 @@ describe.skipIf(!postgresEnabled)('computer maintenance through the HTTP API', (
     const app = buildApp({ operator: { access, services },
       readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } } })
     apps.push(app)
-    const operator = computerMaintenanceHttp(app, writer.token)
-    const readOnly = computerMaintenanceHttp(app, reader.token)
+    const address = await app.listen({ host: '127.0.0.1', port: 0 })
+    const connect = async (token: string) => {
+      const client = new Client({ name: 'maintenance-shutdown-test', version: '1' })
+      clients.push(client)
+      await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), {
+        requestInit: { headers: { authorization: `Bearer ${token}` } },
+      }))
+      return client
+    }
+    const operator = await connect(writer.token)
+    const readOnly = await connect(reader.token)
     const commandId = randomUUID()
     const request = { commandId, task: { kind: 'update-harnesses', harnesses: ['claude'] } }
     try {
-      const accepted = ComputerMaintenanceStartResultSchema.parse((await operator.start(request)).body)
+      const accepted = ComputerMaintenanceStartResultSchema.parse(decodeMcpToolResult(await operator.callTool({
+        name: 'computers_maintenance_start', arguments: request,
+      })))
       expect(accepted.computers[0]?.task?.id).toBe(commandId)
       await expect.poll(() => updating, POLL).toBe(true)
       fleet.stopAdmission()
       let drained = false
       const draining = fleet.drain().then(() => { drained = true })
-      const denied = await readOnly.start({ commandId: randomUUID(), task: { kind: 'update-system' } })
-      expect(denied.ok).toBe(false)
-      expect(JSON.stringify(denied.body)).toContain('ACCESS_DENIED')
-      const refused = ComputerMaintenanceStartResultSchema.parse(
-        (await operator.start({ ...request, commandId: randomUUID() })).body)
+      const denied = await readOnly.callTool({ name: 'computers_maintenance_start', arguments: {
+        commandId: randomUUID(), task: { kind: 'update-system' },
+      } })
+      expect(denied.isError).toBe(true)
+      expect(JSON.stringify(denied.content)).toContain('ACCESS_DENIED')
+      const refused = ComputerMaintenanceStartResultSchema.parse(decodeMcpToolResult(await operator.callTool({
+        name: 'computers_maintenance_start', arguments: { ...request, commandId: randomUUID() },
+      })))
       expect(refused.computers[0]).toMatchObject({ task: null, error: 'Computer maintenance is shutting down.' })
       expect(drained).toBe(false)
       releaseUpdate()
@@ -99,8 +116,15 @@ describe.skipIf(!postgresEnabled)('computer maintenance through the HTTP API', (
       } as unknown as OperatorServices },
       readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } } })
       apps.push(restartedApp)
-      const recoveredReader = computerMaintenanceHttp(restartedApp, reader.token)
-      const persisted = ComputerMaintenanceListSchema.parse((await recoveredReader.status({ refresh: true })).body)
+      const restartedAddress = await restartedApp.listen({ host: '127.0.0.1', port: 0 })
+      const recoveredReader = new Client({ name: 'maintenance-readback-test', version: '1' })
+      clients.push(recoveredReader)
+      await recoveredReader.connect(new StreamableHTTPClientTransport(new URL('/mcp', restartedAddress), {
+        requestInit: { headers: { authorization: `Bearer ${reader.token}` } },
+      }))
+      const persisted = ComputerMaintenanceListSchema.parse(decodeMcpToolResult(await recoveredReader.callTool({
+        name: 'computers_maintenance_status', arguments: { detail: 'full', refresh: true },
+      })))
       expect(persisted.computers[0]?.status?.tasks).toEqual([
         expect.objectContaining({ id: commandId, state: 'succeeded' }),
       ])
@@ -148,47 +172,54 @@ describe.skipIf(!postgresEnabled)('computer maintenance through the HTTP API', (
     const app = buildApp({ readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
       operator: { access, services: { computerMaintenance, commands } as unknown as OperatorServices } })
     apps.push(app)
-    const operator = computerMaintenanceHttp(app, writer.token)
-    const listed = ComputerMaintenanceListSchema.parse((await operator.status({ refresh: true })).body)
+    const address = await app.listen({ host: '127.0.0.1', port: 0 })
+    const connect = async (token: string) => {
+      const client = new Client({ name: 'maintenance-test', version: '1' }); clients.push(client)
+      await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), { requestInit: { headers: { authorization: `Bearer ${token}` } } }))
+      return client
+    }
+    const operator = await connect(writer.token)
+    const listed = ComputerMaintenanceListSchema.parse(decodeMcpToolResult((await operator.callTool({ name: 'computers_maintenance_status', arguments: { detail: 'full', refresh: true } }))))
     expect(listed.computers.map(computer => computer.status?.harnesses[0]?.version)).toEqual(['0.161.0', '0.150.0'])
     const http = await app.inject({ url: '/api/management/computers/maintenance', headers: { authorization: `Bearer ${writer.token}` } })
     expect(http.statusCode).toBe(200)
     expect(ComputerMaintenanceListSchema.parse(http.json()).computers).toHaveLength(2)
 
     const update = { commandId: randomUUID(), task: { kind: 'update-harnesses', harnesses: ['codex', 'claude'] } }
-    const started = ComputerMaintenanceStartResultSchema.parse((await operator.start(update)).body)
+    const started = ComputerMaintenanceStartResultSchema.parse(decodeMcpToolResult((await operator.callTool({ name: 'computers_maintenance_start', arguments: update }))))
     expect(started.computers.map(computer => computer.task?.kind)).toEqual(['update-harnesses', 'update-harnesses'])
     // The same command never starts the work twice.
-    await operator.start(update)
+    await operator.callTool({ name: 'computers_maintenance_start', arguments: update })
     expect(mainStarts).toHaveLength(1)
     expect(deviceStarts).toHaveLength(1)
 
-    const sync = ComputerMaintenanceStartResultSchema.parse(
-      (await operator.start({ commandId: randomUUID(), task: { kind: 'sync-mcp' } })).body)
+    const sync = ComputerMaintenanceStartResultSchema.parse(decodeMcpToolResult((await operator.callTool({ name: 'computers_maintenance_start',
+      arguments: { commandId: randomUUID(), task: { kind: 'sync-mcp' } } }))))
     expect(sync.computers.map(computer => computer.target.hostRef.kind)).toEqual(['device'])
     expect(deviceStarts.at(-1)).toEqual({ kind: 'sync-mcp', servers: {
       codex: [{ transport: 'http', name: 'linear', url: 'https://mcp.linear.app/mcp', bearerTokenEnvVar: null }],
       claude: [{ transport: 'http', name: 'docs', url: 'https://docs.example/mcp', bearerTokenEnvVar: null }] },
       skippedServers: { codex: ['private'] },
       warnings: ['codex MCP server private contains credentials; configure it separately on each computer; skipped.'] })
-    await operator.start({ commandId: randomUUID(), task: { kind: 'sync-plugins' } })
+    await operator.callTool({ name: 'computers_maintenance_start', arguments: { commandId: randomUUID(), task: { kind: 'sync-plugins' } } })
     expect(deviceStarts.at(-1)).toEqual({ kind: 'sync-plugins', plugins: ['pdf@openai'],
       marketplaces: [{ name: 'claude-plugins-official', source: 'https://github.com/anthropics/claude-plugins-official.git' }], claudePlugins: [], claudeMarketplaces: [] })
 
-    const restartAll = await operator.start({ commandId: randomUUID(), task: { kind: 'restart' } })
-    expect(restartAll.ok).toBe(false)
-    expect(JSON.stringify(restartAll.body)).toContain('COMPUTER_RESTART_TARGET_REQUIRED')
+    const restartAll = await operator.callTool({ name: 'computers_maintenance_start', arguments: { commandId: randomUUID(), task: { kind: 'restart' } } })
+    expect(restartAll.isError).toBe(true)
+    expect(JSON.stringify(restartAll.content)).toContain('COMPUTER_RESTART_TARGET_REQUIRED')
 
-    const readOnly = computerMaintenanceHttp(app, reader.token)
-    const deniedStart = await readOnly.start({ commandId: randomUUID(), task: { kind: 'update-system' } })
-    expect(deniedStart.ok).toBe(false)
-    expect(JSON.stringify(deniedStart.body)).toContain('ACCESS_DENIED')
+    const readOnly = await connect(reader.token)
+    expect((await readOnly.listTools()).tools.map(tool => tool.name)).not.toContain('computers_maintenance_start')
+    const deniedStart = await readOnly.callTool({ name: 'computers_maintenance_start', arguments: { commandId: randomUUID(), task: { kind: 'update-system' } } })
+    expect(deniedStart.isError).toBe(true)
+    expect(JSON.stringify(deniedStart.content)).toContain('ACCESS_DENIED')
     expect(deviceStarts.some(start => start.kind === 'update-system')).toBe(false)
     const audits = await database.pool.query<{ source: string }>("select source from management_audit where action='computers.maintenance.start' and outcome='succeeded'")
     expect(audits.rows.length).toBeGreaterThanOrEqual(3)
-    expect(new Set(audits.rows.map(row => row.source))).toEqual(new Set(['http']))
+    expect(new Set(audits.rows.map(row => row.source))).toEqual(new Set(['mcp']))
   })
-  it('syncs safely through authenticated HTTP, preserves local entries, and reads persisted partial ownership', async () => {
+  it('syncs safely through authenticated MCP, preserves local entries, and reads persisted partial ownership', async () => {
     const mainId = (await database.pool.query<{ id: string }>('select id from application_installation')).rows[0]!.id
     const access = new PostgresAccessService(database.pool)
     const writer = await access.issue({ name: 'Sync maintainer', audience: 'operator',
@@ -247,21 +278,37 @@ describe.skipIf(!postgresEnabled)('computer maintenance through the HTTP API', (
     const app = buildApp({ readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
       operator: { access, services: { computerMaintenance: service, commands } as unknown as OperatorServices } })
     apps.push(app)
-    const operator = computerMaintenanceHttp(app, writer.token)
-    const readOnly = computerMaintenanceHttp(app, reader.token)
+    const address = await app.listen({ host: '127.0.0.1', port: 0 })
+    const connect = async (token: string) => {
+      const client = new Client({ name: 'fleet-sync-test', version: '1' })
+      clients.push(client)
+      await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), {
+        requestInit: { headers: { authorization: `Bearer ${token}` } },
+      }))
+      return client
+    }
+    const operator = await connect(writer.token)
+    const readOnly = await connect(reader.token)
+    expect((await readOnly.listTools()).tools.map(tool => tool.name)).not.toContain('computers_maintenance_start')
     const targets = [{ hostRef: { kind: 'device', mainId, deviceId: device.deviceId },
       applicationInstallationId: device.workerInstallationId, keyRevision: 1, authorizationRevision: 1 }]
-    expect((await readOnly.start({ commandId: randomUUID(), task: { kind: 'sync-mcp' }, targets })).ok).toBe(false)
+    expect((await readOnly.callTool({ name: 'computers_maintenance_start', arguments: {
+      commandId: randomUUID(), task: { kind: 'sync-mcp' }, targets,
+    } })).isError).toBe(true)
     expect(starts).toHaveLength(0)
     const sync = async (kind: 'sync-mcp' | 'sync-plugins') => {
       const arguments_ = { commandId: randomUUID(), task: { kind }, targets }
-      const result = ComputerMaintenanceStartResultSchema.parse((await operator.start(arguments_)).body)
+      const result = ComputerMaintenanceStartResultSchema.parse(decodeMcpToolResult((await operator.callTool({
+        name: 'computers_maintenance_start', arguments: arguments_,
+      }))))
       const count = starts.length
-      await operator.start(arguments_)
+      await operator.callTool({ name: 'computers_maintenance_start', arguments: arguments_ })
       expect(starts).toHaveLength(count)
       expect(result.computers[0]?.task?.sourceFingerprint).toMatch(/^sha256:/u)
       await settle(computer)
-      const readback = ComputerMaintenanceListSchema.parse((await operator.status({ refresh: true })).body)
+      const readback = ComputerMaintenanceListSchema.parse(decodeMcpToolResult((await operator.callTool({
+        name: 'computers_maintenance_status', arguments: { detail: 'full', refresh: true },
+      }))))
       return readback.computers.find(item => item.target.applicationInstallationId === device.workerInstallationId)
         ?.status?.tasks.find(task => task.id === result.computers[0]?.task?.id)
     }
@@ -298,7 +345,9 @@ describe.skipIf(!postgresEnabled)('computer maintenance through the HTTP API', (
         codex: expect.arrayContaining(['good']), claude: expect.arrayContaining(['good']),
       } })
       computer.maintenance = new ComputerMaintenance(computer.ports)
-      const persisted = ComputerMaintenanceListSchema.parse((await operator.status({ refresh: true })).body).computers.find(item => item.target.applicationInstallationId === device.workerInstallationId)
+      const persisted = ComputerMaintenanceListSchema.parse(decodeMcpToolResult((await operator.callTool({
+        name: 'computers_maintenance_status', arguments: { detail: 'full', refresh: true },
+      })))).computers.find(item => item.target.applicationInstallationId === device.workerInstallationId)
       expect(persisted?.status?.tasks.find(task => task.kind === 'sync-mcp'))
         .toMatchObject({ state: 'succeeded', summary: expect.stringContaining('good') })
     }
@@ -328,7 +377,9 @@ describe.skipIf(!postgresEnabled)('computer maintenance through the HTTP API', (
     computer.maintenance = new ComputerMaintenance(computer.ports)
     await service.syncChangedSources()
     expect(starts).toHaveLength(count)
-    const persisted = ComputerMaintenanceListSchema.parse((await operator.status({ refresh: true })).body).computers.find(item => item.target.applicationInstallationId === device.workerInstallationId)
+    const persisted = ComputerMaintenanceListSchema.parse(decodeMcpToolResult((await operator.callTool({
+      name: 'computers_maintenance_status', arguments: { detail: 'full', refresh: true },
+    })))).computers.find(item => item.target.applicationInstallationId === device.workerInstallationId)
     for (const kind of ['sync-mcp', 'sync-plugins']) {
       expect(persisted?.status?.tasks.find(task => task.kind === kind)).toMatchObject({
         state: 'succeeded', sourceFingerprint: expect.stringMatching(/^sha256:/u),
@@ -385,7 +436,7 @@ describe.skipIf(!postgresEnabled)('computer maintenance through the HTTP API', (
     expect(starts.some(input => input.kind === 'sync-plugins')).toBe(false)
   })
 
-  it('verifies OS updates through HTTP and returns phased packages as pending', async () => {
+  it('verifies OS updates through MCP and returns phased packages as pending', async () => {
     const mainId = (await database.pool.query<{ id: string }>('select id from application_installation')).rows[0]!.id
     const access = new PostgresAccessService(database.pool)
     const owner = await access.issue({ name: 'OS update verifier', audience: 'operator',
@@ -416,19 +467,27 @@ describe.skipIf(!postgresEnabled)('computer maintenance through the HTTP API', (
     const app = buildApp({ readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
       operator: { access, services: { computerMaintenance: service, commands } as unknown as OperatorServices } })
     apps.push(app)
-    const client = computerMaintenanceHttp(app, owner.token)
-    const before = ComputerMaintenanceListSchema.parse((await client.status({ refresh: true })).body)
+    const address = await app.listen({ host: '127.0.0.1', port: 0 })
+    const client = new Client({ name: 'update-readback-test', version: '1' })
+    clients.push(client)
+    await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), {
+      requestInit: { headers: { authorization: `Bearer ${owner.token}` } },
+    }))
+    const before = ComputerMaintenanceListSchema.parse(decodeMcpToolResult((await client.callTool({ name: 'computers_maintenance_status',
+      arguments: { detail: 'full', refresh: true } }))))
     const main = before.computers.find(computer => computer.target.hostRef.kind === 'main')!
     expect(main.status?.system.packageUpdates).toBe(25)
-    const started = await client.start({
+    const started = await client.callTool({ name: 'computers_maintenance_start', arguments: {
       commandId: randomUUID(), task: { kind: 'update-system' }, targets: [main.target],
-    })
-    expect(started.ok).toBe(true)
+    } })
+    expect(started.isError).not.toBe(true)
     await expect.poll(async () => {
-      const current = ComputerMaintenanceListSchema.parse((await client.status({ refresh: true })).body).computers.find(computer => computer.target.hostRef.kind === 'main')
+      const current = ComputerMaintenanceListSchema.parse(decodeMcpToolResult((await client.callTool({ name: 'computers_maintenance_status',
+        arguments: { detail: 'full', refresh: true } })))).computers.find(computer => computer.target.hostRef.kind === 'main')
       return current?.status?.tasks[0]?.state
     }, POLL).toBe('succeeded')
-    const after = ComputerMaintenanceListSchema.parse((await client.status({ refresh: true })).body).computers.find(computer => computer.target.hostRef.kind === 'main')!
+    const after = ComputerMaintenanceListSchema.parse(decodeMcpToolResult((await client.callTool({ name: 'computers_maintenance_status',
+      arguments: { detail: 'full', refresh: true } })))).computers.find(computer => computer.target.hostRef.kind === 'main')!
     expect(after.status?.system.packageUpdates).toBe(23)
     expect(after.status?.tasks[0]?.summary).toContain('23 updates pending')
     expect(readbacks).toBeGreaterThan(0)
@@ -504,14 +563,26 @@ describe.skipIf(!postgresEnabled)('computer maintenance through the HTTP API', (
     const app = buildApp({ readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
       operator: { access, services: { computerMaintenance: service, commands } as unknown as OperatorServices } })
     apps.push(app)
-    const operator = computerMaintenanceHttp(app, writer.token)
-    const readOnly = computerMaintenanceHttp(app, reader.token)
-    const current = async () => ComputerMaintenanceListSchema.parse((await operator.status({ refresh: true })).body).computers.find(computer => computer.target.hostRef.kind === 'main')!
+    const address = await app.listen({ host: '127.0.0.1', port: 0 })
+    const connect = async (token: string) => {
+      const client = new Client({ name: 'maintenance-lifecycle-test', version: '1' })
+      clients.push(client)
+      await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), {
+        requestInit: { headers: { authorization: `Bearer ${token}` } },
+      }))
+      return client
+    }
+    const operator = await connect(writer.token)
+    const readOnly = await connect(reader.token)
+    const current = async () => ComputerMaintenanceListSchema.parse(decodeMcpToolResult((await operator.callTool({
+      name: 'computers_maintenance_status', arguments: { detail: 'full', refresh: true },
+    })))).computers.find(computer => computer.target.hostRef.kind === 'main')!
     const main = await current()
     const codex = { commandId: randomUUID(), task: { kind: 'update-harnesses', harnesses: ['codex'] }, targets: [main.target] }
-    const start = async (input: typeof codex) =>
-      ComputerMaintenanceStartResultSchema.parse((await operator.start(input)).body).computers[0]!.task!
-    expect((await readOnly.start(codex)).ok).toBe(false)
+    const start = async (input: typeof codex) => ComputerMaintenanceStartResultSchema.parse(decodeMcpToolResult((await operator.callTool({
+      name: 'computers_maintenance_start', arguments: input,
+    })))).computers[0]!.task!
+    expect((await readOnly.callTool({ name: 'computers_maintenance_start', arguments: codex })).isError).toBe(true)
     expect(installs).toBe(0)
     const first = await start(codex)
     await expect.poll(() => installs, POLL).toBe(1)

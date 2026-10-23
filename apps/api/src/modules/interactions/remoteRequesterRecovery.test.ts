@@ -6,7 +6,7 @@ import {
   ReviewJobSchema,
   type PendingNativeInteraction,
 } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 
 import { DomainError } from '../errors.js'
 import type { RunOwnership } from '../runs/ownership.js'

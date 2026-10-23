@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, expect, vi } from 'vitest'
 import { HarnessExecutionSchema, NativeHarnessEventSchema, type HarnessExecution, type NativeHarnessEvent, type NativeSessionReference } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture, parseRepeatExitResultV1 } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture, parseRepeatExitResultV1 } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../../src/modules/errors.js'
 import { NativeProcessRegistry } from '../../src/modules/harnesses/recovery/processRegistry.js'
 import type { NativeHarnessSessionManager, NativeHistory } from '../../src/modules/harnesses/port.js'
@@ -15,7 +15,7 @@ import { canonicalRepeatEffect } from '../../src/modules/run-graph/repeatPublica
 import { readWorkflowCheckpoint } from '../../src/modules/runs/repeatGraph.js'
 import { checkpointRuntimeFixture } from './checkpointRuntime.js'
 import { approvalResponse } from './approvalResponse.js'
-import { migratedDatabase } from './migratedDatabase.js'
+import { agent3Database } from './workflowDatabase.js'
 import { reserveFromExitedParent } from './launchReservation.testSupport.js'
 import { holdCrashCut, observeCrashTask } from './crashCut.testSupport.js'
 
@@ -126,7 +126,7 @@ function failEntryAtProvider(t: Runtime, allAttempts = false) {
   })
 }
 
-type CrashCutDatabase = Awaited<ReturnType<typeof migratedDatabase>>
+type CrashCutDatabase = Awaited<ReturnType<typeof agent3Database>>
 type WorkflowForm = 'sequential' | 'repeat'
 type TerminalRecoveryKind = 'success' | 'approval' | 'retry' | 'retry-exhausted' | 'stop'
 
@@ -134,7 +134,7 @@ type TerminalRecoveryKind = 'success' | 'approval' | 'retry' | 'retry-exhausted'
 export function useCrashCutDatabase() {
   let database: CrashCutDatabase | undefined
   beforeAll(async () => {
-    database = await migratedDatabase()
+    database = await agent3Database()
   }, 60_000)
   afterEach(() => vi.restoreAllMocks())
   afterAll(async () => {

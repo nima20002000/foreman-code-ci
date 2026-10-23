@@ -3,7 +3,7 @@ import type { OperatorConversationSummary } from '@foreman-code/contracts'
 import { getOperatorConversation } from '../../shared/api/client'
 import { useAccessFailureLatch } from '../../shared/api/useAccessFailureLatch'
 import { ActionMenu } from '../../shared/ui/nocturne'
-import { retiredHarnessLabel } from '../settings'
+import { retiredHarnessLabel } from '../settings/settingsPresentation'
 
 export function OperatorHistoryActions({ summary, queryKey, enabled, removing, onRemove }: {
   summary: OperatorConversationSummary

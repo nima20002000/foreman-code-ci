@@ -13,7 +13,6 @@ import { passiveDriverPayloads } from '../payloadDiscovery.js'
 import { discoverLauncher } from '../hostDiscovery.js'
 import { CompatibilityCheckError } from './errors.js'
 import { sha256Hex } from '../../../shared/hash.js'
-import { hostEnvironment } from '../../../shared/process.js'
 
 export interface HarnessInstallation {
   executable: string
@@ -192,7 +191,7 @@ async function readExport(path: string): Promise<string> {
     return bytes.subarray(0, bytesRead).toString('utf8')
   } finally { await handle.close() }
 }
-export function nativeCompatibilityProbe(binaries: Record<CompatibilityHarness, string>, workingDirectory: string, source: NodeJS.ProcessEnv = hostEnvironment(), inspectTimeoutMs = 2000, ownership?: CompatibilityProbeOwnership): CompatibilityProbe {
+export function nativeCompatibilityProbe(binaries: Record<CompatibilityHarness, string>, workingDirectory: string, source: NodeJS.ProcessEnv = process.env, inspectTimeoutMs = 2000, ownership?: CompatibilityProbeOwnership): CompatibilityProbe {
   const processes = new Set<DiagnosticProcess>()
   const directories = new Set<string>()
   return {

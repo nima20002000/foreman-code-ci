@@ -3,12 +3,12 @@ import { describe, expect, it } from 'vitest'
 import { ManagementPrincipalSchema } from '@foreman-code/contracts/management'
 import {
   CURRENT_WORKFLOW_CAPABILITIES, CurrentWorkflowCapabilitiesSchema, CurrentWorkflowSaveInputSchema,
-  ManualRunStartInputSchema, makeCurrentWorkflowFixture, WorkflowVersionCurrentSchema, ExecutableWorkflowCurrentSchema,
-  RepeatPlanV1Schema, RepeatGraphSnapshotCurrentSchema, repeatGraphTopologyCurrent, WorkflowRunCurrentSchema,
+  ManualRunStartInputSchema, makeCurrentWorkflowFixture, WorkflowVersionV3Schema, ExecutableWorkflowV3Schema,
+  RepeatPlanV1Schema, RepeatGraphSnapshotV3Schema, repeatGraphTopologyV3, WorkflowRunV3Schema,
   CurrentWorkflowCreateInputSchema, SavedWorkflowVersionSchema, SavedWorkflowDefinitionSchema,
   CanonicalRunGraphScopeSchema, CurrentEditStageInputSchema, CurrentOperatorToolNameSchema,
   parseRepeatExitResultV1, type CurrentFixtureForm,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import { currentWorkflowAvailable, requireCurrentWorkflowAccess } from '../src/modules/workflows/currentWorkflowPolicy.js'
 
 const f = makeCurrentWorkflowFixture('current-contract')
@@ -27,16 +27,16 @@ const actions = ['workflows:read', 'workflows:update', 'graph:read', 'graph:edit
 describe('ENG-S3-ONLY current definition and shared authoring policy', () => {
   it.each(forms)('%s uses the SAME actual V3 validator; no-repeat stays omitted', (form) => {
     const fixture = makeCurrentWorkflowFixture(`form-${form}`, form)
-    const parsed = ExecutableWorkflowCurrentSchema.parse({ version: fixture.version, configurations: fixture.configurations })
+    const parsed = ExecutableWorkflowV3Schema.parse({ version: fixture.version, configurations: fixture.configurations })
     expect(parsed.version.executionSemanticsVersion).toBe(3)
     expect(Object.hasOwn(parsed.version.definition, 'repeat')).toBe(form === 'repeat')
-    expect(Object.hasOwn(repeatGraphTopologyCurrent(parsed.version), 'repeat')).toBe(form === 'repeat')
-    expect(Object.hasOwn(WorkflowRunCurrentSchema.parse(fixture.run), 'repeat')).toBe(false)
+    expect(Object.hasOwn(repeatGraphTopologyV3(parsed.version), 'repeat')).toBe(form === 'repeat')
+    expect(Object.hasOwn(WorkflowRunV3Schema.parse(fixture.run), 'repeat')).toBe(false)
     expect(JSON.stringify(parsed.version.definition).includes('"repeat":')).toBe(form === 'repeat')
   })
   it.each([null, { contractVersion: 1, blocks: [] }, { contractVersion: 2, blocks: [] }])('does not accept a fake ordinary repeat plan %j', (repeat) => {
     const version = { ...f.version, definition: { ...f.version.definition, repeat } }
-    expect(WorkflowVersionCurrentSchema.safeParse(version).success).toBe(false)
+    expect(WorkflowVersionV3Schema.safeParse(version).success).toBe(false)
     expect(CurrentWorkflowSaveInputSchema.safeParse({ ...input(), graph: version.definition }).success).toBe(false)
     expect(RepeatPlanV1Schema.safeParse(repeat).success).toBe(false)
   })
@@ -53,7 +53,7 @@ describe('ENG-S3-ONLY current definition and shared authoring policy', () => {
       expectedWorkflowRevision: 1, expectedLocationRevision: 1, expectedAgentConfigurationVersionIds: f.version.agentConfigurationVersionIds }).success).toBe(false)
     expect(SavedWorkflowVersionSchema.safeParse({ ...f.version, executionSemanticsVersion }).success).toBe(false)
     expect(SavedWorkflowDefinitionSchema.safeParse({ ...f.version.definition, executionSemanticsVersion }).success).toBe(false)
-    expect(WorkflowRunCurrentSchema.safeParse({ ...f.run, executionSemanticsVersion }).success).toBe(false)
+    expect(WorkflowRunV3Schema.safeParse({ ...f.run, executionSemanticsVersion }).success).toBe(false)
     expect(CanonicalRunGraphScopeSchema.safeParse({ ...f.scope, executionSemanticsVersion }).success).toBe(false)
   })
   it.each([1, 2, 4, '3', null])('creation rejects an explicit retired/unknown tag %s', (executionSemanticsVersion) => {
@@ -71,16 +71,16 @@ describe('ENG-S3-ONLY current definition and shared authoring policy', () => {
     expect(CurrentWorkflowSaveInputSchema.parse({ ...value, commandId }).commandId).toBe(commandId)
   })
   it('retains current DAG, named-result, configuration, role and scope guards without repeat', () => {
-    expect(ExecutableWorkflowCurrentSchema.safeParse({ version: f.version, configurations: [] }).success).toBe(false)
-    expect(WorkflowVersionCurrentSchema.safeParse({ ...f.version, definition: { ...f.version.definition, workspaceId: 'other' } }).success).toBe(false)
-    expect(WorkflowVersionCurrentSchema.safeParse({ ...f.version, definition: { ...f.version.definition, edges: [...f.version.definition.edges,
+    expect(ExecutableWorkflowV3Schema.safeParse({ version: f.version, configurations: [] }).success).toBe(false)
+    expect(WorkflowVersionV3Schema.safeParse({ ...f.version, definition: { ...f.version.definition, workspaceId: 'other' } }).success).toBe(false)
+    expect(WorkflowVersionV3Schema.safeParse({ ...f.version, definition: { ...f.version.definition, edges: [...f.version.definition.edges,
       { id: 'cycle', kind: 'execution', source: f.version.definition.nodes[1]!.id, target: f.version.entryNodeId }] } }).success).toBe(false)
-    expect(WorkflowVersionCurrentSchema.safeParse({ ...f.version, definition: { ...f.version.definition, nodes: f.version.definition.nodes.map((node, i) =>
+    expect(WorkflowVersionV3Schema.safeParse({ ...f.version, definition: { ...f.version.definition, nodes: f.version.definition.nodes.map((node, i) =>
       i === 0 ? { ...node, choice: { outcomes: [{ outcome: 'go', target: { kind: 'edge', relationshipId: 'missing' } }] } } : node) } }).success).toBe(false)
   })
   it.each([0, -1, 1.5, Infinity, NaN, undefined, 2147483648])('rejects nonfinite/missing repeat cap %s', (maxOccurrences) => {
     const version = makeCurrentWorkflowFixture('bad-cap', 'repeat').version
-    expect(WorkflowVersionCurrentSchema.safeParse({ ...version, definition: { ...version.definition,
+    expect(WorkflowVersionV3Schema.safeParse({ ...version, definition: { ...version.definition,
       repeat: { ...version.definition.repeat, blocks: version.definition.repeat!.blocks.map((block) => ({ ...block, maxOccurrences })) } } }).success).toBe(false)
   })
   it.each(['overlap', 'side-exit', 'unknown-node', 'outcomes', 'limit-route', 'budget'])(
@@ -93,7 +93,7 @@ describe('ENG-S3-ONLY current definition and shared authoring policy', () => {
       if (kind === 'outcomes') block.earlyExitOutcome = block.repeatOutcome
       if (kind === 'limit-route') block.limitExit = { kind: 'edge', relationshipId: 'missing' }
       if (kind === 'budget') version.definition.executionPolicy!.maxNodeExecutions = 2
-      expect(WorkflowVersionCurrentSchema.safeParse(version).success).toBe(false)
+      expect(WorkflowVersionV3Schema.safeParse(version).success).toBe(false)
     })
   it('does not turn metadata-read support, omission or a request flag into native admission', () => {
     expect(CURRENT_WORKFLOW_CAPABILITIES).toMatchObject({ executionSemanticsVersion: 3, repeatOptional: true,
@@ -105,13 +105,13 @@ describe('ENG-S3-ONLY current definition and shared authoring policy', () => {
   })
   it('ordinary canonical metadata rejects repeat occurrences not declared by its topology', () => {
     const ordinary = { kind: 'snapshot', protocolVersion: 1, scope: f.scope, asOfSequence: '1', retentionFloor: '0',
-      historyCoverage: 'from_admission', topology: repeatGraphTopologyCurrent(f.version), state: {
+      historyCoverage: 'from_admission', topology: repeatGraphTopologyV3(f.version), state: {
         run: { executionState: 'queued', outcome: 'pending', stopRequested: false, cleanupPending: false,
           unsettledReviewCount: 0, pendingInteractionCount: 0 }, nodes: [], inputBindings: [], interactions: [], reviews: [], occurrences: [], executions: [],
         resolutions: [], results: [], bindings: [], decisions: [],
       } }
-    expect(RepeatGraphSnapshotCurrentSchema.parse(ordinary)).toEqual(ordinary)
-    expect(RepeatGraphSnapshotCurrentSchema.safeParse({ ...ordinary, topology: { ...ordinary.topology, repeat: { contractVersion: 1, blocks: [] } } }).success).toBe(false)
+    expect(RepeatGraphSnapshotV3Schema.parse(ordinary)).toEqual(ordinary)
+    expect(RepeatGraphSnapshotV3Schema.safeParse({ ...ordinary, topology: { ...ordinary.topology, repeat: { contractVersion: 1, blocks: [] } } }).success).toBe(false)
   })
   it('keeps complete finite-exit result validation, not prose extraction', () => {
     const choice = makeCurrentWorkflowFixture('exit-data', 'repeat').version.definition.nodes[1]!.choice!

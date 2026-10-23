@@ -1,8 +1,8 @@
 import { createContext, useContext, type ReactNode } from 'react'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
-import type { CollaborationFieldSlots } from '../../features/board-core'
-import type { WorkflowCollaborationSlots } from '../../features/workflow-board'
-import type { WorkflowExecutionChatViews } from '../../features/workflow-hierarchy'
+import type { CollaborationFieldSlots } from '../../features/graph/collaborationFields'
+import type { WorkflowCollaborationSlots } from '../../features/workflow-board/WorkflowSidePanel'
+import type { WorkflowExecutionChatViews } from '../../features/workflow-hierarchy/execution-chat/types'
 
 /** Explicit composition of feature-owned UI; the shell retains no feature data or background work. */
 export interface CollaborationUISlots extends CollaborationFieldSlots {

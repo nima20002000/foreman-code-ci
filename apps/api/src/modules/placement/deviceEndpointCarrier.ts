@@ -1,8 +1,8 @@
 import { REMOTE_EXECUTION_EXTENSION, REMOTE_PREPARATION_EXTENSION } from '@foreman-code/contracts/remote-execution-rpc'
-import { sameWorkflowValue } from '@foreman-code/contracts/current'
-import type { CapturedDeviceApplicationRequest } from '../devices/index.js'
-import { waitForDeviceReconnect } from '../devices/index.js'
-import { DeviceConnectionError } from '../devices/index.js'
+import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
+import type { CapturedDeviceApplicationRequest } from '../devices/deviceApplicationChannel.js'
+import { waitForDeviceReconnect } from '../devices/deviceReconnect.js'
+import { DeviceConnectionError } from '../devices/deviceWire.js'
 import { DomainError } from '../errors.js'
 import type { MainWorkerCarrier } from './workerCarrier.js'
 

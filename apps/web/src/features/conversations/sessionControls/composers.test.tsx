@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SessionControlStateSchema } from '@foreman-code/contracts'
-import { OperatorComposer } from '../../operator-chat'
+import { OperatorComposer } from '../../operator-chat/OperatorComposer'
 import { ConversationComposer } from '../ConversationComposer'
 import { SessionContext } from './SessionControls'
 import type { ComposerSessionControls } from './useSessionControls'

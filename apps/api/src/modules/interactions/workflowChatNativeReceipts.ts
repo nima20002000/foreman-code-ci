@@ -1,11 +1,10 @@
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import type { GraphTransactionSql } from '../run-graph/connection.js'
 import type { WorkflowNativeProofRecord } from '../runs/workflowNativeProof.js'
 import { CONTROL_COMMAND_COLUMNS, WORKFLOW_INPUT_RETRIES, captureWorkflowControlNativeLocked, markWorkflowControlCommandLocked,
-  type ControlCommandRow } from '../collaboration/index.js'
-import type { WorkflowChatNativeTarget } from '../collaboration/index.js'
-import { supportsExpectedTurnSteer } from '../harnesses/index.js'
+  type ControlCommandRow } from '../collaboration/workflowControlRecords.js'
+import type { WorkflowChatNativeTarget } from '../collaboration/workflowControlTypes.js'
 
-const projectedNonTerminal = new WeakMap<SqlTransaction, Set<string>>()
+const projectedNonTerminal = new WeakMap<GraphTransactionSql, Set<string>>()
 
 const ACTIVE_CONTROL_FILTER = `run_id=$1 and state not in ('completed','failed','canceled') and (
       delivered_execution->>'executionId'=$2
@@ -14,7 +13,7 @@ const ACTIVE_CONTROL_FILTER = `run_id=$1 and state not in ('completed','failed',
 
 /** One statement tells a batch of frames for the same execution whether any of
  * them can have a chat receipt to project, instead of one lookup per frame. */
-export async function hasWorkflowChatNativeReceiptsLocked(sql: SqlTransaction,
+export async function hasWorkflowChatNativeReceiptsLocked(sql: GraphTransactionSql,
   runId: string, executionId: string): Promise<boolean> {
   return (await sql.query(`${WORKFLOW_INPUT_RETRIES} select 1 from run_chat_commands where ${ACTIVE_CONTROL_FILTER} limit 1`,
     [runId, executionId])).rows.length > 0
@@ -22,7 +21,7 @@ export async function hasWorkflowChatNativeReceiptsLocked(sql: SqlTransaction,
 
 /** Called only after the original-source verifier has checked its live writer,
  * persisted physical evidence and canonical publication on THIS transaction. */
-export async function projectWorkflowChatNativeReceiptsLocked(sql: SqlTransaction,
+export async function projectWorkflowChatNativeReceiptsLocked(sql: GraphTransactionSql,
   proof: WorkflowNativeProofRecord): Promise<void> {
   const providerId = proof.lane?.providerId
   if (!providerId || proof.original.type === 'session_created' || proof.original.type === 'boundary') return
@@ -52,7 +51,7 @@ export async function projectWorkflowChatNativeReceiptsLocked(sql: SqlTransactio
         nativeTarget: { nativeSessionId: proof.session.nativeSessionId, ownerRequestId: proof.commandId,
           ...(proof.session.harness === 'codex' ? { nativeTurnId: providerId } : { inputMessageId: providerId }),
           providerId, sessionMode: (row.request as { sessionMode?: 'regular' | 'plan' }).sessionMode ?? 'regular',
-          steer: supportsExpectedTurnSteer(proof.session), interruptAndSend: true },
+          steer: proof.session.harness === 'codex', interruptAndSend: true },
       })
       await markWorkflowControlCommandLocked(sql, { runId: row.run_id, commandId: row.id,
         state: terminal ? 'completed' : 'accepted',

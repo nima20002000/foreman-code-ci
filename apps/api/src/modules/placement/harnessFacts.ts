@@ -1,15 +1,15 @@
-import { readHostHarnessMeasurements } from '../harnesses/index.js'
+import { readHostHarnessMeasurements } from '../harnesses/qualification/repository.js'
 import { HostHarnessOverrideSchema, HostHarnessProfileEvidenceSchema, HostHarnessInstallationSchema,
   PinnedHarnessSelectionSchema, type HostHarnessInstallationDto, type HostHarnessOverride,
   type HostHarnessProfileEvidence } from '@foreman-code/contracts/harness-registry'
 import { z } from 'zod'
 import { HarnessQualificationSchema } from '@foreman-code/contracts/harness-qualification'
 import type { AcceptedNodePlacement } from '@foreman-code/contracts/node-placement'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
-import type { HarnessInstallationRegistry } from '../harnesses/index.js'
-import { sameWorkflowValue } from '@foreman-code/contracts/current'
+import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { HarnessInstallationRegistry } from '../harnesses/installationRegistry.js'
+import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../errors.js'
-import { QUALIFICATION_TARGET_PROFILE } from '../harnesses/index.js'
+import { QUALIFICATION_TARGET_PROFILE } from '../harnesses/qualification/profiles.js'
 import type { CompatibilityHarness } from '@foreman-code/contracts'
 import { placementDigest } from './binding.js'
 const QualificationIdentitySchema = z.object({
@@ -37,7 +37,7 @@ function measuredInstallationMatches(evidence: unknown, installation: HostHarnes
 }
 /** Exact immutable instance revision and binary proof; never today's Agent head
  * or a baseline/ready boolean. Registry provides the current host file identity. */
-export async function readPlacementHarnessFacts(sql: SqlQuery, placement: Pick<AcceptedNodePlacement, 'payload' | 'hostRef'>,
+export async function readPlacementHarnessFacts(sql: GraphSqlClient, placement: Pick<AcceptedNodePlacement, 'payload' | 'hostRef'>,
   installations: HarnessInstallationRegistry, suites: Readonly<Record<CompatibilityHarness, string>>,
   options?: { purpose: 'resident' }) {
   const unavailable = (reason: string, message = 'The selected harness profile or native qualification is unavailable.'): never => {

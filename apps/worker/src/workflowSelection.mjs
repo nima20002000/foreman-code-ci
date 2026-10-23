@@ -5,9 +5,12 @@ import { createRequire } from 'node:module';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
-import { openPrivateRoot, anchored } from '@foreman-code/api/worker/sources';
-import { readInstalledWorkflowConfiguration, InstalledWorkflowConfigurationSchema } from '@foreman-code/api/worker/runs';
-import { passiveDriverPayloads, inventoryPayloadFingerprints, discoverInstalledClaudeSdk } from '@foreman-code/api/worker/harnesses';
+import { openPrivateRoot, anchored } from '../../../apps/api/src/modules/sources/privateFilesystem.ts';
+import { readInstalledWorkflowConfiguration, InstalledWorkflowConfigurationSchema }
+  from '../../../apps/api/src/modules/runs/remote/installedWorkflowConfiguration.ts';
+import { passiveDriverPayloads } from '../../../apps/api/src/modules/harnesses/payloadDiscovery.ts';
+import { inventoryPayloadFingerprints } from '../../../apps/api/src/modules/harnesses/payloadFingerprintCache.ts';
+import { discoverInstalledClaudeSdk } from '../../../apps/api/src/modules/harnesses/claudeSdk/currentPin.ts';
 import { publishManagedJson, managedEntryExists } from './managedState.mjs';
 import { WorkerError } from './diagnostics.mjs';
 import { workerPath } from './harnessPath.mjs';

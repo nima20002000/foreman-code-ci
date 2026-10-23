@@ -1,5 +1,5 @@
 import type pg from 'pg'
-import { withTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
+import { withTransaction } from '../../infrastructure/transaction.js'
 import { ResolvedJobDefinitionSpecRecordSchema } from '@foreman-code/contracts/job-verification'
 import { isDeepStrictEqual } from 'node:util'
 import { SourceFilesystemOperationSchema, SourceOperationOwnerSchema, type SourceFilesystemOperation, type SourceOperationOwner } from '@foreman-code/contracts/source-operations'
@@ -8,8 +8,9 @@ import type { DeviceConnectionIdentity } from '@foreman-code/contracts/device-id
 import type { SourceRootRecord, SourceMaterializationRecord } from '@foreman-code/contracts/source-admission'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { DomainError, retryDatabaseRead } from '../errors.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import type { SourceAttemptAuthority, SourceActiveNativeSessionReader } from './executionHosts.js'
-import { assertDeviceHostInstallation } from '../devices/index.js'
+import { assertDeviceHostInstallation } from '../devices/hostAuthorization.js'
 import { assertAcceptedSourceRelativeCwd } from './agentSourceAuthority.js'
 import type { MaterializationAttempt } from './ports.js'
 import { resolvePreparationReconciliationOwner } from './preparationReconciliation.js'
@@ -20,12 +21,12 @@ import { retainedNodeReceipt, retainsNodeWorkingTree } from './retainedNodeSourc
 /** Actual Main allocation/source facts; workers receive no database credentials. */
 export class PostgresSourceOperationAuthority {
   constructor(private readonly pool: pg.Pool, private readonly attempts: SourceAttemptAuthority,
-    private readonly closure: (sql: SqlQuery, record: SourceMaterializationRecord) => Promise<boolean>,
+    private readonly closure: (sql: GraphSqlClient, record: SourceMaterializationRecord) => Promise<boolean>,
     private readonly activeNativeSession?: SourceActiveNativeSessionReader) {}
-  private async transaction<T>(work: (sql: SqlQuery) => Promise<T>): Promise<T> {
+  private async transaction<T>(work: (sql: GraphSqlClient) => Promise<T>): Promise<T> {
     return withTransaction(this.pool, work)
   }
-  private async allocation(sql: SqlQuery, attempt: MaterializationAttempt) {
+  private async allocation(sql: GraphSqlClient, attempt: MaterializationAttempt) {
     const rows = await sql.query<{ operation_id: string; principal_id: string; preparation_kind: 'job' | 'workflow' }>(`select operation_id,principal_id,'job' preparation_kind from job_preparations where execution_id=$1 and attempt_id=$2
       union all select p.preparation->>'operationId',r.record->>'authorizationPrincipalId','job' from workflow_job_preparations p
       join runs r on r.id=p.preparation->>'runId' where p.preparation->>'executionId'=$1 and p.preparation->>'attemptId'=$2
@@ -35,7 +36,7 @@ export class PostgresSourceOperationAuthority {
     if (rows.rows.length !== 1) throw new DomainError('SOURCE_ALLOCATION_CONFLICT', 'The original actual Main preparation is missing or ambiguous.', 409)
     return rows.rows[0]!
   }
-  async authorizePreparation(sql: SqlQuery, root: SourceRootRecord, attempt: MaterializationAttempt,
+  async authorizePreparation(sql: GraphSqlClient, root: SourceRootRecord, attempt: MaterializationAttempt,
     identity: { operationId: string; ownerPrincipalId: string; expiresAt: string }) {
     await requireUnreclaimedSourceOperation(sql, identity.operationId)
     if ((await sql.query('select 1 from source_preparation_reconciliations where operation_id=$1', [identity.operationId])).rowCount)
@@ -157,8 +158,8 @@ export class PostgresSourceOperationAuthority {
 
 /** Cleanup confers no execution authority. Terminal Runs can release only their
  * exact original claim after positive Main closure and current root/device auth. */
-export async function authorizeClosedSourceRelease(sql: SqlQuery, root: SourceRootRecord, record: SourceMaterializationRecord,
-  closure: (sql: SqlQuery, record: SourceMaterializationRecord) => Promise<boolean>): Promise<void> {
+export async function authorizeClosedSourceRelease(sql: GraphSqlClient, root: SourceRootRecord, record: SourceMaterializationRecord,
+  closure: (sql: GraphSqlClient, record: SourceMaterializationRecord) => Promise<boolean>): Promise<void> {
   if (!isDeepStrictEqual(root.binding, record.receipt.binding) || record.rootPolicyId !== root.selection.rootPolicyId
     || record.rootPolicyRevision !== root.selection.rootPolicyRevision || !await closure(sql, record))
     throw new DomainError('SOURCE_EXECUTION_UNCERTAIN', 'Original physical ownership closure is not positively confirmed.', 409)

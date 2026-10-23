@@ -1,9 +1,9 @@
 import { canonicalJson, CoordinatorConsultationBindingSchema, EngineChatMessageSchema,
   type CoordinatorConsultationBinding, type EngineChatMessage } from '@foreman-code/contracts'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import { DomainError } from '../errors.js'
-import { controlDigest, workflowTargetRunId } from '../collaboration/index.js'
-import type { WorkflowChatTarget, WorkflowNativeChatPage } from '../collaboration/index.js'
+import { controlDigest, workflowTargetRunId } from '../collaboration/workflowControlRecords.js'
+import type { WorkflowChatTarget, WorkflowNativeChatPage } from '../collaboration/workflowControlTypes.js'
 import { nativePersistenceRedactor } from './nativePersistence.js'
 
 interface TextRow {
@@ -81,7 +81,7 @@ function nativeMessage(target: WorkflowChatTarget, row: TextRow, content: string
 
 /** SQL projection of the existing single observer's retained native source.
  * Old consultation pages load their actual bindings; recent hints are not a history limit. */
-export async function readWorkflowNativeChat(sql: SqlQuery, target: WorkflowChatTarget,
+export async function readWorkflowNativeChat(sql: GraphSqlClient, target: WorkflowChatTarget,
   input: { cursor?: string; limit: number; bindings: CoordinatorConsultationBinding[]; messageId?: string;
     afterRevision?: string; messageBytes?: number }): Promise<WorkflowNativeChatPage> {
   const kind = target.kind === 'workflow_execution' ? 'execution' : 'consultation'

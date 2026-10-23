@@ -4,9 +4,9 @@ import { agentWorkflowVersion } from './agentWorkflowFixture.js'
 import { bindRunAuthority, currentOperatorAuthority, type AcceptedRunAuthority } from '../../src/modules/access/runAuthority.js'
 import { requireAuthorization } from '../../src/modules/access/policy.js'
 import type pg from 'pg'
-import { AcceptedRepeatStartV1Schema } from '@foreman-code/contracts/current'
+import { AcceptedRepeatStartV1Schema } from '@foreman-code/contracts/wave25'
 import { APP_MCP_TOKEN_ENVIRONMENT_VARIABLE } from '../../src/modules/access/workerCredentials.js'
-import { Wave25WorkerCredentialService } from '../../src/modules/interactions/current/credentials.js'
+import { Wave25WorkerCredentialService } from '../../src/modules/interactions/wave25/credentials.js'
 import { McpDetectionService, WorkerLaunchCredentialService, type ExecutionCredentialProvider, type NativeMcpInspector } from '../../src/modules/harnesses/mcpDetection.js'
 import type { NativeHarnessSessionManager } from '../../src/modules/harnesses/port.js'
 import { DomainError } from '../../src/modules/errors.js'
@@ -24,14 +24,14 @@ import type { RepeatRepositoryServices } from '../../src/modules/runs/repeatRepo
 import { randomUUID } from 'node:crypto'
 import { vi } from 'vitest'
 import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
-import { ExecutableWorkflowCurrentSchema, makeCurrentWorkflowFixture, WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
+import { ExecutableWorkflowV3Schema, makeCurrentWorkflowFixture, WorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
 import { ApprovalPostgresSaver } from '../../src/infrastructure/approvalCheckpointSaver.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
 import { PostgresApprovalBudgetRepository } from '../../src/modules/interactions/budget.js'
 import { ApprovalExecutionCoordinator } from '../../src/modules/interactions/execution.js'
 import { InteractionService } from '../../src/modules/interactions/service.js'
-import { Wave25InteractionRepository } from '../../src/modules/interactions/current/repository.js'
+import { Wave25InteractionRepository } from '../../src/modules/interactions/wave25/repository.js'
 import { ExecutionScopedNativeSessionManagerResolver, type NativeManagerResolutionContext } from '../../src/modules/interactions/runtimePorts.js'
 import type { RunOwnership } from '../../src/modules/runs/ownership.js'
 import { LangGraphWorkflowEngine } from '../../src/modules/runs/engine.js'
@@ -41,8 +41,7 @@ import { registerApprovalCheckpointResume } from '../../src/modules/runs/approva
 import { PostgresWorkflowRepository } from '../../src/modules/workflows/postgres.js'
 import { LOCAL_RUNNER_ID, WorkspaceLocationService } from '../../src/modules/workspaces/location.js'
 import type { WorkspaceRootPolicyPort } from '../../src/modules/sources/rootPolicyPorts.js'
-import { seedWorkflowFixture } from './workflowDatabase.js'
-import { migratedDatabase } from './migratedDatabase.js'
+import { agent3Database, seedAgent3 } from './workflowDatabase.js'
 import { CheckpointTestProvider } from './checkpointProvider.js'
 import { approvalFixture } from './approvalFixture.js'
 
@@ -51,9 +50,9 @@ import { approvalFixture } from './approvalFixture.js'
  * registration are retained. Only provider transport and filesystem identity
  * qualification are synthetic. This is not a buildProductionApp/HTTP test. */
 export async function checkpointRuntimeFixture(branches: 1 | 2 = 1, pendingPerExecution: 1 | 2 = 1,
-  options: {
+  options: { databaseUrl?: string;
     /** A suite-owned database; the caller closes it after all runtimes shut down. */
-    database?: Awaited<ReturnType<typeof migratedDatabase>>;
+    database?: Awaited<ReturnType<typeof agent3Database>>;
     acknowledgeStarts?: boolean; disconnectAfterStart?: boolean; fixture?: ReturnType<typeof makeCurrentWorkflowFixture>;
     nativeSourcePersisted?: Parameters<typeof createWorkflowRepositoryServices>[2];
     nativeCommitted?: ConstructorParameters<typeof PostgresRunRepository>[4];
@@ -71,7 +70,7 @@ export async function checkpointRuntimeFixture(branches: 1 | 2 = 1, pendingPerEx
     prepareManagerContext?: ConstructorParameters<typeof ApprovalExecutionCoordinator>[0]['prepareManagerContext'];
     validateContinuation?: ReturnType<typeof continuationValidator>;
     mcpInspector?: (manager: NativeHarnessSessionManager) => NativeMcpInspector } = {}) {
-  const db = options.database ?? await migratedDatabase()
+  const db = options.database ?? await agent3Database(options.databaseUrl)
   const engines: LangGraphWorkflowEngine[] = []
   try {
     const f = options.fixture ?? makeCurrentWorkflowFixture(randomUUID())
@@ -95,16 +94,16 @@ export async function checkpointRuntimeFixture(branches: 1 | 2 = 1, pendingPerEx
       f.version.agentConfigurationVersionIds[configuration.agentId] = configuration.id
       f.version.definition.executionPolicy = { maxParallelism: 2, maxNodeExecutions: 3 }
     }
-    f.version = agentWorkflowVersion(ExecutableWorkflowCurrentSchema.parse({ version: f.version, configurations: f.configurations }).version)
-    f.run = WorkflowRunCurrentSchema.parse({ ...f.run, agentConfigurationVersionIds: f.version.agentConfigurationVersionIds })
-    await seedWorkflowFixture(db.pool, db.directory, f, { run: false })
+    f.version = agentWorkflowVersion(ExecutableWorkflowV3Schema.parse({ version: f.version, configurations: f.configurations }).version)
+    f.run = WorkflowRunV3Schema.parse({ ...f.run, agentConfigurationVersionIds: f.version.agentConfigurationVersionIds })
+    await seedAgent3(db.pool, db.directory, f, { run: false })
     const access = new PostgresAccessService(db.pool)
     const accepted = await access.issue({ name: 'Checkpoint test Run authority', audience: 'operator', expiresAt: new Date(Date.now() + 600000),
       grants: [
         { actions: ['runs:start', 'runs:stop'], scope: { workspaceIds: [f.scope.workspaceId], workflowIds: [f.scope.workflowId] } },
         { actions: ['workspace_locations:read'], scope: { workspaceIds: [f.scope.workspaceId] } },
       ] })
-    f.run = WorkflowRunCurrentSchema.parse({ ...f.run, agentConfigurationVersionIds: f.version.agentConfigurationVersionIds,
+    f.run = WorkflowRunV3Schema.parse({ ...f.run, agentConfigurationVersionIds: f.version.agentConfigurationVersionIds,
       authorizationPrincipalId: accepted.principal.id })
     if (options.insertRun !== false) await insertProviderRun(db.pool, f)
     const user = await access.issue({ name: 'Checkpoint test approver', audience: 'user', expiresAt: new Date(Date.now() + 600000),
@@ -201,7 +200,7 @@ export async function checkpointRuntimeFixture(branches: 1 | 2 = 1, pendingPerEx
 
 export const providerAppEndpoint = 'http://127.0.0.1:4100/mcp/app'
 
-/** Canonical insertion after seedWorkflowFixture has published through typed Save. */
+/** Canonical insertion after seedAgent3 has published through typed Save. */
 export async function insertProviderRun(pool: pg.Pool, fixture: ReturnType<typeof makeCurrentWorkflowFixture>,
   authority?: AcceptedRunAuthority) {
   const { run, version } = fixture

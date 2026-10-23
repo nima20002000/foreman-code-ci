@@ -2,15 +2,13 @@ import { timeRuntimeOperation } from '../../infrastructure/runtimeTiming.js'
 import {
   GraphDigestSchema, GraphEvidenceSchema, GraphIdSchema, GraphSequenceSchema,
   RepeatMetadataScopeV1Schema, type GraphEvidence,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 
 import { DomainError, databaseReadFailure } from '../errors.js'
 import {
-  assertGraphTransaction,
-  isReadOnlyGraphTransaction,
-  poisonGraphTransaction
+  assertGraphTransaction, isReadOnlyGraphTransaction, poisonGraphTransaction,
+  type GraphSqlClient, type GraphTransactionSql,
 } from './connection.js'
-import type { SqlQuery, SqlTransaction } from '../../infrastructure/transaction.js'
 import { nativeCommitCollect } from './nativeBatch.js'
 import type { RepeatScope } from '../runs/repeatResolution.js'
 
@@ -60,7 +58,7 @@ function validatedReceipt(input: RepeatCanonicalReceipt): RepeatCanonicalReceipt
 /** Read persisted receipts on the SAME branded SQL transaction as the domain
  * mutation. Caller holds the existing Run/head locks; no pool read, nested
  * transaction, head initialization, or in-memory staging counts as readback. */
-export async function assertRepeatCanonicalReceiptLocked(sql: SqlTransaction,
+export async function assertRepeatCanonicalReceiptLocked(sql: GraphTransactionSql,
   input: RepeatCanonicalReceipt): Promise<void> {
   assertGraphTransaction(sql)
   try {
@@ -74,7 +72,7 @@ export async function assertRepeatCanonicalReceiptLocked(sql: SqlTransaction,
 }
 
 /** Preserve every receipt assertion while sharing the Run/head read for the group. */
-export async function assertRepeatCanonicalReceiptsLocked(sql: SqlTransaction,
+export async function assertRepeatCanonicalReceiptsLocked(sql: GraphTransactionSql,
   inputs: readonly RepeatCanonicalReceipt[]): Promise<void> {
   assertGraphTransaction(sql)
   if (!inputs.length) return
@@ -116,7 +114,7 @@ export async function assertRepeatCanonicalReceiptsLocked(sql: SqlTransaction,
 /** Read-only validation of an already persisted receipt. This grants no
  * publication, settlement, owner or native-entry capability. Mutation callers
  * must retain the branded/poisoning wrapper above and their commit finalizers. */
-export async function assertRepeatCanonicalReceipt(sql: SqlQuery,
+export async function assertRepeatCanonicalReceipt(sql: GraphSqlClient,
   input: RepeatCanonicalReceipt): Promise<void> {
   try {
     const receipt = validatedReceipt(input)
@@ -165,13 +163,13 @@ export function assertRepeatCanonicalReceiptRows(rows: readonly RepeatCanonicalR
 }
 
 const receiptCheckKey = {}
-const receiptChecks = new WeakMap<SqlTransaction, (receipts: readonly RepeatCanonicalReceipt[]) => Promise<void>>()
+const receiptChecks = new WeakMap<GraphTransactionSql, (receipts: readonly RepeatCanonicalReceipt[]) => Promise<void>>()
 
 /** Register AFTER openRunGraphPublication registered its finalizer, and AFTER
  * staging this change. The query runs after G1 has written source/effect rows,
  * before COMMIT. A failed proof rolls the domain and the publication back.
  * This function's return is NOT a native launch permit or a committed receipt. */
-export function requireRepeatCanonicalReceiptBeforeCommit(sql: SqlTransaction,
+export function requireRepeatCanonicalReceiptBeforeCommit(sql: GraphTransactionSql,
   input: RepeatCanonicalReceipt): void {
   assertGraphTransaction(sql)
   // Snapshot the assertion: a caller cannot retarget a registered proof later.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { RepeatWorkflowVersionV1Schema } from '@foreman-code/contracts/current'
+import { RepeatWorkflowVersionV1Schema } from '@foreman-code/contracts/wave25'
 import { parseWorkflowArtifactResult } from '@foreman-code/contracts/workflow-artifact-result'
 import type { RepeatRepositoryHost } from '../src/modules/runs/repeatPostgres.js'
 import { normalizeRepeatTerminal } from '../src/modules/runs/repeatNode.js'

@@ -1,12 +1,12 @@
-import { staysOnWorkflowBoard } from '@foreman-code/contracts/current'
+import { staysOnWorkflowBoard } from '@foreman-code/contracts/wave25'
 import { useUnsavedChanges } from '../../../shared/ui/unsavedChanges'
 import { useGraphDraftStore } from '../store'
 import { storeEditSnapshot } from './editIntentStorage'
-import { nextDraftDirty, type NextDraftEdit } from '../../board-core'
+import { nextDraftDirty, type NextDraftEdit } from './state'
 import type { useDraftEditorSave } from './useDraftEditorSave'
 import type { useGraphEditIntent } from './useGraphEditIntent'
 import type { useScheduleCommand } from '../../schedules/queries'
-import { boardScope, executeBoardAction } from '../../workflow-board'
+import { boardScope, executeBoardAction } from '../../workflow-board/boardUndo'
 
 /** Registers the draft with the navigation guard: dirty/busy/uncertain state and explicit Save/Discard. */
 export function useDraftUnsavedGuard({ draftKey, edit, editIntent, saveActions, pendingStart, starting, localError, start, scheduleWrite }: {

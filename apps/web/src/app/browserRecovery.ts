@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { sessionGeneration } from '../shared/api/sessionBoundary'
-import type { BrowserControl, BrowserSession, BrowserUiPort } from '../features/agent-browser'
+import type { BrowserControl, BrowserSession, BrowserUiPort } from '../features/agent-browser/types'
 import { browserUiClient, browserProfilesClient } from './browserClients'
 
 interface Cleanup {

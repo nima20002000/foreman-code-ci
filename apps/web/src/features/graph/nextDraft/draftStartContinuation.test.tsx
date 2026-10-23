@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
 import { ManagedWorkspaceSchema } from '@foreman-code/contracts/management'
-import type { GraphEditReadResultCurrent } from '@foreman-code/contracts/current'
+import type { GraphEditReadResultV3 } from '@foreman-code/contracts/wave25'
 import { http, HttpResponse } from 'msw'
 import { server } from '../../../mocks/server'
 import { deferred } from '../../../test/deferred'
@@ -11,10 +11,14 @@ import { createCurrentBoardMock } from '../../../shared/mocks/currentBoard'
 import { currentWorkflowFixture } from '../../../shared/mocks/currentWorkflow'
 import { beginSessionChange, finishSessionChange } from '../../../shared/api/sessionBoundary'
 import { useGraphDraftStore } from '../store'
-import { clearBoardStartStorage, readBoardStart, RunActivityPanel, boardStartClient } from '../../workflow-board'
-import { WorkflowBoardProvider, boardRunListKey, nextDraftKey } from '../../board-core'
+import { clearBoardStartStorage, readBoardStart } from '../../workflow-board/startOutbox'
+import { WorkflowBoardProvider } from '../../workflow-board/context'
+import { RunActivityPanel } from '../../workflow-board/RunActivityPanel'
+import { boardRunListKey } from '../../workflow-board/keys'
+import { boardStartClient } from '../../workflow-board/startClient'
 import * as startPreflight from '../../workflow-board/startPreflight'
 import { fixture } from './core.cases'
+import { nextDraftKey } from './state'
 import { journalIntent, journalRequest, savedJournal } from './nim2644Journal.fixture'
 import { useDraftStartMutation, type DraftStartState } from './useDraftStart'
 import type { DraftEditorCore } from './useDraftEditorCore'
@@ -64,7 +68,7 @@ function setup() {
     runAfterSave: { current: false }, setLocalError: vi.fn(), setMessage: vi.fn(), report: vi.fn(),
   } as unknown as DraftEditorCore
   const startState = { canStart: true, preflight: { data: facts, isError: false } } as DraftStartState
-  let data: GraphEditReadResultCurrent = { intent: null, current: [], canStop: false, affectedSetChanged: false }
+  let data: GraphEditReadResultV3 = { intent: null, current: [], canStop: false, affectedSetChanged: false }
   const stopAndSave = vi.fn(async () => data)
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   clients.push(client)

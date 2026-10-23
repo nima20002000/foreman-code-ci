@@ -1,11 +1,12 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { ManagementPrincipalSchema, NON_EXPIRING_CREDENTIAL_TIMESTAMP, type ManagementPrincipal } from '@foreman-code/contracts/management'
-import type { TransactionSql, SqlQuery } from '../../infrastructure/transaction.js'
+import type { TransactionSql } from '../../infrastructure/transaction.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import { DomainError } from '../errors.js'
 import { intersectGrants } from './operatorDelegation.js'
 import { authorizationReadSnapshot, snapshotPrincipal } from './authorizationReadSnapshot.js'
 
-type Database = SqlQuery
+type Database = GraphSqlClient
 interface Row {
   id: string; name: string; audience: string; grants: unknown; expires_at: Date
   revoked_at: Date | null; delegated_from: string | null

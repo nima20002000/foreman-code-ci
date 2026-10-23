@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 import type { ResolvedSkill } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { codexApprovalRuntime } from './helpers/codexApprovalRuntime.js'
 import { deferred } from './helpers/deferred.js'
 import { readUntil } from './helpers/observableCondition.js'

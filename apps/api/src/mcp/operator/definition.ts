@@ -36,7 +36,7 @@ interface ToolMetadata<I extends StandardSchemaWithJSON> {
   permissionDetail?: string
   /** One or two sentences: what the tool does and what a caller must know to call it. */
   description: string
-  /** Longer guidance, served on demand by tool_schema, never in tools/list. */
+  /** Longer guidance, served on demand by tool_schema and operator_tool_schema_get, never in tools/list. */
   detail?: string
   inputSchema: I
   outputSchema?: StandardSchemaWithJSON

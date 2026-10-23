@@ -1,5 +1,5 @@
 import { MemoryBoardMutationSchema } from '@foreman-code/contracts'
-import { sameWorkflowValue } from '@foreman-code/contracts/current'
+import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import type { RetainedMemoryCommand } from './commandRecovery'
 import { cardDraftCommand } from './cardEditing'
 import { noteDraftCommand } from './noteEditing'

@@ -1,6 +1,6 @@
+import { createHash } from 'node:crypto'
 import { runCiRuntimeCommand } from './ciRuntimeCommands.js'
 import type { CiImageJournal } from './environment.js'
-import { sha256Hex } from '@foreman-code/contracts/server-kit'
 
 export async function retainedCiJobImages(journal: CiImageJournal) {
   const images: string[] = []
@@ -16,7 +16,7 @@ export async function pruneCiImages({ keep, env, installer, signal }: {
   keep: readonly string[]; env: NodeJS.ProcessEnv; installer: string; signal?: AbortSignal | undefined
 }) {
   const kept = new Set(keep.map(id => id.replace(/^sha256:/u, '')))
-  const installation = sha256Hex(installer)
+  const installation = createHash('sha256').update(installer).digest('hex')
   const podman = (args: string[]) => runCiRuntimeCommand('podman', ['--remote=false', ...args], { env, signal })
   const listed = JSON.parse((await podman(['images', '--format', 'json'])).stdout) as
     { Id: string; Names?: string[] }[]

@@ -4,7 +4,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { COMPUTER_ACCOUNTS_NAMESPACE } from '@foreman-code/contracts/computer-accounts'
 import { COMPUTER_MAINTENANCE_NAMESPACE, MaintenanceRequestSchema,
-  ComputerMaintenanceListSchema, type MaintenanceTask } from '@foreman-code/contracts/computer-maintenance'
+  ComputerMaintenanceOperatorListSchema, ComputerMaintenanceListSchema, type MaintenanceTask } from '@foreman-code/contracts/computer-maintenance'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -18,8 +18,6 @@ import { FleetMaintenanceService, type FleetSources } from '../src/modules/compu
 import { DomainError } from '../src/modules/errors.js'
 import { fakeComputer } from './helpers/fleetSync.js'
 import { deferred } from './helpers/deferred.js'
-import { computerMaintenanceHttp } from './support/computerMaintenanceHttp.js'
-import { liveAuthorityQuery, livePrincipalRow } from './helpers/livePrincipal.js'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -41,10 +39,13 @@ async function fixture() {
   const worker: DeviceProvisioningTarget = { hostRef: { kind: 'device', mainId, deviceId: registration.deviceId },
     applicationInstallationId: registration.workerInstallationId, keyRevision: 1, authorizationRevision: 1 }
   const sql = {
-    query: liveAuthorityQuery(id => {
-      const principal = principals.find(item => item.id === id)
-      return principal && livePrincipalRow(principal)
-    }, () => ({ rows: [{ record: registration }] })),
+    query: async (text: string, values: unknown[] = []) => {
+      if (text.includes('from management_principals')) {
+        const principal = principals.find(item => item.id === values[0])!
+        return { rows: [{ ...principal, expires_at: new Date(principal.expiresAt), revoked_at: null }] }
+      }
+      return { rows: [{ record: registration }] }
+    },
     release() {},
   }
   const pool = { connect: async () => sql } as unknown as pg.Pool
@@ -123,7 +124,7 @@ async function fixture() {
     }))
     return client
   }
-  return { app, address, connect, http: (token: string) => computerMaintenanceHttp(app, token), commands, main, worker, registration, requests, sources, mainAccounts, mainStatus, workerStatus,
+  return { app, address, connect, commands, main, worker, registration, requests, sources, mainAccounts, mainStatus, workerStatus,
     maintenance, status: () => local.status(AbortSignal.timeout(1000)),
     restart: () => { local = new ComputerMaintenance(computer.ports) },
     drain: () => local.drain(),
@@ -136,7 +137,7 @@ async function fixture() {
 const available = { status: 'available', consecutiveFailures: 0, failedAt: null, lastError: null, lastSuccess: expect.any(String) }
 
 describe('authenticated computer target reads and maintenance', () => {
-  it('bounds fleet and target history to the newest tasks and denies scoped callers', async () => {
+  it('bounds compact, full and HTTP history while retaining authorized task-specific reads', async () => {
     const f = await fixture()
     try {
       const now = Date.now()
@@ -157,24 +158,45 @@ describe('authenticated computer target reads and maintenance', () => {
         currentVersion: '1.2.3', targetVersion: '1.2.4', state: 'pending' as const, lastError: null,
       } }
       f.mainStatus.mockResolvedValue(snapshot)
-      const reader = f.http('reader')
-      const scoped = f.http('scoped')
-      const read = async (input: { target?: unknown }) => {
-        const response = await reader.status(input)
-        expect(response.ok).toBe(true)
-        return response.body
+      const client = await f.connect('reader')
+      const denied = await f.connect('scoped')
+      const read = async (arguments_: Record<string, unknown>) => decodeMcpToolResult(
+        await client.callTool({ name: 'computers_maintenance_status', arguments: arguments_ }),
+      )
+      const compact = ComputerMaintenanceOperatorListSchema.parse(await read({ target: f.main }))
+      const status = compact.computers[0]!.status!
+      expect(status.tasks.map(task => task.id)).toEqual([
+        latest.id, recentFailure.id, tasks[4]!.id, tasks[3]!.id, latestRestart.id,
+      ])
+      expect(compact.computers[0]!.tasksOmitted).toBe(2)
+      for (const summary of status.tasks) {
+        expect(summary).not.toHaveProperty('outputTail')
+        expect(summary.summary).toHaveLength(300)
       }
+      expect(status).toMatchObject({ harnesses: snapshot.harnesses, system: snapshot.system, worker: snapshot.worker })
+      const full = await read({ target: f.main, detail: 'full' })
       const newest = [latest, recentFailure, tasks[4]!, tasks[3]!, latestRestart]
-      const targeted = await read({ target: f.main })
-      expect(targeted).toEqual({ computers: [{ target: f.main, observation: available, status: { ...snapshot, tasks: newest }, tasksOmitted: 2 }] })
-      expect((await scoped.status({ target: f.main })).statusCode).toBe(403)
-      expect((await scoped.status()).statusCode).toBe(403)
-      const fleet = await read({}) as { computers: unknown[] }
-      expect(fleet.computers[0]).toEqual((targeted as { computers: unknown[] }).computers[0])
+      expect(full).toEqual({ computers: [{ target: f.main, observation: available, status: { ...snapshot, tasks: newest }, tasksOmitted: 2 }] })
+      expect(await read({ target: f.main, detail: 'full', taskId: longFailure.id }))
+        .toEqual({ computers: [{ target: f.main, observation: available, status: { ...snapshot, tasks: [longFailure] }, tasksOmitted: 6 }] })
+      expect(await read({ target: f.main, detail: 'full', taskId: randomUUID() }))
+        .toMatchObject({ computers: [{ status: { tasks: [] } }] })
+      expect((await client.callTool({ name: 'computers_maintenance_status',
+        arguments: { target: f.main, taskId: latest.id } })).isError).toBe(true)
+      for (const detail of ['compact', 'full']) {
+        expect((await denied.callTool({ name: 'computers_maintenance_status',
+          arguments: { target: f.main, detail } })).isError).toBe(true)
+      }
+      const fleet = ComputerMaintenanceOperatorListSchema.parse(await read({}))
+      expect(fleet.computers[0]).toEqual(compact.computers[0])
+      const http = await f.app.inject({ method: 'POST', url: '/api/management/computers/maintenance/read',
+        headers: { authorization: 'Bearer reader' }, payload: { target: f.main } })
+      expect(http.statusCode).toBe(200)
+      expect(http.json()).toEqual(full)
     } finally { await f.close() }
   })
 
-  it('applies per-computer limits over HTTP, keeping running and queued tasks', async () => {
+  it('applies per-computer limits equally over authenticated MCP and HTTP, keeping running and queued tasks', async () => {
     const f = await fixture()
     try {
       const tasks: MaintenanceTask[] = Array.from({ length: 9 }, (_, index) => ({
@@ -187,6 +209,8 @@ describe('authenticated computer target reads and maintenance', () => {
       const workerTasks = [tasks[7]!, tasks[5]!, tasks[4]!]
       f.mainStatus.mockResolvedValue(snapshot)
       f.workerStatus.mockResolvedValue({ ...snapshot, tasks: workerTasks })
+      const client = await f.connect('reader')
+      const denied = await f.connect('scoped')
       const headers = { authorization: 'Bearer reader' }
       const cases = [
         { input: {}, indices: [0, 1, 2, 3, 4, 6, 8], workerIndices: [4, 5, 7] },
@@ -201,21 +225,37 @@ describe('authenticated computer target reads and maintenance', () => {
           { target: f.worker, observation: available, status: { ...snapshot, tasks: workerIndices.map(index => tasks[index]!) },
             tasksOmitted: 3 - workerIndices.length },
         ] }
+        const full = ComputerMaintenanceListSchema.parse(decodeMcpToolResult(await client.callTool({
+          name: 'computers_maintenance_status', arguments: { ...input, detail: 'full' },
+        })))
+        expect(full).toEqual(expected)
+        const compact = ComputerMaintenanceOperatorListSchema.parse(decodeMcpToolResult(await client.callTool({
+          name: 'computers_maintenance_status', arguments: input,
+        })))
+        expect(compact.computers[0]!.status!.tasks.map(task => task.id)).toEqual(expectedTasks.map(task => task.id))
+        expect(compact.computers.map(computer => computer.tasksOmitted))
+          .toEqual(expected.computers.map(computer => computer.tasksOmitted))
+        for (const task of compact.computers[0]!.status!.tasks) expect(task).not.toHaveProperty('outputTail')
         const query = input.taskLimit === undefined ? '' : `?taskLimit=${input.taskLimit}`
         const http = await f.app.inject({ method: 'GET', url: `/api/management/computers/maintenance${query}`, headers })
         expect(http.statusCode).toBe(200)
-        expect(ComputerMaintenanceListSchema.parse(http.json())).toEqual(expected)
+        expect(http.json()).toEqual(full)
         for (const computer of expected.computers) {
           const targetRead = await f.app.inject({ method: 'POST', url: '/api/management/computers/maintenance/read',
             headers, payload: { target: computer.target, ...input } })
           expect(targetRead.statusCode).toBe(200)
           expect(targetRead.json()).toEqual({ computers: [computer] })
+          const targetedMcp = decodeMcpToolResult(await client.callTool({ name: 'computers_maintenance_status',
+            arguments: { target: computer.target, detail: 'full', ...input } }))
+          expect(targetedMcp).toEqual(targetRead.json())
         }
       }
       // Different limits use one cached observation without truncating its history.
       expect(f.mainStatus).toHaveBeenCalledOnce()
       expect(f.workerStatus).toHaveBeenCalledOnce()
       for (const taskLimit of [0, 51, 1.5, -1]) {
+        expect((await client.callTool({ name: 'computers_maintenance_status', arguments: { taskLimit } })).isError)
+          .toBe(true)
         const fleet = await f.app.inject({ method: 'GET',
           url: `/api/management/computers/maintenance?taskLimit=${taskLimit}`, headers })
         expect(fleet.statusCode).toBe(400)
@@ -223,6 +263,8 @@ describe('authenticated computer target reads and maintenance', () => {
           headers, payload: { target: f.main, taskLimit } })
         expect(targeted.statusCode).toBe(400)
       }
+      expect((await denied.callTool({ name: 'computers_maintenance_status', arguments: { taskLimit: 50 } })).isError)
+        .toBe(true)
       for (const request of [
         { method: 'GET' as const, url: '/api/management/computers/maintenance?taskLimit=50' },
         { method: 'POST' as const, url: '/api/management/computers/maintenance/read',
@@ -248,16 +290,18 @@ describe('authenticated computer target reads and maintenance', () => {
       await expect.poll(() => f.mainStatus.mock.calls.length).toBe(1)
       controller.abort()
       await expect(reading).rejects.toMatchObject({ name: 'AbortError' })
-      const second = f.http('reader').status({ target: f.main, refresh: true })
+      const client = await f.connect('reader')
+      const second = client.callTool({ name: 'computers_maintenance_status',
+        arguments: { target: f.main, refresh: true } })
       await expect.poll(() => reads.mock.calls.length).toBe(2)
       expect(f.mainStatus).toHaveBeenCalledOnce()
       expect(f.mainStatus.mock.calls[0]![0].aborted).toBe(false)
       gate.resolve(snapshot)
-      expect((await second).body).toMatchObject({ computers: [{ target: f.main, status: snapshot }] })
+      expect(decodeMcpToolResult(await second)).toMatchObject({ computers: [{ target: f.main, status: snapshot }] })
     } finally { await f.close() }
   })
 
-  it('reads one target independently while enforcing grants and revisions', async () => {
+  it('reads one target independently through HTTP and MCP while enforcing grants and revisions', async () => {
     const f = await fixture()
     try {
       const client = await f.connect('reader')
@@ -265,25 +309,22 @@ describe('authenticated computer target reads and maintenance', () => {
       const gate = deferred<never>()
       f.mainAccounts.mockImplementation(() => gate.promise)
       f.mainStatus.mockImplementation(() => gate.promise)
-      const stale = { ...f.worker, authorizationRevision: 2 }
-      const readRoute = (route: string) => f.app.inject({ method: 'POST', url: `/api/management/computers/${route}/read`,
-        headers: { authorization: 'Bearer reader' }, payload: { target: f.worker } })
-      const accounts = await readRoute('accounts')
-      expect(accounts.statusCode).toBe(200)
-      expect(accounts.json().computers).toHaveLength(1)
-      expect(accounts.json().computers[0].accounts).not.toBeNull()
-      const listed = await client.callTool({ name: 'computer_accounts_list', arguments: { target: f.worker } })
-      expect(listed.isError).not.toBe(true)
-      expect(decodeMcpToolResult(listed)).toEqual(accounts.json())
-      expect((await denied.callTool({ name: 'computer_accounts_list', arguments: { target: f.worker } })).isError).toBe(true)
-      expect((await client.callTool({ name: 'computer_accounts_list',
-        arguments: { target: stale, refresh: true } })).isError).toBe(true)
-      const maintenance = await readRoute('maintenance')
-      expect(maintenance.statusCode).toBe(200)
-      expect(maintenance.json().computers).toHaveLength(1)
-      expect(maintenance.json().computers[0].status).not.toBeNull()
-      expect((await f.http('scoped').status({ target: f.worker })).statusCode).toBe(403)
-      expect((await f.http('reader').status({ target: stale, refresh: true })).ok).toBe(false)
+      for (const [name, route, property] of [
+        ['computer_accounts_list', 'accounts', 'accounts'],
+        ['computers_maintenance_status', 'maintenance', 'status'],
+      ] as const) {
+        const http = await f.app.inject({ method: 'POST', url: `/api/management/computers/${route}/read`,
+          headers: { authorization: 'Bearer reader' }, payload: { target: f.worker } })
+        expect(http.statusCode).toBe(200)
+        expect(http.json().computers).toHaveLength(1)
+        expect(http.json().computers[0][property]).not.toBeNull()
+        const result = await client.callTool({ name, arguments: { target: f.worker } })
+        expect(result.isError).not.toBe(true)
+        expect(decodeMcpToolResult(result)).toEqual(http.json())
+        expect((await denied.callTool({ name, arguments: { target: f.worker } })).isError).toBe(true)
+        const stale = { ...f.worker, authorizationRevision: 2 }
+        expect((await client.callTool({ name, arguments: { target: stale, refresh: true } })).isError).toBe(true)
+      }
       expect(f.mainAccounts).not.toHaveBeenCalled()
       expect(f.mainStatus).not.toHaveBeenCalled()
       expect(f.requests).toHaveLength(2)
@@ -295,27 +336,34 @@ describe('authenticated computer target reads and maintenance', () => {
   it('rejects duplicate selectors and read-only writes, then reads a newer successful update after restart', async () => {
     const f = await fixture()
     try {
-      const owner = f.http('owner')
-      const reader = f.http('reader')
+      const client = await f.connect('owner')
+      const denied = await f.connect('reader')
       const input = { commandId: randomUUID(), targets: [f.main],
         task: { kind: 'update-harnesses', harnesses: ['codex'] } }
-      expect((await reader.start(input)).ok).toBe(false)
-      expect((await owner.start({
+      expect((await denied.callTool({ name: 'computers_maintenance_start', arguments: input })).isError).toBe(true)
+      expect((await client.callTool({ name: 'computers_maintenance_start', arguments: {
         ...input, task: { kind: 'update-harnesses', harnesses: ['codex', 'codex'] },
-      })).ok).toBe(false)
-      const started = await owner.start(input)
-      expect(started.ok).toBe(true)
+      } })).isError).toBe(true)
+      const started = await client.callTool({ name: 'computers_maintenance_start', arguments: input })
+      expect(started.isError).not.toBe(true)
       await f.drain()
       f.restart()
-      const result = (await owner.status({ target: f.main, refresh: true })).body
+      const result = decodeMcpToolResult(await client.callTool({ name: 'computers_maintenance_status',
+        arguments: { target: f.main, refresh: true } }))
       expect(result).toMatchObject({ computers: [{ target: f.main,
         status: { tasks: [{ id: input.commandId, state: 'succeeded', summary: 'Codex 1.2.3 → 1.2.5' }] } }] })
-      const full = ComputerMaintenanceListSchema.parse(result)
+      const full = ComputerMaintenanceListSchema.parse(decodeMcpToolResult(await client.callTool({
+        name: 'computers_maintenance_status',
+        arguments: { target: f.main, detail: 'full', taskId: input.commandId },
+      })))
       expect(full.computers[0]!.status!.tasks[0]).toMatchObject({
         id: input.commandId, state: 'succeeded', outputTail: expect.any(String),
       })
       const persisted = await f.status()
       expect(full.computers[0]!.status!.tasks).toEqual(persisted.tasks)
+      expect(result).toMatchObject({ computers: [{ status: { tasks: [
+        expect.not.objectContaining({ outputTail: expect.any(String) }),
+      ] } }] })
     } finally { await f.close() }
   })
 
@@ -325,14 +373,15 @@ describe('authenticated computer target reads and maintenance', () => {
       const source = 'https://owner:fixture-password@plugins.example/repo.git'
       f.sources.codexPlugins = async () => [{ pluginId: 'docs@unsafe', version: null }]
       f.sources.codexMarketplaces = async () => [{ name: 'unsafe', source }]
-      const owner = f.http('owner')
-      const started = await owner.start({
+      const client = await f.connect('owner')
+      const started = await client.callTool({ name: 'computers_maintenance_start', arguments: {
         commandId: randomUUID(), targets: [f.worker], task: { kind: 'sync-plugins' },
-      })
-      expect(started.ok).toBe(true)
+      } })
+      expect(started.isError).not.toBe(true)
       await f.drain()
       f.restart()
-      const result = (await owner.status({ target: f.worker, refresh: true })).body
+      const result = decodeMcpToolResult(await client.callTool({ name: 'computers_maintenance_status',
+        arguments: { target: f.worker, refresh: true } }))
       expect(JSON.stringify(f.requests)).not.toContain('fixture-password')
       expect(JSON.stringify(result)).not.toContain('fixture-password')
       expect(result).toMatchObject({ computers: [{ status: { tasks: [{ state: 'succeeded',
@@ -346,14 +395,15 @@ describe('authenticated computer target reads and maintenance', () => {
       const source = deferred<Record<string, unknown>>()
       const discovering = deferred<void>()
       f.sources.codexUserMcpServers = async () => { discovering.resolve(); return source.promise }
-      const starting = f.http('owner').start({
+      const client = await f.connect('owner')
+      const starting = client.callTool({ name: 'computers_maintenance_start', arguments: {
         commandId: randomUUID(), targets: [f.worker], task: { kind: 'sync-mcp' },
-      })
+      } })
       await discovering.promise
       f.registration.workerInstallationId = randomUUID()
       f.registration.authorizationRevision++
       source.resolve({})
-      const result = (await starting).body
+      const result = decodeMcpToolResult(await starting)
       expect(result).toMatchObject({ computers: [{ target: f.worker, task: null,
         error: 'This computer is not paired with this Main.' }] })
       expect(f.requests).toEqual([])

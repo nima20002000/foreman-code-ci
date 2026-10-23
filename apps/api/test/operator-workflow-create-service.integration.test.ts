@@ -3,7 +3,7 @@ import { expect, it } from 'vitest'
 import {
   CurrentWorkflowCreateInputSchema, CurrentWorkflowReadResultSchema,
   SavedManagedWorkflowCommandResultSchema, makeCurrentWorkflowFixture,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import { initialSave, setupWorkflowCreateIntegration } from './helpers/operatorWorkflowCreate.js'
 
 const currentOperatorIntegration = setupWorkflowCreateIntegration()

@@ -1,4 +1,4 @@
-import type { WorkflowVersionCurrent } from '@foreman-code/contracts/current'
+import type { WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import type { CoordinationResultContext, ExecutionResult, HarnessExecutionContext } from '@foreman-code/contracts'
 import { ZodError } from 'zod'
 import { parseWorkResultForInput, receivedWorkRequestIds } from '../runs/workHandoffResult.js'
@@ -26,7 +26,7 @@ function fencedResultJson(result: ExecutionResult): string | undefined {
 
 export function workResultRepairPrompt(result: ExecutionResult, contract: string, input?: unknown,
   context?: HarnessExecutionContext, coordination?: CoordinationResultContext,
-  hierarchy?: { version: WorkflowVersionCurrent; workflowNodeId: string }): string | undefined {
+  hierarchy?: { version: WorkflowVersionV3; workflowNodeId: string }): string | undefined {
   if (result.outcome !== 'succeeded') return undefined
   try {
     if (coordination) parseWorkflowCoordinationResult(result, coordination, input, context)

@@ -1,13 +1,13 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import { afterEach, expect, it, vi } from 'vitest'
 import { executeRepeatRuntime, type RepeatRuntimeLifecycle } from '../src/modules/runs/repeatRuntime.js'
-import { graphScenario, graphHarness } from './helpers/graphScenarioHarness.js'
+import { a1Scenario, graphHarness } from './helpers/graphScenarioHarness.js'
 
 afterEach(() => vi.restoreAllMocks())
 
 it.each(['put', 'putWrites'] as const)(
   'reports a background %s failure to its owning Run without an unhandled rejection', async operation => {
-    const h = graphHarness(graphScenario('parallel', `checkpoint-failure-${operation}`), {
+    const h = graphHarness(a1Scenario('parallel', `checkpoint-failure-${operation}`), {
       beforeObserve: async () => { await delay(50) },
     })
     const failure = Object.assign(new Error('Database operation retry deadline exceeded.', {

@@ -2,9 +2,9 @@ import { nativeNode } from '../../../shared/mocks/nativeFixtureTypes'
 import { AgentSchema, RunActivitySchema } from '@foreman-code/contracts'
 import {
   CurrentRunDetailsSchema, RunExecutionBindingSchema, RunExecutionDetailSchema,
-  WorkflowVersionCurrentSchema, WorkflowRunCurrentSchema, RepeatGraphCurrentStateSchema, repeatGraphTopologyCurrent,
-  makeCurrentWorkflowFixture, type WorkflowVersionCurrent, type RunExecutionDetail,
-} from '@foreman-code/contracts/current'
+  WorkflowVersionV3Schema, WorkflowRunV3Schema, RepeatGraphCurrentV3Schema, repeatGraphTopologyV3,
+  makeCurrentWorkflowFixture, type WorkflowVersionV3, type RunExecutionDetail,
+} from '@foreman-code/contracts/wave25'
 import { createCurrentBoardMock } from '../../../shared/mocks/currentBoard'
 import { inspectionScopeForRun, type RunInspectionFixture } from '../../../shared/mocks/runInspection'
 import { digestCurrentValue } from '../runDetailsClient'
@@ -32,14 +32,14 @@ export async function inspectionBoardFixture(suffix = 'inspect', firstNodeId?: s
   const first = nativeNode(source.version.definition.nodes[0]!), second = nativeNode(source.version.definition.nodes[1]!)
   const { repeat: _repeat, ...ordinary } = source.version.definition
   void _repeat
-  const before = WorkflowVersionCurrentSchema.parse({ ...source.version, id: `version-${suffix}-before`, version: 1,
+  const before = WorkflowVersionV3Schema.parse({ ...source.version, id: `version-${suffix}-before`, version: 1,
     agentConfigurationVersionIds: { [first.agentId]: source.version.agentConfigurationVersionIds[first.agentId] },
     definition: { ...ordinary, name: 'Before repeat', version: 1, nodes: [first], edges: [],
       executionPolicy: { maxParallelism: 1, maxNodeExecutions: 200 } } })
-  const repeated = WorkflowVersionCurrentSchema.parse({ ...source.version, id: `version-${suffix}-repeat`, version: 2,
+  const repeated = WorkflowVersionV3Schema.parse({ ...source.version, id: `version-${suffix}-repeat`, version: 2,
     definition: { ...source.version.definition, name: 'With repeat', version: 2 } })
   const added = { id: `node-${suffix}-added-later`, name: 'Added later', agentId: second.agentId }
-  const after = WorkflowVersionCurrentSchema.parse({ ...source.version, id: `version-${suffix}-after`, version: 3,
+  const after = WorkflowVersionV3Schema.parse({ ...source.version, id: `version-${suffix}-after`, version: 3,
     definition: { ...ordinary, name: 'After repeat removed', version: 3, nodes: [first, added],
       edges: [{ id: `edge-${suffix}-after`, source: first.id, target: added.id, kind: 'execution' }] } })
   const agents = source.configurations.map((config, i) => AgentSchema.parse({
@@ -53,16 +53,16 @@ export async function inspectionBoardFixture(suffix = 'inspect', firstNodeId?: s
   mock.workflows.set(source.scope.workflowId, after.definition)
   const draft = mock.drafts.get(source.scope.workflowId)!
   mock.drafts.set(source.scope.workflowId, { ...draft, graph: after.definition, baseWorkflowVersionId: after.id })
-  function install(version: WorkflowVersionCurrent, label: string) {
-    const run = WorkflowRunCurrentSchema.parse({ ...source.run, id: `run-${suffix}-${label}`, workflowVersionId: version.id,
+  function install(version: WorkflowVersionV3, label: string) {
+    const run = WorkflowRunV3Schema.parse({ ...source.run, id: `run-${suffix}-${label}`, workflowVersionId: version.id,
       agentConfigurationVersionIds: version.agentConfigurationVersionIds,
       executionState: 'completed', outcome: 'succeeded', result: { outcome: 'succeeded', output: { label } },
       startedAt: source.createdAt, finishedAt: source.createdAt })
     const detail = CurrentRunDetailsSchema.parse({ run, executions: [], activity: [], cleanupPending: false })
     const scope = inspectionScopeForRun(detail)
     mock.runs.set(run.id, detail)
-    mock.currents.set(run.id, RepeatGraphCurrentStateSchema.parse({
-      kind: 'current', protocolVersion: 1, scope, topology: repeatGraphTopologyCurrent(version), asOfSequence: '0',
+    mock.currents.set(run.id, RepeatGraphCurrentV3Schema.parse({
+      kind: 'current', protocolVersion: 1, scope, topology: repeatGraphTopologyV3(version), asOfSequence: '0',
       retentionFloor: '0', historyCoverage: 'from_admission',
       state: { run: { executionState: 'completed', outcome: 'succeeded', stopRequested: false,
         cleanupPending: false, unsettledReviewCount: 0, pendingInteractionCount: 0 },

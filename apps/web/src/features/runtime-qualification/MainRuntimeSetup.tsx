@@ -1,5 +1,5 @@
 import { Button } from '../../shared/ui/nocturne'
-import { askOperator } from '../operator-chat'
+import { askOperator } from '../operator-chat/operatorChatStore'
 
 /** Human-only step: the protected CI runtime on Main is installed locally; the Operator captures and qualifies it after. */
 export function MainRuntimeSetup() {

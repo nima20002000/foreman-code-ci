@@ -4,12 +4,12 @@
 .run-execution-inspector { display: grid; gap: 12px; min-width: 0; }
 .run-execution-inspector header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .run-execution-inspector label { display: grid; gap: 6px; font-weight: 500; }
-.run-execution-inspector select { min-width: 0; max-width: 100%; padding: 8px; background: var(--surface-raised); color: inherit; border: 1px solid var(--border); border-radius: 6px; }
+.run-execution-inspector select { min-width: 0; max-width: 100%; padding: 8px; background: var(--surface-raised, Canvas); color: inherit; border: 1px solid var(--border); border-radius: 6px; }
 .run-execution-list { display: grid; gap: 12px; padding-inline-start: 24px; }
 .run-execution-list p { font-size: 12px; margin-block: 4px; overflow-wrap: anywhere; }
 .run-exact-execution { border-top: 1px solid var(--border); padding-top: 12px; min-width: 0; }
 .run-inspection-json { max-height: 320px; max-width: 100%; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; }
-.run-inspection-json:focus-visible { outline: 2px solid var(--accent); }
+.run-inspection-json:focus-visible { outline: 2px solid var(--accent, Highlight); }
 .run-exact-execution dd { margin-inline-start: 0; overflow-wrap: anywhere; }
 .board-run-context-note { flex: 0 0 auto; padding: 6px 12px; margin: 0; font-size: 12px; border-bottom: 1px solid var(--border); }
 
@@ -17,7 +17,7 @@
 
 /* CI server: a presentation-only Board component beside the Agents, with its jobs, tests and log in a small floating window. */
 .react-flow__edge-ciTransfer { pointer-events: none; }
-.ci-server-window { position: fixed; z-index: 40; top: 80px; left: 24px; width: min(460px, calc(100vw - 24px)); height: min(420px, calc(100vh - 24px)); min-width: 280px; min-height: 200px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); resize: both; overflow: hidden; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-raised); box-shadow: var(--shadow-lg, 0 12px 32px rgb(0 0 0 / 0.35)); }
+.ci-server-window { position: fixed; z-index: 40; top: 80px; left: 24px; width: min(460px, calc(100vw - 24px)); height: min(420px, calc(100vh - 24px)); min-width: 280px; min-height: 200px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); resize: both; overflow: hidden; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-lg, 12px); background: var(--surface-raised); box-shadow: var(--shadow-lg, 0 12px 32px rgb(0 0 0 / 0.35)); }
 .ci-server-window > header { display: flex; align-items: center; gap: var(--space-1); padding: var(--space-1) var(--space-2); cursor: move; user-select: none; touch-action: none; border-bottom: 1px solid var(--border); }
 .ci-server-window > header > :last-child { margin-inline-start: auto; }
 .ci-server-window h2 { display: inline-flex; align-items: center; gap: var(--space-1); margin: 0; font: var(--type-heading); }
@@ -44,7 +44,7 @@
 .ci-test-files ul li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); min-width: 0; font: var(--type-caption); }
 .ci-test-name { flex: 1 1 240px; min-width: 0; color: var(--text); overflow-wrap: anywhere; }
 .ci-test-message, .ci-log { margin: 0; max-width: 100%; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); font-family: var(--font-mono); font-size: 12px; }
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); font-family: var(--font-mono, monospace); font-size: 12px; }
 .ci-test-message { flex-basis: 100%; color: var(--danger); }
 .ci-log { max-height: 420px; }
 .ci-log:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }

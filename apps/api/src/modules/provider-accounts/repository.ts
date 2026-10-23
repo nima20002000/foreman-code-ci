@@ -3,7 +3,7 @@ import type pg from 'pg'
 import {
   ProviderAccountsSnapshotSchema, ProviderAccountBindingSchema, type ProviderAccountsSnapshot, ProviderAccountObservationSchema, type ProviderAccountObservation,
 } from '@foreman-code/contracts/provider-accounts'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import { DomainError } from '../errors.js'
 import { DeviceProvisioningTargetSchema, sameDeviceProvisioningTarget,
   type DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
@@ -11,9 +11,9 @@ import { DeviceProvisioningTargetSchema, sameDeviceProvisioningTarget,
 export class ProviderAccountsRepository {
   /** `targetReader` names the computer these accounts belong to; without it they belong to `hostId` on Main. */
   constructor(private readonly pool: pg.Pool, private readonly hostId: () => Promise<string>,
-    private readonly targetReader?: (sql: SqlQuery) => Promise<DeviceProvisioningTarget>) {}
+    private readonly targetReader?: (sql: GraphSqlClient) => Promise<DeviceProvisioningTarget>) {}
 
-  async target(sql: SqlQuery = this.pool): Promise<DeviceProvisioningTarget> {
+  async target(sql: GraphSqlClient = this.pool): Promise<DeviceProvisioningTarget> {
     if (this.targetReader) return DeviceProvisioningTargetSchema.parse(await this.targetReader(sql))
     const id = await this.hostId()
     return DeviceProvisioningTargetSchema.parse({ hostRef: { kind: 'main', mainId: id },
@@ -24,7 +24,7 @@ export class ProviderAccountsRepository {
     return `provider-accounts:${await this.hostId()}`
   }
 
-  async read(sql: SqlQuery = this.pool): Promise<ProviderAccountsSnapshot> {
+  async read(sql: GraphSqlClient = this.pool): Promise<ProviderAccountsSnapshot> {
     const result = await sql.query<{ record: unknown; revision: string }>(
       'select record, revision from application_settings where key=$1', [await this.key()],
     )
@@ -63,7 +63,7 @@ export class ProviderAccountsRepository {
     return snapshot
   }
 
-  async observe(sql: SqlQuery, accountId: string, observation: ProviderAccountObservation) {
+  async observe(sql: GraphSqlClient, accountId: string, observation: ProviderAccountObservation) {
     const key = await this.key()
     const prior = (await this.read(sql)).accounts.find(account => account.id === accountId)?.observation
     if (prior) {
@@ -75,13 +75,13 @@ export class ProviderAccountsRepository {
     return observation
   }
 
-  async lock(sql: SqlQuery): Promise<ProviderAccountsSnapshot> {
+  async lock(sql: GraphSqlClient): Promise<ProviderAccountsSnapshot> {
     const key = await this.key()
     await sql.query('select pg_advisory_xact_lock(hashtext($1))', [key])
     return this.read(sql)
   }
 
-  async write(sql: SqlQuery, snapshot: ProviderAccountsSnapshot, expectedRevision: number) {
+  async write(sql: GraphSqlClient, snapshot: ProviderAccountsSnapshot, expectedRevision: number) {
     const current = await this.read(sql)
     if (current.revision !== expectedRevision) {
       throw new DomainError('REVISION_CONFLICT', 'Provider accounts changed. Refresh before saving.', 409)

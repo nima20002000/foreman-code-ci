@@ -1,18 +1,18 @@
 .workflow-graph,
 .workflow-graph-state {
-  --graph-ink: var(--text);
-  --graph-muted: var(--text-muted);
-  --graph-faint: var(--text-faint);
-  --graph-line: var(--border);
-  --graph-line-strong: var(--border-strong);
-  --graph-panel: var(--surface-raised);
-  --graph-subtle: var(--surface-hover);
-  --graph-canvas: var(--surface);
-  --graph-edge: var(--text-faint);
-  --graph-focus: var(--focus);
-  --graph-accent: var(--accent);
-  --graph-accent-contrast: var(--on-accent);
-  --graph-handle: var(--text-faint);
+  --graph-ink: var(--color-text);
+  --graph-muted: var(--color-text-muted);
+  --graph-faint: var(--color-text-faint);
+  --graph-line: var(--color-border);
+  --graph-line-strong: var(--color-border-strong);
+  --graph-panel: var(--color-surface-raised);
+  --graph-subtle: var(--color-surface-subtle);
+  --graph-canvas: var(--color-surface);
+  --graph-edge: var(--color-text-faint);
+  --graph-focus: var(--color-focus);
+  --graph-accent: var(--color-accent);
+  --graph-accent-contrast: var(--color-accent-contrast);
+  --graph-handle: var(--color-text-faint);
   color: var(--graph-ink);
 }
 
@@ -103,8 +103,8 @@
   padding-inline: 0.2rem;
   border: 1px solid var(--graph-panel);
   border-radius: var(--radius-full);
-  color: var(--on-accent);
-  background: var(--accent);
+  color: var(--color-accent-contrast);
+  background: var(--color-accent);
   font-size: 11px;
   font-weight: 600;
   line-height: 1;
@@ -380,7 +380,7 @@
   width: 100%;
   height: auto !important;
   min-height: 0;
-  background: var(--canvas-glow), var(--graph-canvas);
+  background: var(--canvas-glow, none), var(--graph-canvas);
 }
 
 .workflow-graph-canvas .react-flow__controls {

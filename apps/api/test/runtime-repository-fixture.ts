@@ -1,4 +1,4 @@
-import { AcceptedWorkflowRunCurrentSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { AcceptedWorkflowRunV3Schema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { WorkflowNativeProofServices } from '../src/modules/runs/workflowNativeProof.js'
 import type { RepeatRepositoryActivation } from '../src/modules/runs/port.js'
 
@@ -13,7 +13,7 @@ export function unavailableRuntime(): RepeatRepositoryActivation {
 
 export function currentRepositoryFixture() {
   const f = makeCurrentWorkflowFixture('repository-dispatch')
-  const run = AcceptedWorkflowRunCurrentSchema.parse({ ...f.run, authorizationPrincipalId: 'recording-principal',
+  const run = AcceptedWorkflowRunV3Schema.parse({ ...f.run, authorizationPrincipalId: 'recording-principal',
     executionLocation: { runnerId: 'recording-runner', rootPath: '/synthetic/runtime', locationRevision: 1,
       identityHash: `sha256:${'a'.repeat(64)}` } })
   return { f, version: f.version, run }

@@ -8,7 +8,7 @@ import { BYTE_TRANSFER_POLICY, TransferIntentSchema, VerifiedTransferReceiptSche
   type ByteTransferPort, type TransferIntent } from '@foreman-code/contracts/byte-transfer'
 import type { WorkflowArtifactTransferInput } from '@foreman-code/contracts/workflow-artifact-transfer'
 import { workflowArtifactTransferManifestDigest } from '@foreman-code/contracts/workflow-artifact-transfer-node'
-import { ResumableByteTransferSender, type TransferSenderConnection } from '../../byte-transfer/index.js'
+import { ResumableByteTransferSender, type TransferSenderConnection } from '../../byte-transfer/sender.js'
 import { fileScopeIdentity } from '../../files/requests.js'
 import { DomainError } from '../../errors.js'
 

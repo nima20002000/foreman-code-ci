@@ -1,8 +1,8 @@
 import type { ExecutionResult, HarnessExecutionContext, CoordinationResultContext } from '@foreman-code/contracts'
-import { WorkActivationInputSchema, parseWorkHandoffResult } from '@foreman-code/contracts/current'
+import { WorkActivationInputSchema, parseWorkHandoffResult } from '@foreman-code/contracts/wave25'
 import { ZodError } from 'zod'
 import type { HierarchyWorkResult } from './hierarchyResults.js'
-import type { WorkHandoffResult } from '@foreman-code/contracts/current'
+import type { WorkHandoffResult } from '@foreman-code/contracts/wave25'
 
 export function receivedWorkRequestIds(input: unknown, context?: HarnessExecutionContext): string[] {
   const { work, parentRequest } = WorkActivationInputSchema.parse(input)

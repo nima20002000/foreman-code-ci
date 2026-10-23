@@ -16,7 +16,7 @@ import { nativeLanes } from './helpers/memorySessionCoordination.js'
 
 import { ApprovalExecutionCoordinator } from '../src/modules/interactions/execution.js'
 import { PostgresInteractionRepository } from '../src/modules/interactions/postgres.js'
-import type { Wave25InteractionRepository } from '../src/modules/interactions/current/repository.js'
+import type { Wave25InteractionRepository } from '../src/modules/interactions/wave25/repository.js'
 import { createWorkflowNativeCaptureChannel } from '../src/modules/interactions/workflowNativeCapture.js'
 import type { WorkflowClosureStore } from '../src/modules/interactions/workflowClosure.js'
 import type { RepeatNativeObservationStore } from '../src/modules/interactions/repeatObservation.js'
@@ -31,7 +31,7 @@ import type { PostgresRunRepository } from '../src/modules/runs/postgres.js'
 import type { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import type { RunOwnership } from '../src/modules/runs/ownership.js'
 import type { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
-import { AcceptedWorkflowRunCurrentSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { AcceptedWorkflowRunV3Schema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { rejectableDeferred } from './helpers/deferred.js'
 import { idleWorkflowControls, idleWorkflowRepeat } from './helpers/idleWorkflowControls.js'
 
@@ -415,7 +415,7 @@ function engineFixture(approvals: ApprovalExecutionCoordinator) {
     closeForRestart: async () => undefined })
   const f = makeCurrentWorkflowFixture('stop-fixture', 'single'), calls: string[] = []
   let owned = true, stopRequested = false, cleanupPending = false
-  let run = AcceptedWorkflowRunCurrentSchema.parse({ ...f.run, id: 'run-1', executionState: 'waiting',
+  let run = AcceptedWorkflowRunV3Schema.parse({ ...f.run, id: 'run-1', executionState: 'waiting',
     authorizationPrincipalId: 'stop-authority', executionLocation: { runnerId: 'runner', rootPath: '/project',
       locationRevision: 1, identityHash: `sha256:${'1'.repeat(64)}` } })
   const connection = new ExclusiveGraphConnection({ query: async (text: string, values: unknown[]) => {

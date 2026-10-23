@@ -2,7 +2,7 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, expect, it, vi, type MockInstance } from 'vitest'
 import { ManagementPrincipalSchema } from '@foreman-code/contracts/management'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { buildProductionApp } from '../src/production.js'
 import { loadConfig } from '../src/config.js'
 import { createDatabase } from '../src/infrastructure/database.js'
@@ -41,16 +41,14 @@ beforeEach(async () => {
   const config = loadConfig({ DATABASE_URL: 'postgresql://unused:unused@127.0.0.1:1/composition' })
   database = createDatabase(config.database)
   checkpoints = createCheckpointStore(config.database.connectionString, 'placement_composition', config.database)
-  // Reads are told apart by their bound values: the principal id is the live authority read, no value is the Main
-  // installation read, and the workspace with the workflow id is the saved workflow read.
-  const query = vi.fn(async (sql: string, values: unknown[] = []) => {
+  const query = vi.fn(async (sql: string) => {
     if (['begin', 'commit', 'rollback'].includes(sql)) return { rows: [], rowCount: 0 }
-    if (values.length === 1 && values[0] === principal.id) return { rows: [{ id: principal.id, name: principal.name,
+    if (sql.includes('from management_principals')) return { rows: [{ id: principal.id, name: principal.name,
       audience: principal.audience, grants: liveGrants, expires_at: new Date(principal.expiresAt),
       revoked_at: null, delegated_from: null }], rowCount: 1 }
-    if (values.length === 0) return { rows: [{ id: mainId }], rowCount: 1 }
-    if (values.length === 2 && values[0] === input.workspaceId && values[1] === input.workflowId) return { rows: [{ record: fixture.version }], rowCount: 1 }
-    throw new Error(`Unexpected placement composition query binding ${values.length} values`)
+    if (sql.includes('from application_installation')) return { rows: [{ id: mainId }], rowCount: 1 }
+    if (sql.startsWith('select v.record from workflows')) return { rows: [{ record: fixture.version }], rowCount: 1 }
+    throw new Error(`Unexpected placement composition query: ${sql}`)
   })
   vi.spyOn(database.pool, 'connect').mockResolvedValue({ query, release: vi.fn() } as never)
   vi.spyOn(PostgresAccessService.prototype, 'authenticate').mockImplementation(async token => {

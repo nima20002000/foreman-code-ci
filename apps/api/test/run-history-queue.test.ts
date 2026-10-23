@@ -2,7 +2,7 @@ import pg from 'pg'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { expect, it, vi } from 'vitest'
 import { ManagementPrincipalSchema } from '@foreman-code/contracts/management'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { RunBoardSnapshotSchema } from '@foreman-code/contracts/run-snapshots'
 import { buildApp } from '../src/app.js'
@@ -11,7 +11,6 @@ import { DomainError } from '../src/modules/errors.js'
 import { RunHistoryService } from '../src/modules/runs/history.js'
 import { RunnerAdmission } from '../src/modules/runs/runnerAdmission.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { liveAuthorityQuery, livePrincipalRow } from './helpers/livePrincipal.js'
 
 it('reads live queue reasons through authenticated Board MCP and denies an unauthorized caller', async () => {
   const f = makeCurrentWorkflowFixture('queue-read', 'single')
@@ -26,17 +25,17 @@ it('reads live queue reasons through authenticated Board MCP and denies an unaut
       agentId: f.identities[0]!.agentId, agentConfigurationVersionId: f.configurations[0]!.id,
       position: { x: 0, y: 0 }, size: { width: 208, height: 112 } }] })
   const pool = new pg.Pool()
-  // Reads are told apart by their bound values: a principal id is the live authority read, the Run scope (workspace,
-  // workflow, Run) is the Run and snapshot read, the Run and workspace are the CI read, and the version id with the
-  // workspace and workflow is the saved version read.
-  const query = vi.fn(liveAuthorityQuery(() => livePrincipalRow(principal), async (text, values) => {
-    if (/^(begin|commit|rollback)/i.test(text)) return { rows: [] }
-    if (values.length === 3 && values[2] === f.run.id) return { rows: [{ workflow_version_id: f.version.id,
+  const query = vi.fn(async (sql: string) => {
+    if (/^(begin|commit|rollback)/i.test(sql)) return { rows: [] }
+    if (sql.includes('from management_principals')) return { rows: [{ id: principal.id, name: principal.name,
+      audience: principal.audience, grants: principal.grants, expires_at: new Date(principal.expiresAt),
+      revoked_at: null, delegated_from: null }] }
+    if (sql.includes('from runs r left join run_board_snapshots')) return { rows: [{ workflow_version_id: f.version.id,
       snapshot_id: f.run.id, snapshot, execution_state: 'running' }] }
-    if (values.length === 2) return { rows: [] }
-    if (values.length === 3 && values[0] === f.version.id) return { rows: [{ record: f.version }] }
+    if (sql.includes('from ci_runs')) return { rows: [] }
+    if (sql.includes('from workflow_versions')) return { rows: [{ record: f.version }] }
     throw new Error('Unexpected database read in queue fixture')
-  }))
+  })
   vi.spyOn(pool, 'connect').mockResolvedValue({ query, release() {}, on() {}, removeListener() {} } as never)
   const access = new PostgresAccessService(pool)
   vi.spyOn(access, 'authenticate').mockImplementation(async token => {

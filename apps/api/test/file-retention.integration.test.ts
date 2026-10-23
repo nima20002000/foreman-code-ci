@@ -37,7 +37,7 @@ import { FileByteStorage } from '../src/modules/files/storage.js'
 import { PostgresOperatorRepository } from '../src/modules/operators/postgres.js'
 import { FILE_RETENTION_PATH, registerFileRetentionRoutes } from '../src/routes/fileRetention.js'
 import { registerFileRoutes } from '../src/routes/files.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 type Credential = Awaited<ReturnType<PostgresAccessService['issue']>>
@@ -55,14 +55,14 @@ const payload = (durationSeconds: number, expectedRevision = 0, applyToExisting 
 
 /** Real PostgreSQL transactions, credentials, HTTP and authenticated /mcp. No native harness/model. */
 describe.skipIf(!postgresEnabled)('FIL-40 retention persistence and transport parity', () => {
-  let database: Awaited<ReturnType<typeof migratedDatabase>>, app: FastifyInstance, storageRoot: string, address: string
+  let database: Awaited<ReturnType<typeof agent3Database>>, app: FastifyInstance, storageRoot: string, address: string
   let access: PostgresAccessService, commands: PostgresCommandCoordinator, retention: FileRetentionService
   let files: PostgresFileRepository, bytes: FileByteStorage, authorization: PostgresFileConversationAuthorization
   let operator: Awaited<ReturnType<PostgresOperatorRepository['ensure']>>
   let conversations: PostgresOperatorConversationRepository
 
   beforeAll(async () => {
-    database = await migratedDatabase()
+    database = await agent3Database()
     // FIL-03 is already registered at this base; tolerate later integration of FIL-40 too.
     for (const migration of [fileStorageMigration, fileRetentionMigration]) {
       const found = await database.pool.query('select 1 from application_migrations where version=$1', [migration.version])

@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { until } from './fixtures/codex-test-helpers.js'
 import { HarnessExecutionSchema, NativeSessionReferenceSchema } from '@foreman-code/contracts'
 import { AgentChatContextSchema, AgentChatStateSchema, SendAgentChatMessageResponseSchema, type AgentChatState } from '@foreman-code/contracts/agent-chat'
-import { WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
+import { WorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
 
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { readNativeSource } from './helpers/agentChatNativeSource.js'
@@ -91,7 +91,7 @@ describe.skipIf(!enabled)('F4 A-R21 actual terminal-Run to Agent-chat immutabili
     try {
       await assertOwnedTestApi(api, pool)
       await assertOwnedExecutionDestinations(pool, { workspaceId: context.workspaceId, runId: context.runId })
-      const run = WorkflowRunCurrentSchema.parse((await pool.query<{ record: unknown }>('select record from runs where id=$1', [context.runId])).rows[0]?.record)
+      const run = WorkflowRunV3Schema.parse((await pool.query<{ record: unknown }>('select record from runs where id=$1', [context.runId])).rows[0]?.record)
       expect(run.workspaceId).toBe(context.workspaceId)
       expect(run.workflowId).toBe(context.workflowId)
       expect(['completed', 'interrupted']).toContain(run.executionState)

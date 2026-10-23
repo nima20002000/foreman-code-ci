@@ -1,7 +1,7 @@
 import type { HarnessExecutionRequest } from '@foreman-code/contracts'
 
 import { HarnessExecutionError } from './errors.js'
-import { legacySkillPrompt } from '../skills/index.js'
+import { legacySkillPrompt } from '../skills/instructions.js'
 
 /** UTF-8 bytes, including system prompt, skill references, and accepted inputs. */
 export const MAX_HARNESS_PROMPT_BYTES = 8 * 1024 * 1024

@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { MemoryBoardMutationSchema, type MemoryBoardMutation } from '@foreman-code/contracts'
-import { sameWorkflowValue } from '@foreman-code/contracts/current'
+import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { protectedKey } from '../../shared/api/protectedChatStorage'
 import { createOutboxView, readStoredCommand, withCommandLock, writeStoredCommand } from '../../shared/api/commandOutbox'
 import { assertSession, sessionGeneration, sessionIsSwitching, SessionChangedError } from '../../shared/api/sessionBoundary'

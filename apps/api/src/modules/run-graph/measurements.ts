@@ -1,4 +1,4 @@
-import { logIgnoredError } from '../diagnostics/index.js'
+import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import type pg from 'pg'
 export interface GraphMeasurement {
   stage: 'snapshot' | 'delta' | 'projection' | 'publication' | 'storage'

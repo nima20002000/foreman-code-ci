@@ -1,6 +1,6 @@
-import { timeRuntimeOperation } from '../diagnostics/index.js'
+import { timeRuntimeOperation } from '../diagnostics/runtimeTiming.js'
 import type { ChildProcess, ChildProcessWithoutNullStreams } from 'node:child_process'
-import { spawnProcess, hostEnvironment } from '../../shared/process.js'
+import { spawnProcess } from '../../shared/process.js'
 import type { Readable } from 'node:stream'
 import { nativeOutputCollector } from './nativeCommandOutput.js'
 import { NativeProcessRegistry, nativeProcessExit, spawnNativeProcess, prepareNativeProcessRecovery, stopRecoveredChild, type NativeProcessRecovery } from './recovery/processRegistry.js'
@@ -8,7 +8,7 @@ import { NativeProcessRegistry, nativeProcessExit, spawnNativeProcess, prepareNa
 import type { ChildProcessEnvironment, NativeEventInput } from './port.js'
 import { appMcpTokenEnvironment, inheritedAgentEnvironment, redactKnownSecrets, redactSecretText } from './secrets.js'
 import { APP_MCP_TOKEN_NAMES } from '@foreman-code/contracts/product'
-import { ignoreError, logIgnoredError } from '../diagnostics/index.js'
+import { ignoreError, logIgnoredError } from '../diagnostics/ignoredError.js'
 
 const MAX_STDERR_LENGTH = 1_000_000
 export const PROCESS_SHUTDOWN_GRACE_MS = 1_000
@@ -129,7 +129,7 @@ async function runOwnedProcess<T>(
     }
     options.signal?.throwIfAborted()
     child = spawnNativeProcess(options.binary, options.args, {
-      cwd: options.cwd, env: appMcpTokenEnvironment(childEnvironment, options.environment ?? hostEnvironment()), purpose: 'command',
+      cwd: options.cwd, env: appMcpTokenEnvironment(childEnvironment, options.environment ?? process.env), purpose: 'command',
       ...(recovery ? { recovery } : {}),
     })
   } catch (error) {

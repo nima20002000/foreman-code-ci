@@ -4,9 +4,9 @@ import type { NativeSessionReference } from '@foreman-code/contracts'
 import { WorkspaceLocationSetResultSchema } from '@foreman-code/contracts/management'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import {
-  CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveResultSchema, RunStartCurrentInputSchema,
-  RunStartCurrentResultSchema, makeCurrentWorkflowFixture,
-} from '@foreman-code/contracts/current'
+  CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveResultSchema, RunStartV3InputSchema,
+  RunStartV3ResultSchema, makeCurrentWorkflowFixture,
+} from '@foreman-code/contracts/wave25'
 import { isWorkflowStart } from '../src/modules/harnesses/sessionStart.js'
 import { PostgresWorkflowClosureStore } from '../src/modules/interactions/workflowClosure.js'
 import { LOCAL_RUNNER_ID } from '../src/modules/workspaces/location.js'
@@ -97,7 +97,7 @@ describe.runIf(postgresEnabled)('restart during native startup', () => {
             arguments: await runtime.create() })
           expect(savedResponse.isError).not.toBe(true)
           const saved = CurrentWorkflowSaveResultSchema.parse(decodeMcpToolResult(savedResponse)).value
-          const input = RunStartCurrentInputSchema.parse({
+          const input = RunStartV3InputSchema.parse({
             workspaceId: saved.workspaceId, workflowId: saved.workflowId, workflowVersionId: saved.version.id,
             commandId: randomUUID(), executionSemanticsVersion: 3, expectedWorkflowRevision: saved.revision,
             expectedAgentConfigurationVersionIds: saved.version.agentConfigurationVersionIds,
@@ -120,7 +120,7 @@ describe.runIf(postgresEnabled)('restart during native startup', () => {
           const startedResponse = await runtime.client.callTool({ name: 'run_start', arguments: input })
           const startedResult = decodeMcpToolResult(startedResponse)
           expect(startedResponse.isError, JSON.stringify(startedResult)).not.toBe(true)
-          const started = RunStartCurrentResultSchema.parse(startedResult)
+          const started = RunStartV3ResultSchema.parse(startedResult)
           expect(started).toMatchObject({ accepted: true, replayed: false, run: {
             outcome: 'pending', executionLocation: { locationRevision: location.locationRevision },
           } })
@@ -324,7 +324,7 @@ describe.runIf(postgresEnabled)('restart during native startup', () => {
           arguments: await runtime.create() })
         expect(savedResponse.isError).not.toBe(true)
         const saved = CurrentWorkflowSaveResultSchema.parse(decodeMcpToolResult(savedResponse)).value
-        const input = RunStartCurrentInputSchema.parse({
+        const input = RunStartV3InputSchema.parse({
           workspaceId: saved.workspaceId, workflowId: saved.workflowId, workflowVersionId: saved.version.id,
           commandId: randomUUID(), executionSemanticsVersion: 3, expectedWorkflowRevision: saved.revision,
           expectedAgentConfigurationVersionIds: saved.version.agentConfigurationVersionIds,
@@ -345,7 +345,7 @@ describe.runIf(postgresEnabled)('restart during native startup', () => {
 
         const response = await runtime.client.callTool({ name: 'run_start', arguments: input })
         expect(response.isError, JSON.stringify(decodeMcpToolResult(response))).not.toBe(true)
-        const started = RunStartCurrentResultSchema.parse(decodeMcpToolResult(response))
+        const started = RunStartV3ResultSchema.parse(decodeMcpToolResult(response))
         expect(started).toMatchObject({ accepted: true, replayed: false })
         await paused.promise
         expect(observed).toBeDefined()

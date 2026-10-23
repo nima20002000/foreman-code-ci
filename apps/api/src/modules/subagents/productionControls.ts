@@ -1,8 +1,8 @@
 import { isDeepStrictEqual } from 'node:util'
 import type { RunSubagent } from '@foreman-code/contracts/subagents'
-import type { ExecutionScopedNativeSessionManagerResolver } from '../interactions/index.js'
+import type { ExecutionScopedNativeSessionManagerResolver } from '../interactions/runtimePorts.js'
 import type { SubagentControlResolver } from './types.js'
-import { logIgnoredError } from '../diagnostics/index.js'
+import { logIgnoredError } from '../diagnostics/ignoredError.js'
 
 /** Resolve only the original resident allocation. Reads never launch a native process. */
 export function productionSubagentControls(managers: Pick<ExecutionScopedNativeSessionManagerResolver, 'residentForRead'>): SubagentControlResolver {

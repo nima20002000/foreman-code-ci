@@ -16,9 +16,9 @@ are 32 scenario Agent executions across both rounds, plus the host profile check
 
 1. Integrate the acceptance commit and the intended runtime fixes into the production source. The orchestrator uses
    the existing installation procedure (`corepack pnpm production:install` from that source checkout). Read the
-   production Main's installed revision and readiness. Through the authenticated management API, update the paired Worker using
-   `POST /api/management/computers/maintenance/start` with `{commandId: <fresh UUID>, task: {kind: "update-worker"}, targets: [<current Worker provisioning target>]}`;
-   follow `GET /api/management/computers/maintenance` until its installed release matches Main and it reconnects. A provisioning
+   production Main's installed revision and readiness. Through Operator MCP, update the paired Worker using
+   `computers_maintenance_start` with `{commandId: <fresh UUID>, task: {kind: "update-worker"}, targets: [<current Worker provisioning target>]}`;
+   follow `computers_maintenance_status` until its installed release matches Main and it reconnects. A provisioning
    target retains `{hostRef, applicationInstallationId, keyRevision, authorizationRevision}` from production readback.
    Do not change SSH, network, security or router configuration.
    Main must have qualified execution-semantics-3 Start/Stop support; the Worker must serve `ci-host-v1` and the native

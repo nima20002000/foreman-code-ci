@@ -2,7 +2,7 @@ import { skillHash } from './instructions.js'
 export { skillHash } from './instructions.js'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import type { AssignedSkill, ResolvedSkill, WorkspaceSkillReference } from '@foreman-code/contracts'
 import {
   SkillListInputSchema, SkillVersionSchema, SkillVersionSummarySchema,
@@ -13,7 +13,7 @@ import { requireAuthorization } from '../access/policy.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { authorizedPage } from '../access/authorizedPage.js'
 import { lockActiveWorkspace } from '../workspaces/admission.js'
-import type { PostgresCommandCoordinator } from '../commands/index.js'
+import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
 
 type Source = 'http' | 'mcp'
@@ -28,7 +28,7 @@ function verifiedVersion(record: unknown): SkillVersion {
 
 /** Catalog contents, not mutable pointers, are copied into an immutable execution snapshot.
  * Archived skills cannot be newly assigned; a reference the Agent already pinned stays valid. */
-export async function resolveAssignedSkills(client: SqlQuery, workspaceId: string, references: readonly AssignedSkill[],
+export async function resolveAssignedSkills(client: GraphSqlClient, workspaceId: string, references: readonly AssignedSkill[],
   retained: readonly AssignedSkill[] = []): Promise<ResolvedSkill[]> {
   if (references.length > 100) throw new DomainError('SKILL_LIMIT_EXCEEDED', 'At most 100 skills can be assigned.', 400)
   const seen = new Set<string>()

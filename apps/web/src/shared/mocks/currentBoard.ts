@@ -9,20 +9,20 @@ import { RunBoardSnapshotGetResultSchema } from '@foreman-code/contracts/run-sna
 import { AgentCreateInputSchema, AgentUpdateInputSchema, AgentMutationResultSchema, LocalHumanAccessSchema, ManagedWorkspaceSchema, RunStopInputSchema, WorkflowUpdateInputSchema, WorkflowArchiveInputSchema, WorkflowBatchArchiveInputSchema } from '@foreman-code/contracts/management'
 import {
   CurrentManagedWorkflowSchema, CurrentWorkspaceDetailsSchema, CurrentWorkflowCreateInputSchema,
-  CurrentWorkflowCapabilitiesSchema, GraphDraftCurrentSchema, WorkflowDefinitionCurrentSchema,
-  ExecutableWorkflowCurrentSchema, AcceptedWorkflowRunCurrentSchema, GraphEditStageInputCurrentSchema, GraphEditReadResultCurrentSchema,
-  GraphEditAdvanceInputCurrentSchema, GraphEditDiscardInputCurrentSchema, CurrentWorkflowSaveInputSchema, CurrentWorkflowValidateInputSchema, CURRENT_WORKFLOW_CAPABILITIES, sameExecutableWorkflow,
-  RunStartCurrentInputSchema, RepeatGraphCurrentStateSchema, repeatGraphTopologyCurrent, sameWorkflowValue,
+  CurrentWorkflowCapabilitiesSchema, GraphDraftV3Schema, WorkflowDefinitionV3Schema,
+  ExecutableWorkflowV3Schema, AcceptedWorkflowRunV3Schema, GraphEditStageInputV3Schema, GraphEditReadResultV3Schema,
+  GraphEditAdvanceInputV3Schema, GraphEditDiscardInputV3Schema, CurrentWorkflowSaveInputSchema, CurrentWorkflowValidateInputSchema, CURRENT_WORKFLOW_CAPABILITIES, sameExecutableWorkflow,
+  RunStartV3InputSchema, RepeatGraphCurrentV3Schema, repeatGraphTopologyV3, sameWorkflowValue,
   preserveWorkflowGeometry, RunActivitiesPageSchema,
-  type WorkflowDefinitionCurrent, type WorkflowVersionCurrent, type GraphDraftCurrent,
-  type GraphEditReadResultCurrent, type CurrentRunDetails, type RepeatGraphCurrentState,
-} from '@foreman-code/contracts/current'
+  type WorkflowDefinitionV3, type WorkflowVersionV3, type GraphDraftV3,
+  type GraphEditReadResultV3, type CurrentRunDetails, type RepeatGraphCurrentV3,
+} from '@foreman-code/contracts/wave25'
 
 const copy = <T,>(value: T): T => structuredClone(value)
 const hash = `sha256:${'b'.repeat(64)}`
 const at = '2026-09-25T00:00:00.000Z'
 const pageInfo = { nextCursor: null }
-const emptyIntent = (): GraphEditReadResultCurrent => ({ intent: null, current: [], affectedSetChanged: false, canStop: true })
+const emptyIntent = (): GraphEditReadResultV3 => ({ intent: null, current: [], affectedSetChanged: false, canStop: true })
 const failure = (code: string, message: string, status = 409) => HttpResponse.json({ error: { code, message } }, { status })
 
 /** Reusable MSW-only service family for the REGISTERED current Board. Nothing in
@@ -32,8 +32,8 @@ type CurrentBoardMockOptions = {
   workspaceId?: string
   allowSimulatedStart?: boolean
   agents?: Agent[]
-  initialWorkflow?: WorkflowDefinitionCurrent
-  onSaved?: (graph: WorkflowDefinitionCurrent) => void
+  initialWorkflow?: WorkflowDefinitionV3
+  onSaved?: (graph: WorkflowDefinitionV3) => void
 }
 
 export function createCurrentBoardMock(options: CurrentBoardMockOptions = {}) {
@@ -71,11 +71,11 @@ function createCurrentBoardState(options: CurrentBoardMockOptions) {
     harness: agent.harnessConfiguration ?? { harness: 'codex', model: 'synthetic-no-native-call', reasoningEffort: 'low', sandbox: 'read-only', serviceTier: 'standard' },
     prompt: agent.prompt ?? {}, assignedSkills: agent.assignedSkills ?? [], contentHash: hash, createdAt: at }))
   const catalog = agents.map((agent) => ({ agent, metadataRevision: 1, archivedAt: null }))
-  const drafts = new Map<string, GraphDraftCurrent>(), versions = new Map<string, WorkflowVersionCurrent>()
-  const revisions = new Map<string, number>(), workflows = new Map<string, WorkflowDefinitionCurrent>()
+  const drafts = new Map<string, GraphDraftV3>(), versions = new Map<string, WorkflowVersionV3>()
+  const revisions = new Map<string, number>(), workflows = new Map<string, WorkflowDefinitionV3>()
   const archivedWorkflows = new Set<string>()
-  const intents = new Map<string, GraphEditReadResultCurrent>(), runs = new Map<string, CurrentRunDetails>()
-  const currents = new Map<string, RepeatGraphCurrentState>()
+  const intents = new Map<string, GraphEditReadResultV3>(), runs = new Map<string, CurrentRunDetails>()
+  const currents = new Map<string, RepeatGraphCurrentV3>()
   const inspection = new Map<string, RunInspectionFixture[]>()
   const history = new Map<string, RunInspectionActivity[]>()
   const receipts = new Map<string, { input: unknown; value: unknown }>()
@@ -96,11 +96,11 @@ function createCurrentBoardState(options: CurrentBoardMockOptions) {
     ...(run.startedAt ? { startedAt: run.startedAt } : {}), ...(run.finishedAt ? { finishedAt: run.finishedAt } : {}) }))
   const details = () => CurrentWorkspaceDetailsSchema.parse({ workspace: workspace(), agents, workflows: [...workflows.values()].filter((graph) => !archivedWorkflows.has(graph.id)), runs: summaries(),
     resources: [], browserProfiles: [], runners: [{ id: 'runner-synthetic', name: 'Synthetic only', health: { status: 'healthy', checkedAt: at } }] })
-  function install(raw: WorkflowDefinitionCurrent, saved = false) {
-    const graph = WorkflowDefinitionCurrentSchema.parse(raw)
+  function install(raw: WorkflowDefinitionV3, saved = false) {
+    const graph = WorkflowDefinitionV3Schema.parse(raw)
     if (graph.workspaceId !== workspaceId) throw new Error('Out-of-scope MSW fixture')
     workflows.set(graph.id, graph); revisions.set(graph.id, 1)
-    const draft = GraphDraftCurrentSchema.parse({ id: `draft-${graph.id}`, workspaceId, workflowId: graph.id,
+    const draft = GraphDraftV3Schema.parse({ id: `draft-${graph.id}`, workspaceId, workflowId: graph.id,
       revision: 1, publishedRevision: 1, layoutRevision: 0, baseWorkflowVersionId: null, graph, stagedAgents: [],
       sourceAgentPins: catalog.map((item) => ({ agentId: item.agent.id, metadataRevision: item.metadataRevision, configurationVersionId: item.agent.configurationVersionId })),
       updatedAt: at, updatedByPrincipalId: 'principal-current-mock' })
@@ -108,23 +108,23 @@ function createCurrentBoardState(options: CurrentBoardMockOptions) {
     if (saved) publish(draft)
     return managed(graph.id)
   }
-  function publish(staged: { workflowId: string; graph: WorkflowDefinitionCurrent }) {
+  function publish(staged: { workflowId: string; graph: WorkflowDefinitionV3 }) {
     const id = staged.workflowId, revision = (revisions.get(id) ?? 0) + 1
     const number = [...versions.values()].filter((v) => v.workflowId === id).length + 1
     const graph = { ...staged.graph, version: number }
     const pins = Object.fromEntries(graph.nodes.filter(node=>node.kind!=='job').map((node) => { const config = configurations.find((c) => c.agentId === nativeNode(node).agentId
       && c.id === catalog.find((item) => item.agent.id === nativeNode(node).agentId)?.agent.configurationVersionId)
       if (!config) throw new Error('Missing exact configuration'); return [nativeNode(node).agentId, config.id] }))
-    const { version } = ExecutableWorkflowCurrentSchema.parse({ version: { id: `version-${id}-${number}`, workspaceId, workflowId: id,
+    const { version } = ExecutableWorkflowV3Schema.parse({ version: { id: `version-${id}-${number}`, workspaceId, workflowId: id,
       version: number, definition: graph, entryNodeId: graph.entryNodeId, executionSemanticsVersion: 3, approval: graph.approval,
       agentConfigurationVersionIds: pins, contentHash: hash, createdAt: at }, configurations: configurations.filter((c) => pins[c.agentId] === c.id) })
-    const draft = GraphDraftCurrentSchema.parse({ ...drafts.get(id), graph: version.definition, revision, publishedRevision: revision,
+    const draft = GraphDraftV3Schema.parse({ ...drafts.get(id), graph: version.definition, revision, publishedRevision: revision,
       baseWorkflowVersionId: version.id, stagedAgents: [] })
     versions.set(version.id, copy(version)); drafts.set(id, draft); workflows.set(id, draft.graph)
     revisions.set(id, (revisions.get(id) ?? 0) + 1); options.onSaved?.(copy(draft.graph))
     return { workspaceId, workflowId: id, revision, currentVersionId: version.id, version, agents: catalog }
   }
-  function savePresentation(workflowId: string, graph: WorkflowDefinitionCurrent) {
+  function savePresentation(workflowId: string, graph: WorkflowDefinitionV3) {
     const version = versions.get(drafts.get(workflowId)!.baseWorkflowVersionId!)!
     workflows.set(workflowId, copy(graph))
     options.onSaved?.(copy(graph))
@@ -132,14 +132,14 @@ function createCurrentBoardState(options: CurrentBoardMockOptions) {
       currentVersionId: version.id, version, presentation: graph }
   }
   if (options.initialWorkflow) install(options.initialWorkflow, options.initialWorkflow.nodes.length > 0)
-  const record = (id: string): GraphEditReadResultCurrent => {
+  const record = (id: string): GraphEditReadResultV3 => {
     const current = copy(intents.get(id) ?? emptyIntent())
     current.canStop = !controls.deniedStop; current.affectedSetChanged = controls.affectedSetChanged
     current.current = (current.intent?.affected ?? []).map((pin) => { const detail = runs.get(pin.runId)
       const terminal = detail?.run.executionState === 'completed', pending = detail?.cleanupPending !== false
       return { pin, terminal, settled: terminal && !pending, outcome: detail?.run.outcome ?? 'pending',
         cleanupPending: pending, nativePending: pending, interactionPending: false, reviewPending: false } })
-    return GraphEditReadResultCurrentSchema.parse(current)
+    return GraphEditReadResultV3Schema.parse(current)
   }
   function journal<T>(key: string, input: unknown, work: () => T): { value: T; replayed: boolean } {
     const receipt = receipts.get(key)
@@ -260,7 +260,7 @@ async function dispatchCurrentBoardRequest(request: Request, state: CurrentBoard
   }
 
 /** The admission-time Board a Run would persist: the pinned version's Agents, geometry and relationships. */
-function savedRunSnapshot(workspaceId: string, detail: CurrentRunDetails, version: WorkflowVersionCurrent | undefined) {
+function savedRunSnapshot(workspaceId: string, detail: CurrentRunDetails, version: WorkflowVersionV3 | undefined) {
   const run = detail.run
   if (!version) return { kind: 'unavailable' as const, reason: 'legacy_run' as const, workspaceId, workflowId: run.workflowId, runId: run.id }
   return { kind: 'available' as const, workspaceId, workflowId: run.workflowId, runId: run.id, workflowVersionId: version.id,
@@ -375,7 +375,7 @@ function dispatchCurrentBoardWorkflows({ url, path, method, prefix, publicPrefix
         if (method === 'DELETE') archivedWorkflows.add(id)
         else {
           const update = WorkflowUpdateInputSchema.parse(input), graph = workflows.get(id)!
-          workflows.set(id, WorkflowDefinitionCurrentSchema.parse({ ...graph, name: update.name ?? graph.name,
+          workflows.set(id, WorkflowDefinitionV3Schema.parse({ ...graph, name: update.name ?? graph.name,
             description: update.description === null ? undefined : update.description ?? graph.description, updatedAt: at }))
           options.onSaved?.(copy(workflows.get(id)!))
         }
@@ -389,7 +389,7 @@ function dispatchCurrentBoardWorkflows({ url, path, method, prefix, publicPrefix
       return version?.workflowId === id ? HttpResponse.json({ version }) : failure('NOT_FOUND', 'Version not found', 404) }
     if (method === 'GET' && tail === '/versions') return HttpResponse.json({ items: [...versions.values()].filter((v) => v.workflowId === id), pageInfo })
     if (tail === '/runs' && method === 'POST') {
-      const input = RunStartCurrentInputSchema.parse(body)
+      const input = RunStartV3InputSchema.parse(body)
       if (controls.deniedStart) return failure('FORBIDDEN', 'Start denied for exact workflow', 403)
       if (controls.unsupportedStart || !controls.start) return failure('EXECUTION_SEMANTICS_UNSUPPORTED', 'Synthetic runtime admission is disabled', 409)
       const response = journal(`start:${input.commandId}`, input, () => {
@@ -397,15 +397,15 @@ function dispatchCurrentBoardWorkflows({ url, path, method, prefix, publicPrefix
           || input.expectedLocationRevision !== controls.locationRevision) throw new Error('REVISION_CONFLICT')
         const version = versions.get(input.workflowVersionId)!
         if (!sameWorkflowValue(input.expectedAgentConfigurationVersionIds, version.agentConfigurationVersionIds)) throw new Error('CONFIGURATION_CONFLICT')
-        const run = AcceptedWorkflowRunCurrentSchema.parse({ id: `run-current-${nextRun()}`, workspaceId, workflowId: id,
+        const run = AcceptedWorkflowRunV3Schema.parse({ id: `run-current-${nextRun()}`, workspaceId, workflowId: id,
           workflowVersionId: version.id, agentConfigurationVersionIds: version.agentConfigurationVersionIds, executionSemanticsVersion: 3,
           authorizationPrincipalId: 'principal-current-mock', approval: version.approval, executionCondition: version.definition.executionCondition,
           executionLocation: { runnerId: 'runner-synthetic', rootPath: '/synthetic/board', locationRevision: controls.locationRevision, identityHash: hash },
           input: input.input, executionState: 'queued', outcome: 'pending', createdAt: at })
         runs.set(run.id, { run, executions: [], activity: [], cleanupPending: false })
-        currents.set(run.id, RepeatGraphCurrentStateSchema.parse({ kind: 'current', protocolVersion: 1,
+        currents.set(run.id, RepeatGraphCurrentV3Schema.parse({ kind: 'current', protocolVersion: 1,
           scope: { workspaceId, workflowId: id, runId: run.id, workflowVersionId: version.id, executionSemanticsVersion: 3 },
-          topology: repeatGraphTopologyCurrent(version), asOfSequence: '0', retentionFloor: '0', historyCoverage: 'from_admission',
+          topology: repeatGraphTopologyV3(version), asOfSequence: '0', retentionFloor: '0', historyCoverage: 'from_admission',
           state: { run: { executionState: 'queued', outcome: 'pending', stopRequested: false, cleanupPending: false, unsettledReviewCount: 0, pendingInteractionCount: 0 }, nodes: [], inputBindings: [], interactions: [], reviews: [], occurrences: [], executions: [], resolutions: [], results: [], bindings: [], decisions: [] } }))
         return { run, accepted: true as const }
       })
@@ -445,7 +445,7 @@ function dispatchCurrentBoardWorkflows({ url, path, method, prefix, publicPrefix
 
         if (method === 'GET') return HttpResponse.json(record(id))
         if (method === 'POST' && (body as { action?: string }).action === 'stage_edits') {
-          const input = GraphEditStageInputCurrentSchema.parse(body)
+          const input = GraphEditStageInputV3Schema.parse(body)
           const response = journal(`stage:${input.commandId}`, input, () => {
             if (input.expectedRevision !== revisions.get(id) || input.expectedWorkflowVersionId !== draft.baseWorkflowVersionId) throw new Error('REVISION_CONFLICT')
             const version = versions.get(draft.baseWorkflowVersionId!)
@@ -467,13 +467,13 @@ function dispatchCurrentBoardWorkflows({ url, path, method, prefix, publicPrefix
               stops: affected.map((pin) => ({ input: { workspaceId, runId: pin.runId, commandId: `stop-${intentId}-${pin.runId}` } })),
               saveInput: { workspaceId, workflowId: id, commandId: `save-${input.commandId}`, executionSemanticsVersion: 3 as const, expectedRevision: input.expectedRevision, expectedWorkflowVersionId: input.expectedWorkflowVersionId, expectedAgentConfigurationVersionIds: input.expectedAgentConfigurationVersionIds, graph: input.graph },
               saveInputHash: hash, state: 'staged' as const, saveAttempted: false, createdAt: at, updatedAt: at }
-            intents.set(id, GraphEditReadResultCurrentSchema.parse({ ...emptyIntent(), intent })); return record(id)
+            intents.set(id, GraphEditReadResultV3Schema.parse({ ...emptyIntent(), intent })); return record(id)
           })
           if (controls.loseStageReply) { controls.loseStageReply = false; return HttpResponse.error() }
           return HttpResponse.json(response.replayed ? record(id) : response.value)
         }
         if (method === 'POST' && (body as { action?: string }).action === 'stop_and_save') {
-          const input = GraphEditAdvanceInputCurrentSchema.parse(body), read = record(id), intent = read.intent
+          const input = GraphEditAdvanceInputV3Schema.parse(body), read = record(id), intent = read.intent
           if (!intent || input.intentId !== intent.id || input.commandId !== intent.advanceCommandId) return failure('INTENT_CONFLICT', 'Wrong exact intent')
           if (intent.state === 'saved') return HttpResponse.json(read)
           if (read.affectedSetChanged || !read.canStop && read.current.some((r) => !r.settled)) return failure('FORBIDDEN', 'Affected runs cannot be stopped', 403)
@@ -491,7 +491,7 @@ function dispatchCurrentBoardWorkflows({ url, path, method, prefix, publicPrefix
           intents.set(id, read); return HttpResponse.json(record(id))
         }
         if (method === 'POST' && (body as { action?: string }).action === 'discard_edits') {
-          const input = GraphEditDiscardInputCurrentSchema.parse(body), read = record(id)
+          const input = GraphEditDiscardInputV3Schema.parse(body), read = record(id)
           if (!read.intent || input.intentId !== read.intent.id || input.commandId !== read.intent.discardCommandId) return failure('INTENT_CONFLICT', 'Wrong exact intent')
           if (read.intent.state === 'saved') return failure('ALREADY_SAVED', 'Cannot discard a saved version')
           read.intent.state = 'discarded'; intents.set(id, read); return HttpResponse.json(record(id))

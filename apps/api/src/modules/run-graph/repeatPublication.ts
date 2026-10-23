@@ -2,23 +2,20 @@ import type { PublicProjectionReader } from './publicProjectionReader.js'
 import { readPublicProjectionLocked } from './compactSnapshot.js'
 import { canonicalRepeatEffect, canonicalRepeatEffectReceipt } from './repeatEffects.js'
 import {
-  canonicalGraphJson, RepeatGraphEffectCurrentSchema,
-  RepeatGraphFactCurrentSchema, RepeatGraphScopeCurrentSchema, sameCanonicalGraphScope,
-  qualifyRepeatGraphExecution, validateRepeatGraphFactsCurrent, RUN_GRAPH_LIMITS,
-  type RepeatGraphEffectCurrent, type RepeatGraphFactCurrent, type RepeatGraphScopeCurrent, type WorkflowVersionCurrent,
-} from '@foreman-code/contracts/current'
+  canonicalGraphJson, RepeatGraphEffectV3Schema,
+  RepeatGraphFactV3Schema, RepeatGraphScopeV3Schema, sameCanonicalGraphScope,
+  qualifyRepeatGraphExecution, validateRepeatGraphFactsV3, RUN_GRAPH_LIMITS,
+  type RepeatGraphEffectV3, type RepeatGraphFactV3, type RepeatGraphScopeV3, type WorkflowVersionV3,
+} from '@foreman-code/contracts/wave25'
 import type { RepeatEffect, RepeatFact } from '../runs/repeatPostgres.js'
 import type { RepeatCanonicalPublication } from '../runs/repeatRepositoryHost.js'
 import { repeatDigest, repeatId, repeatSlotId, repeatExecutionIdentity } from '../runs/repeatResolution.js'
 import { repeatLaunchClaim, type RepeatLaunchClaim, type RepeatNativeChange } from '../runs/repeatNativeRepository.js'
 import type { RunOwnership } from '../runs/ownership.js'
 import {
-  assertGraphTransaction,
-  beforeGraphCommit,
-  isReadOnlyGraphTransaction,
-  poisonGraphTransaction
+  assertGraphTransaction, beforeGraphCommit, isReadOnlyGraphTransaction, poisonGraphTransaction,
+  type GraphTransactionSql,
 } from './connection.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { assertRunGraphPublication, readRepeatRunSourceLocked, openRunGraphPublication, type RunGraphPublication } from './publication.js'
 import {
   assertRepeatCanonicalReceiptLocked, requireRepeatCanonicalReceiptBeforeCommit, type RepeatCanonicalReceipt,
@@ -35,32 +32,32 @@ export { canonicalRepeatEffect, canonicalRepeatEffectReceipt } from './repeatEff
 const same = (left: unknown, right: unknown) => canonicalGraphJson(left) === canonicalGraphJson(right)
 const fail = (): never => { throw new RunGraphError('GRAPH_INVARIANT_VIOLATION') }
 
-export function canonicalRepeatLaunchEffect(claim: RepeatLaunchClaim, digest: string): RepeatGraphEffectCurrent {
+export function canonicalRepeatLaunchEffect(claim: RepeatLaunchClaim, digest: string): RepeatGraphEffectV3 {
   if (repeatDigest(claim) !== digest) return fail()
-  return RepeatGraphEffectCurrentSchema.parse({ operation: 'execution.launch', subjectId: claim.executionId,
+  return RepeatGraphEffectV3Schema.parse({ operation: 'execution.launch', subjectId: claim.executionId,
     identity: { kind: 'execution.launch', entityId: claim.executionId }, digest })
 }
 
 /** Explicit private-to-public mapping. The private union is not a public schema.
  * Queued execution state/input bindings are supplied from newly persisted rows.
  * No object spread of a Run, HarnessExecution, input, result or native source. */
-export function mapRepeatFactMetadata(fact: Exclude<RepeatFact, { type: 'repeat.execution.queued' }>): RepeatGraphFactCurrent {
+export function mapRepeatFactMetadata(fact: Exclude<RepeatFact, { type: 'repeat.execution.queued' }>): RepeatGraphFactV3 {
   switch (fact.type) {
-    case 'repeat.occurrence': return RepeatGraphFactCurrentSchema.parse({ type: fact.type, occurrence: fact.occurrence })
-    case 'repeat.decision': return RepeatGraphFactCurrentSchema.parse({ type: fact.type, decision: fact.decision })
-    case 'repeat.node.resolved': return RepeatGraphFactCurrentSchema.parse({ type: fact.type, resolution: {
+    case 'repeat.occurrence': return RepeatGraphFactV3Schema.parse({ type: fact.type, occurrence: fact.occurrence })
+    case 'repeat.decision': return RepeatGraphFactV3Schema.parse({ type: fact.type, decision: fact.decision })
+    case 'repeat.node.resolved': return RepeatGraphFactV3Schema.parse({ type: fact.type, resolution: {
       ref: fact.resolution.ref, value: fact.resolution.value, deferredRelationshipIds: fact.resolution.deferredRelationshipIds, outside: fact.outside,
     } })
     case 'repeat.result.accepted':
       if (fact.ref.nodeId !== fact.execution.workflowNodeId) return fail()
-      return RepeatGraphFactCurrentSchema.parse({ type: fact.type, result: {
+      return RepeatGraphFactV3Schema.parse({ type: fact.type, result: {
         execution: qualifyRepeatGraphExecution(fact.execution, fact.ref.occurrence), resultDigest: fact.resultDigest,
       } })
     default: return fail()
   }
 }
 
-async function assertPersistedFact(sql: SqlTransaction, scope: RepeatGraphScopeCurrent, fact: RepeatGraphFactCurrent): Promise<void> {
+async function assertPersistedFact(sql: GraphTransactionSql, scope: RepeatGraphScopeV3, fact: RepeatGraphFactV3): Promise<void> {
   switch (fact.type) {
     case 'repeat.occurrence': {
       const row = (await sql.query<{ record: unknown }>(
@@ -98,7 +95,7 @@ async function assertPersistedFact(sql: SqlTransaction, scope: RepeatGraphScopeC
     case 'repeat.execution': case 'repeat.input.bound': return
   }
 }
-function assertEffectFacts(scope: RepeatGraphScopeCurrent, version: WorkflowVersionCurrent, effect: RepeatEffect, facts: readonly RepeatFact[]): void {
+function assertEffectFacts(scope: RepeatGraphScopeV3, version: WorkflowVersionV3, effect: RepeatEffect, facts: readonly RepeatFact[]): void {
   if (effect.kind === 'run.complete') { if (effect.entityId !== scope.runId || facts.length !== 0) return fail(); return }
   if (effect.kind === 'occurrence.create') {
     if (facts.length !== 1 || facts[0]!.type !== 'repeat.occurrence' || facts[0]!.occurrence.identity.occurrenceId !== effect.entityId) return fail()
@@ -143,11 +140,11 @@ function assertEffectFacts(scope: RepeatGraphScopeCurrent, version: WorkflowVers
  * A caller that already opened G1 at admission passes that SAME publication.
  * Otherwise this opens G1 once without initializing or repairing a missing head.
  */
-export async function openRepeatCanonicalPublicationLocked(sql: SqlTransaction, input: RepeatGraphScopeCurrent,
-  owner: RunOwnership, existing?: RunGraphPublication<RepeatGraphScopeCurrent>): Promise<RepeatCanonicalPublication> {
+export async function openRepeatCanonicalPublicationLocked(sql: GraphTransactionSql, input: RepeatGraphScopeV3,
+  owner: RunOwnership, existing?: RunGraphPublication<RepeatGraphScopeV3>): Promise<RepeatCanonicalPublication> {
   assertGraphTransaction(sql)
   try {
-    const scope = RepeatGraphScopeCurrentSchema.parse(input)
+    const scope = RepeatGraphScopeV3Schema.parse(input)
     owner.assertOwned()
     if (owner.runId !== scope.runId) throw new RunGraphError('GRAPH_SCOPE_MISMATCH')
     if (isReadOnlyGraphTransaction(sql)) return await readRepeatCanonicalPublication(sql, scope, owner, readPublicProjectionLocked)
@@ -185,7 +182,7 @@ export async function openRepeatCanonicalPublicationLocked(sql: SqlTransaction, 
               'select payload_digest from run_repeat_effects where run_id=$1 and effect_kind=$2 and entity_id=$3',
               [scope.runId, effect.kind, effect.entityId])).rows[0]
             if (!privateReceipt || privateReceipt.payload_digest !== effect.digest) return fail()
-            const metadata: RepeatGraphFactCurrent[] = []
+            const metadata: RepeatGraphFactV3[] = []
             for (const fact of facts) {
               if (fact.type === 'repeat.execution.queued') {
                 const [execution] = await readRepeatGraphExecutionsLocked(sql, scope,
@@ -195,14 +192,14 @@ export async function openRepeatCanonicalPublicationLocked(sql: SqlTransaction, 
                   || !same(execution.identity, qualifyRepeatGraphExecution(fact.execution, fact.ref.occurrence))) return fail()
                 metadata.push({ type: 'repeat.execution', execution })
                 const bindings = await readRepeatGraphBindingsLocked(sql, scope, [fact.execution.executionId])
-                metadata.push(...bindings.map((binding): RepeatGraphFactCurrent => ({ type: 'repeat.input.bound', binding })))
+                metadata.push(...bindings.map((binding): RepeatGraphFactV3 => ({ type: 'repeat.input.bound', binding })))
               } else metadata.push(mapRepeatFactMetadata(fact))
             }
             if (effect.kind === 'run.complete') {
               const state = await readRepeatRunStateLocked(sql, scope)
               if (state.executionState !== 'completed' || state.outcome !== 'succeeded' || state.stopRequested) return fail()
             }
-            validateRepeatGraphFactsCurrent(version, scope, metadata)
+            validateRepeatGraphFactsV3(version, scope, metadata)
             for (const fact of metadata) await assertPersistedFact(sql, scope, fact)
             return metadata
           })
@@ -217,7 +214,7 @@ export async function openRepeatCanonicalPublicationLocked(sql: SqlTransaction, 
         canonicalGraphJson(changeValue, RUN_GRAPH_LIMITS.transactionBytes)
         const change = structuredClone(changeValue)
         checkNative(change)
-        let effect: RepeatGraphEffectCurrent | null = null
+        let effect: RepeatGraphEffectV3 | null = null
         if (change.kind === 'launch') {
           const [before] = await readRepeatGraphExecutionsLocked(sql, scope, { executionIds: [change.next.id], version })
           if (!before) return fail()
@@ -226,12 +223,12 @@ export async function openRepeatCanonicalPublicationLocked(sql: SqlTransaction, 
           effect = canonicalRepeatLaunchEffect(claim, change.sourceDigest)
         }
         const evidence = { sourceKind: 'execution' as const, sourceId: change.sourceId, sourceRevision: change.sourceRevision }
-        const project = async (): Promise<RepeatGraphFactCurrent[]> => {
+        const project = async (): Promise<RepeatGraphFactV3[]> => {
           const [execution] = await readRepeatGraphExecutionsLocked(sql, scope, { executionIds: [change.next.id], version })
           if (!execution || !same(execution.identity, qualifyRepeatGraphExecution(repeatExecutionIdentity(change.next), change.ref.occurrence))
             || execution.state !== change.next.state || execution.resultOutcome !== (change.next.result?.outcome ?? null)) return fail()
-          const facts: RepeatGraphFactCurrent[] = [{ type: 'repeat.execution', execution }]
-          validateRepeatGraphFactsCurrent(version, scope, facts)
+          const facts: RepeatGraphFactV3[] = [{ type: 'repeat.execution', execution }]
+          validateRepeatGraphFactsV3(version, scope, facts)
           return facts
         }
         const mutation = async () => { await mutate() }
@@ -259,7 +256,7 @@ export async function openRepeatCanonicalPublicationLocked(sql: SqlTransaction, 
 }
 
 /** Owner observations validate committed sources without opening a writer or staging finalization. */
-async function readRepeatCanonicalPublication(sql: SqlTransaction, scope: RepeatGraphScopeCurrent,
+async function readRepeatCanonicalPublication(sql: GraphTransactionSql, scope: RepeatGraphScopeV3,
   owner: RunOwnership, readPublicProjection: PublicProjectionReader): Promise<RepeatCanonicalPublication> {
   const { version } = await readRepeatGraphPinsLocked(sql, scope)
   const source = await readRepeatRunSourceLocked(sql, scope)
@@ -291,7 +288,7 @@ async function readRepeatCanonicalPublication(sql: SqlTransaction, scope: Repeat
  * COMMIT, on its existing owner transaction/publication. No new authority,
  * mutation, counter, head, command receipt or native acknowledgement is created.
  * Full private Run data contributes only to its digest, never to graph facts. */
-export async function publishRepeatRunStateLocked(publication: RunGraphPublication<RepeatGraphScopeCurrent>, owner: RunOwnership): Promise<void> {
+export async function publishRepeatRunStateLocked(publication: RunGraphPublication<RepeatGraphScopeV3>, owner: RunOwnership): Promise<void> {
   const { sql, scope } = publication
   try {
     assertGraphTransaction(sql)

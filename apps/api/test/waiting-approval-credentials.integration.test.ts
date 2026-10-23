@@ -3,7 +3,7 @@ import { expect, it, vi } from 'vitest'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { approvalResponse } from './helpers/approvalFaults.js'
 import { renewOwnedLeases } from '../src/modules/leases/ownerLeases.js'
-import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
+import { Wave25WorkerCredentialService } from '../src/modules/interactions/wave25/credentials.js'
 import { APP_MCP_TOKEN_ENVIRONMENT_VARIABLE, WORKER_CREDENTIAL_RENEWAL_WINDOW_MS } from '../src/modules/access/workerCredentials.js'
 
 it('issues and renews against database time despite API clock offsets and jumps', async () => {

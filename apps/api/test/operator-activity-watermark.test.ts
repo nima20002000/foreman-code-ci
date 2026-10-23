@@ -8,30 +8,28 @@ function fixture() {
   let item: { record: OperatorActivityChange; source_provenance: Record<string, unknown>; sequence: string; revision: string } | undefined
   const owner = { requestId: 'A', sessionId: 'session', turnId: 'turn-A' }
   const query = async (text: string, values: unknown[] = []) => {
-    // Statements are told apart by their bound values: four (the owner fence ending in session and turn, or the
-    // provenance write ending in JSON) are the owner read and the watermark write; three read the stored item; two read
-    // the owner input hash; five insert the item; one bumps the scope revision.
-    if (values.length === 4 && typeof values[3] === 'string' && values[3].startsWith('{')) {
-      item!.source_provenance = JSON.parse(String(values[3])) as Record<string, unknown>
-      return { rows: [], rowCount: 1 }
-    }
-    if (values.length === 4) {
+    const sql = text.replace(/\s+/g, ' ').trim()
+    if (sql.startsWith('select id,harness')) {
       const admitted = values[1] === owner.requestId && (values[2] === null || values[2] === owner.sessionId)
         && (values[3] === null || values[3] === owner.turnId)
       return { rows: admitted ? [{ id: 'conversation', harness: 'codex' }] : [], rowCount: admitted ? 1 : 0 }
     }
-    if (values.length === 3) return { rows: item ? [structuredClone(item)] : [], rowCount: item ? 1 : 0 }
-    if (values.length === 2) return { rows: [{ input_hash: 'attempt-A' }], rowCount: 1 }
-    if (values.length === 5) {
+    if (sql.startsWith('select record,source_provenance')) return { rows: item ? [structuredClone(item)] : [], rowCount: item ? 1 : 0 }
+    if (sql.startsWith('select input_hash')) return { rows: [{ input_hash: 'attempt-A' }], rowCount: 1 }
+    if (sql.startsWith('insert into operator_conversation_activity')) {
       item = { record: JSON.parse(String(values[3])) as OperatorActivityChange,
         source_provenance: JSON.parse(String(values[4])) as Record<string, unknown>, sequence: '1', revision: String(item ? Number(item.revision) + 1 : 0) }
       return { rows: [structuredClone(item)], rowCount: 1 }
     }
-    if (values.length === 1) {
+    if (sql.startsWith('update operator_conversation_activity set source_provenance')) {
+      item!.source_provenance = JSON.parse(String(values[3])) as Record<string, unknown>
+      return { rows: [], rowCount: 1 }
+    }
+    if (sql.startsWith('update operator_conversations set revision')) {
       scopeRevision++
       return { rows: [{ revision: String(scopeRevision) }], rowCount: 1 }
     }
-    if (!['begin', 'commit', 'rollback'].includes(text.trim())) throw new Error(`Unexpected statement binding ${values.length} values`)
+    if (!['begin', 'commit', 'rollback'].includes(sql)) throw new Error(`Unexpected SQL ${sql}`)
     return { rows: [], rowCount: 0 }
   }
   const pool = { connect: async () => ({ query, release() {} }) } as unknown as pg.Pool

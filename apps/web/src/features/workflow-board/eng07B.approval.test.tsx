@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { HttpResponse } from 'msw'
 import { DurableInteractionSchema, NATIVE_INTERACTION_FIXTURES, RespondToInteractionRequestSchema } from '@foreman-code/contracts'
 import { LocalHumanAccessSchema, ManagementActionSchema } from '@foreman-code/contracts/management'
-import { CurrentRunDetailsSchema, RepeatGraphCurrentStateSchema, RunExecutionDetailSchema } from '@foreman-code/contracts/current'
+import { CurrentRunDetailsSchema, RepeatGraphCurrentV3Schema, RunExecutionDetailSchema } from '@foreman-code/contracts/wave25'
 import { boardHref, installBoardTestLifecycle, measureBoardWire, mountMeasuredBoard, openRunDetails } from './eng05D.testSupport'
 import { eng07BoardFixture } from './eng07B.testSupport'
 
@@ -32,7 +32,7 @@ describe('ENG07-B S3-04 human approval on the mounted ordinary Board', () => {
           acceptedResult: { status: 'not_accepted' },
         } : {}) }) }
     }))
-    f.mock.currents.set(f.run.id, RepeatGraphCurrentStateSchema.parse({ ...terminalCurrent, asOfSequence: '1',
+    f.mock.currents.set(f.run.id, RepeatGraphCurrentV3Schema.parse({ ...terminalCurrent, asOfSequence: '1',
       state: { ...terminalCurrent.state, run: { ...terminalCurrent.state.run, executionState: 'waiting', outcome: 'pending', pendingInteractionCount: 1 } } }))
     let interaction = DurableInteractionSchema.parse({ ...NATIVE_INTERACTION_FIXTURES.codex,
       id: `interaction-${f.run.id}`, workspaceId: f.scope.workspaceId, workflowId: f.scope.workflowId,
@@ -81,7 +81,7 @@ describe('ENG07-B S3-04 human approval on the mounted ordinary Board', () => {
     await act(async () => {
       terminalPublished = true
       f.mock.runs.set(f.run.id, f.record); f.mock.inspection.set(f.run.id, f.rows)
-      f.mock.currents.set(f.run.id, RepeatGraphCurrentStateSchema.parse({ ...terminalCurrent, asOfSequence: '2' }))
+      f.mock.currents.set(f.run.id, RepeatGraphCurrentV3Schema.parse({ ...terminalCurrent, asOfSequence: '2' }))
       await mounted.cache.invalidateQueries()
     })
     const last = f.at(2, 1).detail

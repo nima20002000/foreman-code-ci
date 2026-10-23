@@ -5,7 +5,8 @@ import { DomainError } from '../errors.js'
 import type { HostHarnessOverrideService } from './instanceSettings/service.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type pg from 'pg'
-import { withTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
+import { withTransaction } from '../../infrastructure/transaction.js'
 export { managedProviderEnvironment, pinnedCodexAccountEnvironment } from './providerAccountRuntime.js'
 import { AcceptedProviderAccountBindings } from '../provider-accounts/acceptedBindings.js'
 
@@ -73,7 +74,7 @@ export class ProviderAccountConfigurationService {
   }
 
   async resolve(configuration: HarnessConfiguration, selection?: HarnessProfileSelection,
-    options?: { sql: SqlQuery }): Promise<HarnessConfiguration> {
+    options?: { sql: GraphSqlClient }): Promise<HarnessConfiguration> {
     if (configuration.harness === 'opencode') return configuration
     if (!configuration.accountId && (selection || configuration.harness === 'claude')) return configuration
     const account = await this.accounts.resolve(configuration.harness, configuration.accountId, options)

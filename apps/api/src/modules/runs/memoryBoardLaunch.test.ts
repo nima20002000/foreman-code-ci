@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { assertRepeatNativeUpdate } from '../interactions/repeatNativeEvidence.js'
 import { workflowExecutionRequest } from './workflowExecutionRequest.js'
 

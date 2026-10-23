@@ -1,8 +1,7 @@
 import { REMOTE_NATIVE_SOURCE_LIMIT } from '@foreman-code/contracts/remote-workflow-physical'
 import type { WorkflowNativeCapture, WorkflowOriginalNativeSource } from '../interactions/workflowNativeCapture.js'
-import { assertGraphTransaction } from '../run-graph/connection.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
-import { canonicalGraphJson } from '@foreman-code/contracts/current'
+import { assertGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
+import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../errors.js'
 import { repeatDigest, repeatId, repeatExecutionIdentity, type RepeatScope } from './repeatResolution.js'
 import type { StoredRepeatExecution } from './repeatPostgres.js'
@@ -33,7 +32,7 @@ function sourceIdentity(record: WorkflowNativeProofRecord): unknown {
 }
 
 /** The terminal that committed with the execution, before physical settlement. */
-export async function readWorkflowTerminalSource(sql: SqlTransaction,
+export async function readWorkflowTerminalSource(sql: GraphTransactionSql,
   execution: HarnessExecution): Promise<WorkflowNativeProofRecord | undefined> {
   const rows = (await sql.query<{ record: WorkflowNativeProofRecord; source_digest: string }>(`
     select record,source_digest from workflow_native_proofs where run_id=$1 and execution_id=$2
@@ -68,7 +67,7 @@ export function workflowNativeSourceRecord(capture: WorkflowNativeCapture, store
 }
 
 /** Each frame keeps its own immutable source, including the first receipt on replay. */
-export async function persistWorkflowNativeSources(sql: SqlTransaction,
+export async function persistWorkflowNativeSources(sql: GraphTransactionSql,
   proposed: readonly WorkflowNativeProofRecord[]): Promise<WorkflowNativeProofRecord[]> {
   assertGraphTransaction(sql)
   const distinct = new Map<string, WorkflowNativeProofRecord>()

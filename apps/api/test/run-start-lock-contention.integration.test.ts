@@ -3,9 +3,9 @@ import type pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import {
-  CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveResultSchema, RunStartCurrentInputSchema, RunStartCurrentResultSchema,
-  SavedRunDetailsSchema, makeCurrentWorkflowFixture, type RunStartCurrentInput,
-} from '@foreman-code/contracts/current'
+  CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveResultSchema, RunStartV3InputSchema, RunStartV3ResultSchema,
+  SavedRunDetailsSchema, makeCurrentWorkflowFixture, type RunStartV3Input,
+} from '@foreman-code/contracts/wave25'
 import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 import { createPool } from '../src/infrastructure/pool.js'
 import { LOCAL_RUNNER_ID } from '../src/modules/workspaces/location.js'
@@ -15,7 +15,7 @@ import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 type Runtime = Awaited<ReturnType<typeof currentOperatorIntegration>>
-type Starter = { runtime: Runtime; input: RunStartCurrentInput }
+type Starter = { runtime: Runtime; input: RunStartV3Input }
 
 describe.runIf(postgresEnabled)('authenticated Start lock contention', () => {
   let database: Awaited<ReturnType<typeof migratedDatabase>>
@@ -64,7 +64,7 @@ describe.runIf(postgresEnabled)('authenticated Start lock contention', () => {
           arguments: await runtime.create() })
         expect(save.isError).not.toBe(true)
         const saved = CurrentWorkflowSaveResultSchema.parse(decodeMcpToolResult(save)).value
-        const input = RunStartCurrentInputSchema.parse({ workspaceId: saved.version.workspaceId,
+        const input = RunStartV3InputSchema.parse({ workspaceId: saved.version.workspaceId,
           workflowId: saved.workflowId, workflowVersionId: saved.version.id, executionSemanticsVersion: 3,
           commandId: randomUUID(), expectedWorkflowRevision: saved.revision,
           expectedAgentConfigurationVersionIds: saved.version.agentConfigurationVersionIds,
@@ -120,7 +120,7 @@ describe.runIf(postgresEnabled)('authenticated Start lock contention', () => {
       }
       const response = await starter.runtime.client.callTool({ name: 'run_start', arguments: starter.input })
       expect(response.isError).not.toBe(true)
-      const started = RunStartCurrentResultSchema.parse(decodeMcpToolResult(response))
+      const started = RunStartV3ResultSchema.parse(decodeMcpToolResult(response))
       expect(started).toMatchObject({ accepted: true, replayed: false })
       // Acceptance is asynchronous: dispatch, the first native turn and its result persistence all run
       // before closure, which took over 5 s on a loaded CI machine. Same budget as settlement below.
@@ -203,7 +203,7 @@ describe.runIf(postgresEnabled)('authenticated Start lock contention', () => {
         const ids: string[] = []
         for (const [index, response] of accepted.entries()) {
           expect(response.isError).not.toBe(true)
-          const started = RunStartCurrentResultSchema.parse(decodeMcpToolResult(response))
+          const started = RunStartV3ResultSchema.parse(decodeMcpToolResult(response))
           expect(started).toMatchObject({ accepted: true, replayed: false })
           ids.push(started.run.id)
           await assertPersisted(starters[index]!, started.run.id)
@@ -259,7 +259,7 @@ describe.runIf(postgresEnabled)('authenticated Start lock contention', () => {
       const responses = await Promise.all(calls)
       const results = responses.map((response) => {
         expect(response.isError).not.toBe(true)
-        return RunStartCurrentResultSchema.parse(decodeMcpToolResult(response))
+        return RunStartV3ResultSchema.parse(decodeMcpToolResult(response))
       })
       expect(results.filter((result) => !result.replayed)).toHaveLength(1)
       expect(new Set(results.map((result) => result.run.id)).size).toBe(1)
@@ -303,7 +303,7 @@ describe.runIf(postgresEnabled)('authenticated Start lock contention', () => {
       await commitTransaction(holder)
       const retry = await starter.runtime.client.callTool({ name: 'run_start', arguments: starter.input })
       expect(retry.isError).not.toBe(true)
-      const accepted = RunStartCurrentResultSchema.parse(decodeMcpToolResult(retry))
+      const accepted = RunStartV3ResultSchema.parse(decodeMcpToolResult(retry))
       expect(accepted).toMatchObject({ accepted: true, replayed: false })
       await assertPersisted(starter, accepted.run.id)
     } finally {

@@ -1,16 +1,15 @@
 import { SourceMaterializationRecordSchema } from '@foreman-code/contracts/source-admission'
 import { RetainedSourceFootprintSchema } from '@foreman-code/contracts/source-operations'
-import { sourceWorkingTreePath } from '../sources/index.js'
+import { sourceWorkingTreePath } from '../sources/sourceTreePaths.js'
 import { readRunActivitySnapshot } from './activitySnapshot.js'
 import type pg from 'pg'
 import { HarnessExecutionSchema, RunActivitySchema } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { RunWorktreeSchema, SavedRunDetailsSchema, REPEAT_GRAPH_LIMITS, graphJsonBytes, RUN_GRAPH_LIMITS } from '@foreman-code/contracts/current'
+import { RunWorktreeSchema, SavedRunDetailsSchema, REPEAT_GRAPH_LIMITS, graphJsonBytes, RUN_GRAPH_LIMITS } from '@foreman-code/contracts/wave25'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { isAuthorized, requireAuthorization } from '../access/policy.js'
 import { DomainError, databaseReadFailure } from '../errors.js'
-import { withExclusiveGraphConnection } from '../run-graph/connection.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { withExclusiveGraphConnection, type GraphTransactionSql } from '../run-graph/connection.js'
 import { readAcceptedRepeatRunLocked, readRecordedRepeatRunSnapshot, type AcceptedRepeatRunSnapshot } from './repeatStartRead.js'
 import { readRepeatExecutionsLocked } from './repeatExecutionRead.js'
 import { readExecutionQueueReason } from './executionQueue.js'
@@ -21,7 +20,7 @@ const executionReadBatchSize = 16
 /** Readback uses one unlocked snapshot; mutation callers retain admission locks. */
 export async function withCurrentRunRead<T>(pool: pg.Pool, principal: ManagementPrincipal,
   workspaceId: string, runId: string, action: 'runs:read' | 'runs:stop',
-  work: (sql: SqlTransaction, snapshot: AcceptedRepeatRunSnapshot, live: ManagementPrincipal) => Promise<T>,
+  work: (sql: GraphTransactionSql, snapshot: AcceptedRepeatRunSnapshot, live: ManagementPrincipal) => Promise<T>,
   readAcceptedRun = action === 'runs:read' ? readRecordedRepeatRunSnapshot : readAcceptedRepeatRunLocked): Promise<T> {
   try {
     return await withExclusiveGraphConnection(pool, (connection) => connection.transaction(async (sql) => {

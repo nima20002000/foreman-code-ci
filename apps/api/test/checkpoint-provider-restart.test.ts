@@ -1,5 +1,5 @@
 import { HarnessExecutionRequestSchema, type NativeHarnessEvent } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { expect, it } from 'vitest'
 import { CheckpointTestProvider } from './helpers/checkpointProvider.js'
 

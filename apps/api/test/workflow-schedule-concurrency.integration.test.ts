@@ -4,22 +4,22 @@ import { admitRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
 import { repeatStartPublication } from '../src/modules/run-graph/repeatStartPublication.js'
 import { DomainError } from '../src/modules/errors.js'
 import { WorkflowScheduleDispatcher } from '../src/modules/schedules/dispatcher.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
-import { scheduleDispatchFixture, scheduleDomainState, type ScheduleDatabase, type ScheduleDispatchFixture } from './helpers/scheduleFixture.js'
-import { onceSchedule, minuteSchedule } from './helpers/scheduleClockCases.js'
+import { sch11Fixture, sch11DomainState, type Sch11Database, type Sch11Fixture } from './helpers/scheduleFixture.js'
+import { sch11Once, sch11Minute } from './helpers/scheduleClockCases.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 describe.skipIf(!postgresEnabled)('scheduled Start concurrency and cancellation', () => {
-  let database: ScheduleDatabase
-  let f: ScheduleDispatchFixture
-  beforeAll(async () => { database = await migratedDatabase() }, 60_000)
+  let database: Sch11Database
+  let f: Sch11Fixture
+  beforeAll(async () => { database = await agent3Database() }, 60_000)
   afterAll(async () => { await database?.close() })
-  beforeEach(async () => { f = await scheduleDispatchFixture(database) }, 60_000)
+  beforeEach(async () => { f = await sch11Fixture(database) }, 60_000)
 
   it('queues scheduled Starts on one runner beyond the production SQL deadlines', async () => {
-    const other = await scheduleDispatchFixture(database)
+    const other = await sch11Fixture(database)
     const firstSchedule = await f.save()
     const secondSchedule = await other.save()
     f.time.now = firstSchedule.nextOccurrenceAt!
@@ -59,9 +59,9 @@ describe.skipIf(!postgresEnabled)('scheduled Start concurrency and cancellation'
   }, 15_000)
 
   it('admits another workspace that becomes due while the first preflight is pending', async () => {
-    const healthy = await scheduleDispatchFixture(database)
+    const healthy = await sch11Fixture(database)
     const slowSchedule = await f.save()
-    const healthySchedule = await healthy.save({ ...onceSchedule, time: '10:01' })
+    const healthySchedule = await healthy.save({ ...sch11Once, time: '10:01' })
     f.time.now = slowSchedule.nextOccurrenceAt!
     const entered = rejectableDeferred()
     const release = rejectableDeferred()
@@ -106,7 +106,7 @@ describe.skipIf(!postgresEnabled)('scheduled Start concurrency and cancellation'
   }, 15_000)
 
   it('reuses fenced preflight when admission latency spans a one-second interval', async () => {
-    const saved = await f.save({ ...minuteSchedule, unit: 'second' })
+    const saved = await f.save({ ...sch11Minute, unit: 'second' })
     f.time.now = saved.nextOccurrenceAt!
     let preparations = 0
     const dispatcher = f.dispatcher(async (principal, input, schedule) => {
@@ -133,7 +133,7 @@ describe.skipIf(!postgresEnabled)('scheduled Start concurrency and cancellation'
   it('rolls back a staged Run when the dispatch deadline expires before commit', async () => {
     const saved = await f.save()
     f.time.now = saved.nextOccurrenceAt!
-    const before = await scheduleDomainState(f)
+    const before = await sch11DomainState(f)
     const entered = rejectableDeferred()
     const release = rejectableDeferred()
     const controller = new AbortController()
@@ -151,7 +151,7 @@ describe.skipIf(!postgresEnabled)('scheduled Start concurrency and cancellation'
       controller.abort(new DomainError('SCHEDULE_PREPARATION_TIMEOUT', 'Preparation deadline expired.', 504))
       release.resolve()
       await rejected
-      expect(await scheduleDomainState(f)).toEqual(before)
+      expect(await sch11DomainState(f)).toEqual(before)
       expect(await f.countRuns()).toBe(0)
     } finally { release.resolve(); await pending.catch(() => /* ignore: cleanup; the test body already awaited or asserted this outcome */ undefined) }
   }, 15_000)

@@ -45,13 +45,11 @@ function fixture(nativeOutputs?: import('./workerMcpRelay.js').WorkerNativeOutpu
   const binding = { execution_id: 'execution', run_id: 'run', workspace_id: 'workspace', workflow_id: 'workflow', agent_id: 'agent',
     purpose: 'workflow', revoked_at: null as Date | null, execution_state: 'running', run_state: 'running', authorization_principal_id: 'owner', stopped: false, cleanup: false }
   const state = { receipt: undefined as unknown, contextReady: false }
-  // Reads are told apart by what they bind: the credential binding read binds the worker principal and execution ids,
-  // the receipt read the operation id, and the native conversation read the Run, execution, session and turn.
-  const query = vi.fn(async (_sql: string, values: unknown[] = []): Promise<{ rows: Record<string, unknown>[]; rowCount: number }> => {
+  const query = vi.fn(async (sql: string): Promise<{ rows: Record<string, unknown>[]; rowCount: number }> => {
     let rows: Record<string, unknown>[] = []
-    if (values.length === 2 && values[0] === principal.id) rows = [binding]
-    if (values.length === 1 && values[0] === intent.operationId && state.receipt) rows = [{ receipt: state.receipt }]
-    if (values.length === 4 && values[0] === intent.runId && state.contextReady) rows = [{ id: 'conversation' }]
+    if (sql.includes('from worker_credential_bindings')) rows = [binding]
+    if (sql.includes('from remote_execution_receipts') && state.receipt) rows = [{ receipt: state.receipt }]
+    if (sql.includes('from operator_conversations') && state.contextReady) rows = [{ id: 'conversation' }]
     return { rows, rowCount: rows.length }
   })
   const pool = { connect: async () => ({ query, release: vi.fn() }) } as unknown as pg.Pool
@@ -213,7 +211,7 @@ describe('Main worker MCP relay with original binding doubles and real worker sc
     expect(isAuthorized(f.principal, 'interactions:read', { workspaceId: 'workspace', workflowId: 'workflow', runId: 'run' })).toBe(false)
     expect(await f.relay.handle(f.request, f.connection)).toMatchObject({ audience: 'worker', principalId: f.principal.id, executionId: 'execution' })
     expect(f.forward).not.toHaveBeenCalled()
-    expect(f.query.mock.calls.some(([, values]) => values?.[0] === f.principal.id && values?.[1] === 'execution')).toBe(true)
+    expect(f.query.mock.calls.some(([sql]) => sql.includes("he.record->>'state' as execution_state"))).toBe(true)
     expect(await f.relay.handle({ ...f.request, operation: 'worker-mcp.request', body: { method: 'tools/list' } }, f.connection)).toMatchObject({ statusCode: 200 })
     expect(f.forward).toHaveBeenCalledWith({ method: 'tools/list' }, 'original-worker-bearer', undefined, undefined)
   })

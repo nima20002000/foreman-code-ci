@@ -1,15 +1,15 @@
 import { nativeNode } from '../../../shared/mocks/nativeFixtureTypes'
-import { boardStartClient } from '../../workflow-board'
+import { boardStartClient } from '../../workflow-board/startClient'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { GraphEditIntentCurrentSchema, type GraphEditReadResultCurrent, type GraphEditStageInputCurrent } from '@foreman-code/contracts/current'
+import { GraphEditIntentV3Schema, type GraphEditReadResultV3, type GraphEditStageInputV3 } from '@foreman-code/contracts/wave25'
 import { queryKeys } from '../../../shared/api/query'
 import { useGraphDraftStore } from '../store'
 import { fixture } from './core.cases'
 import { NextDraftEditor } from './NextDraftEditor'
-import { nextDraftKey } from '../../board-core'
+import { nextDraftKey } from './state'
 import { nextDraftApi } from './transport'
 import { readEditOutbox } from './editIntentStorage'
 import { journalIntent } from './nim2644Journal.fixture'
@@ -31,8 +31,8 @@ async function confirmStop(user: ReturnType<typeof userEvent.setup>) {
 
 // Mounted React state/form tests with a mocked transport and canvas. These do
 // not claim an authenticated browser, React Flow geometry or native Stop test.
-vi.mock('../../board-core/context', async (original) => ({
-  ...await original<typeof import('../../board-core/context')>(),
+vi.mock('../../workflow-board/context', async (original) => ({
+  ...await original<typeof import('../../workflow-board/context')>(),
   useWorkflowBoard: () => ({ activeRuns: 1 }),
 }))
 vi.mock('./DraftCanvas', () => ({ DraftCanvas: ({ open, panels }: { open?: { nodeId: string; panel: 'chat' | 'settings' | 'info' }; panels?: (nodeId: string) => Record<string, unknown> }) => <div>Canvas fixture{open && panels
@@ -42,7 +42,7 @@ vi.mock('../../../shared/api/query', async (original) => ({
   useInteractionsQuery: () => ({ data: { items: [] } }),
 }))
 const key = nextDraftKey('workspace', 'workflow')
-const empty: GraphEditReadResultCurrent = { intent: null, current: [], canStop: false, affectedSetChanged: false }
+const empty: GraphEditReadResultV3 = { intent: null, current: [], canStop: false, affectedSetChanged: false }
 const clients: QueryClient[] = []
 function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
@@ -56,11 +56,11 @@ function changeMeaning() {
     nodes: graph.nodes.map((node, index) => index ? node : { ...node, initialPrompt: 'Retained exact instruction', position: { x: 802, y: -71 } }),
   })))
 }
-function staged(request: GraphEditStageInputCurrent): GraphEditReadResultCurrent {
+function staged(request: GraphEditStageInputV3): GraphEditReadResultV3 {
   const pins = ['run-one', 'run-two'].map((runId, index) => ({ workspaceId: 'workspace', workflowId: index ? 'shared-workflow' : 'workflow',
     runId, workflowVersionId: `accepted-${runId}`, executionSemanticsVersion: 3 as const, agentConfigurationVersionIds: { agent: 'accepted-configuration' } }))
   // The journal retains the complete submitted V3 definition and pins, not an old server draft.
-  const intent = GraphEditIntentCurrentSchema.parse({ ...journalIntent(request, fixture(), pins),
+  const intent = GraphEditIntentV3Schema.parse({ ...journalIntent(request, fixture(), pins),
     id: 'private-intent', advanceCommandId: 'exact-advance', discardCommandId: 'exact-discard' })
   return { intent, canStop: true, affectedSetChanged: false, current: pins.map((pin) => ({ pin, terminal: false, settled: false,
     outcome: 'pending', cleanupPending: false, nativePending: true, interactionPending: true, reviewPending: false })) }
@@ -94,7 +94,7 @@ it('shows both exact board actions; Discard does not Stop, publish, or erase ind
   expect(stage).not.toHaveBeenCalled(); expect(advance).not.toHaveBeenCalled(); expect(start).not.toHaveBeenCalled()
 })
 it('recovers a dropped Stage reply after full form-memory loss and retries the same payload, without Start', async () => {
-  let persisted: GraphEditReadResultCurrent = empty
+  let persisted: GraphEditReadResultV3 = empty
   vi.mocked(nextDraftApi.editRead).mockImplementation(async () => persisted)
   const stage = vi.spyOn(nextDraftApi, 'editStage').mockImplementation(async (input) => {
     if (!persisted.intent) { persisted = staged(input); throw new Error('Stage reply lost') }
@@ -126,7 +126,7 @@ it('recovers a dropped Stage reply after full form-memory loss and retries the s
   expect(start).not.toHaveBeenCalled()
 })
 it('duplicate clicks share one stage/advance; private Discard reconciles without another Stop', async () => {
-  let persisted: GraphEditReadResultCurrent = empty
+  let persisted: GraphEditReadResultV3 = empty
   vi.mocked(nextDraftApi.editRead).mockImplementation(async () => persisted)
   let releaseStage!: () => void
   const stage = vi.spyOn(nextDraftApi, 'editStage').mockImplementation(async (input) => {
@@ -136,7 +136,7 @@ it('duplicate clicks share one stage/advance; private Discard reconciles without
     await new Promise<void>((resolve) => { releaseStage = resolve })
     return persisted
   })
-  let release!: (value: GraphEditReadResultCurrent) => void
+  let release!: (value: GraphEditReadResultV3) => void
   const advance = vi.spyOn(nextDraftApi, 'editAdvance').mockImplementation(async () => new Promise((resolve) => { release = resolve }))
   const discard = vi.spyOn(nextDraftApi, 'editDiscard').mockImplementation(async () => (persisted = { ...persisted, intent: { ...persisted.intent!, state: 'discarded' } }))
   const user = userEvent.setup(); mount(); changeMeaning()
@@ -161,7 +161,7 @@ it('duplicate clicks share one stage/advance; private Discard reconciles without
 })
 
 it('stages default worktree changes through Stop-and-save and locks further worktree edits', async () => {
-  let persisted: GraphEditReadResultCurrent = empty
+  let persisted: GraphEditReadResultV3 = empty
   vi.mocked(nextDraftApi.editRead).mockImplementation(async () => persisted)
   const stage = vi.spyOn(nextDraftApi, 'editStage').mockImplementation(async input => (persisted = staged(input)))
   const advance = vi.spyOn(nextDraftApi, 'editAdvance').mockImplementation(async () => {

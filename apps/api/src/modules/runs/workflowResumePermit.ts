@@ -1,13 +1,13 @@
 import type { DurableInteraction } from '@foreman-code/contracts'
-import type { WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
+import type { WorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
 import type { ApprovalPostgresSaver } from '../../infrastructure/approvalCheckpointSaver.js'
 import { DomainError } from '../errors.js'
 import { currentRunGraphPublication } from '../run-graph/publication.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
-import { consumeApprovalGraphResume } from '../interactions/current/resume.js'
+import type { GraphTransactionSql } from '../run-graph/connection.js'
+import { consumeApprovalGraphResume } from '../interactions/wave25/resume.js'
 import type { RunOwnership } from './ownership.js'
 
-type WorkflowRunCurrent = ReturnType<typeof WorkflowRunCurrentSchema.parse>
+type WorkflowRunV3 = ReturnType<typeof WorkflowRunV3Schema.parse>
 
 /** Only a confirmed atomic checkpoint/effect COMMIT mints this private permit.
  * Serialized IDs or an arbitrary Command can never move a waiting Run forward. */
@@ -22,8 +22,8 @@ export function mintWorkflowResumePermit(captured: CapturedResume): WorkflowResu
   resumePermits.set(permit, captured)
   return permit
 }
-export async function assertConsumedWorkflowResumeLocked(sql: SqlTransaction, owner: RunOwnership,
-  run: WorkflowRunCurrent, permit: WorkflowResumePermit | undefined): Promise<void> {
+export async function assertConsumedWorkflowResumeLocked(sql: GraphTransactionSql, owner: RunOwnership,
+  run: WorkflowRunV3, permit: WorkflowResumePermit | undefined): Promise<void> {
   const captured = permit && resumePermits.get(permit)
   owner.assertOwned()
   if (!captured || captured.owner !== owner || captured.runId !== run.id || captured.versionId !== run.workflowVersionId

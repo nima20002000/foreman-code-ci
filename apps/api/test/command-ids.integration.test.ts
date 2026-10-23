@@ -1,10 +1,10 @@
 import { expect, it } from 'vitest'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 
 it('generates distinct persisted command IDs when callers omit them', async () => {
-  const db = await migratedDatabase()
+  const db = await agent3Database()
   try {
     const caller = await new PostgresAccessService(db.pool).issue({
       name: 'Synthetic command caller', audience: 'operator', grants: [],

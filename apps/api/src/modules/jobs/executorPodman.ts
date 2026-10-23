@@ -16,7 +16,7 @@ import type { JobQualificationCandidate } from '@foreman-code/contracts/job-runt
 import type { JobExecution } from '@foreman-code/contracts'
 import { jobSupervisorIdentity, requireVerificationRuntime, type JobLaunchPlan, type JobSupervisor,
   type QualifiedJobProfile, type RuntimeJobExecution, type VerificationExecution } from './executor.js'
-import { ignoreError, fallbackOnError } from '../diagnostics/index.js'
+import { ignoreError, fallbackOnError } from '../diagnostics/ignoredError.js'
 
 export interface PodmanIsolationInput {
   identity: string

@@ -1,6 +1,6 @@
-import { logIgnoredError } from '../../diagnostics/index.js'
+import { logIgnoredError } from '../../diagnostics/ignoredError.js'
 /** Turn submission, streaming, steering, cancellation, history and native interaction responses. */
-import { runtimeTimingPoint } from '../../diagnostics/index.js'
+import { runtimeTimingPoint } from '../../diagnostics/runtimeTiming.js'
 import { DEVICE_HISTORY_PAGE_BYTES } from '@foreman-code/contracts/device-application'
 import { isWorkflowStart, hasWorkflowRequest } from '../sessionStart.js'
 import { SessionPreferencesSchema, type ApprovalResponseOption, type NativeHarnessEvent, type NativeSessionReference,

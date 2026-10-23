@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import type { GraphTransactionSql } from '../run-graph/connection.js'
 import type { AgentPlacementProducer } from './agentProducer.js'
 import { deriveDispatch, freezePlacement } from './binding.js'
 import { approvalFixture } from '../../../test/helpers/approvalFixture.js'
@@ -76,7 +76,7 @@ function fixture() {
     if (text.includes('remote_dispatch_origins')) return { rows: [{ connection: state.origin }], rowCount: 1 }
     if (text.includes('remote_execution_receipts')) return { rows: state.receipt ? [{ receipt }] : [], rowCount: state.receipt ? 1 : 0 }
     return { rows: [], rowCount: 1 }
-  } } as unknown as SqlTransaction
+  } } as unknown as GraphTransactionSql
   const locations = { revalidateRunAuthorization: vi.fn(async () => {}) }
   const pins = vi.fn<AgentPlacementProducer['assertPinsCurrent']>(async () => {})
   const producer = { assertPinsCurrent: pins, harnessFacts: async () => state.harness } as unknown as AgentPlacementProducer

@@ -1,6 +1,6 @@
 import { managedBrowserSkillId } from './browserSkill.js'
 import type { AgentConfigurationVersion, ResolvedSkill, NodeBrowserSettings } from '@foreman-code/contracts'
-import type { NodeSkillOverride } from '@foreman-code/contracts/current'
+import type { NodeSkillOverride } from '@foreman-code/contracts/wave25'
 import { verifiedSkills } from './instructions.js'
 import { DomainError } from '../errors.js'
 

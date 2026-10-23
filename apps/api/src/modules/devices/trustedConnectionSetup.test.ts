@@ -15,16 +15,13 @@ function fixture() {
   const principal: ManagementPrincipal = { id: 'owner', name: 'Owner', audience: 'operator', grants: [{ actions: ['settings:read', 'settings:update'], scope: {} }], expiresAt: '2099-01-01T00:00:00.000Z', revokedAt: null }
   let revoked = false
   const receipts = new Map<string, { input_hash: unknown; target_key: unknown; result: unknown }>()
-  const query = vi.fn(async (_sql: string, values: unknown[] = []) => {
+  const query = vi.fn(async (sql: string, values: unknown[] = []) => {
     let rows: unknown[] = []
-    // Statements are told apart by what they bind: the principal read one id, the device read the device and Main ids,
-    // the coordinator's receipt read an array of principals first, the saved consent read an operation and target key,
-    // and the receipt insert six values.
-    if (values.length === 1 && values[0] === principal.id) rows = [{ ...principal, expires_at: new Date(principal.expiresAt), revoked_at: revoked ? new Date() : null, delegated_from: null }]
-    else if (values.length === 2 && values[1] === mainId) rows = [{ record: registration }]
-    else if (values.length === 3 && Array.isArray(values[0])) rows = receipts.has(String(values[2])) ? [receipts.get(String(values[2]))] : []
-    else if (values.length === 2) rows = [...receipts.values()].sort((a, b) => (b.result as { revision: number }).revision - (a.result as { revision: number }).revision).slice(0, 1)
-    else if (values.length === 6) receipts.set(String(values[2]), { input_hash: values[4], target_key: values[3], result: JSON.parse(values[5] as string) })
+    if (sql.includes('select id,name,audience,grants')) rows = [{ ...principal, expires_at: new Date(principal.expiresAt), revoked_at: revoked ? new Date() : null, delegated_from: null }]
+    else if (sql.includes('select record from device_registrations')) rows = [{ record: registration }]
+    else if (sql.includes('input_hash, target_key, result')) rows = receipts.has(String(values[2])) ? [receipts.get(String(values[2]))] : []
+    else if (sql.includes('select result from management_command_receipts')) rows = [...receipts.values()].sort((a, b) => (b.result as { revision: number }).revision - (a.result as { revision: number }).revision).slice(0, 1)
+    else if (sql.includes('insert into management_command_receipts')) receipts.set(String(values[2]), { input_hash: values[4], target_key: values[3], result: JSON.parse(values[5] as string) })
     return { rows, rowCount: rows.length, fields: [], oid: 0, command: 'SELECT' }
   })
   const pool = { connect: async () => ({ query, release: vi.fn() }), query } as unknown as pg.Pool

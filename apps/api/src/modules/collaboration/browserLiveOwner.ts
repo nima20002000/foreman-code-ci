@@ -1,6 +1,6 @@
 import type { SqlQuery } from '../../infrastructure/transaction.js'
 import type { BrowserSubjectDetails } from './browserAuthority.js'
-import { readCoordinatorCredentialAuthority } from '../access/index.js'
+import { readCoordinatorCredentialAuthority } from '../access/consultationAuthority.js'
 import { DomainError } from '../errors.js'
 import { OPEN_RUN_STATES_SQL } from '../runs/runState.js'
 

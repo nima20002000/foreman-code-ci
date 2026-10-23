@@ -1,11 +1,11 @@
 import type pg from 'pg'
 import { expect } from 'vitest'
-import { reduceRepeatGraphPageCurrent, type RepeatGraphScopeCurrent, type RepeatGraphSnapshotCurrent } from '@foreman-code/contracts/current'
+import { reduceRepeatGraphPageV3, type RepeatGraphScopeV3, type RepeatGraphSnapshotV3 } from '@foreman-code/contracts/wave25'
 import { RunGraphReadService } from '../../src/modules/run-graph/readService.js'
 
 /** Actual read service plus the COMPLETE frozen reference consumer. No fact
  * filtering, activity-only reducer, SQL mutation, or sorting-away differences. */
-export async function graphParity(pool: pg.Pool, scope: RepeatGraphScopeCurrent, initial?: RepeatGraphSnapshotCurrent) {
+export async function graphParity(pool: pg.Pool, scope: RepeatGraphScopeV3, initial?: RepeatGraphSnapshotV3) {
   const reads = new RunGraphReadService(pool, { qualifiedReads: true })
   const principal = { id: 'r1-parity-reader', name: 'Synthetic reader', audience: 'operator' as const,
     expiresAt: '2099-01-01T00:00:00.000Z', revokedAt: null,
@@ -17,7 +17,7 @@ export async function graphParity(pool: pg.Pool, scope: RepeatGraphScopeCurrent,
       const page = await reads.events(principal, { ...request, afterSequence: replayed.asOfSequence })
       expect(page.kind).toBe('page')
       if (page.kind !== 'page') throw new Error('Unexpected graph reset in bounded parity fixture')
-      replayed = reduceRepeatGraphPageCurrent(replayed, page)
+      replayed = reduceRepeatGraphPageV3(replayed, page)
       if (!page.hasMore) break
     }
     const fresh = await reads.snapshot(principal, request)

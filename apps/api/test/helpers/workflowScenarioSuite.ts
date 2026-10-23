@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GetInteractionResponseSchema, ListInteractionsResponseSchema, RespondToInteractionRequestSchema, RespondToInteractionResponseSchema } from '@foreman-code/contracts'
 import { ManagedInteractionPageSchema } from '@foreman-code/contracts/management'
-import { RepeatGraphSnapshotCurrentSchema, RunExecutionsPageSchema, RunRecordDetailSchema } from '@foreman-code/contracts/current'
+import { RepeatGraphSnapshotV3Schema, RunExecutionsPageSchema, RunRecordDetailSchema } from '@foreman-code/contracts/wave25'
 import { postgresEnabled } from './database.js'
 import { scenarioFixture, type ScenarioId } from './scenarioFixtures.js'
 import { runPath, scenarioHarness, type Harness, type Started, type Via } from './scenarioHarness.js'
@@ -38,7 +38,7 @@ async function approveThroughHttp(f: Harness, started: Started) {
   const monitoring = ManagedInteractionPageSchema.parse(decodeMcpToolResult(monitoringResult))
   expect(monitoring.items).toEqual(page.items)
   expect(f.base.provider.startedNodes).toEqual(f.scenario.nodes.slice(0, 2).map((node) => node.id))
-  const current = RepeatGraphSnapshotCurrentSchema.parse(await f.graph(started.scope, 'snapshot'))
+  const current = RepeatGraphSnapshotV3Schema.parse(await f.graph(started.scope, 'snapshot'))
   expect(current.state.run.pendingInteractionCount).toBe(1)
   expect(current.state.occurrences).toEqual([]); expect(current.state.decisions).toEqual([])
   const detail = GetInteractionResponseSchema.parse(await f.http('GET', `/api/user/interactions/${interaction.id}`, undefined, ''))
@@ -138,7 +138,7 @@ export function defineScenarioTests(id: ScenarioId, via: Via) {
           const releaseRouter = id === 'S3-03' ? f.hold(scenario.nodes[2]!.id) : undefined
           const started = await f.start(via, saved)
           await f.waitUntilParked(started.scope, scenario.nodes[0]!.id)
-          const initial = RepeatGraphSnapshotCurrentSchema.parse(await f.graph(started.scope, 'snapshot'))
+          const initial = RepeatGraphSnapshotV3Schema.parse(await f.graph(started.scope, 'snapshot'))
           expect(initial.state.run).toMatchObject({ executionState: 'running', outcome: 'pending' })
           expect(f.base.provider.counts.starts).toBe(1)
           releaseEntry()

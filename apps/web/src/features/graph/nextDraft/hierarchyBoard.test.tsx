@@ -7,7 +7,7 @@ import { GraphPresentationProvider } from '../GraphPresentation'
 import { useGraphDraftStore } from '../store'
 import { fixture } from './core.cases'
 import { DraftCanvas } from './DraftCanvas'
-import { nextDraftKey } from '../../board-core'
+import { nextDraftKey } from './state'
 
 const key = nextDraftKey('workspace', 'workflow')
 const stacked = [{ x: 0, y: 0 }, { x: 320, y: 180 }, { x: 320, y: 360 }, { x: 320, y: 540 }]

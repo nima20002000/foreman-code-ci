@@ -4,7 +4,7 @@ import { afterAll, beforeAll, expect } from 'vitest'
 import { AgentConfigurationVersionSchema, GetInteractionResponseSchema, NativeSessionLaneSchema, ReviewJobSchema,
   withAdvancedDefaults, type HarnessExecution } from '@foreman-code/contracts'
 import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-execution'
-import { RunExecutionLocationCurrentSchema } from '@foreman-code/contracts/current'
+import { RunExecutionLocationV3Schema } from '@foreman-code/contracts/wave25'
 import { ManagedWorkspaceSchema } from '@foreman-code/contracts/management'
 import { hasRetainedRemoteReviewerSource } from '../../src/modules/interactions/retainedRemoteReviewer.js'
 import { HostHarnessProfileEvidenceRepository } from '../../src/modules/harnesses/instanceSettings/profileRepository.js'
@@ -152,7 +152,7 @@ export async function reviewInProgress(fixture: Fixture) {
   expect(configuration.harness.advanced).toBeUndefined()
   expect(fixture.profiles[1]!.configuration).toEqual(withAdvancedDefaults(configuration.harness))
   const started = await fixture.start()
-  const location = RunExecutionLocationCurrentSchema.parse(started.run.executionLocation)
+  const location = RunExecutionLocationV3Schema.parse(started.run.executionLocation)
   expect(workspace.executionLocation).not.toBeNull()
   expect(location).toMatchObject(workspace.executionLocation!)
   expect((await fixture.details(started.run.id)).run.executionLocation).toEqual(location)

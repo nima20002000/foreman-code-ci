@@ -7,7 +7,7 @@ import {
   CurrentOperatorCapabilitiesSchema,
   CurrentWorkflowSaveResultSchema,
   SavedManagedWorkflowCommandResultSchema,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { AgentManagementService } from '../src/modules/workspaces/agents.js'
 import { OperatorAgentMutationService } from '../src/modules/workspaces/operatorAgents.js'

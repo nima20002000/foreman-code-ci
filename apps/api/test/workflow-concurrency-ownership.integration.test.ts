@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
-import { WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
+import { WorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
 import { insertProviderRun } from './helpers/checkpointRuntime.js'
 import { workflowConcurrencyFixture } from './helpers/workflowConcurrencyFixture.js'
 
@@ -11,7 +11,7 @@ it('completes concurrent Runs of the same single Agent without sharing native ow
   const runIds = [f.f.run.id]
   try {
     for (let index = 0; index < 3; index += 1) {
-      const run = WorkflowRunCurrentSchema.parse({ ...f.f.run, id: `run-${randomUUID()}` })
+      const run = WorkflowRunV3Schema.parse({ ...f.f.run, id: `run-${randomUUID()}` })
       await insertProviderRun(f.db.pool, { ...f.f, run })
       runIds.push(run.id)
     }

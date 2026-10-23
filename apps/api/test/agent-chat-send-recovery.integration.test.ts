@@ -11,7 +11,7 @@ import {
   type SendAgentChatMessageRequest,
 } from '@foreman-code/contracts/agent-chat'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { buildApp } from '../src/app.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
@@ -20,14 +20,13 @@ import { PostgresAgentChatRepository } from '../src/modules/conversations/agentC
 import { PostgresOperatorConversationRepository } from '../src/modules/conversations/operatorChatRepository.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { ScriptedChatNative, eventually } from './helpers/agentChatF5.js'
-import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { AgentChatF5Native, eventually } from './helpers/agentChatF5.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 /** Opt-in real SQL/authenticated transports; native I/O remains a deterministic substitute. */
 describe.skipIf(!postgresEnabled)('Agent chat send recovery after access revocation', { timeout: 60_000 }, () => {
-  let database: Awaited<ReturnType<typeof migratedDatabase>>
+  let database: Awaited<ReturnType<typeof agent3Database>>
   let pool: pg.Pool
   let root: string
   let fixture: ReturnType<typeof makeCurrentWorkflowFixture>
@@ -37,10 +36,10 @@ describe.skipIf(!postgresEnabled)('Agent chat send recovery after access revocat
   let readerToken: string
 
   beforeAll(async () => {
-    database = await migratedDatabase()
+    database = await agent3Database()
     pool = database.pool
     root = database.directory
-    fixture = await seedWorkflowFixture(pool, root, makeCurrentWorkflowFixture(`send-recovery-${randomUUID()}`, 'single'), { run: false })
+    fixture = await seedAgent3(pool, root, makeCurrentWorkflowFixture(`send-recovery-${randomUUID()}`, 'single'), { run: false })
     access = new PostgresAccessService(pool)
     const issued = await access.issue({ name: 'Chat writer', audience: 'operator', expiresAt: new Date(Date.now() + 600_000),
       grants: [{ actions: ['agent_chat:read', 'agent_chat:write', 'agent_chat:cancel', 'agent_chat:respond'], scope: {} }] })
@@ -64,7 +63,7 @@ describe.skipIf(!postgresEnabled)('Agent chat send recovery after access revocat
     }
     const { workspaceId, ...query } = context
     const repository = new PostgresAgentChatRepository(pool)
-    const managers = new Map<string, ScriptedChatNative>()
+    const managers = new Map<string, AgentChatF5Native>()
     const service = new AgentChatService(pool, repository, new PostgresOperatorConversationRepository(pool), new PostgresWorkflowRepository(pool),
       {
         getForWorkspace: async () => { throw new Error('Chat fixture must not access a Run.') },
@@ -72,7 +71,7 @@ describe.skipIf(!postgresEnabled)('Agent chat send recovery after access revocat
         async *executionPages() { yield [] },
       },
       (id) => {
-        const manager = new ScriptedChatNative()
+        const manager = new AgentChatF5Native()
         managers.set(id, manager)
         return manager
       }, root)

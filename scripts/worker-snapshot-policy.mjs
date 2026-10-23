@@ -28,8 +28,6 @@ export const workerSnapshotFiles = [
   'packages/contracts/src/productEnvironment.mjs',
   'packages/contracts/src/verificationEnvironment.mjs',
   'packages/contracts/src/integrationScheduling.mjs',
-  'packages/ci-protocol/src/testResults.mjs',
-  'apps/api/package.json',
   'apps/ci/package.json',
   'apps/worker/package.json',
   'package.json',
@@ -52,7 +50,7 @@ export function assertWorkerSnapshotSource(path) {
 }
 
 /** Workspace packages the Worker bundles from source: package directory by short name. */
-export const workerPackages = Object.freeze({ contracts: 'packages/contracts', ci: 'apps/ci', api: 'apps/api' })
+export const workerPackages = Object.freeze({ contracts: 'packages/contracts', ci: 'apps/ci' })
 
 /** Bundler aliases from each package's exported dist module to its TypeScript source.
  * @param {Partial<Record<keyof typeof workerPackages, Record<string, unknown>>>} manifests `exports` by package. */

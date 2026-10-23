@@ -3,7 +3,7 @@ import { test, vi } from 'vitest'
 import * as snapshots from '../src/modules/runs/repeatStartRead.js'
 import * as executions from '../src/modules/runs/repeatExecutionRead.js'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import type { SqlTransaction } from '../src/infrastructure/transaction.js'
+import { type GraphTransactionSql } from '../src/modules/run-graph/connection.js'
 import { settleRepeatNativeExecutionLocked, settleRepeatNativeExecutionWithProofLocked } from '../src/modules/interactions/repeatNativeSettlement.js'
 
 import { nativeProofModel as model } from './native-proof-model.js'
@@ -127,10 +127,10 @@ test('native proof model: nominal SQL objects and leaked transaction tokens cann
   const f = model()
   try {
     let queried = false
-    const fake = { transaction: true, query: async () => { queried = true; throw new Error('unbranded query') } } as SqlTransaction
+    const fake = { transaction: true, query: async () => { queried = true; throw new Error('unbranded query') } } as GraphTransactionSql
     await assert.rejects(settleRepeatNativeExecutionLocked(fake, f.execution.runId, f.execution), { code: 'GRAPH_TRANSACTION_CLOSED' })
     assert.equal(queried, false)
-    let leaked!: SqlTransaction
+    let leaked!: GraphTransactionSql
     await f.connection.transaction(async (sql) => { leaked = sql })
     await assert.rejects(settleRepeatNativeExecutionLocked(leaked, f.execution.runId, f.execution), { code: 'GRAPH_TRANSACTION_CLOSED' })
   } finally { await f.connection.close() }

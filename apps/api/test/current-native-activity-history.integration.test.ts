@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
-import { withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
-import type { SqlTransaction } from '../src/infrastructure/transaction.js'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { withExclusiveGraphConnection, type GraphTransactionSql } from '../src/modules/run-graph/connection.js'
 import { readCurrentNativeActivities } from '../src/modules/run-graph/currentActivity.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { currentDatabase, postgresEnabled } from './helpers/database.js'
@@ -11,7 +10,7 @@ const tables = [
   'run_work_activations', 'run_native_activity', 'review_jobs',
 ] as const
 
-async function activityReadModel(sql: SqlTransaction, schema: string) {
+async function activityReadModel(sql: GraphTransactionSql, schema: string) {
   // Copy production column types into transaction-local reader fixtures; no execution or publication is simulated.
   for (const table of tables) {
     await sql.query(`create temporary table ${table} on commit drop as select * from ${schema}.${table} where false`)

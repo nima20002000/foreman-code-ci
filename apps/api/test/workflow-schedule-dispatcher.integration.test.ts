@@ -6,7 +6,7 @@ import pg from 'pg'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { ManagementGrant } from '@foreman-code/contracts/management'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { ScheduleSaveResultSchema, type ScheduleConfiguration } from '@foreman-code/contracts/schedules'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
@@ -19,8 +19,7 @@ import { WorkflowScheduleService } from '../src/modules/schedules/service.js'
 import { ScheduleOccurrencePageSchema } from '../src/modules/schedules/transportSchemas.js'
 import { LOCAL_RUNNER_ID, WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
-import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
@@ -36,7 +35,7 @@ const actions: ManagementGrant['actions'] = ['workflows:create', 'workflows:read
  * publisher. No fake Run inserts, native harness, model calls, wall-clock sleeps,
  * public/shared database, or production authentication bypass. */
 describe.skipIf(!postgresEnabled)('SCH-04 PostgreSQL dispatcher / common Start', () => {
-  let database: Awaited<ReturnType<typeof migratedDatabase>>
+  let database: Awaited<ReturnType<typeof agent3Database>>
   let access: PostgresAccessService
   let commands: PostgresCommandCoordinator
   let service: WorkflowScheduleService
@@ -44,13 +43,13 @@ describe.skipIf(!postgresEnabled)('SCH-04 PostgreSQL dispatcher / common Start',
   let locations: WorkspaceLocationService
   let writer: Awaited<ReturnType<PostgresAccessService['issue']>>
   let reader: Awaited<ReturnType<PostgresAccessService['issue']>>
-  let fixture: Awaited<ReturnType<typeof seedWorkflowFixture>>
+  let fixture: Awaited<ReturnType<typeof seedAgent3>>
   let scope: { workspaceId: string; workflowId: string }
   let now: string
   let realStart: ScheduledStart
 
   beforeAll(async () => {
-    database = await migratedDatabase() // includes registered migrations 270203 + 270204
+    database = await agent3Database() // includes registered migrations 270203 + 270204
     access = new PostgresAccessService(database.pool)
     commands = new PostgresCommandCoordinator(database.pool)
     workflows = new WorkflowManagementService(database.pool, commands)
@@ -61,7 +60,7 @@ describe.skipIf(!postgresEnabled)('SCH-04 PostgreSQL dispatcher / common Start',
     const projectRoot = join(database.directory, 'projects'), runtimeRoot = join(database.directory, 'runtime')
     const directory = join(projectRoot, randomUUID())
     await Promise.all([mkdir(directory, { recursive: true }), mkdir(runtimeRoot, { recursive: true })])
-    fixture = await seedWorkflowFixture(database.pool, directory, makeCurrentWorkflowFixture(randomUUID()), { run: false })
+    fixture = await seedAgent3(database.pool, directory, makeCurrentWorkflowFixture(randomUUID()), { run: false })
     scope = { workspaceId: fixture.scope.workspaceId, workflowId: fixture.scope.workflowId }
     // Upgrade the helper's explicitly synthetic directory identity to real
     // filesystem evidence; common Start's real location validation is retained.

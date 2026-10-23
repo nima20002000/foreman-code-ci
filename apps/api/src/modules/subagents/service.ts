@@ -4,15 +4,15 @@ import { z } from 'zod'
 import type { ManagementAction, ManagementPrincipal } from '@foreman-code/contracts/management'
 import { subagentCapabilities, RunSubagentSchema, RunSubagentGetInputSchema, RunSubagentsListInputSchema, RunSubagentItemsInputSchema,
   RunSubagentMessagesPageSchema, RunSubagentToolsPageSchema, RunSubagentDetailSchema, RunSubagentsPageSchema } from '@foreman-code/contracts/subagents'
-import { readLiveManagementPrincipal } from '../access/index.js'
-import { requireAuthorization } from '../access/index.js'
+import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
+import { requireAuthorization } from '../access/policy.js'
 import { DomainError } from '../errors.js'
 import { subagentAvailableActions } from './capabilities.js'
 import { reconcileRunSubagents } from './projection.js'
 import { backfillRunSubagents } from './recovery.js'
 import type { SubagentNativeRecoverySource, SubagentControlResolver, SubagentReadScope, SubagentRecoveryFailure } from './types.js'
 import { executeSubagentCommand } from './commands.js'
-import { componentLogger } from '../diagnostics/index.js'
+import { componentLogger } from '../diagnostics/logger.js'
 
 export type { SubagentReadScope, SubagentRecoveryFailure }
 const recoveryLogger = componentLogger('harness')

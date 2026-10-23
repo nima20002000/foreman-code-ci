@@ -11,7 +11,7 @@ import { PostgresScheduleDispatcher } from '../../src/modules/schedules/postgres
 import { LOCAL_RUNNER_ID, WorkspaceLocationService } from '../../src/modules/workspaces/location.js'
 import { assertTestDatabase, ownedTestDatabaseUrl, ownedTestPath } from '../../../../scripts/test-resources.mjs'
 
-export interface ScheduleChildInput {
+export interface Sch11ChildInput {
   schema: string
   directory: string
   runtimeRoot: string
@@ -20,14 +20,14 @@ export interface ScheduleChildInput {
   observed: WorkflowSchedule
   mode: 'prepared' | 'mid-claim' | 'lost-start-ack'
 }
-export interface ScheduleChildMessage {
+export interface Sch11ChildMessage {
   kind: 'prepared' | 'mid-claim' | 'committed' | 'done' | 'error'
   runId?: string
   authorityId?: string
   pid?: number
   message?: string
 }
-function send(message: ScheduleChildMessage): Promise<void> {
+function send(message: Sch11ChildMessage): Promise<void> {
   return new Promise((resolve, reject) => {
     const sender = process.send
     if (!sender) { reject(new Error('SCH-11 child requires IPC')); return }
@@ -42,7 +42,7 @@ function releaseBarrier(): Promise<void> {
     process.on('message', handler)
   })
 }
-async function run(input: ScheduleChildInput) {
+async function run(input: Sch11ChildInput) {
   const url = ownedTestDatabaseUrl()
   const parsed = new URL(url)
   const fixtureDatabase = /^\/graphql_fixture_[a-f0-9]{32}$/.test(parsed.pathname)
@@ -101,7 +101,7 @@ async function run(input: ScheduleChildInput) {
 }
 
 if (process.send) {
-  process.once('message', (input: ScheduleChildInput) => {
+  process.once('message', (input: Sch11ChildInput) => {
     void run(input).catch(async (error: unknown) => {
       process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`)
       await send({ kind: 'error', message: error instanceof Error ? error.message : String(error) }).catch(() => {

@@ -4,7 +4,7 @@ import { JobExecutionRecordSchema } from '@foreman-code/contracts/job-verificati
 import { TransferProgressSchema } from '@foreman-code/contracts/byte-transfer'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import type { DeviceExtensionRegistration } from '../../devices/deviceApplicationChannel.js'
-import { ResumableByteTransferService } from '../../byte-transfer/index.js'
+import { ResumableByteTransferService } from '../../byte-transfer/service.js'
 import type { JobInputDeliverySource } from './delivery.js'
 import type { CanonicalJobInputs } from './service.js'
 import { JOB_INPUT_NAMESPACE } from './protocol.js'

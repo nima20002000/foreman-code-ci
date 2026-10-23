@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { setTimeout as delay } from 'node:timers/promises'
 
-import { WorkflowVersionCurrentSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { WorkflowVersionV3Schema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { it } from 'vitest'
 
 import { ExecutionLimiter } from '../src/modules/runs/limiter.js'
@@ -57,7 +57,7 @@ function graph(predecessorCount: number) {
       { id: 'b-c', kind: 'execution', source: b!.id, target: c!.id }]
   version.agentConfigurationVersionIds = Object.fromEntries(version.definition.nodes.map((node) =>
     [node.agentId, version.agentConfigurationVersionIds[node.agentId]!]))
-  return WorkflowVersionCurrentSchema.parse(version)
+  return WorkflowVersionV3Schema.parse(version)
 }
 
 for (const join of [{ mode: 'threshold', required: 2 }, { mode: 'any' }]) {
@@ -65,7 +65,7 @@ for (const join of [{ mode: 'threshold', required: 2 }, { mode: 'any' }]) {
     it(`rejects ${join.mode} joins with ${predecessors} predecessors`, () => {
       const version = graph(predecessors)
       const targetId = version.definition.nodes.at(-1)!.id
-      const result = WorkflowVersionCurrentSchema.safeParse({ ...version, definition: { ...version.definition,
+      const result = WorkflowVersionV3Schema.safeParse({ ...version, definition: { ...version.definition,
         nodes: version.definition.nodes.map((node) => node.id === targetId ? { ...node, join } : node),
       } })
       assert.equal(result.success, false)
@@ -84,7 +84,7 @@ it('validates an all-join with unequal predecessor path lengths', () => {
   const version = graph(2)
   const [a, b, c] = version.definition.nodes
   c!.join = { mode: 'all' }
-  const topology = compileExecutionTopology(WorkflowVersionCurrentSchema.parse(version))
+  const topology = compileExecutionTopology(WorkflowVersionV3Schema.parse(version))
   assert.deepEqual(topology.incoming.get(c!.id)?.map((edge) => edge.source), [a!.id, b!.id])
   assert.deepEqual(topology.sinks, [c!.id])
 })

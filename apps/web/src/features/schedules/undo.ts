@@ -1,8 +1,8 @@
-import { sameWorkflowValue } from '@foreman-code/contracts/current'
+import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import type { QueryClient } from '@tanstack/react-query'
 import { ScheduleConfigurationSchema, type ScheduleGetInput, type WorkflowSchedule } from '@foreman-code/contracts/schedules'
 import { assertSession, sessionGeneration } from '../../shared/api/sessionBoundary'
-import { boardScope, recordBoardAction, useBoardUndo } from '../workflow-board'
+import { boardScope, recordBoardAction, useBoardUndo } from '../workflow-board/boardUndo'
 import { scheduleApi } from './client'
 import { scheduleCommandOwner, type ScheduleCommand } from './queries'
 

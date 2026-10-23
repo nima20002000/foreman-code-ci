@@ -85,12 +85,13 @@ test('native launchers retain the running Node interpreter when HOME is isolated
 
 test('acceptance keeps its caller-selected database and evidence', () => {
   const environment = {
-    TEST_DATABASE_URL: 'postgresql://fixture@127.0.0.1:5432/native_test',
+    TEST_DATABASE_URL: 'postgresql://fixture@127.0.0.1:5432/general_test',
+    ENG03_A_TEST_DATABASE_URL: 'postgresql://fixture@127.0.0.1:5432/native_test',
     ENG03_A_EVIDENCE_DIR: '/tmp/retained-native-evidence',
   }
   const original = { ...environment }
   assert.deepEqual(nativeAcceptanceConfiguration(environment), {
-    databaseUrl: environment.TEST_DATABASE_URL,
+    databaseUrl: environment.ENG03_A_TEST_DATABASE_URL,
     evidenceRoot: environment.ENG03_A_EVIDENCE_DIR,
   })
   assert.deepEqual(environment, original)

@@ -1,28 +1,23 @@
 import type pg from 'pg'
-import { retryDatabaseTimeout } from './databaseRetry.js'
-import { componentLogger } from './logger.js'
-import { timeRuntimeOperation } from './runtimeTiming.js'
+import { componentLogger } from '../modules/diagnostics/logger.js'
 
 /**
- * The one module that issues transaction-control statements. Everything else runs a transaction through
- * withTransaction. Connection-loss and commit-outcome handling goes through its `rollback` option, and the one
- * session that must keep a transaction open across its own callbacks (commands/postgres.ts) uses TransactionSession.
- * Run-graph sessions run through ExclusiveGraphConnection (modules/run-graph/connection.ts), whose
- * `transaction` calls withTransaction and adds statement queueing, a statement guard, before-commit checks and
- * poisoning around it.
+ * The one module that issues transaction-control statements. Everything else runs a transaction
+ * through withTransaction, or, for a session that must span several transactions or needs its own connection-loss
+ * and commit-outcome handling, the statement primitives below. Run-graph sessions use the same primitives through
+ * ExclusiveGraphConnection (modules/run-graph/connection.ts), which adds statement queueing, a statement guard,
+ * before-commit checks and poisoning.
  */
 
 /** Minimal SQL port: a Pool, a client or a graph transaction all satisfy it. */
 export interface SqlQuery {
   query<R extends pg.QueryResultRow = pg.QueryResultRow>(text: string, values?: unknown[]): Promise<pg.QueryResult<R>>
 }
-/** An open run-graph transaction: the guarded port ExclusiveGraphConnection.transaction hands to its callback. */
-export interface SqlTransaction extends SqlQuery { readonly transaction: true }
 /**
  * A session that can hold transaction-scoped locks: a checked-out client or a graph transaction.
  * A bare Pool never satisfies it, so lock-taking helpers cannot run each statement on a different connection.
  */
-export type TransactionSql = SqlQuery & ({ release(err?: Error | boolean): void } | SqlTransaction)
+export type TransactionSql = SqlQuery & ({ release(err?: Error | boolean): void } | { readonly transaction: true })
 
 export interface TransactionOptions {
   isolation?: 'read committed' | 'repeatable read'
@@ -41,10 +36,6 @@ function beginStatement(options: TransactionOptions): string {
     .filter(Boolean).join(' ')
 }
 
-/**
- * Statement primitives under withTransaction and TransactionSession. Production code does not call them; they stay
- * exported for integration tests that hold a transaction open on their own connection to provoke lock contention.
- */
 export async function beginTransaction(client: pg.ClientBase, options: TransactionOptions = {},
   origin = new Error('transaction caller')): Promise<void> {
   const timing = new TransactionTiming(origin, options.operation)
@@ -73,7 +64,7 @@ export async function rollbackTransaction(client: pg.ClientBase): Promise<void> 
 }
 
 /** End instrumentation when a connection closes before transaction control can finish. */
-function finishTransactionTiming(client: pg.ClientBase, outcome: TransactionOutcome): void {
+export function finishTransactionTiming(client: pg.ClientBase, outcome: TransactionOutcome): void {
   const active = transactionTimings.get(client)
   if (!active) return
   transactionTimings.delete(client)
@@ -177,48 +168,12 @@ export function isTransactionConflict(error: unknown): boolean {
 /** Where a transaction runs: a fresh connection from a pool, or a connection the caller owns, keeps and releases. */
 export type TransactionSource = Pick<pg.Pool, 'connect'> | { readonly client: pg.ClientBase }
 
-/** Where a failed transaction was when it failed: sending BEGIN, running the callback, or sending COMMIT. */
-export type TransactionPhase = 'begin' | 'work' | 'commit'
-
 export interface TransactionRunOptions extends TransactionOptions {
   /**
    * The caller's open transaction, when it has one: perform runs on it directly and the caller commits or rolls
    * back, so the other options do not apply. Undefined starts a transaction from the source as usual.
    */
   join?: pg.ClientBase | undefined
-  /** Where the transaction was requested, for slow-transaction reports of work that runs later from a queue. */
-  origin?: Error
-  /** Publish `sql.begin` and `sql.commit` runtime-timing records for this transaction. */
-  runtimeTiming?: boolean
-  /**
-   * Replaces the rollback that follows a failure, for a session that decides from the failed phase whether its
-   * connection is still usable or that must recover a stalled rollback (rollbackWithRecovery). Return the error
-   * when the session state is unknown, so the connection is discarded; the original error is still thrown. With
-   * it, a failed BEGIN is rolled back too.
-   */
-  rollback?: (client: pg.ClientBase, failure: { error: unknown; phase: TransactionPhase }) => Promise<Error | undefined>
-}
-
-type Attempt<T> = { ok: true; value: T } | { ok: false; error: unknown; rollbackError: Error | undefined }
-
-async function attempt<T>(client: pg.PoolClient, perform: (client: pg.PoolClient) => Promise<T>,
-  options: TransactionRunOptions, origin: Error, rollbackFailedBegin: boolean): Promise<Attempt<T>> {
-  const timed = <R>(phase: string, work: () => Promise<R>) =>
-    options.runtimeTiming ? timeRuntimeOperation('db', phase, work) : work()
-  let phase: TransactionPhase = 'begin'
-  try {
-    await timed('sql.begin', () => beginTransaction(client, options, origin))
-    phase = 'work'
-    const value = await perform(client)
-    phase = 'commit'
-    await timed('sql.commit', () => commitTransaction(client))
-    return { ok: true, value }
-  } catch (error) {
-    if (phase === 'begin' && !rollbackFailedBegin) throw error
-    const rollbackError = await (options.rollback ?? rollbackAfterFailure)(client, { error, phase })
-    if (rollbackError) finishTransactionTiming(client, 'failed')
-    return { ok: false, error, rollbackError }
-  }
 }
 
 /**
@@ -239,75 +194,35 @@ export async function withTransaction<T>(
   options: TransactionRunOptions = {},
 ): Promise<T> {
   if (options.join) return perform(options.join as pg.PoolClient)
-  const origin = options.origin ?? new Error('transaction caller')
+  const origin = new Error('transaction caller')
   const retries = options.conflictRetries ?? 0
   if ('client' in source) {
     const client = source.client as pg.PoolClient
-    for (let tries = 0; ; tries += 1) {
-      const result = await attempt(client, perform, options, origin, options.rollback !== undefined)
-      if (result.ok) return result.value
-      if (result.rollbackError || tries >= retries || !isTransactionConflict(result.error)) throw result.error
+    for (let attempt = 0; ; attempt += 1) {
+      await beginTransaction(client, options, origin)
+      try {
+        const result = await perform(client)
+        await commitTransaction(client)
+        return result
+      } catch (error) {
+        const rollbackError = await rollbackAfterFailure(client)
+        if (rollbackError || attempt >= retries || !isTransactionConflict(error)) throw error
+      }
     }
   }
-  for (let tries = 0; ; tries += 1) {
+  for (let attempt = 0; ; attempt += 1) {
     const client = await source.connect()
     let releaseError: Error | undefined
     try {
-      const result = await attempt(client, perform, options, origin, true)
-      if (result.ok) return result.value
-      releaseError = result.rollbackError
-      if (releaseError || tries >= retries || !isTransactionConflict(result.error)) throw result.error
+      await beginTransaction(client, options, origin)
+      const result = await perform(client)
+      await commitTransaction(client)
+      return result
+    } catch (error) {
+      releaseError = await rollbackAfterFailure(client)
+      if (releaseError || attempt >= retries || !isTransactionConflict(error)) throw error
     } finally {
       client.release(releaseError)
     }
-  }
-}
-
-/**
- * Rollback for a session whose queries may be stalled: retries a timed-out rollback until the closing signal or
- * five seconds, so a confirmed rollback restores the connection. Pass it from a `rollback` option.
- */
-export async function rollbackWithRecovery(client: pg.ClientBase, closing: AbortSignal): Promise<void> {
-  const deadline = new AbortController()
-  const timer = setTimeout(() => deadline.abort(new Error('Graph rollback recovery timed out.')), 5_000)
-  timer.unref()
-  const signal = AbortSignal.any([closing, deadline.signal])
-  let onAbort: (() => void) | undefined
-  try {
-    signal.throwIfAborted()
-    const canceled = new Promise<never>((_resolve, reject) => {
-      onAbort = () => reject(signal.reason)
-      signal.addEventListener('abort', onAbort, { once: true })
-    })
-    await Promise.race([
-      retryDatabaseTimeout(() => timeRuntimeOperation('db', 'sql.rollback', () => rollbackTransaction(client)), { signal }),
-      canceled,
-    ])
-  } finally {
-    clearTimeout(timer)
-    if (onAbort) signal.removeEventListener('abort', onAbort)
-  }
-}
-
-/**
- * One connection's transactions driven by hand, for the one session that must keep a transaction open across its
- * own callbacks and decide at each step whether to commit, roll back or begin again (commands/postgres.ts). Every
- * other caller uses withTransaction. `open` is true from a successful begin until a successful commit or rollback.
- */
-export class TransactionSession {
-  #open = false
-  constructor(private readonly client: pg.ClientBase) {}
-  get open(): boolean { return this.#open }
-  async begin(options: TransactionOptions = {}): Promise<void> {
-    await beginTransaction(this.client, options)
-    this.#open = true
-  }
-  async commit(): Promise<void> {
-    await commitTransaction(this.client)
-    this.#open = false
-  }
-  async rollback(): Promise<void> {
-    await rollbackTransaction(this.client)
-    this.#open = false
   }
 }

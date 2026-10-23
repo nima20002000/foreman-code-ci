@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { ManagementActionSchema, type ManagementAction } from '@foreman-code/contracts/management'
-import { CurrentOperatorCapabilitiesSchema, CurrentOperatorToolNameSchema } from '@foreman-code/contracts/current'
+import { CurrentOperatorCapabilitiesSchema, CurrentOperatorToolNameSchema } from '@foreman-code/contracts/wave25'
 import {
   ScheduleDisableInputSchema, ScheduleDisableResultSchema, ScheduleGetInputSchema, ScheduleGetResultSchema,
   ScheduleSaveInputSchema, ScheduleSaveResultSchema,

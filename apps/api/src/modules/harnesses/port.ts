@@ -23,7 +23,6 @@ import type {
 } from '@foreman-code/contracts'
 import type { ChatResponseIdentity } from '@foreman-code/contracts/interaction-activity'
 
-import type { HarnessCapabilityDescriptors } from './capabilities.js'
 import type { ResponseAvailabilityInspector } from './responseAvailability.js'
 import type { RunSubagent } from '@foreman-code/contracts/subagents'
 import type { SubagentControlLease } from '../subagents/types.js'
@@ -237,8 +236,6 @@ export interface NativeSubagentHistoryPage {
 
 export interface NativeHarnessSessionManager extends ResponseAvailabilityInspector {
   readonly harness: AgentHarness
-  /** Static steer/compact descriptors of this adapter. Absent means the table in `capabilities.ts` for `harness`. */
-  readonly harnessCapabilities?: HarnessCapabilityDescriptors
   /** True after native query dispatch; false proves this manager never launched work. */
   requiresRuntimeClosure?(): boolean
   /** Disposal releases a settled remote process instead of stopping unresolved local work. */

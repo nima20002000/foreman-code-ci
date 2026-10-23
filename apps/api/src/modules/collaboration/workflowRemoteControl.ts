@@ -1,8 +1,8 @@
 import { ChatSendRequestSchema } from '@foreman-code/contracts'
 import type { DispatchIntent } from '@foreman-code/contracts/node-placement'
 import { RemoteOwnerControlSchema, type RemoteOwnerControl, type RemoteNativeIdentity } from '@foreman-code/contracts/remote-execution'
-import { sameWorkflowValue } from '@foreman-code/contracts/current'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import { DomainError } from '../errors.js'
 import { asWorkflowChatTarget, readControlCommand } from './workflowControlRecords.js'
 import type { WorkflowChatNativeTarget } from './workflowControlTypes.js'
@@ -16,7 +16,7 @@ export function workflowRemoteControl(intent: DispatchIntent, native: RemoteNati
     workflowControl: { ownerRequestId: input.ownerRequestId }, action: input.action })
 }
 
-export async function assertWorkflowRemoteControl(sql: SqlQuery, intent: DispatchIntent,
+export async function assertWorkflowRemoteControl(sql: GraphSqlClient, intent: DispatchIntent,
   control: RemoteOwnerControl): Promise<void> {
   const command = await readControlCommand(sql, control.commandId)
   const target = command && asWorkflowChatTarget(command.target)

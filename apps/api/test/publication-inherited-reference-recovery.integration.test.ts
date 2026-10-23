@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { nativePublicationFixture } from './helpers/nativePublicationFixture.js'
+import { afPublicationFixture } from './helpers/afPublicationFixture.js'
 import { postgresEnabled } from './helpers/database.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { AgentChatStateSchema } from '@foreman-code/contracts/agent-chat'
-import { withPublicationMcp } from './helpers/afMcp.js'
+import { withAfMcp } from './helpers/afMcp.js'
 import { ReadSelectedRunChatResponseSchema } from '@foreman-code/contracts/selected-run-chat'
 import { preparePublication } from './helpers/codexPublication.js'
 
@@ -11,7 +11,7 @@ afterEach(() => vi.restoreAllMocks())
 describe.skipIf(!postgresEnabled)('inherited publication reference recovery', { timeout: 90_000 }, () => {
   for (const selectedRun of [false, true]) {
     it(`upload-free ${selectedRun ? 'selected-Run' : 'Agent'} inherited-reference cold recovery without adoption or close`, async () => {
-      const f = await nativePublicationFixture({ selectedRun }), t = await preparePublication(f, 0, 'lose_close')
+      const f = await afPublicationFixture({ selectedRun }), t = await preparePublication(f, 0, 'lose_close')
       expect(t.admission.accepted.attachments).toEqual([])
       if (selectedRun) expect(t.admission.accepted.scope.chat).toMatchObject({
         runId: f.fixture.run.id, executionId: f.runExecution.id,
@@ -36,7 +36,7 @@ describe.skipIf(!postgresEnabled)('inherited publication reference recovery', { 
       await expect(f.database.pool.query('update file_tool_publications set binding=$2 where file_id=$1',
         [original[0]!.fileId, '0'.repeat(64)])).rejects.toThrow('append-only')
       expect(await f.readPins(t.active.turn.messageId)).toEqual(original)
-      await withPublicationMcp(f, async (_writer, reader) => {
+      await withAfMcp(f, async (_writer, reader) => {
         const denied = await reader.callTool({ name: 'agent_chat_read', arguments: { workspaceId: 'foreign-workspace', query: f.context } })
         expect(denied.isError).toBe(true)
         expect(JSON.stringify(denied)).toContain('ACCESS_DENIED')

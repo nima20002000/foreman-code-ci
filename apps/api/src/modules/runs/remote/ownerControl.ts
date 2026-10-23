@@ -1,7 +1,7 @@
 import { DurableInteractionSchema } from '@foreman-code/contracts'
-import { sameWorkflowValue } from '@foreman-code/contracts/current'
+import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { RemoteOwnerControlSchema, RemoteOperationReceiptSchema, remoteActiveNative, type RemoteOwnerControl } from '@foreman-code/contracts/remote-execution'
-import type { SqlTransaction } from '../../../infrastructure/transaction.js'
+import type { GraphTransactionSql } from '../../run-graph/connection.js'
 import { assertGraphTransaction } from '../../run-graph/connection.js'
 import type { RunOwnership } from '../ownership.js'
 import type { AcceptedExecutionBinding } from '../../placement/nativeComposition.js'
@@ -9,13 +9,13 @@ import type { RemoteNativeManagerOptions } from './nativeManagerProxy.js'
 import { DomainError } from '../../errors.js'
 import { canCloseRetainedRemoteReviewer } from '../../placement/remoteReviewerAuthority.js'
 import { selectedInteractionResponse } from '../../interactions/delivery.js'
-import { assertWorkflowRemoteControl, workflowRemoteControl } from '../../collaboration/index.js'
+import { assertWorkflowRemoteControl, workflowRemoteControl } from '../../collaboration/workflowRemoteControl.js'
 
 export type RemoteControlInput = Parameters<RemoteNativeManagerOptions['controlFor']>[0]
 /** SQL-only preparation inside the admitted Main transaction. The caller must
  * persist the exact command with its delivery fence before COMMIT, then deliver
  * outside G1. Preparation alone never authorizes a worker/native effect. */
-export async function prepareRemoteOwnerControl(sql: SqlTransaction, owner: RunOwnership,
+export async function prepareRemoteOwnerControl(sql: GraphTransactionSql, owner: RunOwnership,
   binding: AcceptedExecutionBinding, command: RemoteControlInput): Promise<RemoteOwnerControl> {
   assertGraphTransaction(sql)
   owner.assertOwned()

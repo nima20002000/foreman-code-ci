@@ -1,8 +1,8 @@
-import type { AgentChatNativeSessionStart, NativeHarnessSessionManager, NativeSessionStart } from '../harnesses/index.js'
-import type { ConversationFeatureContext } from '../conversations/index.js'
-import type { ConversationFeatureBinder } from '../conversations/index.js'
-import { conversationChatTools } from '../access/index.js'
-import type { ConversationCredentials } from '../access/index.js'
+import type { AgentChatNativeSessionStart, NativeHarnessSessionManager, NativeSessionStart } from '../harnesses/port.js'
+import type { ConversationFeatureContext } from '../conversations/conversationFeatureSubject.js'
+import type { ConversationFeatureBinder } from '../conversations/agentChat.js'
+import { conversationChatTools } from '../access/conversationCredentials.js'
+import type { ConversationCredentials } from '../access/conversationCredentialIssuer.js'
 import { DomainError } from '../errors.js'
 
 export class ConversationNativeAccess {

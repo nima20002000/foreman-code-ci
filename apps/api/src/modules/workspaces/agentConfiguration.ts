@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import {
   AgentConfigurationVersionSchema,
   AgentSchema,
+  RETIRED_OPENCODE_MESSAGE,
   projectHarnessEffort,
   type Agent,
   type AgentConfigurationVersion,
@@ -14,11 +15,10 @@ import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-re
 import type { HarnessConfiguration } from '@foreman-code/contracts'
 
 import { DomainError } from '../errors.js'
-import { assertClaudeFullAccess } from '../harnesses/index.js'
+import { assertClaudeFullAccess } from '../harnesses/nativeWorkflowConfiguration.js'
 import { resolveAssignedSkills } from '../skills/catalog.js'
 import { composeInstructionText, instructionsTooLarge } from '../skills/instructions.js'
 import { sha256Hex } from '../../shared/hash.js'
-import { retiredHarnessError } from '../harnesses/retiredHarness.js'
 
 export function configurationInput(
   workspaceId: string,
@@ -32,7 +32,7 @@ export function configurationInput(
   }
   const harness = agent.harnessConfiguration?.harness ?? agent.harness ?? current?.harness.harness ?? 'codex'
   if (harness === 'opencode') {
-    throw retiredHarnessError()
+    throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
   }
   const prompt = agent.prompt ?? current?.prompt ?? {}
   const assignedSkills = agent.assignedSkills ?? current?.assignedSkills ?? []

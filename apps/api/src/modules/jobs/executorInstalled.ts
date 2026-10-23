@@ -1,5 +1,5 @@
 import { verifyJobInputDirectory } from './inputs.js'
-import { componentLogger } from '../diagnostics/index.js'
+import { componentLogger } from '../diagnostics/logger.js'
 import { isDeepStrictEqual as same } from 'node:util'
 import { constants } from 'node:fs'
 import { open, realpath, readFile } from 'node:fs/promises'
@@ -26,7 +26,7 @@ import type { OCIContainerOwnership } from './executorContainerOwner.js'
 import { assertJobRuntimeEntryContext } from './qualification.js'
 import type { QualifiedJobProfile } from './executor.js'
 import { requireJobGitMounts, verifyJobGitMounts } from './privateGitMounts.js'
-import { ignoreError } from '../diagnostics/index.js'
+import { ignoreError } from '../diagnostics/ignoredError.js'
 
 export type InstalledJobExecutionHostInput = Omit<RemoteJobExecutionHostPorts, 'supervisor'> & {
   configuration: InstalledRuntimeConfigurationLocation | null

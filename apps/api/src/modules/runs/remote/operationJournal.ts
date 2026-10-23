@@ -1,12 +1,12 @@
 import { CompactionStateSchema, type CompactionState } from '@foreman-code/contracts'
-import { readFile, mkdir } from 'node:fs/promises'
+import { open, readFile, rename, mkdir, unlink, stat } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
+import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { remoteActiveNative, RemoteWorkflowTurnInputSchema, RemoteReviewerAssignmentSchema, RemoteReviewerTurnSchema,
   type RemoteReviewerAssignment } from '@foreman-code/contracts/remote-execution'
-import { canonicalGraphJson } from '@foreman-code/contracts/current'
+import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import { RemoteNativeHistorySchema, REMOTE_NATIVE_SOURCE_LIMIT,
   REMOTE_PHYSICAL_CONTINUATION_LIMIT } from '@foreman-code/contracts/remote-workflow-physical'
 import { encodeResultCopies, decodeResultCopies, historyResultPaths } from './executionResultCodec.js'
@@ -41,7 +41,6 @@ import { acquireJournalOwner } from './journalOwner.js'
 import { hasPositiveRemoteEntryClosure } from '@foreman-code/contracts/remote-execution-entry-closure-node'
 import { RuntimeJournalArchive, RUNTIME_JOURNAL_RETENTION_MS } from './runtimeJournalArchive.js'
 import { sha256Hex } from '../../../shared/hash.js'
-import { readBoundedText, readBoundedTextIfPresent, writeDurableFile } from '../../../shared/durableFile.js'
 
 const ControlDeliverySchema = z.object({
   operationId: z.string(), commandId: z.string(), phase: z.enum(['reserved', 'entered', 'acknowledged']),
@@ -96,8 +95,9 @@ export class RemoteOperationJournal {
     private readonly now: () => number,
     private readonly retentionNow: () => number | undefined,
   ) {
-    this.runtimeArchive = new RuntimeJournalArchive(path)
-    this.conversationArchive = new WorkerConversationArchive(path, byteLimit)
+    this.runtimeArchive = new RuntimeJournalArchive(path, (path, value) => this.writeSnapshot(path, value))
+    this.conversationArchive = new WorkerConversationArchive(path, byteLimit,
+      (archivePath, value) => this.writeSnapshot(archivePath, value))
     this.conversations = new WorkerConversationJournal({
       read: async (conversationId, generation) => {
         await this.tail
@@ -149,7 +149,9 @@ export class RemoteOperationJournal {
     try {
       let data: z.infer<typeof JournalSchema>
       try {
-        const serialized = await readBoundedText(path, { maxBytes: byteLimit, message: 'Journal byte limit reached' })
+        if ((await stat(path)).size > byteLimit) throw new Error('Journal byte limit reached')
+        const serialized = await readFile(path, 'utf8')
+        if (Buffer.byteLength(serialized) > byteLimit) throw new Error('Journal byte limit reached')
         data = JournalSchema.parse(JSON.parse(serialized))
       } catch (error) {
         if (lock.recovered || !options.initializeNewInstallation || (error as NodeJS.ErrnoException).code !== 'ENOENT') {
@@ -185,7 +187,24 @@ export class RemoteOperationJournal {
     if (Buffer.byteLength(serialized) > this.byteLimit - reserved) throw new Error('Journal byte limit reached')
     return serialized
   }
-  private persist(serialized: string) { return writeDurableFile(this.path, serialized) }
+  private async writeSnapshot(path: string, serialized: string) {
+    await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+    const temporary = `${path}.${randomUUID()}.tmp`
+    const file = await open(temporary, 'wx', 0o600)
+    try {
+      await file.writeFile(serialized)
+      await file.sync()
+    } catch (error) {
+      await unlink(temporary)
+      throw error
+    } finally {
+      await file.close()
+    }
+    await rename(temporary, path)
+    const directory = await open(dirname(path), 'r')
+    try { await directory.sync() } finally { await directory.close() }
+  }
+  private persist(serialized: string) { return this.writeSnapshot(this.path, serialized) }
   private archivePath(operationId: string) { return `${this.path}.settled/${hash(operationId)}.json` }
   private reviewPath(operationId: string, correlationId: string) {
     return `${this.path}.reviews/${hash(operationId)}/${hash(correlationId)}.json`
@@ -199,9 +218,9 @@ export class RemoteOperationJournal {
     if (history) turn.historyDigest = hash(canonicalGraphJson(history, REMOTE_NATIVE_SOURCE_LIMIT))
     const archived = { operationId, turn: { ...turn, resultDigest }, ...(history ? { history } : {}) }
     const dictionary = encodeResultCopies(archived, [['turn', 'result'], ...historyResultPaths(['history'])])
-    await writeDurableFile(this.reviewPath(operationId, turn.assignment.correlationId),
+    await this.writeSnapshot(this.reviewPath(operationId, turn.assignment.correlationId),
       canonicalGraphJson(dictionary, REMOTE_PHYSICAL_CONTINUATION_LIMIT))
-    await writeDurableFile(this.reviewJobPath(operationId, turn.assignment.jobId),
+    await this.writeSnapshot(this.reviewJobPath(operationId, turn.assignment.jobId),
       JSON.stringify({ operationId, correlationId: turn.assignment.correlationId, jobId: turn.assignment.jobId }))
     turn.resultDigest = resultDigest
     delete turn.result
@@ -226,26 +245,30 @@ export class RemoteOperationJournal {
     })
   }
   private async readArchivedReview(receipt: RemoteOperationReceipt, correlationId: string) {
-    const serialized = await readBoundedTextIfPresent(this.reviewPath(receipt.intent.operationId, correlationId),
-      { maxBytes: REMOTE_PHYSICAL_CONTINUATION_LIMIT, message: 'Review archive byte limit reached' })
-    if (serialized === undefined) return undefined
-    const archived = z.object({ operationId: z.string(), turn: RemoteReviewerTurnSchema,
-      history: RemoteNativeHistorySchema.optional() }).strict()
-      .parse(decodeResultCopies(JSON.parse(serialized)))
-    const turn = archived.turn
-    if (archived.operationId !== receipt.intent.operationId || !turn.settled || !turn.result
-      || turn.assignment.correlationId !== correlationId
-      || turn.assignment.session.nativeSessionId !== receipt.native?.sessionId
-      || turn.assignment.reviewerAgentId !== receipt.retainedReviewer?.agentId
-      || hash(canonicalGraphJson(turn.result, journalByteLimit)) !== turn.resultDigest)
-      throw new Error('Review archive changed: recovery required')
-    if (turn.historyDigest && (!archived.history
-      || hash(canonicalGraphJson(archived.history, REMOTE_NATIVE_SOURCE_LIMIT)) !== turn.historyDigest
-      || archived.history.terminalTurn?.correlationId !== correlationId
-      || archived.history.terminalTurn.providerId !== turn.providerId
-      || !same(archived.history.terminalTurn.result, turn.result)))
-      throw new Error('Review history archive changed: recovery required')
-    return archived
+    const path = this.reviewPath(receipt.intent.operationId, correlationId)
+    try {
+      if ((await stat(path)).size > REMOTE_PHYSICAL_CONTINUATION_LIMIT) throw new Error('Review archive byte limit reached')
+      const archived = z.object({ operationId: z.string(), turn: RemoteReviewerTurnSchema,
+        history: RemoteNativeHistorySchema.optional() }).strict()
+        .parse(decodeResultCopies(JSON.parse(await readFile(path, 'utf8'))))
+      const turn = archived.turn
+      if (archived.operationId !== receipt.intent.operationId || !turn.settled || !turn.result
+        || turn.assignment.correlationId !== correlationId
+        || turn.assignment.session.nativeSessionId !== receipt.native?.sessionId
+        || turn.assignment.reviewerAgentId !== receipt.retainedReviewer?.agentId
+        || hash(canonicalGraphJson(turn.result, journalByteLimit)) !== turn.resultDigest)
+        throw new Error('Review archive changed: recovery required')
+      if (turn.historyDigest && (!archived.history
+        || hash(canonicalGraphJson(archived.history, REMOTE_NATIVE_SOURCE_LIMIT)) !== turn.historyDigest
+        || archived.history.terminalTurn?.correlationId !== correlationId
+        || archived.history.terminalTurn.providerId !== turn.providerId
+        || !same(archived.history.terminalTurn.result, turn.result)))
+        throw new Error('Review history archive changed: recovery required')
+      return archived
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+      throw error
+    }
   }
   private async archivedReviewJob(receipt: RemoteOperationReceipt, jobId: string) {
     try {
@@ -295,8 +318,9 @@ export class RemoteOperationJournal {
   }
   private async archiveWorkflowIndexes(data: z.infer<typeof JournalSchema>) {
     for (const archived of data.archivedWorkflows) {
-      const serialized = await readBoundedText(this.archivePath(archived.operationId),
-        { maxBytes: this.byteLimit, message: 'Archived receipt byte limit reached' })
+      const path = this.archivePath(archived.operationId)
+      if ((await stat(path)).size > this.byteLimit) throw new Error('Archived receipt byte limit reached')
+      const serialized = await readFile(path, 'utf8')
       if (hash(serialized) !== archived.receiptDigest) throw new Error('Archived receipt changed: recovery required')
       const receipt = RemoteOperationReceiptSchema.parse(JSON.parse(serialized))
       if (!receipt.terminal || receipt.intent.operationId !== archived.operationId

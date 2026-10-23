@@ -1,5 +1,6 @@
-import { type SelectedRunState, useSelectedRunSnapshot } from '../runs-selector'
-import { useRunVersionQuery } from '../workflow-board'
+import type { SelectedRunState } from '../runs-selector/useSelectedRun'
+import { useSelectedRunSnapshot } from '../runs-selector/query'
+import { useRunVersionQuery } from '../workflow-board/inspect/queries'
 
 /** True once the selected Run can be drawn in full (or has nothing to draw), so the Board never flashes a loading
  * screen between the draft and the Run: its places come from the Run's snapshot and saved version together. */

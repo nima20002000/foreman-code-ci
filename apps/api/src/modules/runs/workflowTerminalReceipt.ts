@@ -1,6 +1,6 @@
 import { DomainError } from '../errors.js'
 import { assertOriginalWorkflowTerminal } from '../interactions/workflowTerminalSource.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import type { GraphTransactionSql } from '../run-graph/connection.js'
 import { assertRepeatCanonicalReceiptLocked, requireRepeatCanonicalReceiptBeforeCommit } from '../run-graph/repeatReceipts.js'
 import type { StoredRepeatExecution } from './repeatPostgres.js'
 import type { AcceptedRepeatRunSnapshot } from './repeatStartRead.js'
@@ -10,7 +10,7 @@ import { assertWorkflowCorrelation, readWorkResultRepairAttempt, workResultRepai
 
 /** The original successful native terminal is recoverable independently of its
  * later business acceptance. Every stored source still needs its canonical receipt. */
-export async function readWorkflowTerminalReceiptLocked(sql: SqlTransaction,
+export async function readWorkflowTerminalReceiptLocked(sql: GraphTransactionSql,
   snapshot: AcceptedRepeatRunSnapshot, stored: StoredRepeatExecution) {
   const { run, version } = snapshot
   const { execution } = stored

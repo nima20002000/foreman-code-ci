@@ -2,7 +2,7 @@ import type { createProductionBrowser } from '../../modules/collaboration/browse
 import type { DeviceManagementService } from '../../modules/devices/management.js'
 import type { FileReferenceService } from '../../modules/files/references/service.js'
 import type { RunGraphReadApi } from '../../modules/run-graph/readService.js'
-import type { OperatorExtensions } from '../../composition/operatorExtensions.js'
+import type { OperatorExtensions } from './extensions.js'
 import type { HarnessMcpSettingsService } from '../../modules/harnesses/mcpSettings.js'
 import type { HarnessDirectoryBrowser } from '../../modules/harnesses/directoryBrowser.js'
 import type { ClaudePluginSettingsService } from '../../modules/harnesses/claudePlugins.js'

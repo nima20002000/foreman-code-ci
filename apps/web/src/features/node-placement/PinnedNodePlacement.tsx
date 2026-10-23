@@ -1,15 +1,15 @@
 import { useId } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useBlockingReadError } from '../../shared/api/readFailure'
-import type { RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
+import type { RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
 import { assertSession, sessionGeneration, sessionIsSwitching } from '../../shared/api/sessionBoundary'
-import { runReadErrorLabel } from '../runs-selector'
+import { runReadErrorLabel } from '../runs-selector/query'
 import { NodePlacementFacts } from './NodePlacementFacts'
 import { readNodePlacement } from './client'
 
 /** The parent keys this read by the complete immutable inspection scope. Each
  * mount owns a distinct query visit, including A→B→A after ignored cancellation. */
-export function PinnedNodePlacement({ scope, nodeId }: { scope: RepeatGraphScopeCurrent; nodeId: string }) {
+export function PinnedNodePlacement({ scope, nodeId }: { scope: RepeatGraphScopeV3; nodeId: string }) {
   const visit = useId(), session = sessionGeneration()
   const query = useQuery({
     queryKey: ['node-placement-inspection', session, visit, scope.workspaceId, scope.workflowId, scope.runId,

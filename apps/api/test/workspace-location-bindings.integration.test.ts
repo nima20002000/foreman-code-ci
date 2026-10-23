@@ -2,7 +2,7 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { describe, expect, it } from 'vitest'
-import { makeCurrentWorkflowFixture, sameWorkflowValue } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture, sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { ApprovedRootAllowlistSchema } from '@foreman-code/contracts/workspace-root-policies'
 import { WorkspaceBoundLocationReadbackSchema, WorkspaceBoundLocationSetResultSchema }
   from '@foreman-code/contracts/workspace-bound-location'

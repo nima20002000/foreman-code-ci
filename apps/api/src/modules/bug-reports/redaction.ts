@@ -1,9 +1,8 @@
-import { nativePersistenceRedactor } from '../interactions/index.js'
-import { hostEnvironment } from '../../shared/process.js'
+import { nativePersistenceRedactor } from '../interactions/nativePersistence.js'
 
 const sensitiveName = /(?:token|password|passwd|secret|api[_-]?key|authorization|credential|cookie)/i
 
-const native = nativePersistenceRedactor(Object.entries(hostEnvironment())
+const native = nativePersistenceRedactor(Object.entries(process.env)
   .filter(([name]) => sensitiveName.test(name))
   .flatMap(([, value]) => value ? [value] : []))
 

@@ -2,7 +2,7 @@ import type pg from 'pg'
 import { expect, it, vi } from 'vitest'
 import type { ClaudeHarnessConfiguration } from '@foreman-code/contracts/claude'
 import { AgentConfigurationVersionSchema, HarnessExecutionSchema } from '@foreman-code/contracts'
-import { WorkflowRunCurrentSchema, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
+import { WorkflowRunV3Schema, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
 import { createPostgresClaudeInteractionBridge } from '../src/modules/harnesses/claudeSdk/domainAuthority.js'
 import { claudeCallbackDatabase } from './support/claudeCallbackDatabase.js'
 
@@ -13,12 +13,12 @@ const createdAt = '2026-10-01T00:00:00.000Z'
 const approval = { handler: 'user' as const }
 const cfg = AgentConfigurationVersionSchema.parse({ id: 'cfg', workspaceId: 'ws', agentId: 'agent', version: 1, productRole: 'coder',
   harness: configuration, prompt: {}, assignedSkills: [], contentHash: `sha256:${'0'.repeat(64)}`, createdAt })
-const version = WorkflowVersionCurrentSchema.parse({ id: 'version', workspaceId: 'ws', workflowId: 'wf', version: 1, executionSemanticsVersion: 3,
+const version = WorkflowVersionV3Schema.parse({ id: 'version', workspaceId: 'ws', workflowId: 'wf', version: 1, executionSemanticsVersion: 3,
   entryNodeId: 'node', approval, agentConfigurationVersionIds: { agent: cfg.id }, contentHash: `sha256:${'0'.repeat(64)}`, createdAt,
   definition: { id: 'wf', workspaceId: 'ws', name: 'Correction turn fixture', version: 1, executionSemanticsVersion: 3, entryNodeId: 'node',
     approval, executionCondition: { kind: 'manual' }, executionPolicy: { maxParallelism: 1, maxNodeExecutions: 1 },
     nodes: [{ id: 'node', agentId: 'agent', name: 'Worker' }], edges: [] } })
-const run = WorkflowRunCurrentSchema.parse({ id: 'run', workspaceId: 'ws', workflowId: 'wf', workflowVersionId: version.id, executionSemanticsVersion: 3,
+const run = WorkflowRunV3Schema.parse({ id: 'run', workspaceId: 'ws', workflowId: 'wf', workflowVersionId: version.id, executionSemanticsVersion: 3,
   agentConfigurationVersionIds: version.agentConfigurationVersionIds, approval, executionCondition: { kind: 'manual' },
   executionState: 'running', outcome: 'pending', input: {}, createdAt })
 const execution = HarnessExecutionSchema.parse({ id: 'exec', runId: run.id, workflowNodeId: 'node', agentId: 'agent',

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
-import { RUN_INSPECTION_TOOLS, RunRecordDetailSchema } from '@foreman-code/contracts/current'
+import { RUN_INSPECTION_TOOLS, RunRecordDetailSchema } from '@foreman-code/contracts/wave25'
 import { scenarioFixture } from './helpers/scenarioFixtures.js'
 import { runPath, scenarioHarness } from './helpers/scenarioHarness.js'
 import { postgresEnabled } from './helpers/database.js'

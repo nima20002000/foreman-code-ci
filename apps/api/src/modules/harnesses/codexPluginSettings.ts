@@ -16,7 +16,7 @@ import { pluginConfigurationHas, unrelatedPluginConfiguration } from './codexPlu
 import { PluginReadQueue } from './pluginReadQueue.js'
 import { QualificationCache } from './qualificationCache.js'
 import { assertNoUnresolvedMcpWrites, assertNoUnresolvedPluginWrites, lockNativeConfigurationFile, NATIVE_SETTINGS_LOCK } from './nativeSettingsWrites.js'
-import { ignoreError, logIgnoredError } from '../diagnostics/index.js'
+import { ignoreError, logIgnoredError } from '../diagnostics/ignoredError.js'
 
 const operation = 'codex.plugin.change'
 const RecoverySchema = z.object({

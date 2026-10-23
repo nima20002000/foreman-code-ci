@@ -3,8 +3,8 @@ import { canonicalGraphJson } from './canonicalJson.js'
 import { BoardResultSchema } from './memoryBoards.js'
 import { WorkflowArtifactResultV1Schema } from './workflowArtifactDeclarations.js'
 import { DelegateRoutingSchema, WorkHandoffDataSchema, WorkHandoffRoutingSchema, WorkflowDelegationContextSchema } from './workflowHierarchy.js'
-import type { WorkflowDefinitionCurrent } from './current/workflowShape.js'
-import { checkDeliverable } from './current/outputContract.js'
+import type { WorkflowDefinitionV3 } from './wave25/workflowShape.js'
+import { checkDeliverable } from './wave25/outputContract.js'
 
 /** Hierarchy routing is saved workflow behavior. It does not opt a Run into board-result effects. */
 export const HierarchyExecutionResultSchema = z.object({
@@ -14,7 +14,7 @@ export const HierarchyExecutionResultSchema = z.object({
 }).strict()
 export type HierarchyExecutionResult = z.infer<typeof HierarchyExecutionResultSchema>
 
-export function parseHierarchyExecutionResult(output: unknown, definition: WorkflowDefinitionCurrent,
+export function parseHierarchyExecutionResult(output: unknown, definition: WorkflowDefinitionV3,
   workflowNodeId: string, outstandingRequestIds?: readonly string[]): HierarchyExecutionResult {
   const node = definition.nodes.find(candidate => candidate.id === workflowNodeId)
   if (!definition.hierarchy || !definition.handoffs || !node || node.kind === 'job') throw new Error('HIERARCHY_AGENT_REQUIRED')

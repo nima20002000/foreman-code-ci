@@ -6,7 +6,7 @@ import type { DeviceRegistration } from '@foreman-code/contracts/device-identity
 import type { MaintenanceStatus } from '@foreman-code/contracts/computer-maintenance'
 import { ComputerCards } from './ComputerCards'
 import { computerReadHandler, computersFixture, deviceName, deviceTarget, mainTarget, registration } from './computersTestFixture'
-import { useOperatorChatStore } from '../operator-chat'
+import { useOperatorChatStore } from '../operator-chat/operatorChatStore'
 
 afterEach(() => useOperatorChatStore.getState().reset())
 

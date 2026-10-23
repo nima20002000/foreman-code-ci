@@ -1,6 +1,7 @@
 import { Select } from '../../shared/ui/nocturne'
 import { useGraphDraftStore } from '../graph/store'
-import { nodeTitle, type NextDraftEdit } from '../board-core'
+import { nodeTitle } from '../graph/nextDraft/model'
+import type { NextDraftEdit } from '../graph/nextDraft/state'
 import { hierarchyNodes } from './authoring'
 
 /** A raw selection belongs to the existing Agent Apply/Cancel form. */

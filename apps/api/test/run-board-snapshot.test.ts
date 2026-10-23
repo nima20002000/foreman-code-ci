@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AcceptedRepeatStartV1Schema } from '@foreman-code/contracts/current'
+import { AcceptedRepeatStartV1Schema } from '@foreman-code/contracts/wave25'
 import { RunBoardSnapshotSchema } from '@foreman-code/contracts/run-snapshots'
 import { projectRunBoardSnapshot } from '../src/modules/runs/boardSnapshotProjection.js'
 import { admitRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
@@ -74,15 +74,15 @@ describe('SCH-05 common Start capture (rollback-capable SQL double; not PostgreS
     expect(f.database().boardSnapshot).toMatchObject({ kind: 'available', runId: first.value.id,
       workflowVersionId: first.value.workflowVersionId, capturedAt: first.value.createdAt })
     expect(f.database().admissionTrigger).toBe('manual')
-    const insert = f.writes.findIndex((write) => write.kind === 'board snapshot')
-    const publish = f.writes.findIndex((write) => write.kind === 'graph head')
+    const insert = f.calls.findIndex((call) => call.sql.startsWith('insert into run_board_snapshots'))
+    const publish = f.calls.findIndex((call) => call.sql.startsWith('insert into run_graph_heads'))
     expect(insert).toBeGreaterThan(-1); expect(insert).toBeLessThan(publish)
-    expect(f.writes[insert]!.transaction).toBe(true)
+    expect(f.calls[insert]!.transaction).toBe(true)
     const saved = structuredClone(f.database().boardSnapshot)
     const replay = await admitRepeatRun(f.pool, f.locations, f.principal, 'mcp', f.request, f.publication)
     expect(replay).toEqual({ value: first.value, replayed: true })
     expect(f.database().boardSnapshot).toEqual(saved)
-    expect(f.writes.filter((write) => write.kind === 'board snapshot')).toHaveLength(1)
+    expect(f.calls.filter((call) => call.sql.startsWith('insert into run_board_snapshots'))).toHaveLength(1)
   })
 
   it('rolls back the Run, new authority and command when snapshot storage fails', async () => {
@@ -101,7 +101,7 @@ describe('SCH-05 common Start capture (rollback-capable SQL double; not PostgreS
     await expect(admitRepeatRun(f.pool, f.locations, f.principal, 'http', f.request, {
       initializeLocked: async () => { throw new Error('publication failed after capture') },
     })).rejects.toThrow(/publication failed/)
-    expect(f.writes.some((write) => write.kind === 'board snapshot')).toBe(true)
+    expect(f.calls.some((call) => call.sql.startsWith('insert into run_board_snapshots'))).toBe(true)
     expect(f.database().run).toBeUndefined(); expect(f.database().boardSnapshot).toBeUndefined()
     expect(f.database().receipt).toBeUndefined()
   })
@@ -124,7 +124,7 @@ describe('SCH-05 common Start capture (rollback-capable SQL double; not PostgreS
     expect(saved).toMatchObject({ kind: 'available' })
     const replay = await admitRepeatRun(f.pool, f.locations, f.principal, 'http', f.request, f.publication)
     expect(replay.replayed).toBe(true); expect(f.database().boardSnapshot).toEqual(saved)
-    expect(f.writes.filter((write) => write.kind === 'board snapshot')).toHaveLength(1)
+    expect(f.calls.filter((call) => call.sql.startsWith('insert into run_board_snapshots'))).toHaveLength(1)
   })
 })
 

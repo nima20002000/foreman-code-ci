@@ -6,10 +6,10 @@ import { buildApp } from '../../src/app.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import type { JobService } from '../../src/modules/jobs/service.js'
 import { buildQueueFixture } from './buildComputerFixture.js'
-import { migratedDatabase } from './migratedDatabase.js'
+import { agent3Database } from './workflowDatabase.js'
 
 export function setupJobAdmissionQueue() {
-  let database: Awaited<ReturnType<typeof migratedDatabase>>
+  let database: Awaited<ReturnType<typeof agent3Database>>
   let access: PostgresAccessService
   let writer: Awaited<ReturnType<PostgresAccessService['issue']>>
   let reader: Awaited<ReturnType<PostgresAccessService['issue']>>
@@ -17,7 +17,7 @@ export function setupJobAdmissionQueue() {
   const apps: ReturnType<typeof buildApp>[] = []
   const clients: Client[] = []
   beforeEach(async () => {
-    database = await migratedDatabase()
+    database = await agent3Database()
     access = new PostgresAccessService(database.pool)
     writer = await access.issue({ name: 'Queue writer', audience: 'operator', expiresAt: new Date(Date.now() + 3600000),
       grants: [{ actions: ['job_definitions:read', 'job_definitions:write', 'jobs:start', 'jobs:read', 'jobs:cancel',

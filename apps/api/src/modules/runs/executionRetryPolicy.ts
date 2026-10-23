@@ -6,9 +6,8 @@ import {
 } from '@foreman-code/contracts/failure'
 import { ZodError } from 'zod'
 import { DomainError } from '../errors.js'
-import { componentLogger } from '../diagnostics/index.js'
+import { componentLogger } from '../diagnostics/logger.js'
 import { isTransientExecutionCode } from '../../shared/executionFailureCodes.js'
-import { executionRetryBackoffOverrideMs } from '../../config.js'
 export { isTransientExecutionCode } from '../../shared/executionFailureCodes.js'
 
 /** Agent failure attempts per work activation, including the first. At-least-once: an Agent
@@ -81,7 +80,8 @@ export function isTransientExecutionResult(result: ExecutionResult | undefined):
 
 /** Delay before starting the attempt after `failedAttempt`. */
 export function executionRetryDelayMs(failedAttempt: number): number {
-  const configured = executionRetryBackoffOverrideMs()
+  const configured = process.env.FOREMAN_EXECUTION_RETRY_BACKOFF_MS?.split(',').map(Number)
+    .filter((value) => Number.isFinite(value) && value >= 0)
   const backoff = configured?.length ? configured : EXECUTION_RETRY_BACKOFF_MS
   return backoff[Math.min(Math.max(failedAttempt, 1), backoff.length) - 1]!
 }

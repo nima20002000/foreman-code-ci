@@ -204,9 +204,7 @@ async function mainFixture() {
   const qualify = vi.fn(async () => proof), authority = { authorize: vi.fn(async () => undefined) }
   const checks = new HostHarnessInstanceProfileChecks(settings, proofs, commands, authority, { qualify }, retention)
   const input = { commandId, instanceId: f.value.instanceId, expectedRevision: 1, target: f.value.target }
-  // A qualification save is the one statement that binds twelve values.
-  const saves = () => query.mock.calls.filter(([, values]) => values?.length === 12)
-  return { ...f, principal, proof, query, saves, client, poolQuery, append, qualify, checks, input, transactions, refreshInstallation,
+  return { ...f, principal, proof, query, client, poolQuery, append, qualify, checks, input, transactions, refreshInstallation,
     replaceBinding: () => { binding = { ...binding, connectionEpoch: randomUUID() } },
     changeRevision: () => { selected = { ...selected, revision: 2, instanceRevision: '2' } } }
 }
@@ -230,12 +228,13 @@ describe('Main retention through existing authorized idempotent profile check', 
     const f = await mainFixture()
     try {
       await f.checks.check(f.principal, 'mcp', f.input)
-      expect(f.saves()).toHaveLength(1); expect(f.poolQuery).not.toHaveBeenCalled()
+      const insert = f.query.mock.calls.find(([sql]) => String(sql).includes('insert into harness_qualifications'))
+      expect(insert).toBeDefined(); expect(f.poolQuery).not.toHaveBeenCalled()
       expect(f.append.mock.calls[0]?.[0]).toBe(f.client)
       expect(f.transactions).not.toContain('rollback')
       await f.checks.check(f.principal, 'http', f.input)
       expect(f.qualify).toHaveBeenCalledOnce()
-      expect(f.saves()).toHaveLength(1)
+      expect(f.query.mock.calls.filter(([sql]) => String(sql).includes('insert into harness_qualifications'))).toHaveLength(1)
       expect(f.refreshInstallation).toHaveBeenCalledTimes(2)
     } finally { await f.checks.close(); await release(f) }
   })
@@ -268,7 +267,7 @@ describe('Main retention through existing authorized idempotent profile check', 
       if (kind === 'closure') receipt.record.checks = receipt.record.checks.filter(check => check.id !== 'owned-resource-closure')
       if (kind === 'profile') receipt.record.profile = 'codex-0.154'
       await expect(f.checks.check(f.principal, 'mcp', f.input)).rejects.toMatchObject({ code: 'HARNESS_PROFILE_EVIDENCE_MISMATCH' })
-      expect(f.saves()).toHaveLength(0)
+      expect(f.query.mock.calls.some(([sql]) => String(sql).includes('insert into harness_qualifications'))).toBe(false)
       expect(f.append).not.toHaveBeenCalled()
     } finally { await f.checks.close(); await release(f) }
   })

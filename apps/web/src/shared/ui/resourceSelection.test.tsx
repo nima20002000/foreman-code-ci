@@ -4,8 +4,8 @@ import { http, HttpResponse } from 'msw'
 import { expect, it } from 'vitest'
 import { server } from '../../mocks/server'
 import { renderWithRouter } from '../../test/renderWithRouter'
-import { WorkspaceDirectory } from '../../features/workspaces'
-import { WorkflowDirectory } from '../../features/workflows'
+import { WorkspaceDirectory } from '../../features/workspaces/WorkspaceDirectory'
+import { WorkflowDirectory } from '../../features/workflows/WorkflowDirectory'
 import { createResourceSelection } from './resourceSelection'
 
 it.each(['workspaces', 'workflows'] as const)('selects and clears all shown %s, including another loaded page', async (kind) => {

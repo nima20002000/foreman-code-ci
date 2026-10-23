@@ -1,9 +1,9 @@
 import { expect } from 'vitest'
 import type pg from 'pg'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { hasSaveNativeSettlement } from '../../src/modules/graph-drafts/saveNativeSettlement.js'
-import type { SqlQuery } from '../../src/infrastructure/transaction.js'
+import type { GraphSqlClient } from '../../src/modules/run-graph/connection.js'
 import { nativeEntrySourceId, workflowNativeReservation, type WorkflowNativeEntryRecord } from '../../src/modules/runs/workflowNativeEntry.js'
 import { repeatDigest } from '../../src/modules/runs/repeatResolution.js'
 import { recoveryDatabase, recoveryIdentity } from './recoveryExecution.testSupport.js'
@@ -45,7 +45,7 @@ export function saveNativeProtocolFixture(proof: SaveNativeProof,
   const result = <R extends pg.QueryResultRow>(rows: unknown[]): pg.QueryResult<R> => ({
     rows: structuredClone(rows) as R[], rowCount: rows.length, command: 'SELECT', oid: 0, fields: [],
   })
-  const sql: SqlQuery = { async query<R extends pg.QueryResultRow>(text: string, values: unknown[] = []) {
+  const sql: GraphSqlClient = { async query<R extends pg.QueryResultRow>(text: string, values: unknown[] = []) {
     statements.push(text)
     try {
       expect(text).toMatch(/^select\b/i)

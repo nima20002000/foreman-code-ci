@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import { HarnessExecutionSchema, type ExecutionResult } from '@foreman-code/contracts'
-import { WorkActivationInputSchema } from '@foreman-code/contracts/current'
+import { WorkActivationInputSchema } from '@foreman-code/contracts/wave25'
 import { hierarchyRuntimeFixture } from '../../../test/helpers/hierarchyRuntimeFixture.js'
 import { parseWorkflowWorkResult } from './workflowCoordinationResult.js'
 import { workflowExecutionRequest } from './workflowExecutionRequest.js'

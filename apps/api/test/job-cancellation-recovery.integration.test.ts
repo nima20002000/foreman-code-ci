@@ -29,13 +29,13 @@ import { sourceBindingHash, sourceMaterializationDigest } from '../src/modules/s
 import { PrivateSourceMaterializer, releaseMaterializationClaim } from '../src/modules/sources/materialization.js'
 import { openPrivateRoot, identity } from '../src/modules/sources/privateFilesystem.js'
 import { RemoteOperationJournal } from '../src/modules/runs/remote/operationJournal.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { jobExecution, jobSpec } from './helpers/jobFixture.js'
 
 // Real PostgreSQL, authenticated HTTP/MCP, Ed25519 signatures, durable journal,
 // and a protected filesystem claim. This is not a laptop/OCI acceptance run.
 describe('approved cancellation recovery of a revoked original Worker', () => {
-  let database: Awaited<ReturnType<typeof migratedDatabase>>
+  let database: Awaited<ReturnType<typeof agent3Database>>
   let app: ReturnType<typeof buildApp>, address: string, directory: string, dispatch: PostgresJobDispatch
   let writer: Awaited<ReturnType<PostgresAccessService['issue']>>, reader: typeof writer
   let client: Client, deniedClient: Client
@@ -51,7 +51,7 @@ describe('approved cancellation recovery of a revoked original Worker', () => {
   const ordinaryTransport = vi.fn(async (): Promise<never> => { throw new Error('Revoked worker transport is unavailable') })
   const sha = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex')
   beforeAll(async () => {
-    database = await migratedDatabase()
+    database = await agent3Database()
     directory = await mkdtemp(`${process.env.FOREMAN_CODE_TEST_ROOT}/job-revoked-cancellation-`)
     const pool = database.pool
     const mainId = (await pool.query<{ id: string }>('select id from application_installation where singleton=true')).rows[0]!.id

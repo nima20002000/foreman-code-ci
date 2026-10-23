@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { WorkNoticeSchema, WorkHandoffResultSchema, type WorkHandoffResult } from '@foreman-code/contracts/current'
+import { WorkNoticeSchema, WorkHandoffResultSchema, type WorkHandoffResult } from '@foreman-code/contracts/wave25'
 import { describe, expect, it } from 'vitest'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { RepeatRunRepository } from '../src/modules/runs/repeatPostgres.js'
 import { createWorkLimitNotice } from '../src/modules/runs/workHandoffNotice.js'
-import { withTaskDatabase as taskDatabase } from './helpers/taskDatabase.js'
+import { nim2691TaskDatabase as taskDatabase } from './helpers/taskDatabase.js'
 import {
   acceptedReview, acquireOwner, acceptPreparedResult, boundaryNoticeDeliverable, databaseJsonBytes, returnPreview, text,
 } from './work-handoff-delivery-postgres.test-support.js'

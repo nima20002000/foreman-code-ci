@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { GraphIdSchema, IdSchema } from "./schemaPrimitives.js";
 import { SelectedRunChatKeySchema } from "./runSnapshots.js";
-import { refineChatPrompt } from "./chatInput.js";
 import {
   AgentChatHistoryPageSchema, AgentChatReadbackQuerySchema, AgentChatStateSchema,
   AgentChatTurnPageSchema, InterruptAgentChatRequestSchema, ReadAgentChatRequestSchema, ReadAgentChatResponseSchema,
@@ -72,7 +71,11 @@ export const SendSelectedRunChatRequestSchema = z.object({
   selection: SelectedRunChatExecutionSchema,
   // Derive fields before refining: preserve content and attachment-steering checks.
   message: z.object(AgentChatMessageCommandSchema.shape).omit({ context: true }).strict()
-    .superRefine((value, context) => refineChatPrompt(value, context, { size: false })),
+    .refine((value) => value.content.length > 0 || value.attachments.length > 0, {
+      path: ["content"], message: "Message requires text or an attachment.",
+    }).refine((value) => value.intent !== "steer" || value.attachments.length === 0, {
+      path: ["attachments"], message: "Attachment steering is not supported. Send attachments in a new turn.",
+    }),
 }).strict();
 export const InterruptSelectedRunChatRequestSchema = z.object({
   key: SelectedRunChatKeySchema, request: InterruptAgentChatRequestSchema,

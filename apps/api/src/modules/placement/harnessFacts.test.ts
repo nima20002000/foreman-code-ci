@@ -4,7 +4,7 @@ import { DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
 import type { HostHarnessOverride, HostHarnessProfileEvidence } from '@foreman-code/contracts/harness-registry'
 import type { AcceptedNodePlacement } from '@foreman-code/contracts/node-placement'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import { HarnessInstallationRegistry, type HarnessInstallationRecord } from '../harnesses/installationRegistry.js'
 import { HarnessInstanceRegistry, localHarnessDrivers } from '../harnesses/instanceRegistry.js'
 import { qualificationIdentity } from '../harnesses/qualification/identity.js'
@@ -76,7 +76,7 @@ function fixture(driver: 'codex' | 'claude' = 'codex', hostKind: 'main' | 'devic
     installationFingerprint: fingerprint, runtimeContractVersion: 1, protocolRevision: installation.protocolRevision, credentialScopeRefs: [],
   } }
   const read = (options?: { purpose: 'resident' }) => readPlacementHarnessFacts(
-    { query } as unknown as SqlQuery, placement, installations, { codex: suiteRevision }, options)
+    { query } as unknown as GraphSqlClient, placement, installations, { codex: suiteRevision }, options)
   return { read, installations, records, proof, evidence, override, placement, query, settingsRecords, proofRecords }
 }
 
@@ -254,7 +254,7 @@ it('restores the pinned Main qualification from persisted records after restart 
   f.records.push(newer)
   const restarted = new HarnessInstallationRegistry(new HarnessInstanceRegistry(localHarnessDrivers))
   restarted.refresh(f.installations.list())
-  const recovered = await readPlacementHarnessFacts({ query: f.query } as unknown as SqlQuery,
+  const recovered = await readPlacementHarnessFacts({ query: f.query } as unknown as GraphSqlClient,
     f.placement, restarted, { codex: newer.suite_revision })
   expect(recovered.qualification).toEqual(original.qualification)
   expect(recovered.profileProof).toEqual(original.profileProof)

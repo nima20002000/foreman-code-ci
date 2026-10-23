@@ -1,10 +1,10 @@
 import type { SqlQuery } from '../../infrastructure/transaction.js'
 import type { AgentConfigurationVersion, ResolvedSkill, NodeBrowserSettings } from '@foreman-code/contracts'
-import type { SavedWorkflowDefinition, SavedWorkflowVersion } from '@foreman-code/contracts/current'
+import type { SavedWorkflowDefinition, SavedWorkflowVersion } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../errors.js'
 import { configurationWithNodeSkills } from '../skills/nodeSkills.js'
 import { referencesCreatedByExecution } from '../runs/workflowDeliverable.js'
-import type { NodeSkillOverride, OutputReferenceKind } from '@foreman-code/contracts/current'
+import type { NodeSkillOverride, OutputReferenceKind } from '@foreman-code/contracts/wave25'
 import { readImmutableWorkflowVersion, readImmutableAgentConfiguration, readSavedWorkflowDefinition, IMMUTABLE_WORKFLOW_VERSION_COLUMNS,
   type ImmutableWorkflowVersionRow, type ImmutableAgentConfigurationRow } from './immutableRead.js'
 

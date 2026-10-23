@@ -9,11 +9,11 @@ import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { WorkflowScheduleDispatcher } from '../src/modules/schedules/dispatcher.js'
 import { ScheduleOccurrencePageSchema } from '../src/modules/schedules/transportSchemas.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import {
-  scheduleManagementActions, scheduleDomainState, scheduleDispatchFixture,
-  type ScheduleDatabase, type ScheduleDispatchFixture,
+  sch11Actions, sch11DomainState, sch11Fixture,
+  type Sch11Database, type Sch11Fixture,
 } from './helpers/scheduleFixture.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
@@ -25,14 +25,14 @@ const cursorCases = (['weekly', 'interval', 'once'] as const).flatMap((mode) =>
     (['http', 'mcp'] as const).map((transport) => ({ mode, operation, transport }))))
 
 describe.skipIf(!postgresEnabled)('unchanged schedule cursor persistence and admission', () => {
-  let database: ScheduleDatabase
-  let f: ScheduleDispatchFixture
+  let database: Sch11Database
+  let f: Sch11Fixture
   let dueAt: string
   let app: ReturnType<typeof buildApp> | undefined
   let address: string
   let clients: Client[] = []
 
-  beforeAll(async () => { database = await migratedDatabase() }, 60_000)
+  beforeAll(async () => { database = await agent3Database() }, 60_000)
   afterAll(async () => { await database?.close() })
   beforeEach(async () => {
     app = undefined
@@ -42,7 +42,7 @@ describe.skipIf(!postgresEnabled)('unchanged schedule cursor persistence and adm
     due.setUTCSeconds(0, 0)
     due.setUTCMinutes(due.getUTCMinutes() - 1)
     dueAt = due.toISOString()
-    f = await scheduleDispatchFixture(database, new Date(due.getTime() - 1).toISOString())
+    f = await sch11Fixture(database, new Date(due.getTime() - 1).toISOString())
     clients = []
     app = buildApp({
       readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
@@ -130,7 +130,7 @@ describe.skipIf(!postgresEnabled)('unchanged schedule cursor persistence and adm
       const saved = await f.save(settings)
       expect(saved.nextOccurrenceAt).toBe(dueAt)
       f.time.now = new Date(Date.parse(dueAt) + 2_000).toISOString()
-      const replacement = await f.issue(scheduleManagementActions)
+      const replacement = await f.issue(sch11Actions)
       const caller = { token: replacement.token, client: await connect(replacement.token) }
       const reader = await connect(f.reader.token)
       const prepared = rejectableDeferred()
@@ -157,13 +157,13 @@ describe.skipIf(!postgresEnabled)('unchanged schedule cursor persistence and adm
           ...f.command(saved.revision),
           ...(operation === 'save' ? { schedule: settings } : {}),
         }
-        const before = await scheduleDomainState(f)
+        const before = await sch11DomainState(f)
         const deniedHttp = await writeHttp(operation, input, f.reader.token)
         expect(deniedHttp.statusCode).toBe(403)
         const deniedMcp = await reader.callTool({ name: `workflow_schedule_${operation}`, arguments: input })
         expect(deniedMcp.isError).toBe(true)
         expect(JSON.stringify(deniedMcp.content)).toContain('ACCESS_DENIED')
-        expect(await scheduleDomainState(f)).toEqual(before)
+        expect(await sch11DomainState(f)).toEqual(before)
 
         const changed = await write(transport, operation, input, caller)
         expect(changed.replayed).toBe(false)
@@ -301,11 +301,11 @@ describe.skipIf(!postgresEnabled)('unchanged schedule cursor persistence and adm
     const paused = ScheduleSaveResultSchema.parse(decodeMcpToolResult(disabled)).value
     expect(paused).toMatchObject({ enabled: false, nextOccurrenceAt: null, revision: 2 })
     const input = { ...f.command(2), ...(operation === 'save' ? { schedule: settings } : {}) }
-    const before = await scheduleDomainState(f)
+    const before = await sch11DomainState(f)
     const denied = await reader.callTool({ name: `workflow_schedule_${operation}`, arguments: input })
     expect(denied.isError).toBe(true)
     expect(JSON.stringify(denied.content)).toContain('ACCESS_DENIED')
-    expect(await scheduleDomainState(f)).toEqual(before)
+    expect(await sch11DomainState(f)).toEqual(before)
     const enabled = await write(transport, operation, input, caller)
     expect(enabled.value).toEqual({ ...paused, enabled: true, revision: 3 })
     expect(await readBoth(reader)).toEqual(enabled.value)
@@ -321,11 +321,11 @@ describe.skipIf(!postgresEnabled)('unchanged schedule cursor persistence and adm
     await f.save(settings)
     f.time.now = new Date(Date.parse(dueAt) + 2_000).toISOString()
     await f.service.disable(f.writer.principal, 'http', f.command(1))
-    const before = await scheduleDomainState(f)
+    const before = await sch11DomainState(f)
     await expect(f.service.save(f.writer.principal, 'http', {
       ...f.command(2), schedule: { ...settings, localDate: '2000-01-01' },
     }))
       .rejects.toMatchObject({ code: 'INVALID_REQUEST' })
-    expect(await scheduleDomainState(f)).toEqual(before)
+    expect(await sch11DomainState(f)).toEqual(before)
   }, 60_000)
 })

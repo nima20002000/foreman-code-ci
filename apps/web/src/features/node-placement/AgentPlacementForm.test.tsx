@@ -3,15 +3,15 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
 import { vi } from 'vitest'
-import { AgentSettingsForm } from '../graph'
-import { AgentFormSchema } from '../board-core'
+import { AgentSettingsForm } from '../graph/AgentSettingsForm'
+import { AgentFormSchema } from '../graph/nextDraft/agentForm'
 import { savedPlacementFixture as placement } from './fixtures'
 
 it('keeps selection local until Apply and includes only this node placement in its callback', async () => {
   const save = vi.fn()
   const pc = { ...placement, hostRef: { kind: 'main' as const, mainId: placement.hostRef.mainId } }
   render(<QueryClientProvider client={new QueryClient()}><AgentSettingsForm embedded agent={{ id: 'shared-agent', name: 'Worker', harnessConfiguration: DEFAULT_HARNESS_DEFAULTS.codex }}
-    creationDefaults={DEFAULT_HARNESS_DEFAULTS} node={{ placement }} placementChoices={{ options: [{ label: 'Laptop', placement }, { label: 'PC', placement: pc }] }}
+    creationDefaults={DEFAULT_HARNESS_DEFAULTS} nodePlacement={placement} placementOptions={[{ label: 'Laptop', placement }, { label: 'PC', placement: pc }]}
     onClose={() => undefined} onSave={save} /></QueryClientProvider>)
   const apply = screen.getByRole('button', { name: 'Apply agent settings to draft' })
   expect(apply).toBeDisabled()

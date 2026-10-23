@@ -26,16 +26,12 @@ async function fixture() {
   const principal=ManagementPrincipalSchema.parse({id:'job-owner',name:'Job owner',audience:'operator',
     grants:[{actions:['jobs:start','job_artifacts:read'],scope:{workspaceIds:[execution.workspaceId]}}],expiresAt:'2099-01-01T00:00:00Z',revokedAt:null})
   let revoked=false,now=new Date(execution.createdAt)
-  // Reads are told apart by their bound values: the principal id is the live authority read; one other key reads the
-  // accepting principal; the workspace and execution (in either order) read the accepted execution, its record and its
-  // accepting principal, so one row answers them all; and three values are the pinned definition read (definition id
-  // last) or the output budget read (request id last).
-  const query=vi.fn(async(_sql:string,params:unknown[]=[])=>{
-    if(params.length===1&&params[0]===principal.id) return {rows:[{id:principal.id,name:principal.name,audience:'operator',grants:principal.grants,expires_at:new Date(principal.expiresAt),revoked_at:revoked?new Date():null,delegated_from:null}]}
-    if(params.length===1) return {rows:[{accepted_by:principal.id}]}
-    if(params.length===2) return {rows:[{record:structuredClone(execution),accepted_spec:structuredClone(execution.acceptedSpec),accepted_by:principal.id}]}
-    if(params.length===3&&params[2]===execution.acceptedSpec.definitionId) return {rows:[{record:{schemaVersion:1,id:execution.acceptedSpec.definitionId,workspaceId:execution.workspaceId,name:'Original',revision:execution.acceptedSpec.definitionRevision,versionId:execution.acceptedSpec.definitionVersionId,spec:{...jobSpec(),outputs:execution.acceptedSpec.outputs},createdAt:execution.createdAt,updatedAt:execution.createdAt}}]}
-    if(params.length===3) return {rows:[{total:String([...repository.allocations.values()].filter(a=>a.requestId!==params?.[2]&&a.state!=='canceled').reduce((sum,a)=>sum+a.stored.value.revision.byteSize,0))}]}
+  const query=vi.fn(async(sql:string,params?:unknown[])=>{
+    if(sql.startsWith('select coalesce(sum')) return {rows:[{total:String([...repository.allocations.values()].filter(a=>a.requestId!==params?.[2]&&a.state!=='canceled').reduce((sum,a)=>sum+a.stored.value.revision.byteSize,0))}]}
+    if(sql.includes('management_principals')) return {rows:[{id:principal.id,name:principal.name,audience:'operator',grants:principal.grants,expires_at:new Date(principal.expiresAt),revoked_at:revoked?new Date():null,delegated_from:null}]}
+    if(sql.startsWith('select record,accepted_spec')) return {rows:[{record:structuredClone(execution),accepted_spec:structuredClone(execution.acceptedSpec)}]}
+    if(sql.startsWith('select record from job_definition_versions')) return {rows:[{record:{schemaVersion:1,id:execution.acceptedSpec.definitionId,workspaceId:execution.workspaceId,name:'Original',revision:execution.acceptedSpec.definitionRevision,versionId:execution.acceptedSpec.definitionVersionId,spec:{...jobSpec(),outputs:execution.acceptedSpec.outputs},createdAt:execution.createdAt,updatedAt:execution.createdAt}}]}
+    if(sql.startsWith('select accepted_by')) return {rows:[{accepted_by:principal.id}]}
     return {rows:[],rowCount:0}
   })
   const sql={query} as unknown as import('../src/modules/jobs/repository.js').JobSql

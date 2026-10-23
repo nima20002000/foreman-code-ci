@@ -1,8 +1,6 @@
 // Node-only server helpers shared by the API and CI packages. Plain fields, not parameter properties: Worker code
 // loads this file through Node's type stripping.
 
-import { createHash } from 'node:crypto'
-
 // The browser native host is bundled separately and has its own copy of this class; the brand lets both copies
 // recognise each other's errors, so its codes and messages reach callers instead of a generic internal error.
 const domainErrorBrand = Symbol.for('foreman-code.DomainError')
@@ -94,14 +92,4 @@ export function underDeadline(timeoutMs: number, file: string, args: readonly st
   return ['/bin/sh', ['-c', 'trap \'kill -KILL -$! $! 2>/dev/null; exit 143\' TERM; '
     + 'timeout --signal=TERM --kill-after=0.25s "$@" & wait $!; status=$?; kill -KILL -$! 2>/dev/null; exit $status',
   'deadline', `${timeoutMs / 1000}s`, file, ...args]]
-}
-
-// One-shot SHA-256 digests. Strings are hashed as UTF-8, exactly like `createHash('sha256').update(string)`.
-// Incremental hashing (several `update` calls or a stream) still uses `createHash` directly.
-export function sha256Hex(data: string | NodeJS.ArrayBufferView): string {
-  return createHash('sha256').update(data).digest('hex')
-}
-
-export function sha256Digest(data: string | NodeJS.ArrayBufferView): Buffer {
-  return createHash('sha256').update(data).digest()
 }

@@ -1,5 +1,5 @@
 import { ExecutionResultSchema, HarnessExecutionSchema } from '@foreman-code/contracts'
-import { AcceptedCurrentNodeResultSchema, WorkReturnSchema } from '@foreman-code/contracts/current'
+import { AcceptedCurrentNodeResultSchema, WorkReturnSchema } from '@foreman-code/contracts/wave25'
 import type { HierarchyGroupContext } from './hierarchyGroupAdmission.js'
 import { parseHierarchyWorkResult } from './hierarchyResults.js'
 import { repeatConflict, repeatDigest, repeatExecutionIdentity, sameRepeatValue, type RepeatSource } from './repeatResolution.js'

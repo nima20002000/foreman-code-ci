@@ -7,12 +7,11 @@ import { CodexHarnessConfigurationSchema, DEFAULT_CODEX_ADVANCED_CONFIGURATION, 
 import { HarnessExecutionError } from '../errors.js'
 import type { NativeSessionStart } from '../port.js'
 import { appMcpTokenEnvironment, inheritedAgentEnvironment, isControllerEnvironmentVariable } from '../secrets.js'
-import { agentInstructionBundle } from '../../skills/index.js'
+import { agentInstructionBundle } from '../../skills/instructions.js'
 import { canonicalJsonNumericKeysFirstLegacy } from '@foreman-code/contracts/canonical-json'
 import { CodexRpcError, isObject, object, type JsonObject, type RequestId } from '../codexStdioTransport.js'
 import type { CodexTransport, CodexSessionOperations, TurnSnapshot, Runtime, Prepared } from './types.js'
 import { sha256Hex } from '../../../shared/hash.js'
-import { hostEnvironment } from '../../../shared/process.js'
 
 export const MAX_EVENTS = 1_024
 export const MAX_EVENT_BYTES = 8 * 1024 * 1024
@@ -70,7 +69,7 @@ export function safeEnvironment(input?: NativeSessionStart['environment'], scope
       environment[key] = value
     }
   }
-  return appMcpTokenEnvironment(environment, hostEnvironment())
+  return appMcpTokenEnvironment(environment, process.env)
 }
 export function validateEnvironmentOwner(input: NativeSessionStart, requiredVariable?: string): void {
   if (input.environment && input.environment.agentId !== ownerId(input)) {

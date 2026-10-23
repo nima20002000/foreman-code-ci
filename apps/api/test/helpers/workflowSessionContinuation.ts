@@ -6,7 +6,7 @@ import { expect, vi } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { CanonicalRunGraphCurrentSchema, CANONICAL_RUN_GRAPH_MCP_TOOLS, WorkActivationInputSchema,
-  makeCurrentWorkflowFixture, parseWorkHandoffResult } from '@foreman-code/contracts/current'
+  makeCurrentWorkflowFixture, parseWorkHandoffResult } from '@foreman-code/contracts/wave25'
 import { buildApp } from '../../src/app.js'
 import { ApprovalPostgresSaver } from '../../src/infrastructure/approvalCheckpointSaver.js'
 import type { OperatorServices } from '../../src/mcp/operator/types.js'
@@ -23,7 +23,7 @@ import { graphRpc, graphRpcValue } from '../graph-composition-fixture.js'
 import { agentWorkflowNode } from './agentWorkflowFixture.js'
 import { approvalResponse } from './approvalResponse.js'
 import { codexApprovalRuntime } from './codexApprovalRuntime.js'
-import { continuationAt } from './continuationCuts.js'
+import { br1002At } from './continuationCuts.js'
 import { rejectableDeferred } from './deferred.js'
 import { RunWorktrees } from '../../src/modules/runs/runWorktrees.js'
 import { repeatRuntimeDirectory } from '../../src/modules/runs/repeatRepositoryHost.js'
@@ -130,7 +130,7 @@ export async function assertWorkflowSessionContinuation({ restart, worktrees = f
     if (restart) {
       const starting = runtime.engine.start(f.f.run.id)
       const settled = Promise.allSettled([starting])
-      await continuationAt(cut.promise, starting)
+      await br1002At(cut.promise, starting)
       const closing = rejectableDeferred<void>()
       const closeForRestart = runtime.native.closeForRestart.bind(runtime.native)
       const close = vi.spyOn(runtime.native, 'closeForRestart').mockImplementation(() => {

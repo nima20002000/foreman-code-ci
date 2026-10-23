@@ -1,6 +1,6 @@
 import type pg from 'pg'
 import { withTransaction } from '../../infrastructure/transaction.js'
-import { componentLogger } from '../diagnostics/index.js'
+import { componentLogger } from '../diagnostics/logger.js'
 import { JobRuntimeProfileSchema, JobRuntimeFingerprintSchema, InstalledJobRuntimeDescriptorSchema }
   from '@foreman-code/contracts/job-runtime'
 import { JobRuntimeApprovalRecordSchema, JobRuntimeProfileRecordSchema, JobRuntimeFingerprintRecordSchema,
@@ -9,7 +9,7 @@ import { JobRuntimeApprovalRecordSchema, JobRuntimeProfileRecordSchema, JobRunti
   type JobRuntimeNativeAdmissionRecord, type JobQualificationCandidateRecord, InstalledJobRuntimeDescriptorRecordSchema,
   jobRuntimeProfilePolicy, jobRuntimeProfileLimits, jobRuntimeQualificationAnchorAt } from '@foreman-code/contracts/job-verification-runtime'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
-import type { PostgresCommandCoordinator } from '../commands/index.js'
+import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import type { PostgresSourceService } from '../sources/service.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { requireAuthorization } from '../access/policy.js'

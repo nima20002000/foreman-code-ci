@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { SavedRunDetailsSchema } from '@foreman-code/contracts/current'
+import { SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
 import { placementDigest } from '../src/modules/placement/binding.js'
 import { waitForRemoteReview } from './helpers/remoteReviewProduction.js'
 import {

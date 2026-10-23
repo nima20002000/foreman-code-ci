@@ -1,6 +1,6 @@
 import type { AcceptedProviderAccountBinding, ProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
 import { isDeepStrictEqual } from 'node:util'
-import { HarnessConfigurationSchema } from '@foreman-code/contracts'
+import { HarnessConfigurationSchema, RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
 import { captureOriginalCodexSession, type OriginalCodexSession } from './originalCodexSession.js'
 import { createAdmittedNativeManager } from './admittedManager.js'
 import type { ClaudeOwnedVersionObservation } from './claudeSdk/currentPin.js'
@@ -26,9 +26,7 @@ import type { NativeProcessRecovery } from './recovery/processRegistry.js'
 import type { NativeResponseJournal } from './recovery/responseJournal.js'
 import type { ProviderAccountResolver, ResolvedProviderAccount } from '../provider-accounts/service.js'
 import { pinnedCodexAccountEnvironment, resolveRuntimeProviderAccount } from './providerAccountRuntime.js'
-import { ignoreError } from '../diagnostics/index.js'
-import { hostEnvironment } from '../../shared/process.js'
-import { retiredHarnessError } from './retiredHarness.js'
+import { ignoreError } from '../diagnostics/ignoredError.js'
 
 export type HarnessRuntimeRole = 'workflow' | 'operator' | 'agent-chat' | 'diagnostics' | 'qualification'
 interface AllocationContext {
@@ -381,7 +379,8 @@ export class NativeHarnessFactories {
   }
 
   async qualifyConfiguration(configuration: HarnessConfiguration, workingDirectory: string, signal?: AbortSignal) {
-    if (configuration.harness === 'opencode') throw retiredHarnessError()
+    if (configuration.harness === 'opencode') throw new DomainError('HARNESS_RETIRED',
+      RETIRED_OPENCODE_MESSAGE, 409)
     await this.config.refreshInstallations?.(signal)
     if (configuration.harness === 'claude') throw new DomainError('CLAUDE_NATIVE_QUALIFICATION_UNAVAILABLE',
       'The Claude preset is saved, but native profile qualification is not available in this runtime. Execution still requires verified authentication, sandbox isolation and lifecycle evidence for the exact host profile.', 409)
@@ -421,8 +420,7 @@ export class NativeHarnessFactories {
       combined.throwIfAborted()
       owned.admitted = true
       const environment: NodeJS.ProcessEnv = { PATH: binding.installation.launcher.environment.path }
-      const host = hostEnvironment()
-      for (const name of ['LANG', 'LC_ALL', 'TMPDIR']) if (host[name] !== undefined) environment[name] = host[name]
+      for (const name of ['LANG', 'LC_ALL', 'TMPDIR']) if (process.env[name] !== undefined) environment[name] = process.env[name]
       const observed = await this.config.claudeVersionCommand!(binding.installation.launcher.resolvedLauncher!, ['--version'], workingDirectory,
         combined, environment, { recovery, maxOutputBytes: 16_384 })
       combined.throwIfAborted()

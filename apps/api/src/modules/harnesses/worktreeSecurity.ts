@@ -1,7 +1,7 @@
 import { lstat, realpath } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { DEFAULT_CODEX_ADVANCED_CONFIGURATION, type CodexHarnessConfiguration } from '@foreman-code/contracts'
-import { systemGitWorktreePorts, type GitWorktreePorts } from '../sources/index.js'
+import { systemGitWorktreePorts, type GitWorktreePorts } from '../sources/gitWorktree.js'
 import { DomainError } from '../errors.js'
 
 /** Worktree commits write their index and the repository object/ref store, outside cwd. */

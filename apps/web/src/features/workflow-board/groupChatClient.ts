@@ -1,12 +1,12 @@
 import { AgentIdentitySchema, type AgentIdentity } from '@foreman-code/contracts'
-import { CurrentWorkflowReadResultSchema, RunVersionDetailSchema } from '@foreman-code/contracts/current'
+import { CurrentWorkflowReadResultSchema, RunVersionDetailSchema } from '@foreman-code/contracts/wave25'
 import type { AgentChatState } from '@foreman-code/contracts/agent-chat'
 import { apiClient, ApiError, type RequestOptions } from '../../shared/api/client'
 import { agentChatApi } from '../../shared/api/agentChat'
-import { selectedRunChatApi } from '../conversations'
-import type { RecipientTargetOption, WorkflowTargetResolver } from '../workflow-chat'
+import { selectedRunChatApi } from '../conversations/agentChat/selectedRunChatClient'
+import type { RecipientTargetOption, WorkflowTargetResolver } from '../workflow-chat/RecipientTargetPicker'
 import { readPinnedAgentVersion } from './runDetailsClient'
-import { readExecutionChat, resolveExecutionChat } from '../workflow-hierarchy'
+import { readExecutionChat, resolveExecutionChat } from '../workflow-hierarchy/execution-chat/client'
 
 export async function readGroupParticipants(workspaceId: string, workflowId: string, runId: string | undefined,
   options: RequestOptions): Promise<AgentIdentity[]> {

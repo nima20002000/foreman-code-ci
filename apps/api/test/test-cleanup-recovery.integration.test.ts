@@ -13,7 +13,7 @@ import { assertTestDatabase, completeTestResourceCleanup, dropFixtureDatabase, p
   registerTestResourceCleanup, removeFixtureDirectory, testAdminPool } from '../../../scripts/test-resources.mjs'
 import { groupUsed, stopGroup } from '../../../scripts/integration-process.mjs'
 import { NativeProcessRegistry } from '../src/modules/harnesses/recovery/processRegistry.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 
 const root = fileURLToPath(new URL('../../../', import.meta.url))
 const require = createRequire(import.meta.url)
@@ -26,7 +26,7 @@ function exit(child: ChildProcess): Promise<number | null> {
 }
 
 it('retains fixture rows and native state until pending qualification closure is confirmed', async () => {
-  const fixture = await migratedDatabase()
+  const fixture = await agent3Database()
   const registryDirectory = join(fixture.directory, 'native-processes')
   const registry = new NativeProcessRegistry(registryDirectory)
   const owner = 'unfinished-schedule-qualification'

@@ -4,7 +4,7 @@ import { requireJobPreparationDeadline } from './preparationDeadline.js'
 import type pg from 'pg'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { JobDefinitionRecordSchema, isAutoJobSpecRecord, type ResolvedJobDefinitionSpecRecord } from '@foreman-code/contracts/job-verification'
-import { AcceptedWorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
+import { AcceptedWorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
 import { RemoteJobDispatchIntentSchema } from '@foreman-code/contracts/remote-job-execution'
 import { SourceRootRecordSchema, type SourceMaterializationRecord, type SourceRootRecord } from '@foreman-code/contracts/source-admission'
 import { requireAuthorization } from '../access/policy.js'
@@ -17,7 +17,7 @@ import { JobQueueTicketSchema } from '@foreman-code/contracts/job-admission'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { JobRepository, type JobSql } from './repository.js'
 import { WorkflowJobPreparationSchema } from './workflowPreparation.js'
-import { IMMUTABLE_WORKFLOW_VERSION_COLUMNS, readImmutableWorkflowVersion, type ImmutableWorkflowVersionRow } from '../workflows/index.js'
+import { IMMUTABLE_WORKFLOW_VERSION_COLUMNS, readImmutableWorkflowVersion, type ImmutableWorkflowVersionRow } from '../workflows/immutableRead.js'
 
 /** Genuine preparation identity is persisted before W09 source I/O. It confers no launch authority. */
 export class JobSourceAttemptAuthority implements SourceAttemptAuthority {
@@ -63,7 +63,7 @@ export class JobSourceAttemptAuthority implements SourceAttemptAuthority {
     const prep=WorkflowJobPreparationSchema.parse(workflow.preparation)
     const row=(await sql.query<{record:unknown;stopped:boolean;cleanup:boolean}>('select record,stop_requested_at is not null stopped,exists(select 1 from run_cleanup_intents c where c.run_id=r.id and c.pending) cleanup from runs r where id=$1 for share',[prep.runId])).rows[0]
     if(!row)throw new DomainError('RUN_NOT_FOUND','The allocating Run is missing.',404)
-    const run=AcceptedWorkflowRunCurrentSchema.parse(row.record),actor=await readLiveManagementPrincipal(sql,run.authorizationPrincipalId)
+    const run=AcceptedWorkflowRunV3Schema.parse(row.record),actor=await readLiveManagementPrincipal(sql,run.authorizationPrincipalId)
     if(principal&&principal.id!==actor.id)throw new DomainError('AUTH_INVALID','Source preparation belongs to another accepted Run principal.',403)
     requireAuthorization(actor,'runs:start',{workspaceId:run.workspaceId,workflowId:run.workflowId,runId:run.id})
     if(!(await sql.query('select 1 from run_authority_principals where principal_id=$1 and run_id=$2 for share',[actor.id,run.id])).rows.length)throw new DomainError('AUTH_INVALID','The job source cannot borrow another Run principal.',403)

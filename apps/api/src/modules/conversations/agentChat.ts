@@ -1,8 +1,8 @@
 import type { SqlQuery } from '../../infrastructure/transaction.js'
-import { withWorkflowChatContext } from '../workflow-chat/index.js'
+import { withWorkflowChatContext } from '../workflow-chat/nativeContext.js'
 import { nativeChatPrompt, preflightChatInput, restoreAcceptedChatInput, type AcceptedChatInput, type AcceptedChatSettings, type PreparedChatInput } from './nativeChatInput.js'
 import type { ReadObservation } from '@foreman-code/contracts'
-import { failedReadObservation, successfulReadObservation } from '../diagnostics/index.js'
+import { failedReadObservation, successfulReadObservation } from '../diagnostics/readObservation.js'
 import { DeviceConnectionError } from '../devices/deviceWire.js'
 import { errorMessage } from '@foreman-code/contracts/server-kit'
 import { RETIRED_OPENCODE_MESSAGE, type NodeBrowserSettings } from '@foreman-code/contracts'
@@ -11,7 +11,6 @@ import { withInteractionResponse, isSessionNativeInteraction } from '@foreman-co
 import { missingAgentChatDirectory, missingChatFolderMessage, resolveAgentChatDirectory, revalidateAgentChatDirectory } from './agentChatDirectory.js'
 import type { SessionControlRequest } from '@foreman-code/contracts'
 import { pendingSessionControls, type ChatModelCatalog } from '../harnesses/sessionControlDefaults.js'
-import { supportsExpectedTurnSteer } from '../harnesses/capabilities.js'
 import { readRunChatTranscript } from './runChatTranscript.js'
 import { ExecutionActivityReader, type ExecutionActivityRequest } from './executionActivity.js'
 import { SessionControlStateSchema } from '@foreman-code/contracts'
@@ -26,11 +25,12 @@ import { pendingInteractionAfterHistory } from './pendingInteractionReadback.js'
 import { qualifyChatActivity } from './qualifiedActivity.js'
 import { reconcileKnownActivities } from './reconcileKnownActivities.js'
 import { knownNativeActivity } from './knownNativeActivity.js'
-import { consumeTurnOutput, createTurnTextPipeline, observedMessageReceipt, observedNonSubmission, type TurnEventSink } from './conversationTurnCore.js'
+import { committedNativeText } from './committedNativeText.js'
+import { activityTextEnvelope } from './activityTextEnvelope.js'
 import { nativeInteractionAvailability } from './interactionAvailability.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { mkdir } from 'node:fs/promises'
-import { componentLogger } from '../diagnostics/index.js'
+import { componentLogger } from '../diagnostics/logger.js'
 import { join, resolve } from 'node:path'
 import type pg from 'pg'
 import type { z } from 'zod'
@@ -45,7 +45,7 @@ import {
   type AgentChatSessionState, type AgentChatState, type AgentChatStreamEvent, type AgentChatTurn, type SendAgentChatMessageRequest,
 } from '@foreman-code/contracts/agent-chat'
 import type { ManagementAction, ManagementPrincipal } from '@foreman-code/contracts/management'
-import { RepeatOccurrenceIdentityV1Schema } from '@foreman-code/contracts/current'
+import { RepeatOccurrenceIdentityV1Schema } from '@foreman-code/contracts/wave25'
 
 import { SelectedRunChatKeySchema } from '@foreman-code/contracts/run-snapshots'
 import {
@@ -64,12 +64,12 @@ import { DomainError } from '../errors.js'
 import { NativeDeliveryError, NativeTurnNotActiveError } from '../harnesses/errors.js'
 import type { NativeHarnessSessionManager, NativeSessionStart, AgentChatNativeSessionStart, NativeMessageSubmission } from '../harnesses/port.js'
 import { primeInitialNativeStream } from '../harnesses/claudeSdk/initialStream.js'
-import { nativePersistenceRedactor } from '../interactions/index.js'
+import { nativePersistenceRedactor } from '../interactions/nativePersistence.js'
 import { agentMessagePrompt } from './agentMessagePrompt.js'
 import { assertAgentChatInputSize } from './agentInputSize.js'
-import { configurationWithNodeSkills } from '../skills/index.js'
+import { configurationWithNodeSkills } from '../skills/nodeSkills.js'
 import type { PostgresRunRepository } from '../runs/postgres.js'
-import { PostgresWorkflowRepository } from '../workflows/index.js'
+import { PostgresWorkflowRepository } from '../workflows/postgres.js'
 import { PostgresOperatorActivityRepository } from './operatorActivityRepository.js'
 import { currentOperatorHistory, operatorActivity } from './operatorActivity.js'
 import type { PostgresOperatorConversationRepository } from './operatorChatRepository.js'
@@ -80,19 +80,19 @@ import type { ActivityScope } from '@foreman-code/contracts/activity'
 import {
   agentChatCorrelation, agentChatKey, agentConversation, type AgentConversationRow, type AgentChatInterruptTarget, type NewAgentConversation, PostgresAgentChatRepository,
 } from './agentChatRepository.js'
-import { ignoreError } from '../diagnostics/index.js'
+import { ignoreError } from '../diagnostics/ignoredError.js'
 import { lockActiveWorkspace } from '../workspaces/admission.js'
 import { validateMessageAttachments } from './messageAttachments.js'
 import type { ChatSendRequest, DeliveryTarget } from '@foreman-code/contracts'
-import type { DeliveryQualification, StoredDelivery } from '../workflow-chat/index.js'
+import type { DeliveryQualification, StoredDelivery } from '../workflow-chat/model.js'
 import { ConversationDeliveryOwner, type ConversationTarget } from './conversationDeliveryOwner.js'
 import { ConversationControlQueue, ConversationEvents, conversationDeliveryState, definiteCreationRejection, definitePromptRejection,
   failedTurnResult, followDeliveryReceipts, nativeErrorCode, qualifyDeliveryIntent } from './conversationEngine.js'
-import type { PostgresChatDeliveryRepository } from '../workflow-chat/index.js'
+import type { PostgresChatDeliveryRepository } from '../workflow-chat/deliveryRepository.js'
 import type { TransactionSql } from '../../infrastructure/transaction.js'
 import { conversationFeatureContext, type ConversationFeatureContext } from './conversationFeatureSubject.js'
-import { installChatDeliveryBridge, operatorDeliveryBridge } from '../workflow-chat/index.js'
-import type { ChatDeliveryBridge } from '../workflow-chat/index.js'
+import { installChatDeliveryBridge, operatorDeliveryBridge } from '../workflow-chat/deliveryBridgeAccess.js'
+import type { LegacyChatDeliveryBridge } from '../workflow-chat/legacyBridge.js'
 
 /** One native manager per conversation; its process is owned by this service, never by a UI connection. */
 export interface AgentChatManagerFactory extends ChatModelCatalog {
@@ -114,14 +114,6 @@ export interface AgentChatManagerFactory extends ChatModelCatalog {
     row?: AgentConversationRow; sql?: TransactionSql; featureContext: ConversationFeatureContext; settings: AcceptedChatSettings }): Promise<PreparedChatInput>
   /** Reads installed-provider qualification for this exact live owner; a method name is not capability proof. */
   qualifiedSteer?(row: AgentConversationRow, configuration: AgentConfigurationVersion): Promise<boolean>
-}
-
-/** The manager factory together with the hooks the service reads off it. */
-export function withAgentChatHooks(
-  create: (...args: Parameters<AgentChatManagerFactory>) => ReturnType<AgentChatManagerFactory>,
-  hooks: Omit<AgentChatManagerFactory, never>,
-): AgentChatManagerFactory {
-  return Object.assign(create, hooks)
 }
 
 export class AgentChatEvents extends ConversationEvents<AgentChatStreamEvent> {
@@ -204,8 +196,8 @@ function intervalTick(execution: HarnessExecution): number {
 }
 
 export class AgentChatService {
-  get deliveryBridge(): ChatDeliveryBridge | undefined { return operatorDeliveryBridge(this) }
-  installDeliveryBridge(bridge: ChatDeliveryBridge): void { installChatDeliveryBridge(this, bridge) }
+  get deliveryBridge(): LegacyChatDeliveryBridge | undefined { return operatorDeliveryBridge(this) }
+  installDeliveryBridge(bridge: LegacyChatDeliveryBridge): void { installChatDeliveryBridge(this, bridge) }
 
   async assertContextReadable(principal: ManagementPrincipal, workspaceId: string, query: AgentChatQuery): Promise<void> {
     const scope = { workspaceId, ...query }
@@ -216,10 +208,14 @@ export class AgentChatService {
   async hasDeliveryConversation(id: string): Promise<boolean> { return Boolean(await this.repository.get(id)) }
 
   async retainedConversationTarget(principal: ManagementPrincipal, workspaceId: string, conversationId: string): Promise<DeliveryTarget> {
-    const row = await this.repository.conversationScope(conversationId)
+    const row = (await this.pool.query<Pick<AgentConversationRow, 'workspace_id' | 'workflow_id' | 'workflow_node_id' | 'agent_id'>>(
+      "select workspace_id,workflow_id,workflow_node_id,agent_id from operator_conversations where kind='agent' and id=$1",
+    [conversationId])).rows[0]
     const target: DeliveryTarget | undefined = row ? { kind: 'agent_conversation', conversationId, agent: {
       workspaceId: row.workspace_id, workflowId: row.workflow_id, workflowNodeId: row.workflow_node_id, agentId: row.agent_id } }
-      : await this.repository.retainedDeliveryTarget(workspaceId, conversationId)
+      : (await this.pool.query<{ target: DeliveryTarget }>(`select request->'target' as target from chat_delivery_commands
+        where workspace_id=$1 and request->'target'->>'kind'='agent_conversation'
+          and request->'target'->>'conversationId'=$2 limit 1`, [workspaceId, conversationId])).rows[0]?.target
     if (!target || target.kind !== 'agent_conversation' || target.agent.workspaceId !== workspaceId) {
       throw new DomainError('CONVERSATION_NOT_FOUND', 'Conversation was not found.', 404)
     }
@@ -233,7 +229,7 @@ export class AgentChatService {
     await lockActiveWorkspace(tx, target.agent.workspaceId)
     const row = await this.repository.get(target.conversationId, tx)
     const key = row?.agent_key ?? agentChatKey({ workspaceId: target.agent.workspaceId, ...query })
-    await this.repository.lockContextKey(tx, key)
+    await tx.query('select pg_advisory_xact_lock(hashtext($1))', [`agent-chat:${key}`])
     const current = await this.repository.get(target.conversationId, tx)
     if ((current?.id ?? null) !== expected) throw new DomainError('CHAT_TARGET_CHANGED', 'The observed conversation changed before admission.', 409)
   }
@@ -249,9 +245,13 @@ export class AgentChatService {
     const context = { workspaceId, ...input.context }
     this.authorize(principal, 'agent_chat:read', context)
     this.authorize(await readLiveManagementPrincipal(this.pool, principal.id), 'agent_chat:read', context)
-    const rows = await this.repository.conversationsForRequest({ workspaceId, workflowId: input.context.workflowId,
-      workflowNodeId: input.context.workflowNodeId, agentId: input.context.agentId, requestId: input.requestId,
-      runId: input.context.runId ?? null, expectedConversationId: input.expectedConversationId })
+    const rows = (await this.pool.query<AgentConversationRow>(`select c.* from operator_conversations c
+      join operator_conversation_turns t on t.conversation_id=c.id and t.request_id=$5
+      where c.kind='agent' and c.workspace_id=$1 and c.workflow_id=$2 and c.workflow_node_id=$3 and c.agent_id=$4
+        and c.origin_run_id is not distinct from $6::text
+        and ($7::text is null or c.id=$7) order by c.created_at desc limit 2`,
+    [workspaceId, input.context.workflowId, input.context.workflowNodeId, input.context.agentId, input.requestId,
+      input.context.runId ?? null, input.expectedConversationId])).rows
     if (!rows.length) return undefined
     if (rows.length !== 1) throw new DomainError('AGENT_CHAT_CONTEXT_STALE', 'Select the original conversation to read this command.', 409)
     const row = rows[0]!
@@ -463,7 +463,8 @@ export class AgentChatService {
     if (node && node.agentId !== context.agentId) {
       return blocked('agent_missing', 'This Agent is no longer part of the saved workflow.')
     }
-    if (!await this.repository.workflowIsActive(sql, context.workspaceId, context.workflowId)) return blocked('context_stale', 'The workflow was not found.')
+    if (!(await sql.query('select 1 from workflows where id=$1 and workspace_id=$2 and archived_at is null',
+      [context.workflowId, context.workspaceId])).rowCount) return blocked('context_stale', 'The workflow was not found.')
     if (row) {
       const configuration = await workflows.getAgentConfiguration(row.agent_configuration_version_id)
       const unavailable = this.sessionUnavailable(row, configuration)
@@ -479,14 +480,16 @@ export class AgentChatService {
         ...(configuration ? { configuration } : {}) }
       return { context, row, ...(configuration ? { configuration } : {}), ...(unavailable ? { blocked: unavailable } : {}) }
     }
-    const agent = await this.repository.agentConfigurationPointer(sql, context.workspaceId, context.agentId)
+    const agent = (await sql.query<{ current_configuration_version_id: string | null; archived_at: Date | null }>(
+      'select current_configuration_version_id,archived_at from agents where workspace_id=$1 and id=$2', [context.workspaceId, context.agentId])).rows[0]
     if (!agent || agent.archived_at || !agent.current_configuration_version_id) return blocked('agent_missing', 'This Agent has no saved configuration.')
     const configurationId = node?.placement ? version!.agentConfigurationVersionIds[context.agentId]
       : agent.current_configuration_version_id
     const configuration = configurationId ? await workflows.getAgentConfiguration(configurationId) : undefined
     if (!configuration) return blocked('agent_missing', 'This Agent has no saved configuration.')
     if (configuration.harness.harness === 'opencode') return { ...blocked('harness_unavailable', RETIRED_OPENCODE_MESSAGE), configuration }
-    const location = ExecutionLocationSchema.safeParse(await this.repository.workspaceExecutionLocation(sql, context.workspaceId))
+    const workspace = (await sql.query<{ execution_location: unknown }>('select execution_location from workspaces where id=$1', [context.workspaceId])).rows[0]
+    const location = ExecutionLocationSchema.safeParse(workspace?.execution_location)
     let directory
     try { directory = await resolveAgentChatDirectory({ sql, configuration, ...(version ? { workflowVersionId: version.id } : {}),
       ...(node?.placement ? { placement: node.placement } : {}), ...(location.success ? { location: location.data } : {}) }) }
@@ -494,7 +497,9 @@ export class AgentChatService {
       if (!(error instanceof DomainError) || error.code !== 'AGENT_CHAT_DIRECTORY_UNAVAILABLE') throw error
       return { ...blocked('execution_location_missing', error.message), configuration }
     }
-    const generation = await this.repository.newestConversationId(sql, context)
+    const generation = (await sql.query<{ id: string }>(`select id from operator_conversations
+      where kind='agent' and workspace_id=$1 and workflow_id=$2 and workflow_node_id=$3 and agent_id=$4
+      order by created_at desc,id desc limit 1`, [context.workspaceId, context.workflowId, context.workflowNodeId, context.agentId])).rows[0]?.id ?? null
     const candidateId = `agent-chat:${commandInputHash({ context, workflowVersionId: version?.id ?? null,
       configurationVersionId: configuration.id, directory, generation }).slice(7)}`
     return { context, configuration, candidateId, create: {
@@ -511,7 +516,7 @@ export class AgentChatService {
       interruptAndSend: false, queueNextTurn: false, resume: false,
       unavailable: { steer: RETIRED_OPENCODE_MESSAGE, resume: RETIRED_OPENCODE_MESSAGE } }
     const unavailable = row ? this.sessionUnavailable(row, configuration) : undefined
-    if (supportsExpectedTurnSteer({ harness })) {
+    if (harness === 'codex') {
       return { harness, providerVersion, steer: 'native_expected_turn', interruptAndSend: true, queueNextTurn: true, resume: !unavailable,
         unavailable: unavailable ? { resume: unavailable.message } : {} }
     }
@@ -775,8 +780,10 @@ export class AgentChatService {
     if (!resolved.configuration) {
       throw new DomainError('AGENT_CHAT_UNAVAILABLE', resolved.blocked?.message ?? 'This node has no chat configuration.', 409)
     }
-    const defaults = await this.repository.sessionDefaults(principal.id, `${context.workspaceId}:${context.agentId}`,
-      resolved.configuration.id) ?? {}
+    const defaultsRow = await this.pool.query<{ record: unknown }>(`select record from conversation_session_defaults
+      where principal_id=$1 and role='agent' and subject=$2 and profile_key=$3`,
+    [principal.id, `${context.workspaceId}:${context.agentId}`, resolved.configuration.id])
+    const defaults = defaultsRow.rows[0]?.record ?? {}
     return SessionControlStateSchema.parse({ conversationId: null, revision: 0,
       profileKey: resolved.configuration.id, desiredMode: 'regular', appliedMode: null,
       defaults, desired: defaults, applied: null, applicability: 'next-turn',
@@ -863,7 +870,9 @@ export class AgentChatService {
   async setChatBrowser(principal: ManagementPrincipal, workspaceId: string, id: string, browser: NodeBrowserSettings | null) {
     const row = await this.conversation(workspaceId, id, principal, 'agent_chat:write')
     if (row.origin_run_id) throw new DomainError('AGENT_CHAT_RUN_BROWSER', 'A Run chat uses the browser saved with its Run.', 409)
-    await this.repository.setChatBrowser(id, browser)
+    await this.pool.query(`update operator_conversations set record=case when $2::jsonb is null then record - 'chatBrowser'
+      else record || jsonb_build_object('chatBrowser',$2::jsonb) end where id=$1 and kind='agent'`,
+    [id, browser ? JSON.stringify(browser) : null])
   }
 
   /** Snapshot-selected read. It never creates, attaches, forks or probes a native session. */
@@ -977,7 +986,7 @@ export class AgentChatService {
             if (resolved.blocked) throw new DomainError('AGENT_CHAT_UNAVAILABLE', resolved.blocked.message, 409)
             if (!resolved.create) staleRunChat()
             const key = resolved.key ?? agentChatKey(context)
-            await this.repository.lockContextKey(client, key)
+            await client.query('select pg_advisory_xact_lock(hashtext($1))', [`agent-chat:${key}`])
             if (await this.repository.byKey(key, client)) staleRunChat()
             const row = await this.repository.ensureForControls(key,
               { ...resolved.create, context, freshSession: true }, authorize, client)
@@ -1227,7 +1236,9 @@ export class AgentChatService {
     action: 'read' | 'write' | 'cancel', tx?: TransactionSql): Promise<void> {
     if (target.kind !== 'agent_conversation') throw new DomainError('CHAT_TARGET_INVALID', 'An Agent owner requires its Agent target.', 422)
     const sql: SqlQuery = tx ?? this.pool
-    const row = await this.repository.conversationScope(target.conversationId, sql)
+    const row = (await sql.query<Pick<AgentConversationRow, 'workspace_id' | 'workflow_id' | 'workflow_node_id' | 'agent_id' | 'origin_run_id'>>(
+      "select workspace_id,workflow_id,workflow_node_id,agent_id,origin_run_id from operator_conversations where kind='agent' and id=$1",
+    [target.conversationId])).rows[0]
     if (row && (row.workspace_id !== target.agent.workspaceId || row.workflow_id !== target.agent.workflowId
       || row.workflow_node_id !== target.agent.workflowNodeId || row.agent_id !== target.agent.agentId)) {
       throw new DomainError('CHAT_TARGET_SCOPE_MISMATCH', 'The conversation does not belong to that exact Agent node.', 403)
@@ -1249,11 +1260,11 @@ export class AgentChatService {
     const existing = await this.repository.get(target.conversationId, tx)
     const key = existing?.agent_key ?? agentChatKey(context)
     await lockActiveWorkspace(tx, target.agent.workspaceId)
-    await this.repository.lockContextKey(tx, key)
+    await tx.query('select pg_advisory_xact_lock(hashtext($1))', [`agent-chat:${key}`])
     let row = await this.repository.lockLiveRow(tx, target.conversationId)
     if (!row && create) {
-      await this.repository.shareLockWorkflow(tx, context.workspaceId, context.workflowId)
-      await this.repository.shareLockAgent(tx, context.workspaceId, context.agentId)
+      await tx.query('select id from workflows where workspace_id=$1 and id=$2 for share', [context.workspaceId, context.workflowId])
+      await tx.query('select id from agents where workspace_id=$1 and id=$2 for share', [context.workspaceId, context.agentId])
       const selected = await this.resolve(context, undefined, false, { sql: tx, source: undefined })
       if (selected.row?.id === target.conversationId) row = selected.row
       else if (!selected.blocked && selected.candidateId === target.conversationId && selected.create) {
@@ -1290,7 +1301,7 @@ export class AgentChatService {
     if (!input.commandId || input.target.kind !== 'agent_conversation') throw new DomainError('CHAT_TARGET_INVALID', 'An exact Agent command is required.', 422)
     await this.authorizeDelivery(principal, input.target, 'write', tx)
     const row = await this.lockDeliveryTarget(tx, principal, input.target, true)
-    await this.repository.shareLockAgent(tx, row.workspace_id, row.agent_id)
+    await tx.query('select id from agents where workspace_id=$1 and id=$2 for share', [row.workspace_id, row.agent_id])
     const configuration = await this.pendingConfiguration(row, tx) ?? await this.conversationConfiguration(row)
     const unavailable = this.sessionUnavailable(row, configuration)
     if (unavailable || !configuration) throw new DomainError('AGENT_CHAT_UNAVAILABLE', unavailable?.message ?? 'The accepted configuration is unavailable.', 409)
@@ -1408,7 +1419,7 @@ export class AgentChatService {
     const runtime = this.runtimes.get(id)
     if (!runtime?.session || !runtime.manager.steerTurn || runtime.retiring || runtime.disposal || !this.managers.qualifiedSteer) return false
     const row = await this.repository.get(id)
-    return Boolean(row && supportsExpectedTurnSteer(row) && await this.managers.qualifiedSteer(row, runtime.configuration))
+    return Boolean(row && row.harness === 'codex' && await this.managers.qualifiedSteer(row, runtime.configuration))
   }
 
   interrupt(principal: ManagementPrincipal, workspaceId: string, id: string,
@@ -1587,9 +1598,12 @@ export class AgentChatService {
 
   private async pendingConfiguration(row: AgentConversationRow, sql: SqlQuery = this.pool) {
     if (row.origin_run_id && !row.native_session_id && !row.record.startupDelivered) return undefined
-    const currentConfigurationId = await this.repository.activeAgentConfigurationId(sql, row.workspace_id, row.agent_id)
-    if (!currentConfigurationId || currentConfigurationId === row.agent_configuration_version_id) return undefined
-    const configuration = await this.workflows.getAgentConfiguration(currentConfigurationId)
+    const agent = (await sql.query<{ current_configuration_version_id: string | null }>(
+      'select current_configuration_version_id from agents where workspace_id=$1 and id=$2 and archived_at is null',
+      [row.workspace_id, row.agent_id])).rows[0]
+    if (!agent?.current_configuration_version_id
+      || agent.current_configuration_version_id === row.agent_configuration_version_id) return undefined
+    const configuration = await this.workflows.getAgentConfiguration(agent.current_configuration_version_id)
     if (!configuration) {
       throw new DomainError('AGENT_CHAT_CONFIGURATION_MISSING', 'The saved Agent configuration is unavailable.', 409)
     }
@@ -1740,7 +1754,10 @@ export class AgentChatService {
   private async sourceProviderVersion(origin: Extract<AgentChatOrigin, { kind: 'run_execution' }>, runtime: Runtime): Promise<string> {
     // Provider metadata belongs to the same physical Run execution, never an unrelated
     // lane with a colliding native id (nor an Agent's most recently updated session).
-    const row = await this.repository.runExecutionSessionReference(origin.executionId, origin.runId)
+    const row = (await this.pool.query<{ reference: unknown }>(`
+      select s.reference from execution_native_sessions s
+      join harness_executions e on e.id=s.execution_id
+      where s.execution_id=$1 and e.run_id=$2`, [origin.executionId, origin.runId])).rows[0]
     if (row) {
       const reference = NativeSessionReferenceSchema.safeParse(row.reference)
       if (!reference.success || reference.data.nativeSessionId !== origin.sourceNativeSessionId
@@ -1861,14 +1878,25 @@ export class AgentChatService {
       const textOwner = () => ({ scope, requestId: turn.requestId, sessionId: observedSession.nativeSessionId,
         ...(nativeTurnId ? { turnId: nativeTurnId } : {}) })
       const redact = nativePersistenceRedactor([])
-      const events: TurnEventSink = { publish: (type, data) => this.events.publish(id, type, data) }
-      const pipeline = createTurnTextPipeline({ id, requestId: turn.requestId, repository: this.messages,
-        harness: runtime.manager.harness, session: observedSession, owner: textOwner, redact, signal: streamSignal, events,
-        reconcileCommit: () => this.scheduleReconcile(id) })
-      textStream = pipeline.textStream
+      const committed = committedNativeText({ id, requestId: turn.requestId, repository: this.messages,
+        harness: runtime.manager.harness, session: observedSession, owner: textOwner, sanitize: (operation) => redact.value(operation),
+        reconcile: () => this.scheduleReconcile(id) })
+      textStream = createNativeTextStream({
+        signal: streamSignal, harness: runtime.manager.harness,
+        owner: textOwner,
+        publish: (operation) => {
+          if (operation.identity.channel !== 'assistant') return
+          const message = committed.message(operation)
+          this.events.publish(id, 'delta', { requestId: turn.requestId,
+            ...(message ? { message } : {}),
+            activityChange: activityTextEnvelope(redact.value(operation), runtime!.manager.harness),
+            ...(committed.revision() ? { scopeRevision: committed.revision() } : {}) })
+        },
+        reconcile: () => this.events.publish(id, 'state', { requestId: turn.requestId, snapshotRequired: true }),
+      })
       finishPreparation()
       runtime.observer = { requestId: turn.requestId, controller: observer }
-      await consumeTurnOutput(initialStream?.output ?? runtime.manager.startTurn(observedSession, {
+      for await (const event_ of initialStream?.output ?? runtime.manager.startTurn(observedSession, {
         ...await turnSettings(observedSession.nativeSessionId),
         prompt: prompt.text, clientCorrelationId: correlationId,
         onMessageSubmitted: async (receipt) => {
@@ -1880,21 +1908,25 @@ export class AgentChatService {
           })
         },
         onSubmitted,
-      }, streamSignal), turn.requestId, pipeline, events, {
-        onOutput: () => { submitted = true },
-        nativeTurnId: () => nativeTurnId,
-        nativeSubmission: () => nativeSubmission,
-        admit: async (event, text) => await this.record(id, turn.requestId, runtime!, event, redact, nativeTurnId, false,
-          text.handled, nativeSubmission) && text.allowed,
-        pending: async () => {
+      }, streamSignal)) {
+        submitted = true
+        const event = event_
+        textStream.before(event)
+        const text = await committed.record(event, nativeTurnId, nativeSubmission)
+        const recorded = await this.record(id, turn.requestId, runtime, event, redact, nativeTurnId, false, text.handled, nativeSubmission)
+        if (recorded && text.allowed) textStream.push(event)
+        else textStream.rejected(event)
+        if (text.final) this.events.publish(id, 'message', { requestId: turn.requestId, snapshotRequired: true,
+          scopeRevision: committed.revision() })
+        if (event.type === 'interaction.pending' || event.type === 'permission.asked') {
           // Share the response lock so an older observation cannot overwrite its next approval.
           await this.control(id, async () => {
             const pending = await runtime!.manager.pending(observedSession, signal)
             await this.repository.pending(id, turn.requestId, pending)
             this.events.publish(id, 'state', { requestId: turn.requestId, pending: Boolean(pending) })
           })
-        },
-      })
+        }
+      }
       textStream.flush()
       await this.observe(id, turn.requestId, runtime!, correlationId)
     } catch (error) {
@@ -2004,15 +2036,16 @@ export class AgentChatService {
     const history = await runtime.manager.reconcile(runtime.session!, correlationId,
       options.signal ?? AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(30_000)]))
     if (options.retiring && !history.terminalResult && !history.nonSubmission) return
-    const rejected = observedNonSubmission(history, row, correlationId)
-    if (rejected) {
+    const rejected = history.nonSubmission
+    if (rejected && rejected.nativeSessionId === row.native_session_id
+      && rejected.clientCorrelationId === correlationId && !row.active_native_turn_id) {
       if (!await this.repository.recordNonSubmission(id, requestId, 'turn_submission', rejected.result)) return
       if (!options.retiring) await this.release(id)
       await this.settle(id, requestId, row.cancel_requested ? { outcome: 'canceled' } : rejected.result)
       return
     }
-    const receipt = observedMessageReceipt(history, runtime.session!, correlationId)
-    const messageIdentity = receipt !== undefined
+    const receipt = history.nativeSubmission
+    const messageIdentity = receipt?.kind === 'message' && receipt.nativeSessionId === runtime.session!.nativeSessionId && receipt.clientCorrelationId === correlationId
     const providerId = history.nativeTurnId ?? (messageIdentity ? receipt.nativeMessageId : undefined)
     if (runtime.session?.nativeSessionId !== row.native_session_id || history.correlationId !== correlationId || !providerId
       || row.active_native_turn_id && history.nativeTurnId !== row.active_native_turn_id
@@ -2030,9 +2063,10 @@ export class AgentChatService {
     if (!current || current.active_request_id !== requestId || current.native_session_id !== row.native_session_id) return
     const pending = pendingInteractionAfterHistory(current.pending_interaction, history)
     if (messageIdentity || history.responseDeliveries?.length) {
-      const senderPrincipalId = await this.repository.turnPrincipalId(id, requestId)
-      if (senderPrincipalId) {
-        const principal = await readLiveManagementPrincipal(this.pool, senderPrincipalId)
+      const sender = (await this.pool.query<{ principal_id: string }>(`select payload->>'ownerPrincipalId' as principal_id
+        from operator_conversation_turns where conversation_id=$1 and request_id=$2`, [id, requestId])).rows[0]
+      if (sender?.principal_id) {
+        const principal = await readLiveManagementPrincipal(this.pool, sender.principal_id)
         const state = await this.readConversation(principal, row.workspace_id, id)
         const scope = state.activitySnapshot?.scope
         if (scope) {

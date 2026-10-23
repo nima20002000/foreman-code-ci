@@ -15,7 +15,7 @@ import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { JobService } from '../src/modules/jobs/service.js'
 import { JobWorkerService } from '../src/modules/jobs/worker.js'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { buildQueueFixture } from './helpers/buildComputerFixture.js'
 import { DomainError } from '../src/modules/errors.js'
@@ -24,7 +24,7 @@ import { verificationJobsMcpFixture } from './helpers/verificationJobsMcpFixture
 
 /** Real PostgreSQL, authenticated HTTP/MCP, receipts and live revocation. No physical launch claim. */
 describe.skipIf(!postgresEnabled)('authenticated job persistence and denied MCP parity',()=>{
-  let database:Awaited<ReturnType<typeof migratedDatabase>>,app:ReturnType<typeof buildApp>,address:string
+  let database:Awaited<ReturnType<typeof agent3Database>>,app:ReturnType<typeof buildApp>,address:string
   let access:PostgresAccessService,jobs:JobService,worker:JobWorkerService
   let writer:Awaited<ReturnType<PostgresAccessService['issue']>>,reader:Awaited<ReturnType<PostgresAccessService['issue']>>
   let services: OperatorServices
@@ -32,7 +32,7 @@ describe.skipIf(!postgresEnabled)('authenticated job persistence and denied MCP 
   let queue: Awaited<ReturnType<typeof buildQueueFixture>>
   const clients:Client[]=[]
   beforeAll(async()=>{
-    database=await migratedDatabase()
+    database=await agent3Database()
     access=new PostgresAccessService(database.pool)
     workspaceId = randomUUID()
     await database.pool.query('insert into workspaces(id,record) values($1,$2::jsonb)',

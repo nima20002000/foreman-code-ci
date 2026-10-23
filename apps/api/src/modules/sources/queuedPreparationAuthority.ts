@@ -1,9 +1,9 @@
 import { JobQueueTicketSchema } from '@foreman-code/contracts/job-admission'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import { DomainError } from '../errors.js'
 
 /** A terminal ticket and its live Job owner authorize closure of this attempt only. */
-export async function requireQueuedPreparationClosed(sql: SqlQuery, ticketId: string) {
+export async function requireQueuedPreparationClosed(sql: GraphSqlClient, ticketId: string) {
   const row = (await sql.query<{ record: unknown; owned: boolean }>(`select q.record,
     exists(select 1 from pg_stat_activity a where a.pid::text=q.owner_id
       and (extract(epoch from a.backend_start)*1000000)::bigint::text=q.owner_fence

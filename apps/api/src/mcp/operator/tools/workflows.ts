@@ -1,13 +1,15 @@
-import { CurrentWorkflowCreateInputSchema, DEFAULT_WORKFLOW_EXECUTION_POLICY } from '@foreman-code/contracts/current'
+import { CurrentWorkflowCreateInputSchema, DEFAULT_WORKFLOW_EXECUTION_POLICY } from '@foreman-code/contracts/wave25'
 import { SavedManagedWorkflowCommandResultSchema as ManagedWorkflowCommandResultSchema,
-  SavedManagedWorkflowPageSchema as ManagedWorkflowPageSchema, SavedManagedWorkflowSchema as ManagedWorkflowSchema } from '@foreman-code/contracts/current'
+  SavedManagedWorkflowPageSchema as ManagedWorkflowPageSchema, SavedManagedWorkflowSchema as ManagedWorkflowSchema } from '@foreman-code/contracts/wave25'
 
 import {
   WorkflowBatchArchiveInputSchema, WorkflowBatchArchiveResultSchema,
+  WorkflowReorderInputSchema, WorkflowReorderResultSchema,
   WorkflowArchiveInputSchema, WorkflowGetInputSchema,
   WorkflowUpdateInputSchema,
 } from '@foreman-code/contracts/management'
 import { OperatorWorkflowListInputSchema, WorkflowSummaryPageSchema } from '@foreman-code/contracts/operator-mcp'
+import { WorkflowKanbanLayoutReadSchema, WorkflowKanbanLayoutSetInputSchema, WorkflowKanbanScopeSchema } from '@foreman-code/contracts'
 import { defineOperatorTool } from '../definition.js'
 
 export const workflowTools = [
@@ -16,7 +18,7 @@ export const workflowTools = [
     requires: [['workflows:read', 'resource']],
     enabled: s => !!s.workflows,
     description: 'List workflow summaries in saved workspace order, including empty workflows (10 by default); pass pageInfo.nextCursor as cursor until null. detail: "full" or workflow_get returns the saved definition.',
-    detail: 'Each page includes the workspace's orderRevision; it is 0 when no read grant applies to this workspace. Restart pagination after order or membership changes.',
+    detail: 'Each page includes orderRevision for workflow_reorder; it is 0 when no read grant applies to this workspace. Restart pagination after order or membership changes.',
     inputSchema: OperatorWorkflowListInputSchema,
     outputSchema: WorkflowSummaryPageSchema.or(ManagedWorkflowPageSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -75,6 +77,44 @@ export const workflowTools = [
     outputSchema: ManagedWorkflowCommandResultSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (context, input) => context.services.workflows.update(context.principal, 'mcp', input),
+  }),
+  defineOperatorTool({
+    name: 'workflow_reorder',
+    requires: [['workflows:update', 'workflow'], ['workflows:read', 'workflow']],
+    enabled: s => !!s.workflows,
+    description: 'Persist the order of at least two unique active workflows in one workspace. '
+      + 'Pass workflow_list.orderRevision as expectedRevision; workflow revisions remain unchanged. '
+      + 'The submitted IDs replace only their existing slots, preserving omitted workflows, including hidden or unloaded items. '
+      + 'Requires workflows:read and workflows:update for every submitted workflow. '
+      + 'Stale order revisions, archived workflows or foreign/missing IDs reject the whole command. '
+      + 'Returns only the submitted IDs in saved order. Retry the same commandId and input after an uncertain reply, '
+      + 'then restart workflow_list pagination to read the persisted result.',
+    inputSchema: WorkflowReorderInputSchema, outputSchema: WorkflowReorderResultSchema,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    run: (context, input) => context.services.workflows.reorder(context.principal, 'mcp', input),
+  }),
+  defineOperatorTool({
+    name: 'workflow_kanban_layout_get',
+    requires: [['workflows:read', 'resource']],
+    enabled: s => !!s.workflows?.kanban,
+    description: 'Read where the workflow\'s Kanban (its workflow memory board) sits on the Board canvas: '
+      + 'visible, and frame {x, y, width, height} in canvas coordinates, or null when the Board places it beside the Agents. '
+      + 'Read cards with memory_board_get.',
+    inputSchema: WorkflowKanbanScopeSchema, outputSchema: WorkflowKanbanLayoutReadSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    run: (context, input) => context.services.workflows.kanban.get(context.principal, input),
+  }),
+  defineOperatorTool({
+    name: 'workflow_kanban_layout_set',
+    requires: [['workflows:update', 'resource'], ['workflows:read', 'resource']],
+    enabled: s => !!s.workflows?.kanban,
+    description: 'Show, hide, move or resize the workflow\'s Kanban on the Board canvas, as the Board\'s Kanban button and the object\'s own '
+      + 'move, resize and remove controls do. Pass the complete layout {visible, frame}; frame null lets the Board place it. '
+      + 'Hiding never changes the memory board or its cards. Board layout: last write wins, no revision, workflow revision and versions stay unchanged. '
+      + 'Read back with workflow_kanban_layout_get.',
+    inputSchema: WorkflowKanbanLayoutSetInputSchema, outputSchema: WorkflowKanbanLayoutReadSchema,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    run: (context, input) => context.services.workflows.kanban.set(context.principal, 'mcp', input),
   }),
   defineOperatorTool({
     name: 'workflow_batch_archive',

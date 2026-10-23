@@ -13,7 +13,6 @@ import { inspectInstalledClaude, type InstalledClaudeTarget } from './installedC
 import { HarnessInstanceRegistry, localHarnessDrivers } from './instanceRegistry.js'
 import { HarnessInstallationRegistry } from './installationRegistry.js'
 import type { NativeProcessRegistry } from './recovery/processRegistry.js'
-import { hostEnvironment } from '../../shared/process.js'
 
 export function createInstalledClaudeOperatorInspection(input: {
   stateDirectory: string
@@ -32,7 +31,7 @@ export function createInstalledClaudeOperatorInspection(input: {
       if (!isDeepStrictEqual(input.current(), connection)) throw new DomainError(
         'HARNESS_INVENTORY_STALE', 'The Worker configuration inspection connection changed.', 409)
       const target = (await inspectInstalledClaude({ binding: connection, configuration: input.configuration,
-        environment: hostEnvironment(), cwd: input.stateDirectory, signal })).currentTarget
+        environment: process.env, cwd: input.stateDirectory, signal })).currentTarget
       if (!target || !isDeepStrictEqual(target.target, request.override.target)
         || !isDeepStrictEqual(target.binding, connection) || !isDeepStrictEqual(input.current(), connection)
         || original && !isDeepStrictEqual(target.sdk, original.sdk)) {

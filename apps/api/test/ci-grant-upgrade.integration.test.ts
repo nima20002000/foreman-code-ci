@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
-import { ciGrantMigration } from '../src/modules/ci/migrations.js'
+import { ciGrantMigration } from '../src/infrastructure/ciGrantMigration.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { currentDatabase } from './helpers/database.js'
 

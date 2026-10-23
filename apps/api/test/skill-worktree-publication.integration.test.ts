@@ -5,7 +5,7 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import * as c from '@foreman-code/contracts/management'
 import type { z } from 'zod'
 import { buildApp } from '../src/app.js'
-import { createOperatorExtensions } from '../src/composition/operatorExtensions.js'
+import { createOperatorExtensions } from '../src/mcp/operator/extensions.js'
 import { setup } from './helpers/workflowWorktreeMcp.js'
 import { postgresEnabled } from './helpers/database.js'
 

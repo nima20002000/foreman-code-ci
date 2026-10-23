@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, expect, it, vi } from 'vitest'
-import { CANONICAL_RUN_GRAPH_MCP_TOOLS, CanonicalRunGraphCurrentSchema } from '@foreman-code/contracts/current'
+import { CANONICAL_RUN_GRAPH_MCP_TOOLS, CanonicalRunGraphCurrentSchema } from '@foreman-code/contracts/wave25'
 import { graphRpcValue } from './graph-composition-fixture.js'
 import {
   useSettlementFixtures, timeout, finish, handoffs, acceptedActivation, sourceAndRequest, runtime,

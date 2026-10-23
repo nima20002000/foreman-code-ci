@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type pg from 'pg'
 import { sharedFixture } from './shared-repeat-fixture.js'
-import { ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
-import type { SqlTransaction } from '../src/infrastructure/transaction.js'
+import { ExclusiveGraphConnection, type GraphTransactionSql } from '../src/modules/run-graph/connection.js'
 import {
   readAcceptedRepeatRunSnapshot, readRecordedRepeatRunSnapshot, type AcceptedRepeatRunSnapshot,
 } from '../src/modules/runs/repeatStartRead.js'
@@ -22,7 +21,7 @@ function fixture() {
     stopped: false,
     cleanup_pending: false,
   }
-  async function read(reader: (sql: SqlTransaction, runId: string) => Promise<AcceptedRepeatRunSnapshot>) {
+  async function read(reader: (sql: GraphTransactionSql, runId: string) => Promise<AcceptedRepeatRunSnapshot>) {
     const empty = { rows: [], rowCount: 0 }
     const query = vi.fn()
       .mockResolvedValueOnce(empty)

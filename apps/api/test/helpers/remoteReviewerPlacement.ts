@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { SavedNodePlacementSchema } from '@foreman-code/contracts/node-placement'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 
 export function remoteReviewerPlacementFixture() {
   const baseline = makeCurrentWorkflowFixture(randomUUID(), 'approval')

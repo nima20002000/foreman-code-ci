@@ -2,7 +2,7 @@ import { InfoHint } from '../../../shared/ui/InfoHint'
 import { useRef } from 'react'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { DurableInteraction } from '@foreman-code/contracts'
-import type { RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
+import type { RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
 import { approvalOptionScope } from '../../../shared/ui/approvalOptionScope'
 import { NativeInteractionResponse } from '../../../shared/ui/NativeInteractionResponse'
 import { runActionsClient } from './client'
@@ -10,7 +10,7 @@ import { actionKey, useActionLifetime, useDisclosure } from './state'
 import { approvalDeliveryMessage, type ActionRun } from './policy'
 
 function Approval({ scope, item, run, permitted, refresh }: {
-  scope: RepeatGraphScopeCurrent; item: DurableInteraction; run: ActionRun; permitted: boolean; refresh(): void
+  scope: RepeatGraphScopeV3; item: DurableInteraction; run: ActionRun; permitted: boolean; refresh(): void
 }) {
   const [open, setOpen] = useDisclosure(), life = useActionLifetime(), feedback = useRef<HTMLParagraphElement>(null), cache = useQueryClient()
   const detail = useQuery({ queryKey: actionKey(scope, 'approval', item.id), enabled: open,
@@ -79,7 +79,7 @@ function Approval({ scope, item, run, permitted, refresh }: {
 }
 
 export function Approvals({ scope, run, canRead, canRespond, refresh }: {
-  scope: RepeatGraphScopeCurrent; run: ActionRun; canRead: boolean; canRespond: boolean; refresh(): void
+  scope: RepeatGraphScopeV3; run: ActionRun; canRead: boolean; canRespond: boolean; refresh(): void
 }) {
   const [open, setOpen] = useDisclosure(), cache = useQueryClient(), pageHeading = useRef<HTMLHeadingElement>(null)
   const queue = useInfiniteQuery({ queryKey: actionKey(scope, 'human-approvals'), enabled: open && canRead,

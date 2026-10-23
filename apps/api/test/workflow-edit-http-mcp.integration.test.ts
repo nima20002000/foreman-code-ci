@@ -2,7 +2,7 @@ import { AgentSchema } from '@foreman-code/contracts'
 import { randomUUID } from 'node:crypto'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { CURRENT_WORKFLOW_TOOLS, CurrentEditReadResultSchema, CurrentWorkflowSaveResultSchema,
-  CurrentWorkflowReadResultSchema } from '@foreman-code/contracts/current'
+  CurrentWorkflowReadResultSchema } from '@foreman-code/contracts/wave25'
 import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { graphHeaders, graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 import { writerFixture, type WriterFixture } from './writer-fixtures.js'

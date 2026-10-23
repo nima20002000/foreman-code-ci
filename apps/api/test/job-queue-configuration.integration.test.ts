@@ -11,7 +11,7 @@ import { createProductionJobs, createReviewedBuildQueueConfiguration,
   readBuildQueueConfiguration } from '../src/modules/jobs/production.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { buildQueueFixture } from './helpers/buildComputerFixture.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { jobRuntimeMetadataFixture } from './helpers/jobRuntimeMetadataFixture.js'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
@@ -19,11 +19,11 @@ import type { DeviceEndpoint } from '../src/modules/devices/deviceEndpoint.js'
 import { workerClockReason } from '../src/modules/devices/workerClock.js'
 
 describe.skipIf(!postgresEnabled)('build queue persistence and owner configuration', () => {
-  let database: Awaited<ReturnType<typeof migratedDatabase>>
+  let database: Awaited<ReturnType<typeof agent3Database>>
   let principal: Awaited<ReturnType<PostgresAccessService['issue']>>['principal']
   const services: JobService[] = []
   beforeEach(async () => {
-    database = await migratedDatabase()
+    database = await agent3Database()
     const access = new PostgresAccessService(database.pool)
     principal = (await access.issue({ name: 'Queue configuration fixture', audience: 'operator',
       expiresAt: new Date(Date.now() + 3600000), grants: [{ scope: {}, actions: [

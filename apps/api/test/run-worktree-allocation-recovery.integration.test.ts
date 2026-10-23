@@ -2,21 +2,20 @@ import { execFileSync } from 'node:child_process'
 import { writeFile, readFile, access } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { AcceptedWorkflowRunCurrentSchema, RunWorktreeSchema } from '@foreman-code/contracts/current'
+import { AcceptedWorkflowRunV3Schema, RunWorktreeSchema } from '@foreman-code/contracts/wave25'
 import { RunWorktrees } from '../src/modules/runs/runWorktrees.js'
 import { systemGitWorktreePorts } from '../src/modules/sources/gitWorktree.js'
-import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { gitFixtureEnvironment } from './helpers/gitFixture.js'
 
 describe.skipIf(!postgresEnabled)('Run worktree allocation recovery', () => {
   it.each([false, true])('cleans a failed allocation after terminality without another prepare (modified: %s)', async modified => {
-    const db = await migratedDatabase()
+    const db = await agent3Database()
     const env = gitFixtureEnvironment()
     const git = (...args: string[]) => execFileSync('git', args, { cwd: db.directory, env, encoding: 'utf8' }).trim()
     try {
-      const f = await seedWorkflowFixture(db.pool, db.directory)
+      const f = await seedAgent3(db.pool, db.directory)
       git('init', '-b', 'main')
       await writeFile(join(db.directory, 'project.txt'), 'project')
       git('add', 'project.txt')
@@ -33,15 +32,15 @@ describe.skipIf(!postgresEnabled)('Run worktree allocation recovery', () => {
         return result
       } }
       const worktrees = new RunWorktrees(db.pool, join(db.directory, 'managed'), faulty)
-      await expect(worktrees.prepare(AcceptedWorkflowRunCurrentSchema.parse(f.run))).rejects.toThrow('Allocation acknowledgement failed')
+      await expect(worktrees.prepare(AcceptedWorkflowRunV3Schema.parse(f.run))).rejects.toThrow('Allocation acknowledgement failed')
       expect(allocated).toBeDefined()
-      const interrupted = AcceptedWorkflowRunCurrentSchema.parse({ ...f.run, executionState: 'interrupted' })
+      const interrupted = AcceptedWorkflowRunV3Schema.parse({ ...f.run, executionState: 'interrupted' })
       await db.pool.query('update runs set execution_state=$2,record=$3::jsonb where id=$1',
         [f.run.id, interrupted.executionState, JSON.stringify(interrupted)])
       const persisted = (await db.pool.query<{ execution_state: string; record: unknown }>(
         'select execution_state,record from runs where id=$1', [f.run.id])).rows[0]!
       expect(persisted.execution_state).toBe('interrupted')
-      expect(AcceptedWorkflowRunCurrentSchema.parse(persisted.record)).toEqual({
+      expect(AcceptedWorkflowRunV3Schema.parse(persisted.record)).toEqual({
         ...f.run, executionState: 'interrupted',
       })
       const errors: unknown[] = []

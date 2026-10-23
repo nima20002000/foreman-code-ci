@@ -9,7 +9,7 @@ import { AgentChatService } from '../src/modules/conversations/agentChat.js'
 import {
   AGENT_CHAT_OPEN_TURN_LIMIT, agentChatInputHash, agentChatKey, PostgresAgentChatRepository, type AgentConversationRow,
 } from '../src/modules/conversations/agentChatRepository.js'
-import { ScriptedChatNative, approval, eventually } from './helpers/agentChatF5.js'
+import { AgentChatF5Native, approval, eventually } from './helpers/agentChatF5.js'
 import { chatWorkflowVersionRow, isCurrentVersionRead, isLiveWorkflowRead } from './helpers/chatWorkflowVersion.js'
 import { deferred } from './helpers/deferred.js'
 
@@ -42,7 +42,7 @@ function receipt(input = request(), sequence = 1, delivery: AgentChatTurn['deliv
 
 function approvalFixture() {
   const current = row()
-  const native = new ScriptedChatNative()
+  const native = new AgentChatF5Native()
   native.pendingRequests.push(approval(native.session, native.nativeTurnId, 'approval-a'), approval(native.session, native.nativeTurnId, 'approval-b'))
   current.pending_interaction = native.pendingRequests[0]!
   const writes: Array<string | undefined> = []
@@ -105,7 +105,7 @@ function approvalFixture() {
       () => { dispatchAttempts.push(String(args[3])) }), drain: async () => undefined,
   }
   const internals = service as unknown as {
-    runtimes: Map<string, { manager: ScriptedChatNative; session: ScriptedChatNative['session']; configuration: typeof configuration }>
+    runtimes: Map<string, { manager: AgentChatF5Native; session: AgentChatF5Native['session']; configuration: typeof configuration }>
     runTurn(id: string, turn: AgentChatTurn): Promise<void>
   }
   // The injected resident session carries no scoped tools, so an accepted feature scope never needs rebinding.

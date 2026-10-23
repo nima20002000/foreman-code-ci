@@ -17,9 +17,8 @@ import type { WorkflowOriginalNativeSource, WorkflowNativeCapture } from '../../
 import type { RemoteNativeBatchPhysicalVerification, VerifiedRemoteOriginalSource } from '../../placement/remoteNativeSource.js'
 import { readAcceptedPlacement, readNativePlacement } from '../../placement/persistence.js'
 import { readNativeExecutionBinding } from '../../placement/executionBinding.js'
-import { sourceMaterializationDigest } from '../../sources/index.js'
-import { assertGraphTransaction, didGraphTransactionCommit, beforeGraphCommit, isGraphTransactionFinalizing, poisonGraphTransaction } from '../../run-graph/connection.js'
-import type { SqlTransaction } from '../../../infrastructure/transaction.js'
+import { sourceMaterializationDigest } from '../../sources/bindingHash.js'
+import { assertGraphTransaction,didGraphTransactionCommit,beforeGraphCommit,isGraphTransactionFinalizing,poisonGraphTransaction, type GraphTransactionSql } from '../../run-graph/connection.js'
 import type { RunOwnership } from '../ownership.js'
 import { readReconciledDispatchIntent } from './persistence.js'
 import { repeatExecutionIdentity,repeatDigest } from '../repeatResolution.js'
@@ -31,7 +30,7 @@ import { DomainError } from '../../errors.js'
 import { assertRemoteReviewerReceipt } from '../../placement/remoteReviewerAuthority.js'
 import { readRetainedRemoteReviewer } from '../../interactions/retainedRemoteReviewer.js'
 import type { ReviewNativeProofRecord } from '../../interactions/reviewNativeProof.js'
-import { transferContextForBinding } from '../../byte-transfer/index.js'
+import { transferContextForBinding } from '../../byte-transfer/carrier.js'
 import type { TransferContext } from '@foreman-code/contracts/byte-transfer'
 import { assertRepeatCanonicalReceiptLocked,requireRepeatCanonicalReceiptBeforeCommit } from '../../run-graph/repeatReceipts.js'
 import type { WorkflowPhysicalArtifactsPort } from './workflowPhysicalArtifacts.js'
@@ -68,17 +67,17 @@ interface Prepared {
 interface Bound extends Prepared {
   owner: RunOwnership
   lifetime: RemoteWorkflowMainLifetime
-  processingSql?: SqlTransaction
-  publications: Set<SqlTransaction>
-  replyPublications: Set<SqlTransaction>
-  terminalPublications: Set<SqlTransaction>
+  processingSql?: GraphTransactionSql
+  publications: Set<GraphTransactionSql>
+  replyPublications: Set<GraphTransactionSql>
+  terminalPublications: Set<GraphTransactionSql>
   terminalCapture?: WorkflowNativeCapture
 }
 interface WorkflowPhysicalTerminal {
   original: VerifiedRemoteOriginalSource
   capture: Bound
   proof: WorkflowNativeProofRecord
-  sql: SqlTransaction
+  sql: GraphTransactionSql
 }
 const unavailable = (reason: string): never => {
   throw new DomainError('REMOTE_NATIVE_PHYSICAL_UNAVAILABLE',
@@ -148,17 +147,17 @@ export function createRemoteWorkflowPhysicalVerification(input: RemoteWorkflowPh
   acknowledgeClosed(prepared: PreparedRemoteWorkflowPhysical): Promise<RemoteWorkflowPhysicalAck>
   /** Requires every original event in this reply to have durably published. */
   acknowledgeReply(original:VerifiedRemoteOriginalSource):Promise<RemoteWorkflowPhysicalAck>
-  artifactTerminalContext(sql:SqlTransaction,owner:RunOwnership,original:VerifiedRemoteOriginalSource,capture:WorkflowNativeCapture,proof:WorkflowNativeProofRecord):Promise<TransferContext>
-  assertArtifactTerminal(sql:SqlTransaction,owner:RunOwnership,capture:WorkflowNativeCapture,proof:WorkflowNativeProofRecord):Promise<void>
-  assertAdoptedArtifacts(sql:SqlTransaction,owner:RunOwnership,original:VerifiedRemoteOriginalSource):Promise<void>
+  artifactTerminalContext(sql:GraphTransactionSql,owner:RunOwnership,original:VerifiedRemoteOriginalSource,capture:WorkflowNativeCapture,proof:WorkflowNativeProofRecord):Promise<TransferContext>
+  assertArtifactTerminal(sql:GraphTransactionSql,owner:RunOwnership,capture:WorkflowNativeCapture,proof:WorkflowNativeProofRecord):Promise<void>
+  assertAdoptedArtifacts(sql:GraphTransactionSql,owner:RunOwnership,original:VerifiedRemoteOriginalSource):Promise<void>
 } {
   const prepared = new WeakMap<object, Prepared>(), bound = new WeakMap<object, Bound>()
   const histories = new Map<string, Prepared>()
   const terminals = new WeakMap<WorkflowNativeCapture, WorkflowPhysicalTerminal>()
-  const assertBound = (sql: SqlTransaction, owner: RunOwnership,
+  const assertBound = (sql: GraphTransactionSql, owner: RunOwnership,
     original: VerifiedRemoteOriginalSource, retained: boolean) =>
     assertRemoteWorkflowBinding(sql, owner, original, retained, bound, input)
-  const assertTerminal = (sql: SqlTransaction, owner: RunOwnership,
+  const assertTerminal = (sql: GraphTransactionSql, owner: RunOwnership,
     captured: WorkflowNativeCapture, retained: WorkflowPhysicalTerminal, committed: boolean) =>
     assertRemoteWorkflowTerminal(sql, owner, captured, retained, committed, bound, input)
   return {
@@ -316,7 +315,7 @@ export function createRemoteWorkflowPhysicalVerification(input: RemoteWorkflowPh
         beforeGraphCommit(sql,async()=>{await assertTerminal(sql,owner,capture.terminalCapture!,terminal,true);await input.artifacts!.assertAdopted(sql,capture.readout,capture.binding)})
       }catch(error){poisonGraphTransaction(sql);throw error}
     },
-    assertOriginal: (sql: SqlTransaction, owner: RunOwnership, original: VerifiedRemoteOriginalSource) => assertBound(sql, owner, original, false),
+    assertOriginal: (sql: GraphTransactionSql, owner: RunOwnership, original: VerifiedRemoteOriginalSource) => assertBound(sql, owner, original, false),
     async assertOriginals(sql, owner, originals) {
       const proofs = await readRemotePublicationProofs(sql, owner, originals, bound)
       for (const original of originals) {
@@ -476,7 +475,7 @@ interface SharedBindingCheck {
   readout: RemoteWorkflowPhysicalReadout; placement: AcceptedNodePlacement; binding: Readonly<DeviceSessionBinding>
   owner: RunOwnership; retained: boolean; lifetime: unknown; rows: RemoteBindingRows
 }
-const sharedBindingChecks = new WeakMap<SqlTransaction, { finalizing: boolean; checks: SharedBindingCheck[] }>()
+const sharedBindingChecks = new WeakMap<GraphTransactionSql, { finalizing: boolean; checks: SharedBindingCheck[] }>()
 const lifetimeFacts = (lifetime: RemoteWorkflowMainLifetime) => ({ execution: lifetime.execution, session: lifetime.session,
   lifetimeGeneration: lifetime.lifetimeGeneration, closureGeneration: lifetime.closureGeneration, lane: lifetime.lane,
   review: lifetime.review })
@@ -484,7 +483,7 @@ const lifetimeFacts = (lifetime: RemoteWorkflowMainLifetime) => ({ execution: li
 /** Every original of one history shares its capture, so the Run-locked binding reads run once per transaction
  * phase instead of once per event. The COMMIT phase always reads again: by then this transaction's own writes are
  * done, and the rows it locked cannot change before COMMIT. */
-async function sharedRemoteBindingRows(sql: SqlTransaction, owner: RunOwnership, capture: Bound, retained: boolean,
+async function sharedRemoteBindingRows(sql: GraphTransactionSql, owner: RunOwnership, capture: Bound, retained: boolean,
   input: RemoteWorkflowPhysicalVerificationInput): Promise<RemoteBindingRows> {
   const finalizing = isGraphTransactionFinalizing(sql)
   let shared = sharedBindingChecks.get(sql)
@@ -499,7 +498,7 @@ async function sharedRemoteBindingRows(sql: SqlTransaction, owner: RunOwnership,
 }
 
 /** Closed output uses its committed terminal as readback authority after credentials end. */
-async function isCommittedTerminalReplay(sql: SqlTransaction, execution: HarnessExecution,
+async function isCommittedTerminalReplay(sql: GraphTransactionSql, execution: HarnessExecution,
   source: WorkflowOriginalNativeSource, session: NativeSessionReference): Promise<boolean> {
   if (execution.state !== 'completed' || source.type !== 'history' || !source.history.terminalTurn
     || source.history.pendingInteraction || source.history.pendingInteractions.length) return false
@@ -510,7 +509,7 @@ async function isCommittedTerminalReplay(sql: SqlTransaction, execution: Harness
   return true
 }
 
-async function readRemoteBindingRows(sql: SqlTransaction, capture: Bound, retained: boolean,
+async function readRemoteBindingRows(sql: GraphTransactionSql, capture: Bound, retained: boolean,
   input: RemoteWorkflowPhysicalVerificationInput): Promise<RemoteBindingRows> {
   const { readout, lifetime } = capture, receipt = readout.receipt, intent = receipt.intent
   const published=readout.output?.kind==='published-artifacts'
@@ -579,7 +578,7 @@ async function readRemoteBindingRows(sql: SqlTransaction, capture: Bound, retain
   return { execution: execution.data, sessionStored: sessionRow !== undefined }
 }
 
-async function assertRemoteNativeEntry(sql: SqlTransaction, intent: RemoteOperationReceipt['intent'],
+async function assertRemoteNativeEntry(sql: GraphTransactionSql, intent: RemoteOperationReceipt['intent'],
   execution: HarnessExecution, published: boolean): Promise<void> {
   const entry = (await sql.query<{ phase: string; source_id: string | null; source_digest: string | null;
     reservation: WorkflowNativeReservation; transition: WorkflowNativeEntryRecord }>(
@@ -605,7 +604,7 @@ async function assertRemoteNativeEntry(sql: SqlTransaction, intent: RemoteOperat
   requireRepeatCanonicalReceiptBeforeCommit(sql,inputReceipt)
 }
 
-async function assertRemoteNativeClosure(sql: SqlTransaction, capture: Bound, execution: HarnessExecution,
+async function assertRemoteNativeClosure(sql: GraphTransactionSql, capture: Bound, execution: HarnessExecution,
   withOutput: boolean): Promise<{ closed: boolean }> {
   const { readout, lifetime } = capture
   const closure = (await sql.query<{ generation: string; expected_reference: unknown; closed_reference:unknown; closed: boolean; detached:boolean;
@@ -624,7 +623,7 @@ async function assertRemoteNativeClosure(sql: SqlTransaction, capture: Bound, ex
   return { closed: closure.closed }
 }
 
-async function assertRemoteWriterLane(sql: SqlTransaction, capture: Bound, execution: HarnessExecution,
+async function assertRemoteWriterLane(sql: GraphTransactionSql, capture: Bound, execution: HarnessExecution,
   closedAfterRetention: boolean): Promise<void> {
   const { readout, lifetime } = capture, receipt = readout.receipt, intent = receipt.intent
   const lane = (await sql.query<{ owner_agent_id: string; harness: string; native_session_id: string; generation: string;
@@ -651,7 +650,7 @@ async function assertRemoteWriterLane(sql: SqlTransaction, capture: Bound, execu
   }
 }
 
-async function assertRemoteWorkflowBinding(sql: SqlTransaction, owner: RunOwnership,
+async function assertRemoteWorkflowBinding(sql: GraphTransactionSql, owner: RunOwnership,
   original: VerifiedRemoteOriginalSource, retained: boolean, bound: WeakMap<object, Bound>,
   input: RemoteWorkflowPhysicalVerificationInput,
   proofs?: readonly WorkflowNativeProofRecord[]): Promise<void> {
@@ -690,8 +689,8 @@ async function assertRemoteWorkflowBinding(sql: SqlTransaction, owner: RunOwners
   check()
   finalized?.add(original)
 }
-const finalizedChecks = new WeakMap<SqlTransaction, Map<boolean, WeakSet<VerifiedRemoteOriginalSource>>>()
-function finalizedOriginals(sql: SqlTransaction, retained: boolean): WeakSet<VerifiedRemoteOriginalSource> {
+const finalizedChecks = new WeakMap<GraphTransactionSql, Map<boolean, WeakSet<VerifiedRemoteOriginalSource>>>()
+function finalizedOriginals(sql: GraphTransactionSql, retained: boolean): WeakSet<VerifiedRemoteOriginalSource> {
   let byMode = finalizedChecks.get(sql)
   if (!byMode) finalizedChecks.set(sql, byMode = new Map())
   let originals = byMode.get(retained)
@@ -700,7 +699,7 @@ function finalizedOriginals(sql: SqlTransaction, retained: boolean): WeakSet<Ver
 }
 
 /** Fetch every source needed for publication acknowledgments once for this boundary. */
-async function readRemotePublicationProofs(sql: SqlTransaction, owner: RunOwnership,
+async function readRemotePublicationProofs(sql: GraphTransactionSql, owner: RunOwnership,
   originals: readonly VerifiedRemoteOriginalSource[], bound: WeakMap<object, Bound>): Promise<WorkflowNativeProofRecord[]> {
   assertGraphTransaction(sql)
   const ids = new Set<string>()
@@ -725,7 +724,7 @@ async function readRemotePublicationProofs(sql: SqlTransaction, owner: RunOwners
 
 /** Publication is acknowledged only after this exact original was retained by the existing canonical writer AND
  * its owning transaction committed. A boundary observation is never retained as a source, so it has no proof. */
-async function recordRemotePublications(sql: SqlTransaction, original: VerifiedRemoteOriginalSource,
+async function recordRemotePublications(sql: GraphTransactionSql, original: VerifiedRemoteOriginalSource,
   capture: Bound, execution: HarnessExecution, retainedProofs?: readonly WorkflowNativeProofRecord[]): Promise<void> {
   const { readout, lifetime } = capture, receipt = readout.receipt, intent = receipt.intent
   const matching = retainedProofs?.filter(record => record.scope.runId === intent.runId
@@ -778,7 +777,7 @@ async function recordRemotePublications(sql: SqlTransaction, original: VerifiedR
 }
 
 
-async function assertRemoteWorkflowTerminal(sql: SqlTransaction, owner: RunOwnership,
+async function assertRemoteWorkflowTerminal(sql: GraphTransactionSql, owner: RunOwnership,
   captured: WorkflowNativeCapture, retained: WorkflowPhysicalTerminal, committed: boolean,
   bound: WeakMap<object, Bound>, input: RemoteWorkflowPhysicalVerificationInput): Promise<void> {
   try {

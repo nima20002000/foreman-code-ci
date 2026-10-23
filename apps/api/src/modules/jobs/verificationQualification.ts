@@ -69,247 +69,6 @@ try{for(let n=0;n<=input.inodes;n++){fs.closeSync(fs.openSync('/job-scratch/quot
 fs.rmSync('/job-scratch/quota-inodes',{recursive:true});}
 console.log(JSON.stringify({byteError,inodeError,byteErrno,inodeErrno,inodeCreated}));`
 
-type QualificationCandidate = z.infer<typeof JobVerificationQualificationCandidateSchema>
-type QualificationClaim = { path: string; file: FileHandle; namespace: string }
-type QualificationSource = Awaited<ReturnType<typeof prepareVerificationQualificationSource>>
-type PodmanChecked = (argv: string[], timeoutMs?: number) => Promise<string>
-type QualificationPublications = NonNullable<import('@foreman-code/contracts/job-verification-runtime')
-  .JobVerificationRuntimeMeasurement['publications']>
-
-/** Journals and creates each per-Job quota slot in turn; every opened claim stays in `claims` so the caller closes it. */
-async function claimQuotaSlots(input: {
-  candidate: QualificationCandidate
-  owner: QualificationNativeOwner
-  claims: QualificationClaim[]
-  signal: AbortSignal
-  readQuota: JobQuotaReader
-}): Promise<void> {
-  const { candidate, owner, claims, signal, readQuota } = input
-  const fingerprint = candidate.fingerprint
-  const pool = fingerprint.quotaPool!
-  for (const slot of pool.slots) {
-    const path = join(candidate.sourceParent, `quota-${slot.namespace}.claim.json`)
-    const file = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600)
-    const namespace = join(candidate.sourceParent, slot.namespace, candidate.operationId)
-    claims.push({ path, file, namespace })
-    await file.writeFile(JSON.stringify({ kind: 'qualification', qualificationId: candidate.qualificationId, operationId: candidate.operationId }))
-    await file.sync()
-    const claim = await file.stat()
-    if (!owner.recordQuotaClaim) throw new Error('Protected qualification quota journal required.')
-    await owner.recordQuotaClaim({ path, namespace, device: claim.dev, inode: claim.ino })
-    await mkdir(namespace, { mode: 0o700 })
-    await verifyJobQuotaOwnership({ pool, binding: fingerprint.root.binding, slot, directory: namespace,
-      signal, read: readQuota })
-  }
-}
-
-/** The qualification source tree, its input directory and the scratch directory of one quota namespace. */
-async function prepareQualificationWorkspace(input: {
-  configuration: Awaited<ReturnType<typeof readInstalledVerificationConfiguration>>
-  namespace: string
-  signal: AbortSignal
-}) {
-  const { configuration, namespace, signal } = input
-  const source = await prepareVerificationQualificationSource({ ...configuration.qualificationSource,
-    namespace, signal })
-  const inputRoot = join(source.sourceRoot, JOB_INPUT_DIRECTORY)
-  const scratch = join(namespace, 'job-scratch')
-  await mkdir(inputRoot, { mode: 0o700 })
-  await mkdir(scratch, { mode: 0o700 })
-  await writeFile(join(inputRoot, 'manifest.json'), JSON.stringify(JobBuildInputManifestSchema.parse({ version: 1,
-    inputSnapshotDigest: jobDigest({ inputs: [], workflowInput: null }), workflowInput: null, files: [] })), { mode: 0o444 })
-  return { source, inputRoot, scratch }
-}
-
-/** The local rootless cgroup-v2 runtime and the approved immutable image; returns the runtime's `info`. */
-async function assertAdmittedRuntime(checked: PodmanChecked, fingerprint: QualificationCandidate['fingerprint']) {
-  const info = JSON.parse(await checked(['info', '--format=json']))
-  if (info.host?.serviceIsRemote !== false || info.host?.security?.rootless !== true
-    || info.host.cgroupVersion !== 'v2' || info.host.cgroupManager !== 'systemd'
-    || info.host.kernel !== release() || info.host.ociRuntime?.path !== fingerprint.ociExecutable) {
-    throw new Error('Local rootless cgroup-v2 runtime required.')
-  }
-  const images = JSON.parse(await checked(['image', 'inspect', fingerprint.imageDigest]))
-  const imageId = images[0]?.Id?.replace(/^sha256:/, '')
-  if (images.length !== 1 || !/^[a-f0-9]{64}$/.test(imageId ?? '')
-    || `sha256:${imageId}` !== fingerprint.imageDigest) {
-    throw new Error('The approved immutable verification image changed.')
-  }
-  return info
-}
-
-/** The container's observed isolation: image, tools, private Git, scheduler and namespaces. */
-async function observeContainerIsolation(input: {
-  checked: PodmanChecked
-  containerId: string
-  candidate: QualificationCandidate
-}): Promise<Record<string, unknown>> {
-  const { checked, containerId, candidate } = input
-  const fingerprint = candidate.fingerprint
-  const ownerSentinel = join(candidate.runtimeRoot, `qualification-${candidate.operationId}-owner-sentinel`)
-  await writeFile(ownerSentinel, 'private controller state', { mode: 0o600, flag: 'wx' })
-  let observation: Record<string, unknown>
-  try {
-    observation = JSON.parse(await checked(['exec', containerId, 'node',
-      '/opt/graphql-ci/verification-observation.mjs', JSON.stringify({ ownerSentinelPaths: [ownerSentinel],
-        tools: fingerprint.tools })]))
-  } finally { await rm(ownerSentinel, { force: true }) }
-  validateVerificationIsolationObservation({ observation, resources: fingerprint.resources,
-    hostPidNamespace: await readlink('/proc/self/ns/pid'), hostNetworkNamespace: await readlink('/proc/self/ns/net'),
-    hostCgroupNamespace: await readlink('/proc/self/ns/cgroup'),
-    ownerSentinelPaths: [ownerSentinel] })
-  const environment = ['CI', 'FOREMAN_CODE_JOB_INPUT_MANIFEST', 'GRAPHQL_JOB_INPUT_MANIFEST',
-    'FOREMAN_CODE_VERIFICATION_ENVIRONMENT', 'HOME', 'LANG',
-    'PATH', 'TMPDIR', 'XDG_CACHE_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', ...Object.keys(JOB_GIT_ENVIRONMENT)]
-  if (Array.isArray(observation.environment) && observation.environment.includes('HOSTNAME')) environment.push('HOSTNAME')
-  if (!isDeepStrictEqual(observation.environment, environment.sort()) || jobDigest(observation.toolchain) !== fingerprint.toolchainDigest
-    || !isDeepStrictEqual(observation.tools, fingerprint.tools) || observation.rootfsWriteError !== 'EROFS'
-    || observation.gitWriteErrors !== 'EROFS,EROFS,EROFS' || observation.schedulerWrite !== true
-    || !Number.isSafeInteger(observation.detachedChildPid) || Number(observation.detachedChildPid) <= 0) {
-    throw new Error('Physical image, tools and private Git isolation changed.')
-  }
-  return observation
-}
-
-/** Byte and inode pressure inside the container must hit the kernel quota, and sibling slots stay independent. */
-async function probeQuotaPressure(input: {
-  checked: PodmanChecked
-  containerId: string
-  pool: NonNullable<QualificationCandidate['fingerprint']['quotaPool']>
-  claims: readonly QualificationClaim[]
-  approvalExpiresAt: string
-  now: () => number
-}) {
-  const { checked, containerId, pool, claims, approvalExpiresAt, now } = input
-  const quotaResult = JSON.parse(await checked(['exec', containerId, 'node', '-e', quotaProbe,
-    JSON.stringify({ phase: 'bytes', bytes: pool.slots[0]!.hardLimitBytes })],
-  Math.min(600000, Date.parse(approvalExpiresAt) - now())))
-  if (!isKernelQuotaDenial(quotaResult.byteErrno)) {
-    throw new Error(`Per-Job byte pressure did not report quota denial: ${JSON.stringify(quotaResult)}`)
-  }
-  const independence = []
-  for (const claim of claims.slice(1)) {
-    const path = join(claim.namespace, 'independent-quota')
-    await writeFile(path, 'independent Job capacity', { mode: 0o600, flag: 'wx' })
-    independence.push(await readFile(path, 'utf8'))
-  }
-  const quotaInodes = JSON.parse(await checked(['exec', containerId, 'node', '-e', quotaProbe,
-    JSON.stringify({ phase: 'inodes', inodes: pool.slots[0]!.hardInodes })],
-  Math.min(600000, Date.parse(approvalExpiresAt) - now())))
-  if (!isKernelQuotaDenial(quotaInodes.inodeErrno)) {
-    throw new Error(`Per-Job inode pressure did not report quota denial: ${JSON.stringify(quotaInodes)}`)
-  }
-  return { quotaResult, quotaInodes, independence }
-}
-
-/** The seed receipt, qualification validity window, profile identity, Job target and measured concurrency. */
-async function planQualification(input: {
-  candidate: QualificationCandidate
-  configuration: Awaited<ReturnType<typeof readInstalledVerificationConfiguration>>
-  ownerUid: number
-  source: QualificationSource
-  namespace: string
-  approvalExpiresAt: string
-  now: () => number
-}) {
-  const { candidate, configuration, ownerUid, source, namespace, approvalExpiresAt, now } = input
-  const fingerprint = candidate.fingerprint
-  const pool = fingerprint.quotaPool!
-  const seedBytes = await readProtectedRuntimeFile({ path: configuration.seedReceiptPath,
-    ownerUid: ownerUid }, 16 * 1024 * 1024)
-  const seed = JobVerificationOfflineSeedReceiptSchema.parse(JSON.parse(seedBytes.toString('utf8')))
-  const checkedAt = new Date(now()).toISOString()
-  const expiresAt = new Date(Math.min(Date.parse(approvalExpiresAt),
-    Date.parse(checkedAt) + candidate.ttlSeconds * 1000)).toISOString()
-  const profileIdentity = { profileId: fingerprint.profileId, profileRevision: fingerprint.profileRevision,
-    qualificationId: candidate.qualificationId, rootId: fingerprint.root.binding.rootId,
-    bindingRevision: fingerprint.root.binding.bindingRevision, fingerprintDigest: jobQualificationFingerprint(candidate),
-    imageDigest: fingerprint.imageDigest, toolchainDigest: fingerprint.toolchainDigest, network: fingerprint.network,
-    approvalId: candidate.approvalId, approvalExpiresAt: approvalExpiresAt, qualificationExpiresAt: expiresAt }
-  const target = JobTargetSchema.parse({ schemaVersion: 1, mainId: fingerprint.mainInstallationId,
-    hostRef: fingerprint.hostRef, registration: fingerprint.registration, mainInstallationId: fingerprint.mainInstallationId,
-    destination: { canonicalProjectRoot: source.sourceRoot, canonicalCwd: source.sourceRoot,
-      managedRuntimeRoot: candidate.runtimeRoot, directoryIdentityHash: jobDigest(namespace),
-      rootPolicyId: fingerprint.root.selection.rootPolicyId,
-      rootPolicyRevision: fingerprint.root.selection.rootPolicyRevision,
-      locationRevision: fingerprint.root.selection.locationRevision, attestationId: fingerprint.root.attestationId,
-      attestationHash: fingerprint.root.attestationDigest } })
-  const ownerConcurrency = fingerprint.hostRef.kind === 'main'
-    ? JOB_VERIFICATION_OWNER_CONFIGURATION.mainConcurrentJobs : JOB_VERIFICATION_OWNER_CONFIGURATION.laptopConcurrentJobs
-  const concurrency = Math.min(ownerConcurrency, pool.slots.length,
-    ...Object.keys(fingerprint.limits).map(key => Math.floor(
-      Reflect.get(fingerprint.deviceLimits, key) / Reflect.get(fingerprint.limits, key))))
-  if (concurrency < 1) throw new Error('Measured device resource headroom cannot reserve one verification Job.')
-  return { seed, checkedAt, expiresAt, profileIdentity, target, concurrency }
-}
-
-/** The repository context one ordinary suite runs with inside the qualification container. */
-function suiteRepositoryContext(input: {
-  candidate: QualificationCandidate
-  suite: QualificationCandidate['profile']['spec']['suites'][number]
-  target: ReturnType<typeof JobTargetSchema.parse>
-  profileIdentity: Awaited<ReturnType<typeof planQualification>>['profileIdentity']
-  seed: ReturnType<typeof JobVerificationOfflineSeedReceiptSchema.parse>
-  source: QualificationSource
-  maxBytes: number
-}) {
-  const { candidate, suite, target, profileIdentity, seed, source, maxBytes } = input
-  const fingerprint = candidate.fingerprint
-  return JobVerificationRepositoryContextSchema.parse({
-    identity: { commit: fingerprint.sourceCommit, manifestDigest: fingerprint.root.source.manifestDigest,
-      definitionVersionId: `${fingerprint.profileId}:${fingerprint.profileRevision}:${candidate.qualificationId}:${suite}`,
-      suite, executionId: `${candidate.operationId}:${suite}`, attemptId: `${candidate.qualificationId}:${suite}`, target,
-      profile: profileIdentity, resources: fingerprint.resources,
-      parameters: { unitWorkers: qualificationUnitWorkers(fingerprint.resources.limits),
-        integrationShards: suite === 'integration' ? qualificationIntegrationShards(fingerprint.resources) : 1 } },
-    requiredPortions: captureVerificationInventory(source.sourceRoot, suite, { qualification: true }),
-    privateGit: source.privateGit, executionTimeoutMs: candidate.profile.spec.policy.executionTimeoutMs,
-    cancellationTimeoutMs: Math.max(1, candidate.profile.spec.policy.cancellationGraceMs),
-    qualifiedUnitWorkers: qualificationUnitWorkers(fingerprint.resources.limits),
-    qualifiedIntegrationShards: suite === 'integration' ? qualificationIntegrationShards(fingerprint.resources) : 1,
-    limits: { summaryBytes: maxBytes, junitBytes: maxBytes, vitestBytes: maxBytes,
-      logsArchiveBytes: maxBytes, logBytes: Math.min(maxBytes, candidate.profile.spec.policy.maxLogBytes) },
-    mutableDirectory: '/job-scratch', storeDirectory: '/job-scratch/pnpm-store',
-    preseedReceipt: { lockfileSha256: seed.dependencyInputs.find(file => file.path === 'pnpm-lock.yaml')!.sha256,
-      pnpmVersion: '11.27.0', platform: 'linux', architecture: 'x64', provenanceDigest: seed.provenanceDigest,
-      minimumReleaseAgeMinutes: 2880, releaseAgeVerified: true },
-    unitCodex: fingerprint.tools.filter(tool => tool.kind === 'codex').map(({ executable, binarySha256, version }) =>
-      ({ executable, binarySha256, version }))[0],
-  })
-}
-
-/** The qualified runtime and its measurement, from the evidence the suites and interruptions produced. */
-function qualifiedResult(input: {
-  candidate: QualificationCandidate
-  info: { version: { Version: string }; host: { ociRuntime: { version: string } } }
-  profileIdentity: Awaited<ReturnType<typeof planQualification>>['profileIdentity']
-  checkedAt: string
-  expiresAt: string
-  suites: ReadonlyArray<{ suite: string }>
-  publications: QualificationPublications
-  evidence: Record<string, unknown>
-}) {
-  const { candidate, info, profileIdentity, checkedAt, expiresAt, suites, publications, evidence } = input
-  const fingerprint = candidate.fingerprint
-  const runtime = { ...fingerprint.limits, workspaceLayout: fingerprint.workspaceLayout,
-    policyId: fingerprint.profileId, policyRevision: fingerprint.profileRevision,
-    qualificationId: candidate.qualificationId, imageDigest: fingerprint.imageDigest,
-    toolchainDigest: fingerprint.toolchainDigest, runtimeVersion: info.version.Version,
-    ociRuntimeVersion: info.host.ociRuntime.version.split('\n')[0], kernelVersion: release(),
-    rootless: true, cgroupV2: true, filesystemBounded: true, descendantContainment: true,
-    network: fingerprint.network, quota: fingerprint.quota, deviceLimits: fingerprint.deviceLimits,
-    resourcePolicyRevision: fingerprint.resourcePolicyRevision, resourcePolicyDigest: fingerprint.resourcePolicyDigest,
-    runtimeApprovalId: fingerprint.runtimeApprovalId, runtimeApprovalRevision: fingerprint.runtimeApprovalRevision,
-    provisioningSuite: fingerprint.provisioningSuite, aggregateCgroupIdentityDigest: fingerprint.aggregateCgroupIdentityDigest,
-    imageManifestDigest: fingerprint.imageManifestDigest, imageConfigDigest: fingerprint.imageConfigDigest }
-  const measurement = JobVerificationRuntimeMeasurementSchema.parse({ schemaVersion: 2, fingerprint,
-    identity: profileIdentity, origin: 'real-runtime', approvedAt: candidate.approvedAt, checkedAt, expiresAt, suites, publications,
-    checks: [...JOB_VERIFICATION_BASE_CHECKS, 'network-none',
-      ...(suites.some(suite => suite.suite === 'integration') ? ['postgres-isolation'] : [])].map(id => ({ id, passed: true,
-      evidenceDigest: jobDigest({ id, evidence }) })) })
-  return JobVerificationRuntimeQualificationResultSchema.parse({ outcome: 'qualified', measurement, runtime })
-}
-
 /** Every pass comes from full ordinary commands in the admitted image and original quota namespace. */
 export async function qualifyVerificationRuntime(input: {
   candidate: JobQualificationCandidateRecord
@@ -373,11 +132,42 @@ export async function qualifyVerificationRuntime(input: {
   let pendingReport: Omit<Parameters<typeof publishFailedQualification>[0], 'closeContainer' | 'failure'> | undefined
   try {
     const quotas = await readVerificationQuotaPool(pool, fingerprint.root.binding, input.signal, readQuota)
-    await claimQuotaSlots({ candidate, owner, claims, signal: input.signal, readQuota })
+    for (const slot of pool.slots) {
+      const path = join(candidate.sourceParent, `quota-${slot.namespace}.claim.json`)
+      const file = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600)
+      const namespace = join(candidate.sourceParent, slot.namespace, candidate.operationId)
+      claims.push({ path, file, namespace })
+      await file.writeFile(JSON.stringify({ kind: 'qualification', qualificationId: candidate.qualificationId, operationId: candidate.operationId }))
+      await file.sync()
+      const claim = await file.stat()
+      if (!owner.recordQuotaClaim) throw new Error('Protected qualification quota journal required.')
+      await owner.recordQuotaClaim({ path, namespace, device: claim.dev, inode: claim.ino })
+      await mkdir(namespace, { mode: 0o700 })
+      await verifyJobQuotaOwnership({ pool, binding: fingerprint.root.binding, slot, directory: namespace,
+        signal: input.signal, read: readQuota })
+    }
     const namespace = claims[0]!.namespace
-    const { source, inputRoot, scratch } = await prepareQualificationWorkspace({ configuration, namespace, signal: input.signal })
+    const source = await prepareVerificationQualificationSource({ ...configuration.qualificationSource,
+      namespace, signal: input.signal })
+    const inputRoot = join(source.sourceRoot, JOB_INPUT_DIRECTORY)
+    const scratch = join(namespace, 'job-scratch')
+    await mkdir(inputRoot, { mode: 0o700 })
+    await mkdir(scratch, { mode: 0o700 })
+    await writeFile(join(inputRoot, 'manifest.json'), JSON.stringify(JobBuildInputManifestSchema.parse({ version: 1,
+      inputSnapshotDigest: jobDigest({ inputs: [], workflowInput: null }), workflowInput: null, files: [] })), { mode: 0o444 })
     await ensureEmptyPodmanHooks(candidate.runtimeRoot)
-    const info = await assertAdmittedRuntime(checked, fingerprint)
+    const info = JSON.parse(await checked(['info', '--format=json']))
+    if (info.host?.serviceIsRemote !== false || info.host?.security?.rootless !== true
+      || info.host.cgroupVersion !== 'v2' || info.host.cgroupManager !== 'systemd'
+      || info.host.kernel !== release() || info.host.ociRuntime?.path !== fingerprint.ociExecutable) {
+      throw new Error('Local rootless cgroup-v2 runtime required.')
+    }
+    const images = JSON.parse(await checked(['image', 'inspect', fingerprint.imageDigest]))
+    const imageId = images[0]?.Id?.replace(/^sha256:/, '')
+    if (images.length !== 1 || !/^[a-f0-9]{64}$/.test(imageId ?? '')
+      || `sha256:${imageId}` !== fingerprint.imageDigest) {
+      throw new Error('The approved immutable verification image changed.')
+    }
     let containerSequence = 0
     const createContainer = async () => {
       const identity = `graphql-ci-qualification-${candidate.qualificationId}-${++containerSequence}`
@@ -390,12 +180,71 @@ export async function qualifyVerificationRuntime(input: {
       } })
     }
     let containerId = await createContainer()
-    const observation = await observeContainerIsolation({ checked, containerId, candidate })
-    const { quotaResult, quotaInodes, independence } = await probeQuotaPressure({ checked, containerId, pool, claims,
-      approvalExpiresAt: approval.expiresAt, now })
-    const { seed, checkedAt, expiresAt, profileIdentity, target, concurrency } = await planQualification({
-      candidate, configuration, ownerUid: input.configuration!.ownerUid, source, namespace,
-      approvalExpiresAt: approval.expiresAt, now })
+    const ownerSentinel = join(candidate.runtimeRoot, `qualification-${candidate.operationId}-owner-sentinel`)
+    await writeFile(ownerSentinel, 'private controller state', { mode: 0o600, flag: 'wx' })
+    let observation: Record<string, unknown>
+    try {
+      observation = JSON.parse(await checked(['exec', containerId, 'node',
+        '/opt/graphql-ci/verification-observation.mjs', JSON.stringify({ ownerSentinelPaths: [ownerSentinel],
+          tools: fingerprint.tools })]))
+    } finally { await rm(ownerSentinel, { force: true }) }
+    validateVerificationIsolationObservation({ observation, resources: fingerprint.resources,
+      hostPidNamespace: await readlink('/proc/self/ns/pid'), hostNetworkNamespace: await readlink('/proc/self/ns/net'),
+      hostCgroupNamespace: await readlink('/proc/self/ns/cgroup'),
+      ownerSentinelPaths: [ownerSentinel] })
+    const environment = ['CI', 'FOREMAN_CODE_JOB_INPUT_MANIFEST', 'GRAPHQL_JOB_INPUT_MANIFEST',
+      'FOREMAN_CODE_VERIFICATION_ENVIRONMENT', 'HOME', 'LANG',
+      'PATH', 'TMPDIR', 'XDG_CACHE_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', ...Object.keys(JOB_GIT_ENVIRONMENT)]
+    if (Array.isArray(observation.environment) && observation.environment.includes('HOSTNAME')) environment.push('HOSTNAME')
+    if (!isDeepStrictEqual(observation.environment, environment.sort()) || jobDigest(observation.toolchain) !== fingerprint.toolchainDigest
+      || !isDeepStrictEqual(observation.tools, fingerprint.tools) || observation.rootfsWriteError !== 'EROFS'
+      || observation.gitWriteErrors !== 'EROFS,EROFS,EROFS' || observation.schedulerWrite !== true
+      || !Number.isSafeInteger(observation.detachedChildPid) || Number(observation.detachedChildPid) <= 0) {
+      throw new Error('Physical image, tools and private Git isolation changed.')
+    }
+    const quotaResult = JSON.parse(await checked(['exec', containerId, 'node', '-e', quotaProbe,
+      JSON.stringify({ phase: 'bytes', bytes: pool.slots[0]!.hardLimitBytes })],
+    Math.min(600000, Date.parse(approval.expiresAt) - now())))
+    if (!isKernelQuotaDenial(quotaResult.byteErrno)) {
+      throw new Error(`Per-Job byte pressure did not report quota denial: ${JSON.stringify(quotaResult)}`)
+    }
+    const independence = []
+    for (const claim of claims.slice(1)) {
+      const path = join(claim.namespace, 'independent-quota')
+      await writeFile(path, 'independent Job capacity', { mode: 0o600, flag: 'wx' })
+      independence.push(await readFile(path, 'utf8'))
+    }
+    const quotaInodes = JSON.parse(await checked(['exec', containerId, 'node', '-e', quotaProbe,
+      JSON.stringify({ phase: 'inodes', inodes: pool.slots[0]!.hardInodes })],
+    Math.min(600000, Date.parse(approval.expiresAt) - now())))
+    if (!isKernelQuotaDenial(quotaInodes.inodeErrno)) {
+      throw new Error(`Per-Job inode pressure did not report quota denial: ${JSON.stringify(quotaInodes)}`)
+    }
+    const seedBytes = await readProtectedRuntimeFile({ path: configuration.seedReceiptPath,
+      ownerUid: input.configuration!.ownerUid }, 16 * 1024 * 1024)
+    const seed = JobVerificationOfflineSeedReceiptSchema.parse(JSON.parse(seedBytes.toString('utf8')))
+    const checkedAt = new Date(now()).toISOString()
+    const expiresAt = new Date(Math.min(Date.parse(approval.expiresAt),
+      Date.parse(checkedAt) + candidate.ttlSeconds * 1000)).toISOString()
+    const profileIdentity = { profileId: fingerprint.profileId, profileRevision: fingerprint.profileRevision,
+      qualificationId: candidate.qualificationId, rootId: fingerprint.root.binding.rootId,
+      bindingRevision: fingerprint.root.binding.bindingRevision, fingerprintDigest: jobQualificationFingerprint(candidate),
+      imageDigest: fingerprint.imageDigest, toolchainDigest: fingerprint.toolchainDigest, network: fingerprint.network,
+      approvalId: candidate.approvalId, approvalExpiresAt: approval.expiresAt, qualificationExpiresAt: expiresAt }
+    const target = JobTargetSchema.parse({ schemaVersion: 1, mainId: fingerprint.mainInstallationId,
+      hostRef: fingerprint.hostRef, registration: fingerprint.registration, mainInstallationId: fingerprint.mainInstallationId,
+      destination: { canonicalProjectRoot: source.sourceRoot, canonicalCwd: source.sourceRoot,
+        managedRuntimeRoot: candidate.runtimeRoot, directoryIdentityHash: jobDigest(namespace),
+        rootPolicyId: fingerprint.root.selection.rootPolicyId,
+        rootPolicyRevision: fingerprint.root.selection.rootPolicyRevision,
+        locationRevision: fingerprint.root.selection.locationRevision, attestationId: fingerprint.root.attestationId,
+        attestationHash: fingerprint.root.attestationDigest } })
+    const ownerConcurrency = fingerprint.hostRef.kind === 'main'
+      ? JOB_VERIFICATION_OWNER_CONFIGURATION.mainConcurrentJobs : JOB_VERIFICATION_OWNER_CONFIGURATION.laptopConcurrentJobs
+    const concurrency = Math.min(ownerConcurrency, pool.slots.length,
+      ...Object.keys(fingerprint.limits).map(key => Math.floor(
+        Reflect.get(fingerprint.deviceLimits, key) / Reflect.get(fingerprint.limits, key))))
+    if (concurrency < 1) throw new Error('Measured device resource headroom cannot reserve one verification Job.')
     const suites = []
     const reports = []
     const publications: NonNullable<import('@foreman-code/contracts/job-verification-runtime')
@@ -463,7 +312,27 @@ export async function qualifyVerificationRuntime(input: {
       const inodesBefore = before.files - before.ffree
       const maxBytes = Math.floor(Math.min(fingerprint.resources.reportBytes,
         candidate.profile.spec.policy.maxOutputBytes) / reportFiles.length)
-      const context = suiteRepositoryContext({ candidate, suite, target, profileIdentity, seed, source, maxBytes })
+      const context = JobVerificationRepositoryContextSchema.parse({
+        identity: { commit: fingerprint.sourceCommit, manifestDigest: fingerprint.root.source.manifestDigest,
+          definitionVersionId: `${fingerprint.profileId}:${fingerprint.profileRevision}:${candidate.qualificationId}:${suite}`,
+          suite, executionId: `${candidate.operationId}:${suite}`, attemptId: `${candidate.qualificationId}:${suite}`, target,
+          profile: profileIdentity, resources: fingerprint.resources,
+          parameters: { unitWorkers: qualificationUnitWorkers(fingerprint.resources.limits),
+            integrationShards: suite === 'integration' ? qualificationIntegrationShards(fingerprint.resources) : 1 } },
+        requiredPortions: captureVerificationInventory(source.sourceRoot, suite, { qualification: true }),
+        privateGit: source.privateGit, executionTimeoutMs: candidate.profile.spec.policy.executionTimeoutMs,
+        cancellationTimeoutMs: Math.max(1, candidate.profile.spec.policy.cancellationGraceMs),
+        qualifiedUnitWorkers: qualificationUnitWorkers(fingerprint.resources.limits),
+        qualifiedIntegrationShards: suite === 'integration' ? qualificationIntegrationShards(fingerprint.resources) : 1,
+        limits: { summaryBytes: maxBytes, junitBytes: maxBytes, vitestBytes: maxBytes,
+          logsArchiveBytes: maxBytes, logBytes: Math.min(maxBytes, candidate.profile.spec.policy.maxLogBytes) },
+        mutableDirectory: '/job-scratch', storeDirectory: '/job-scratch/pnpm-store',
+        preseedReceipt: { lockfileSha256: seed.dependencyInputs.find(file => file.path === 'pnpm-lock.yaml')!.sha256,
+          pnpmVersion: '11.27.0', platform: 'linux', architecture: 'x64', provenanceDigest: seed.provenanceDigest,
+          minimumReleaseAgeMinutes: 2880, releaseAgeVerified: true },
+        unitCodex: fingerprint.tools.filter(tool => tool.kind === 'codex').map(({ executable, binarySha256, version }) =>
+          ({ executable, binarySha256, version }))[0],
+      })
       if (!failureContext || suite === 'unit') failureContext = context
       const materialization = materialize(context, verified)
       const reserve = await reserveVerificationReportSpace(qualificationExecution(candidate,
@@ -535,8 +404,24 @@ export async function qualifyVerificationRuntime(input: {
     closed = await owner.close()
     if (!closed) throw new Error('Physical verification descendant closure is unconfirmed.')
     await input.authority.assertCurrent(candidate)
+    const runtime = { ...fingerprint.limits, workspaceLayout: fingerprint.workspaceLayout,
+      policyId: fingerprint.profileId, policyRevision: fingerprint.profileRevision,
+      qualificationId: candidate.qualificationId, imageDigest: fingerprint.imageDigest,
+      toolchainDigest: fingerprint.toolchainDigest, runtimeVersion: info.version.Version,
+      ociRuntimeVersion: info.host.ociRuntime.version.split('\n')[0], kernelVersion: release(),
+      rootless: true, cgroupV2: true, filesystemBounded: true, descendantContainment: true,
+      network: fingerprint.network, quota: fingerprint.quota, deviceLimits: fingerprint.deviceLimits,
+      resourcePolicyRevision: fingerprint.resourcePolicyRevision, resourcePolicyDigest: fingerprint.resourcePolicyDigest,
+      runtimeApprovalId: fingerprint.runtimeApprovalId, runtimeApprovalRevision: fingerprint.runtimeApprovalRevision,
+      provisioningSuite: fingerprint.provisioningSuite, aggregateCgroupIdentityDigest: fingerprint.aggregateCgroupIdentityDigest,
+      imageManifestDigest: fingerprint.imageManifestDigest, imageConfigDigest: fingerprint.imageConfigDigest }
     const evidence = { observation, quotas, quotaResult, quotaInodes, independence, suites, reports, failures, publications, containerId, closed }
-    result = qualifiedResult({ candidate, info, profileIdentity, checkedAt, expiresAt, suites, publications, evidence })
+    const measurement = JobVerificationRuntimeMeasurementSchema.parse({ schemaVersion: 2, fingerprint,
+      identity: profileIdentity, origin: 'real-runtime', approvedAt: candidate.approvedAt, checkedAt, expiresAt, suites, publications,
+      checks: [...JOB_VERIFICATION_BASE_CHECKS, 'network-none',
+        ...(suites.some(suite => suite.suite === 'integration') ? ['postgres-isolation'] : [])].map(id => ({ id, passed: true,
+        evidenceDigest: jobDigest({ id, evidence }) })) })
+    result = JobVerificationRuntimeQualificationResultSchema.parse({ outcome: 'qualified', measurement, runtime })
   } catch (error) {
     denial = error instanceof Error ? error : new Error('Physical verification qualification failed.')
   } finally {

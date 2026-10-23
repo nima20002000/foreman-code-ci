@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util'
-import type { PublicGraphProjection, GraphFact } from '@foreman-code/contracts/current'
+import type { PublicGraphProjection, GraphFact } from '@foreman-code/contracts/wave25'
 import { runtimeTimingPoint } from '../../infrastructure/runtimeTiming.js'
 import type { CurrentNativeActivity } from './nativeActivitySelection.js'
 import { publicNodeProjectionDelta } from './publicProjection.js'

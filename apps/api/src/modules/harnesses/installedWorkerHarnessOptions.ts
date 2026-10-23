@@ -21,7 +21,6 @@ import { inspectInstalledCodex } from './installedCodexInspection.js'
 import { inspectInstalledClaude } from './installedClaudeInspection.js'
 import { QualificationCache } from './qualificationCache.js'
 import type { NativeProcessRegistry } from './recovery/processRegistry.js'
-import { hostEnvironment } from '../../shared/process.js'
 
 /** Catalog reads own native processes but never qualify execution or create a model turn. */
 export function createInstalledWorkerHarnessOptions(input: {
@@ -45,7 +44,7 @@ export function createInstalledWorkerHarnessOptions(input: {
     const inspect = async (signal: AbortSignal) => {
       assertConnection(signal)
       const ports = { binding: connection, configuration: input.configuration,
-        environment: hostEnvironment(), cwd: input.stateDirectory, signal }
+        environment: process.env, cwd: input.stateDirectory, signal }
       const selected = request.harness === 'claude'
         ? await inspectInstalledClaude(ports) : await inspectInstalledCodex(ports)
       assertConnection(signal)
@@ -64,7 +63,7 @@ export function createInstalledWorkerHarnessOptions(input: {
     }
     const credentialIdentity = async (signal: AbortSignal) => {
       const account = await resolveAccount(signal)
-      const environment = account ? managedProviderEnvironment(hostEnvironment(), account, request.harness) : hostEnvironment()
+      const environment = account ? managedProviderEnvironment(process.env, account, request.harness) : process.env
       const binary = original.installation.launcher.resolvedLauncher
       if (!binary) throw new DomainError('HARNESS_DRIVER_UNAVAILABLE', 'The selected harness is unavailable.', 409)
       const identity = await systemPorts(environment).probeIdentity!(request.harness, binary)

@@ -1,8 +1,8 @@
 import { expect, it, vi } from 'vitest'
-import { nativeReviewerFixture } from './native-reviewer-fixtures.js'
+import { native2Fixture } from './native-reviewer-fixtures.js'
 
 it('closes the persisted native session after its save acknowledgement was lost', async () => {
-  const f = nativeReviewerFixture(false)
+  const f = native2Fixture(false)
   const execution = f.get()
   f.installResident()
   f.resident.execution = { ...execution, nativeSessionId: undefined, state: 'starting' }

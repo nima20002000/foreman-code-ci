@@ -1,4 +1,4 @@
-import type { RunDirectionWait } from '@foreman-code/contracts/current'
+import type { RunDirectionWait } from '@foreman-code/contracts/wave25'
 import { Button, Icon } from '../../../shared/ui/nocturne'
 import { InfoHint } from '../../../shared/ui/InfoHint'
 import './actions.css'

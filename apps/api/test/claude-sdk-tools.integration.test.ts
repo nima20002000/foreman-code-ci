@@ -23,7 +23,7 @@ import { PostgresOperatorChatAuthority } from '../src/modules/conversations/oper
 import { NativeRollout } from '../src/modules/harnesses/nativeRollout.js'
 import { registerProductionFileStorage } from '../src/modules/files/production.js'
 import { productionFileTools } from '../src/modules/files/tools/production.js'
-import { withTaskDatabase } from './helpers/taskDatabase.js'
+import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
 import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'
 import { readUntil } from './helpers/observableCondition.js'
 import { graphRpc, graphRpcValue } from './graph-composition-fixture.js'
@@ -31,7 +31,7 @@ import { productionClaudeFixture } from './support/claudeProduction.js'
 import { claudeSdkToolTransport } from './support/claudeSdkToolTransport.js'
 
 it('reuses the production Claude SDK query with fresh revoked turn credentials through authenticated MCP', async () => {
-  await withTaskDatabase(async (pool, directory) => {
+  await nim2691TaskDatabase(async (pool, directory) => {
     await applyApplicationMigrations(pool)
     const access = new PostgresAccessService(pool)
     const owner = await access.issue({ name: 'Warm SDK owner', audience: 'operator', grants: [{ scope: {}, actions: [
@@ -143,7 +143,7 @@ it.each([
   'executes $scenario on $serverName through the official SDK and production composition with persisted readback',
   async ({ scenario, serverName }) => {
     const vault = await privateFixtureDirectory('claude-sdk-files-')
-    await withTaskDatabase(async (pool, directory) => {
+    await nim2691TaskDatabase(async (pool, directory) => {
       await applyApplicationMigrations(pool)
       const access = new PostgresAccessService(pool)
       const permissions = ['operator_chat:read', 'operator_chat:write', 'operator_chat:respond', 'workspaces:read'] as const

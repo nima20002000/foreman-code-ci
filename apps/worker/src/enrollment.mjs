@@ -8,7 +8,7 @@ import { pairingProof, verifyMainEnrollmentProof, persistWorkerPairing, loadWork
 import { requirePrivateDirectory, WorkerError } from './diagnostics.mjs';
 import { ensurePairedManagedSetup } from './managedSetup.mjs';
 import { acquireWorkerLock } from './runtime.mjs';
-import { ignoreError } from '@foreman-code/api/worker/diagnostics';
+import { ignoreError } from '../../api/src/modules/diagnostics/ignoredError.ts';
 
 const retryHint = 'Keep the original state directory, identity, enrollment file and requestId. Retry the same pair command; do not create a new identity or requestId.';
 const recoveryHints = {

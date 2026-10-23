@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { MemorySaver } from '@langchain/langgraph'
 import { afterAll, beforeAll, expect } from 'vitest'
-import { CANONICAL_RUN_GRAPH_MCP_TOOLS, RepeatGraphSnapshotCurrentSchema } from '@foreman-code/contracts/current'
+import { CANONICAL_RUN_GRAPH_MCP_TOOLS, RepeatGraphSnapshotV3Schema } from '@foreman-code/contracts/wave25'
 import { migratedDatabase } from './migratedDatabase.js'
 import { workflowJobFixture } from './workflowJobFixture.js'
 import { executeRepeatRuntime } from '../../src/modules/runs/repeatRuntime.js'
@@ -38,7 +38,7 @@ export async function snapshot(f: Fixture) {
   const response = await f.call(CANONICAL_RUN_GRAPH_MCP_TOOLS.snapshot, { protocolVersion: 1, scope: f.scope })
   expect(response.status).toBe(200)
   expect(response.result?.isError, JSON.stringify(graphRpcValue(response.result))).not.toBe(true)
-  return RepeatGraphSnapshotCurrentSchema.parse(graphRpcValue(response.result))
+  return RepeatGraphSnapshotV3Schema.parse(graphRpcValue(response.result))
 }
 export const sink: Parameters<typeof workflowJobFixture>[1] = (graph, job) => {
   assert.ok(graph.entryNodeId, 'Expected an Agent entry node')

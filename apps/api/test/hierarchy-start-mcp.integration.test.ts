@@ -4,8 +4,8 @@ import { inspect } from 'node:util'
 import { describe, expect, it } from 'vitest'
 import { COORDINATION_RESULT_PROTOCOL, WorkflowHierarchyReadResultSchema, WorkflowReportsPageSchema } from '@foreman-code/contracts'
 import { AgentMutationResultSchema } from '@foreman-code/contracts/management'
-import { CurrentRunDetailsSchema, CurrentWorkflowSaveResultSchema, RunStartCurrentResultSchema,
-  SavedManagedWorkflowCommandResultSchema } from '@foreman-code/contracts/current'
+import { CurrentRunDetailsSchema, CurrentWorkflowSaveResultSchema, RunStartV3ResultSchema,
+  SavedManagedWorkflowCommandResultSchema } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { coordinationOutput } from './helpers/hierarchyRuntimeFixture.js'
 import { workflowChatCall } from './helpers/workflowChatRequests.js'
@@ -56,7 +56,7 @@ describe.skipIf(!postgresEnabled)('single-computer hierarchy Start through authe
         grants: [{ actions: ['runs:read', 'workflows:read'], scope: { workspaceIds: [workspaceId] } }] })
       const denied = await graphRpc(f.app, reader.token, 'tools/call', { name: 'run_start', arguments: start })
       expect(denied.result?.isError).toBe(true)
-      const started = RunStartCurrentResultSchema.parse(await workflowChatCall(f, 'run_start', start))
+      const started = RunStartV3ResultSchema.parse(await workflowChatCall(f, 'run_start', start))
       const runId = started.run.id
       CurrentRunDetailsSchema.parse(await f.services.runs.get(f.writer.principal, workspaceId, runId))
       const read = async () => {

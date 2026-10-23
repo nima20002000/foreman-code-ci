@@ -1,5 +1,5 @@
 import { ResolvedJobDefinitionSpecRecordSchema } from '@foreman-code/contracts/job-verification'
-import { withTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
+import { withTransaction } from '../../infrastructure/transaction.js'
 import { createProductionRootPolicies, rootPolicySourceAttempts } from './productionRootAuthority.js'
 import type { MaterializationAttempt } from './ports.js'
 import { installedSourceQuotaPool } from '../jobs/quotaOwnership.js'
@@ -7,18 +7,19 @@ import type { InstalledRuntimeConfigurationLocation } from '../jobs/installedRun
 import { RSYNC_STAGE_EXTENSION, type TransferIntent } from '@foreman-code/contracts/byte-transfer'
 import { PostgresSourceRsyncLifecycle } from './rsyncTransferLifecycle.js'
 import { AgentSourceAttemptAuthority, installedSourceAttemptAuthority } from './agentSourceAuthority.js'
-import { readAcceptedPlacement, readDispatchIntent, readNativePlacement } from '../placement/index.js'
+import { readAcceptedPlacement, readDispatchIntent, readNativePlacement } from '../placement/persistence.js'
 import { readReconciledDispatchIntent, readRemoteReceipts } from '../runs/remote/persistence.js'
-import { readNativeExecutionBinding } from '../placement/index.js'
+import { readNativeExecutionBinding } from '../placement/executionBinding.js'
 import { sourceMaterializationDigest } from './bindingHash.js'
-import { sameWorkflowValue } from '@foreman-code/contracts/current'
+import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { SOURCE_OPERATION_EXTENSION } from '@foreman-code/contracts/source-operations'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import type { SourceRootRecord, SourcePreparationClosure, SourceMaterializationRecord } from '@foreman-code/contracts/source-admission'
 import { PostgresSourceOperationAuthority } from './operationAuthority.js'
 import { PostgresSourcePackageTransfers } from './operationTransferAdmission.js'
 import { GitHubSourcePublisher } from './githubPublisher.js'
 import { CarrierRemoteSourceMaterializationHost, createMainSourceOperationExtension } from './operationCarrier.js'
-import type { MainWorkerCarrier } from '../placement/index.js'
+import type { MainWorkerCarrier } from '../placement/workerCarrier.js'
 import { lstat, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type pg from 'pg'
@@ -28,10 +29,10 @@ import { PostgresSourceService } from './service.js'
 import { JobSourceAttemptAuthority } from '../jobs/sourceAuthority.js'
 import type { PostgresJobDispatch } from '../jobs/dispatch.js'
 import { JobRepository } from '../jobs/repository.js'
-import type { PostgresCommandCoordinator } from '../commands/index.js'
-import type { WorkspaceLocationService } from '../workspaces/index.js'
-import type { DeviceEndpoint } from '../devices/index.js'
-import { assertDeviceHostInstallation } from '../devices/index.js'
+import type { PostgresCommandCoordinator } from '../commands/postgres.js'
+import type { WorkspaceLocationService } from '../workspaces/location.js'
+import type { DeviceEndpoint } from '../devices/deviceEndpoint.js'
+import { assertDeviceHostInstallation } from '../devices/hostAuthorization.js'
 import { DomainError, retryDatabaseRead } from '../errors.js'
 import { isDeepStrictEqual } from 'node:util'
 import { localWorkflowSourceClosed } from './workflowCleanup.js'
@@ -45,7 +46,7 @@ import { SourceOperationOwnerSchema, SourceReservationReclamationResponseSchema 
 
 /** Existing approved root records and original Job attempts own these services.
  * Construction does not fabricate an allowlist or authorize native execution. */
-async function installationFence(sql: SqlQuery, value: import('@foreman-code/contracts/source-admission').SourceRootRecord) {
+async function installationFence(sql: GraphSqlClient, value: import('@foreman-code/contracts/source-admission').SourceRootRecord) {
   await assertDeviceHostInstallation(sql, value.selection.hostRef, value.selection.hostRef.kind === 'main'
     ? value.selection.hostRef.mainId : value.registration!.workerInstallationId)
 }
@@ -70,7 +71,7 @@ export async function createProductionSources(input: ProductionSourcesInput) {
   const originalAttempts = installedSourceAttemptAuthority(input.pool, agents, jobs)
   const attempts = rootPolicySourceAttempts({ pool: input.pool, roots, originalAttempts,
     prepareIdentity: (root, attempt) => owners.prepareIdentity(root, attempt) })
-  const confirmedClosed = async (sql: SqlQuery, record: import('@foreman-code/contracts/source-admission').SourceMaterializationRecord) => {
+  const confirmedClosed = async (sql: GraphSqlClient, record: import('@foreman-code/contracts/source-admission').SourceMaterializationRecord) => {
     const original = await readDispatchIntent(sql, record.receipt.executionId)
     if (original) {
       let reconciled = (await sql.query<{ reconciliation_id: string; owner: unknown; closure: unknown }>(

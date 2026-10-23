@@ -2,7 +2,7 @@ import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { randomUUID } from 'node:crypto'
 import { Client } from '@modelcontextprotocol/client'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
-import { CurrentOperatorCapabilitiesSchema } from '@foreman-code/contracts/current'
+import { CurrentOperatorCapabilitiesSchema } from '@foreman-code/contracts/wave25'
 import { decodeMcpToolResult, OperatorCompactCapabilitiesSchema,
   OperatorToolSchemaResultSchema } from '@foreman-code/contracts/operator-mcp'
 import { FileRetentionGetResultSchema, FileRetentionSaveResultSchema } from '@foreman-code/contracts/files'
@@ -78,11 +78,11 @@ it.each([
 
 it('returns structured requirements for each registered extension without invoking it', async () => {
   for (const [name, actions] of Object.entries(extensionActions)) {
-    const response = await owner.callTool({ name: 'tool_schema', arguments: { name } })
+    const response = await owner.callTool({ name: 'operator_tool_schema_get', arguments: { name } })
     expect(response.isError, name).not.toBe(true)
     const schema = OperatorToolSchemaResultSchema.parse(decodeMcpToolResult(response))
     expect(schema.name).toBe(name)
-    expect(schema.permissionRequirements?.actions, name).toEqual(expect.arrayContaining(actions))
+    expect(schema.permissionRequirements.actions, name).toEqual(expect.arrayContaining(actions))
   }
 })
 
@@ -94,7 +94,7 @@ it('keeps grant-hidden tools denied and reads back a persisted retention prefere
   expect(names).toContain('file_retention_get')
   for (const name of ['file_retention_save', 'harness_instance_save', 'reference_file_add', 'run_summaries_list']) {
     expect(names).not.toContain(name)
-    const schema = await reader.callTool({ name: 'tool_schema', arguments: { name } })
+    const schema = await reader.callTool({ name: 'operator_tool_schema_get', arguments: { name } })
     expect(schema.isError).toBe(true)
     expect(decodeMcpToolResult(schema)).toMatchObject({ error: { code: 'ACCESS_DENIED' } })
     const denied = await reader.callTool({ name, arguments: {} })

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it, vi } from 'vitest'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import { PostgresSourceReservations, type SourceReservation } from './reservations.js'
 import { sourceStorageCapacityFixture } from '../../../test/helpers/sourceStorageCapacityFixture.js'
 
@@ -10,14 +10,14 @@ const idleUsage = {
   retained_bytes: '0', verification_retained_bytes: '0',
 }
 
-function reservationSql(ownerKind: SourceReservation['ownerKind'], usage = idleUsage): SqlQuery {
+function reservationSql(ownerKind: SourceReservation['ownerKind'], usage = idleUsage): GraphSqlClient {
   const empty = { rows: [], rowCount: 0 }
   const query = vi.fn().mockResolvedValue(empty)
     .mockResolvedValueOnce(empty)
     .mockResolvedValueOnce(empty)
   if (ownerKind === 'materialization') query.mockResolvedValueOnce(empty)
   query.mockResolvedValueOnce({ rows: [usage], rowCount: 1 })
-  return { query } as unknown as SqlQuery
+  return { query } as unknown as GraphSqlClient
 }
 
 it.each(['capture', 'transfer', 'materialization'] as const)(

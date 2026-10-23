@@ -3,14 +3,14 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { expect, it } from 'vitest'
 import { WorkflowChatPostResponseSchema } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
-import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
 import { access, address, database, project, production, registerProductionLifecycleFixture } from './helpers/productionLifecycleFixture.js'
 
 registerProductionLifecycleFixture()
 
 it('composes group chat in production with authenticated posting, persisted readback and denied writes', async () => {
-  const saved = await seedWorkflowFixture(database.pool, project, makeCurrentWorkflowFixture('group-production', 'single'), { run: false })
+  const saved = await seedAgent3(database.pool, project, makeCurrentWorkflowFixture('group-production', 'single'), { run: false })
   const scope = { workspaceId: saved.scope.workspaceId, workflowId: saved.scope.workflowId }
   const issued = await access.issue({ name: 'Group sender', audience: 'operator', grants: [{
     scope: { workspaceIds: [scope.workspaceId], workflowIds: [scope.workflowId] },

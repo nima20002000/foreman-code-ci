@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { graphJsonBytes } from '@foreman-code/contracts/current'
+import { graphJsonBytes } from '@foreman-code/contracts/wave25'
 import { parseNativeCheckpoint } from '../src/modules/run-graph/nativeCheckpoint.js'
 import {
   emptyNativeProjection, nativeProjectionActivity, projectNativeEvidence, NATIVE_PROJECTION_LIMITS,

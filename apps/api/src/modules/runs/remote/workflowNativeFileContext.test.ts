@@ -5,8 +5,7 @@ import { DEFAULT_HARNESS_DEFAULTS, type AgentConfigurationVersion, type HarnessE
 import type { ArtifactAttempt } from '@foreman-code/contracts/artifact-edges'
 import type { RemoteOperationReceipt } from '@foreman-code/contracts/remote-execution'
 import { createWorkflowNativeCaptureChannel, type WorkflowNativeCaptureInput } from '../../interactions/workflowNativeCapture.js'
-import { ExclusiveGraphConnection } from '../../run-graph/connection.js'
-import type { SqlTransaction } from '../../../infrastructure/transaction.js'
+import { ExclusiveGraphConnection, type GraphTransactionSql } from '../../run-graph/connection.js'
 import { currentRunGraphPublication } from '../../run-graph/publication.js'
 import { readDispatchIntent, readAcceptedPlacement } from '../../placement/persistence.js'
 import { readReconciledDispatchIntent } from './persistence.js'
@@ -130,7 +129,7 @@ function fixture() {
   const ports = { captures: channel.verify, assertPhysical: vi.fn(async () => {}), authority }
   const helper = new WorkflowNativeFileContextAdmission(mainId, ports)
   const admit = (input: RepeatNativeEvidence = evidence, actual: WorkflowNativeProofRecord = proof,
-    after?: (sql: SqlTransaction) => Promise<void>) => connection.transaction(async sql => {
+    after?: (sql: GraphTransactionSql) => Promise<void>) => connection.transaction(async sql => {
     const result = await helper.admitLocked(sql, input, actual, transfer); await after?.(sql); return result
   })
   const attempt: ArtifactAttempt = { workspaceId: 'workspace', workflowId: 'workflow', runId: execution.runId, nodeId: execution.workflowNodeId,
@@ -410,7 +409,7 @@ describe('genuine original workflow file-context admission', () => {
   })
   it('rejects an unbranded query and a missing physical/G1 verifier without partial admission', async () => {
     const t = fixture()
-    await expect(t.helper.admitLocked({ query: async () => ({ rows: [] }) } as unknown as SqlTransaction, t.evidence, t.proof, t.transfer)).rejects.toThrow()
+    await expect(t.helper.admitLocked({ query: async () => ({ rows: [] }) } as unknown as GraphTransactionSql, t.evidence, t.proof, t.transfer)).rejects.toThrow()
     t.ports.assertPhysical.mockRejectedValueOnce(new DomainError('REMOTE_NATIVE_PHYSICAL_UNAVAILABLE', 'unavailable', 409))
     await expect(t.admit()).rejects.toMatchObject({ code: 'REMOTE_NATIVE_PHYSICAL_UNAVAILABLE' })
     vi.mocked(currentRunGraphPublication).mockImplementationOnce(() => { throw new DomainError('GRAPH_SCOPE_MISMATCH', 'unavailable', 409) })

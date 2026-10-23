@@ -8,7 +8,7 @@ import { HarnessMcpListResultSchema, HarnessMcpPlanSchema, type HarnessMcpManage
   type HarnessMcpPlan, type HarnessMcpReconcileInput, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import { isDeepStrictEqual } from 'node:util'
 import type { DeviceEndpoint } from '../devices/deviceEndpoint.js'
-import type { PostgresCommandCoordinator } from '../commands/index.js'
+import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { requireAuthorization } from '../access/policy.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { DomainError } from '../errors.js'

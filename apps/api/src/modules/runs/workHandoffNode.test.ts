@@ -1,5 +1,5 @@
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { expect, it, vi } from 'vitest'
 import { DomainError } from '../errors.js'
 import { ExecutionLimiter } from './limiter.js'

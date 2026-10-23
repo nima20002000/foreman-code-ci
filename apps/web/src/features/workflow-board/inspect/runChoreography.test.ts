@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
-import type { RepeatGraphCurrentState } from '@foreman-code/contracts/current'
+import type { RepeatGraphCurrentV3 } from '@foreman-code/contracts/wave25'
 import { runHandoffs, runNodeDisplays, SETTLE_MS, TRAVEL_MS, useRunChoreography } from './runChoreography'
 
 const edges = [
@@ -16,7 +16,7 @@ const activity = (node: string, action?: string) => ({ state: { workflowNodeId: 
 function record(parts: { executions?: unknown[]; bindings?: unknown[]; interactions?: unknown[]; nodes?: unknown[]; done?: boolean }) {
   const topology = { relationships: edges.map((edge) => ({ relationshipId: edge.id, kind: edge.kind, source: edge.source, target: edge.target })) }
   return { topology, state: { run: { executionState: parts.done ? 'completed' : 'running' }, resolutions: [], executions: parts.executions ?? [],
-    bindings: parts.bindings ?? [], interactions: parts.interactions ?? [], nodes: parts.nodes ?? [] } } as unknown as RepeatGraphCurrentState
+    bindings: parts.bindings ?? [], interactions: parts.interactions ?? [], nodes: parts.nodes ?? [] } } as unknown as RepeatGraphCurrentV3
 }
 
 describe('run choreography facts', () => {

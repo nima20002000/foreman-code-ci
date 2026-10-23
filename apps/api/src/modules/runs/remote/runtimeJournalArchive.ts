@@ -6,7 +6,6 @@ import { QualificationReceiptSchema } from '../../jobs/qualificationJournal.js'
 import { JobNativeOwnerSchema } from '../../jobs/executorJournal.js'
 import { SourcePreparationClosureSchema } from '@foreman-code/contracts/source-admission'
 import { sha256Hex } from '../../../shared/hash.js'
-import { writeDurableFile } from '../../../shared/durableFile.js'
 
 const ArchiveSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('workflow'), receipt: RemoteOperationReceiptSchema }).strict(),
@@ -21,7 +20,7 @@ export const RUNTIME_JOURNAL_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 
 /** Cold records and identity tombstones live outside the bounded recovery snapshot. */
 export class RuntimeJournalArchive {
-  constructor(private readonly path: string) {}
+  constructor(private readonly path: string, private readonly write: (path: string, value: string) => Promise<void>) {}
 
   async read(identity: string): Promise<z.infer<typeof ArchiveSchema> | null> {
     let tombstone: z.infer<typeof TombstoneSchema>
@@ -49,11 +48,11 @@ export class RuntimeJournalArchive {
         `lease:${archive.receipt.admission.leaseId}`]
     const operationId = 'intent' in receipt ? receipt.intent.operationId : receipt.admission.operationId
     const serialized = JSON.stringify(archive)
-    await writeDurableFile(`${this.path}.runtime-archive/${hash(operationId)}.json`, serialized)
+    await this.write(`${this.path}.runtime-archive/${hash(operationId)}.json`, serialized)
     const tombstone = JSON.stringify({ operationId, digest: hash(serialized) })
-    for (const identity of identities) await writeDurableFile(`${this.path}.retired/${hash(identity)}.json`, tombstone)
+    for (const identity of identities) await this.write(`${this.path}.retired/${hash(identity)}.json`, tombstone)
     if (archive.kind === 'qualification') {
-      await writeDurableFile(`${this.path}.qualifications/${hash(operationId)}.json`, JSON.stringify({ operationId }))
+      await this.write(`${this.path}.qualifications/${hash(operationId)}.json`, JSON.stringify({ operationId }))
     }
   }
 

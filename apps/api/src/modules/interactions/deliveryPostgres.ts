@@ -1,10 +1,10 @@
 import { DurableInteractionSchema, type DurableInteraction } from '@foreman-code/contracts'
-import { rollbackAfterFailure, withTransaction } from '../../infrastructure/transaction.js'
+import { beginTransaction, commitTransaction, rollbackAfterFailure } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 
 import { runInDeliveryTransaction } from './connection.js'
 import { DomainError } from '../errors.js'
-import { RUN_CLEANUP_BOUNDARY_SQL } from './current/cleanupAuthority.js'
+import { RUN_CLEANUP_BOUNDARY_SQL } from './wave25/cleanupAuthority.js'
 import {
   INTERACTION_DELIVERY_LEASE_MS,
   matchingDeliveryEvidence,
@@ -38,17 +38,14 @@ export class PostgresInteractionDeliveryRepository {
     client.on('error', lost)
     client.on('end', lost)
     try {
-      return await withTransaction({ client }, async () => {
-        const result = await action(client, controller.signal)
-        controller.signal.throwIfAborted()
-        return result
-      }, {
-        rollback: async (connection) => {
-          const rollbackError = await rollbackAfterFailure(connection)
-          if (rollbackError) lost()
-          return rollbackError
-        },
-      })
+      await beginTransaction(client)
+      const result = await action(client, controller.signal)
+      controller.signal.throwIfAborted()
+      await commitTransaction(client)
+      return result
+    } catch (error) {
+      if (await rollbackAfterFailure(client)) lost()
+      throw error
     } finally {
       client.removeListener('error', lost)
       client.removeListener('end', lost)

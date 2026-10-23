@@ -1,11 +1,11 @@
 import type { MemoryWorkPageInfo, MemoryWorkSummary } from '@foreman-code/contracts'
 import type {
   AgentIdentity, AgentNodeRef, AgentSubject, ExecutionRef, LogicalWorkRef, MemoryBoard,
-  MemoryBoardMutation, MemoryBoardMutationReceipt, MemoryBoardScope, MemoryCard, MemoryCardWorkBinding,
+  MemoryBoardMutation, MemoryBoardScope, MemoryCard, MemoryCardWorkBinding,
   MemoryCardWorkClaim, MemoryNote,
 } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import type { GraphTransactionSql } from '../run-graph/connection.js'
 
 export type MemoryTool = 'memory_board_get' | 'memory_board_changes_read'
   | 'memory_card_create' | 'memory_card_update' | 'memory_note_create'
@@ -17,8 +17,11 @@ export interface Actor { kind: 'operator' | 'agent' | 'engine'; id: string; disp
 export interface Page<T> { items: T[]; nextCursor: string | null; hasMore: boolean; revision: number }
 export interface Counts { todo: number; doing: number; waiting_for_user: number; blocked: number; done: number; completed: number; dropped: number; notes: number }
 export interface BoardRow { board: MemoryBoard; sequence: number; counts: Counts; nextNoteRank: number }
-/** The contract's mutation receipt; this module no longer keeps a second copy of its shape. */
-export type MutationReceipt = MemoryBoardMutationReceipt
+export interface MutationReceipt {
+  commandId: string; outcome: 'created' | 'existing' | 'updated' | 'unchanged'
+  card?: MemoryCard; note?: MemoryNote
+  bindings: MemoryCardWorkBinding[]; claims: MemoryCardWorkClaim[]; boardRevision: number
+}
 export interface BoardChange {
   id: string; boardId: string; sequence: number; boardRevision: number
   entity: 'card' | 'note'; entityId: string; entityRevision: number
@@ -63,21 +66,21 @@ export interface ResolvedWork {
  * These functions use only the supplied SQL transaction: no native/network I/O.
  * Missing adapters must keep the feature unavailable, never grant fallback access. */
 export interface MemoryBoardAuthority {
-  caller(tx: SqlTransaction, principal: ManagementPrincipal): Promise<SubjectAccess | null>
-  subject(tx: SqlTransaction, subject: AgentSubject): Promise<SubjectAccess>
-  scope(tx: SqlTransaction, scope: MemoryBoardScope): Promise<void>
-  node(tx: SqlTransaction, node: AgentNodeRef, scope: MemoryBoardScope): Promise<void>
-  work(tx: SqlTransaction, work: LogicalWorkRef): Promise<ResolvedWork>
-  currentWork(tx: SqlTransaction, subject: AgentSubject): Promise<ResolvedWork | null>
-  sourcePost(tx: SqlTransaction, postId: string, scope: MemoryBoardScope,
+  caller(tx: GraphTransactionSql, principal: ManagementPrincipal): Promise<SubjectAccess | null>
+  subject(tx: GraphTransactionSql, subject: AgentSubject): Promise<SubjectAccess>
+  scope(tx: GraphTransactionSql, scope: MemoryBoardScope): Promise<void>
+  node(tx: GraphTransactionSql, node: AgentNodeRef, scope: MemoryBoardScope): Promise<void>
+  work(tx: GraphTransactionSql, work: LogicalWorkRef): Promise<ResolvedWork>
+  currentWork(tx: GraphTransactionSql, subject: AgentSubject): Promise<ResolvedWork | null>
+  sourcePost(tx: GraphTransactionSql, postId: string, scope: MemoryBoardScope,
     caller: ManagementPrincipal | AgentSubject): Promise<void>
   /** Recheck authoritative saved node/work/execution identity at engine seams. */
-  lifecycle(tx: SqlTransaction, agent: AgentIdentity, work: LogicalWorkRef,
+  lifecycle(tx: GraphTransactionSql, agent: AgentIdentity, work: LogicalWorkRef,
     executionId?: string): Promise<void>
 }
 export interface MemoryBoardDependencies {
-  transaction<T>(perform: (tx: SqlTransaction) => Promise<T>): Promise<T>
-  readTransaction<T>(perform: (tx: SqlTransaction) => Promise<T>): Promise<T>
+  transaction<T>(perform: (tx: GraphTransactionSql) => Promise<T>): Promise<T>
+  readTransaction<T>(perform: (tx: GraphTransactionSql) => Promise<T>): Promise<T>
   authority: MemoryBoardAuthority
   /** Notifications only wake readback; PostgreSQL delivers them after commit. */
   listen(boardId: string, changed: () => void, disconnected: () => void): Promise<() => void>

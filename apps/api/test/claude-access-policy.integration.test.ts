@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 import { CLAUDE_FULL_ACCESS_REQUIRED } from '@foreman-code/contracts/claude'
 import { AgentMutationResultSchema, ManagedAgentDetailSchema, HarnessCatalogResultSchema, HarnessCatalogEntrySchema } from '@foreman-code/contracts/management'
-import { CurrentWorkflowSaveResultSchema } from '@foreman-code/contracts/current'
+import { CurrentWorkflowSaveResultSchema } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { OperatorAgentMutationService } from '../src/modules/workspaces/operatorAgents.js'
 

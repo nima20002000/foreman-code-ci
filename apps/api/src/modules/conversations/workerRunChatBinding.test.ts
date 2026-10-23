@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { expect, it, vi } from 'vitest'
-import type { NodeSkillOverride } from '@foreman-code/contracts/current'
+import type { NodeSkillOverride } from '@foreman-code/contracts/wave25'
 import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { WorkerConversationBindingSchema, WorkerConversationRpcRequestSchema,
@@ -17,7 +17,6 @@ import { recoverWorkerConversation } from './recoverWorkerConversation.js'
 import { workerConversationCallbacks } from './workerCallbacks.js'
 import { legacyProviderAccountBinding } from '../provider-accounts/acceptedBindings.js'
 import { configurationWithNodeSkills } from '../skills/nodeSkills.js'
-import { workerConversationStoreRead } from '../../../test/helpers/workerConversationStoreReads.js'
 import { agentChatCorrelation } from './agentChatRepository.js'
 
 async function fixture(harness: 'codex' | 'claude', change: 'add' | 'remove' = 'add',
@@ -79,14 +78,11 @@ async function fixture(harness: 'codex' | 'claude', change: 'add' | 'remove' = '
       nodes: [{ id: 'node', agentId: base.agentId, name: 'Agent', skills }], edges: [] },
     contentHash: `sha256:${'a'.repeat(64)}`, createdAt: base.createdAt }
   let failPersistence = false
-  // Reads are told apart by what they bind: the configuration reads lead with a configuration version id, the owner
-  // binding update binds five values with the conversation id first.
-  const configurationIds: unknown[] = [base.id, configuration.id, binding.owner.configurationVersionId]
-  const pool = { query: vi.fn(async (_sql: string, args: unknown[] = []) => {
-    const known = workerConversationStoreRead(args, { principals: [principal], accountBinding: binding.accountBinding })
-    if (known) return known
-    if (configurationIds.includes(args[0])) return { rows: [{ record: base, version }] }
-    if (args.length === 5 && args[0] === conversation.id) {
+  const pool = { query: vi.fn(async (sql: string, args: unknown[]) => {
+    if (sql.includes('from management_principals')) return { rows: [principal] }
+    if (sql.includes('from provider_account_accepted_bindings')) return { rows: [{ binding: binding.accountBinding }] }
+    if (sql.includes('from agent_configuration_versions')) return { rows: [{ record: base, version }] }
+    if (sql.startsWith('update operator_conversations')) {
       if (failPersistence) throw new Error('Fixture persistence interrupted.')
       conversation.worker_conversation_binding = JSON.parse(args[1] as string)
       return { rows: [], rowCount: 1 }

@@ -1,5 +1,4 @@
-import { assertGraphTransaction } from '../run-graph/connection.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { assertGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
 import { memoizeNativeRead, nativeCommitCheck } from '../run-graph/nativeBatch.js'
 import type { WorkflowNativeCapture } from '../interactions/workflowNativeCapture.js'
 import type { RunOwnership } from './ownership.js'
@@ -17,14 +16,14 @@ interface LockedLane {
   leaseMs: number
   expiresAt: string
 }
-const lockedLanes = new WeakMap<SqlTransaction, Map<string, LockedLane>>()
+const lockedLanes = new WeakMap<GraphTransactionSql, Map<string, LockedLane>>()
 
 function lost(): never {
   throw new DomainError('SESSION_LANE_LEASE_LOST', 'The native publication lane changed owners.', 409)
 }
 
 /** Register the live lease read by physical validation while its row remains locked. */
-export function holdWorkflowNativePublicationLease(sql: SqlTransaction, owner: RunOwnership,
+export function holdWorkflowNativePublicationLease(sql: GraphTransactionSql, owner: RunOwnership,
   capture: WorkflowNativeCapture, lane: Lane,
   locked: { lease_owner: string | null; lease_ms: number; expires_at: string }): void {
   assertGraphTransaction(sql)
@@ -47,7 +46,7 @@ export function holdWorkflowNativePublicationLease(sql: SqlTransaction, owner: R
 
 /** The row remains locked continuously; renew the same fence that independent heartbeats cannot reach.
  * Inside a native batch the lease renews once after it is registered, not once per frame. */
-export async function renewWorkflowNativePublicationLease(sql: SqlTransaction, owner: RunOwnership,
+export async function renewWorkflowNativePublicationLease(sql: GraphTransactionSql, owner: RunOwnership,
   laneId: string): Promise<void> {
   assertGraphTransaction(sql)
   const lane = lockedLanes.get(sql)?.get(laneId)
@@ -56,7 +55,7 @@ export async function renewWorkflowNativePublicationLease(sql: SqlTransaction, o
   await memoizeNativeRead(sql, `lease-renew:${laneId}`, () => renewLocked(sql, owner, laneId, lane))
 }
 
-async function renewLocked(sql: SqlTransaction, owner: RunOwnership, laneId: string, lane: LockedLane): Promise<void> {
+async function renewLocked(sql: GraphTransactionSql, owner: RunOwnership, laneId: string, lane: LockedLane): Promise<void> {
   await owner.readOneShotFence(sql)
   const renewed = await sql.query<{ expires_at: string }>(`update native_session_lanes set revision=revision+1,updated_at=clock_timestamp(),
     record=jsonb_set(jsonb_set(record,'{revision}',to_jsonb((revision+1)::bigint)),

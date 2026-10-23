@@ -4,10 +4,12 @@ import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_HARNESS_DEFAULTS, type Agent } from '@foreman-code/contracts'
-import { CurrentWorkflowReadResultSchema, type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
+import { CurrentWorkflowReadResultSchema, type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 import { apiClient } from '../../shared/api/client'
-import { useGraphDraftStore, readEditOutbox, graphEditIntentKey } from '../graph'
-import { nextDraftDirty } from '../board-core'
+import { useGraphDraftStore } from '../graph/store'
+import { nextDraftDirty } from '../graph/nextDraft/state'
+import { readEditOutbox } from '../graph/nextDraft/editIntentStorage'
+import { graphEditIntentKey } from '../graph/nextDraft/useGraphEditIntent'
 import { installBoardTestLifecycle, measureBoardWire, mountMeasuredBoard } from './eng05D.testSupport'
 import { meaningfulSaveFixture } from './meaningfulSave.testSupport'
 
@@ -29,7 +31,7 @@ async function mount(f: Fixture) {
 }
 function change(f: Fixture, kind: EditKind = 'update-agent', graphChange = true) {
   act(() => useGraphDraftStore.getState().updateNextDraft(f.key, (current) => {
-    let graph: WorkflowDefinitionCurrent = graphChange ? { ...current.graph, nodes: current.graph.nodes.map((node, index) => index ? node
+    let graph: WorkflowDefinitionV3 = graphChange ? { ...current.graph, nodes: current.graph.nodes.map((node, index) => index ? node
       : { ...node, initialPrompt: 'Atomically published graph instructions' }) } : current.graph
     const agentEdits = { ...current.agentEdits }
     if (kind === 'update-agent') {

@@ -10,9 +10,9 @@ import type { SourceRootRecord } from '@foreman-code/contracts/source-admission'
 import type { ResolvedJobDefinitionSpecRecord } from '@foreman-code/contracts/job-verification'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { requireAuthorization } from '../access/policy.js'
-import type { PostgresCommandCoordinator } from '../commands/index.js'
+import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import type { PostgresSourceService } from '../sources/service.js'
-import { lockActiveWorkspace } from '../workspaces/index.js'
+import { lockActiveWorkspace } from '../workspaces/admission.js'
 import { DomainError } from '../errors.js'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import type { JobSql } from './repository.js'
@@ -30,9 +30,9 @@ import { JobVerificationProfileSchema, JobVerificationRuntimeFingerprintSchema, 
 import { createVerificationProfile, requireReviewedVerificationConfiguration } from './verificationProfiles.js'
 import type { z } from 'zod'
 import { verificationDependencyBasis } from './dependencyBasis.js'
-import { retiredHarnessError } from '../harnesses/retiredHarness.js'
 import { runtimeQualificationFacts, validateRuntimeQualification, qualificationTimeoutMs, qualificationDeadline }
   from './runtimeQualificationFacts.js'
+import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
 
 function usesRetiredHarness(profile: JobRuntimeProfileRecord): boolean {
   return profile.schemaVersion === 2
@@ -361,7 +361,7 @@ export class JobRuntimeProfiles implements JobRuntimeInventory {
     requireAuthorization(await readLiveManagementPrincipal(sql,principal.id),'source_roots:read',{workspaceId:root.binding.workspaceId})
     const profile = await readJobRuntimeProfileVersion(sql, root.binding.workspaceId,
       spec.policy.isolationPolicyId, spec.policy.isolationPolicyRevision)
-    if (usesRetiredHarness(profile)) throw retiredHarnessError()
+    if (usesRetiredHarness(profile)) throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
     const sameNamespace=canonicalJson(profile.root.selection.hostRef)===canonicalJson(root.selection.hostRef)&&canonicalJson(profile.root.registration)===canonicalJson(root.registration)&&profile.root.selection.rootPolicyId===root.selection.rootPolicyId&&profile.root.selection.rootPolicyRevision===root.selection.rootPolicyRevision&&canonicalJson(profile.root.binding.filesystem)===canonicalJson(root.binding.filesystem)&&profile.root.binding.canonicalPath===root.binding.canonicalPath
     if(profile.status!=='qualified'||!profile.measurement||profile.revision!==spec.policy.isolationPolicyRevision||canonicalJson(jobRuntimeProfilePolicy(profile))!==canonicalJson(spec.policy)||!sameNamespace)throw new DomainError('JOB_RUNTIME_UNQUALIFIED','The exact policy/root/host has no current actual qualification.',409)
     if ('verification' in spec) {

@@ -6,7 +6,7 @@ import { assertOwned, publicError } from '../../../scripts/acceptance/safety.mjs
 import { seed } from '../../../scripts/acceptance/scenarios.mjs'
 import { parity } from '../../../scripts/acceptance/parity.mjs'
 import { assertTestDatabase, ownedTestDatabaseUrl } from '../../../scripts/test-resources.mjs'
-import * as schemas from '@foreman-code/contracts/current'
+import * as schemas from '@foreman-code/contracts/wave25'
 import * as sdk from '@modelcontextprotocol/client'
 import { redactKnownSecrets } from '../src/modules/harnesses/secrets.ts'
 

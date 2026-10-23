@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { SavedRunDetailsSchema } from '@foreman-code/contracts/current'
+import { SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
 import type { HarnessNativeEvent } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { faultWorkflowFixture } from './helpers/faultWorkflowFixture.js'

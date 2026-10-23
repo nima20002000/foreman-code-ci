@@ -6,8 +6,8 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, it } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import type { ManagementGrant } from '@foreman-code/contracts/management'
-import { makeCurrentWorkflowFixture, CurrentWorkflowSaveResultSchema, RunStartCurrentInputSchema, WorkflowVersionCurrentSchema,
-  type AcceptedWorkflowRunCurrent, type CurrentWorkflowSaveInput } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture, CurrentWorkflowSaveResultSchema, RunStartV3InputSchema, WorkflowVersionV3Schema,
+  type AcceptedWorkflowRunV3, type CurrentWorkflowSaveInput } from '@foreman-code/contracts/wave25'
 import { buildApp } from '../src/app.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
@@ -22,8 +22,7 @@ import { repeatStartPublication } from '../src/modules/run-graph/repeatStartPubl
 import { assertRepeatCanonicalReceiptLocked } from '../src/modules/run-graph/repeatReceipts.js'
 import { readRepeatRunSourceLocked } from '../src/modules/run-graph/publication.js'
 import { withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
-import { graphHead, seedWorkflowFixture } from './helpers/workflowDatabase.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database, graphHead, seedAgent3 } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 // Real, opt-in, disposable loopback PostgreSQL. The genuine v3 version is saved
@@ -33,9 +32,9 @@ import { postgresEnabled } from './helpers/database.js'
 // source, closure, approval ack, untyped graph fact or fake service is inserted.
 // Positive native ingestion/settlement remain intentionally untested/blocked.
 describe.skipIf(!postgresEnabled)('ENG04 native proof accepted v3 PostgreSQL guard slice', () => {
-  let db: Awaited<ReturnType<typeof migratedDatabase>>
+  let db: Awaited<ReturnType<typeof agent3Database>>
   const apps: FastifyInstance[] = [], owners = new Set<RunOwnership>()
-  beforeAll(async () => { db = await migratedDatabase() }, 60000)
+  beforeAll(async () => { db = await agent3Database() }, 60000)
   afterAll(async () => {
     for (const owner of owners) await owner.release()
     await Promise.all(apps.map((app) => app.close()))
@@ -45,12 +44,12 @@ describe.skipIf(!postgresEnabled)('ENG04 native proof accepted v3 PostgreSQL gua
   async function fixture() {
     const directory = await mkdtemp(join(db.directory, 'native-proof-'))
     const f = makeCurrentWorkflowFixture(randomUUID()), entry = f.version.definition.nodes[0]!, exit = f.version.definition.nodes[1]!
-    f.version = agentWorkflowVersion(WorkflowVersionCurrentSchema.parse({ ...f.version, definition: { ...f.version.definition,
+    f.version = agentWorkflowVersion(WorkflowVersionV3Schema.parse({ ...f.version, definition: { ...f.version.definition,
       executionPolicy: { maxParallelism: 1, maxNodeExecutions: 6 }, nodes: [entry, { ...exit, choice: { outcomes: [
         { outcome: 'pass', target: { kind: 'branch_end' } }, { outcome: 'issues', target: { kind: 'branch_end' } },
       ] } }],
     } }))
-    await seedWorkflowFixture(db.pool, directory, f, { run: false })
+    await seedAgent3(db.pool, directory, f, { run: false })
     const commands = new PostgresCommandCoordinator(db.pool), access = new PostgresAccessService(db.pool)
     const scope = { workspaceIds: [f.scope.workspaceId], workflowIds: [f.scope.workflowId] }
     const issue = (grants: ManagementGrant[]) => access.issue({ name: 'Disposable native proof test caller',
@@ -63,7 +62,7 @@ describe.skipIf(!postgresEnabled)('ENG04 native proof accepted v3 PostgreSQL gua
     ])
     const principal = await access.authenticate(writer.token)
     const locations = new WorkspaceLocationService(db.pool, commands)
-    // Replace seedWorkflowFixture's synthetic location via the REAL location setter and
+    // Replace seedAgent3's synthetic location via the REAL location setter and
     // filesystem identity checks before admission. Do not mock snapshot().
     const location = await locations.set(principal, 'http', { workspaceId: f.scope.workspaceId,
       commandId: randomUUID(), expectedLocationRevision: 1, runnerId: locations.runnerId, rootPath: directory })
@@ -83,7 +82,7 @@ describe.skipIf(!postgresEnabled)('ENG04 native proof accepted v3 PostgreSQL gua
     const response = await app.inject({ method: 'PUT', url, headers: headers(writer.token), payload: save })
     assert.equal(response.statusCode, 200, response.body)
     const saved = CurrentWorkflowSaveResultSchema.parse(response.json())
-    const input = RunStartCurrentInputSchema.parse({ workspaceId: save.workspaceId, workflowId: save.workflowId,
+    const input = RunStartV3InputSchema.parse({ workspaceId: save.workspaceId, workflowId: save.workflowId,
       workflowVersionId: saved.value.currentVersionId, expectedWorkflowRevision: saved.value.revision,
       expectedAgentConfigurationVersionIds: saved.value.version.agentConfigurationVersionIds,
       expectedLocationRevision: location.value.locationRevision, commandId: randomUUID(), input: f.run.input, executionSemanticsVersion: 3 })
@@ -92,7 +91,7 @@ describe.skipIf(!postgresEnabled)('ENG04 native proof accepted v3 PostgreSQL gua
     return { f, app, save, url, saved, writer, issue, headers, input, start, access, locations }
   }
 
-  async function readback(run: AcceptedWorkflowRunCurrent) {
+  async function readback(run: AcceptedWorkflowRunV3) {
     return withExclusiveGraphConnection(db.pool, (connection) => connection.transaction(async (sql) => {
       const accepted = await readAcceptedRepeatRunLocked(sql, run.id)
       await assertRepeatCanonicalReceiptLocked(sql, repeatStartReceipt(run))

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type pg from 'pg'
 import { afterEach, expect, it, vi } from 'vitest'
-import { AcceptedWorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
+import { AcceptedWorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
 import { currentUnitSnapshot } from '../../../test/helpers/currentUnitSnapshot.js'
 import { RunWorktrees } from '../runs/runWorktrees.js'
 import { addGitWorktree, systemGitWorktreePorts, type GitWorktreePorts } from './gitWorktree.js'
@@ -130,7 +130,7 @@ it('sets identity on a Main Run worktree and repairs it when the persisted workt
   }
   const pool = { connect: async () => sql } as unknown as pg.Pool
   const fixtureRun = currentUnitSnapshot('git-identity').run
-  const run = AcceptedWorkflowRunCurrentSchema.parse({ ...fixtureRun,
+  const run = AcceptedWorkflowRunV3Schema.parse({ ...fixtureRun,
     executionLocation: { ...fixtureRun.executionLocation, rootPath: f.origin },
   })
   const worktrees = new RunWorktrees(pool, join(f.root, 'runs'), f.ports)

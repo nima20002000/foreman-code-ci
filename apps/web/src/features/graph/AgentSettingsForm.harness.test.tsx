@@ -6,7 +6,7 @@ import { http, HttpResponse } from 'msw'
 import { afterEach, expect, it, vi } from 'vitest'
 import { server } from '../../mocks/server'
 import { queryKeys } from '../../shared/api/query'
-import { defaultAgentForHarness } from '../agents'
+import { defaultAgentForHarness } from '../agents/agentSettings'
 import { savedClaudeConfiguration } from '../settings/claudeSettings.fixtures'
 import { AgentSettingsForm } from './AgentSettingsForm'
 

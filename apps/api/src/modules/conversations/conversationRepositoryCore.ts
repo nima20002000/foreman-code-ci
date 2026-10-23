@@ -25,12 +25,6 @@ export class ConversationRepositoryCore<Row extends pg.QueryResultRow> {
       [id, this.kind])).rows[0]
   }
 
-  /** Whether this principal has ever sent a delivery command to the exact target. */
-  async hasDeliveryCommandForTarget(principalId: string, targetHash: string, query: SqlQuery = this.pool): Promise<boolean> {
-    return Boolean((await query.query(`select 1 from chat_delivery_commands
-        where principal_id=$1 and target_hash=$2 limit 1`, [principalId, targetHash])).rowCount)
-  }
-
   async markInitialInputOffered(id: string, requestId: string): Promise<void> {
     const changed = await this.pool.query(`update operator_conversation_turns t
       set payload=payload || '{"initialInputOffered":true}'::jsonb

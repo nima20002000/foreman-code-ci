@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -6,7 +7,6 @@ import { CiIntegrationCoverageSchema, type CiCoverageSelection, type Integration
 import { compactIntegrationCoverage, usableIntegrationCoverage } from '@foreman-code/contracts/ci-coverage'
 import { ciInfrastructureFile } from '@foreman-code/contracts/ci-import-graph'
 import type { CiCommits } from './serviceTypes.js'
-import { sha256Hex } from '@foreman-code/contracts/server-kit'
 
 const COVERAGE_ARTIFACT_LIMIT = 32
 
@@ -17,7 +17,7 @@ export class IntegrationCoverageStore {
   constructor(private readonly root = join(homedir(), '.cache/foreman-code/integration-coverage')) {}
 
   private directory(repository: string) {
-    return join(this.root, sha256Hex(repository))
+    return join(this.root, createHash('sha256').update(repository).digest('hex'))
   }
 
   private async candidates(repository: string): Promise<string[]> {

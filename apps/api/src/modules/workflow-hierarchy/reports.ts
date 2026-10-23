@@ -1,10 +1,10 @@
 import { HierarchyReportSchema, type HierarchyReport } from '@foreman-code/contracts'
-import { sameWorkflowValue } from '@foreman-code/contracts/current'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
+import type { GraphTransactionSql } from '../run-graph/connection.js'
 import { DomainError } from '../errors.js'
 
 /** Call inside the transaction that commits the corresponding authoritative lifecycle/result fact. */
-export async function appendHierarchyReportLocked(sql: SqlTransaction, raw: HierarchyReport): Promise<HierarchyReport> {
+export async function appendHierarchyReportLocked(sql: GraphTransactionSql, raw: HierarchyReport): Promise<HierarchyReport> {
   const report = HierarchyReportSchema.parse(raw)
   const { agent, execution } = report
   // Assign cursor order only while holding the same Run lock as its lifecycle owner.

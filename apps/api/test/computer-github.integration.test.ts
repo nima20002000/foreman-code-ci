@@ -14,11 +14,11 @@ import { probeComputerAccounts, type AccountProbePorts } from '../src/modules/co
 import { ComputerAccountsService } from '../src/modules/computers/accounts.js'
 import { ComputerGitHubService } from '../src/modules/computers/github.js'
 import { GitHubLoginRunner } from '../src/modules/computers/githubLogin.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 it.skipIf(!postgresEnabled).each(['structured', 'text'])('verifies GitHub accounts through MCP with %s status', async format => {
-  const database = await migratedDatabase()
+  const database = await agent3Database()
   const credentialPath = join(database.directory, 'github-account.json')
   await writeFile(credentialPath, JSON.stringify('previous-owner'))
   const mainId = (await database.pool.query<{ id: string }>('select id from application_installation')).rows[0]!.id

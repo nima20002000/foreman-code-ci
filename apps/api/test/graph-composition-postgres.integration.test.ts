@@ -1,10 +1,10 @@
 import { readPublicProjectionLocked } from '../src/modules/run-graph/compactSnapshot.js'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
-  canonicalGraphJson, RepeatGraphPageCurrentSchema, reduceRepeatGraphPageCurrent, RUN_GRAPH_LIMITS,
-  type RepeatGraphFactCurrent,
-} from '@foreman-code/contracts/current'
-import { currentDatabase, postgresEnabled } from './helpers/database.js'
+  canonicalGraphJson, RepeatGraphPageV3Schema, reduceRepeatGraphPageV3, RUN_GRAPH_LIMITS,
+  type RepeatGraphFactV3,
+} from '@foreman-code/contracts/wave25'
+import { currentDatabase as agent3Database, postgresEnabled } from './helpers/database.js'
 import {
   graphFixture, graphPosition, ownedGraph, changeRunState, privateCanary,
   type GraphFixture, type GraphTestDatabase,
@@ -23,7 +23,7 @@ import { insertRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
 describe.skipIf(!postgresEnabled)('ENG04 graph composition / disposable PostgreSQL', () => {
   let db: GraphTestDatabase
   const fixtures: GraphFixture[] = []
-  beforeAll(async () => { db = await currentDatabase() }, 60000)
+  beforeAll(async () => { db = await agent3Database() }, 60000)
   afterEach(async () => { await Promise.all(fixtures.splice(0).map((t) => t.app.close())) })
   afterAll(async () => { await db?.close() })
   async function fixture(insert = true) {
@@ -72,9 +72,9 @@ describe.skipIf(!postgresEnabled)('ENG04 graph composition / disposable PostgreS
     // Each helper releases the old real owner. The new reader has no cached cut.
     const restarted = new RepeatGraphReadService(db.pool, { qualifiedReads: true })
     const after = await restarted.snapshot(t.writer.principal, t.readRequest)
-    const page = RepeatGraphPageCurrentSchema.parse(await events(t, '1'))
+    const page = RepeatGraphPageV3Schema.parse(await events(t, '1'))
     expect(page).toMatchObject({ throughSequence: '13', headSequence: '13', hasMore: false })
-    expect(reduceRepeatGraphPageCurrent(initial, page)).toEqual(after)
+    expect(reduceRepeatGraphPageV3(initial, page)).toEqual(after)
     await changeRunState(db, t, 'waiting')
     expect(await graphPosition(db, t)).toBe('13')
     expect(await snapshot(t)).toEqual(after)
@@ -91,8 +91,8 @@ describe.skipIf(!postgresEnabled)('ENG04 graph composition / disposable PostgreS
     await withExclusiveGraphConnection(db.pool, (connection) => connection.transaction(async (sql) =>
       publishRepeatStoppedRunLocked(await openRunGraphPublication(sql, t.scope, readPublicProjectionLocked))))
     expect(await graphPosition(db, t)).toBe('2')
-    const page = RepeatGraphPageCurrentSchema.parse(await events(t, '1'))
-    expect(reduceRepeatGraphPageCurrent(initial, page)).toEqual(await snapshot(t))
+    const page = RepeatGraphPageV3Schema.parse(await events(t, '1'))
+    expect(reduceRepeatGraphPageV3(initial, page)).toEqual(await snapshot(t))
     let mutated = false
     await expect(ownedGraph(db, t, (owner) => owner.oneShotConnection().transaction(async (sql) => {
       const publication = await openRunGraphPublication(sql, t.scope, readPublicProjectionLocked)
@@ -149,7 +149,7 @@ describe.skipIf(!postgresEnabled)('ENG04 graph composition / disposable PostgreS
     let before: Awaited<ReturnType<typeof snapshot>>
     beforeEach(async () => { t = await fixture(); before = await snapshot(t) })
     it('uses one bounded reset for an oversized atomic change and retains every source after pruning its batch', async () => {
-    const fact: RepeatGraphFactCurrent = { type: 'repeat.run.state', state: before.state.run }
+    const fact: RepeatGraphFactV3 = { type: 'repeat.run.state', state: before.state.run }
     const count = RUN_GRAPH_LIMITS.batchEvents + 1
     // White-box journal capacity test: distinct test source identities point to
     // the ACTUAL same physical metadata. No engine/native evidence is invented.
@@ -190,7 +190,7 @@ describe.skipIf(!postgresEnabled)('ENG04 graph composition / disposable PostgreS
         evidence: { sourceKind: 'run', sourceId: id, sourceRevision: '1' }, sourceDigest: graphSourceDigest(id),
       }, owner, async () => [{ type: 'repeat.run.state', state: initial.state.run }])
     }))
-    const original = RepeatGraphPageCurrentSchema.parse(await events(t, '1'))
+    const original = RepeatGraphPageV3Schema.parse(await events(t, '1'))
     const reversed = { ...original.batches[0]!, events: [...original.batches[0]!.events].reverse() }
     // Every individual source/effect receipt is unchanged. Only order differs.
     await db.pool.query('update run_graph_batches set payload=$2 where run_id=$1 and sequence=2', [t.run.id, canonicalGraphJson(reversed)])

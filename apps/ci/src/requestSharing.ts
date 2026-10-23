@@ -1,9 +1,9 @@
+import { createHash } from 'node:crypto'
 import type pg from 'pg'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { CI_SHARING_REQUESTERS_LIMIT, CiRunOutputSchema, CiRunRecordSchema, type CiRunInput, type CiRunOutput,
   type CiRunRecord, type CiSharing } from '@foreman-code/contracts'
 import type { CiContext, SqlQuery } from './environment.js'
-import { sha256Hex } from '@foreman-code/contracts/server-kit'
 
 /** Who asked for a ticket group: an Operator or another principal, and the Agent execution when an Agent asked. */
 export interface CiRequester { principalId: string; executionId: string | null }
@@ -22,10 +22,10 @@ const sameSupersessionRequester = (requester: CiRequester): Leaving => candidate
  * flag. The workspace scopes every lookup. Smoke runs target one computer and never share. */
 export function ciRequestKey(input: CiRunInput, run: CiRunRecord): string | null {
   if (input.smokeComputer) return null
-  return sha256Hex(canonicalJson({ repository: run.repository, commit: run.commit, suite: input.suite,
+  return createHash('sha256').update(canonicalJson({ repository: run.repository, commit: run.commit, suite: input.suite,
     scope: run.scope, baseCommit: input.baseCommit ?? null,
     files: input.files === undefined ? null : [...new Set(input.files)].sort(),
-    partitions: input.partitions ?? null, gate: input.gate === true }))
+    partitions: input.partitions ?? null, gate: input.gate === true })).digest('hex')
 }
 
 async function readRequesters(sql: SqlQuery, workspaceId: string, groupId: string): Promise<Requester[]> {

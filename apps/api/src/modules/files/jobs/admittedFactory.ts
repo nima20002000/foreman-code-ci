@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import type { DeviceEndpoint } from '../../devices/deviceEndpoint.js'
 import type { JobPublicationAuthority } from '../../jobs/authority.js'
-import { ResumableByteTransferService } from '../../byte-transfer/index.js'
+import { ResumableByteTransferService } from '../../byte-transfer/service.js'
 import { createCanonicalJobArtifactPort } from './factory.js'
 import { PostgresJobOutputAdmission } from './outputAdmission.js'
 import { VerifiedJobOutputReader } from './transferReader.js'

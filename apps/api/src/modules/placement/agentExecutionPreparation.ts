@@ -1,15 +1,15 @@
 import type { HarnessExecution } from '@foreman-code/contracts'
-import type { AcceptedWorkflowRunCurrent } from '@foreman-code/contracts/current'
+import type { AcceptedWorkflowRunV3 } from '@foreman-code/contracts/wave25'
 import type { NativeExecutionPlacement } from '@foreman-code/contracts/node-placement'
 import type { SourceMaterializationRecord } from '@foreman-code/contracts/source-admission'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
-import { beforeGraphCommit } from '../run-graph/index.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
+import { beforeGraphCommit } from '../run-graph/connection.js'
 import type { SourceAdmissionPort } from '../sources/admissionPorts.js'
 import { sourceBindingHash } from '../sources/bindingHash.js'
 import { posix } from 'node:path'
-import { sameWorkflowValue } from '@foreman-code/contracts/current'
-import { readLiveManagementPrincipal } from '../access/index.js'
+import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
+import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import type { RunOwnership } from '../runs/ownership.js'
 import { repeatRuntimeDirectory } from '../runs/repeatRepositoryHost.js'
 import { DomainError } from '../errors.js'
@@ -18,14 +18,14 @@ import { bindNativeExecution } from './executionBinding.js'
 import type { AgentPlacementProducer } from './agentProducer.js'
 
 type NativeSourcePort = SourceAdmissionPort & {
-  adoptFinalBinding(sql: SqlQuery, principal: ManagementPrincipal, record: SourceMaterializationRecord, hash: string): Promise<SourceMaterializationRecord>
+  adoptFinalBinding(sql: GraphSqlClient, principal: ManagementPrincipal, record: SourceMaterializationRecord, hash: string): Promise<SourceMaterializationRecord>
 }
 /** Called only after eligible execution/intent COMMIT. Source copying stays
  * outside G1; final materialized evidence is adopted on the original owner. */
 export class AgentExecutionPreparation {
   constructor(private readonly sources: NativeSourcePort, private readonly producer: AgentPlacementProducer) {}
-  private async currentPurpose(sql: SqlQuery, owner: RunOwnership,
-    run: AcceptedWorkflowRunCurrent, execution: HarnessExecution) {
+  private async currentPurpose(sql: GraphSqlClient, owner: RunOwnership,
+    run: AcceptedWorkflowRunV3, execution: HarnessExecution) {
     owner.assertOwned()
     if (owner.runId !== run.id || execution.runId !== run.id) this.conflict()
     const resident = await sql.query(`select 1 from harness_executions e
@@ -40,7 +40,7 @@ export class AgentExecutionPreparation {
     await owner.readOneShotFence(sql)
     return { purpose: 'resident' as const }
   }
-  async prepare(owner: RunOwnership, run: AcceptedWorkflowRunCurrent, execution: HarnessExecution) {
+  async prepare(owner: RunOwnership, run: AcceptedWorkflowRunV3, execution: HarnessExecution) {
     const accepted = await owner.oneShotConnection().transaction(async sql => {
       const placement = await readAcceptedPlacement(sql, run.id, execution.workflowNodeId)
       if (!placement) return undefined

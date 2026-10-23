@@ -18,7 +18,7 @@ import { PostgresOperatorConversationRepository } from '../src/modules/conversat
 import type { PostgresOperatorRepository } from '../src/modules/operators/postgres.js'
 import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart, NativeTurnInput } from '../src/modules/harnesses/port.js'
 import type { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
-import { context, ScriptedConversationNative, ScriptedConversationStore, eventually } from './helpers/agentChatF1.js'
+import { context, F1Native, F1Store, eventually } from './helpers/agentChatF1.js'
 import { memoryConversation, operator, ReviewManager } from './fixtures/operatorChatMemory.js'
 
 const snapshot = (text: string, revision = 1): PromptSettingSnapshot => ({
@@ -148,11 +148,11 @@ describe('conversation prompt snapshots', () => {
 
   it('passes the stored Agent revision when a chat attaches after an API restart', async () => {
     const root = await mkdtemp(join(tmpdir(), 'chat-prompt-'))
-    const store = new ScriptedConversationStore()
+    const store = new F1Store()
     store.row.record.workingDirectory = root
     store.row.record.systemPrompt = snapshot('Original app instructions', 4)
     const starts: NativeSessionStart[] = []
-    class Native extends ScriptedConversationNative {
+    class Native extends F1Native {
       override async attachSession(_session?: NativeSessionReference, start?: NativeSessionStart) {
         if (start) starts.push(structuredClone(start))
         return this.session

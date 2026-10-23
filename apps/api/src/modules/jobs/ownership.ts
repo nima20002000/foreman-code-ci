@@ -1,9 +1,8 @@
 import type pg from 'pg'
 import { createDedicatedClient } from '../../infrastructure/pool.js'
-import { ExclusiveGraphConnection, assertGraphTransaction } from '../run-graph/connection.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { ExclusiveGraphConnection, assertGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
 import { DomainError } from '../errors.js'
-import { ignoreError } from '../diagnostics/index.js'
+import { ignoreError } from '../diagnostics/ignoredError.js'
 const JOB_OWNER_NAMESPACE=810038
 /** Same PostgreSQL session-lock authority primitive as Runs, with a real job namespace.
  * This acquires no scheduling capability and never fabricates a Run identity. */
@@ -27,7 +26,7 @@ export class JobOwnership {
   }
   private readonly handleLoss=()=>{if(this.lost||this.released)return;this.lost=true;this.onLost()}
   assertOwned():void {if(this.lost||this.released)throw new DomainError('JOB_OWNERSHIP_LOST','The main job-owner session disconnected; reconcile the original execution.',409)}
-  async readFence(sql:SqlTransaction):Promise<{ownerId:string;fence:string}> {
+  async readFence(sql:GraphTransactionSql):Promise<{ownerId:string;fence:string}> {
     assertGraphTransaction(sql);this.assertOwned()
     const row=(await sql.query<{owner_id:string;fence:string}>(`select pg_backend_pid()::text owner_id,
       (extract(epoch from a.backend_start)*1000000)::bigint::text fence from pg_stat_activity a

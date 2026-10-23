@@ -8,7 +8,7 @@ import {
   type RepeatDecisionV1,
   type RepeatOccurrenceV1,
   type RepeatWorkflowVersionV1,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 
 import { ExclusiveGraphConnection } from '../../src/modules/run-graph/connection.js'
 import { DomainError } from '../../src/modules/errors.js'
@@ -29,7 +29,7 @@ import {
 } from '../../src/modules/runs/repeatResolution.js'
 import { repeatTerminalResolution } from '../../src/modules/runs/repeatNode.js'
 
-export const REPEAT_FIXTURE_AT = '2026-09-25T02:21:00.000Z'
+export const ENG04_REPEAT_AT = '2026-09-25T02:21:00.000Z'
 
 const edge = (id: string, source: string, target: string) => ({ id, kind: 'execution' as const, source, target })
 
@@ -197,7 +197,7 @@ export function executionFor(fixture: RepeatFixture, nodeId: string, id: string,
     attempt,
     state: 'queued',
     input: {},
-    createdAt: REPEAT_FIXTURE_AT,
+    createdAt: ENG04_REPEAT_AT,
   })
 }
 
@@ -205,7 +205,7 @@ export function successfulExecution(value: HarnessExecution, output: unknown = {
   return HarnessExecutionSchema.parse({
     ...value,
     state: 'completed',
-    finishedAt: REPEAT_FIXTURE_AT,
+    finishedAt: ENG04_REPEAT_AT,
     result: { outcome: 'succeeded', output },
   })
 }
@@ -214,7 +214,7 @@ export function retryableFailure(value: HarnessExecution, code = 'PROVIDER_TRANS
   return HarnessExecutionSchema.parse({
     ...value,
     state: 'completed',
-    finishedAt: REPEAT_FIXTURE_AT,
+    finishedAt: ENG04_REPEAT_AT,
     result: { outcome: 'failed', error: { code, message: 'provider-shaped transient failure', retryable: true } },
   })
 }
@@ -240,7 +240,7 @@ export function exitDecision(fixture: RepeatFixture, occurrence: RepeatOccurrenc
   )
   const choice = fixture.version.definition.nodes.find((node) => node.id === 'review')!.choice!
   const envelope = parseRepeatExitResultV1(completed.result, choice)
-  const decision = decideRepeatExit(fixture.version, occurrence, completed, envelope, REPEAT_FIXTURE_AT)
+  const decision = decideRepeatExit(fixture.version, occurrence, completed, envelope, ENG04_REPEAT_AT)
   return { completed, decision }
 }
 
@@ -420,7 +420,7 @@ export function createRepeatHarness(fixture = makeSimpleRepeatFixture()): Repeat
         if (saved) state = saved
         saved = undefined
       } else if (q.includes('from runs r join workflow_versions')) {
-        rows = [{ run: state.run, version: fixture.version, stopped: state.stopped, state: state.run.executionState, now: REPEAT_FIXTURE_AT }]
+        rows = [{ run: state.run, version: fixture.version, stopped: state.stopped, state: state.run.executionState, now: ENG04_REPEAT_AT }]
       } else if (q.startsWith('select ( (select count(*) from harness_executions')) {
         rows = [{ total: String([...state.executions.values()]
           .filter((item) => item.execution_run_id === v[0]).length) }]

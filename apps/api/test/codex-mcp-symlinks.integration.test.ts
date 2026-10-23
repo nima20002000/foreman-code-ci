@@ -7,7 +7,7 @@ import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { HarnessMcpSettingsService } from '../src/modules/harnesses/mcpSettings.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { lstat, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -49,7 +49,7 @@ it.each(['directory', 'file'] as const)('writes through a same-user %s link and 
   const parent = join(homedir(), '.cache', 'foreman-tmp')
   await mkdir(parent, { recursive: true })
   const directory = await mkdtemp(join(parent, 'codex-config-link-'))
-  const database = await migratedDatabase()
+  const database = await agent3Database()
   const access = new PostgresAccessService(database.pool)
   const commands = new PostgresCommandCoordinator(database.pool)
   const adapter = new CodexMcpConnections('/fixture/codex', directory)

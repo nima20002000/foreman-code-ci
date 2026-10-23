@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema, CurrentWorkflowSaveInputSchema,
-  CurrentWorkflowSaveResultSchema, ExecutableWorkflowCurrentSchema } from '@foreman-code/contracts/current'
+  CurrentWorkflowSaveResultSchema, ExecutableWorkflowV3Schema } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { remoteReviewerPlacementFixture } from './helpers/remoteReviewerPlacement.js'
-import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { graphRpcValue } from './graph-composition-fixture.js'
 
@@ -13,8 +13,8 @@ describe.skipIf(!postgresEnabled)('remote designated Orchestrator authoring over
     const f = await currentOperatorIntegration({ approvalNodeIds: [] })
     try {
       const { baseline, remote } = remoteReviewerPlacementFixture()
-      expect(ExecutableWorkflowCurrentSchema.safeParse({ version: remote.version, configurations: remote.configurations }).success).toBe(true)
-      await seedWorkflowFixture(f.db.pool, f.db.directory, baseline, { run: false })
+      expect(ExecutableWorkflowV3Schema.safeParse({ version: remote.version, configurations: remote.configurations }).success).toBe(true)
+      await seedAgent3(f.db.pool, f.db.directory, baseline, { run: false })
       const scope = { workspaceId: baseline.scope.workspaceId, workflowId: baseline.scope.workflowId }
       const read = await f.client.callTool({ name: CURRENT_WORKFLOW_TOOLS.saved, arguments: scope })
       const before = CurrentWorkflowReadResultSchema.parse(graphRpcValue(read as Parameters<typeof graphRpcValue>[0]))

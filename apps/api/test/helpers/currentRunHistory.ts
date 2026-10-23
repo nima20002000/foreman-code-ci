@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { AgentSchema } from '@foreman-code/contracts'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
 import { WorkflowManagementService } from '../../src/modules/workflows/management.js'

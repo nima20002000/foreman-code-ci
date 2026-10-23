@@ -1,6 +1,9 @@
 import type { Agent } from '@foreman-code/contracts'
-import type { WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
-import { workflowToGraph, LAYOUT_GAP_Y, editorAgents, type NextDraftEdit } from '../../board-core'
+import type { WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import { workflowToGraph } from '../mapper'
+import { LAYOUT_GAP_Y } from '../hierarchyLayout'
+import { editorAgents } from './agentEdits'
+import type { NextDraftEdit } from './state'
 
 type Box = { x: number; y: number; width: number; height: number }
 /** The part of the Board the person currently sees, in Board coordinates. */
@@ -10,7 +13,7 @@ export type BoardView = { x: number; y: number; width: number; height: number
 
 /** Pins every node where the Board shows it now, so adding, pasting, connecting or removing a node never
  * re-lays out (and moves) the others. Returns the same graph when every node is already placed. */
-export function pinGraphLayout(graph: WorkflowDefinitionCurrent, agents: readonly Agent[]): WorkflowDefinitionCurrent {
+export function pinGraphLayout(graph: WorkflowDefinitionV3, agents: readonly Agent[]): WorkflowDefinitionV3 {
   if (graph.nodes.every(node => node.position?.manual)) return graph
   const shown = new Map(workflowToGraph({ workflow: graph, agents }).nodes.map(node => [node.id, node.position]))
   return { ...graph, nodes: graph.nodes.map(node => {

@@ -32,7 +32,7 @@ import { MainWorkerConversationBridge } from './workerBridge.js'
 import { DomainError } from '../errors.js'
 import { MainWorkerConversationMcp, type WorkerConversationAgentMcp } from './mainWorkerMcp.js'
 import type { PostgresAccessService } from '../access/postgres.js'
-import type { SelectedMainMcpForward } from '../placement/index.js'
+import type { SelectedMainMcpForward } from '../placement/workerMcpRelay.js'
 import { ApprovedRootAllowlistSchema, WORKSPACE_ROOT_EXTENSION } from '@foreman-code/contracts/workspace-root-policies'
 import { workerOperatorDirectory } from './workerOperatorDirectory.js'
 import { AgentChatDirectoryBindingSchema } from '@foreman-code/contracts/agent-chat'
@@ -46,9 +46,9 @@ import { readAgentChatConfigurationTransition, readRunChatSkillsTransition } fro
 import { validWorkerConfigurationTransition } from './workerConfigurationTransition.js'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import { definedProperties } from '../definedProperties.js'
-import { readExecutionPlacement, readNativePlacement } from '../placement/index.js'
+import { readExecutionPlacement, readNativePlacement } from '../placement/persistence.js'
 import type { WorkerConversationBinding } from '@foreman-code/contracts/remote-execution-rpc'
-import { legacyProviderAccountBinding, readProviderAccountBinding } from '../provider-accounts/index.js'
+import { legacyProviderAccountBinding, readProviderAccountBinding } from '../provider-accounts/acceptedBindings.js'
 
 type ConversationClaudeOwner = Extract<ClaudeDomainBinding, { kind: 'operator' | 'agent' }>
 

@@ -5,8 +5,9 @@ import { protectedKey, rotateProtectedSession } from '../../../shared/api/protec
 import { fixture } from './core.cases'
 import { DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
 import { savedClaudeConfiguration } from '../../settings/claudeSettings.fixtures'
-import { createHarnessEditor, switchHarnessEditor } from '../../settings'
-import { type AgentForm, nextDraftKey, newNextDraft } from '../../board-core'
+import { createHarnessEditor, switchHarnessEditor } from '../../settings/harnessEditor'
+import type { AgentForm } from './agentForm'
+import { nextDraftKey, newNextDraft } from './state'
 import { acknowledgeEditOutbox, clearEditIntentStorage, readEditOutbox, readEditSnapshot,
   reserveEditOutbox, storeEditSnapshot, withEditIntentLock, type EditIntentOutbox } from './editIntentStorage'
 

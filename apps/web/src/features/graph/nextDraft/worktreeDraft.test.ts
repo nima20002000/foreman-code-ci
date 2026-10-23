@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { sameExecutableWorkflow, WorkflowDefinitionCurrentSchema } from '@foreman-code/contracts/current'
+import { sameExecutableWorkflow, WorkflowDefinitionV3Schema } from '@foreman-code/contracts/wave25'
 import { nativeNode } from '../../../shared/mocks/nativeFixtureTypes'
 import { fixture } from './core.cases'
-import {
-  discardMeaningfulChanges, draftOperations, mergeAcknowledgement, editNextDraft, newNextDraft, nextDraftDirty,
-  redoNextDraft, undoNextDraft,
-} from '../../board-core'
+import { discardMeaningfulChanges, draftOperations, mergeAcknowledgement } from './model'
+import { editNextDraft, newNextDraft, nextDraftDirty, redoNextDraft, undoNextDraft } from './state'
 import { worktreeFixture } from '../../workflow-board/worktree.fixtures'
 
 const settings = { rootBinding: worktreeFixture('workspace').rootBinding, branchPrefix: 'foreman/site' }
@@ -16,7 +14,7 @@ describe('worktree draft changes', () => {
     const graph = { ...context.draft.graph, defaultWorktree: settings }
     expect(draftOperations(context, graph)).toEqual([{ type: 'workflow.set_worktree', worktree: settings }])
     expect(sameExecutableWorkflow(context.draft.graph, graph)).toBe(false)
-    expect(WorkflowDefinitionCurrentSchema.parse(JSON.parse(JSON.stringify(graph))).defaultWorktree).toEqual(settings)
+    expect(WorkflowDefinitionV3Schema.parse(JSON.parse(JSON.stringify(graph))).defaultWorktree).toEqual(settings)
   })
 
   it('undoes, redoes and discards the worktree setting while keeping independent geometry', () => {

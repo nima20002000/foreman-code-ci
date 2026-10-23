@@ -1,20 +1,23 @@
+import { operatorCatalogNames } from './support/operatorCatalog.js'
 import { randomUUID } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import {
   ManagementActionSchema, WorkflowReorderResultSchema,
   type ManagementPrincipal, type WorkflowReorderInput,
 } from '@foreman-code/contracts/management'
-import { decodeMcpToolResult, WorkflowSummaryPageSchema } from '@foreman-code/contracts/operator-mcp'
-import { SavedManagedWorkflowPageSchema } from '@foreman-code/contracts/current'
+import { decodeMcpToolResult, OperatorToolSchemaResultSchema, WorkflowSummaryPageSchema } from '@foreman-code/contracts/operator-mcp'
+import { SavedManagedWorkflowPageSchema } from '@foreman-code/contracts/wave25'
 import { describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
+import { ScheduleOperatorCapabilitiesSchema } from '../src/mcp/operator/tools/workflowSchedules.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { WorkspaceManagementService } from '../src/modules/workspaces/management.js'
+import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 import { currentDatabase } from './helpers/database.js'
 
 async function workflowOrderFixture() {
@@ -66,6 +69,10 @@ async function workflowOrderFixture() {
 
 type Fixture = Awaited<ReturnType<typeof workflowOrderFixture>>
 
+async function toolNames(client: Client): Promise<string[]> {
+  return operatorCatalogNames(client)
+}
+
 async function listPage(f: Fixture, client = f.client, token = f.owner.token, cursor?: string) {
   const input = { workspaceId: f.workspaceId, limit: 2, ...(cursor ? { cursor } : {}) }
   const response = await f.app.inject({ method: 'GET',
@@ -96,18 +103,13 @@ async function issueCaller(f: Fixture, grants: ManagementPrincipal['grants']) {
   return { ...issued, client: await f.connect(issued.token) }
 }
 
-function reorder(f: Fixture, token: string, input: WorkflowReorderInput) {
-  return f.app.inject({ method: 'PUT', url: `/api/management/workspaces/${input.workspaceId}/workflows/order`,
-    headers: { authorization: `Bearer ${token}` }, payload: input })
+async function expectReorderError(client: Client, input: WorkflowReorderInput, code: string) {
+  const result = await client.callTool({ name: 'workflow_reorder', arguments: input })
+  expect(result.isError).toBe(true)
+  expect(decodeMcpToolResult(result)).toMatchObject({ error: { code } })
 }
 
-async function expectReorderError(f: Fixture, token: string, input: WorkflowReorderInput, code: string) {
-  const result = await reorder(f, token, input)
-  expect(result.statusCode).toBeGreaterThanOrEqual(400)
-  expect(result.json()).toMatchObject({ error: { code } })
-}
-
-describe('persisted workflow ordering through authenticated HTTP, read back through MCP and HTTP', () => {
+describe('persisted workflow ordering through authenticated MCP and HTTP', () => {
   it('reorders across scoped pages, retains omitted slots, persists readback and replays one audited command', async () => {
     const f = await workflowOrderFixture()
     try {
@@ -115,28 +117,46 @@ describe('persisted workflow ordering through authenticated HTTP, read back thro
       const original = await readOrder(f)
       expect(original.ids).toEqual(ids)
       expect(original.orderRevision).toBe(5)
+      expect(await toolNames(f.client)).toContain('workflow_reorder')
+      const capability = ScheduleOperatorCapabilitiesSchema.parse(decodeMcpToolResult(await f.client.callTool({
+        name: 'operator_get_capabilities', arguments: { detail: 'full' },
+      })))
+      expect(capability.requirements?.find((entry) => entry.name === 'workflow_reorder')?.actions)
+        .toEqual(['workflows:update', 'workflows:read'])
+      const schema = OperatorToolSchemaResultSchema.parse(decodeMcpToolResult(await f.client.callTool({
+        name: 'operator_tool_schema_get', arguments: { name: 'workflow_reorder', includeOutputSchema: true },
+      })))
+      expect(schema.permissionRequirements.actions).toEqual(['workflows:update', 'workflows:read'])
+      expect(schema.outputSchema).toBeDefined()
 
       const first = await listPage(f)
       const httpInput = { workspaceId: f.workspaceId, commandId: randomUUID(),
         expectedRevision: first.orderRevision, workflowIds: [ids[1]!, ids[0]!] }
-      const http = await reorder(f, f.owner.token, httpInput)
+      const http = await f.app.inject({ method: 'PUT',
+        url: `/api/management/workspaces/${f.workspaceId}/workflows/order`,
+        headers: { authorization: `Bearer ${f.owner.token}` }, payload: httpInput })
       expect(http.statusCode, http.body).toBe(200)
       const httpResult = WorkflowReorderResultSchema.parse(http.json())
       expect(httpResult.value).toEqual({ workspaceId: f.workspaceId,
         workflowIds: httpInput.workflowIds, orderRevision: 6 })
-      const httpReplay = WorkflowReorderResultSchema.parse((await reorder(f, f.owner.token, httpInput)).json())
+      const httpReplay = WorkflowReorderResultSchema.parse(decodeMcpToolResult(await f.client.callTool({
+        name: 'workflow_reorder', arguments: httpInput,
+      })))
       expect(httpReplay).toEqual({ ...httpResult, replayed: true })
 
       const scopedIds = [ids[0]!, ids[2]!, ids[4]!]
       const scoped = await issueCaller(f, [{ actions: ['workflows:read', 'workflows:update'],
         scope: { workspaceIds: [f.workspaceId], workflowIds: scopedIds } }])
+      expect(await toolNames(scoped.client)).toContain('workflow_reorder')
       const scopedFirst = await listPage(f, scoped.client, scoped.token)
       const scopedLast = await listPage(f, scoped.client, scoped.token, scopedFirst.pageInfo.nextCursor!)
       expect(scopedFirst.items.map((item) => item.workflow.id)).toEqual(scopedIds.slice(0, 2))
       expect(scopedLast.items.map((item) => item.workflow.id)).toEqual(scopedIds.slice(2))
       const input = { workspaceId: f.workspaceId, commandId: randomUUID(),
         expectedRevision: scopedFirst.orderRevision, workflowIds: [...scopedIds].reverse() }
-      const result = WorkflowReorderResultSchema.parse((await reorder(f, scoped.token, input)).json())
+      const result = WorkflowReorderResultSchema.parse(decodeMcpToolResult(await scoped.client.callTool({
+        name: 'workflow_reorder', arguments: input,
+      })))
       expect(result).toEqual({ value: { workspaceId: f.workspaceId, workflowIds: input.workflowIds,
         orderRevision: 7 }, replayed: false })
       expect(await readOrder(f, scoped.client, scoped.token)).toEqual({ ids: input.workflowIds, orderRevision: 7 })
@@ -165,16 +185,18 @@ describe('persisted workflow ordering through authenticated HTTP, read back thro
         headers: { authorization: `Bearer ${f.owner.token}` } })
       expect(staleHttp.statusCode).toBe(409)
 
-      const replay = WorkflowReorderResultSchema.parse((await reorder(f, scoped.token, input)).json())
+      const replay = WorkflowReorderResultSchema.parse(decodeMcpToolResult(await scoped.client.callTool({
+        name: 'workflow_reorder', arguments: input,
+      })))
       expect(replay).toEqual({ ...result, replayed: true })
-      await expectReorderError(f, scoped.token, { ...input, workflowIds: scopedIds }, 'COMMAND_ID_CONFLICT')
-      await expectReorderError(f, scoped.token, { ...input, commandId: randomUUID() }, 'REVISION_CONFLICT')
+      await expectReorderError(scoped.client, { ...input, workflowIds: scopedIds }, 'COMMAND_ID_CONFLICT')
+      await expectReorderError(scoped.client, { ...input, commandId: randomUUID() }, 'REVISION_CONFLICT')
       expect(await readOrder(f)).toEqual({ ids: expected, orderRevision: 7 })
       const audit = await f.database.pool.query<{ source: string; count: string }>(
         `select source, count(*) from management_audit where action = 'workflow.reorder'
          and outcome = 'succeeded' group by source order by source`,
       )
-      expect(audit.rows).toEqual([{ source: 'http', count: '2' }])
+      expect(audit.rows).toEqual([{ source: 'http', count: '1' }, { source: 'mcp', count: '1' }])
 
       const appended = (await f.workflows.create(f.owner.principal, 'mcp', {
         workspaceId: f.workspaceId, name: 'Appended workflow', commandId: randomUUID(),
@@ -198,15 +220,20 @@ describe('persisted workflow ordering through authenticated HTTP, read back thro
       const input = { workspaceId: f.workspaceId, commandId: randomUUID(),
         expectedRevision: original.orderRevision, workflowIds: [ids[1]!, ids[0]!] }
       const reader = await issueCaller(f, [{ actions: ['workflows:read'], scope: { workspaceIds: [f.workspaceId] } }])
-      const deniedHttp = await reorder(f, reader.token, input)
+      expect(await toolNames(reader.client)).not.toContain('workflow_reorder')
+      await expectMcpAccessDenied(reader.client.callTool({ name: 'workflow_reorder', arguments: input }))
+      const deniedHttp = await f.app.inject({ method: 'PUT',
+        url: `/api/management/workspaces/${f.workspaceId}/workflows/order`,
+        headers: { authorization: `Bearer ${reader.token}` }, payload: input })
       expect(deniedHttp.statusCode).toBe(403)
       const incomplete = await issueCaller(f, [
         { actions: ['workflows:read'], scope: { workspaceIds: [f.workspaceId], workflowIds: [ids[0]!] } },
         { actions: ['workflows:update'], scope: { workspaceIds: [f.workspaceId], workflowIds: ids.slice(0, 2) } },
       ])
-      await expectReorderError(f, incomplete.token, input, 'ACCESS_DENIED')
+      await expectReorderError(incomplete.client, input, 'ACCESS_DENIED')
       const writeOnly = await issueCaller(f, [{ actions: ['workflows:update'], scope: { workspaceIds: [f.workspaceId] } }])
-      expect((await reorder(f, writeOnly.token, input)).statusCode).toBe(403)
+      expect(await toolNames(writeOnly.client)).not.toContain('workflow_reorder')
+      await expectMcpAccessDenied(writeOnly.client.callTool({ name: 'workflow_reorder', arguments: input }))
       expect(await readOrder(f)).toEqual(original)
 
       const foreignWorkspace = (await f.workspaces.create(f.owner.principal, 'http', {
@@ -240,11 +267,11 @@ describe('persisted workflow ordering through authenticated HTTP, read back thro
         expect(deniedList.statusCode).toBe(200)
         expect(deniedList.json()).toEqual(empty)
       }
-      await expectReorderError(f, f.owner.token, { ...input, commandId: randomUUID(),
+      await expectReorderError(f.client, { ...input, commandId: randomUUID(),
         workflowIds: [ids[0]!, foreign] }, 'WORKFLOW_NOT_FOUND')
-      await expectReorderError(f, f.owner.token, { ...input, commandId: randomUUID(),
+      await expectReorderError(f.client, { ...input, commandId: randomUUID(),
         workflowIds: [ids[0]!, 'workflow-missing'] }, 'WORKFLOW_NOT_FOUND')
-      await expectReorderError(f, f.owner.token, { ...input, commandId: randomUUID(), expectedRevision: 0 }, 'REVISION_CONFLICT')
+      await expectReorderError(f.client, { ...input, commandId: randomUUID(), expectedRevision: 0 }, 'REVISION_CONFLICT')
       expect(await readOrder(f)).toEqual(original)
       const first = await listPage(f)
       for (const cursor of ['invalid-cursor', first.pageInfo.nextCursor!]) {
@@ -259,7 +286,7 @@ describe('persisted workflow ordering through authenticated HTTP, read back thro
         commandId: randomUUID(), expectedRevision: f.created[1]!.revision })
       const afterArchive = await readOrder(f)
       expect(afterArchive).toEqual({ ids: ids.filter((id) => id !== ids[1]), orderRevision: 6 })
-      await expectReorderError(f, f.owner.token, { ...input, commandId: randomUUID(), expectedRevision: 6 }, 'WORKFLOW_ARCHIVED')
+      await expectReorderError(f.client, { ...input, commandId: randomUUID(), expectedRevision: 6 }, 'WORKFLOW_ARCHIVED')
       expect(await readOrder(f)).toEqual(afterArchive)
       for (const workflowIds of [[ids[0]!], [ids[0]!, ids[0]!]]) {
         const invalid = await f.app.inject({ method: 'PUT',
@@ -272,15 +299,10 @@ describe('persisted workflow ordering through authenticated HTTP, read back thro
         headers: { authorization: `Bearer ${f.owner.token}` }, payload: { ...input, workspaceId: foreignWorkspace } })
       expect(mismatch.statusCode).toBe(400)
       expect(mismatch.json()).toMatchObject({ error: { code: 'RESOURCE_ID_MISMATCH' } })
-      // The scope check fails before the command starts, so only the generic HTTP handler audits each denial.
-      for (const caller of [reader, incomplete, writeOnly]) {
-        const audit = await f.database.pool.query<{ source: string; action: string; target_key: string }>(
-          "select source, action, target_key from management_audit where principal_id = $1 and outcome = 'denied'",
-          [caller.principal.id],
-        )
-        expect(audit.rows).toEqual([{ source: 'http', action: 'ACCESS_DENIED',
-          target_key: `/api/management/workspaces/${f.workspaceId}/workflows/order` }])
-      }
+      const audit = await f.database.pool.query<{ count: string }>(
+        "select count(*) from management_audit where action = 'workflow_reorder' and outcome = 'denied'",
+      )
+      expect(Number(audit.rows[0]!.count)).toBeGreaterThanOrEqual(3)
     } finally {
       await f.close()
     }

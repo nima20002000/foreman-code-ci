@@ -2,13 +2,13 @@ import { InfoHint } from '../../../shared/ui/InfoHint'
 import { useRef } from 'react'
 import { Button } from '../../../shared/ui/nocturne'
 import { useMutation } from '@tanstack/react-query'
-import type { RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
+import type { RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
 import { settleBoardStop, useBoardStopOutbox } from '../stopOutbox'
 import { runActionsClient } from './client'
 import { useRunStop } from './useRunStop'
 import type { ActionRun } from './policy'
 
-export function StopReceipt({ scope }: { scope: RepeatGraphScopeCurrent }) {
+export function StopReceipt({ scope }: { scope: RepeatGraphScopeV3 }) {
   const { journal } = useBoardStopOutbox(scope)
   const receipt = journal?.receipt
   return receipt ? <p role="status">Stop receipt: {receipt.status}{receipt.replayed ? ' (sent again)' : ''}.{' '}
@@ -18,7 +18,7 @@ export function StopReceipt({ scope }: { scope: RepeatGraphScopeCurrent }) {
 }
 
 export function StopControl({ scope, run, permitted, available, refresh }: {
-  scope: RepeatGraphScopeCurrent; run: ActionRun; permitted: boolean; available: boolean; refresh(): void
+  scope: RepeatGraphScopeV3; run: ActionRun; permitted: boolean; available: boolean; refresh(): void
 }) {
   const { stop, outbox, life } = useRunStop(scope, refresh), heading = useRef<HTMLHeadingElement>(null)
   const settlement = useMutation({ retry: false, gcTime: 0, mutationFn: async () => {

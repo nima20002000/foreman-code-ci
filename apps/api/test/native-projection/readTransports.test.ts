@@ -4,7 +4,7 @@ import Fastify from 'fastify'
 import type pg from 'pg'
 import type { McpServer } from '@modelcontextprotocol/server'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { CANONICAL_RUN_GRAPH_MCP_TOOLS as RUN_GRAPH_MCP_TOOLS, makeCurrentWorkflowFixture, RepeatGraphSnapshotCurrentSchema, repeatGraphTopologyCurrent } from '@foreman-code/contracts/current'
+import { CANONICAL_RUN_GRAPH_MCP_TOOLS as RUN_GRAPH_MCP_TOOLS, makeCurrentWorkflowFixture, RepeatGraphSnapshotV3Schema, repeatGraphTopologyV3 } from '@foreman-code/contracts/wave25'
 import { registerRunGraphRoutes } from '../../src/routes/runGraph.js'
 import { registerRunGraphTools } from '../../src/mcp/operator/tools/runGraph.js'
 import type { OperatorRequestContext } from '../../src/mcp/operator/types.js'
@@ -12,9 +12,9 @@ import { RunGraphReadService, type RunGraphReadApi } from '../../src/modules/run
 import { RunGraphError } from '../../src/modules/run-graph/errors.js'
 
 const f = makeCurrentWorkflowFixture('a5-transport')
-const fixture = { ...f, snapshot: RepeatGraphSnapshotCurrentSchema.parse({ kind: 'snapshot', protocolVersion: 1,
+const fixture = { ...f, snapshot: RepeatGraphSnapshotV3Schema.parse({ kind: 'snapshot', protocolVersion: 1,
   scope: f.scope, asOfSequence: '1', retentionFloor: '0', historyCoverage: 'from_admission',
-  topology: repeatGraphTopologyCurrent(f.version), state: { run: { executionState: 'queued', outcome: 'pending', stopRequested: false, cleanupPending: false, unsettledReviewCount: 0, pendingInteractionCount: 0 },
+  topology: repeatGraphTopologyV3(f.version), state: { run: { executionState: 'queued', outcome: 'pending', stopRequested: false, cleanupPending: false, unsettledReviewCount: 0, pendingInteractionCount: 0 },
     nodes: [], inputBindings: [], interactions: [], reviews: [], occurrences: [], executions: [], resolutions: [], results: [], bindings: [], decisions: [] } }) }
 const principal: ManagementPrincipal = { id: 'reader', name: 'Reader', audience: 'operator', expiresAt: '2099-01-01T00:00:00.000Z', revokedAt: null,
   grants: [{ actions: ['capabilities:read'], scope: {} }, { actions: ['runs:read'], scope: { workspaceIds: [fixture.scope.workspaceId] } }] }

@@ -49,9 +49,9 @@ describe('one Foreman Code MCP server scoped by role', () => {
     expect((await selected.listTools()).tools.map(tool => tool.name)).toEqual(['workspace_get'])
     const complete = await connect('operator')
     const completeTools = (await complete.listTools()).tools
-    const schemaLookup = await connect('operator', undefined, call('tool_schema'))
+    const schemaLookup = await connect('operator', undefined, call('operator_tool_schema_get'))
     expect((await schemaLookup.listTools()).tools).toEqual(completeTools)
-    const result = await schemaLookup.callTool({ name: 'tool_schema', arguments: { name: 'workspace_get' } })
+    const result = await schemaLookup.callTool({ name: 'operator_tool_schema_get', arguments: { name: 'workspace_get' } })
     expect(result.isError).not.toBe(true)
     expect(JSON.stringify(result)).toContain('workspace_get')
     const capabilities = await connect('operator', undefined, call('operator_get_capabilities'))

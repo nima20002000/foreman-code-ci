@@ -1,5 +1,5 @@
 import { errorMessage } from '@foreman-code/contracts/server-kit'
-import { componentLogger } from '../diagnostics/index.js'
+import { componentLogger } from '../diagnostics/logger.js'
 import type { PayloadFingerprintCache } from './payloadFingerprintCache.js'
 import { isAbsolute } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'

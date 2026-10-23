@@ -2,9 +2,9 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
-import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { LocalProviderCredentials } from '../src/modules/provider-accounts/localCredentials.js'
@@ -40,7 +40,7 @@ it('pins queued Start and both fresh and source-Run conversation admissions befo
       if (configuration.harness.harness !== 'codex') throw new Error('This fixture requires Codex')
       configuration.harness = { ...configuration.harness, accountId: first.id }
     }
-    await seedWorkflowFixture(db.pool, db.directory, fixture, { run: false })
+    await seedAgent3(db.pool, db.directory, fixture, { run: false })
     const locations = new WorkspaceLocationService(db.pool, commands)
     const location = (await locations.set(owner.principal, 'http', { workspaceId: fixture.scope.workspaceId,
       commandId: randomUUID(), expectedLocationRevision: 1, runnerId: locations.runnerId, rootPath: db.directory })).value

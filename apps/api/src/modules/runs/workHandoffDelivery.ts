@@ -2,9 +2,9 @@ import { z } from 'zod'
 import type { HarnessExecution } from '@foreman-code/contracts'
 import {
   WorkReturnSchema, WorkNoticeSchema,
-  canonicalGraphJson, type WorkHandoffResult, type WorkflowVersionCurrent,
-} from '@foreman-code/contracts/current'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+  canonicalGraphJson, type WorkHandoffResult, type WorkflowVersionV3,
+} from '@foreman-code/contracts/wave25'
+import type { GraphTransactionSql } from '../run-graph/connection.js'
 import { repeatConflict, repeatDigest, repeatId, type RepeatScope } from './repeatResolution.js'
 import {
   availableWorkAlternativesLocked, createWorkLimitNotice, type WorkLimitNoticeInput,
@@ -15,11 +15,11 @@ import { isHierarchyWorkflow, type HierarchyWorkResult } from './hierarchyResult
 import type { RepeatLockedHooks } from './repeatPostgres.js'
 
 interface DeliveryContext {
-  sql: SqlTransaction; scope: RepeatScope; version: WorkflowVersionCurrent; now: string
+  sql: GraphTransactionSql; scope: RepeatScope; version: WorkflowVersionV3; now: string
   hooks?: Pick<RepeatLockedHooks, 'run'>
 }
 
-async function assertDatabaseEnvelopeFits(sql: SqlTransaction, envelope: unknown): Promise<void> {
+async function assertDatabaseEnvelopeFits(sql: GraphTransactionSql, envelope: unknown): Promise<void> {
   // jsonb expands exponent numbers; measure with the same function as the persisted constraints.
   const result = await sql.query<{ bytes: number }>('select work_json_bytes($1::jsonb) as bytes',
     [canonicalGraphJson(envelope, 64 * 1024)])

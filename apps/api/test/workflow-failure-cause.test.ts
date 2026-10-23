@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ExecutionResult } from '@foreman-code/contracts'
-import type { SqlTransaction } from '../src/infrastructure/transaction.js'
+import type { GraphTransactionSql } from '../src/modules/run-graph/connection.js'
 import type { RunOwnership } from '../src/modules/runs/ownership.js'
 import { settleWorkflowRun } from '../src/modules/runs/workflowLifecycle.js'
 import { currentUnitSnapshot } from './helpers/currentUnitSnapshot.js'
@@ -49,7 +49,7 @@ function fixture(candidates: FailedCandidate[], options: { stopped?: boolean; fa
     run = JSON.parse(values[2] as string)
     return { rows: [], rowCount: 1 }
   })
-  const sql = { query, transaction: true } as unknown as SqlTransaction
+  const sql = { query, transaction: true } as unknown as GraphTransactionSql
   const snapshot = () => ({ ...f, run: structuredClone(run), cleanupPending: true, stopRequested: options.stopped ?? false })
   const publication = {
     sql,
@@ -65,7 +65,7 @@ function fixture(candidates: FailedCandidate[], options: { stopped?: boolean; fa
     assertOwned: vi.fn(),
     readOneShotFence: async () => fence,
     oneShotConnection: () => ({
-      transaction: async <T>(work: (transaction: SqlTransaction) => Promise<T>) => {
+      transaction: async <T>(work: (transaction: GraphTransactionSql) => Promise<T>) => {
         const result = await work(sql)
         for (const check of ports.commitChecks) await check()
         return result

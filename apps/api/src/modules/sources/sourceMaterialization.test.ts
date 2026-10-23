@@ -69,7 +69,7 @@ describe('source manifest policy', () => {
   })
 
   it.each(['../outside', '/absolute', 'C:/drive', 'dir\\file', 'dir//file', 'dir/../file', 'x\0z', 'e\u0301', 'dir/name.', '.git/config', '.env', 'id_ed25519', '.config/provider/token', 'CON'])('rejects ambiguous or sensitive inclusion %s', (path) => { expect(() => sourcePath(path)).toThrow() })
-  it.each(['apps/api/src/modules/interactions/current/credentials.ts', 'src/credentials.test.ts', 'src/credentials.spec.js', 'src/credentials.d.ts', 'src/credentials.d.mts', 'src/credentials.d.cts',
+  it.each(['apps/api/src/modules/interactions/wave25/credentials.ts', 'src/credentials.test.ts', 'src/credentials.spec.js', 'src/credentials.d.ts', 'src/credentials.d.mts', 'src/credentials.d.cts',
     'src/credentials.tsx', 'src/credentials.js', 'src/credentials.jsx', 'src/credentials.mts', 'src/credentials.cts',
     'src/credentials.mjs', 'src/credentials.cjs'])('classifies implementation leaf %s as source', path => {
     expect(sourcePath(path)).toBe(path)
@@ -261,8 +261,8 @@ describe('capture semantics', () => {
   })
   it('captures the complete approved Git tree including credential implementation code', async () => {
     const f = await fixture(); await qualifiedGit(f.root, ['init', '--template='])
-    const modulePath = 'apps/api/src/modules/interactions/current/credentials.ts'
-    await mkdir(join(f.root, 'apps/api/src/modules/interactions/current'), { recursive: true })
+    const modulePath = 'apps/api/src/modules/interactions/wave25/credentials.ts'
+    await mkdir(join(f.root, 'apps/api/src/modules/interactions/wave25'), { recursive: true })
     const code = Buffer.from('export class CredentialService { readonly lifetime = 60 }\n')
     await writeFile(join(f.root, modulePath), code); await writeFile(join(f.root, 'README.md'), 'complete fixture tree\n')
     await qualifiedGit(f.root, ['add', '.']); await qualifiedGit(f.root, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'source'])

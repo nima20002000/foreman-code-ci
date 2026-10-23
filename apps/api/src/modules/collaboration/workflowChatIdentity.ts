@@ -1,11 +1,11 @@
 import { AgentConfigurationVersionSchema, AgentIdentitySchema, ExecutionRefSchema, HarnessExecutionSchema,
   sameAgentNode, sameExecution, type AgentIdentity, type EngineChatReadback, type ExecutionRef,
   type HarnessExecution } from '@foreman-code/contracts'
-import type { WorkflowVersionCurrent } from '@foreman-code/contracts/current'
+import type { WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../errors.js'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import { IMMUTABLE_WORKFLOW_VERSION_COLUMNS, readImmutableWorkflowVersion,
-  type ImmutableWorkflowVersionRow } from '../workflows/index.js'
+  type ImmutableWorkflowVersionRow } from '../workflows/immutableRead.js'
 import { workflowTargetRunId } from './workflowControlRecords.js'
 import type { WorkflowChatTarget } from './workflowControlTypes.js'
 import { isOpenRunState } from '../runs/runState.js'
@@ -18,15 +18,15 @@ export interface WorkflowChatExecutionRow {
   record: unknown; accepted: boolean; work_activation_id: string | null
 }
 export interface WorkflowChatIdentity {
-  run: WorkflowChatRunRow; version: WorkflowVersionCurrent; agent: AgentIdentity
+  run: WorkflowChatRunRow; version: WorkflowVersionV3; agent: AgentIdentity
   state: EngineChatReadback['state']; execution?: HarnessExecution; reference?: ExecutionRef
   /** A finished turn in a live Run: a new message waits for this Agent's next turn in the same Run. */
   nextTurn?: boolean
 }
 
-export async function readWorkflowChatVersion(sql: SqlQuery, scope: {
+export async function readWorkflowChatVersion(sql: GraphSqlClient, scope: {
   workspaceId: string; workflowId: string; workflowVersionId: string
-}): Promise<WorkflowVersionCurrent> {
+}): Promise<WorkflowVersionV3> {
   const row = (await sql.query<ImmutableWorkflowVersionRow>(`select ${IMMUTABLE_WORKFLOW_VERSION_COLUMNS}
     from workflow_versions where workspace_id=$1 and workflow_id=$2 and id=$3`,
   [scope.workspaceId, scope.workflowId, scope.workflowVersionId])).rows[0]
@@ -34,7 +34,7 @@ export async function readWorkflowChatVersion(sql: SqlQuery, scope: {
   return readImmutableWorkflowVersion(row, { id: scope.workflowVersionId, workspaceId: scope.workspaceId, workflowId: scope.workflowId })
 }
 
-export async function readWorkflowChatAgent(sql: SqlQuery, version: WorkflowVersionCurrent,
+export async function readWorkflowChatAgent(sql: GraphSqlClient, version: WorkflowVersionV3,
   workflowNodeId: string): Promise<AgentIdentity> {
   const node = version.definition.nodes.find(item => item.id === workflowNodeId)
   if (!node || node.kind === 'job') throw new DomainError('CHAT_NODE_UNAVAILABLE', 'Select an Agent in this saved workflow.', 404)
@@ -68,7 +68,7 @@ export function workflowChatState(execution: HarnessExecution, accepted: boolean
 }
 
 /** Read-only exact pins. This never acquires a Run owner, starts a session or chooses another attempt. */
-export async function readWorkflowChatIdentity(sql: SqlQuery, target: WorkflowChatTarget): Promise<WorkflowChatIdentity> {
+export async function readWorkflowChatIdentity(sql: GraphSqlClient, target: WorkflowChatTarget): Promise<WorkflowChatIdentity> {
   const run = (await sql.query<WorkflowChatRunRow>(`select id,workspace_id,workflow_id,workflow_version_id,execution_state,
     stop_requested_at is not null as stopped from runs where id=$1 and workspace_id=$2 and workflow_id=$3`,
   [workflowTargetRunId(target), target.agent.workspaceId, target.agent.workflowId])).rows[0]

@@ -1,13 +1,13 @@
 import { expect, it } from 'vitest'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
-import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 
 it('preserves applied migration records and saved workflow facts when migrations run again', async () => {
   const database = await migratedDatabase()
   try {
-    const fixture = await seedWorkflowFixture(database.pool, database.directory, undefined, { run: false })
+    const fixture = await seedAgent3(database.pool, database.directory, undefined, { run: false })
     const workflows = new PostgresWorkflowRepository(database.pool)
     const version = await workflows.getVersion(fixture.version.id)
     expect(version).toBeDefined()

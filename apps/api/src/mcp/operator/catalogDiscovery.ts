@@ -1,5 +1,5 @@
 import { browserOperatorTools } from '../../modules/collaboration/browserTools.js'
-import { CANONICAL_RUN_GRAPH_MCP_TOOLS, CURRENT_WORKFLOW_TOOLS, RUN_INSPECTION_TOOLS } from '@foreman-code/contracts/current'
+import { CANONICAL_RUN_GRAPH_MCP_TOOLS, CURRENT_WORKFLOW_TOOLS, RUN_INSPECTION_TOOLS } from '@foreman-code/contracts/wave25'
 import { WORKFLOW_HIERARCHY_TOOLS } from '@foreman-code/contracts'
 import { toolAvailable, toolRequirements, type OperatorToolDefinition } from './definition.js'
 import type { ManagementAction } from '@foreman-code/contracts/management'

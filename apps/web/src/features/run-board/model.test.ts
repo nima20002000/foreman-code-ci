@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { Position } from '@xyflow/react'
 import { projectRunBoard, READ_ONLY_FLOW_PROPS } from './model'
 import { WorkflowHierarchyReadResultSchema } from '@foreman-code/contracts'
-import { WORKER_NODE_SIZE } from '../board-core'
+import { WORKER_NODE_SIZE } from '../graph/mapper'
 import { savedEdgeCurve } from './curve'
 import { runA, runB } from './testFixtures'
 

@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 import type pg from 'pg'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { CurrentWorkflowAuthoring } from '../src/modules/workflows/currentAuthoring.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 

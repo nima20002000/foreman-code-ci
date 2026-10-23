@@ -5,7 +5,6 @@ import type { WorkerConversationReceipt, WorkerConversationRpcRequest } from '@f
 import { legacyProviderAccountBinding } from '../provider-accounts/acceptedBindings.js'
 import { createProductionWorkerConversations } from './workerProduction.js'
 import { workerConversationFixture } from './workerFixtures.test-support.js'
-import { workerConversationStoreRead } from '../../../test/helpers/workerConversationStoreReads.js'
 import { DomainError } from '../errors.js'
 
 it.each([false, true])('uses the retained owner for disposal after a read-only reader (failed reconnect: %s)', async failedReconnect => {
@@ -22,9 +21,11 @@ it.each([false, true])('uses the retained owner for disposal after a read-only r
     agent_configuration_version_id: f.configuration.id, owner_principal_id: null, active_request_id: null,
     native_session_id: f.session.nativeSessionId, deleted_at: null, record: { status: 'open' }, payload: { ownerPrincipalId: owner.id } as { ownerPrincipalId: string } | null,
     worker_conversation_binding: binding }
-  const pool = { query: async (_sql: string, values: unknown[]) =>
-    workerConversationStoreRead(values, { principals: [owner, reader], accountBinding: binding.accountBinding })
-      ?? { rows: [conversation], rowCount: 1 } } as unknown as pg.Pool
+  const pool = { query: async (sql: string, values: unknown[]) => {
+    if (sql.includes('from management_principals')) return { rows: [values[0] === owner.id ? owner : reader] }
+    if (sql.includes('from provider_account_accepted_bindings')) return { rows: [{ binding: binding.accountBinding }] }
+    return { rows: [conversation], rowCount: 1 }
+  } } as unknown as pg.Pool
   const receipt: WorkerConversationReceipt = { binding, connection: f.connection, session: f.session,
     nativeOwner: f.nativeOwner, revision: 1, closed: false, closing: false, turns: [], compactions: [],
     desiredPreferences: null, appliedPreferences: null }

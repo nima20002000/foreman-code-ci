@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import type { WorkerReleasePublication } from '@foreman-code/contracts/computer-maintenance'
 import { withTransaction } from '../../infrastructure/transaction.js'
-import { expireOverdueCiRuns } from '../ci/index.js'
+import { expireOverdueCiRuns } from '../ci/values.js'
 import { componentLogger } from './logger.js'
 import { registerService, reportService, reportServiceFailure, trackService } from './serviceHealth.js'
 

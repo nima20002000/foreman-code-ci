@@ -30,10 +30,11 @@ import { interactionTools } from './tools/interactions.js'
 import { extendedOperatorTools } from './tools/extensions.js'
 import { memoryBoardToolDefinitions } from './tools/memoryBoards.js'
 import { DomainError } from '../../modules/errors.js'
+import { toolSchemaTools } from './tools/toolSchema.js'
 
 /**
  * The Operator MCP tool registry: the single source of truth for every catalogued Operator tool.
- * tools/list registration, operator_get_capabilities and tool_schema discovery,
+ * tools/list registration, operator_get_capabilities and operator_tool_schema_get discovery,
  * permission requirements, denial classification and handlers are all derived from these
  * definitions; nothing else lists tool names, grants or service conditions.
  *
@@ -79,6 +80,7 @@ export const OPERATOR_TOOL_GROUPS = {
   subagents: subagentTools,
   interactions: interactionTools,
   extensions: extendedOperatorTools,
+  toolSchema: toolSchemaTools,
 } satisfies Record<string, readonly OperatorToolDefinition[]>
 export type OperatorToolGroup = keyof typeof OPERATOR_TOOL_GROUPS
 

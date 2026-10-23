@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { COORDINATION_RESULT_PROTOCOL } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
 import { postgresEnabled } from './helpers/database.js'
 

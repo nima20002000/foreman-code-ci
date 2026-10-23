@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { MemoryCardSchema, MemoryNoteSchema, type MemoryCard, type MemoryNote } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import type { GraphTransactionSql } from '../run-graph/connection.js'
 import type { BoardRow, MemoryBoardAuthority, MutationContext, MutationReceipt, Operation } from './types.js'
 import { inputHash, invalid, same } from './identity.js'
 import { aggregateCard, resolveTerminalWork, selectWork, validateCardState, validateLinks } from './work.js'
@@ -21,7 +21,7 @@ export function replayCommand(stored: Awaited<ReturnType<typeof commandReceipt>>
   if (stored.rejection) throw new DomainError(stored.rejection.code,stored.rejection.message,stored.rejection.status,stored.rejection.details)
   return stored.receipt ?? undefined
 }
-async function cardMutation(tx: SqlTransaction, authority: MemoryBoardAuthority, row: BoardRow,
+async function cardMutation(tx: GraphTransactionSql, authority: MemoryBoardAuthority, row: BoardRow,
   context: MutationContext, operation: Extract<Operation,{ kind: 'card_create' | 'card_update' }>, now: string): Promise<MutationReceipt> {
   const creating = operation.kind === 'card_create'
   const before = creating ? undefined : await cardById(tx,row.board.id,operation.cardId)
@@ -62,7 +62,7 @@ async function cardMutation(tx: SqlTransaction, authority: MemoryBoardAuthority,
   return { commandId: operation.commandId, outcome: creating ? 'created' : changed ? 'updated' : 'unchanged',
     card, bindings, claims, boardRevision: row.board.revision }
 }
-async function noteMutation(tx: SqlTransaction, authority: MemoryBoardAuthority, row: BoardRow,
+async function noteMutation(tx: GraphTransactionSql, authority: MemoryBoardAuthority, row: BoardRow,
   context: MutationContext, operation: Extract<Operation,{ kind: 'note_create' | 'note_update' | 'note_archive' }>, now: string): Promise<MutationReceipt> {
   const before = operation.kind === 'note_create' ? undefined : await noteById(tx,row.board.id,operation.noteId)
   expected(before?.revision ?? row.board.revision,operation,before ?? row.board)
@@ -82,7 +82,7 @@ async function noteMutation(tx: SqlTransaction, authority: MemoryBoardAuthority,
   return { commandId: operation.commandId, outcome: !before ? 'created' : changed ? 'updated' : 'unchanged',
     note, bindings: [], claims: [], boardRevision: row.board.revision }
 }
-export async function mutateLocked(tx: SqlTransaction, authority: MemoryBoardAuthority, row: BoardRow,
+export async function mutateLocked(tx: GraphTransactionSql, authority: MemoryBoardAuthority, row: BoardRow,
   context: MutationContext, operation: Operation, now: string): Promise<MutationReceipt> {
   const replay = replayCommand(await commandReceipt(tx,context.principalId,operation.commandId),operation)
   if (replay) return replay

@@ -5,7 +5,7 @@ import { AgentConfigurationVersionSchema, canonicalJson } from '@foreman-code/co
 import { PostgresAgentChatRepository } from '../src/modules/conversations/agentChatRepository.js'
 import { conversationFeatureContext } from '../src/modules/conversations/conversationFeatureSubject.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
-import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
+import { Wave25WorkerCredentialService } from '../src/modules/interactions/wave25/credentials.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { workerCredentialBudgetFixture } from './helpers/workerCredentialBudgetFixture.js'
 

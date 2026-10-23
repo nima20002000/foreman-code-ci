@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { COORDINATION_RESULT_PROTOCOL, type BoardApplicationReceipt, type ExecutionResult,
   type NativeHarnessEvent } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import type { NativeHistory } from '../src/modules/harnesses/port.js'
 import type { MemoryBoardPort } from '../src/modules/collaboration/ports.js'
 import { DomainError } from '../src/modules/errors.js'

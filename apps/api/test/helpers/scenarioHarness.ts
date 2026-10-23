@@ -6,9 +6,9 @@ import type { HarnessExecutionRequest } from '@foreman-code/contracts'
 import {
   CANONICAL_RUN_GRAPH_MCP_TOOLS, CANONICAL_RUN_GRAPH_ROUTES, CURRENT_WORKFLOW_TOOLS,
   CurrentWorkflowSaveInputSchema, CurrentWorkflowSaveResultSchema, RunRecordDetailSchema,
-  RunStartCurrentInputSchema, RunStartCurrentResultSchema, SavedManagedWorkflowCommandResultSchema,
-  type RepeatGraphScopeCurrent, type WorkflowDefinitionCurrent,
-} from '@foreman-code/contracts/current'
+  RunStartV3InputSchema, RunStartV3ResultSchema, SavedManagedWorkflowCommandResultSchema,
+  type RepeatGraphScopeV3, type WorkflowDefinitionV3,
+} from '@foreman-code/contracts/wave25'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { buildApp } from '../../src/app.js'
 import { OperatorInteractionService } from '../../src/modules/interactions/operator.js'
@@ -24,7 +24,7 @@ export type Saved = ReturnType<typeof CurrentWorkflowSaveResultSchema.parse>['va
 export type Harness = Awaited<ReturnType<typeof scenarioHarness>>
 export type Started = Awaited<ReturnType<Harness['start']>>
 export const other = (via: Via): Via => via === 'http' ? 'mcp' : 'http'
-export const runPath = (scope: Pick<RepeatGraphScopeCurrent, 'workspaceId' | 'runId'>) =>
+export const runPath = (scope: Pick<RepeatGraphScopeV3, 'workspaceId' | 'runId'>) =>
   `/api/management/workspaces/${encodeURIComponent(scope.workspaceId)}/runs/${encodeURIComponent(scope.runId)}`
 
 function latch() {
@@ -161,7 +161,7 @@ export async function scenarioHarness(scenario: Scenario) {
       return via === 'http' ? http(method, path, args) : mcp(name, args)
     }
     // Qualify the actual task-owned temporary directory through the real service.
-    // Never reuse seedWorkflowFixture's synthetic location identity for a public Start.
+    // Never reuse seedAgent3's synthetic location identity for a public Start.
     await mcp('workspace_location_set', { workspaceId: base.f.scope.workspaceId,
       commandId: randomUUID(), expectedLocationRevision: 1,
       runnerId: base.locations.runnerId, rootPath: base.db.directory })
@@ -170,7 +170,7 @@ export async function scenarioHarness(scenario: Scenario) {
     expect(locationRevision).toBe(2)
     const workflowPath = (workflowId: string) =>
       `/api/management/workspaces/${base.f.scope.workspaceId}/workflows/${workflowId}`
-    async function save(via: Via, previous?: Saved, graph?: WorkflowDefinitionCurrent) {
+    async function save(via: Via, previous?: Saved, graph?: WorkflowDefinitionV3) {
       const created = previous ? undefined : SavedManagedWorkflowCommandResultSchema.parse(await command(via, 'POST',
         `/api/management/workspaces/${base.f.scope.workspaceId}/workflows`, 'workflow_create', {
           workspaceId: base.f.scope.workspaceId, commandId: randomUUID(), name: scenario.id,
@@ -201,17 +201,17 @@ export async function scenarioHarness(scenario: Scenario) {
       const before = (await base.db.pool.query<{ id: string }>('select id from runs where workflow_id=$1',
         [saved.version.workflowId])).rows.map((row) => row.id)
       outputs.clear()
-      const input = RunStartCurrentInputSchema.parse({ workspaceId: saved.version.workspaceId,
+      const input = RunStartV3InputSchema.parse({ workspaceId: saved.version.workspaceId,
         workflowId: saved.version.workflowId, workflowVersionId: saved.currentVersionId,
         executionSemanticsVersion: 3, commandId: randomUUID(), expectedWorkflowRevision: saved.revision,
         expectedAgentConfigurationVersionIds: saved.version.agentConfigurationVersionIds,
         expectedLocationRevision: locationRevision, input: scenario.runInput })
       const path = `${workflowPath(input.workflowId)}/runs`
-      const accepted = RunStartCurrentResultSchema.parse(await command(via, 'POST', path, 'run_start', input))
+      const accepted = RunStartV3ResultSchema.parse(await command(via, 'POST', path, 'run_start', input))
       expect(accepted.accepted).toBe(true); expect(accepted.replayed).toBe(false)
-      const replay = RunStartCurrentResultSchema.parse(await command(other(via), 'POST', path, 'run_start', input))
+      const replay = RunStartV3ResultSchema.parse(await command(other(via), 'POST', path, 'run_start', input))
       expect(replay.run.id).toBe(accepted.run.id); expect(replay.replayed).toBe(true)
-      const scope: RepeatGraphScopeCurrent = { workspaceId: input.workspaceId, workflowId: input.workflowId,
+      const scope: RepeatGraphScopeV3 = { workspaceId: input.workspaceId, workflowId: input.workflowId,
         workflowVersionId: input.workflowVersionId, executionSemanticsVersion: 3, runId: accepted.run.id }
       expect((await base.db.pool.query<{ id: string }>('select id from runs where workflow_id=$1',
         [input.workflowId])).rows.map((row) => row.id).sort()).toEqual([...before, accepted.run.id].sort())
@@ -236,7 +236,7 @@ export async function scenarioHarness(scenario: Scenario) {
       expect(await mcp(name, args)).toEqual(response.body)
       return response.body
     }
-    async function graph(scope: RepeatGraphScopeCurrent, kind: 'snapshot' | 'current' | 'events', afterSequence?: string) {
+    async function graph(scope: RepeatGraphScopeV3, kind: 'snapshot' | 'current' | 'events', afterSequence?: string) {
       const route = CANONICAL_RUN_GRAPH_ROUTES[kind].replace(':workspaceId', scope.workspaceId)
         .replace(':workflowId', scope.workflowId).replace(':runId', scope.runId)
       const params = new URLSearchParams({ workflowVersionId: scope.workflowVersionId, executionSemanticsVersion: '3',
@@ -245,7 +245,7 @@ export async function scenarioHarness(scenario: Scenario) {
         protocolVersion: 1, scope, ...(afterSequence === undefined ? {} : { afterSequence }),
       })
     }
-    async function waitUntilParked(scope: RepeatGraphScopeCurrent, nodeId: string) {
+    async function waitUntilParked(scope: RepeatGraphScopeV3, nodeId: string) {
       const gate = gates.get(nodeId)
       if (!gate) throw new Error(`Missing provider gate ${nodeId}`)
       let timer: ReturnType<typeof setTimeout> | undefined
@@ -267,7 +267,7 @@ export async function scenarioHarness(scenario: Scenario) {
         { cause: error })
       } finally { clearTimeout(timer) }
     }
-    async function settled(scope: RepeatGraphScopeCurrent, timeoutMs?: number) {
+    async function settled(scope: RepeatGraphScopeV3, timeoutMs?: number) {
       let record: Awaited<ReturnType<typeof waitForSuccessfulRunCleanup>>
       try {
         record = await waitForSuccessfulRunCleanup({ pool: base.db.pool, runId: scope.runId,

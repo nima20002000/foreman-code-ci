@@ -12,7 +12,7 @@ import { RunBoardSnapshotGetResultSchema } from '@foreman-code/contracts/run-sna
 import {
   ReadSelectedRunChatResponseSchema, type SelectedRunChatTarget,
 } from '@foreman-code/contracts/selected-run-chat'
-import { makeCurrentWorkflowFixture, RunStartCurrentResultSchema } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture, RunStartV3ResultSchema } from '@foreman-code/contracts/wave25'
 import { buildApp } from '../../src/app.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
@@ -27,7 +27,7 @@ import { createWorkflowRepositoryServices } from '../../src/modules/runs/workflo
 import { WorkflowManagementService } from '../../src/modules/workflows/management.js'
 import { PostgresWorkflowRepository } from '../../src/modules/workflows/postgres.js'
 import { WorkspaceLocationService } from '../../src/modules/workspaces/location.js'
-import { ScriptedChatNative, eventually } from './agentChatF5.js'
+import { AgentChatF5Native, eventually } from './agentChatF5.js'
 import { answerForRun } from './coordinationEnvelope.js'
 import { currentOperatorIntegration } from './currentOperatorIntegration.js'
 import { waitForSuccessfulRunCleanup } from './runSettlement.testSupport.js'
@@ -57,7 +57,7 @@ export async function historicalFixture(form: 'sequential' | 'repeat' = 'sequent
 }
 
 /** A native-port double that detects selecting another Run's parent/child. */
-export class HistoricalChatNative extends ScriptedChatNative {
+export class HistoricalChatNative extends AgentChatF5Native {
   override readonly session: NativeSessionReference
   readonly forks: Array<{ source: NativeSessionReference; input: NativeSessionStart }> = []
   readonly attachments: NativeSessionReference[] = []
@@ -201,7 +201,7 @@ export async function startSaved(f: HistoricalFixture, version = f.f.version) {
   const row = (await f.db.pool.query<{ revision: string; location_revision: string }>(
     `select w.revision::text,s.location_revision::text from workflows w join workspaces s on s.id=w.workspace_id
      where w.id=$1`, [version.workflowId])).rows[0]!
-  const result = RunStartCurrentResultSchema.parse(toolValue(await f.client.callTool({ name: 'run_start', arguments: {
+  const result = RunStartV3ResultSchema.parse(toolValue(await f.client.callTool({ name: 'run_start', arguments: {
     workspaceId: version.workspaceId, workflowId: version.workflowId, workflowVersionId: version.id,
     executionSemanticsVersion: 3, commandId: randomUUID(), expectedWorkflowRevision: Number(row.revision),
     expectedLocationRevision: Number(row.location_revision), expectedAgentConfigurationVersionIds: version.agentConfigurationVersionIds, input: {},

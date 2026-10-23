@@ -12,8 +12,7 @@ import { requireAuthorization } from '../../access/policy.js'
 import type { WorkflowNativeCapture, WorkflowNativeVerificationPort } from '../../interactions/workflowNativeCapture.js'
 import { readDispatchIntent } from '../../placement/persistence.js'
 import { readReconciledDispatchIntent } from './persistence.js'
-import { assertGraphTransaction, beforeGraphCommit, poisonGraphTransaction } from '../../run-graph/connection.js'
-import type { SqlTransaction } from '../../../infrastructure/transaction.js'
+import { assertGraphTransaction, beforeGraphCommit, poisonGraphTransaction, type GraphTransactionSql } from '../../run-graph/connection.js'
 import { currentRunGraphPublication } from '../../run-graph/publication.js'
 import { requireRepeatCanonicalReceiptBeforeCommit } from '../../run-graph/repeatReceipts.js'
 import { commandInputHash } from '../../commands/postgres.js'
@@ -36,7 +35,7 @@ export function workflowNativeFileConversationKey(mainId: string, executionId: s
 export interface WorkflowNativeFileContextPorts {
   captures: WorkflowNativeVerificationPort
   /** Mount the existing production remote workflow's actual SQL-only physical verifier. */
-  assertPhysical(sql: SqlTransaction, owner: RunOwnership, capture: WorkflowNativeCapture): Promise<void>
+  assertPhysical(sql: GraphTransactionSql, owner: RunOwnership, capture: WorkflowNativeCapture): Promise<void>
   authority: Pick<PostgresArtifactPublicationAuthority, 'authorize'>
 }
 interface Admission {
@@ -64,7 +63,7 @@ const digest = (key: string) => sha256Hex(key)
 export class WorkflowNativeFileContextAdmission {
   constructor(private readonly mainId: string, private readonly ports: WorkflowNativeFileContextPorts) {}
   /** Later captures read the first durable admission. Their proof never replaces its original source. */
-  async resolveOrAdmitLocked(sql: SqlTransaction, evidence: RepeatNativeEvidence, proof: WorkflowNativeProofRecord,
+  async resolveOrAdmitLocked(sql: GraphTransactionSql, evidence: RepeatNativeEvidence, proof: WorkflowNativeProofRecord,
     rawTransfer: TransferContext): Promise<AcceptedArtifactPublication> {
     assertGraphTransaction(sql)
     try {
@@ -160,7 +159,7 @@ export class WorkflowNativeFileContextAdmission {
       return structuredClone(accepted)
     } catch (error) { poisonGraphTransaction(sql); throw error }
   }
-  private async currentTurnContext(sql: SqlTransaction, capture: WorkflowNativeCapture,
+  private async currentTurnContext(sql: GraphTransactionSql, capture: WorkflowNativeCapture,
     admission: Admission, intent: DispatchIntent): Promise<{ context: FileToolContext; correlationId: string }> {
     const turnId = capture.lane!.providerId!
     if (admission.context.turnId === turnId) return { context: admission.context, correlationId: admission.commandId }
@@ -178,7 +177,7 @@ export class WorkflowNativeFileContextAdmission {
     await assertWorkflowCorrelation(sql, capture.execution.id, correlationId)
     return { context: { ...admission.context, turnId }, correlationId }
   }
-  async admitLocked(sql: SqlTransaction, evidence: RepeatNativeEvidence, rawProof: WorkflowNativeProofRecord,
+  async admitLocked(sql: GraphTransactionSql, evidence: RepeatNativeEvidence, rawProof: WorkflowNativeProofRecord,
     rawTransfer: TransferContext): Promise<AcceptedArtifactPublication> {
     assertGraphTransaction(sql)
     try {

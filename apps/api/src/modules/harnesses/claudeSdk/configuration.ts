@@ -7,7 +7,6 @@ import { ClaudeFullAccessConfigurationSchema, type ClaudeHarnessConfiguration } 
 import { inheritedAgentEnvironment } from '../secrets.js'
 import { HarnessExecutionError } from '../errors.js'
 import type { SandboxSettings } from '@anthropic-ai/claude-agent-sdk'
-import { hostEnvironment } from '../../../shared/process.js'
 
 /** Only the existing HRT repository/producer supplies this exact accepted host-profile proof. */
 export interface ClaudePolicyQualification {
@@ -87,7 +86,7 @@ export function requireClaudePolicyQualification(configuration: ClaudeHarnessCon
 }
 
 export function compileClaudeConfiguration(raw: unknown, cwd: string, qualification: ClaudePolicyQualification,
-  source: NodeJS.ProcessEnv = hostEnvironment(), apiKey?: string, preferences = SessionPreferencesSchema.parse({})): ClaudeCompiledConfiguration {
+  source: NodeJS.ProcessEnv = process.env, apiKey?: string, preferences = SessionPreferencesSchema.parse({})): ClaudeCompiledConfiguration {
   const configuration = ClaudeFullAccessConfigurationSchema.parse(raw)
   const capabilities = requireClaudePolicyQualification(configuration, qualification)
   return { ...claudeCandidateConfiguration(configuration, cwd, source, apiKey, preferences), qualification: capabilities }
@@ -96,7 +95,7 @@ export function compileClaudeConfiguration(raw: unknown, cwd: string, qualificat
 /** Policy translation shared by owned qualification and admitted runtime.
  * This does not allocate a manager or grant production admission. */
 export function claudeCandidateConfiguration(configuration: ClaudeHarnessConfiguration, cwd: string,
-  source: NodeJS.ProcessEnv = hostEnvironment(), apiKey?: string, preferences: SessionPreferences = SessionPreferencesSchema.parse({})): Omit<ClaudeCompiledConfiguration, 'qualification'> {
+  source: NodeJS.ProcessEnv = process.env, apiKey?: string, preferences: SessionPreferences = SessionPreferencesSchema.parse({})): Omit<ClaudeCompiledConfiguration, 'qualification'> {
   ClaudeFullAccessConfigurationSchema.parse(configuration)
   if (!cwd.startsWith('/') || cwd.includes('\0')) throw new HarnessExecutionError('CLAUDE_CWD_INVALID', 'An accepted absolute working directory is required.')
   // AskUserQuestion is a real available tool; allowedTools only configures approval, not availability.

@@ -10,7 +10,7 @@ import { configuredOperatorSetup } from './operatorSetupTestFixture'
 import { operatorState } from './pr17-test-fixtures'
 import { summarizeOperatorConversation } from './operatorChatStatus'
 import { useConversationDraftStore } from '../conversations'
-import { clearRevisionedFormPersistence } from '../settings'
+import { clearRevisionedFormPersistence } from '../settings/revisionedForm'
 import { server } from '../../mocks/server'
 
 const api = vi.hoisted(() => ({ create: vi.fn(), get: vi.fn(), list: vi.fn(), send: vi.fn() }))

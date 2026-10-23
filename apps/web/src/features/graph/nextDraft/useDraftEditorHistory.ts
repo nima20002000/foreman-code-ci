@@ -1,11 +1,12 @@
 import { useEffect } from 'react'
 import { useGraphDraftStore } from '../store'
 import { announceBoardChange, describeDraftChange, executeBoardAction, peekBoardRedo, pendingBoardAction,
-  popBoardRedo, pushDraftRedo, useBoardUndo } from '../../workflow-board'
+  popBoardRedo, pushDraftRedo, useBoardUndo } from '../../workflow-board/boardUndo'
 import type { useScheduleCommand } from '../../schedules/queries'
-import { type useWorkflowBoard, canUndoNextDraft } from '../../board-core'
+import type { useWorkflowBoard } from '../../workflow-board/context'
 import type { DraftEditorCore } from './useDraftEditorCore'
 import type { useGraphEditIntent } from './useGraphEditIntent'
+import { canUndoNextDraft } from './state'
 import { modalOpen } from '../../../shared/ui/modalOpen'
 
 /** Undo/redo across draft steps and server-saved settings, plus the Ctrl/Cmd+Z/Y shortcuts. */

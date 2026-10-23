@@ -6,9 +6,9 @@ import {
 } from '@foreman-code/contracts'
 import {
   RUN_INSPECTION_TOOLS, RunAcceptedInputValueSchema, RunExecutionDetailSchema,
-  RunExecutionsPageSchema, RunRecordDetailSchema, RunStartCurrentInputSchema, WorkflowRunCurrentSchema,
+  RunExecutionsPageSchema, RunRecordDetailSchema, RunStartV3InputSchema, WorkflowRunV3Schema,
   makeCurrentWorkflowFixture, type RunInspectionToolName, type RunExecutionDetail,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { buildApp } from '../../src/app.js'
 import { ApprovalPostgresSaver } from '../../src/infrastructure/approvalCheckpointSaver.js'
@@ -18,8 +18,8 @@ import { APP_MCP_TOKEN_ENVIRONMENT_VARIABLE } from '../../src/modules/access/wor
 import { PostgresApprovalBudgetRepository } from '../../src/modules/interactions/budget.js'
 import { ApprovalExecutionCoordinator } from '../../src/modules/interactions/execution.js'
 import { InteractionService } from '../../src/modules/interactions/service.js'
-import { Wave25InteractionRepository } from '../../src/modules/interactions/current/repository.js'
-import { Wave25WorkerCredentialService } from '../../src/modules/interactions/current/credentials.js'
+import { Wave25InteractionRepository } from '../../src/modules/interactions/wave25/repository.js'
+import { Wave25WorkerCredentialService } from '../../src/modules/interactions/wave25/credentials.js'
 import { ExecutionScopedNativeSessionManagerResolver } from '../../src/modules/interactions/runtimePorts.js'
 import { createWorkflowNativeCaptureChannel } from '../../src/modules/interactions/workflowNativeCapture.js'
 import { createReviewNativeCaptureChannel } from '../../src/modules/interactions/reviewNativeCapture.js'
@@ -40,7 +40,7 @@ import { WorkspaceManagementService } from '../../src/modules/workspaces/managem
 import { currentOperatorIntegration } from './currentOperatorIntegration.js'
 import { providerLaunchCredentials, providerAppEndpoint } from './checkpointRuntime.js'
 import { RecoveryProvider, type Fault, type Submission } from './recoveryProvider.js'
-import { waitForRecoverySettlement } from './recoverySettlement.js'
+import { waitForEng06Settlement } from './recoverySettlement.js'
 
 export type Form = 'sequential' | 'repeat' | 'parallel'
 type Base = Awaited<ReturnType<typeof currentOperatorIntegration>>
@@ -197,7 +197,7 @@ export async function recoveryFixture(form: Form, plan: (input: Submission) => F
     },
     async settled(runId = base.f.run.id, options: { pollIntervalMs?: number } = {}) {
       try {
-        await waitForRecoverySettlement(async () => {
+        await waitForEng06Settlement(async () => {
           await runtime.engine.reconcile((error) => errors.push(error))
           const snapshot = await runtime.runs.getRepeatSnapshot(runId)
           const executions = (await base.db.pool.query<{ id: string; state: string; accepted: boolean }>(
@@ -272,7 +272,7 @@ export async function executionRows(f: RecoveryFixture, runId = f.base.f.run.id)
 export async function readback(f: RecoveryFixture, runId = f.base.f.run.id) {
   const record = RunRecordDetailSchema.parse(await readParity(f, RUN_INSPECTION_TOOLS.record, scope(f, runId)))
   const persisted = await f.runtime.runs.getRepeatSnapshot(runId)
-  const publicRun = WorkflowRunCurrentSchema.parse(persisted.run); delete publicRun.authorizationPrincipalId
+  const publicRun = WorkflowRunV3Schema.parse(persisted.run); delete publicRun.authorizationPrincipalId
   expect(record).toEqual({ run: publicRun, stopRequested: persisted.stopRequested, cleanupPending: persisted.cleanupPending })
   const page = RunExecutionsPageSchema.parse(await readParity(f, RUN_INSPECTION_TOOLS.executions, { ...scope(f, runId), limit: 100 }))
   const rows = await executionRows(f, runId)
@@ -304,7 +304,7 @@ export async function fullRunInput(f: RecoveryFixture) {
   const locationRevision = location.value?.locationRevision ?? location.locationRevision
   expect(Number.isInteger(locationRevision)).toBe(true)
   const row = (await f.base.db.pool.query<{ revision: string }>('select revision::text from workflows where id=$1', [f.base.f.scope.workflowId])).rows[0]!
-  return RunStartCurrentInputSchema.parse({ workspaceId: f.base.f.scope.workspaceId, workflowId: f.base.f.scope.workflowId,
+  return RunStartV3InputSchema.parse({ workspaceId: f.base.f.scope.workspaceId, workflowId: f.base.f.scope.workflowId,
     workflowVersionId: f.base.f.version.id, executionSemanticsVersion: 3, commandId: randomUUID(), expectedWorkflowRevision: Number(row.revision),
     expectedAgentConfigurationVersionIds: f.base.f.version.agentConfigurationVersionIds,
     expectedLocationRevision: locationRevision, input: f.base.f.run.input })

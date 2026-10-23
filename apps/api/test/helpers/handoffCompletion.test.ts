@@ -1,6 +1,6 @@
 import { deferred } from './deferred.js'
 import { afterEach, expect, it, vi } from 'vitest'
-import { SavedRunDetailsSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { SavedRunDetailsSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { waitForHandoffCompletion } from './handoffCompletion.js'
 
 afterEach(() => vi.useRealTimers())

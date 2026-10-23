@@ -2,13 +2,13 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('Run ownership database fence', () => {
-  let db: Awaited<ReturnType<typeof migratedDatabase>>
+  let db: Awaited<ReturnType<typeof agent3Database>>
   const owners = new Set<RunOwnership>()
-  beforeAll(async () => { db = await migratedDatabase() }, 60_000)
+  beforeAll(async () => { db = await agent3Database() }, 60_000)
   afterEach(async () => {
     for (const owner of owners) await owner.release()
     owners.clear()

@@ -1,10 +1,10 @@
 import { type RunNodeLiveActivity } from '@foreman-code/contracts'
-import { type CurrentRunDetails as GetRunResponse } from '@foreman-code/contracts/current'
+import { type CurrentRunDetails as GetRunResponse } from '@foreman-code/contracts/wave25'
 import { describe, expect, it } from 'vitest'
 import { makeScaleGraph, makeSyntheticRun } from './fixtures/scaleData'
 import { graphRuntimeIndex, selectGraphNodeActivity } from './runtimeIndex'
 import { createGraphTopologyProjector } from './topology'
-import { workflowToGraph } from '../board-core'
+import { workflowToGraph } from './mapper'
 import { shareRunResponseOrSelection } from '../../shared/api/runLiveCache'
 
 const scope = { workspaceId: 'synthetic-workspace', workflowId: 'synthetic-workflow', runId: 'synthetic-run',

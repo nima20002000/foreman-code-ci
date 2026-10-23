@@ -10,8 +10,8 @@ import { RemoteOperationReceiptSchema, WorkflowArtifactValidationFailureSchema,
 import { SourceMaterializationRecordSchema, VerifiedSourceWorkingTreeSchema, SourceCwdAttestationSchema } from './sourceAdmission.js'
 import { WorkflowArtifactResultV1Schema, type WorkflowArtifactOutputsV1 } from './workflowArtifactDeclarations.js'
 import { WorkflowArtifactResultEnvelopeV1Schema, WorkflowChoiceArtifactResultEnvelopeV1Schema } from './workflowArtifactResult.js'
-import { canonicalGraphJson } from './current/json.js'
-import { WorkHandoffResultSchema } from './current/handoffs.js'
+import { canonicalGraphJson } from './wave25/json.js'
+import { WorkHandoffResultSchema } from './wave25/handoffs.js'
 import { DeviceHistoryGapSchema, DeviceJsonContinuationSchema, DEVICE_JSON_CONTINUATION_LIMIT } from './deviceApplication.js'
 
 export const REMOTE_PHYSICAL_CONTINUATION_LIMIT = DEVICE_JSON_CONTINUATION_LIMIT * 3

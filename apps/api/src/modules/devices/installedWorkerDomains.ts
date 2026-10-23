@@ -1,11 +1,9 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { late, type Late } from '../../composition/late.js'
-import { hostEnvironment } from '../../shared/process.js'
 import { isWorkerAdmission, requiresWorkerBundle } from './workerAdmission.js'
 import { createInstalledWorkerManagedMcp } from '../harnesses/installedWorkerManagedMcp.js'
 import { createWorkerManagedMcpExtension } from '../harnesses/workerManagedMcp.js'
-import { createInstalledWorkerAccounts } from '../provider-accounts/index.js'
-import { createProviderAccountWorkerExtension, workerProviderAccountResolver, type WorkerAccountOperationPorts } from '../provider-accounts/index.js'
+import { createInstalledWorkerAccounts } from '../provider-accounts/installedWorkerAccounts.js'
+import { createProviderAccountWorkerExtension, workerProviderAccountResolver, type WorkerAccountOperationPorts } from '../provider-accounts/workerOperations.js'
 import { inventoryPayloadFingerprints } from '../harnesses/payloadFingerprintCache.js'
 import { realpath, stat } from 'node:fs/promises'
 import type { TransferIntent } from '@foreman-code/contracts/byte-transfer'
@@ -13,32 +11,32 @@ import { setTimeout as wait } from 'node:timers/promises'
 import { SourceReservationReclamationAuthorityResponseSchema } from '@foreman-code/contracts/source-operations'
 import { hasPositiveRemoteEntryClosure, hasPositiveRemoteNonEntryClosure }
   from '@foreman-code/contracts/remote-execution-entry-closure-node'
-import { recoverInstalledJobRuntimeQualifications } from '../jobs/index.js'
-import { installedSourceQuotaPool } from '../jobs/index.js'
+import { recoverInstalledJobRuntimeQualifications } from '../jobs/installedRuntimeQualification.js'
+import { installedSourceQuotaPool } from '../jobs/quotaOwnership.js'
 import { JOB_OUTPUT_NAMESPACE } from '../files/jobs/workerProtocol.js'
-import { componentLogger } from '../diagnostics/index.js'
-import { createWorkerSourceRsyncAcknowledgement } from '../sources/index.js'
+import { componentLogger } from '../diagnostics/logger.js'
+import { createWorkerSourceRsyncAcknowledgement } from '../sources/rsyncTransferLifecycle.js'
 import { createInstalledRsyncComposition, type InstalledRsyncProviders } from '../byte-transfer/productionComposition.js'
 import { randomUUID } from 'node:crypto'
 import { RemoteJobExecutionRpcRequestRecordSchema } from '@foreman-code/contracts/remote-job-execution'
-import { createInstalledJobExecutionHost } from '../jobs/index.js'
-import { createVerificationSystemInput } from '../jobs/index.js'
-import { WorkerJobApplicationSink } from '../runs/index.js'
-import { createInstalledJobSource } from '../runs/index.js'
-import { createRemoteExecutionHandler, executionExtension } from '../runs/index.js'
-import { workflowPreparationExtension } from '../runs/index.js'
+import { createInstalledJobExecutionHost } from '../jobs/executorInstalled.js'
+import { createVerificationSystemInput } from '../jobs/verificationSystemInput.js'
+import { WorkerJobApplicationSink } from '../runs/remote/workerJobApplicationSink.js'
+import { createInstalledJobSource } from '../runs/remote/installedJobSource.js'
+import { createRemoteExecutionHandler, executionExtension } from '../runs/remote/executionRouter.js'
+import { workflowPreparationExtension } from '../runs/remote/preparationExtension.js'
 import { REMOTE_EXECUTION_EXTENSION, REMOTE_PREPARATION_EXTENSION } from '@foreman-code/contracts/remote-execution-rpc'
 import { createWorkerJobInputPort } from '../files/jobInputs/workerFactory.js'
 import { JOB_INPUT_NAMESPACE } from '../files/jobInputs/protocol.js'
-import { createWorkerJobOutputCollector } from '../runs/index.js'
-import { createInstalledJobOutputRsync } from '../runs/index.js'
-import { createInstalledJobInputRsync } from '../runs/index.js'
+import { createWorkerJobOutputCollector } from '../runs/remote/workerJobOutputs.js'
+import { createInstalledJobOutputRsync } from '../runs/remote/installedJobOutputRsync.js'
+import { createInstalledJobInputRsync } from '../runs/remote/installedJobInputRsync.js'
 import { DeviceConnectionError } from './deviceWire.js'
 import { sameDeviceInstallation } from './deviceReconnect.js'
-import type { RemoteJobExecutionHost, RemoteJobExecutionHostPorts } from '../runs/index.js'
-import { RemoteOperationJournal } from '../runs/index.js'
+import type { RemoteJobExecutionHost, RemoteJobExecutionHostPorts } from '../runs/remote/jobExecutionHost.js'
+import { RemoteOperationJournal } from '../runs/remote/operationJournal.js'
 import { NativeProcessRegistry } from '../harnesses/recovery/processRegistry.js'
-import { createWorkerQualificationExtension } from '../jobs/index.js'
+import { createWorkerQualificationExtension } from '../jobs/workerQualificationCarrier.js'
 import type { InstalledRuntimeConfigurationLocation } from '../jobs/installedRuntimeHost.js'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
@@ -58,11 +56,11 @@ import type { DeviceExtensionRegistration, DeviceExtensionContext } from './devi
 import type { DeviceConnectionSupervisor } from './connectionSupervisor.js'
 import { MainClock } from './workerClock.js'
 import { createAuthenticatedTransferReceiver, transferContextForBinding } from '../byte-transfer/carrier.js'
-import { sourceTransfersOnMain } from '../sources/index.js'
-import { SourceOperationWorkerService } from '../sources/index.js'
-import { createInstalledWorkflowHost, type InstalledWorkflowHostOptions } from '../runs/index.js'
-import { InstalledWorkflowRecovery } from '../runs/index.js'
-import type { InstalledWorkflowConfigurationLocation } from '../runs/index.js'
+import { sourceTransfersOnMain } from '../sources/operationCarrier.js'
+import { SourceOperationWorkerService } from '../sources/operationWorker.js'
+import { createInstalledWorkflowHost, type InstalledWorkflowHostOptions } from '../runs/remote/installedWorkflowHost.js'
+import { InstalledWorkflowRecovery } from '../runs/remote/installedWorkflowRecovery.js'
+import type { InstalledWorkflowConfigurationLocation } from '../runs/remote/installedWorkflowConfiguration.js'
 import { inspectInstalledCodex } from '../harnesses/installedCodexInspection.js'
 import { COMPUTER_MAINTENANCE_NAMESPACE, COMPUTER_MAINTENANCE_VERSION, MaintenanceReplySchema, MaintenanceRequestSchema } from '@foreman-code/contracts/computer-maintenance'
 import { ComputerMaintenance, systemMaintenancePorts, type MaintenancePorts } from '../computers/maintenance.js'
@@ -73,22 +71,22 @@ import { GitHubLoginRunner } from '../computers/githubLogin.js'
 import {
   AGENT_SNAPSHOT_JSON_BYTES, AGENT_SNAPSHOT_NAMESPACE, AgentSnapshotRequestSchema, AgentSnapshotResultSchema,
 } from '@foreman-code/contracts/source-materialization'
-import { snapshotAgentWorktree } from '../sources/index.js'
+import { snapshotAgentWorktree } from '../sources/agentSnapshot.js'
 import { CI_HOST_NAMESPACE, CI_RUNTIME_NAMESPACE } from '@foreman-code/contracts'
 import { HostCiRunner, hostCiDirectory, systemHostCiPorts } from '../ci/runner.js'
 import { CiRuntimeWorker, currentCiRuntimePaths, lastCiRuntimeRefresh, prepareCiRuntime, retainedCiJobImages,
   retireCiRuntimeConfigurations } from '../ci/runtime.js'
-import { systemGitWorktreePorts } from '../sources/index.js'
-import { readInstalledWorkflowConfiguration } from '../runs/index.js'
+import { systemGitWorktreePorts } from '../sources/gitWorktree.js'
+import { readInstalledWorkflowConfiguration } from '../runs/remote/installedWorkflowConfiguration.js'
 import { probeComputerAccounts, systemPorts } from '../computers/accountProbe.js'
 import { inspectInstalledClaudeInventory } from '../harnesses/installedClaudeInspection.js'
 import { createInstalledWorkerProfileChecks } from '../harnesses/installedWorkerProfileChecks.js'
 import { DomainError } from '../errors.js'
-import { jobContainerNonEntryObserved } from '../jobs/index.js'
-import { proveOCIBoundaryEmpty } from '../jobs/index.js'
-import { sourceMaterializationDigest } from '../sources/index.js'
-import { createWorkerResourceTelemetryExtension } from '../resource-telemetry/index.js'
-import { createLinuxResourceCollector } from '../resource-telemetry/index.js'
+import { jobContainerNonEntryObserved } from '../jobs/executorJournal.js'
+import { proveOCIBoundaryEmpty } from '../jobs/executorContainerOwner.js'
+import { sourceMaterializationDigest } from '../sources/bindingHash.js'
+import { createWorkerResourceTelemetryExtension } from '../resource-telemetry/ingestion/carrier.js'
+import { createLinuxResourceCollector } from '../resource-telemetry/collector/ports.js'
 import { createInstalledWorkerConversations } from '../conversations/installedWorkerConversations.js'
 import { WORKER_MCP_EXTENSION } from '@foreman-code/contracts/worker-mcp-relay'
 import { WORKER_UPDATE_DRAIN_TIMEOUT_MS } from '@foreman-code/contracts/worker-update'
@@ -125,112 +123,102 @@ interface WorkerRequestActivity {
   waitingOnMain: number
 }
 
-type WorkerCurrentBinding = () => NonNullable<ReturnType<DeviceConnectionSupervisor['currentBinding']>>
-type WorkerMainRequest = (
-  namespace: string,
-  payload: unknown,
-  options?: { signal?: AbortSignal; bytes?: Uint8Array; timeoutMs?: number },
-) => ReturnType<NonNullable<ReturnType<DeviceConnectionSupervisor['captureRequest']>>['request']>
-
-/** What changes after the worker domains open: lazily opened journals and hosts, the selected configuration, activation. */
-interface WorkerState {
+interface InstalledWorkerComposition {
+  input: InstalledWorkerInput
+  managedMcp: ReturnType<typeof createInstalledWorkerManagedMcp>
+  lifetime: AbortController
   configuration: InstalledWorkflowConfigurationLocation | null
+  configurationLocation: InstalledWorkflowConfigurationLocation
+  active: Map<Promise<unknown>, WorkerRequestActivity>
+  requestActivity: AsyncLocalStorage<WorkerRequestActivity>
   maintenance: Promise<ComputerMaintenance> | undefined
-  journalOpening: Promise<RemoteOperationJournal> | undefined
+  registry: NativeProcessRegistry
+  jobRegistry: NativeProcessRegistry
   jobJournalOpening: Promise<RemoteOperationJournal> | undefined
+  jobJournal: () => Promise<RemoteOperationJournal>
+  systemInput: ReturnType<typeof createVerificationSystemInput>
+  journalOpening: Promise<RemoteOperationJournal> | undefined
   nativeRecordCleanup: Promise<unknown> | undefined
+  mainNow: () => number
+  journal: () => Promise<RemoteOperationJournal>
+  current: () => NonNullable<ReturnType<DeviceConnectionSupervisor['currentBinding']>>
+  request: (
+    namespace: string,
+    payload: unknown,
+    options?: { signal?: AbortSignal; bytes?: Uint8Array; timeoutMs?: number },
+  ) => ReturnType<NonNullable<ReturnType<DeviceConnectionSupervisor['captureRequest']>>['request']>
+  roots: () => Promise<ApprovedRootAllowlist>
+  approved: ApprovedRootAllowlist | null
   profileChecks: Awaited<ReturnType<typeof createInstalledWorkerProfileChecks>> | null
+  jobOutputRsync: Awaited<ReturnType<typeof createInstalledJobOutputRsync>> | undefined
+  jobInputRsync: ReturnType<typeof createInstalledJobInputRsync> | undefined
+  rsync: ReturnType<typeof createInstalledRsyncComposition>
+  extensions: DeviceExtensionRegistration[]
   providerAccounts: Omit<WorkerAccountOperationPorts, 'current'> | undefined
   accounts: ReturnType<typeof workerProviderAccountResolver> | undefined
+  receiver: ReturnType<typeof createAuthenticatedTransferReceiver> | undefined
   native: Awaited<ReturnType<typeof createInstalledWorkflowHost>> | undefined
   openWorkflow: ((location: InstalledWorkflowConfigurationLocation) => Promise<void>) | undefined
+  qualification: ReturnType<typeof createWorkerQualificationExtension> | undefined
+  telemetry: ReturnType<typeof createWorkerResourceTelemetryExtension>
+  ciRuntime: CiRuntimeWorker
+  hostCi: HostCiRunner
   jobs: RemoteJobExecutionHost | undefined
   jobOpening: Promise<RemoteJobExecutionHost> | undefined
   jobInputs: ReturnType<typeof createWorkerJobInputPort> | ReturnType<typeof createInstalledJobInputRsync> | undefined
   conversations: Awaited<ReturnType<typeof createInstalledWorkerConversations>> | null
   activation: Promise<void> | undefined
+  activateWorkflowConfiguration: (location: InstalledWorkflowConfigurationLocation) => Promise<void>
+  updateDrain: ReturnType<typeof createWorkerRuntimeDrain>
+  tracked: DeviceExtensionRegistration[]
   shutdown: Promise<void> | undefined
 }
 
-/** Stages that an earlier stage's code reaches before the later stage has built them. */
-interface WorkerForward {
-  updateDrain: Late<ReturnType<typeof createWorkerRuntimeDrain>>
-  activateWorkflowConfiguration: Late<(location: InstalledWorkflowConfigurationLocation) => Promise<void>>
-}
-
-type WorkerTransfers = Awaited<ReturnType<typeof createWorkerTransfers>>
-type WorkerSources = Awaited<ReturnType<typeof createWorkerSources>>
-type WorkerComputers = Awaited<ReturnType<typeof createWorkerComputers>>
-
 /** Opens the installed worker domains under the paired Main connection. */
 export async function createInstalledWorkerDomains(input: InstalledWorkerInput) {
-  const state: WorkerState = {
-    configuration: input.configuration,
-    maintenance: undefined,
-    journalOpening: undefined,
-    jobJournalOpening: undefined,
-    nativeRecordCleanup: undefined,
-    profileChecks: null,
-    providerAccounts: undefined,
-    accounts: undefined,
-    native: undefined,
-    openWorkflow: undefined,
-    jobs: undefined,
-    jobOpening: undefined,
-    jobInputs: undefined,
-    conversations: null,
-    activation: undefined,
-    shutdown: undefined,
-  }
-  const forward: WorkerForward = {
-    updateDrain: late('updateDrain'),
-    activateWorkflowConfiguration: late('activateWorkflowConfiguration'),
-  }
-  const transfers = await createWorkerTransfers({ input, state, forward })
-  const sources = await createWorkerSources({ input, state, transfers })
-  const computers = await createWorkerComputers({ input, state, forward, transfers })
-  const execution = await createWorkerExecution({ input, state, transfers })
-  forward.activateWorkflowConfiguration.bind(execution.activateWorkflowConfiguration)
-  const drain = await createWorkerDrain({ input, state, transfers, sources, computers })
-  forward.updateDrain.bind(drain.updateDrain)
-  const { lifetime, registry, journal, rsync, active } = transfers
-  const { hostCi, ciRuntime, telemetry, qualification } = computers
-  startNativeRecordCleanup(state, lifetime, registry, journal)
+  // Service callbacks read the same slots as later startup and shutdown stages.
+  const composition = { input } as InstalledWorkerComposition
+  await configureWorkerTransfers(composition)
+  await configureWorkerSources(composition)
+  await configureWorkerComputers(composition)
+  await configureWorkerExecution(composition)
+  await configureWorkerDrain(composition)
+  startNativeRecordCleanup(composition)
   return {
-    extensions: drain.tracked,
-    rsyncAvailable: rsync.kind === 'configured',
-    rsyncMissing: rsync.missing,
+    extensions: composition.tracked,
+    rsyncAvailable: composition.rsync.kind === 'configured',
+    rsyncMissing: composition.rsync.missing,
     async drainForUpdate(signal?: AbortSignal) {
-      await drain.updateDrain.run(signal)
+      await composition.updateDrain.run(signal)
     },
     resumeAfterUpdate() {
-      drain.updateDrain.resume()
-      state.jobs?.resumeAdmissions()
-      hostCi.resumeAdmissions()
-      ciRuntime.resumeAdmissions()
+      composition.updateDrain.resume()
+      composition.jobs?.resumeAdmissions()
+      composition.hostCi.resumeAdmissions()
+      composition.ciRuntime.resumeAdmissions()
     },
-    ...(rsync.kind === 'configured' ? { rsync: rsync.backend, rsyncWriters: rsync.rsyncWriters, rsyncOwnership: rsync.ownership } : {}),
-    get workflowAvailable() { return state.native?.kind === 'configured' }, sourceAvailable: Boolean(sources.receiver),
-    close() { return state.shutdown ??= (async () => {
-      lifetime.abort()
-      await Promise.allSettled([state.activation, state.nativeRecordCleanup])
+    ...(composition.rsync.kind === 'configured' ? { rsync: composition.rsync.backend, rsyncWriters: composition.rsync.rsyncWriters, rsyncOwnership: composition.rsync.ownership } : {}),
+    get workflowAvailable() { return composition.native?.kind === 'configured' }, sourceAvailable: Boolean(composition.receiver),
+    close() { return composition.shutdown ??= (async () => {
+      composition.lifetime.abort()
+      await Promise.allSettled([composition.activation, composition.nativeRecordCleanup])
       const failures: unknown[] = []
-      try { registry.closeRetention() } catch (error) { failures.push(error) }
-      try { await hostCi.beginDrain() } catch (error) { failures.push(error) }
-      try { await ciRuntime.close() } catch (error) { failures.push(error) }
-      try { await state.providerAccounts?.native.close() } catch (error) { failures.push(error) }
-      try { await state.profileChecks?.close() } catch (error) { failures.push(error) }
-      try { await telemetry.close() } catch (error) { failures.push(error) }
-      try { if (rsync.kind === 'configured') await rsync.rsyncWriters.close() } catch (error) { failures.push(error) }
-      try { if (state.jobOpening) await (await state.jobOpening).shutdown() } catch (error) { failures.push(error) }
-      try { await state.jobInputs?.close() } catch (error) { failures.push(error) }
-      try { if (state.native?.kind === 'configured') await state.native.close() } catch (error) { failures.push(error) }
-      try { await state.conversations?.close() } catch (error) { failures.push(error) }
-      await Promise.allSettled([...active.keys()])
-      await qualification?.drain()
-      try { await sources.receiver?.receiver.close() } catch (error) { failures.push(error) }
+      try { composition.registry.closeRetention() } catch (error) { failures.push(error) }
+      try { await composition.hostCi.beginDrain() } catch (error) { failures.push(error) }
+      try { await composition.ciRuntime.close() } catch (error) { failures.push(error) }
+      try { await composition.providerAccounts?.native.close() } catch (error) { failures.push(error) }
+      try { await composition.profileChecks?.close() } catch (error) { failures.push(error) }
+      try { await composition.telemetry.close() } catch (error) { failures.push(error) }
+      try { if (composition.rsync.kind === 'configured') await composition.rsync.rsyncWriters.close() } catch (error) { failures.push(error) }
+      try { if (composition.jobOpening) await (await composition.jobOpening).shutdown() } catch (error) { failures.push(error) }
+      try { await composition.jobInputs?.close() } catch (error) { failures.push(error) }
+      try { if (composition.native?.kind === 'configured') await composition.native.close() } catch (error) { failures.push(error) }
+      try { await composition.conversations?.close() } catch (error) { failures.push(error) }
+      await Promise.allSettled([...composition.active.keys()])
+      await composition.qualification?.drain()
+      try { await composition.receiver?.receiver.close() } catch (error) { failures.push(error) }
       if (!failures.length) {
-        for (const opening of [state.journalOpening, state.jobJournalOpening]) {
+        for (const opening of [composition.journalOpening, composition.jobJournalOpening]) {
           if (opening) { try { await (await opening).close() } catch (error) { failures.push(error) } }
         }
       }
@@ -239,47 +227,42 @@ export async function createInstalledWorkerDomains(input: InstalledWorkerInput) 
   }
 }
 
-function startNativeRecordCleanup(
-  state: WorkerState,
-  lifetime: AbortController,
-  registry: NativeProcessRegistry,
-  journal: () => Promise<RemoteOperationJournal>,
-): void {
+function startNativeRecordCleanup(composition: InstalledWorkerComposition): void {
   const cleanup = () => {
-    if (state.nativeRecordCleanup || lifetime.signal.aborted) return
-    state.nativeRecordCleanup = (async () => {
-      const openJournal = await journal()
-      await registry.pruneSettled(owner => lifetime.signal.aborted
-        ? Promise.resolve(false) : openJournal.isNativeOwnerSettled(owner))
+    if (composition.nativeRecordCleanup || composition.lifetime.signal.aborted) return
+    composition.nativeRecordCleanup = (async () => {
+      const journal = await composition.journal()
+      await composition.registry.pruneSettled(owner => composition.lifetime.signal.aborted
+        ? Promise.resolve(false) : journal.isNativeOwnerSettled(owner))
     })().catch(error => {
       componentLogger('engine').warn({ err: error }, 'Native closure retention cleanup failed')
-    }).finally(() => { state.nativeRecordCleanup = undefined })
+    }).finally(() => { composition.nativeRecordCleanup = undefined })
   }
   const timer = setInterval(cleanup, 10 * 60_000)
   timer.unref()
-  lifetime.signal.addEventListener('abort', () => clearInterval(timer), { once: true })
+  composition.lifetime.signal.addEventListener('abort', () => clearInterval(timer), { once: true })
 }
 
-async function createWorkerTransfers({ input, state, forward }: {
-  input: InstalledWorkerInput
-  state: WorkerState
-  forward: WorkerForward
-}) {
-  const lifetime = new AbortController()
-  const configurationLocation = input.configuration ?? {
+async function configureWorkerTransfers(composition: InstalledWorkerComposition) {
+  const {
+    input,
+  } = composition
+  const lifetime = composition.lifetime = new AbortController()
+  composition.configuration = input.configuration
+  composition.configurationLocation = input.configuration ?? {
     path: join(input.stateDirectory, 'workflow-runtime.json'), ownerUid: process.getuid!(),
   }
-  const active = new Map<Promise<unknown>, WorkerRequestActivity>()
-  const requestActivity = new AsyncLocalStorage<WorkerRequestActivity>()
-  const registry = new NativeProcessRegistry(join(input.stateDirectory, 'workflow-native-processes'))
-  const jobRegistry = new NativeProcessRegistry(join(input.stateDirectory, 'job-runtime-native-processes'))
+  composition.active = new Map()
+  composition.requestActivity = new AsyncLocalStorage()
+  const registry = composition.registry = new NativeProcessRegistry(join(input.stateDirectory, 'workflow-native-processes'))
+  composition.jobRegistry = new NativeProcessRegistry(join(input.stateDirectory, 'job-runtime-native-processes'))
   const mainClock = new MainClock()
   const observedMainTime = () => {
     const observed = input.connection()?.mainNow()
     if (observed !== undefined) mainClock.observe(observed)
     return mainClock.observed ? mainClock.now() : undefined
   }
-  const mainNow: () => number = () => {
+  composition.mainNow = () => {
     const now = observedMainTime()
     if (now === undefined) throw new DomainError('WORKER_CLOCK_UNTRUSTED',
       'Main clock has not been observed on this connection.', 409)
@@ -288,12 +271,12 @@ async function createWorkerTransfers({ input, state, forward }: {
   const ownership = { now: () => observedMainTime() ?? Date.now(),
     retentionNow: () => input.connection()?.mainNow(),
     ...(input.assertStateOwnership ? { assertExclusiveOwner: input.assertStateOwnership } : {}) }
-  const jobJournal: () => Promise<RemoteOperationJournal> = () => state.jobJournalOpening ??= RemoteOperationJournal.open(
+  const jobJournal = composition.jobJournal = () => composition.jobJournalOpening ??= RemoteOperationJournal.open(
     join(input.stateDirectory, 'job-runtime-operations.json'), ownership)
-  const systemInput = createVerificationSystemInput({ configuration: input.jobConfiguration ?? null, journal: jobJournal })
-  const journal: () => Promise<RemoteOperationJournal> = () => state.journalOpening ??= RemoteOperationJournal.open(
+  const systemInput = composition.systemInput = createVerificationSystemInput({ configuration: input.jobConfiguration ?? null, journal: jobJournal })
+  composition.journal = () => composition.journalOpening ??= RemoteOperationJournal.open(
     join(input.stateDirectory, 'workflow-operations.json'), ownership)
-  const current: WorkerCurrentBinding = () => {
+  const current = composition.current = () => {
     lifetime.signal.throwIfAborted()
     const binding = input.connection()?.currentBinding()
     if (!binding || binding.mainId !== input.pairing.mainId || binding.deviceId !== input.pairing.deviceId
@@ -302,10 +285,10 @@ async function createWorkerTransfers({ input, state, forward }: {
       throw new DomainError('WORKER_DOMAIN_UNAVAILABLE', 'The current original paired Main connection is unavailable.', 409)
     return binding
   }
-  const request: WorkerMainRequest = async (namespace: string, payload: unknown, options?: { signal?: AbortSignal; bytes?: Uint8Array; timeoutMs?: number }) => {
+  const request = composition.request = async (namespace: string, payload: unknown, options?: { signal?: AbortSignal; bytes?: Uint8Array; timeoutMs?: number }) => {
     const binding = current(), captured = input.connection()?.captureRequest(namespace)
     if (!captured || !isDeepStrictEqual(captured.binding, binding)) throw new DomainError('WORKER_DOMAIN_UNAVAILABLE', 'The exact original Main channel is unavailable.', 409)
-    const activity = requestActivity.getStore()
+    const activity = composition.requestActivity.getStore()
     if (activity?.sourceCleanup) activity.waitingOnMain++
     let reply
     try {
@@ -314,28 +297,26 @@ async function createWorkerTransfers({ input, state, forward }: {
     } finally {
       if (activity?.sourceCleanup) activity.waitingOnMain--
     }
-    if (activity?.sourceCleanup) forward.updateDrain.get().assertAdmission(activity.namespace, activity.payload)
+    if (activity?.sourceCleanup) composition.updateDrain.assertAdmission(activity.namespace, activity.payload)
     if (!isDeepStrictEqual(current(), binding)) throw new DomainError('WORKER_DOMAIN_UNAVAILABLE', 'The authenticated Main generation changed.', 409)
     return reply
   }
-  const roots: () => Promise<ApprovedRootAllowlist> = async () => {
+  const roots = composition.roots = async () => {
     lifetime.signal.throwIfAborted()
     const value = await input.approvedRoots()
     if (!value) throw new DomainError('ROOT_CONFIGURATION_MISSING', 'The actual human-approved worker roots are unavailable.', 409)
     return ApprovedRootAllowlistSchema.parse(value)
   }
-  const approved: ApprovedRootAllowlist | null = await input.approvedRoots()
-  const managedMcp = createInstalledWorkerManagedMcp({ stateDirectory: input.stateDirectory,
-    configuration: configurationLocation, availableConfiguration: () => state.configuration,
+  const approved = composition.approved = await input.approvedRoots()
+  composition.managedMcp = createInstalledWorkerManagedMcp({ stateDirectory: input.stateDirectory,
+    configuration: composition.configurationLocation, availableConfiguration: () => composition.configuration,
     registry, launcherSource: input.launcherSource })
-  if (approved) await managedMcp.ensureReady({ signal: lifetime.signal }).catch(error => {
+  if (approved) await composition.managedMcp.ensureReady({ signal: lifetime.signal }).catch(error => {
     componentLogger('devices').warn({ operation: 'repair managed MCP mount', err: error }, 'Managed Foreman Code MCP setup needs repair')
   })
-  state.profileChecks = approved ? await createInstalledWorkerProfileChecks({ stateDirectory: input.stateDirectory,
-    configuration: state.configuration, pairing: input.pairing, current, registry,
-    accounts: () => state.accounts }) : null
-  let jobOutputRsync: Awaited<ReturnType<typeof createInstalledJobOutputRsync>> | undefined
-  let jobInputRsync: ReturnType<typeof createInstalledJobInputRsync> | undefined
+  composition.profileChecks = approved ? await createInstalledWorkerProfileChecks({ stateDirectory: input.stateDirectory,
+    configuration: composition.configuration, pairing: input.pairing, current, registry,
+    accounts: () => composition.accounts }) : null
   const sourceAcknowledgement = input.rsync && createWorkerSourceRsyncAcknowledgement({
     authenticate: async (intent, context, signal) => {
       if (!isDeepStrictEqual(transferContextForBinding(current()), context)) throw new DomainError('SOURCE_CONNECTION_CONFLICT', 'Source acknowledgement requires the original current channel.', 409)
@@ -353,53 +334,61 @@ async function createWorkerTransfers({ input, state, forward }: {
     approvedRoots: roots,
   })
   const rsyncProviders: InstalledRsyncProviders | undefined = input.rsync ? { ...input.rsync,
-    resolveSource:async(intent,signal)=>jobOutputRsync&&await jobOutputRsync.owns(intent)?jobOutputRsync.resolveSource(intent,signal):input.rsync!.resolveSource(intent,signal),
+    resolveSource:async(intent,signal)=>composition.jobOutputRsync&&await composition.jobOutputRsync.owns(intent)?composition.jobOutputRsync.resolveSource(intent,signal):input.rsync!.resolveSource(intent,signal),
     acknowledged: async (intent, context) => {
     if (intent.byteClass === 'source' && intent.direction === 'to-worker') await sourceAcknowledgement!.acknowledged(intent, context)
-    else if(jobOutputRsync&&await jobOutputRsync.owns(intent))await jobOutputRsync.acknowledged(intent,context)
-    else if(jobInputRsync&&await jobInputRsync.owns(intent))await jobInputRsync.acknowledged(intent,context)
+    else if(composition.jobOutputRsync&&await composition.jobOutputRsync.owns(intent))await composition.jobOutputRsync.acknowledged(intent,context)
+    else if(composition.jobInputRsync&&await composition.jobInputRsync.owns(intent))await composition.jobInputRsync.acknowledged(intent,context)
     else await input.rsync!.acknowledged(intent, context)
   } } : undefined
-  const rsync = createInstalledRsyncComposition({ side: 'worker', providers: approved ? rsyncProviders : undefined,
+  const rsync = composition.rsync = createInstalledRsyncComposition({ side: 'worker', providers: approved ? rsyncProviders : undefined,
     current: deviceId => deviceId === input.pairing.deviceId ? current() : undefined })
-  if (rsync.kind === 'configured' && input.rsync && input.jobConfiguration && approved) jobOutputRsync = await createInstalledJobOutputRsync({
+  if (rsync.kind === 'configured' && input.rsync && input.jobConfiguration && approved) composition.jobOutputRsync = await createInstalledJobOutputRsync({
     providers: { ...input.rsync, quiescent: async (intent, signal) => { await rsync.writers.quiescent(intent, signal); await input.rsync!.quiescent(intent, signal) } },
     ownership: rsync.ownership, journal: await jobJournal(), current, request })
-  if (rsync.kind === 'configured' && input.rsync && input.jobConfiguration && approved) jobInputRsync = createInstalledJobInputRsync({
+  if (rsync.kind === 'configured' && input.rsync && input.jobConfiguration && approved) composition.jobInputRsync = createInstalledJobInputRsync({
     systemInput,
     receiver: input.rsync.receiver, journal: await jobJournal(), channel: { request, currentBinding: current },
     receiptRoot: join(input.stateDirectory, 'job-input-receipts'), admissionRoot: join(input.stateDirectory, 'job-input-rsync-admissions') })
-  const extensions: DeviceExtensionRegistration[] = rsync.extensions.map(extension => ({ ...extension, role: 'duplex' as const }))
-  return { lifetime, configurationLocation, active, requestActivity, registry, jobRegistry, mainNow, jobJournal, systemInput, journal, current, request, roots, approved, managedMcp, jobOutputRsync, jobInputRsync, rsync, extensions }
+  composition.extensions = rsync.extensions.map(extension => ({ ...extension, role: 'duplex' as const }))
 }
 
-async function createWorkerSources({ input, state, transfers }: {
-  input: InstalledWorkerInput
-  state: WorkerState
-  transfers: WorkerTransfers
-}) {
-  const { approved, configurationLocation, current, extensions, jobJournal, jobRegistry, journal, lifetime, mainNow, managedMcp, registry, request, roots, rsync } = transfers
-  const providerAccounts = state.providerAccounts = input.providerAccounts ?? createInstalledWorkerAccounts({
+async function configureWorkerSources(composition: InstalledWorkerComposition) {
+  const {
+    input,
+    lifetime,
+    configurationLocation,
+    registry,
+    jobRegistry,
+    jobJournal,
+    journal,
+    current,
+    request,
+    roots,
+    approved,
+    rsync,
+    extensions,
+  } = composition
+  const providerAccounts = composition.providerAccounts = input.providerAccounts ?? createInstalledWorkerAccounts({
     stateDirectory: input.stateDirectory, configuration: configurationLocation, current, registry,
-    prepareAccount: account => managedMcp.ensureReady({ account, signal: lifetime.signal }),
+    prepareAccount: account => composition.managedMcp.ensureReady({ account, signal: lifetime.signal }),
     target: { hostRef: { kind: 'device', mainId: input.pairing.mainId, deviceId: input.pairing.deviceId },
       applicationInstallationId: input.pairing.workerInstallationId, keyRevision: input.pairing.keyRevision,
       authorizationRevision: input.pairing.authorizationRevision },
     request: (namespace, payload) => request(namespace, payload),
   })
-  const accounts = state.accounts = providerAccounts
+  const accounts = composition.accounts = providerAccounts
     ? workerProviderAccountResolver({ ...providerAccounts, current }) : undefined
   if (providerAccounts) {
     extensions.push(createProviderAccountWorkerExtension({ ...providerAccounts, current }))
   }
-  let receiver: ReturnType<typeof createAuthenticatedTransferReceiver> | undefined
   if (approved) {
-    receiver = createAuthenticatedTransferReceiver({ stagingRoot: join(input.stateDirectory, 'source-transfer-staging'),
+    composition.receiver = createAuthenticatedTransferReceiver({ stagingRoot: join(input.stateDirectory, 'source-transfer-staging'),
       current: deviceId => { const binding = input.connection()?.currentBinding(); return binding?.deviceId === deviceId ? binding : undefined },
       accepted: rsync.kind === 'configured' ? input.rsync!.accepted : sourceTransfersOnMain(request, current),
       ...(rsync.kind === 'configured' ? { receiver: input.rsync!.receiver } : {}) })
     const sources = new SourceOperationWorkerService({
-      mainNow: mainNow,
+      mainNow: composition.mainNow,
       authenticate: async context => {
         if (!sameDeviceInstallation(current(), context.binding)) {
           throw new DomainError('SOURCE_CONNECTION_CONFLICT',
@@ -442,9 +431,9 @@ async function createWorkerSources({ input, state, transfers }: {
                 ? proveOCIBoundaryEmpty(helper.boundary) : Promise.resolve(false)))).every(Boolean)) return false
           }
         }
-        if (state.native?.kind === 'configured') {
-          if (!owner) return state.native.reservationClosed(operationId)
-          return state.native.preparationClosed({ ...owner, preparationKind: 'workflow', preparationClosed: true })
+        if (composition.native?.kind === 'configured') {
+          if (!owner) return composition.native.reservationClosed(operationId)
+          return composition.native.preparationClosed({ ...owner, preparationKind: 'workflow', preparationClosed: true })
         }
         // Removing a runtime selection does not erase protected operation or process records.
         if ([...registry.snapshot().launches, ...jobRegistry.snapshot().launches]
@@ -456,10 +445,10 @@ async function createWorkerSources({ input, state, transfers }: {
         const recovery = new InstalledWorkflowRecovery(join(input.stateDirectory, 'workflow-recovery'), registry)
         return !recovery.hasCapture(operationId)
       },
-      nativeOwnerFor: record => state.native?.kind === 'configured' ? state.native.nativeOwnerFor(record) : Promise.resolve(null),
+      nativeOwnerFor: record => composition.native?.kind === 'configured' ? composition.native.nativeOwnerFor(record) : Promise.resolve(null),
       preparationNativeClosed: async (operationId, owner) => {
         if (owner.preparationKind === 'workflow') {
-          return state.native?.kind === 'configured' ? state.native.preparationClosed(owner) : false
+          return composition.native?.kind === 'configured' ? composition.native.preparationClosed(owner) : false
         }
         if (!input.jobConfiguration) return false
         const retained = await jobJournal(), nativeOwner = await retained.jobNativeOwner(operationId)
@@ -496,20 +485,20 @@ async function createWorkerSources({ input, state, transfers }: {
       } : {}),
     })
     const createWorkflow = (location: InstalledWorkflowConfigurationLocation | null) =>
-      createInstalledWorkflowHost({ stateDirectory: input.stateDirectory, mainNow: mainNow, pairing: input.pairing, bootId: input.bootId,
+      createInstalledWorkflowHost({ stateDirectory: input.stateDirectory, mainNow: composition.mainNow, pairing: input.pairing, bootId: input.bootId,
       configuration: location, currentBinding: () => input.connection()?.currentBinding(),
       linkLostAt: () => input.connection()?.linkLostAt?.(),
       captureRequest: namespace => input.connection()?.captureRequest(namespace), sources, approvedRoots: roots,
       ...(input.nativeOutputs ? { nativeOutputs: input.nativeOutputs } : {}),
       codexSuiteRevision: input.codexSuiteRevision,
       signal: lifetime.signal, registry, journal, ...(accounts ? { accounts } : {}) })
-    state.native = await createWorkflow(state.configuration)
-    state.openWorkflow = async location => {
-      if (state.native?.kind !== 'configured') state.native = await createWorkflow(location)
+    composition.native = await createWorkflow(composition.configuration)
+    composition.openWorkflow = async location => {
+      if (composition.native?.kind !== 'configured') composition.native = await createWorkflow(location)
     }
-    extensions.push({ ...receiver.extension, role: 'duplex' }, { ...SOURCE_OPERATION_EXTENSION, role: 'duplex', async handle(payload, context) {
+    extensions.push({ ...composition.receiver.extension, role: 'duplex' }, { ...SOURCE_OPERATION_EXTENSION, role: 'duplex', async handle(payload, context) {
       return { payload: await sources.handle(payload, { ...context, signal: AbortSignal.any([context.signal, lifetime.signal]) }) }
-    } }, ...(state.native.kind === 'configured' ? state.native.extensions : []))
+    } }, ...(composition.native.kind === 'configured' ? composition.native.extensions : []))
   }
   if (input.jobConfiguration && approved) {
     await recoverInstalledJobRuntimeQualifications({ journal: await jobJournal(), registry: jobRegistry,
@@ -518,18 +507,22 @@ async function createWorkerSources({ input, state, transfers }: {
           authorizationRevision: input.pairing.authorizationRevision },
         mainInstallationId: input.pairing.mainId, bootId: input.bootId } })
   }
-  return { receiver }
 }
 
-async function createWorkerComputers({ input, state, forward, transfers }: {
-  input: InstalledWorkerInput
-  state: WorkerState
-  forward: WorkerForward
-  transfers: WorkerTransfers
-}) {
-  const { approved, current, extensions, jobJournal, jobRegistry, lifetime, managedMcp, request, roots } = transfers
-  extensions.push(createWorkerManagedMcpExtension(managedMcp.worker, current))
-  const telemetry = createWorkerResourceTelemetryExtension({ signal: lifetime.signal, currentBinding: current,
+async function configureWorkerComputers(composition: InstalledWorkerComposition) {
+  composition.extensions.push(createWorkerManagedMcpExtension(composition.managedMcp.worker, composition.current))
+  const {
+    input,
+    lifetime,
+    jobRegistry,
+    jobJournal,
+    current,
+    request,
+    roots,
+    approved,
+    extensions,
+  } = composition
+  const telemetry = composition.telemetry = createWorkerResourceTelemetryExtension({ signal: lifetime.signal, currentBinding: current,
     createCollector: (identity, signal) => createLinuxResourceCollector({ identity, signal,
       // The installed Job controller already reads host MemAvailable at native entry.
       wholeHostVisible: true,
@@ -540,9 +533,8 @@ async function createWorkerComputers({ input, state, forward, transfers }: {
       }, changes: (revision, signal) => jobRegistry.changes(revision, signal) },
     }) })
   extensions.push(telemetry.extension)
-  let qualification: ReturnType<typeof createWorkerQualificationExtension> | undefined
   if (input.jobConfiguration && approved) {
-    qualification = createWorkerQualificationExtension({ configuration: input.jobConfiguration, pairing: input.pairing, bootId: input.bootId,
+    composition.qualification = createWorkerQualificationExtension({ configuration: input.jobConfiguration, pairing: input.pairing, bootId: input.bootId,
       currentBinding: current, now: () => {
         const now = input.connection()?.mainNow()
         if (now === undefined) throw new DomainError('WORKER_CLOCK_UNTRUSTED',
@@ -550,9 +542,9 @@ async function createWorkerComputers({ input, state, forward, transfers }: {
         return now
       }, request,
       journal: jobJournal, registry: jobRegistry, signal: lifetime.signal })
-    extensions.push(qualification)
+    extensions.push(composition.qualification)
   }
-  const ciRuntime = new CiRuntimeWorker(input.stateDirectory, { git: systemGitWorktreePorts(hostEnvironment()),
+  const ciRuntime = composition.ciRuntime = new CiRuntimeWorker(input.stateDirectory, { git: systemGitWorktreePorts(process.env),
     managedRuntimeRoot: async () => (await roots()).managedRuntimeRoot,
     prepare: async options => {
       const retained = await jobJournal()
@@ -574,7 +566,7 @@ async function createWorkerComputers({ input, state, forward, transfers }: {
       return { payload: await ciRuntime.handle(payload) }
     },
   })
-  const hostCi = new HostCiRunner(hostCiDirectory(), systemHostCiPorts(), hostEnvironment(), input.ciStartupPending)
+  const hostCi = composition.hostCi = new HostCiRunner(hostCiDirectory(), systemHostCiPorts(), process.env, input.ciStartupPending)
   extensions.push({ namespace: CI_HOST_NAMESPACE, version: 1, role: 'server', maxJsonBytes: 1_048_576, maxBinaryBytes: 0,
     async handle(payload, context) {
       if (context.bytes !== undefined || !isDeepStrictEqual(current(), context.binding)) {
@@ -589,10 +581,10 @@ async function createWorkerComputers({ input, state, forward, transfers }: {
       if (context.bytes !== undefined || !isDeepStrictEqual(current(), context.binding)) {
         throw new DomainError('COMPUTER_ACCOUNTS_STALE', 'Account facts require the actual authenticated worker channel.', 409)
       }
-      const selected = await readInstalledWorkflowConfiguration(state.configuration)
+      const selected = await readInstalledWorkflowConfiguration(composition.configuration)
       const binaries = { ...(selected?.codexBinary ? { codex: selected.codexBinary } : {}),
         ...(selected?.claude ? { claude: selected.claude.binary } : {}) }
-      return { payload: await probeComputerAccounts(systemPorts(hostEnvironment(), binaries),
+      return { payload: await probeComputerAccounts(systemPorts(process.env, binaries),
         AbortSignal.any([context.signal, lifetime.signal, AbortSignal.timeout(20_000)]),
         { refresh: request.refresh === true }) }
     },
@@ -607,26 +599,26 @@ async function createWorkerComputers({ input, state, forward, transfers }: {
       if (request.operation === 'status' && request.scope === 'worker') {
         return { payload: MaintenanceReplySchema.parse({ operation: 'worker', worker: await input.workerUpdate?.status() ?? null }) }
       }
-      state.maintenance ??= readInstalledWorkflowConfiguration(state.configuration)
+      composition.maintenance ??= readInstalledWorkflowConfiguration(composition.configuration)
         .then(selected => {
         // Maintenance reads the binaries this Worker actually runs; updates move each harness selection with them.
         const binaries: Record<string, string> = { ...(selected?.codexBinary ? { codex: selected.codexBinary } : {}),
           ...(selected?.claude ? { claude: selected.claude.binary } : {}) }
-        return new ComputerMaintenance({ ...systemMaintenancePorts(hostEnvironment(), binaries),
+        return new ComputerMaintenance({ ...systemMaintenancePorts(process.env, binaries),
           ...(input.browserRuntime ? { browserRuntime: input.browserRuntime } : {}),
           ...(input.workerUpdate ? { workerUpdate: input.workerUpdate } : {}),
           async selectInstalledCodex(signal) {
-            const binary = await selectInstalledCodex(state.configuration, hostEnvironment().HOME ?? homedir(), signal)
+            const binary = await selectInstalledCodex(composition.configuration, process.env.HOME ?? homedir(), signal)
             if (binary) binaries.codex = binary
             return binary
           },
           async selectInstalledClaude(signal) {
-            const binary = await selectInstalledClaude(state.configuration, hostEnvironment(), signal)
+            const binary = await selectInstalledClaude(composition.configuration, process.env, signal)
             if (binary) binaries.claude = binary
             return binary
           } })
       })
-      const owner = await state.maintenance
+      const owner = await composition.maintenance
       return { payload: MaintenanceReplySchema.parse(request.operation === 'status'
         ? { operation: 'status', status: await owner.status(AbortSignal.any([context.signal, lifetime.signal, AbortSignal.timeout(90_000)])) }
         : { operation: 'start', task: await owner.start(request.task, request.commandId) }) }
@@ -645,7 +637,7 @@ async function createWorkerComputers({ input, state, forward, transfers }: {
         .some(base => path.startsWith(`${base.replace(/\/$/u, '')}/`))) {
         throw new DomainError('AGENT_SNAPSHOT_DENIED', 'This folder is not an Agent worktree on this computer.', 403)
       }
-      const snapshot = await snapshotAgentWorktree(systemGitWorktreePorts(hostEnvironment()), { path, baseCommit: request.baseCommit },
+      const snapshot = await snapshotAgentWorktree(systemGitWorktreePorts(process.env), { path, baseCommit: request.baseCommit },
         AbortSignal.any([context.signal, lifetime.signal, AbortSignal.timeout(120_000)]))
       return { payload: AgentSnapshotResultSchema.parse({ commit: snapshot.commit, bundleBase64: snapshot.bundle?.toString('base64') ?? null }) }
     },
@@ -673,16 +665,16 @@ async function createWorkerComputers({ input, state, forward, transfers }: {
       if (!isDeepStrictEqual(current(), context.binding)) throw new DomainError('HARNESS_INVENTORY_STALE', 'The installed inventory generation changed.', 409)
       if (!isDeepStrictEqual(current(), context.binding)) throw new DomainError('HARNESS_INVENTORY_STALE', 'The installed inventory generation changed.', 409)
       const inspected = await inspectInstalledCodex({ binding: context.binding, configuration: refreshed,
-        fingerprintCache: inventoryPayloadFingerprints, environment: hostEnvironment(), cwd: input.stateDirectory,
+        fingerprintCache: inventoryPayloadFingerprints, environment: process.env, cwd: input.stateDirectory,
         signal: AbortSignal.any([context.signal, lifetime.signal]) })
       const claude = await inspectInstalledClaudeInventory({ binding: context.binding, configuration: refreshed,
-        fingerprintCache: inventoryPayloadFingerprints, environment: hostEnvironment(), cwd: input.stateDirectory,
+        fingerprintCache: inventoryPayloadFingerprints, environment: process.env, cwd: input.stateDirectory,
         signal: AbortSignal.any([context.signal, lifetime.signal]) })
       if (!isDeepStrictEqual(current(), context.binding)) throw new DomainError('HARNESS_INVENTORY_STALE', 'The installed inventory generation changed.', 409)
       const installations = [...inspected.inventory.installations, ...claude.inventory.installations]
       if (refreshed && approved) {
         try {
-          await forward.activateWorkflowConfiguration.get()(refreshed)
+          await composition.activateWorkflowConfiguration(refreshed)
         } catch (error) {
           // Setup needs the selected payload; an unavailable one is reported below instead of hiding the inventory.
           if (installations.every(installation => installation.installed)) throw error
@@ -693,26 +685,35 @@ async function createWorkerComputers({ input, state, forward, transfers }: {
       return { payload: { ...inspected.inventory, installations } }
     },
   })
-  return { qualification, telemetry, ciRuntime, hostCi }
 }
 
-async function createWorkerExecution({ input, state, transfers }: {
-  input: InstalledWorkerInput
-  state: WorkerState
-  transfers: WorkerTransfers
-}) {
-  const { approved, configurationLocation, current, extensions, jobInputRsync, jobJournal, jobOutputRsync, jobRegistry, journal, lifetime, registry, request, roots, systemInput } = transfers
-  const { accounts } = state
-  const openJobs = () => state.jobOpening ??= (async () => {
+async function configureWorkerExecution(composition: InstalledWorkerComposition) {
+  const {
+    input,
+    lifetime,
+    configurationLocation,
+    registry,
+    jobRegistry,
+    jobJournal,
+    systemInput,
+    journal,
+    current,
+    request,
+    roots,
+    approved,
+    extensions,
+    accounts,
+  } = composition
+  const openJobs = () => composition.jobOpening ??= (async () => {
     const connection = current(), retained = await jobJournal()
     const application = new WorkerJobApplicationSink({ request })
-    state.jobInputs = jobInputRsync ?? createWorkerJobInputPort({ channel: { request, currentBinding: current },
+    composition.jobInputs = composition.jobInputRsync ?? createWorkerJobInputPort({ channel: { request, currentBinding: current },
       systemInput,
       stagingRoot: join(input.stateDirectory, 'job-input-transfer-staging'), receiptRoot: join(input.stateDirectory, 'job-input-receipts') })
     const host = createInstalledJobExecutionHost({ configuration: input.jobConfiguration ?? null, registry: jobRegistry,
       ...input.jobReports,
       connection, incarnationId: randomUUID(), journal: retained, currentBinding: current,
-      source: createInstalledJobSource({ journal: retained, application, currentBinding: current, approvedRoots: roots }), inputs: state.jobInputs,
+      source: createInstalledJobSource({ journal: retained, application, currentBinding: current, approvedRoots: roots }), inputs: composition.jobInputs,
       authorize: (intent, _execution, action) => application.authorize(intent, action),
       observeReceipt: receipt => application.observeReceipt(receipt),
       appendLog: async chunk => {
@@ -721,40 +722,40 @@ async function createWorkerExecution({ input, state, transfers }: {
         await application.appendLog(owners[0]!.intent, chunk)
       },
       collectOutputs: createWorkerJobOutputCollector({ request }, { current: async signal => { signal?.throwIfAborted(); return transferContextForBinding(current()) },
-        retryable: error => error instanceof DeviceConnectionError && ['transport', 'timeout'].includes(error.code) }, retained,jobOutputRsync?.collector),
+        retryable: error => error instanceof DeviceConnectionError && ['transport', 'timeout'].includes(error.code) }, retained,composition.jobOutputRsync?.collector),
     })
     try { await host.recover() } catch (error) {
       componentLogger('jobs').error({ err: error }, 'Installed Job recovery failed')
       throw error
     }
-    state.jobs = host
+    composition.jobs = host
     return host
   })()
   const execution = extensions.find(extension => extension.namespace === REMOTE_EXECUTION_EXTENSION)
   const createConversations = () => createInstalledWorkerConversations({ stateDirectory: input.stateDirectory,
-    configuration: state.configuration, registry, journal, approvedRoots: roots, current,
+    configuration: composition.configuration, registry, journal, approvedRoots: roots, current,
     capture: () => input.connection()?.captureRequest(REMOTE_EXECUTION_EXTENSION), request,
     codexSuiteRevision: input.codexSuiteRevision, signal: lifetime.signal, ...(accounts ? { accounts } : {}) })
-  state.conversations = approved ? await createConversations() : null
-  const activateWorkflowConfiguration: (location: InstalledWorkflowConfigurationLocation) => Promise<void> = async (location: InstalledWorkflowConfigurationLocation) => {
+  composition.conversations = approved ? await createConversations() : null
+  composition.activateWorkflowConfiguration = async (location: InstalledWorkflowConfigurationLocation) => {
     if (!isDeepStrictEqual(location, configurationLocation)) {
       throw new DomainError('HARNESS_INVENTORY_STALE', 'The protected workflow selection location changed.', 409)
     }
-    state.activation ??= (async () => {
+    composition.activation ??= (async () => {
       await readInstalledWorkflowConfiguration(location)
       lifetime.signal.throwIfAborted()
-      state.configuration = location
-      await state.openWorkflow?.(location)
-      state.profileChecks ??= await createInstalledWorkerProfileChecks({ stateDirectory: input.stateDirectory,
-        configuration: state.configuration, pairing: input.pairing, current, registry,
-        accounts: () => state.accounts })
-      state.conversations ??= await createConversations()
+      composition.configuration = location
+      await composition.openWorkflow?.(location)
+      composition.profileChecks ??= await createInstalledWorkerProfileChecks({ stateDirectory: input.stateDirectory,
+        configuration: composition.configuration, pairing: input.pairing, current, registry,
+        accounts: () => composition.accounts })
+      composition.conversations ??= await createConversations()
     })()
-    try { await state.activation }
-    finally { state.activation = undefined }
+    try { await composition.activation }
+    finally { composition.activation = undefined }
   }
   const workflowSupport = Boolean(approved && input.refreshWorkflowConfiguration)
-  if ((state.conversations || workflowSupport) && !extensions.some(extension => extension.namespace === WORKER_MCP_EXTENSION.namespace)) {
+  if ((composition.conversations || workflowSupport) && !extensions.some(extension => extension.namespace === WORKER_MCP_EXTENSION.namespace)) {
     extensions.push({ ...WORKER_MCP_EXTENSION, role: 'client' })
   }
   if (workflowSupport && !extensions.some(extension => extension.namespace === EXECUTION_AUTHORITY_EXTENSION.namespace)) {
@@ -769,17 +770,17 @@ async function createWorkerExecution({ input, state, transfers }: {
     }
     extensions.push({namespace:JOB_INPUT_NAMESPACE,version:1,role:'client',maxJsonBytes:1_048_576,maxBinaryBytes:8192})
   }
-  if (input.jobConfiguration && approved || state.conversations || workflowSupport) {
+  if (input.jobConfiguration && approved || composition.conversations || workflowSupport) {
     const handler = executionExtension({
       admit(_payload, context) {
         if (context.bytes !== undefined || !isDeepStrictEqual(current(), context.binding)) throw new DomainError('JOB_RUNTIME_CONNECTION_CHANGED', 'Execution requires its actual authenticated worker channel.', 409)
       },
       async dispatch(payload, context) {
-        const job = input.jobConfiguration && RemoteJobExecutionRpcRequestRecordSchema.safeParse(payload).success ? await openJobs() : state.jobs
-        const conversationHost = state.conversations
+        const job = input.jobConfiguration && RemoteJobExecutionRpcRequestRecordSchema.safeParse(payload).success ? await openJobs() : composition.jobs
+        const conversationHost = composition.conversations
         return { payload: await createRemoteExecutionHandler({ handle: async raw => {
-          const workflow = state.native?.kind === 'configured'
-            ? state.native.extensions.find(extension => extension.namespace === REMOTE_EXECUTION_EXTENSION)?.handle : undefined
+          const workflow = composition.native?.kind === 'configured'
+            ? composition.native.extensions.find(extension => extension.namespace === REMOTE_EXECUTION_EXTENSION)?.handle : undefined
           if (!workflow) throw new DomainError('WORKER_WORKFLOW_UNAVAILABLE', 'The installed Workflow runtime is unavailable.', 409)
           return (await workflow(raw, context)).payload
         } }, job, conversationHost ? { handle: raw => conversationHost.handle(raw, context.binding, context.signal) } : undefined)(payload) }
@@ -792,36 +793,58 @@ async function createWorkerExecution({ input, state, transfers }: {
     if (preparation) extensions.splice(extensions.indexOf(preparation), 1, preparationHandler)
     else if (workflowSupport) extensions.push(preparationHandler)
   }
-  if (state.profileChecks || workflowSupport) extensions.push({
+  if (composition.profileChecks || workflowSupport) extensions.push({
     namespace: HARNESS_PROFILE_CHECK_NAMESPACE, version: 1, role: 'server', maxJsonBytes: 1_048_576, maxBinaryBytes: 0,
     async handle(payload, context) {
       if (context.bytes !== undefined || !isDeepStrictEqual(current(), context.binding)) {
         throw new DomainError('HARNESS_INVENTORY_STALE', 'Profile checks require the authenticated worker channel.', 409)
       }
-      if (!state.profileChecks) throw new DomainError('WORKER_WORKFLOW_UNAVAILABLE', 'Install a workflow harness first.', 409)
-      return state.profileChecks.extension.handle(payload, context)
+      if (!composition.profileChecks) throw new DomainError('WORKER_WORKFLOW_UNAVAILABLE', 'Install a workflow harness first.', 409)
+      return composition.profileChecks.extension.handle(payload, context)
     },
   })
-  return { activateWorkflowConfiguration }
 }
 
-async function createWorkerDrain({ input, state, transfers, sources, computers }: {
-  input: InstalledWorkerInput
-  state: WorkerState
-  transfers: WorkerTransfers
-  sources: WorkerSources
-  computers: WorkerComputers
-}) {
-  const { active, extensions, jobRegistry, lifetime, managedMcp, registry, requestActivity, rsync } = transfers
-  const { receiver } = sources
-  const { ciRuntime, hostCi, qualification } = computers
+async function stoppedWorkerTransfer(composition: InstalledWorkerComposition, transfer: TransferIntent): Promise<boolean> {
+  const journals = [
+    ['workflow-operations.json', composition.journalOpening, composition.journal],
+    ['job-runtime-operations.json', composition.jobJournalOpening, composition.jobJournal],
+  ] as const
+  for (const [file, opening, open] of journals) {
+    if (!opening) {
+      try { await stat(join(composition.input.stateDirectory, file)) } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+        throw error
+      }
+    }
+    const journal = await (opening ?? open())
+    const statuses = await Promise.all([journal.status(transfer.operationId), journal.jobStatus(transfer.operationId)])
+    if (statuses.some(status => status.status === 'known' && status.receipt.stopFence
+      && status.receipt.intent.mainId === transfer.mainId
+      && status.receipt.intent.executionId === transfer.executionId
+      && status.receipt.intent.attemptId === transfer.attemptId)) return true
+  }
+  return false
+}
+
+async function configureWorkerDrain(composition: InstalledWorkerComposition) {
+  const {
+    lifetime,
+    active,
+    registry,
+    jobRegistry,
+    rsync,
+    extensions,
+    ciRuntime,
+    hostCi,
+  } = composition
   const updateWaits = new Set<string>()
   const drainStage = async (stage: string, run: () => Promise<void>) => {
     updateWaits.add(stage)
     try { await run() }
     finally { updateWaits.delete(stage) }
   }
-  const updateDrain = createWorkerRuntimeDrain({ signal: lifetime.signal,
+  const updateDrain = composition.updateDrain = createWorkerRuntimeDrain({ signal: lifetime.signal,
     waitingOn: () => [...updateWaits, ...new Set([...active.values()]
       .filter(task => task.namespace !== COMPUTER_MAINTENANCE_NAMESPACE && !(task.sourceCleanup && task.waitingOnMain))
       .map(task => task.namespace))],
@@ -837,8 +860,8 @@ async function createWorkerDrain({ input, state, transfers, sources, computers }
         drainStage('ci-runtime-preparation', () => ciRuntime.beginDrain()),
       ])
       signal.throwIfAborted()
-      if (state.jobOpening) {
-        const opening = state.jobOpening
+      if (composition.jobOpening) {
+        const opening = composition.jobOpening
         await drainStage('jobs', async () => {
           const jobs = await opening
           signal.throwIfAborted()
@@ -846,18 +869,18 @@ async function createWorkerDrain({ input, state, transfers, sources, computers }
         })
       }
       signal.throwIfAborted()
-      if (state.native?.kind === 'configured') {
-        const workflow = state.native
+      if (composition.native?.kind === 'configured') {
+        const workflow = composition.native
         await drainStage('workflow-turns', () => workflow.drainForUpdate())
       }
       signal.throwIfAborted()
-      if (state.conversations) {
-        const conversationHost = state.conversations
+      if (composition.conversations) {
+        const conversationHost = composition.conversations
         await drainStage('conversation-tasks', () => conversationHost.drainForUpdate())
       }
     },
-    drainQualifications: async () => { await qualification?.drain() },
-    drainMaintenance: async () => { if (state.maintenance) await (await state.maintenance).drainForWorkerUpdate() },
+    drainQualifications: async () => { await composition.qualification?.drain() },
+    drainMaintenance: async () => { if (composition.maintenance) await (await composition.maintenance).drainForWorkerUpdate() },
     quiescent: async signal => {
       updateWaits.clear()
       if (!hostCi.isUpdateIdle()) {
@@ -871,8 +894,8 @@ async function createWorkerDrain({ input, state, transfers, sources, computers }
       const workflowLaunches = registry.snapshot().launches
       const jobLaunches = jobRegistry.snapshot().launches
       for (const [name, opening, launches] of [
-        ['workflow-journal', state.journalOpening, workflowLaunches],
-        ['job-journal', state.jobJournalOpening, jobLaunches],
+        ['workflow-journal', composition.journalOpening, workflowLaunches],
+        ['job-journal', composition.jobJournalOpening, jobLaunches],
       ] as const) {
         updateWaits.add(name)
         const log = await opening
@@ -885,9 +908,9 @@ async function createWorkerDrain({ input, state, transfers, sources, computers }
         updateWaits.add('native-processes')
         return false
       }
-      if (receiver) {
+      if (composition.receiver) {
         updateWaits.add('byte-transfer-receiver')
-        if (!await receiver.receiver.isWorkerUpdateIdle(intent => stoppedWorkerTransfer(state, transfers, input.stateDirectory, intent))) return false
+        if (!await composition.receiver.receiver.isWorkerUpdateIdle(intent => stoppedWorkerTransfer(composition, intent))) return false
         updateWaits.delete('byte-transfer-receiver')
       }
       if (rsync.kind === 'configured') {
@@ -899,17 +922,17 @@ async function createWorkerDrain({ input, state, transfers, sources, computers }
       }
       return true
     } })
-  const tracked: DeviceExtensionRegistration[] = extensions.map(extension => ({ ...extension, ...(extension.handle ? { handle: (payload: unknown, context: DeviceExtensionContext) => {
+  composition.tracked = extensions.map(extension => ({ ...extension, ...(extension.handle ? { handle: (payload: unknown, context: DeviceExtensionContext) => {
     lifetime.signal.throwIfAborted()
     const activity = { namespace: extension.namespace, payload,
       sourceCleanup: isWorkerSourceCleanup(extension.namespace, payload), waitingOnMain: 0 }
-    const task = requestActivity.run(activity, async () => {
+    const task = composition.requestActivity.run(activity, async () => {
       // Admission is decided when the request arrives, so a drain that starts during the bundle check waits for this task.
       updateDrain.assertAdmission(extension.namespace, payload)
-      if (requiresWorkerBundle(extension.namespace, payload)) await input.assertBundleReady?.(context)
+      if (requiresWorkerBundle(extension.namespace, payload)) await composition.input.assertBundleReady?.(context)
       if (extension.namespace === REMOTE_EXECUTION_EXTENSION && payload && typeof payload === 'object'
         && 'method' in payload && ['inspect-mcp', 'conversation.inspect-mcp'].includes(String(payload.method))) {
-        await managedMcp.ensureReady({ signal: AbortSignal.any([context.signal, lifetime.signal,
+        await composition.managedMcp.ensureReady({ signal: AbortSignal.any([context.signal, lifetime.signal,
           ...(context.connectionSignal ? [context.connectionSignal] : [])]) })
       }
       return extension.handle!(payload, { ...context, signal: AbortSignal.any([context.signal, lifetime.signal]) })
@@ -918,34 +941,6 @@ async function createWorkerDrain({ input, state, transfers, sources, computers }
     void task.then(() => active.delete(task), () => active.delete(task))
     return task
   } } : {}) }))
-  return { updateDrain, tracked }
-}
-
-async function stoppedWorkerTransfer(
-  state: WorkerState,
-  transfers: Pick<WorkerTransfers, 'journal' | 'jobJournal'>,
-  stateDirectory: string,
-  transfer: TransferIntent,
-): Promise<boolean> {
-  const journals = [
-    ['workflow-operations.json', state.journalOpening, transfers.journal],
-    ['job-runtime-operations.json', state.jobJournalOpening, transfers.jobJournal],
-  ] as const
-  for (const [file, opening, open] of journals) {
-    if (!opening) {
-      try { await stat(join(stateDirectory, file)) } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
-        throw error
-      }
-    }
-    const journal = await (opening ?? open())
-    const statuses = await Promise.all([journal.status(transfer.operationId), journal.jobStatus(transfer.operationId)])
-    if (statuses.some(status => status.status === 'known' && status.receipt.stopFence
-      && status.receipt.intent.mainId === transfer.mainId
-      && status.receipt.intent.executionId === transfer.executionId
-      && status.receipt.intent.attemptId === transfer.attemptId)) return true
-  }
-  return false
 }
 
 export function createWorkerRuntimeDrain(ports: {

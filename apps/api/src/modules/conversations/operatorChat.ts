@@ -1,20 +1,20 @@
 import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { nativeChatPrompt, preflightChatInput, restoreAcceptedChatInput, validateChatInput, type AcceptedChatInput, type AcceptedChatSettings, type PreparedChatInput } from './nativeChatInput.js'
 import { operatorMessagePrompt } from './operatorInput.js'
-import { installChatDeliveryBridge, operatorDeliveryBridge } from '../workflow-chat/index.js'
-import type { ChatDeliveryBridge } from '../workflow-chat/index.js'
+import { installChatDeliveryBridge, operatorDeliveryBridge } from '../workflow-chat/deliveryBridgeAccess.js'
+import type { LegacyChatDeliveryBridge } from '../workflow-chat/legacyBridge.js'
 import type pg from 'pg'
 import type { TransactionSql } from '../../infrastructure/transaction.js'
 import { ConversationDeliveryOwner, type ConversationTarget } from './conversationDeliveryOwner.js'
 import { ConversationControlQueue, ConversationEvents, conversationDeliveryState, definiteCreationRejection, definitePromptRejection,
   failedTurnResult, followDeliveryReceipts, qualifyDeliveryIntent } from './conversationEngine.js'
-import type { PostgresChatDeliveryRepository } from '../workflow-chat/index.js'
-import type { DeliveryQualification, StoredDelivery } from '../workflow-chat/index.js'
+import type { PostgresChatDeliveryRepository } from '../workflow-chat/deliveryRepository.js'
+import type { DeliveryQualification, StoredDelivery } from '../workflow-chat/model.js'
 import type { ChatSendRequest, ChatDeliveryReceipt } from '@foreman-code/contracts'
 import { sessionTaskContent } from '@foreman-code/contracts'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { validateMessageAttachments } from './messageAttachments.js'
-import { logIgnoredError } from '../diagnostics/index.js'
+import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import type { ReadObservation } from '@foreman-code/contracts'
 import { errorMessage } from '@foreman-code/contracts/server-kit'
 import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
@@ -24,7 +24,6 @@ import { publicOperatorConversation } from './operatorConversationRecord.js'
 import { APP_MCP_TOKEN } from '../harnesses/appMcpLauncher.js'
 import type { SessionControlRequest } from '@foreman-code/contracts'
 import { pendingSessionControls, type ChatModelCatalog } from '../harnesses/sessionControlDefaults.js'
-import { supportsExpectedTurnSteer } from '../harnesses/capabilities.js'
 import { lockedSessionModes, validateSessionMessage } from './sessionControls/messageAdmission.js'
 import type { SessionControlStore } from './sessionControls/store.js'
 import { acceptedOperatorResponseControl } from './acceptedResponseControl.js'
@@ -34,7 +33,8 @@ import { pendingInteractionAfterHistory } from './pendingInteractionReadback.js'
 import { qualifyChatActivity } from './qualifiedActivity.js'
 import { reconcileKnownActivities } from './reconcileKnownActivities.js'
 import { knownNativeActivity } from './knownNativeActivity.js'
-import { consumeTurnOutput, createTurnTextPipeline, observedMessageReceipt, observedNonSubmission, type TurnEventSink } from './conversationTurnCore.js'
+import { committedNativeText } from './committedNativeText.js'
+import { activityTextEnvelope } from './activityTextEnvelope.js'
 import { nativeInteractionAvailability } from './interactionAvailability.js'
 import { commandInputHash } from '../commands/postgres.js'
 import { constants } from 'node:fs'
@@ -60,17 +60,17 @@ import type {
   NativeTerminalObservation,
 } from '../harnesses/port.js'
 import { NativeDeliveryError } from '../harnesses/errors.js'
-import { componentLogger } from '../diagnostics/index.js'
+import { componentLogger } from '../diagnostics/logger.js'
 import { primeInitialNativeStream } from '../harnesses/claudeSdk/initialStream.js'
-import type { PostgresOperatorRepository } from '../operators/index.js'
+import type { PostgresOperatorRepository } from '../operators/postgres.js'
 import { withFilesystemDeadline } from '../workspaces/filesystem.js'
 import { nativeCorrelation, PostgresOperatorConversationRepository, type ConversationRow } from './operatorChatRepository.js'
-import { nativePersistenceRedactor } from '../interactions/index.js'
+import { nativePersistenceRedactor } from '../interactions/nativePersistence.js'
 import { currentOperatorHistory, operatorActivity } from './operatorActivity.js'
 import { completedNativeAssistantMessage } from './operatorText.js'
 import { nativeActivityFence } from './nativeActivityFence.js'
 import { createNativeTextStream } from './nativeTextStream.js'
-import { ignoreError } from '../diagnostics/index.js'
+import { ignoreError } from '../diagnostics/ignoredError.js'
 import { sameOperatorExecutionConfiguration } from './workerExecutionConfiguration.js'
 import { admitWhenChecked } from '../harnesses/instanceSettings/profileCheckWait.js'
 
@@ -162,8 +162,8 @@ const definiteOperatorPromptRejection = (error: unknown) => definitePromptReject
 const definiteCreationFailure = (error: unknown) => definiteCreationRejection(error, true)
 
 export class OperatorChatService {
-  get deliveryBridge(): ChatDeliveryBridge | undefined { return operatorDeliveryBridge(this) }
-  installDeliveryBridge(bridge: ChatDeliveryBridge): void { installChatDeliveryBridge(this, bridge) }
+  get deliveryBridge(): LegacyChatDeliveryBridge | undefined { return operatorDeliveryBridge(this) }
+  installDeliveryBridge(bridge: LegacyChatDeliveryBridge): void { installChatDeliveryBridge(this, bridge) }
 
   async assertDeliveryReadable(principal: ManagementPrincipal): Promise<void> {
     requireAuthorization(principal, 'operator_chat:read')
@@ -481,7 +481,7 @@ export class OperatorChatService {
   send(id: string, value: SendOperatorMessageRequest & { intent?: undefined }, principal: ManagementPrincipal):
     ReturnType<OperatorChatService['sendLegacy']>
   send(id: string, value: SendOperatorMessageRequest, principal: ManagementPrincipal):
-    ReturnType<OperatorChatService['sendLegacy']> | ReturnType<ChatDeliveryBridge['sendOperator']>
+    ReturnType<OperatorChatService['sendLegacy']> | ReturnType<LegacyChatDeliveryBridge['sendOperator']>
   send(id: string, value: SendOperatorMessageRequest, principal: ManagementPrincipal) {
     if (value.intent !== undefined && this.deliveryBridge) return this.deliveryBridge.sendOperator(principal, id, value)
     return this.sendLegacy(id, value, principal)
@@ -664,7 +664,8 @@ export class OperatorChatService {
     if (action !== 'read') requireAuthorization(live, action === 'write' ? 'operator_chat:write' : 'operator_chat:cancel')
     const row = await this.repository.active(target.conversationId, query)
     if (row ? row.owner_principal_id !== principal.id || action !== 'read' && Boolean(row.deleted_at)
-      : action !== 'read' || !await this.repository.hasDeliveryCommandForTarget(principal.id, commandInputHash(target), query)) {
+      : action !== 'read' || !(await query.query(`select 1 from chat_delivery_commands
+        where principal_id=$1 and target_hash=$2 limit 1`, [principal.id, commandInputHash(target)])).rowCount) {
       throw new DomainError('CONVERSATION_NOT_FOUND', 'Conversation was not found.', 404)
     }
   }
@@ -686,7 +687,7 @@ export class OperatorChatService {
 
   private async qualifiedSteer(row: ConversationRow): Promise<boolean> {
     const runtime = this.runtimes.get(row.id)
-    if (!supportsExpectedTurnSteer(row) || !row.native_session_id || !runtime?.session || !runtime.manager.steerTurn
+    if (row.harness !== 'codex' || !row.native_session_id || !runtime?.session || !runtime.manager.steerTurn
       || runtime.session.nativeSessionId !== row.native_session_id || runtime.disposal || runtime.observationOnly || !this.managers.qualifiedSteer) return false
     const configuration = await this.repository.configuration(row.operator_configuration_version_id)
     return Boolean(configuration && await this.managers.qualifiedSteer(row, configuration))
@@ -1034,14 +1035,25 @@ export class OperatorChatService {
         requestId: input.requestId, sessionId: runtime.session!.nativeSessionId,
         ...(submittedTurnId ? { turnId: submittedTurnId } : {}) })
       const redactText = nativePersistenceRedactor(Object.values(runtime.environment?.variables ?? {}))
-      const events: TurnEventSink = { publish: (type, data) => this.events.publish(id, type, data) }
-      const pipeline = createTurnTextPipeline({ id, requestId: input.requestId, repository: this.repository,
-        harness: runtime.manager.harness, session: runtime.session, owner: textOwner, redact: redactText, signal, events,
-        reconcileCommit: () => { void this.control(id, () => this.observe(id, input.requestId, runtime))
+      const committed = committedNativeText({ id, requestId: input.requestId, repository: this.repository,
+        harness: runtime.manager.harness, session: runtime.session, owner: textOwner, sanitize: (operation) => redactText.value(operation),
+        reconcile: () => { void this.control(id, () => this.observe(id, input.requestId, runtime))
           .catch(ignoreError('harness', 'observe native turn after reconcile request', { chatId: id, requestId: input.requestId })) } })
-      textStream = pipeline.textStream
-      let eventContext: HistoryContext | undefined
-      await consumeTurnOutput(initialStream?.output ?? runtime.manager.startTurn(runtime.session, {
+      textStream = createNativeTextStream({
+        signal, harness: runtime.manager.harness,
+        owner: textOwner,
+        publish: (operation) => {
+          // Raw reasoning is never promoted to a public assistant answer; safe summaries use activity records.
+          if (operation.identity.channel !== 'assistant') return
+          const message = committed.message(operation)
+          this.events.publish(id, 'delta', { requestId: input.requestId,
+            ...(message ? { message } : {}),
+            activityChange: activityTextEnvelope(redactText.value(operation), runtime.manager.harness),
+            ...(committed.revision() ? { scopeRevision: committed.revision() } : {}) })
+        },
+        reconcile: () => this.events.publish(id, 'state', { requestId: input.requestId, snapshotRequired: true }),
+      })
+      for await (const event_ of initialStream?.output ?? runtime.manager.startTurn(runtime.session, {
         ...await turnSettings(runtime.session.nativeSessionId),
         prompt: messagePrompt(includeHandoff ? row.handoff_context : null), clientCorrelationId: correlationId,
         onTerminal,
@@ -1055,26 +1067,27 @@ export class OperatorChatService {
           })
         },
         onSubmitted,
-      }, signal), input.requestId, pipeline, events, {
+      }, signal)) {
         // After native output, errors from pending/history reads are not prompt rejections.
-        onOutput: () => { submitted = true },
-        nativeTurnId: () => submittedTurnId,
-        nativeSubmission: () => nativeSubmission,
-        beforeText: async (event) => {
-          eventContext = this.historyContext(id, input.requestId, runtime)
-          await this.recordActivity(id, input.requestId, eventContext, event, submittedTurnId, false, nativeSubmission)
-        },
-        admit: async (event, text) => text.allowed && (text.handled
-          || await this.recordAssistantMessage(id, input.requestId, eventContext!, event)),
-        pending: async () => {
-          const pending = await runtime.manager.pending(runtime.session!, signal)
+        submitted = true
+        const event = event_
+        textStream.before(event)
+        const context = this.historyContext(id, input.requestId, runtime)
+        await this.recordActivity(id, input.requestId, context, event, submittedTurnId, false, nativeSubmission)
+        const text = await committed.record(event, submittedTurnId, nativeSubmission)
+        if (text.allowed && (text.handled || await this.recordAssistantMessage(id, input.requestId, context, event))) textStream.push(event)
+        else textStream.rejected(event)
+        if (text.final) this.events.publish(id, 'message', { requestId: input.requestId, snapshotRequired: true,
+          scopeRevision: committed.revision() })
+        if (event.type === 'interaction.pending' || event.type === 'permission.asked') {
+          const pending = await runtime.manager.pending(runtime.session, signal)
           if (pending) {
             await this.repository.pending(id, input.requestId, pending)
             this.events.publish(id, 'state', { requestId: input.requestId, pending: true })
             // Keep this sole turn observer subscribed while the native question is answered.
           }
-        },
-      })
+        }
+      }
       textStream.flush()
       submitted = true
       await this.control(id, () => this.observe(id, input.requestId, runtime))
@@ -1301,15 +1314,16 @@ export class OperatorChatService {
     if (!row || row.active_request_id !== requestId) return
     const correlationId = nativeCorrelation(id, requestId)
     const history: NativeHistory = await runtime.manager.reconcile(runtime.session, correlationId, signal)
-    const rejected = observedNonSubmission(history, row, correlationId)
-    if (rejected) {
+    const rejected = history.nonSubmission
+    if (rejected && rejected.nativeSessionId === row.native_session_id
+      && rejected.clientCorrelationId === correlationId && !row.active_native_turn_id) {
       if (!await this.repository.recordNonSubmission(id, requestId, 'turn_submission', rejected.result)) return
       await this.complete(id, requestId, row.cancel_requested ? { outcome: 'canceled' } : rejected.result,
         undefined, !row.cancel_requested)
       return
     }
-    const receipt = observedMessageReceipt(history, runtime.session, correlationId)
-    const messageIdentity = receipt !== undefined
+    const receipt = history.nativeSubmission
+    const messageIdentity = receipt?.kind === 'message' && receipt.nativeSessionId === runtime.session.nativeSessionId && receipt.clientCorrelationId === correlationId
     if (runtime.session.nativeSessionId !== row.native_session_id || history.correlationId !== correlationId || !history.nativeTurnId && !messageIdentity
       || (row.active_native_turn_id && row.active_native_turn_id !== history.nativeTurnId)) {
       await this.repository.uncertain(id, requestId, 'The provider has not proven the identity of this request. No new turn will be submitted.')
@@ -1536,7 +1550,10 @@ export class OperatorChatService {
   /** Receipt evidence only. A crash-left steer is never offered to the native provider again. */
   private async reconcileDeliverySteers(): Promise<void> {
     if (!this.canonicalDelivery || this.closing) return
-    for (const id of await this.repository.conversationIdsWithUnconfirmedSteers()) {
+    const ids = (await this.repository.pool.query<{ conversation_id: string }>(`select distinct t.conversation_id
+      from operator_conversation_turns t join operator_conversations c on c.id=t.conversation_id
+      where c.kind='operator' and t.intent='steer' and t.delivery in ('submitting','unknown')`)).rows
+    for (const { conversation_id: id } of ids) {
       await this.control(id, async () => {
         const commands = (await this.canonicalDelivery!.receipts.unfinishedForTarget({ kind: 'operator_conversation', conversationId: id }))
           .filter(command => command.receipt.appliedIntent === 'steer' && command.ownerAdmission === 'owner_admitted')
@@ -1553,9 +1570,15 @@ export class OperatorChatService {
                 && item.nativeTurnId === binding.nativeTurnId && item.correlationId === nativeCorrelation(id, command.request.commandId))
             } catch (error) { logIgnoredError('harness', 'read original Operator steer evidence', error) }
           }
-          const changed = await this.repository.settleUnconfirmedSteer(id, command.request.commandId, accepted)
+          const changed = await this.repository.pool.query(`update operator_conversation_turns set delivery=$3,
+            native_turn_id=case when $4 then target_native_turn_id else native_turn_id end,
+            delivery_error=case when $4 then null else '{"code":"CHAT_STEER_UNCONFIRMED","message":"The original steer is unconfirmed and will not be resent."}'::jsonb end,
+            updated_at=now() where conversation_id=$1 and request_id=$2 and delivery in ('submitting','unknown')
+              and (delivery is distinct from $3::text or ($4 and native_turn_id is distinct from target_native_turn_id)
+                or (not $4 and delivery_error->>'code' is distinct from 'CHAT_STEER_UNCONFIRMED'))`,
+          [id, command.request.commandId, accepted ? 'accepted' : 'unknown', accepted])
           await this.canonicalDelivery!.refresh(command)
-          if (changed) this.events.publish(id, 'state', { requestId: command.request.commandId, snapshotRequired: true })
+          if (changed.rowCount) this.events.publish(id, 'state', { requestId: command.request.commandId, snapshotRequired: true })
         }
       })
     }

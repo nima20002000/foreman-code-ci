@@ -13,15 +13,14 @@ import type { HostHarnessInstanceProfileChecks } from './profileChecks.js'
 import { harnessHostKey, type HarnessInstanceSettingsRepository } from './repository.js'
 import { nativeProfileCheckId } from './profileChecks.js'
 import type { HostHarnessOverrideAuthority } from './authority.js'
-import type { SqlQuery } from '../../../infrastructure/transaction.js'
-import { fallbackOnError, ignoreError } from '../../diagnostics/index.js'
-import { retiredHarnessError } from '../retiredHarness.js'
+import type { GraphSqlClient } from '../../run-graph/connection.js'
+import { fallbackOnError, ignoreError } from '../../diagnostics/ignoredError.js'
 
 export type { HostHarnessOverrideAuthority }
 /** Account resolution port, implemented by ProviderAccountConfigurationService. */
 export interface HarnessAccountConfigurationResolver {
   resolve(configuration: HarnessConfiguration, selection?: HarnessProfileSelection,
-    options?: { sql: SqlQuery }): Promise<HarnessConfiguration>
+    options?: { sql: GraphSqlClient }): Promise<HarnessConfiguration>
 }
 export interface HostHarnessOverrideEvidence {
   /** Resolver must match current driver/protocol/suite and authorized connection generations. */
@@ -216,7 +215,8 @@ export class HostHarnessOverrideService {
 
 /** Admission consumes the exact readback snapshot; saved settings alone grant no execution trust. */
 export function requireQualifiedHostOverride(value: HostHarnessOverride, expected: { instanceRevision: string; target: HostHarnessOverride['target'] }): HostHarnessOverride {
-  if (value.driverId === 'opencode' || value.configuration.harness === 'opencode') throw retiredHarnessError()
+  if (value.driverId === 'opencode' || value.configuration.harness === 'opencode') throw new DomainError(
+    'HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
   if (!value.enabled || value.qualification !== 'qualified' || value.instanceRevision !== expected.instanceRevision
     || value.target.installationFingerprint !== expected.target.installationFingerprint
     || value.target.harnessInstallationId !== expected.target.harnessInstallationId

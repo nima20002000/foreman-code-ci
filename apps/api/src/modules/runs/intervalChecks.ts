@@ -1,5 +1,5 @@
 import type { RunIntervalCheck } from '@foreman-code/contracts/run-snapshots'
-import type { WorkflowVersionCurrent } from '@foreman-code/contracts/current'
+import type { WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import type pg from 'pg'
 
 type Queryable = { query<R extends pg.QueryResultRow>(text: string, values?: unknown[]): Promise<pg.QueryResult<R>> }
@@ -43,7 +43,7 @@ export function nextIntervalCheckAt(facts: IntervalCheckFacts, everySeconds: num
 
 /** Live check state of every interval node; next times only while the Run is running. */
 export async function readRunIntervalChecks(sql: Queryable, runId: string, executionState: string,
-  version: WorkflowVersionCurrent): Promise<RunIntervalCheck[]> {
+  version: WorkflowVersionV3): Promise<RunIntervalCheck[]> {
   const checks: RunIntervalCheck[] = []
   for (const node of version.definition.nodes) {
     if (node.kind === 'job' || !node.interval) continue

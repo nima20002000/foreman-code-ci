@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { RunActivityPublicSchema, type RunActivityPublic } from '@foreman-code/contracts/current'
+import { RunActivityPublicSchema, type RunActivityPublic } from '@foreman-code/contracts/wave25'
 import { requireCiWorkflowActivity } from './helpers/crossComputerCiActivity.js'
 
 const ticketId = '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b'

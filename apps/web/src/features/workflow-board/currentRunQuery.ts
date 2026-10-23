@@ -1,22 +1,22 @@
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { RepeatGraphScopeCurrentSchema, type RepeatGraphCurrentState, type RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
+import { RepeatGraphScopeV3Schema, type RepeatGraphCurrentV3, type RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
 import { ApiError } from '../../shared/api/client'
 import { assertSession, sessionGeneration } from '../../shared/api/sessionBoundary'
-import { assertRepeatCurrentProgress, repeatGraphClient, type RepeatGraphClient } from '../repeats'
+import { assertRepeatCurrentProgress, repeatGraphClient, type RepeatGraphClient } from '../repeats/canonicalClient'
 
-export const currentRunKey = (scope: RepeatGraphScopeCurrent, generation = sessionGeneration()) =>
+export const currentRunKey = (scope: RepeatGraphScopeV3, generation = sessionGeneration()) =>
   ['workbench', 'current-v3-run', generation, scope.workspaceId, scope.workflowId, scope.runId, scope.workflowVersionId, 3] as const
 
 /** The same complete canonical V3 read supplies ordinary and configured-repeat facts.
  * Cached data is not current evidence after a failed, denied or regressed refresh. */
-export function useCurrentRunQuery(scope?: RepeatGraphScopeCurrent, live = true, client: RepeatGraphClient = repeatGraphClient) {
+export function useCurrentRunQuery(scope?: RepeatGraphScopeV3, live = true, client: RepeatGraphClient = repeatGraphClient) {
   const cache = useQueryClient(), generation = sessionGeneration()
   const key = scope ? currentRunKey(scope, generation) : ['workbench', 'no-current-run', generation]
   return useQuery({ queryKey: key, enabled: !!scope,
     queryFn: async ({ signal }) => {
-      const value = await client.current(RepeatGraphScopeCurrentSchema.parse(scope), { signal })
+      const value = await client.current(RepeatGraphScopeV3Schema.parse(scope), { signal })
       assertSession(generation)
-      assertRepeatCurrentProgress(cache.getQueryData<RepeatGraphCurrentState>(key), value)
+      assertRepeatCurrentProgress(cache.getQueryData<RepeatGraphCurrentV3>(key), value)
       return value
     }, staleTime: 1000, refetchOnReconnect: 'always', refetchOnWindowFocus: live,
     // Reopening a workflow after a while shows Loading, not node states from the last visit.

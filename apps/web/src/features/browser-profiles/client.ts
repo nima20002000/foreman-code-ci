@@ -1,5 +1,5 @@
 import { createBrowserHttp, browserProfilePath, browserSessionPath, type BrowserHttpOptions,
-  type BrowserMethodCodec, type BrowserWireCodec } from '../agent-browser'
+  type BrowserMethodCodec, type BrowserWireCodec } from '../agent-browser/http'
 import type { BrowserProfileCatalog, BrowserProfilesPort, BrowserProfileSyncJob } from './types'
 import { BrowserProfileSyncPageSchema, type BrowserProfileSyncPage } from '@foreman-code/contracts/browser-profiles'
 

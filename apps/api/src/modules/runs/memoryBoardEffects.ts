@@ -1,4 +1,4 @@
-import { MemoryResultRejected } from '../collaboration/index.js'
+import { MemoryResultRejected } from '../collaboration/memoryResultError.js'
 import { DomainError } from '../errors.js'
 import type { ExecutionResult } from '@foreman-code/contracts'
 import { workflowResultContext } from './resultContext.js'
@@ -9,16 +9,16 @@ import {
   parseCoordinationResult, type BoardLifecycleFact, type HarnessExecution,
   type LogicalWorkRef,
 } from '@foreman-code/contracts'
-import { parseWorkHandoffResult, type WorkflowRunCurrent } from '@foreman-code/contracts/current'
-import type { MemoryBoardPort } from '../collaboration/index.js'
-import { memoryExecution } from '../collaboration/index.js'
-import type { MemoryBoardService } from '../memory-boards/index.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { parseWorkHandoffResult, type WorkflowRunV3 } from '@foreman-code/contracts/wave25'
+import type { MemoryBoardPort } from '../collaboration/ports.js'
+import { memoryExecution } from '../collaboration/memoryExecution.js'
+import type { MemoryBoardService } from '../memory-boards/service.js'
+import type { GraphTransactionSql } from '../run-graph/connection.js'
 import type { RepeatEffect } from './repeatPostgres.js'
 import type { RepeatNativeChange } from './repeatNativeRepository.js'
 import { repeatTickIndex } from './repeatResolution.js'
 
-export async function prepareMemoryLaunchLocked(tx: SqlTransaction, service: MemoryBoardService,
+export async function prepareMemoryLaunchLocked(tx: GraphTransactionSql, service: MemoryBoardService,
   execution: HarnessExecution): Promise<HarnessExecution> {
   const saved = await memoryExecution(tx, execution.id)
   if (repeatTickIndex(execution.input) !== undefined) return execution
@@ -33,7 +33,7 @@ export async function prepareMemoryLaunchLocked(tx: SqlTransaction, service: Mem
   return { ...execution, memoryBoardDigest: digest }
 }
 
-async function lifecycle(tx: SqlTransaction, service: MemoryBoardPort,
+async function lifecycle(tx: GraphTransactionSql, service: MemoryBoardPort,
   executionId: string, sourceEventKey: string, phase: BoardLifecycleFact['phase'],
   extra: Partial<Pick<BoardLifecycleFact, 'reason' | 'continuationOf' | 'outstandingRequestIds'>> = {}) {
   const saved = await memoryExecution(tx, executionId)
@@ -41,7 +41,7 @@ async function lifecycle(tx: SqlTransaction, service: MemoryBoardPort,
     work: saved.work, sourceEventKey, phase, reason: null, outstandingRequestIds: [], ...extra })
 }
 
-async function continuations(tx: SqlTransaction, work: LogicalWorkRef): Promise<LogicalWorkRef[]> {
+async function continuations(tx: GraphTransactionSql, work: LogicalWorkRef): Promise<LogicalWorkRef[]> {
   if (work.kind !== 'activation') return []
   const rows = await tx.query<{ activation_id: string }>(`select distinct q.requester_activation_id as activation_id
     from run_work_returns t join run_work_requests q on q.run_id=t.run_id and q.request_id=t.request_id
@@ -52,7 +52,7 @@ async function continuations(tx: SqlTransaction, work: LogicalWorkRef): Promise<
   return rows.rows.map(row => ({ ...work, activationId: row.activation_id }))
 }
 
-export async function applyMemoryEffectLocked(tx: SqlTransaction, service: MemoryBoardPort,
+export async function applyMemoryEffectLocked(tx: GraphTransactionSql, service: MemoryBoardPort,
   effect: RepeatEffect): Promise<void> {
   if (effect.kind !== 'input.bind' && effect.kind !== 'terminal.accept') return
   const saved = await memoryExecution(tx, effect.entityId)
@@ -89,8 +89,8 @@ export async function applyMemoryEffectLocked(tx: SqlTransaction, service: Memor
   await reconcileMemoryHandoffsLocked(tx, service, effect.entityId, source)
 }
 
-export async function applyMemoryNativeLocked(tx: SqlTransaction, service: MemoryBoardPort,
-  run: Pick<WorkflowRunCurrent, 'resultProtocol'>, change: RepeatNativeChange): Promise<void> {
+export async function applyMemoryNativeLocked(tx: GraphTransactionSql, service: MemoryBoardPort,
+  run: Pick<WorkflowRunV3, 'resultProtocol'>, change: RepeatNativeChange): Promise<void> {
   const source = `${change.sourceId}:${change.sourceRevision}`
   if (change.kind === 'launch') {
     if (repeatTickIndex(change.next.input) === undefined) await lifecycle(tx, service, change.next.id, source, 'launched')
@@ -109,7 +109,7 @@ export async function applyMemoryNativeLocked(tx: SqlTransaction, service: Memor
   }
 }
 
-export async function validateMemoryResultLocked(tx: SqlTransaction, service: MemoryBoardPort,
+export async function validateMemoryResultLocked(tx: GraphTransactionSql, service: MemoryBoardPort,
   execution: HarnessExecution, result: ExecutionResult): Promise<void> {
   if (!execution.resultProtocol || result.outcome !== 'succeeded') return
   const saved = await memoryExecution(tx, execution.id)

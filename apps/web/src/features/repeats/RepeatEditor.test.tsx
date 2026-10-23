@@ -2,12 +2,12 @@ import { useState } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, it } from 'vitest'
-import { makeCurrentWorkflowFixture, type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture, type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 import { RepeatEditor } from './RepeatEditor'
 
 it('shows repeat guidance on demand while keeping validation and the cap target visible', async () => {
   function Editor() {
-    const [graph, setGraph] = useState<WorkflowDefinitionCurrent>(() => makeCurrentWorkflowFixture('repeat-help').version.definition)
+    const [graph, setGraph] = useState<WorkflowDefinitionV3>(() => makeCurrentWorkflowFixture('repeat-help').version.definition)
     return <RepeatEditor graph={graph} change={setGraph} />
   }
   render(<Editor />)

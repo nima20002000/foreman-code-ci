@@ -4,8 +4,10 @@ import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { HttpResponse } from 'msw'
-import { useGraphDraftStore, readEditOutbox, graphEditIntentKey } from '../graph'
-import { nextDraftDirty, nextDraftKey } from '../board-core'
+import { useGraphDraftStore } from '../graph/store'
+import { nextDraftDirty, nextDraftKey } from '../graph/nextDraft/state'
+import { readEditOutbox } from '../graph/nextDraft/editIntentStorage'
+import { graphEditIntentKey } from '../graph/nextDraft/useGraphEditIntent'
 import { inspectionBoardFixture } from './inspect/inspectionFixtures'
 import {
   boardHref, installBoardTestLifecycle, intervalTick, measureBoardWire, mountMeasuredBoard, setRunState,

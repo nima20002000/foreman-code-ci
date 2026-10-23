@@ -3,7 +3,7 @@ import type pg from 'pg'
 import { beforeEach, expect, it, vi } from 'vitest'
 import type { HostHarnessOverride } from '@foreman-code/contracts/harness-registry'
 import { SourceRootRecordSchema } from '@foreman-code/contracts/source-admission'
-import { canonicalGraphJson, makeCurrentWorkflowFixture, RunStartCurrentInputSchema } from '@foreman-code/contracts/current'
+import { canonicalGraphJson, makeCurrentWorkflowFixture, RunStartV3InputSchema } from '@foreman-code/contracts/wave25'
 import type { ProductionHarnessRegistry } from '../harnesses/productionRegistry.js'
 import type { SourceAdmissionPort } from '../sources/admissionPorts.js'
 import type { WorkspaceRootPolicyPort } from '../sources/rootPolicyPorts.js'
@@ -99,7 +99,7 @@ function fixture(options: { repository?: boolean } = {}) {
   async function prepare() {
     version.contentHash = `sha256:${createHash('sha256').update(canonicalGraphJson({ definition: version.definition,
       configurations: version.agentConfigurationVersionIds, entryNodeId: version.entryNodeId })).digest('hex')}`
-    return producer.prepare(RunStartCurrentInputSchema.parse({ workspaceId: version.workspaceId,
+    return producer.prepare(RunStartV3InputSchema.parse({ workspaceId: version.workspaceId,
       workflowId: version.workflowId, workflowVersionId: version.id,
       expectedAgentConfigurationVersionIds: version.agentConfigurationVersionIds,
       commandId: randomUUID(), executionSemanticsVersion: 3, expectedWorkflowRevision: 1,

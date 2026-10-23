@@ -5,7 +5,6 @@ import type { CompatibilityHarness } from '@foreman-code/contracts'
 import { forgetQualifiedProfile, rememberQualifiedProfile, QUALIFICATION_TARGET_PROFILE } from './profiles.js'
 import type { HarnessQualificationRepository } from './repository.js'
 import { sha256Hex } from '../../../shared/hash.js'
-import { configuredSearchPath } from '../../../config.js'
 
 export class HarnessQualificationRegistry {
   constructor(private readonly repository: Pick<HarnessQualificationRepository, 'list' | 'find'>, private readonly revisions: Partial<Record<CompatibilityHarness, string>>) {}
@@ -23,7 +22,7 @@ export class HarnessQualificationRegistry {
   }
 
   async inspectBinary(binary: string): Promise<{ binary: string; sha256: string }> {
-    const candidates = isAbsolute(binary) || binary.includes('/') ? [binary] : (configuredSearchPath() ?? '').split(delimiter).map((entry) => resolve(entry || '.', binary))
+    const candidates = isAbsolute(binary) || binary.includes('/') ? [binary] : (process.env.PATH ?? '').split(delimiter).map((entry) => resolve(entry || '.', binary))
     let resolved: string | undefined
     for (const candidate of candidates) {
       try { await access(candidate, constants.X_OK); resolved = await realpath(candidate); break }

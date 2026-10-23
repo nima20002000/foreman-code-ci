@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { codexApprovalRuntime } from './codexApprovalRuntime.js'
 import { deferred } from './deferred.js'
 

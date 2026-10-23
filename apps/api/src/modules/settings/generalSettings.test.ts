@@ -31,34 +31,31 @@ async function fixture() {
   const records = new Map<string, { record: unknown; revision: string; current_version_id: string }>()
   const receipts = new Map<string, { input_hash: string; target_key: string; result: unknown }>()
   const audits: { principalId: unknown; source: unknown; action: unknown }[] = []
-  // Statements are told apart by what they bind: one value is a principal or setting key read, an array of principals
-  // first is the receipt read, three plain values the setting write.
-  const query = async (_text: string, values: unknown[] = []): Promise<{ rows: unknown[] }> => {
-    if (values.length === 1) {
+  const query = async (text: string, values: unknown[] = []): Promise<{ rows: unknown[] }> => {
+    if (text.includes('from management_principals')) {
       const principal = principals.get(values[0] as string)
-      if (principal) {
-        return { rows: [{ ...principal, expires_at: new Date(principal.expiresAt),
-          revoked_at: principal.revokedAt && new Date(principal.revokedAt), delegated_from: null }] }
-      }
+      return { rows: principal ? [{ ...principal, expires_at: new Date(principal.expiresAt),
+        revoked_at: principal.revokedAt && new Date(principal.revokedAt), delegated_from: null }] : [] }
+    }
+    if (text.includes('from application_settings')) {
       const value = records.get(values[0] as string)
       return { rows: value ? [value] : [] }
     }
-    if (values.length === 3 && Array.isArray(values[0])) {
-      const receipt = receipts.get(values.slice(0, 3).join(':'))
-      return { rows: receipt ? [receipt] : [] }
-    }
-    if (values.length === 3) {
+    if (text.includes('insert into application_settings')) {
       const key = values[0] as string
       records.set(key, { record: JSON.parse(values[1] as string),
         revision: String(Number(records.get(key)?.revision ?? 0) + 1), current_version_id: values[2] as string })
     }
-    // Audit rows bind a command source second (four, five or six values); the receipt insert binds six values with
-    // the operation second.
-    if ([4, 5, 6].includes(values.length) && ['http', 'mcp', 'device'].includes(values[1] as string)) {
-      audits.push({ principalId: values[0], source: values[1], action: values[2] })
-    } else if (values.length === 6) {
+    if (text.includes('from management_command_receipts')) {
+      const receipt = receipts.get(values.slice(0, 3).join(':'))
+      return { rows: receipt ? [receipt] : [] }
+    }
+    if (text.includes('insert into management_command_receipts')) {
       receipts.set(values.slice(0, 3).join(':'), { target_key: values[3] as string,
         input_hash: values[4] as string, result: JSON.parse(values[5] as string) })
+    }
+    if (text.includes('insert into management_audit')) {
+      audits.push({ principalId: values[0], source: values[1], action: values[2] })
     }
     return { rows: [] }
   }

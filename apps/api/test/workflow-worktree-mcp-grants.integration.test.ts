@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { CurrentEditReadResultSchema } from '@foreman-code/contracts/current'
+import { CurrentEditReadResultSchema } from '@foreman-code/contracts/wave25'
 import { postgresEnabled } from './helpers/database.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 import { setup } from './helpers/workflowWorktreeMcp.js'

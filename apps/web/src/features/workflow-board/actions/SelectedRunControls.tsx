@@ -1,11 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
+import type { RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
 import { useLocalHumanAccessQuery } from '../../../shared/api/settingsExperience'
 import { useProtectedAccessError } from '../../../shared/api/useProtectedAccessError'
 import { isApiAccessError } from '../../../shared/api/accessError'
 import { Button } from '../../../shared/ui/nocturne'
 import { canUseBoardAction } from '../permissions'
-import { hierarchyKey } from '../../workflow-hierarchy'
+import { hierarchyKey } from '../../workflow-hierarchy/queries'
 import { runActionsClient, type RunActionSelection } from './client'
 import { actionKey } from './state'
 import { needsRunRefresh, type ActionRun } from './policy'
@@ -15,7 +15,7 @@ import './actions.css'
 /** One plain Stop button in the Board toolbar while the selected Run runs. It sends the Board's exact Stop
  * command (journal, receipt, resend of the same stop); a finished Run with nothing to clean up shows nothing. */
 export function SelectedRunControls({ scope, visible }: {
-  scope: RunActionSelection & Partial<Pick<RepeatGraphScopeCurrent, 'workflowVersionId'>>
+  scope: RunActionSelection & Partial<Pick<RepeatGraphScopeV3, 'workflowVersionId'>>
   visible: boolean
 }) {
   const access = useLocalHumanAccessQuery(), cache = useQueryClient()
@@ -56,7 +56,7 @@ export function SelectedRunControls({ scope, visible }: {
 }
 
 function StopButton({ scope, run, reason, ready, refresh }: {
-  scope: RepeatGraphScopeCurrent; run: ActionRun; reason?: string; ready: boolean; refresh(): void
+  scope: RepeatGraphScopeV3; run: ActionRun; reason?: string; ready: boolean; refresh(): void
 }) {
   const { stop, outbox } = useRunStop(scope, refresh)
   const receipt = outbox.journal?.receipt ?? stop.data

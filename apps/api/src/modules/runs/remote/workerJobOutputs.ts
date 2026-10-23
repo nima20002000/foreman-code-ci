@@ -4,10 +4,10 @@ import type { JobExecutionRecord } from '@foreman-code/contracts/job-verificatio
 import type { TransferIntent, ByteTransferPort } from '@foreman-code/contracts/byte-transfer'
 import type { JobOutputPublicationInput } from '@foreman-code/contracts/job-output-transfer'
 import { JobOutputCollectionError, readDeclaredJobOutputs, readAvailableVerificationOutputs } from '../../jobs/executorOutputs.js'
-import { TransferExpiredError } from '../../byte-transfer/index.js'
+import { TransferExpiredError } from '../../byte-transfer/service.js'
 import { DeviceApplicationError } from '../../devices/deviceApplicationError.js'
 import { WorkerJobOutputApplication, WorkerJobOutputReceiver, type WorkerJobOutputChannel } from '../../files/jobs/outputChannel.js'
-import { ResumableByteTransferSender, type TransferSenderConnection } from '../../byte-transfer/index.js'
+import { ResumableByteTransferSender, type TransferSenderConnection } from '../../byte-transfer/sender.js'
 import type { RemoteOperationJournal } from './operationJournal.js'
 import { sha256Hex } from '../../../shared/hash.js'
 

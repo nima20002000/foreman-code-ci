@@ -1,6 +1,6 @@
 import { operatorCatalog } from './support/operatorCatalog.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { RUN_INSPECTION_TOOLS, RunRecordDetailSchema } from '@foreman-code/contracts/current'
+import { RUN_INSPECTION_TOOLS, RunRecordDetailSchema } from '@foreman-code/contracts/wave25'
 import { postgresEnabled } from './helpers/database.js'
 import { readback, readParity, recoveryFixture, runPath, scope, type RecoveryFixture, type Transport } from './helpers/recoveryFixture.js'
 import { forms } from './helpers/recoveryReadback.js'

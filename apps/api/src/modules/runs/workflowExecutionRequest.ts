@@ -6,7 +6,7 @@ import {
   type HarnessExecutionContext,
   type ResultProtocol,
 } from '@foreman-code/contracts'
-import { WorkActivationInputSchema, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
+import { WorkActivationInputSchema, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import { currentInitialPrompt } from './currentRouting.js'
 import { trustedWorkNoticePrompt } from './workHandoffNotice.js'
 import { repeatTickIndex } from './repeatResolution.js'
@@ -37,7 +37,7 @@ function intervalCheckPrompt(index: number, interval: { everySeconds: number; pr
 
 interface WorkflowExecutionRequestInput {
   execution: HarnessExecution
-  version: WorkflowVersionCurrent
+  version: WorkflowVersionV3
   configuration: AgentConfigurationVersion
   workspaceId: string
   executionContext?: HarnessExecutionContext | undefined

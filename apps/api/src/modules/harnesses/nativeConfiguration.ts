@@ -2,8 +2,9 @@ import { isDeepStrictEqual } from 'node:util'
 import type { CanonicalMachineReference } from '@foreman-code/contracts/device-identity'
 import { HarnessOptionsDiscoveryRequestSchema } from '@foreman-code/contracts/harness-registry'
 import type { DeviceEndpoint } from '../devices/deviceEndpoint.js'
-import { logIgnoredError } from '../diagnostics/index.js'
+import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import type { ProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
+import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
 import {
   HarnessConfigurationSchema, HarnessQualificationSchema, type AgentHarness, type HarnessConfiguration,
 } from '@foreman-code/contracts'
@@ -17,7 +18,6 @@ import { DomainError } from '../errors.js'
 import { claudeSettingSupport, type ClaudeNativeConfigurationPort } from './claudeSdk/nativeConfiguration.js'
 import { requireClaudeProductionCredentialDelivery } from './claudeSdk/productionCredentials.js'
 import type { ProviderAccountResolver } from '../provider-accounts/service.js'
-import { retiredHarnessError } from './retiredHarness.js'
 
 export class NativeConfigurationService {
   private readonly catalogCache = new QualificationCache<ReturnType<typeof HarnessOptionsResultSchema.parse>>(300_000, 128, Date.now, true)
@@ -38,7 +38,8 @@ export class NativeConfigurationService {
 
   async qualifyConfiguration(input: HarnessConfiguration) {
     const value = HarnessConfigurationSchema.parse(input)
-    if (value.harness === 'opencode') throw retiredHarnessError()
+    if (value.harness === 'opencode') throw new DomainError('HARNESS_RETIRED',
+      RETIRED_OPENCODE_MESSAGE, 409)
     try {
       // The selected Claude host/profile proof must be rechecked on every read.
       if (value.harness === 'claude') return await this.inspectConfiguration(value)

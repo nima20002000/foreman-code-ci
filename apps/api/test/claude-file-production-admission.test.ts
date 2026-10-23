@@ -11,14 +11,12 @@ function fixture() {
       kind: 'message', nativeSessionId: context.nativeSessionId, nativeMessageId: context.nativeMessageId, clientCorrelationId: context.clientCorrelationId } }
   const principal = { id: 'sender', name: 'Sender', audience: 'operator', grants: [{ actions: ['agent_chat:read', 'agent_chat:write'], scope: {} }],
     expires_at: new Date('2099-01-01'), revoked_at: null, delegated_from: null }
-  // Reads are told apart by their bound values: the active receipt binds three (conversation, request, session), the
-  // file scope's conversation lookup two (conversation, kind) and the sender's live authority only its id.
-  const query = vi.fn(async (_sql: string, values: unknown[] = []) => {
-    if (values.length === 3) return { rows: [row] }
-    if (values.length === 1) return { rows: [principal] }
-    if (values.length === 2) return { rows: [{ kind: 'agent', id: 'conversation', workspace_id: 'workspace',
+  const query = vi.fn(async (sql: string) => {
+    if (sql.includes('join operator_conversation_turns t')) return { rows: [row] }
+    if (sql.includes('from management_principals where id=')) return { rows: [principal] }
+    if (sql.includes('select kind,id,owner_principal_id,operator_id')) return { rows: [{ kind: 'agent', id: 'conversation', workspace_id: 'workspace',
       workflow_id: 'workflow', agent_id: 'agent', origin_run_id: 'selected-run', origin_execution_id: 'source-execution' }] }
-    throw new Error(`Unexpected statement binding ${values.length} values`)
+    throw new Error('Unexpected SQL: ' + sql.slice(0, 80))
   })
   const manager = { nativeCallbackContext: vi.fn(() => context), callbackAuthority: vi.fn(() => ({ ownerPrincipalId: 'sender', attemptId: identity.attemptId })) }
   const admission = productionClaudeFileAdmission({ pool: { query } as unknown as pg.Pool,

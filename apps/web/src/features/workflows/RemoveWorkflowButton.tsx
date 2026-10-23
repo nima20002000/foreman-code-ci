@@ -8,7 +8,7 @@ import { assertSession, sessionGeneration } from '../../shared/api/sessionBounda
 import { queryKeys, useArchiveManagedWorkflowMutation } from '../../shared/api/query'
 import { ConfirmDialog, Icon, IconButton } from '../../shared/ui/nocturne'
 import { useGraphDraftStore } from '../graph/store'
-import { nextDraftKey } from '../board-core'
+import { nextDraftKey } from '../graph/nextDraft/state'
 
 export function RemoveWorkflowButton({ workspaceId, workflowId, name, revision, renderTrigger }: {
   workspaceId: string; workflowId: string; name: string; revision: number

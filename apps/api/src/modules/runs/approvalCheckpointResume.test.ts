@@ -3,7 +3,7 @@ import { DurableInteractionSchema, NATIVE_INTERACTION_FIXTURES } from '@foreman-
 import { afterEach, expect, it, vi } from 'vitest'
 import { ApprovalPostgresSaver } from '../../infrastructure/approvalCheckpointSaver.js'
 import { DomainError } from '../errors.js'
-import { Wave25InteractionRepository } from '../interactions/current/repository.js'
+import { Wave25InteractionRepository } from '../interactions/wave25/repository.js'
 import { consumeDeliveredApprovals } from './approvalCheckpointResume.js'
 import type { RunOwnership } from './ownership.js'
 

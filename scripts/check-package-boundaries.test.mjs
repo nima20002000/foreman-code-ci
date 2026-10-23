@@ -115,22 +115,6 @@ for (const file of ['apps/web/src/ciView.tsx', 'packages/contracts/src/ciHost.ts
   })
 }
 
-test('accepts a Worker that imports API code through its package entry points', t => {
-  const f = fixture(t)
-  f.write('apps/worker/src/approvedRoots.mjs', "import { anchored } from '@foreman-code/api/worker/sources'\nexport { anchored }")
-  const result = f.run()
-  assert.equal(result.status, 0, result.stderr)
-})
-
-test('rejects a Worker import of API source by relative path', t => {
-  const f = fixture(t)
-  f.write('apps/worker/src/approvedRoots.mjs',
-    "import { anchored } from '../../api/src/modules/sources/privateFilesystem.ts'\nexport { anchored }")
-  const result = f.run()
-  assert.equal(result.status, 1)
-  assert.match(result.stderr, /apps\/worker\/src\/approvedRoots\.mjs imports \.\.\/\.\.\/api\/src\/modules\/sources\/privateFilesystem\.ts/)
-})
-
 test('rejects CI dependencies the API lacks or pins at another version', t => {
   const missing = fixture(t, { ciDependencies: { yaml: '2.9.0' } }).run()
   assert.equal(missing.status, 1)

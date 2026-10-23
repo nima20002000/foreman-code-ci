@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
-import type { RepeatGraphScopeCurrent, RunDirectionWait } from '@foreman-code/contracts/current'
-import { readWorkflowDraft, useWorkflowDraftStore, workflowDraftKey, insertMention } from '../../workflow-chat'
+import type { RepeatGraphScopeV3, RunDirectionWait } from '@foreman-code/contracts/wave25'
+import { readWorkflowDraft, useWorkflowDraftStore, workflowDraftKey } from '../../workflow-chat/draft'
+import { insertMention } from '../../workflow-chat/mentions'
 import type { InteractionWait } from '../inspect/runLiveStatus'
 import { runActionsClient, type RunActionSelection } from './client'
 import { actionKey } from './state'
 
-type Scope = RunActionSelection & Partial<Pick<RepeatGraphScopeCurrent, 'workflowVersionId'>>
+type Scope = RunActionSelection & Partial<Pick<RepeatGraphScopeV3, 'workflowVersionId'>>
 
 /** The same Run status read as Run controls; present while a Master waits for the user's direction. */
 export function useRunDirectionWait(scope: Scope | undefined): RunDirectionWait | undefined {

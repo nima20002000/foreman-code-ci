@@ -1,8 +1,7 @@
 import { JobExecutionRecordSchema } from '@foreman-code/contracts/job-verification'
 import { JobWorkflowExecutionReferenceSchema, JobWorkflowNodeSchema } from '@foreman-code/contracts/job-workflow'
-import { AcceptedCurrentNodeResultSchema, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
-import { assertGraphTransaction } from '../run-graph/connection.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { AcceptedCurrentNodeResultSchema, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import { assertGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
 import { canonicalRepeatEffectReceipt } from '../run-graph/repeatPublication.js'
 import { assertRepeatCanonicalReceiptLocked,
   requireRepeatCanonicalReceiptBeforeCommit } from '../run-graph/repeatReceipts.js'
@@ -26,8 +25,8 @@ interface AcceptedJobRow {
 }
 
 /** Reads the typed Job result accepted by the same Run without a harness row. */
-export async function readWorkflowJobSourceLocked(sql: SqlTransaction, scope: RepeatScope,
-  version: WorkflowVersionCurrent, resolution: RepeatResolution, relationshipId: string): Promise<RepeatSource> {
+export async function readWorkflowJobSourceLocked(sql: GraphTransactionSql, scope: RepeatScope,
+  version: WorkflowVersionV3, resolution: RepeatResolution, relationshipId: string): Promise<RepeatSource> {
   assertGraphTransaction(sql)
   const { ref, value } = resolution
   const identity = value.execution

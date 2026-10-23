@@ -6,34 +6,32 @@ import { appendConversationTextOperation } from '../src/modules/conversations/co
 
 function fixture() {
   let revision = 0; let item: { id: string; record: Record<string, unknown>; content: string; text_provenance: unknown; revision: string } | undefined
-  const writes: unknown[][] = []
+  const writes: string[] = []
   const owner = { kind: 'agent', harness: 'codex', revision: '0', workspace_id: 'ws', workflow_id: 'wf', workflow_node_id: 'node', agent_id: 'agent',
     origin_run_id: null, origin_execution_id: null, native_session_id: 'session', active_native_turn_id: 'turn' }
-  // Statements are told apart by the values they bind, not by SQL text. Two reads bind the same values and are answered by
-  // one row that satisfies both: the owner and activity-boundary reads both bind (conversation, request), and the
-  // message reads by native id both bind (conversation, item).
-  const query = async (_text: string, values: unknown[] = []) => {
-    switch (values.length) {
-      case 0: return { rows: [], rowCount: 0 }
-      case 1: // owner lock read, or the conversation revision bump
-        revision++
-        return { rows: [{ ...owner, id: 'conversation', active_request_id: 'A', revision: String(revision) }], rowCount: 1 }
-      case 2:
-        if (values[1] === 'A') return { rows: [{ ...owner, id: 'conversation', active_request_id: 'A', revision: String(revision), sequence: '3' }], rowCount: 1 }
-        return { rows: item ? [structuredClone(item)] : [], rowCount: item ? 1 : 0 }
-      case 3: // provenance-only update of an unchanged message
-        item!.text_provenance = JSON.parse(String(values[2])); return { rows: [], rowCount: 1 }
-      case 5: // history writer finalizing an existing message: (conversation, item, content, record, complete)
-        if (typeof values[4] !== 'boolean') break
-        writes.push(values); item!.content = String(values[2]); item!.record = JSON.parse(String(values[3])) as Record<string, unknown>
-        if (values[4] === true && item!.text_provenance) item!.text_provenance = { ...(item!.text_provenance as object), final: true }
-        return { rows: [], rowCount: 1 }
-      case 7: // message upsert from the text operation
-        writes.push(values); item = { id: String(values[0]), record: JSON.parse(String(values[5])) as Record<string, unknown>, content: String(values[3]),
-          text_provenance: JSON.parse(String(values[6])), revision: String(item ? Number(item.revision) + 1 : 0) }
-        return { rows: [{ revision: item.revision }], rowCount: 1 }
+  const query = async (text: string, values: unknown[] = []) => {
+    const sql = text.replace(/\s+/g, ' ').trim()
+    if (sql.startsWith('select * from operator_conversations')) return { rows: [{ ...owner, id: 'conversation', active_request_id: 'A' }], rowCount: 1 }
+    if (sql.startsWith('select record from operator_conversation_messages')) return { rows: item ? [{ record: structuredClone(item.record) }] : [], rowCount: item ? 1 : 0 }
+    if (sql.startsWith('select kind')) return { rows: [{ ...owner, revision: String(revision) }], rowCount: 1 }
+    if (sql.startsWith('select id,record,content')) return { rows: item ? [structuredClone(item)] : [], rowCount: item ? 1 : 0 }
+    if (sql.startsWith('select coalesce(max')) return { rows: [{ sequence: '3' }], rowCount: 1 }
+    if (sql.startsWith('insert into operator_conversation_messages')) {
+      writes.push(sql); item = { id: String(values[0]), record: JSON.parse(String(values[5])) as Record<string, unknown>, content: String(values[3]),
+        text_provenance: JSON.parse(String(values[6])), revision: String(item ? Number(item.revision) + 1 : 0) }
+      return { rows: [{ revision: item.revision }], rowCount: 1 }
     }
-    throw new Error(`Unexpected statement binding ${values.length} values`)
+    if (sql.startsWith('update operator_conversation_messages set content=')) {
+      writes.push(sql); item!.content = String(values[2]); item!.record = JSON.parse(String(values[3])) as Record<string, unknown>
+      if (values[4] === true && item!.text_provenance) item!.text_provenance = { ...(item!.text_provenance as object), final: true }
+      return { rows: [], rowCount: 1 }
+    }
+    if (sql.startsWith('update operator_conversation_messages set text_provenance')) {
+      item!.text_provenance = JSON.parse(String(values[2])); return { rows: [], rowCount: 1 }
+    }
+    if (sql.startsWith('update operator_conversations')) { revision++; return { rows: [{ revision: String(revision) }], rowCount: 1 } }
+    if (!['begin', 'commit', 'rollback'].includes(sql)) throw new Error(`Unexpected SQL ${sql}`)
+    return { rows: [], rowCount: 0 }
   }
   const pool = { connect: async () => ({ query, release() {} }) } as unknown as pg.Pool
   return { pool, writes, owner, finalizeHistory: (content: string) => { item!.content = content; item!.record.content = content; item!.record.nativeMessageComplete = true }, state: () => ({ revision, item: structuredClone(item) }) }

@@ -9,8 +9,8 @@ import { CiGetOutputSchema, CiRunOutputSchema } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { RunPlacementGetResultSchema } from '@foreman-code/contracts/placement-readback'
 import { ApprovedSourceSchema } from '@foreman-code/contracts/source-admission'
-import { AcceptedRepeatStartV1Schema, AcceptedWorkflowRunCurrentSchema,
-  makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { AcceptedRepeatStartV1Schema, AcceptedWorkflowRunV3Schema,
+  makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { acceptRunAuthority, bindRunAuthority, currentOperatorAuthority } from '../src/modules/access/runAuthority.js'
@@ -115,7 +115,7 @@ describe.runIf(postgresEnabled)('GitHub Run-start sources and Agent CI through a
       f.f.run = await withExclusiveGraphConnection(f.db.pool, connection => connection.transaction(async sql => {
         const owner = await currentOperatorAuthority(sql, f.authorizationPrincipalId)
         const authority = await acceptRunAuthority(sql, owner.principal)
-        const run = AcceptedWorkflowRunCurrentSchema.parse({ ...f.f.run, id: randomUUID(),
+        const run = AcceptedWorkflowRunV3Schema.parse({ ...f.f.run, id: randomUUID(),
           authorizationPrincipalId: authority.principal.id })
         const version = f.f.version
         const workflow = (await sql.query<{ revision: string }>(

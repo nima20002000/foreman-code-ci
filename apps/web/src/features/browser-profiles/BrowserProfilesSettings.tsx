@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '../../shared/ui/nocturne'
-import {
-  browserAccessDenied, browserErrorMessage, browserRequestUncertain, type BrowserSession, type BrowserUiPort,
-  type BrowserFilesPort,
-} from '../agent-browser'
+import { browserAccessDenied, browserErrorMessage, browserRequestUncertain } from '../agent-browser/errors'
+import type { BrowserSession, BrowserUiPort } from '../agent-browser/types'
+import type { BrowserFilesPort } from '../agent-browser/transferTypes'
 import { BrowserProfileDownloads } from './BrowserProfileDownloads'
 import { BrowserProfileComputerRows } from './BrowserProfileComputerRows'
 import { BrowserProfileForm } from './BrowserProfileForm'

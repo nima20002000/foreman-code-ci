@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
 import {
-  AcceptedWorkflowRunCurrentSchema, ExecutableWorkflowCurrentSchema, WorkflowVersionCurrentSchema,
+  AcceptedWorkflowRunV3Schema, ExecutableWorkflowV3Schema, WorkflowVersionV3Schema,
   canonicalGraphJson, makeCurrentWorkflowFixture,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import type {
   ImmutableAgentConfigurationRow, ImmutableWorkflowVersionRow,
 } from '../../src/modules/workflows/immutableRead.js'
@@ -16,9 +16,9 @@ export function currentUnitSnapshot(suffix: string, form: Parameters<typeof make
     definition: f.version.definition, configurations: f.version.agentConfigurationVersionIds,
     entryNodeId: f.version.entryNodeId,
   })).digest('hex')
-  const version = WorkflowVersionCurrentSchema.parse({ ...f.version, contentHash })
-  ExecutableWorkflowCurrentSchema.parse({ version, configurations: f.configurations })
-  const run = AcceptedWorkflowRunCurrentSchema.parse({ ...f.run,
+  const version = WorkflowVersionV3Schema.parse({ ...f.version, contentHash })
+  ExecutableWorkflowV3Schema.parse({ version, configurations: f.configurations })
+  const run = AcceptedWorkflowRunV3Schema.parse({ ...f.run,
     authorizationPrincipalId: `principal-${suffix}`,
     executionLocation: { runnerId: `runner-${suffix}`, rootPath: `/synthetic/${suffix}`,
       locationRevision: 1, identityHash: `sha256:${'a'.repeat(64)}` },

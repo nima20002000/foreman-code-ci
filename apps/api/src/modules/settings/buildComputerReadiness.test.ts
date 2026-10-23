@@ -8,7 +8,7 @@ import type { JobRuntimeProfiles } from '../jobs/runtimeProfiles.js'
 import type { JobSql } from '../jobs/repository.js'
 import { jobComputerCapacity, jobComputerCapacityDecision } from '../jobs/computerSelection.js'
 import { verificationCapacityFixture } from '../../../test/helpers/verificationCapacityFixture.js'
-import { BuildComputerSettings, buildComputerKey, buildComputerTarget } from './buildComputers.js'
+import { BuildComputerSettings, buildComputerTarget } from './buildComputers.js'
 import { buildComputerReadiness } from './buildComputerReadiness.js'
 import { WorkerExecutionPolicy } from './workerExecution.js'
 import { workerBundleReadinessFixture } from '../../../test/helpers/workerBundleReadinessFixture.js'
@@ -21,8 +21,7 @@ function fixture(host: 'main' | 'device', memory: number | null = 14 * 2 ** 30, 
     keyRevision: target.keyRevision, authorizationRevision: target.authorizationRevision }),
   captureRequest: () => ({}), clockReason: () => null, capabilities: () => [],
   workerBundleReadiness: async () => workerBundleReadinessFixture().read() } as unknown as DeviceEndpoint
-  // The runtime profile list binds no values; the capacity read binds the host key, Main id and device id.
-  const sql = { query: async (_text: string, values: unknown[] = []) => ({ rows: values.length === 0
+  const sql = { query: async (text: string) => ({ rows: text.includes('select record from job_runtime_profiles')
     ? [{ record: profile }] : Array.from({ length: computing }, () => ({
       limits: profile.spec.resources.limits, compute_closed: false,
     })) }) } as unknown as JobSql
@@ -62,15 +61,13 @@ describe('build computer readiness', () => {
     f.profile.measurement!.fingerprint.deviceLimits!.cpuLimit = 4
     const principal: ManagementPrincipal = { id: 'reader', name: 'Reader', audience: 'operator',
       expiresAt: '2099-01-01T00:00:00Z', revokedAt: null, grants: [{ actions: ['settings:read'], scope: {} }] }
-    // The principal read binds the principal id and the preference read the host key. The statements that bind nothing
-    // (the Main installation and the runtime profile list) are answered by one row carrying both columns.
-    const query = async (text: string, values: unknown[] = []) => {
-      if (values.length === 1 && values[0] === principal.id) return { rows: [{ ...principal,
+    const query = async (text: string) => {
+      if (text.includes('from management_principals')) return { rows: [{ ...principal,
         expires_at: new Date(principal.expiresAt), revoked_at: null }] }
-      if (values.length === 1 && values[0] === buildComputerKey(f.target)) return { rows: [{ target: f.target, revision: '1',
+      if (text.includes('from application_installation')) return { rows: [{ id: f.target.hostRef.mainId }] }
+      if (text.includes('from build_computer_preferences')) return { rows: [{ target: f.target, revision: '1',
         build_enabled: true, build_priority: 50, build_allowance_percent: 10 }] }
-      if (values.length === 0) return { rows: [{ id: f.target.hostRef.mainId, record: f.profile }] }
-      return f.sql.query(text, values)
+      return f.sql.query(text)
     }
     const pool = { query, connect: async () => ({ query, release() {} }) } as unknown as pg.Pool
     const service = new BuildComputerSettings(pool, {} as PostgresCommandCoordinator, buildComputerReadiness(f.input))

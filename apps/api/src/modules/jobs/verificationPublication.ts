@@ -3,7 +3,7 @@ import { constants, openSync, fstatSync, writeFileSync, fsyncSync, closeSync, re
 import { open, rm, readdir, lstat, realpath, rmdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
-import { finalizeVerification } from '../../shared/verificationRunner.js'
+import { finalizeVerification } from '../../../../../scripts/verification-runner.mjs'
 import { JobVerificationReportSchema, type JobExecutionRecord } from '@foreman-code/contracts/job-verification'
 import type { RemoteJobTerminalEvidence } from '@foreman-code/contracts/remote-job-execution'
 import type { RemoteOperationJournal } from '../runs/remote/operationJournal.js'

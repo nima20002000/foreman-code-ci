@@ -2,7 +2,7 @@ import { readPublicProjectionLocked } from '../src/modules/run-graph/compactSnap
 import { randomUUID } from 'node:crypto'
 import { expect, it, vi } from 'vitest'
 import { CiGetOutputSchema, CiRunRecordSchema, HarnessExecutionSchema } from '@foreman-code/contracts'
-import { SavedRunDetailsSchema } from '@foreman-code/contracts/current'
+import { SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
 import { buildApp } from '../src/app.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { databaseHotQueriesMigration } from '../src/infrastructure/databaseHotQueriesMigration.js'

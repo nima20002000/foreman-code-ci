@@ -5,10 +5,10 @@ import pg from 'pg'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { createFixtureDatabase, createFixtureSchema, dropFixtureDatabase, dropFixtureSchema } from './helpers/testResources.js'
 import { assertOwnedExecutionDestinations } from './helpers/testResources.js'
-import { candidateFor, seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { candidateFor, seedAgent3 } from './helpers/workflowDatabase.js'
 import { createTestDatabase, createTestRoot, dropTestDatabase, removeTestRoot, resetTestDatabase,
   testAdminPool, testAdminUrl } from '../../../scripts/test-resources.mjs'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { AgentConfigurationVersionSchema, HarnessExecutionSchema } from '@foreman-code/contracts'
 
 let destinationFixture: Awaited<ReturnType<typeof migratedDatabase>>
@@ -129,7 +129,7 @@ it('checks persisted execution destinations again after reconnecting to the prep
   const outside = createTestRoot(dirname(process.env.FOREMAN_CODE_TEST_ROOT!))
   let restarted: pg.Pool | undefined
   try {
-    const saved = await seedWorkflowFixture(fixture.pool, fixture.directory,
+    const saved = await seedAgent3(fixture.pool, fixture.directory,
       makeCurrentWorkflowFixture(randomUUID(), 'single'), { run: false })
     const selection = { workspaceId: saved.scope.workspaceId,
       agentConfigurationVersionIds: saved.configurations.map(configuration => configuration.id) }
@@ -166,14 +166,14 @@ it('checks accepted Run locations and native directories independently of the cu
   const fixture = destinationFixture
   const outside = createTestRoot(dirname(process.env.FOREMAN_CODE_TEST_ROOT!))
   try {
-    const outsideRun = await seedWorkflowFixture(fixture.pool, outside.directory,
+    const outsideRun = await seedAgent3(fixture.pool, outside.directory,
       makeCurrentWorkflowFixture(randomUUID(), 'single'))
     await fixture.pool.query('update workspaces set execution_location=$2::jsonb where id=$1',
       [outsideRun.scope.workspaceId, JSON.stringify({ runnerId: 'local', rootPath: fixture.directory })])
     await expect(assertOwnedExecutionDestinations(fixture.pool, {
       workspaceId: outsideRun.scope.workspaceId, runId: outsideRun.run.id,
     })).rejects.toThrow('owned root')
-    const saved = await seedWorkflowFixture(fixture.pool, fixture.directory, makeCurrentWorkflowFixture(randomUUID(), 'single'))
+    const saved = await seedAgent3(fixture.pool, fixture.directory, makeCurrentWorkflowFixture(randomUUID(), 'single'))
     const selection = { workspaceId: saved.scope.workspaceId, runId: saved.run.id }
     await assertOwnedExecutionDestinations(fixture.pool, selection)
     const execution = HarnessExecutionSchema.parse({ ...candidateFor(saved),

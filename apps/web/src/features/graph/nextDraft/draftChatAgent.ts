@@ -1,7 +1,7 @@
 import { SupportedHarnessConfigurationSchema } from '@foreman-code/contracts'
 import { updateManagedAgent } from '../../../shared/api/client'
 import { useGraphDraftStore } from '../store'
-import { configureAgentOperations } from '../../board-core'
+import { configureAgentOperations } from './agentEdits'
 import { nextDraftApi } from './transport'
 
 export function draftNodeAgent(draftKey: string, nodeId: string) {

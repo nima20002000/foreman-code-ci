@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { Command, interrupt } from '@langchain/langgraph'
 import { describe, it } from 'vitest'
-import { validateRepeatSuccessorV1 } from '@foreman-code/contracts/current'
+import { validateRepeatSuccessorV1 } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../src/modules/errors.js'
 import { executeRepeatRuntime, type RepeatRuntimeLifecycle } from '../src/modules/runs/repeatRuntime.js'
 import { currentInitialPrompt, parseCurrentChoiceResult } from '../src/modules/runs/currentRouting.js'
@@ -10,14 +10,14 @@ import { ExecutionLimiter } from '../src/modules/runs/limiter.js'
 import {
   assertRepeatRef, bindRepeatNodeInput, compileRepeatLayout, decideRepeatAdmission, repeatSlotId,
 } from '../src/modules/runs/repeatResolution.js'
-import { graphScenario, approvalParallelScenario, conditionalScenario, graphHarness, unequalScenario } from './helpers/graphScenarioHarness.js'
+import { a1Scenario, approvalParallelScenario, conditionalScenario, graphHarness, unequalScenario } from './helpers/graphScenarioHarness.js'
 
 // Real LangGraph/checkpointer + production pure/node algorithms. Only persistence,
 // native observation and lifecycle are deterministic TEST ports; no live gate claim.
 describe('ENG04 A1 common graph progression', () => {
   for (const form of ['single', 'sequential', 'parallel', 'conditional', 'approval'] as const) {
     it(`S3-01..04 ${form}: ordinary graph keeps identities without any repeat occurrence/boundary calls`, async () => {
-      const f = graphScenario(form), h = graphHarness(f, { outcome: () => 'go' })
+      const f = a1Scenario(form), h = graphHarness(f, { outcome: () => 'go' })
       const events: string[] = []
       const lifecycle: RepeatRuntimeLifecycle = {
         preflight: async () => { events.push('preflight') }, markRunning: async () => { events.push('running') },
@@ -77,7 +77,7 @@ describe('ENG04 A1 common graph progression', () => {
     assert.equal(h.occurrences.size, 0)
   })
   it('S3-03: branch-end is selected completion even when it is not a static sink', async () => {
-    const f = graphScenario('conditional', 'a1-branch-end'), h = graphHarness(f, { outcome: () => 'skip' })
+    const f = a1Scenario('conditional', 'a1-branch-end'), h = graphHarness(f, { outcome: () => 'skip' })
     await h.run(); await h.input.store.completeRun()
     assert.equal(h.executions.size, 1)
     assert.equal(h.outside.get(f.version.entryNodeId)!.value.branchEnded, true)
@@ -110,7 +110,7 @@ describe('ENG04 A1 common graph progression', () => {
     assert.equal(h.occurrences.size, 0); assert.equal(h.completeCalls, 1)
   })
   for (const mode of ['early', 'limit'] as const) it(`S3-05: bounded ${mode} exit retains exact occurrence ancestry and final data`, async () => {
-    const f = graphScenario('repeat', `a1-${mode}`), h = graphHarness(f, {
+    const f = a1Scenario('repeat', `a1-${mode}`), h = graphHarness(f, {
       outcome: (ref) => mode === 'early' && ref.occurrence!.occurrenceIndex === 2 ? 'pass' : 'issues',
     })
     await h.run(); await h.input.store.completeRun()
@@ -171,7 +171,7 @@ describe('ENG04 A1 common graph progression', () => {
       source.occurrence!.occurrenceId === h.refs.get(joined.id)!.occurrence!.occurrenceId))
   })
   it('technical retry stays in the same business occurrence/input slot; replay allocates nothing', async () => {
-    const f = graphScenario('repeat', 'a1-technical-retry'), h = graphHarness(f, { retryEntryOnce: true })
+    const f = a1Scenario('repeat', 'a1-technical-retry'), h = graphHarness(f, { retryEntryOnce: true })
     await h.run()
     assert.equal(h.retryCount, 1); assert.equal(h.occurrences.size, 1)
     const entryExecutions = [...h.executions.values()].filter((execution) => execution.workflowNodeId === f.version.entryNodeId)
@@ -189,7 +189,7 @@ describe('ENG04 A1 common graph progression', () => {
     assert.equal(h.observations.filter((id) => id === two!.id).length, 1)
   })
   it('rejects cross-occurrence resolution and input binding, and a synthetic occurrence on ordinary work', async () => {
-    const f = graphScenario('repeat', 'a1-cross'), h = graphHarness(f, { outcome: (ref) => ref.occurrence!.occurrenceIndex === 2 ? 'pass' : 'issues' })
+    const f = a1Scenario('repeat', 'a1-cross'), h = graphHarness(f, { outcome: (ref) => ref.occurrence!.occurrenceIndex === 2 ? 'pass' : 'issues' })
     await h.run()
     const [first, second] = [...h.occurrences.values()]
     const target = { nodeId: f.version.definition.nodes[1]!.id, occurrence: second!.identity }
@@ -200,12 +200,12 @@ describe('ENG04 A1 common graph progression', () => {
       && h.refs.get(id)!.occurrence?.occurrenceId === first!.identity.occurrenceId)![1]
     assert.throws(() => bindRepeatNodeInput({ version: f.version, runInput: f.run.input, recipient, ref: target,
       occurrence: second!, entry: h.entries.get(second!.identity.occurrenceId)!, predecessors: prior.input.predecessors }), { code: 'REPEAT_CROSS_OCCURRENCE_JOIN' })
-    const ordinary = graphScenario('single', 'a1-no-synthetic')
+    const ordinary = a1Scenario('single', 'a1-no-synthetic')
     assert.throws(() => assertRepeatRef(ordinary.version, ordinary.scope, { nodeId: ordinary.version.entryNodeId,
       occurrence: { ...first!.identity, scope: ordinary.scope } }), { code: 'REPEAT_OCCURRENCE_CONFLICT' })
   })
   it('Stop after an accepted repeat decision cannot admit the next business occurrence', async () => {
-    const f = graphScenario('repeat', 'a1-stop-boundary')
+    const f = a1Scenario('repeat', 'a1-stop-boundary')
     const h: ReturnType<typeof graphHarness> = graphHarness(f, { outcome: () => 'issues', beforeTransition: () => {
       h.controller.abort(new DomainError('GRAPH_STOP_CONFLICT', 'Synthetic committed Stop', 409))
     } })
@@ -218,7 +218,7 @@ describe('ENG04 A1 common graph progression', () => {
     assert.equal(h.candidateIds.length, count)
   })
   it('Stop racing an already-returning transition is checked again before checkpointing the next occurrence', async () => {
-    const f = graphScenario('repeat', 'a1-stop-return'), h = graphHarness(f, { outcome: () => 'issues' })
+    const f = a1Scenario('repeat', 'a1-stop-return'), h = graphHarness(f, { outcome: () => 'issues' })
     const transition = h.input.store.transition.bind(h.input.store)
     h.input.store.transition = async (id) => {
       const result = await transition(id)
@@ -231,7 +231,7 @@ describe('ENG04 A1 common graph progression', () => {
     assert.equal(h.completeCalls, 0)
   })
   it('graph size is independent of repeat cap and ordinary size has no hidden cap-one wrapper', () => {
-    const f = graphScenario('repeat', 'a1-layout'), first = compileRepeatLayout(f.version)
+    const f = a1Scenario('repeat', 'a1-layout'), first = compileRepeatLayout(f.version)
     f.version.definition.repeat!.blocks[0]!.maxOccurrences = 30
     f.version.definition.executionPolicy!.maxNodeExecutions = 60
     const second = compileRepeatLayout(f.version)
@@ -243,7 +243,7 @@ describe('ENG04 A1 common graph progression', () => {
     assert.deepEqual(ordinary.boundaries, [])
   })
   it('current choice parser accepts an exact native text carrier without rewriting evidence and rejects mixed/prose carriers', () => {
-    const f = graphScenario('conditional', 'a1-result'), node = f.version.definition.nodes[0]!
+    const f = a1Scenario('conditional', 'a1-result'), node = f.version.definition.nodes[0]!
     const result = { outcome: 'succeeded' as const, output: { text: JSON.stringify({ routing: { outcome: 'go' }, data: null }) } }
     const original = structuredClone(result)
     assert.equal(parseCurrentChoiceResult(result, node.choice!).routing.outcome, 'go')
@@ -251,7 +251,7 @@ describe('ENG04 A1 common graph progression', () => {
     assert.throws(() => parseCurrentChoiceResult({ ...result, output: { ...result.output, other: true } }, node.choice!))
     assert.throws(() => parseCurrentChoiceResult({ ...result, output: `prose ${result.output.text}` }, node.choice!))
     assert(currentInitialPrompt(node)!.includes('finite-choice output contract (version 1)'))
-    const repeated = graphScenario('repeat', 'a1-result-repeat')
+    const repeated = a1Scenario('repeat', 'a1-result-repeat')
     assert(currentInitialPrompt(repeated.version.definition.nodes[1]!, true)!.includes('remainingFindings'))
   })
 })

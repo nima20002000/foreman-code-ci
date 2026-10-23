@@ -1,17 +1,16 @@
-import type { AcceptedWorkflowRunCurrent } from '@foreman-code/contracts/current'
-import { beforeGraphCommit } from '../run-graph/connection.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import type { AcceptedWorkflowRunV3 } from '@foreman-code/contracts/wave25'
+import { beforeGraphCommit, type GraphTransactionSql } from '../run-graph/connection.js'
 import { readAcceptedRepeatRunLocked } from './repeatStartRead.js'
 import { readRepeatExecutionsLocked, type StoredRepeatExecution } from './repeatExecutionRead.js'
 import { assertWorkflowNativeEntryRow, workflowNativeReservation, type NativeEntryRow } from './workflowNativeEntry.js'
 import { sameRepeatValue } from './repeatResolution.js'
 import { readWorkflowTerminalReceiptLocked } from './workflowTerminalReceipt.js'
 import { assertSettlementLocked } from './repeatSettlementServices.js'
-import { assertApprovalTerminalSettlement } from '../interactions/current/resume.js'
+import { assertApprovalTerminalSettlement } from '../interactions/wave25/resume.js'
 import { repeatNativePending } from '../interactions/repeatNativeEvidence.js'
 import type { RunOwnership } from './ownership.js'
 
-async function assertUnsubmitted(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent,
+async function assertUnsubmitted(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
   executions: readonly StoredRepeatExecution[]): Promise<void> {
   if (!executions.length) return
   const rows = await sql.query<NativeEntryRow & { execution_id: string; launched: boolean }>(`
@@ -32,7 +31,7 @@ async function assertUnsubmitted(sql: SqlTransaction, run: AcceptedWorkflowRunCu
   }
 }
 
-export async function assertRestartAttemptsLocked(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent,
+export async function assertRestartAttemptsLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
   owner: RunOwnership, retained: readonly string[]): Promise<void> {
   const ids = (await sql.query<{ id: string }>(
     'select id from harness_executions where run_id=$1 order by id for update', [run.id])).rows.map(row => row.id)

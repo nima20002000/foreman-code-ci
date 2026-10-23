@@ -1,7 +1,7 @@
-import type { WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
+import type { WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 
 /** Each saved delegate route with the direct child it reaches, so an Agent can pick a child by name. */
-export function hierarchyChildRoutesPrompt(definition: WorkflowDefinitionCurrent, nodeId: string): string {
+export function hierarchyChildRoutesPrompt(definition: WorkflowDefinitionV3, nodeId: string): string {
   const node = definition.nodes.find(candidate => candidate.id === nodeId)
   const routes = node && node.kind !== 'job' ? (node.choice?.outcomes ?? []).flatMap(choice => {
     if (choice.target.kind !== 'edge') return []
@@ -17,7 +17,7 @@ export function hierarchyChildRoutesPrompt(definition: WorkflowDefinitionCurrent
 }
 
 /** The saved hierarchy's handoff contract is independent of the result-protocol cutover. */
-export function hierarchyWorkPrompt(definition: WorkflowDefinitionCurrent, nodeId: string): string {
+export function hierarchyWorkPrompt(definition: WorkflowDefinitionV3, nodeId: string): string {
   const node = definition.nodes.find(candidate => candidate.id === nodeId)
   if (!definition.hierarchy || !node || node.kind === 'job') throw new Error('HIERARCHY_AGENT_REQUIRED')
   const outcomes = node.choice?.outcomes.map(choice => choice.outcome) ?? []

@@ -12,11 +12,11 @@ import { OperatorChatService, PostgresOperatorConversationRepository } from '../
 import { nativeCorrelation } from '../src/modules/conversations/operatorChatRepository.js'
 import type { NativeHarnessSessionManager, NativeHistory } from '../src/modules/harnesses/port.js'
 import { graphHeaders, graphRpc, graphRpcValue } from './graph-composition-fixture.js'
-import { withTaskDatabase } from './helpers/taskDatabase.js'
+import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 it.skipIf(!postgresEnabled).each(['acknowledged', 'acknowledged-terminal', 'exact', 'wrong-choice', 'wrong-version', 'conflicting-proof'])('reconciles only %s Codex response evidence after outcome persistence fails once', async (proofCase) => {
-    await withTaskDatabase(async (pool, directory) => {
+    await nim2691TaskDatabase(async (pool, directory) => {
       await applyApplicationMigrations(pool)
       const access = new PostgresAccessService(pool)
       const owner = await access.issue({ name: 'recovery owner', audience: 'operator', expiresAt: new Date(Date.now() + 600000),

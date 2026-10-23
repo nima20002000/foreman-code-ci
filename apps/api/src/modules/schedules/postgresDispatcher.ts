@@ -1,17 +1,17 @@
-import { withTransaction, type SqlQuery, type SqlTransaction } from '../../infrastructure/transaction.js'
+import { withTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import {
   nextOccurrences, ScheduleOccurrenceSchema, scheduleOccurrenceId,
   type ScheduleOccurrence, type WorkflowSchedule,
 } from '@foreman-code/contracts/schedules'
-import { RunStartCurrentInputSchema, type RunStartCurrentInput } from '@foreman-code/contracts/current'
-import { beforeGraphCommit } from '../run-graph/index.js'
+import { RunStartV3InputSchema, type RunStartV3Input } from '@foreman-code/contracts/wave25'
+import { beforeGraphCommit, type GraphTransactionSql } from '../run-graph/connection.js'
 import { DomainError } from '../errors.js'
 import { DeviceAccessError } from '../devices/access.js'
 import {
   IMMUTABLE_WORKFLOW_VERSION_COLUMNS, readImmutableWorkflowVersion, type ImmutableWorkflowVersionRow,
-} from '../workflows/index.js'
+} from '../workflows/immutableRead.js'
 import { readScheduleAuthority } from './authority.js'
 import { decideDueSchedule, planDueSchedule, type DueScheduleStep } from './dispatchPlan.js'
 import { PostgresWorkflowScheduleRepository } from './postgres.js'
@@ -24,10 +24,10 @@ interface PreparedStart {
   schedule: WorkflowSchedule
   dueAt: string
   principal: ManagementPrincipal
-  input: RunStartCurrentInput
+  input: RunStartV3Input
 }
 type SchedulePreparation = PreparedStart | { kind: 'continue'; schedule: WorkflowSchedule }
-export type ScheduledStart = (principal: ManagementPrincipal, input: RunStartCurrentInput,
+export type ScheduledStart = (principal: ManagementPrincipal, input: RunStartV3Input,
   guard: ScheduleStartGuard) => Promise<void>
 const retry = () => new DomainError('SCHEDULE_DISPATCH_RETRY', 'Re-read the schedule before admission.', 409)
 
@@ -209,7 +209,7 @@ export class PostgresScheduleDispatcher {
       }
     })
   }
-  private async latestStartInput(client: pg.PoolClient, schedule: WorkflowSchedule, dueAt: string): Promise<RunStartCurrentInput> {
+  private async latestStartInput(client: pg.PoolClient, schedule: WorkflowSchedule, dueAt: string): Promise<RunStartV3Input> {
     const row = (await client.query<{ current_version_id: string | null; revision: string; location_revision: string }>(
       `select workflow.current_version_id,workflow.revision::text,workspace.location_revision::text
         from workflows workflow join workspaces workspace on workspace.id=workflow.workspace_id
@@ -222,7 +222,7 @@ export class PostgresScheduleDispatcher {
     if (!versionRow) throw new DomainError('WORKFLOW_VERSION_NOT_FOUND', 'The saved workflow is unavailable.', 409)
     const version = readImmutableWorkflowVersion(versionRow, { workspaceId: schedule.workspaceId,
       workflowId: schedule.workflowId, id: row.current_version_id })
-    return RunStartCurrentInputSchema.parse({ workspaceId: schedule.workspaceId, workflowId: schedule.workflowId,
+    return RunStartV3InputSchema.parse({ workspaceId: schedule.workspaceId, workflowId: schedule.workflowId,
       commandId: `schedule-v1:${sha256Hex(scheduleOccurrenceId(schedule.workflowId, dueAt))}`,
       executionSemanticsVersion: 3, workflowVersionId: version.id, expectedWorkflowRevision: Number(row.revision),
       expectedAgentConfigurationVersionIds: version.agentConfigurationVersionIds,
@@ -230,7 +230,7 @@ export class PostgresScheduleDispatcher {
   }
   private guard(prepared: PreparedStart, preparation: RepeatStartPreparation, signal?: AbortSignal): ScheduleStartGuard {
     const { schedule, dueAt } = prepared
-    const validate = async (sql: SqlTransaction, exceptRunId?: string) => {
+    const validate = async (sql: GraphTransactionSql, exceptRunId?: string) => {
       signal?.throwIfAborted()
       const principal = await readScheduleAuthority(sql, schedule)
       if (principal.id !== prepared.principal.id) throw retry()

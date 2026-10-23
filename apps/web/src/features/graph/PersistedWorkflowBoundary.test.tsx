@@ -2,19 +2,20 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import type { GraphEditReadResultCurrent } from '@foreman-code/contracts/current'
-import { boardDraftContextKey, nextDraftKey } from '../board-core'
+import type { GraphEditReadResultV3 } from '@foreman-code/contracts/wave25'
+import { boardDraftContextKey } from '../workflow-board/keys'
 import { PersistedWorkflowBoundary } from './PersistedWorkflowBoundary'
 import { useGraphDraftStore } from './store'
 import { fixture } from './nextDraft/core.cases'
 import { journalIntent, savedJournal } from './nextDraft/nim2644Journal.fixture'
 import { nextDraftApi, type AuthoringContext } from './nextDraft/transport'
+import { nextDraftKey } from './nextDraft/state'
 import { clearEditIntentStorage } from './nextDraft/editIntentStorage'
 
 vi.mock('./nextDraft/DraftCanvas', () => ({ DraftCanvas: () => <div>Workflow canvas</div> }))
 
 const clients: QueryClient[] = []
-const empty: GraphEditReadResultCurrent = { intent: null, current: [], canStop: false, affectedSetChanged: false }
+const empty: GraphEditReadResultV3 = { intent: null, current: [], canStop: false, affectedSetChanged: false }
 const warning = /The shared draft changed elsewhere/
 const sourceKey = () => boardDraftContextKey('workspace', 'workflow')
 const draftKey = nextDraftKey('workspace', 'workflow')

@@ -1,6 +1,6 @@
 import { executionQueueReasonLabel, type ExecutionQueueReason, type ActivitySnapshotV1,
   type CiActivity, type DurableInteraction } from '@foreman-code/contracts'
-import type { RepeatGraphCurrentState } from '@foreman-code/contracts/current'
+import type { RepeatGraphCurrentV3 } from '@foreman-code/contracts/wave25'
 import type { RunIntervalCheck } from '@foreman-code/contracts/run-snapshots'
 import type { AgentNodeState } from '../../../shared/ui/nocturne'
 import { ciNodePresentation } from '../../run-board/ciPresentation'
@@ -17,7 +17,7 @@ export const isActiveCi = (ci: CiActivity) => ACTIVE_CI.includes(ci.state)
 /** Pending interactions of this exact Run, keyed by the requesting node. The
  * requester is resolved from its exact execution; an Agent that appears once
  * in the Run's topology is the fallback for an execution outside the bounded cut. */
-export function interactionWaits(record: RepeatGraphCurrentState | undefined, interactions: readonly DurableInteraction[],
+export function interactionWaits(record: RepeatGraphCurrentV3 | undefined, interactions: readonly DurableInteraction[],
   names: ReadonlyMap<string, string>): Map<string, InteractionWait> {
   const waits = new Map<string, InteractionWait>()
   if (!record || record.state.run.executionState === 'completed') return waits

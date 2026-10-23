@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CiRunJob } from '@foreman-code/contracts'
-import type { RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
+import type { RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
 import { CiServerDialog } from './CiServer'
 import { ciServerFlowNode, ciServerSummary } from './ciServer'
 import { useCiPlacement } from '../dock/boardObjects'
@@ -11,7 +11,7 @@ export function useBoardCiServer({ nodes, names, workflow, scope, jobs, truncate
   nodes: Parameters<typeof ciServerFlowNode>[0]; names: ReadonlyMap<string, string>
   /** Keep the server where it first appears, so adding or removing Agents never moves it (the editable Board). */
   keepPlace?: boolean
-  workflow: { workspaceId: string; workflowId: string }; scope?: RepeatGraphScopeCurrent; jobs?: readonly CiRunJob[] | undefined
+  workflow: { workspaceId: string; workflowId: string }; scope?: RepeatGraphScopeV3; jobs?: readonly CiRunJob[] | undefined
   truncated?: boolean; error?: boolean; loading?: boolean
 }) {
   const [open, setOpen] = useState(false)

@@ -6,7 +6,7 @@ import type pg from 'pg'
 
 import { databaseCredentialDeadline } from './credentialLifetime.js'
 import { DomainError } from '../errors.js'
-import type { ChildProcessEnvironment } from '../harnesses/index.js'
+import type { ChildProcessEnvironment } from '../harnesses/port.js'
 import type { PostgresAccessService } from './postgres.js'
 import { lockActiveWorkerPrincipal, lockWorkerExecution, requireActiveWorkerExecution } from './workerLifecycle.js'
 import { RETAINED_REVIEWER_SETTLEMENT_PENDING, WORKER_BINDING_ELIGIBLE } from './workerEligibility.js'

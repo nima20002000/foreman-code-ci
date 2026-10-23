@@ -5,7 +5,7 @@ import {
 } from '@foreman-code/contracts/schedules'
 import { planDueSchedule } from '../src/modules/schedules/dispatchPlan.js'
 import { WorkflowScheduleDispatcher } from '../src/modules/schedules/dispatcher.js'
-import { scheduleClockCases, minuteSchedule, onceSchedule, utcScheduleSettings } from './helpers/scheduleClockCases.js'
+import { sch11ClockCases, sch11Minute, sch11Once, sch11Settings } from './helpers/scheduleClockCases.js'
 import { deferred } from './helpers/deferred.js'
 
 const scope = { workspaceId: 'sch11-workspace', workflowId: 'sch11-workflow' }
@@ -17,7 +17,7 @@ const record = (schedule: ScheduleConfiguration, nextOccurrenceAt: string | null
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers() })
 
 describe('SCH-11 deterministic schedule clock / preview-dispatch contract', () => {
-  it.each(scheduleClockCases)('$name: literal preview and dispatch instants agree', ({ schedule, from, expected }) => {
+  it.each(sch11ClockCases)('$name: literal preview and dispatch instants agree', ({ schedule, from, expected }) => {
     expect(nextOccurrences(schedule, from, expected.length)).toEqual(expected)
     const saved = record(schedule, expected[0]!)
     let cursor = saved.nextOccurrenceAt
@@ -40,7 +40,7 @@ describe('SCH-11 deterministic schedule clock / preview-dispatch contract', () =
     try {
       process.env.TZ = timezone
       vi.spyOn(Date, 'now').mockImplementation(() => { throw new Error('Implicit clock read') })
-      for (const item of scheduleClockCases) {
+      for (const item of sch11ClockCases) {
         expect(nextOccurrences(item.schedule, item.from, item.expected.length)).toEqual(item.expected)
       }
     } finally {
@@ -51,7 +51,7 @@ describe('SCH-11 deterministic schedule clock / preview-dispatch contract', () =
 
   it.each([{ every: 1, unit: 'minute' as const }, { every: 7, unit: 'hour' as const }])(
     'keeps the $every-$unit anchor after JSON persistence and restart', ({ every, unit }) => {
-      const configuration: ScheduleConfiguration = { ...utcScheduleSettings, mode: 'interval', every, unit,
+      const configuration: ScheduleConfiguration = { ...sch11Settings, mode: 'interval', every, unit,
         anchorAt: '2024-11-02T21:00:17.250Z', timezone: 'America/New_York' }
       const duration = every * (unit === 'minute' ? 60_000 : 3_600_000)
       const due = nextOccurrences(configuration, configuration.anchorAt, 20)
@@ -67,7 +67,7 @@ describe('SCH-11 deterministic schedule clock / preview-dispatch contract', () =
   )
 
   it('does not invent pre-anchor intervals, and normalizes offset identities', () => {
-    const schedule = { ...minuteSchedule, anchorAt: '2030-01-07T14:00:00+05:00' }
+    const schedule = { ...sch11Minute, anchorAt: '2030-01-07T14:00:00+05:00' }
     expect(nextOccurrences(schedule, '2030-01-01T00:00:00.000Z', 2))
       .toEqual(['2030-01-07T09:00:00.000Z', '2030-01-07T09:01:00.000Z'])
     expect(scheduleOccurrenceId(scope.workflowId, '2030-01-07T14:00:00+05:00'))
@@ -75,26 +75,26 @@ describe('SCH-11 deterministic schedule clock / preview-dispatch contract', () =
   })
 
   it('exhausts Once while keeping static receipt parsing clock-free and rejecting new elapsed saves', () => {
-    const input = request(onceSchedule), due = '2030-01-07T10:00:00.000Z'
+    const input = request(sch11Once), due = '2030-01-07T10:00:00.000Z'
     expect(parseScheduleSaveInput(input, instantBefore(due))).toEqual(ScheduleSaveInputSchema.parse(input))
-    expect(nextOccurrences(onceSchedule, due, 3)).toEqual([])
-    expect(planDueSchedule(record(onceSchedule, null), due)).toEqual([])
+    expect(nextOccurrences(sch11Once, due, 3)).toEqual([])
+    expect(planDueSchedule(record(sch11Once, null), due)).toEqual([])
     // Static parsing is intentionally clock-free for a historical receipt.
     expect(ScheduleSaveInputSchema.safeParse(input).success).toBe(true)
     for (const now of [due, '2030-01-08T00:00:00.000Z']) {
       expect(() => parseScheduleSaveInput(input, now)).toThrow()
-      expect(() => parseScheduleSaveInput(request({ ...onceSchedule, enabled: false }), now)).toThrow()
+      expect(() => parseScheduleSaveInput(request({ ...sch11Once, enabled: false }), now)).toThrow()
     }
   })
 
   it('cannot use the second fold instance to rescue a new past Once save', () => {
-    const schedule = scheduleClockCases.find((item) => item.name === 'once in a fold')!.schedule
+    const schedule = sch11ClockCases.find((item) => item.name === 'once in a fold')!.schedule
     expect(() => parseScheduleSaveInput(request(schedule), '2024-11-03T05:45:00.000Z')).toThrow()
     expect(nextOccurrences(schedule, '2024-11-03T05:45:00.000Z', 2)).toEqual([])
   })
 
   it('looks ahead across bounded backlog batches; there is exactly one eligible latest due', () => {
-    let saved = record(minuteSchedule, '2030-01-07T09:01:00.000Z')
+    let saved = record(sch11Minute, '2030-01-07T09:01:00.000Z')
     const decisions: ReturnType<typeof planDueSchedule> = []
     const now = '2030-01-07T13:11:30.000Z' // 251 occurrences, three bounded passes.
     for (let pass = 0; pass < 3; pass++) {
@@ -111,26 +111,26 @@ describe('SCH-11 deterministic schedule clock / preview-dispatch contract', () =
   })
 
   it.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 1_001])('rejects invalid preview count %s', (count) => {
-    expect(() => nextOccurrences(onceSchedule, '2030-01-07T09:00:00.000Z', count)).toThrow()
+    expect(() => nextOccurrences(sch11Once, '2030-01-07T09:00:00.000Z', count)).toThrow()
   })
   it('supports zero and the bounded maximum preview count', () => {
-    expect(nextOccurrences(minuteSchedule, '2030-01-07T09:00:00.000Z', 0)).toEqual([])
-    const instants = nextOccurrences(minuteSchedule, '2030-01-07T09:00:00.000Z', 1_000)
+    expect(nextOccurrences(sch11Minute, '2030-01-07T09:00:00.000Z', 0)).toEqual([])
+    const instants = nextOccurrences(sch11Minute, '2030-01-07T09:00:00.000Z', 1_000)
     expect(instants).toHaveLength(1_000)
     expect(new Set(instants).size).toBe(1_000)
     expect(instants).toEqual([...instants].sort())
   })
 })
 
-const weekly = { ...utcScheduleSettings, mode: 'weekly', weekdays: [1], time: '10:00' }
+const weekly = { ...sch11Settings, mode: 'weekly', weekdays: [1], time: '10:00' }
 const invalid: Array<{ name: string; schedule: unknown }> = [
   ...[[], [0], [8], [1, 1], [1.5], ['1']].map((weekdays) => ({ name: `weekdays ${JSON.stringify(weekdays)}`, schedule: { ...weekly, weekdays } })),
   ...['24:00', '23:60', '9:00', '10:00:00', ''].map((time) => ({ name: `time ${time}`, schedule: { ...weekly, time } })),
   ...['EST', '+05:00', 'Mars/Olympus', '', ' UTC'].map((timezone) => ({ name: `zone ${timezone}`, schedule: { ...weekly, timezone } })),
-  ...[0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, '1'].map((every) => ({ name: `interval ${every}`, schedule: { ...minuteSchedule, every } })),
-  ...['day', 'minutes', ''].map((unit) => ({ name: `unit ${unit}`, schedule: { ...minuteSchedule, unit } })),
-  ...['not-a-date', '2030-01-07', '2030-01-07T09:00:00.0001Z'].map((anchorAt) => ({ name: `anchor ${anchorAt}`, schedule: { ...minuteSchedule, anchorAt } })),
-  ...['2030-02-29', '2100-02-29', '2030-04-31', '2030-13-01', '0000-01-01', '2030-1-01'].map((localDate) => ({ name: `date ${localDate}`, schedule: { ...onceSchedule, localDate } })),
+  ...[0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, '1'].map((every) => ({ name: `interval ${every}`, schedule: { ...sch11Minute, every } })),
+  ...['day', 'minutes', ''].map((unit) => ({ name: `unit ${unit}`, schedule: { ...sch11Minute, unit } })),
+  ...['not-a-date', '2030-01-07', '2030-01-07T09:00:00.0001Z'].map((anchorAt) => ({ name: `anchor ${anchorAt}`, schedule: { ...sch11Minute, anchorAt } })),
+  ...['2030-02-29', '2100-02-29', '2030-04-31', '2030-13-01', '0000-01-01', '2030-1-01'].map((localDate) => ({ name: `date ${localDate}`, schedule: { ...sch11Once, localDate } })),
   { name: 'caller-owned cursor', schedule: { ...weekly, nextOccurrenceAt: '2030-01-07T10:00:00.000Z' } },
   { name: 'caller-owned revision', schedule: { ...weekly, revision: 1 } },
   { name: 'pinned version policy', schedule: { ...weekly, policy: 'pinned' } },
@@ -142,8 +142,8 @@ describe('SCH-11 invalid schedule inputs', () => {
     expect(() => parseScheduleSaveInput(request(schedule), '2029-01-01T00:00:00.000Z')).toThrow()
   })
   it.each(['not-a-date', '2030-01-07T09:00:00.1234Z'])('rejects invalid explicit clock %s', (now) => {
-    expect(() => nextOccurrences(onceSchedule, now, 1)).toThrow()
-    expect(() => parseScheduleSaveInput(request(onceSchedule), now)).toThrow()
+    expect(() => nextOccurrences(sch11Once, now, 1)).toThrow()
+    expect(() => parseScheduleSaveInput(request(sch11Once), now)).toThrow()
   })
 })
 
@@ -154,7 +154,7 @@ describe('SCH-11 process timer shutdown and failure pacing', () => {
     const dispatch = vi.fn(async () => undefined)
     const list = vi.fn(async () => {
       entered.resolve(); await release.promise
-      return { items: [record(onceSchedule, '2030-01-07T10:00:00.000Z')], pageInfo: { nextCursor: null } }
+      return { items: [record(sch11Once, '2030-01-07T10:00:00.000Z')], pageInfo: { nextCursor: null } }
     })
     const loop = new WorkflowScheduleDispatcher({ listDueSchedules: list, dispatch }, { reportError: vi.fn() })
     try {

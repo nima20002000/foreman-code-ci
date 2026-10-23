@@ -4,7 +4,7 @@ import { FileRevisionSchema, type FileRevision, type FileWithRevision, type Mess
 import type { FileToolOperation } from '../../files/tools/types.js'
 import { markdownReadText } from '../../files/tools/markdownReadText.js'
 import { FILE_SESSION_LEASE_MS, FILE_SESSION_RENEWAL_WINDOW_MS } from '../../files/tools/context.js'
-import { leaseFailureCause, renewOwnedLeases } from '../../leases/index.js'
+import { leaseFailureCause, renewOwnedLeases } from '../../leases/ownerLeases.js'
 import { assertRegisteredCodexCopy, CodexFileDeliveryError, collectCodexFileBytes, fail, sha256 } from './bytes.js'
 import { warnCodexFileError } from './errorLog.js'
 import type {

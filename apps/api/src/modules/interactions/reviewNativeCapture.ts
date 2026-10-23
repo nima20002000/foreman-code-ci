@@ -1,5 +1,5 @@
 import type { HarnessExecution, NativeHarnessEvent, NativeSessionReference, PendingNativeInteraction, ReviewJob } from '@foreman-code/contracts'
-import { frozenJsonCopy } from '../../shared/deepFreeze.js'
+import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import { REMOTE_NATIVE_SOURCE_LIMIT } from '@foreman-code/contracts/remote-workflow-physical'
 import type { NativeHistory } from '../harnesses/port.js'
 import { DomainError } from '../errors.js'
@@ -44,6 +44,13 @@ export interface ReviewNativeVerificationPort { read(value: ReviewNativeCapture)
 function invalid(): never {
   throw new DomainError('REVIEW_ORIGINAL_SOURCE_REQUIRED', 'The exact original reviewer manager and writer lifetime must produce this evidence.', 409)
 }
+function freeze<T>(value: T): T {
+  if (value !== null && typeof value === 'object') { Object.freeze(value); for (const child of Object.values(value)) freeze(child) }
+  return value
+}
+function immutable<T>(value: T, maxBytes = 4 * 1024 * 1024): T {
+  return freeze(JSON.parse(canonicalGraphJson(value, maxBytes)) as T)
+}
 export function createReviewNativeCaptureChannel(): { capture: ReviewNativeCapturePort; verify: ReviewNativeVerificationPort } {
   const values = new WeakMap<object, CapturedReviewNativeSource>()
   return {
@@ -55,10 +62,10 @@ export function createReviewNativeCaptureChannel(): { capture: ReviewNativeCaptu
         || input.execution.nativeSessionId !== input.session.nativeSessionId
         || input.job.nativeSessionId !== input.session.nativeSessionId || input.job.provider !== input.session.harness
         || input.manager.harness !== input.session.harness) return invalid()
-      const execution = frozenJsonCopy(input.execution), session = frozenJsonCopy(input.session), job = frozenJsonCopy(input.job)
-      const source = frozenJsonCopy(input.source, REMOTE_NATIVE_SOURCE_LIMIT)
+      const execution = immutable(input.execution), session = immutable(input.session), job = immutable(input.job)
+      const source = immutable(input.source, REMOTE_NATIVE_SOURCE_LIMIT)
       const manager = input.manager, lease = input.lease, assertCoordinator = input.assertCurrent
-      const lane = frozenJsonCopy({ id: lease.fence.id, token: lease.fence.token,
+      const lane = immutable({ id: lease.fence.id, token: lease.fence.token,
         connectionGeneration: lease.previous.connectionGeneration, providerId: lease.providerId ?? null })
       const check = () => {
         assertCoordinator(); manager.assertCapturedLease(session, lease)

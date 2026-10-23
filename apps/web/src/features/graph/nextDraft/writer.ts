@@ -1,9 +1,8 @@
 import { errorMessage } from '../../../shared/errorMessage'
-import {
-  acknowledgeAgentEdits, hasAgentEdits, draftOperations, hasLocalChanges, mergeAcknowledgement,
-  type AuthoringIssue, type DraftFailure, type DraftRequest, type NextDraftEdit,
-} from '../../board-core'
-import type { WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
+import { acknowledgeAgentEdits, hasAgentEdits } from './agentEdits'
+import type { WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import { draftOperations, hasLocalChanges, mergeAcknowledgement, type AuthoringIssue } from './model'
+import type { DraftFailure, DraftRequest, NextDraftEdit } from './state'
 import type { NextDraftApi } from './transport'
 
 export type DraftAccess = {
@@ -35,7 +34,7 @@ export function draftFailure(error: unknown, commandMayHaveRun: boolean): DraftF
 export function createNextDraftWriter(
   api: NextDraftApi,
   access: DraftAccess,
-  validateSubmission: (graph: WorkflowDefinitionCurrent, operations: unknown[]) => void,
+  validateSubmission: (graph: WorkflowDefinitionV3, operations: unknown[]) => void,
   commandId: () => string = () => crypto.randomUUID(),
   captureSession: () => () => void = () => () => undefined,
 ) {

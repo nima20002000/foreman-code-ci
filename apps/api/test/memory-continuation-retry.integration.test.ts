@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { WorkActivationInputSchema } from '@foreman-code/contracts/current'
+import { WorkActivationInputSchema } from '@foreman-code/contracts/wave25'
 import { HarnessExecutionError } from '../src/modules/harnesses/errors.js'
 import { isWorkflowStart } from '../src/modules/harnesses/sessionStart.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'

@@ -18,11 +18,11 @@ import { WorkerExecutionPolicy } from '../src/modules/settings/workerExecution.j
 import { BuildComputerSettings } from '../src/modules/settings/buildComputers.js'
 import { buildComputerFixture } from './helpers/buildComputerFixture.js'
 import { deferred } from './helpers/deferred.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { mainCiContext } from '../src/modules/ci/context.js'
 
 it('honors persisted MCP build participation and priority while retaining assigned run control', async () => {
-  const db = await migratedDatabase()
+  const db = await agent3Database()
   const clients: Client[] = []
   let preferredStatusRequested = deferred()
   let preferredStatusReleased = deferred()

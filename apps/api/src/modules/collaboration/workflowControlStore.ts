@@ -4,8 +4,7 @@ import {
   sameExecution, sameLogicalWork, type ExecutionRef, type WorkflowControlContinuation,
 } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
-import { assertGraphTransaction } from '../run-graph/index.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { assertGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
 import { releaseHierarchyDirectionLocked } from '../runs/hierarchyDirection.js'
 import { assertWorkflowExecutionCapacityLocked } from '../runs/workflowExecutionBudget.js'
 import {
@@ -60,7 +59,7 @@ export async function reserveWorkflowControlContinuationLocked(context: Workflow
 
 /** B invokes only after its existing native closure proof and input.bind, in the
  * SAME owner transaction. The successor's identity is checked against persisted slots. */
-export async function completeWorkflowControlContinuationLocked(sql: SqlTransaction, input: {
+export async function completeWorkflowControlContinuationLocked(sql: GraphTransactionSql, input: {
   runId: string; continuationId: string; successorExecution: ExecutionRef; now: string
 }): Promise<WorkflowControlContinuation> {
   assertGraphTransaction(sql)
@@ -108,7 +107,7 @@ export async function completeWorkflowControlContinuationLocked(sql: SqlTransact
   return after
 }
 
-export async function failWorkflowControlContinuationLocked(sql: SqlTransaction,
+export async function failWorkflowControlContinuationLocked(sql: GraphTransactionSql,
   input: { runId:string; continuationId:string; errorCode:string; now:string }): Promise<void> {
   assertGraphTransaction(sql)
   const row = (await sql.query<ContinuationRow>(`select record,reserved_successor_execution_id,delivery_id
@@ -131,7 +130,7 @@ export async function failWorkflowControlContinuationLocked(sql: SqlTransaction,
     state:'failed',errorCode:input.errorCode},input.now)
 }
 
-async function failDelivery(sql:SqlTransaction,row:ControlCommandSummary,errorCode:string,now:string) {
+async function failDelivery(sql:GraphTransactionSql,row:ControlCommandSummary,errorCode:string,now:string) {
   if (['completed','failed','canceled'].includes(row.state)) return
   const receipt = ChatDeliveryReceiptSchema.parse(row.receipt)
   await updateControlCommand(sql,row,{ ...receipt,state:'failed',errorCode,updatedAt:now },now)
@@ -139,7 +138,7 @@ async function failDelivery(sql:SqlTransaction,row:ControlCommandSummary,errorCo
 
 /** Claim one input at an existing input boundary. Repeat of a claimed boundary
  * returns the identical request; B uses commandId for native idempotency. */
-export async function claimWorkflowControlInputLocked(sql:SqlTransaction,
+export async function claimWorkflowControlInputLocked(sql:GraphTransactionSql,
   input:{execution:ExecutionRef;now:string;claimNew?:boolean}):Promise<WorkflowQueuedInput | undefined> {
   assertGraphTransaction(sql)
   const ref=ExecutionRefSchema.parse(input.execution)
@@ -182,7 +181,7 @@ function queuedInput(row:ControlCommandRow,execution:ExecutionRef,sameWork:boole
 }
 
 /** Existing Stop Run calls this under its owner lock before descendant cleanup. */
-export async function cancelWorkflowControlsLocked(sql:SqlTransaction,runId:string,now:string):Promise<void> {
+export async function cancelWorkflowControlsLocked(sql:GraphTransactionSql,runId:string,now:string):Promise<void> {
   assertGraphTransaction(sql)
   const pending = new Set((await sql.query<{id:string}>(`select id from run_control_continuations
     where run_id=$1 and state in ('reserved','waiting_settlement','unknown')`,[runId])).rows.map(row=>row.id))

@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import {
   CURRENT_WORKFLOW_TOOLS, CurrentWorkflowCapabilitiesSchema, CurrentWorkflowReadResultSchema,
   CurrentWorkflowSaveResultSchema, CurrentEditReadResultSchema, MAX_AGENT_ACTIVE_TIMEOUT_MS,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import { currentDatabase } from './helpers/database.js'
 import { writerFixture, type WriterFixture } from './writer-fixtures.js'
 import { graphRpc, graphRpcValue } from './graph-composition-fixture.js'

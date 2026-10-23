@@ -1,5 +1,5 @@
 import type { HarnessExecution } from '@foreman-code/contracts'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import { DomainError } from '../errors.js'
 import { PUBLIC_UNSETTLED_REVIEW_SQL } from '../run-graph/publicObligations.js'
 
@@ -17,7 +17,7 @@ export const outstandingCheckoutReviewSql = `(${openCheckoutLifetimeSql})
 `
 
 /** Caller holds the Run mutation lock, shared with checkout allocation and cleanup claims. */
-export async function assertReviewerCheckoutAvailable(sql: SqlQuery,
+export async function assertReviewerCheckoutAvailable(sql: GraphSqlClient,
   execution: Pick<HarnessExecution, 'id' | 'runId' | 'workingDirectory'>): Promise<void> {
   const unavailable = await sql.query(`select 1 from run_worktrees target where target.run_id=$1
     and (target.allocation_id=$2 or (target.allocation_id='' and target.record->>'workingDirectory'=$3))

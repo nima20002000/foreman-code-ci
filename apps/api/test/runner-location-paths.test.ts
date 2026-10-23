@@ -93,8 +93,7 @@ describe('PR #5 runner locations', () => {
       const payload = { commandId: 'legacy-command', name: 'A' }
       const perform = vi.fn(async () => { throw new Error('Receipt must not repeat mutation') })
       const client = {
-        // The command receipt read is the one statement bound to a principal list, an operation and a command id.
-        query: vi.fn(async (_sql: string, values: unknown[] = []) => ({ rows: values.length === 3 && Array.isArray(values[0])
+        query: vi.fn(async (sql: string) => ({ rows: sql.includes('from management_command_receipts')
           ? [{ input_hash: commandInputHash(payload), target_key: 'workspaces:new', result: legacy }] : [] })),
         release: vi.fn(),
       }

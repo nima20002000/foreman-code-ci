@@ -3,10 +3,10 @@ import { randomUUID } from 'node:crypto'
 import { expect, it, vi } from 'vitest'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 
 it('audits a lost commit reply as uncertain and resolves an identical retry through its persisted receipt', async () => {
-  const db = await migratedDatabase()
+  const db = await agent3Database()
   const caller = await new PostgresAccessService(db.pool).issue({ name: 'Command owner', audience: 'operator',
     grants: [], expiresAt: new Date(Date.now() + 600_000) })
   const client = await db.pool.connect()
@@ -39,7 +39,7 @@ it('audits a lost commit reply as uncertain and resolves an identical retry thro
 }, 60_000)
 
 it('records a definite deferred database rejection as failed', async () => {
-  const db = await migratedDatabase()
+  const db = await agent3Database()
   const caller = await new PostgresAccessService(db.pool).issue({ name: 'Rejected command owner', audience: 'operator',
     grants: [], expiresAt: new Date(Date.now() + 600_000) })
   const client = await db.pool.connect()

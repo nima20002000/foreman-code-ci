@@ -27,9 +27,9 @@ const hostCiRunId = process.env.FOREMAN_CODE_CI_TEST_ADMIN_URL === undefined
 const serverMarker = 'graphql-disposable-test-server'
 const rootMarker = '.graphql-test-owner.json'
 const cleanupDirectory = '.graphql-test-cleanup'
-// Tests gate on and connect through TEST_DATABASE_URL.
+// Tests gate on and connect through TEST_DATABASE_URL. The native acceptance runner still reads its two older names.
 // Any other inherited *DATABASE_URL is pointed at the owned test database too, so no test can reach a real one.
-const databaseVariables = ['DATABASE_URL', 'TEST_DATABASE_URL']
+const databaseVariables = ['DATABASE_URL', 'TEST_DATABASE_URL', 'ENG03_A_TEST_DATABASE_URL', 'WAVE25_TEST_DATABASE_URL']
 
 export function requireTestServerUrl(value) {
   const url = new URL(value)

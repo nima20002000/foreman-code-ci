@@ -5,10 +5,11 @@ import { returnBrowserControl } from './browserRecovery'
 import { BrowserRecovery } from './BrowserRecovery'
 import { useMemo, type ReactNode } from 'react'
 import { CollaborationUIProvider, useCollaborationUISlots, type CollaborationUISlots } from '../shared/ui/collaborationSlots'
-import { WorkflowExecutionConversation, LiveAgentConversation } from '../features/conversations'
+import { WorkflowExecutionConversation } from '../features/conversations/delivery/WorkflowExecutionConversation'
+import { LiveAgentConversation } from '../features/conversations/agentChat/LiveAgentConversation'
 import { useManagedAgentsQuery, useManagedWorkflowQuery } from '../shared/api/query'
-import type { WorkflowOutsideRunChatViewProps } from '../features/workflow-hierarchy'
-import { useBoardAuthoring } from '../features/board-core'
+import type { WorkflowOutsideRunChatViewProps } from '../features/workflow-hierarchy/execution-chat/types'
+import { useBoardAuthoring } from '../features/workflow-board/context'
 
 function OutsideRunChat({ resolved }: WorkflowOutsideRunChatViewProps) {
   // The resolution carries ids only; the saved node supplies the name that tells the person whose chat this is.

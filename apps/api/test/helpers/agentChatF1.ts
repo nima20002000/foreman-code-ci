@@ -44,7 +44,7 @@ interface Receipt {
 
 /** Executes the production repository against a strict scripted SQL store. This is NOT PostgreSQL:
  * it checks query fences/order and durable-state transitions, not SQL validity or lock isolation. */
-export class ScriptedConversationStore {
+export class F1Store {
   workspaceArchived = false
   readonly row: AgentConversationRow & { deleted_at: Date | null } = {
     deleted_at: null, id: 'conversation', agent_key: agentChatKey(context), workspace_id: context.workspaceId, workflow_id: context.workflowId,
@@ -354,7 +354,7 @@ export class ScriptedConversationStore {
   }
 }
 
-export class ScriptedConversationNative implements NativeHarnessSessionManager {
+export class F1Native implements NativeHarnessSessionManager {
   readonly harness: AgentHarness = 'codex'
   readonly session: NativeSessionReference = { harness: 'codex', providerVersion: 'fixture', nativeSessionId: 'session' }
   readonly starts: string[] = []
@@ -414,9 +414,9 @@ export class ScriptedConversationNative implements NativeHarnessSessionManager {
   async close() {}
 }
 
-export function fixture(store = new ScriptedConversationStore()) {
+export function fixture(store = new F1Store()) {
   const repository = new PostgresAgentChatRepository(store.pool)
-  const manager = new ScriptedConversationNative()
+  const manager = new F1Native()
   const workflows = {
     getAgentConfiguration: async () => configuration,
     getCurrentSavedVersion: async () => ({ definition: { nodes: [{ id: context.workflowNodeId, agentId: context.agentId }] } }),

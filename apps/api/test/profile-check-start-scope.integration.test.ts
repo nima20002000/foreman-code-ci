@@ -4,8 +4,8 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { HostHarnessOverrideSaveResultSchema, HostHarnessInstanceCheckResultSchema }
   from '@foreman-code/contracts/harness-registry'
 import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema, CurrentWorkflowSaveResultSchema,
-  ManualRunStartResultSchema, type WorkflowDefinitionCurrent, type WorkflowVersionCurrent }
-  from '@foreman-code/contracts/current'
+  ManualRunStartResultSchema, type WorkflowDefinitionV3, type WorkflowVersionV3 }
+  from '@foreman-code/contracts/wave25'
 import { waitForRemoteReview } from './helpers/remoteReviewProduction.js'
 import { modelRequestDirectories } from './helpers/modelRequestDirectories.js'
 import { completedRun, heldCall, installationUpdateFixture, latestEvidence, pinnedPlacements, profileReader, profiles,
@@ -21,14 +21,14 @@ describe('profile-scoped Start after a Worker harness installation update', () =
     const placedNode = fixture.version.definition.nodes[0]!
     if (placedNode.kind === 'job' || !placedNode.placement) throw new Error('Expected an Agent placement.')
     const locationRevision = Number(placedNode.placement.locationRevision)
-    const startInput = async (version: WorkflowVersionCurrent) => {
+    const startInput = async (version: WorkflowVersionV3) => {
       const current = CurrentWorkflowReadResultSchema.parse(await fixture.value(CURRENT_WORKFLOW_TOOLS.saved, scope))
       return { ...scope, commandId: randomUUID(), workflowVersionId: version.id,
         executionSemanticsVersion: 3 as const, expectedWorkflowRevision: current.revision,
         expectedAgentConfigurationVersionIds: version.agentConfigurationVersionIds,
         expectedLocationRevision: locationRevision, input: {} }
     }
-    const saveGraph = async (graph: WorkflowDefinitionCurrent) => {
+    const saveGraph = async (graph: WorkflowDefinitionV3) => {
       const current = CurrentWorkflowReadResultSchema.parse(await fixture.value(CURRENT_WORKFLOW_TOOLS.saved, scope))
       const definition = {
         ...graph,

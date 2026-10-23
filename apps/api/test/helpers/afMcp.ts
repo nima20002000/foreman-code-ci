@@ -2,10 +2,10 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { buildApp } from '../../src/app.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
 import type { OperatorServices } from '../../src/mcp/operator/types.js'
-import type { nativePublicationFixture } from './nativePublicationFixture.js'
+import type { afPublicationFixture } from './afPublicationFixture.js'
 
 /** Real authenticated Operator MCP transport, not a direct tool-handler invocation. */
-export async function withPublicationMcp<T>(f: Awaited<ReturnType<typeof nativePublicationFixture>>,
+export async function withAfMcp<T>(f: Awaited<ReturnType<typeof afPublicationFixture>>,
   run: (writer: Client, reader: Client) => Promise<T>): Promise<T> {
   const app = buildApp({ readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
     operator: { access: f.access, services: { agentChat: f.chat,

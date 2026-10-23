@@ -7,7 +7,7 @@ import { server } from '../../mocks/server'
 import { queryKeys } from '../../shared/api/query'
 import { UnsavedChangesProvider } from '../../shared/ui/UnsavedChangesProvider'
 import { renderWithRouter } from '../../test/renderWithRouter'
-import { clearRevisionedFormPersistence } from '../settings'
+import { clearRevisionedFormPersistence } from '../settings/revisionedForm'
 import { WorkspaceDetailPage } from './WorkspaceDetailPage'
 
 afterEach(clearRevisionedFormPersistence)

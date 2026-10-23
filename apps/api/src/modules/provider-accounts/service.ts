@@ -1,5 +1,5 @@
 import type { z } from 'zod'
-import { withTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
+import { withTransaction } from '../../infrastructure/transaction.js'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import {
@@ -12,9 +12,10 @@ import {
   type ProviderAccountTarget, type ProviderAccountHumanHandoff,
 } from '@foreman-code/contracts/provider-accounts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { hasAction, requireAuthorization, requireLiveAccountAuthorization } from '../access/index.js'
-import { readLiveManagementPrincipal } from '../access/index.js'
-import type { PostgresCommandCoordinator } from '../commands/index.js'
+import { hasAction, requireAuthorization, requireLiveAccountAuthorization } from '../access/policy.js'
+import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
 import { ProviderAccountsRepository } from './repository.js'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
@@ -39,14 +40,14 @@ import { sha256Hex } from '../../shared/hash.js'
 
 export type { ResolvedProviderAccount, ProviderAccountResolver, ProviderAccountOperationNativePort, ProviderAccountCredentials }
 type CommandSource = 'http' | 'mcp'
-type Change = (snapshot: ProviderAccountsSnapshot, sql: SqlQuery) => Promise<void>
+type Change = (snapshot: ProviderAccountsSnapshot, sql: GraphSqlClient) => Promise<void>
 
 /** Routes account work for another computer to that computer's scoped service. */
 export interface ProviderAccountRouting {
   scope(principal: ManagementPrincipal, target: DeviceProvisioningTarget): Promise<ProviderAccountsService>
   targets(principal: ManagementPrincipal): Promise<ProviderAccountTarget[]>
-  locate?(accountId: string, sql?: SqlQuery): Promise<ProviderAccountBinding | undefined>
-  resolve?(binding: ProviderAccountBinding, sql?: SqlQuery, signal?: AbortSignal): Promise<ResolvedProviderAccount | null>
+  locate?(accountId: string, sql?: GraphSqlClient): Promise<ProviderAccountBinding | undefined>
+  resolve?(binding: ProviderAccountBinding, sql?: GraphSqlClient, signal?: AbortSignal): Promise<ResolvedProviderAccount | null>
 }
 
 export class ProviderAccountsService implements ProviderAccountResolver {
@@ -66,7 +67,7 @@ export class ProviderAccountsService implements ProviderAccountResolver {
     private readonly credentials: ProviderAccountCredentials,
     private readonly native: ProviderAccountOperationNativePort,
     private readonly commands: PostgresCommandCoordinator,
-    private readonly targetAuthorization?: (sql: SqlQuery, principal: ManagementPrincipal, manage: boolean,
+    private readonly targetAuthorization?: (sql: GraphSqlClient, principal: ManagementPrincipal, manage: boolean,
       accountId?: string) => Promise<void>,
     /** Builds the routing to other computers' accounts; it receives this service as Main's local accounts. */
     routing?: (local: ProviderAccountsService) => ProviderAccountRouting,
@@ -106,7 +107,7 @@ export class ProviderAccountsService implements ProviderAccountResolver {
     await assertAccountUnused(this.pool, operation.binding.accountId)
   }
 
-  private async authorize(sql: SqlQuery, principal: ManagementPrincipal,
+  private async authorize(sql: GraphSqlClient, principal: ManagementPrincipal,
     action: 'provider_accounts:read' | 'provider_accounts:manage' = 'provider_accounts:read',
     accountId?: string): Promise<void> {
     if (this.targetAuthorization) return this.targetAuthorization(sql, principal, action === 'provider_accounts:manage', accountId)
@@ -724,7 +725,7 @@ export class ProviderAccountsService implements ProviderAccountResolver {
   }
 
   async resolve(provider: AccountProvider, accountId?: string,
-    options?: { sql?: SqlQuery; allowDefault?: boolean; signal?: AbortSignal;
+    options?: { sql?: GraphSqlClient; allowDefault?: boolean; signal?: AbortSignal;
       acceptedBinding?: AcceptedProviderAccountBinding }): Promise<ResolvedProviderAccount | null> {
     options?.signal?.throwIfAborted()
     if (options?.acceptedBinding?.kind === 'legacy-profile') {

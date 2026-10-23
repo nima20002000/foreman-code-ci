@@ -1,7 +1,7 @@
 import type { HarnessExecution } from '@foreman-code/contracts'
 import { JobExecutionRecordSchema, type JobExecutionRecord } from '@foreman-code/contracts/job-verification'
-import { GraphExecutionIdentitySchema, NodeResolutionSchema, RUN_GRAPH_LIMITS, canonicalGraphJson, type GraphFact, type PublicGraphProjection, type RunGraphScope } from '@foreman-code/contracts/current'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { GraphExecutionIdentitySchema, NodeResolutionSchema, RUN_GRAPH_LIMITS, canonicalGraphJson, type GraphFact, type PublicGraphProjection, type RunGraphScope } from '@foreman-code/contracts/wave25'
+import type { GraphTransactionSql } from './connection.js'
 import { assertGraphTransaction } from './connection.js'
 import { readCurrentNativeActivities, selectCurrentNodeActivity } from './currentActivity.js'
 import type { CurrentNativeActivity } from './nativeActivitySelection.js'
@@ -39,7 +39,7 @@ export interface PublicNodeInputs {
  * lifecycle publication. It reads current records only, never event history.
  * Overlays let a producer compute its post-mutation facts without writing before
  * its source/effect guards. No native writes, lease acquisition or external I/O occurs. */
-export async function readPublicNodeProjection(sql: SqlTransaction, scope: RunGraphScope,
+export async function readPublicNodeProjection(sql: GraphTransactionSql, scope: RunGraphScope,
   nodeIds: readonly string[], overlay: PublicProjectionOverlay = {},
   attention?: ReadonlyMap<string, PublicAttentionCount>, prefetched?: CompactProjectionRows): Promise<PublicNode[]> {
   return composePublicNodes(sql, scope, await readPublicNodeInputs(sql, scope, nodeIds, overlay, attention, prefetched), overlay, prefetched?.native)
@@ -104,7 +104,7 @@ export const PUBLIC_NODE_RESOLUTIONS_SQL = `select d.record from run_repeat_reso
       order by (d.record #>> '{value,resolvedAt}')::timestamptz desc,
         d.workflow_node_id,d.occurrence_key desc limit 2000`
 
-export async function readPublicNodeInputs(sql: SqlTransaction, scope: RunGraphScope,
+export async function readPublicNodeInputs(sql: GraphTransactionSql, scope: RunGraphScope,
   nodeIds: readonly string[], overlay: PublicProjectionOverlay = {},
   attention?: ReadonlyMap<string, PublicAttentionCount>, prefetched?: CompactProjectionRows): Promise<PublicNodeInputs> {
   assertGraphTransaction(sql)
@@ -184,7 +184,7 @@ export async function readPublicNodeInputs(sql: SqlTransaction, scope: RunGraphS
 
 /** Composes node state from read-once inputs and the caller's native rows. Only a
  * review filter reads current review jobs; history is never loaded here. */
-export async function composePublicNodes(sql: SqlTransaction, scope: RunGraphScope,
+export async function composePublicNodes(sql: GraphTransactionSql, scope: RunGraphScope,
   inputs: PublicNodeInputs, overlay: PublicProjectionOverlay = {},
   nativeRows?: CompactProjectionRows['native']): Promise<PublicNode[]> {
   assertGraphTransaction(sql)
@@ -245,7 +245,7 @@ function factKey(fact: GraphFact): string {
 
 /** Run-domain Stop/completion/interruption projection. Native row clear/closure
  * remains BR1-002's fenced boundary; this never claims native cleanup succeeded. */
-export function publicRunClosedFacts(sql: SqlTransaction, scope: RunGraphScope): Promise<GraphFact[]> {
+export function publicRunClosedFacts(sql: GraphTransactionSql, scope: RunGraphScope): Promise<GraphFact[]> {
   return publicRunBoundaryFacts(sql, scope, { closed: true })
 }
 
@@ -253,7 +253,7 @@ export function publicRunClosedFacts(sql: SqlTransaction, scope: RunGraphScope):
  * mutation. Clearing cleanup is not a native acknowledgement: the unchanged
  * publication schema still rejects any attempt to restore active native work
  * from a cleanup source. Stop/terminal closure survives a cleared cleanup flag. */
-export async function publicRunBoundaryFacts(sql: SqlTransaction, scope: RunGraphScope,
+export async function publicRunBoundaryFacts(sql: GraphTransactionSql, scope: RunGraphScope,
   overlay: Pick<PublicProjectionOverlay, 'closed' | 'cleanupPending'>): Promise<GraphFact[]> {
   const ids = (await sql.query<{ id: string }>(`select n.node->>'id' as id from workflow_versions v
     cross join lateral jsonb_array_elements(v.record->'definition'->'nodes') n(node)

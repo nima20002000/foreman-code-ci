@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { nativePublicationFixture } from './helpers/nativePublicationFixture.js'
+import { afPublicationFixture } from './helpers/afPublicationFixture.js'
 import { postgresEnabled } from './helpers/database.js'
 import { preparePublication } from './helpers/codexPublication.js'
 
@@ -7,7 +7,7 @@ afterEach(() => vi.restoreAllMocks())
 describe.skipIf(!postgresEnabled)('publication recovery after native completion', { timeout: 90_000 }, () => {
   for (const failure of ['adopt_once', 'revoke_after_finalize'] as const) {
     it(`Codex terminal close repairs ${failure} without another publication`, async () => {
-      const f = await nativePublicationFixture()
+      const f = await afPublicationFixture()
       const t = await preparePublication(f, 1, failure)
       const publish = vi.spyOn(f.service, 'publish')
       // Production bound its method through a wrapper, so this spy observes the real service call.
@@ -33,7 +33,7 @@ describe.skipIf(!postgresEnabled)('publication recovery after native completion'
   }
 
   it('a reconstructed transcript recovers the ledger even if the process never ran close', async () => {
-    const f = await nativePublicationFixture(), t = await preparePublication(f, 1, 'lose_close')
+    const f = await afPublicationFixture(), t = await preparePublication(f, 1, 'lose_close')
     expect((await t.publish()).success).toBe(false)
     const original = await f.publications(t.active.turn.messageId)
     expect(original).toHaveLength(1)
@@ -51,7 +51,7 @@ describe.skipIf(!postgresEnabled)('publication recovery after native completion'
   })
 
   it('a linked but unfinalized publication is not exposed by close or restart readback', async () => {
-    const f = await nativePublicationFixture(), t = await preparePublication(f, 1)
+    const f = await afPublicationFixture(), t = await preparePublication(f, 1)
     vi.spyOn(f.files, 'finalize').mockRejectedValueOnce(new Error('Injected failure before finalization'))
     expect((await t.publish()).success).toBe(false)
     expect((await f.database.pool.query(`select 1 from file_tool_publications

@@ -11,7 +11,7 @@ import { createWorkflowRepositoryServices } from '../../src/modules/runs/workflo
 import { randomUUID } from 'node:crypto'
 import { vi } from 'vitest'
 import { AgentConfigurationVersionSchema, DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
-import { ExecutableWorkflowCurrentSchema, makeCurrentWorkflowFixture, WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
+import { ExecutableWorkflowV3Schema, makeCurrentWorkflowFixture, WorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
 import { ApprovalPostgresSaver } from '../../src/infrastructure/approvalCheckpointSaver.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
@@ -19,8 +19,8 @@ import { PostgresApprovalBudgetRepository } from '../../src/modules/interactions
 import { ApprovalExecutionCoordinator } from '../../src/modules/interactions/execution.js'
 import { InteractionService } from '../../src/modules/interactions/service.js'
 import { ExecutionScopedNativeSessionManagerResolver } from '../../src/modules/interactions/runtimePorts.js'
-import { Wave25InteractionRepository } from '../../src/modules/interactions/current/repository.js'
-import { Wave25WorkerCredentialService } from '../../src/modules/interactions/current/credentials.js'
+import { Wave25InteractionRepository } from '../../src/modules/interactions/wave25/repository.js'
+import { Wave25WorkerCredentialService } from '../../src/modules/interactions/wave25/credentials.js'
 import { registerApprovalCheckpointResume } from '../../src/modules/runs/approvalCheckpointRegistration.js'
 import { continuationValidator } from '../../src/modules/runs/continuation.js'
 import { LangGraphWorkflowEngine } from '../../src/modules/runs/engine.js'
@@ -30,13 +30,12 @@ import { WorkspaceLocationService } from '../../src/modules/workspaces/location.
 import { deliveryFixture } from '../fixtures/codex-delivery.js'
 import { NativeResponseJournal } from '../../src/modules/harnesses/recovery/responseJournal.js'
 import { join } from 'node:path'
-import { seedWorkflowFixture } from './workflowDatabase.js'
-import { migratedDatabase } from './migratedDatabase.js'
+import { agent3Database, seedAgent3 } from './workflowDatabase.js'
 
 /** Real Codex manager, stdio, workflow engine, SQL owner, checkpoint and delivery services.
  * The executable provider fixture substitutes model execution and installation qualification. */
 export async function codexWorkflowRuntime(kind: 'questions' | 'form') {
-  const db = await migratedDatabase()
+  const db = await agent3Database()
   let engine: LangGraphWorkflowEngine | undefined
   const provider = await deliveryFixture()
   const journal = new NativeResponseJournal(join(provider.directory, 'response-journal'))
@@ -56,16 +55,16 @@ export async function codexWorkflowRuntime(kind: 'questions' | 'form') {
         sandbox: 'read-only', serviceTier: 'standard' } }))
     f.version.approval = approval
     f.version.definition.approval = approval
-    f.version = agentWorkflowVersion(ExecutableWorkflowCurrentSchema.parse({ version: f.version, configurations: f.configurations }).version)
-    f.run = WorkflowRunCurrentSchema.parse({ ...f.run, approval, agentConfigurationVersionIds: f.version.agentConfigurationVersionIds })
-    await seedWorkflowFixture(db.pool, provider.directory, f, { run: false })
+    f.version = agentWorkflowVersion(ExecutableWorkflowV3Schema.parse({ version: f.version, configurations: f.configurations }).version)
+    f.run = WorkflowRunV3Schema.parse({ ...f.run, approval, agentConfigurationVersionIds: f.version.agentConfigurationVersionIds })
+    await seedAgent3(db.pool, provider.directory, f, { run: false })
     const access = new PostgresAccessService(db.pool)
     const authority = await access.issue({ name: 'Codex workflow Run authority', audience: 'operator',
       expiresAt: new Date(Date.now() + 600000), grants: [
         { actions: ['runs:start', 'runs:stop'], scope: { workspaceIds: [f.scope.workspaceId], workflowIds: [f.scope.workflowId] } },
         { actions: ['workspace_locations:read'], scope: { workspaceIds: [f.scope.workspaceId] } },
       ] })
-    f.run = WorkflowRunCurrentSchema.parse({ ...f.run, authorizationPrincipalId: authority.principal.id })
+    f.run = WorkflowRunV3Schema.parse({ ...f.run, authorizationPrincipalId: authority.principal.id })
     await insertProviderRun(db.pool, f)
     const managers = new ExecutionScopedNativeSessionManagerResolver(() =>
       provider.makeManager(undefined, {}, { appMcpAccess: 'scoped', responseJournal: journal }))

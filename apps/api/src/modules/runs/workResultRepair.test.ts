@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import { assertWorkflowCorrelation, readWorkResultRepairAttempt, workResultRepairCorrelation } from './workResultRepair.js'
 
-function store(attempt: number, executionId = 'execution-1'): SqlQuery {
+function store(attempt: number, executionId = 'execution-1'): GraphSqlClient {
   return { query: async (_query: string, values: unknown[]) => {
     expect(values).toEqual([executionId])
     return { rows: attempt ? [{ attempt }] : [], rowCount: attempt ? 1 : 0 }
-  } } as unknown as SqlQuery
+  } } as unknown as GraphSqlClient
 }
 
 describe('persisted work result repair allowance', () => {

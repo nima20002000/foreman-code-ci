@@ -1,6 +1,6 @@
 import type { HarnessExecution } from '@foreman-code/contracts'
-import { sameWorkflowValue } from '@foreman-code/contracts/current'
-import type { BaseCheckpointSaver } from '../../infrastructure/langgraph.js'
+import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
+import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint'
 import type { ApprovalExecutionCoordinator } from '../interactions/execution.js'
 import type { RepeatNativeLaunchStore } from '../interactions/repeatObservation.js'
 import { DomainError } from '../errors.js'
@@ -15,7 +15,6 @@ import { readAcceptedRepeatRunLocked, type AcceptedRepeatRunSnapshot } from './r
 import type { RunnerAdmission } from './runnerAdmission.js'
 import type { ExecutionLimiter } from './limiter.js'
 import { isOpenRunState } from './runState.js'
-import { usesWorkHandoffGraph } from './workflowRunMode.js'
 
 /** These are existing-engine dependencies, not another owner, scheduler, gate
  * or checkpoint thread. Production composes the real current lifecycle and
@@ -32,7 +31,7 @@ export interface RepeatEngineStartContext {
   native: Pick<ApprovalExecutionCoordinator, 'observeExact' | 'assertResume' | 'failIntervalCheck' | 'abandonAttempt'>
   workflows: Pick<PostgresWorkflowRepository, 'getAgentConfiguration' | 'resolveNodeSkills' | 'referencesCreatedByExecution'>
   locations: Pick<WorkspaceLocationService, 'revalidateRunAuthorization' | 'revalidateSnapshot'>
-  jobs?: (owner: RunOwnership, version: import('@foreman-code/contracts/current').WorkflowVersionCurrent) => {
+  jobs?: (owner: RunOwnership, version: import('@foreman-code/contracts/wave25').WorkflowVersionV3) => {
     store: import('../jobs/workflowNode.js').WorkflowJobNodeStore; driver: import('../jobs/workflowRuntimePorts.js').WorkflowJobDriver }
   lifecycle: RepeatRuntimeLifecycle
   /** Must capture REAL current coordinator/manager/lease/command evidence on
@@ -185,7 +184,7 @@ export async function executeRepeatEngineStart(input: RepeatEngineStartContext):
   if (!lifecycle || ['preflight', 'markRunning', 'currentState', 'persistWait', 'cancelNativeAndRequestCleanup',
     'settleRun', 'requestCleanup', 'finishNative', 'finishCleanup'].some((key) =>
     typeof lifecycle[key as keyof RepeatRuntimeLifecycle] !== 'function')
-    || usesWorkHandoffGraph(snapshot.version) && typeof lifecycle.persistDirectionWait !== 'function') {
+    || snapshot.version.definition.handoffs && typeof lifecycle.persistDirectionWait !== 'function') {
     throw new DomainError('REPEAT_NATIVE_HOST_REQUIRED', 'Repeat lifecycle proof writers are required.', 409)
   }
   const recordExecutionFailure = lifecycle.recordExecutionFailure?.bind(lifecycle)

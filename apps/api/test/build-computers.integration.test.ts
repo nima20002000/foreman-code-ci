@@ -16,7 +16,7 @@ import { JobComputerSelection, releaseUnstartedJobComputer } from '../src/module
 import { PostgresSourceReservations } from '../src/modules/sources/reservations.js'
 import { JobService } from '../src/modules/jobs/service.js'
 import { DomainError } from '../src/modules/errors.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { buildComputerFixture, buildQueueConfigurationFixture } from './helpers/buildComputerFixture.js'
 import { JobAdmissionResultSchema } from '@foreman-code/contracts/job-admission'
@@ -26,7 +26,7 @@ import { beginTransaction, commitTransaction, rollbackTransaction } from '../src
 
 // Real settings/command/admission SQL and authenticated transports; runtime/source I/O is a bounded fixture.
 describe.skipIf(!postgresEnabled)('automatic build computer admission and settings parity', () => {
-  let database: Awaited<ReturnType<typeof migratedDatabase>>
+  let database: Awaited<ReturnType<typeof agent3Database>>
   let access: PostgresAccessService
   let commands: PostgresCommandCoordinator
   let writer: Awaited<ReturnType<PostgresAccessService['issue']>>
@@ -35,7 +35,7 @@ describe.skipIf(!postgresEnabled)('automatic build computer admission and settin
   const apps: ReturnType<typeof buildApp>[] = []
   const clients: Client[] = []
   beforeAll(async () => {
-    database = await migratedDatabase()
+    database = await agent3Database()
     mainId = (await database.pool.query<{ id: string }>('select id from application_installation')).rows[0]!.id
     access = new PostgresAccessService(database.pool)
     commands = new PostgresCommandCoordinator(database.pool)

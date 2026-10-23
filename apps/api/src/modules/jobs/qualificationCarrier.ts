@@ -1,20 +1,20 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
-import { sameWorkflowValue } from '@foreman-code/contracts/current'
+import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { JOB_RUNTIME_QUALIFICATION_EXTENSION } from '@foreman-code/contracts/job-runtime'
 import { JobRuntimeQualificationRpcRequestRecordSchema, JobRuntimeQualificationRpcResponseRecordSchema,
   type JobRuntimeProfileRecord, type JobRuntimeNativeAdmissionRecord, type JobQualificationCandidateRecord }
   from '@foreman-code/contracts/job-verification-runtime'
-import type { DeviceEndpoint } from '../devices/index.js'
-import type { DeviceExtensionRegistration, DeviceExtensionContext } from '../devices/index.js'
-import { assertDeviceHostInstallation } from '../devices/index.js'
+import type { DeviceEndpoint } from '../devices/deviceEndpoint.js'
+import type { DeviceExtensionRegistration, DeviceExtensionContext } from '../devices/deviceApplicationChannel.js'
+import { assertDeviceHostInstallation } from '../devices/hostAuthorization.js'
 import { assertInstalledJobQualification } from './runtimeQualificationAdmission.js'
 import type { PostgresSourceService } from '../sources/service.js'
 import type { InstalledJobRuntimeHost } from './runtimeProfileFactory.js'
 import { DomainError } from '../errors.js'
 import { createQualificationReportReceiver } from './qualificationReportReceiver.js'
-import { WorkerExecutionPolicy } from '../settings/index.js'
+import { WorkerExecutionPolicy } from '../settings/workerExecution.js'
 
 /** Main retains only a response from the exact authenticated installed worker.
  * Passive/native IO stays outside admission SQL; SQL readback uses this capture. */

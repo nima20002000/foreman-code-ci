@@ -13,9 +13,8 @@ const walk = directory => readdirSync(directory, { withFileTypes: true }).flatMa
   const path = join(directory, entry.name)
   return entry.isDirectory() ? walk(path) : [path]
 })
-// CI-owned migrations live in the CI package; the registry imports them from its built output.
-const sources = [...walk(join(api, 'src')), ...walk(join(repo, 'apps/ci/src/migrations'))].filter(path => path.endsWith('.ts') && !/\.test\.|test-?support/i.test(path))
-const migrationModules = sources.filter(path => /migration/i.test(path.split('/').at(-1)) && !path.endsWith('modules/ci/migrations.ts'))
+const sources = walk(join(api, 'src')).filter(path => path.endsWith('.ts') && !/\.test\.|test-?support/i.test(path))
+const migrationModules = sources.filter(path => /migration/i.test(path.split('/').at(-1)))
 const registryPath = join(api, 'src/infrastructure/migrations.ts')
 const { migrations } = await import(pathToFileURL(registryPath).href)
 
@@ -25,7 +24,7 @@ for (const path of migrationModules) {
   if (path === registryPath) continue
   const module = await import(pathToFileURL(path).href)
   for (const value of Object.values(module)) {
-    if (value && typeof value === 'object' && typeof value.sql === 'string') { owners.set(value, path); owners.set(value.sql, path) }
+    if (value && typeof value === 'object' && typeof value.sql === 'string') owners.set(value, path)
     if (typeof value === 'string') owners.set(value, path)
   }
 }
@@ -35,8 +34,7 @@ const identifier = /("?[\w]+"?\.)?"?([\w]+)"?/
 const plainName = text => text.match(identifier)?.[2]?.toLowerCase()
 const functions = new Map()
 const triggers = new Map()
-// Only a code the function raises counts: SQL that uses a code as data (a default written into a record) duplicates no rule.
-const codePattern = /raise\s+exception\s+'([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)'/gi
+const codePattern = /'([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)'/g
 
 for (const [order, migration] of migrations.entries()) {
   const sql = migration.sql.replace(/--[^\n]*/g, '')
@@ -115,14 +113,8 @@ const lines = [
   '',
   '## Rules enforced in both SQL and TypeScript',
   '',
-  'Error codes that a current SQL function raises (`raise exception \'CODE\'`) and TypeScript also throws or matches.',
-  'SQL that only uses a code as data (a default written into a record) is not listed: it duplicates no rule.',
-  '',
-  'Decision (#25): the SQL function is the canonical home of each rule, because a trigger holds for every writer.',
-  'The TypeScript check stays as a typed pre-check, so the caller gets a stable 409 code and the transaction is not',
-  'aborted; it must not grow beyond the SQL rule, and the two must agree when either changes. Removing a pre-check',
-  'needs one mapping from the raised code to a `DomainError` (none exists yet) and the database tests. Add a new rule',
-  'in SQL, and add a TypeScript pre-check only when a caller needs the code.',
+  'Error codes raised by a current SQL function that TypeScript also raises or matches. The SQL check is the last',
+  'line of defense; keep the two in agreement when either changes.',
   '',
   '| Code | SQL functions | TypeScript |',
   '|---|---|---|',

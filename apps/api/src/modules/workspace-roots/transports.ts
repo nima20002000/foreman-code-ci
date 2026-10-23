@@ -6,9 +6,9 @@ import { WorkspaceBoundLocationGetInputSchema, WorkspaceBoundLocationValidateInp
   WorkspaceBoundLocationSetInputSchema, WorkspaceBoundLocationValidationSchema, WorkspaceBoundLocationBrowseResultSchema,
   WorkspaceBoundLocationReadbackSchema, WorkspaceBoundLocationSetResultSchema } from '@foreman-code/contracts/workspace-bound-location'
 import { WorkspaceRootConfigurationAdoptSchema, WorkspaceRootConfigurationAdoptResultSchema } from '@foreman-code/contracts/workspace-bound-location'
-import { requirePrincipal } from '../access/index.js'
+import { requirePrincipal } from '../access/http.js'
 import { DomainError } from '../errors.js'
-import type { PostgresCommandCoordinator } from '../commands/index.js'
+import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { toolFailure, toolResult } from '../../mcp/shared/results.js'
 import type { WorkspaceBoundLocationService } from './service.js'
 import { defineOperatorTool, registerToolDefinition } from '../../mcp/operator/definition.js'

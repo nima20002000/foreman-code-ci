@@ -1,5 +1,5 @@
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { WorkActivationInputSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { WorkActivationInputSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { describe, expect, it } from 'vitest'
 import { buildHarnessPrompt } from '../harnesses/prompt.js'
 import { workflowExecutionRequest } from './workflowExecutionRequest.js'

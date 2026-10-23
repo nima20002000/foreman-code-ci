@@ -1,5 +1,5 @@
 import type { ProviderAccountResolver } from '../provider-accounts/service.js'
-import { assertWorkerProviderAccountBinding } from '../provider-accounts/index.js'
+import { assertWorkerProviderAccountBinding } from '../provider-accounts/workerOperations.js'
 import { managedProviderEnvironment, resolveRuntimeProviderAccount } from '../harnesses/providerAccountRuntime.js'
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
@@ -32,7 +32,6 @@ import type { WorkerConversationJournal } from './workerJournal.js'
 import { workerConversationAccountOwner } from './workerAccountSession.js'
 import { acceptedClaudeAppTools } from '../harnesses/claudeSdk/mcpPolicy.js'
 import { workerConversationSessionStart } from './workerConversationStart.js'
-import { hostEnvironment } from '../../shared/process.js'
 
 export async function allocateInstalledWorkerClaude(input: {
   binding: WorkerConversationBinding
@@ -63,7 +62,7 @@ export async function allocateInstalledWorkerClaude(input: {
   if (account && (account.homePath !== configuration.harness.configDirectory
     || account.authMode !== configuration.harness.authMode)) throw new DomainError(
       'PROVIDER_ACCOUNT_CONFIGURATION_CONFLICT', 'The accepted Worker Claude profile differs from its account.', 409)
-  const nativeEnvironment = account ? managedProviderEnvironment(hostEnvironment(), account, 'claude') : { ...hostEnvironment() }
+  const nativeEnvironment = account ? managedProviderEnvironment(process.env, account, 'claude') : { ...process.env }
   const directory = await installedConversationDirectory({ binding, configuration, approvedRoots: input.approvedRoots })
   const profiles = createInstalledClaudeConversationProfile({ binding, configuration, connection: input.connection,
     current: input.current, signal: input.signal, readFacts: signal => input.callbacks.profile(input.source(), signal),

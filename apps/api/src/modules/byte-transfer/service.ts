@@ -7,7 +7,7 @@ import { z } from 'zod'
 import { BYTE_TRANSFER_POLICY as POLICY, TransferIntentSchema, TransferContextSchema,
   TransferProgressSchema, VerifiedTransferReceiptSchema, type TransferIntent, type TransferContext,
   type TransferProgress, type VerifiedTransferReceipt, type ByteTransferPort } from '@foreman-code/contracts/byte-transfer'
-import { ignoreError } from '../diagnostics/index.js'
+import { ignoreError } from '../diagnostics/ignoredError.js'
 import { CanonicalTransferOwnership } from './canonicalOwnership.js'
 import { sha256Hex } from '../../shared/hash.js'
 

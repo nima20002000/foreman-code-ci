@@ -7,8 +7,8 @@ import type { RemoteJobAcceptedSourceReadoutRecord } from '@foreman-code/contrac
 import { JobRuntimeProfileRecordSchema, JobVerificationRuntimeMeasurementSchema, jobRuntimeProfilePolicy, jobRuntimeProfileLimits }
   from '@foreman-code/contracts/job-verification-runtime'
 import type { JobSql } from '../../jobs/repository.js'
-import { sourceBindingHash, sourceMaterializationDigest } from '../../sources/index.js'
-import { sourceSha256, verifySourceManifest } from '../../sources/index.js'
+import { sourceBindingHash, sourceMaterializationDigest } from '../../sources/bindingHash.js'
+import { sourceSha256, verifySourceManifest } from '../../sources/manifest.js'
 import { DomainError } from '../../errors.js'
 
 export type AcceptedJobSourceReadout = RemoteJobAcceptedSourceReadoutRecord

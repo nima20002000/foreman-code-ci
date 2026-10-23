@@ -1,6 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import { DomainError } from '../../errors.js'
-import { componentLogger } from '../../diagnostics/index.js'
+import { componentLogger } from '../../diagnostics/logger.js'
 
 /** Automatic profile checks end within 240 seconds. Admission (a chat message, a Run start or its native session,
  * for example right after a restart) waits for an in-flight check instead of failing with

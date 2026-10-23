@@ -6,7 +6,7 @@ import type { WorkflowKanbanLayoutService } from '../modules/workflows/kanbanLay
 
 interface Scope { workspaceId: string; workflowId: string }
 
-/** Kanban layout is a Board display feature, so it has HTTP routes only. */
+/** The same service backs workflow_kanban_layout_get/set in Operator MCP. */
 export function registerWorkflowKanbanRoutes(app: FastifyInstance, service: WorkflowKanbanLayoutService): void {
   app.get<{ Params: Scope }>(WORKFLOW_KANBAN_LAYOUT_ROUTE, async (request, reply) => {
     reply.header('cache-control', 'no-store')

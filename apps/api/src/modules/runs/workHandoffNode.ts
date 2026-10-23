@@ -1,5 +1,5 @@
 import { setTimeout as delay } from 'node:timers/promises'
-import { type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
+import { type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../errors.js'
 import type { RepeatRunRepository } from './repeatPostgres.js'
 import type { RepeatExecutionDriver } from './repeatNode.js'
@@ -13,7 +13,7 @@ import { parseHierarchyWorkResult } from './hierarchyResults.js'
 /** One LangGraph activation task. Every durable decision is idempotent, so a
  * checkpoint replay reconciles the exact native execution and work receipts. */
 export function workHandoffNodeAction(input: {
-  version: WorkflowVersionCurrent
+  version: WorkflowVersionV3
   store: Pick<RepeatRunRepository, 'admitWorkActivation' | 'acceptWorkTerminal' | 'admitWorkRequest'
     | 'returnWork' | 'recordWorkUnresolved' | 'resolveWaitingWorkJoins'>
     & Partial<Pick<RepeatRunRepository, 'admitHierarchyGroup' | 'readWorkCallerReport'>>

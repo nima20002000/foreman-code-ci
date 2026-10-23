@@ -1,7 +1,7 @@
 import { CompactionStateSchema, SessionModeSchema, SessionPreferencesSchema } from './sessionControls.js'
 import { RemoteOperationReceiptSchema, RemoteNativeIdentitySchema } from './remoteExecution.js'
 import { z } from 'zod'
-import { OutputSchemaSchema } from './current/outputContract.js'
+import { OutputSchemaSchema } from './wave25/outputContract.js'
 import { DeviceExecutionAdmissionFields } from './deviceResources.js'
 import { AgentConfigurationVersionSchema, HarnessExecutionRequestSchema, ApprovalResponseOptionSchema,
   NativeSessionReferenceSchema, WorkflowSessionContinuationSchema } from './index.js'

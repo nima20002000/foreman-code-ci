@@ -20,18 +20,3 @@ export function refineChatMessageSize(value: unknown, context: z.RefinementCtx):
     context.addIssue({ code: 'custom', path: ['content'], message: messageSizeError })
   }
 }
-
-/** The prompt rules every Agent and Operator send shares. `size: false` is for readback of receipts accepted earlier. */
-export function refineChatPrompt(
-  value: { content: string; attachments: readonly unknown[]; intent?: string },
-  context: z.RefinementCtx,
-  options: { size: boolean } = { size: true },
-): void {
-  if (value.content.trim().length === 0 && value.attachments.length === 0) {
-    context.addIssue({ code: 'custom', path: ['content'], message: 'Message requires text or an attachment.' })
-  }
-  if (value.intent === 'steer' && value.attachments.length > 0) {
-    context.addIssue({ code: 'custom', path: ['attachments'], message: 'Attachment steering is not supported. Send attachments in a new turn.' })
-  }
-  if (options.size) refineChatMessageSize(value, context)
-}

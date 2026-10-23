@@ -3,7 +3,7 @@ import type { NativeSessionReference, PendingNativeInteraction, ReviewCleanup, R
 
 import type { NativeHistory } from '../harnesses/port.js'
 import { reviewTurnEvidence } from './reviewerEvidence.js'
-import { logIgnoredError } from '../diagnostics/index.js'
+import { logIgnoredError } from '../diagnostics/ignoredError.js'
 
 
 /** A permission's message identity is not necessarily its root user turn identity. */

@@ -46,12 +46,11 @@ function fixture() {
     executionId: execution.id, attemptId: execution.attemptId, operationId: execution.operationId, bindingHash: spec.bindingHash, inputDigest: `sha256:${spec.specDigest}`, owner: execution.owner }
   const state: { materializationState: string; missing: string; denied: boolean; profile: unknown | null; measurement?: unknown }
     = { materializationState: 'running', missing: '', denied: false, profile: null }
-  const query = vi.fn(async (text: string, values: unknown[] = []) => {
+  const query = vi.fn(async (text: string) => {
     if (text === 'begin' || text === 'commit' || text === 'rollback') return { rows: [] }
     if (state.missing && text.includes(state.missing)) return { rows: [] }
-    // The Job read binds the workspace and execution ids; the dispatch intent read binds the execution id alone.
-    if (values.length === 2 && values[0] === execution.workspaceId && values[1] === execution.id) return { rows: [{ record: execution, accepted_spec: spec }] }
-    if (values.length === 1 && values[0] === execution.id) return { rows: [{ intent }] }
+    if (text.startsWith('select record,accepted_spec')) return { rows: [{ record: execution, accepted_spec: spec }] }
+    if (text.startsWith('select intent')) return { rows: [{ intent }] }
     if (text.includes('source_execution_materializations')) return { rows: [{ record: materialization, state: state.materializationState }] }
     if (text.includes('source_root_bindings')) return { rows: [{ record: root }] }
     if (text.includes('source_snapshots')) return { rows: [{ record: approved }] }

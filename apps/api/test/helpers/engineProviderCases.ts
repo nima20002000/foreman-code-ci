@@ -1,5 +1,5 @@
 import { expect, vi } from 'vitest'
-import { RepeatGraphBatchCurrentSchema } from '@foreman-code/contracts/current'
+import { RepeatGraphBatchV3Schema } from '@foreman-code/contracts/wave25'
 import { checkpointRuntimeFixture } from './checkpointRuntime.js'
 import { approvalResponse } from './approvalResponse.js'
 import { DomainError } from '../../src/modules/errors.js'
@@ -27,7 +27,7 @@ export async function executeApprovalBranches(branches: 1 | 2) {
     expect(resumes.rows.every((row) => row.state === 'resumed' && row.approval_native_ack_id)).toBe(true)
     await expect.poll(() => t.runs.hasPendingCleanup(t.f.run.id)).toBe(false)
     const bodies = await t.db.pool.query<{ payload: string }>("select payload from run_graph_batches where run_id=$1 and kind='events' order by sequence", [t.f.run.id])
-    expect(bodies.rows.flatMap((row) => RepeatGraphBatchCurrentSchema.parse(JSON.parse(row.payload)).events)
+    expect(bodies.rows.flatMap((row) => RepeatGraphBatchV3Schema.parse(JSON.parse(row.payload)).events)
       .some((event) => event.fact.type === 'repeat.run.state' && event.fact.state.executionState === 'completed')).toBe(true)
   } finally { await t.close() }
 }

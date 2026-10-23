@@ -35,8 +35,8 @@ import {
   ManagedAgentDefaultsSchema, ManagedWorkflowDefaultsSchema,
 } from "../src/management/index.js";
 
-import { WorkflowDefinitionCurrentSchema, WorkflowVersionCurrentSchema } from "../src/current/saved.js";
-import { makeCurrentWorkflowFixture } from "../src/current/currentFixture.js";
+import { WorkflowDefinitionV3Schema, WorkflowVersionV3Schema } from "../src/wave25/saved.js";
+import { makeCurrentWorkflowFixture } from "../src/wave25/currentFixture.js";
 
 const condition = { kind: "manual" as const };
 const agent = { id: "agent-1", name: "Researcher" };
@@ -99,9 +99,9 @@ describe("neutral product contracts", () => {
       agentConfigurationVersionIds: { "agent-1": "agent-config-1" },
       contentHash: `sha256:${"0".repeat(64)}`, createdAt: "2026-09-16T00:00:00.000Z",
     };
-    expect(WorkflowDefinitionCurrentSchema.safeParse({ ...workflow, approval: incompleteApproval }).success).toBe(true);
-    expect(WorkflowVersionCurrentSchema.safeParse({ ...version, approval: incompleteApproval }).success).toBe(false);
-    expect(WorkflowVersionCurrentSchema.safeParse({ ...version, approval: acceptedApproval, definition: { ...executableDefinition, approval: acceptedApproval } }).success).toBe(true);
+    expect(WorkflowDefinitionV3Schema.safeParse({ ...workflow, approval: incompleteApproval }).success).toBe(true);
+    expect(WorkflowVersionV3Schema.safeParse({ ...version, approval: incompleteApproval }).success).toBe(false);
+    expect(WorkflowVersionV3Schema.safeParse({ ...version, approval: acceptedApproval, definition: { ...executableDefinition, approval: acceptedApproval } }).success).toBe(true);
 
     const run = {
       id: "run-1", workspaceId: "workspace-1", workflowId: "workflow-1", workflowVersionId: version.id,
@@ -188,7 +188,7 @@ describe("neutral product contracts", () => {
     ] as const) {
       expect(AgentSchema.parse({ ...agent, executionState }).executionState).toBe(executionState);
     }
-    expect(WorkflowDefinitionCurrentSchema.parse({
+    expect(WorkflowDefinitionV3Schema.parse({
       ...workflow,
       nodes: [{
         ...workflow.nodes[0],
@@ -202,7 +202,7 @@ describe("neutral product contracts", () => {
       height: 140,
       initialPrompt: "Summarize the accepted input.",
     });
-    expect(WorkflowDefinitionCurrentSchema.safeParse({
+    expect(WorkflowDefinitionV3Schema.safeParse({
       ...workflow,
       nodes: [{ ...workflow.nodes[0], width: 0 }],
     }).success).toBe(false);
@@ -214,13 +214,13 @@ describe("neutral product contracts", () => {
 
   it("keeps workflow node identity separate from an Agent", () => {
     expect(
-      WorkflowDefinitionCurrentSchema.safeParse({
+      WorkflowDefinitionV3Schema.safeParse({
         ...workflow,
         nodes: [{ id: "node-1", name: "Research", agent: agent }],
       }).success,
     ).toBe(false);
     expect(
-      WorkflowDefinitionCurrentSchema.safeParse({
+      WorkflowDefinitionV3Schema.safeParse({
         ...workflow,
         nodes: [{ id: "node-1", name: "Research", agentId: "agent-1" }],
       }).success,
@@ -229,7 +229,7 @@ describe("neutral product contracts", () => {
 
   it("requires an explicit execution condition", () => {
     expect(ExecutionConditionSchema.safeParse({}).success).toBe(false);
-    expect(WorkflowDefinitionCurrentSchema.safeParse({ ...workflow, executionCondition: undefined }).success).toBe(
+    expect(WorkflowDefinitionV3Schema.safeParse({ ...workflow, executionCondition: undefined }).success).toBe(
       false,
     );
   });
@@ -327,7 +327,7 @@ describe("neutral product contracts", () => {
       edges: [],
     };
     expect(
-      WorkflowVersionCurrentSchema.parse({
+      WorkflowVersionV3Schema.parse({
         id: "workflow-1-v4",
         workspaceId: "workspace-1",
         workflowId: "workflow-1",
@@ -342,7 +342,7 @@ describe("neutral product contracts", () => {
     ).toEqual({ "agent-1": "agent-config-1-v3" });
 
     expect(
-      WorkflowVersionCurrentSchema.safeParse({
+      WorkflowVersionV3Schema.safeParse({
         id: "workflow-1-v4",
         workspaceId: "workspace-1",
         workflowId: "workflow-1",
@@ -361,14 +361,14 @@ describe("neutral product contracts", () => {
     // Current positive fixtures are authored as V3, not converted legacy graphs.
     const conditional = makeCurrentWorkflowFixture("contract-routing", "conditional");
     const repeated = makeCurrentWorkflowFixture("contract-repeat", "repeat");
-    expect(WorkflowVersionCurrentSchema.parse(conditional.version).definition.nodes[0]?.choice?.outcomes)
+    expect(WorkflowVersionV3Schema.parse(conditional.version).definition.nodes[0]?.choice?.outcomes)
       .toEqual(conditional.version.definition.nodes[0]?.choice?.outcomes);
-    expect(WorkflowVersionCurrentSchema.parse(repeated.version).definition.repeat?.blocks[0]?.maxOccurrences).toBe(3);
-    expect(WorkflowDefinitionCurrentSchema.safeParse({
+    expect(WorkflowVersionV3Schema.parse(repeated.version).definition.repeat?.blocks[0]?.maxOccurrences).toBe(3);
+    expect(WorkflowDefinitionV3Schema.safeParse({
       ...conditional.version.definition,
       edges: [{ ...conditional.version.definition.edges[0], route: { outcomes: ["succeeded"], maxTraversals: 2 } }],
     }).success).toBe(false);
-    expect(WorkflowDefinitionCurrentSchema.safeParse({
+    expect(WorkflowDefinitionV3Schema.safeParse({
       ...conditional.version.definition,
       nodes: conditional.version.definition.nodes.map((node) => ({ ...node, join: { mode: "any" } })),
     }).success).toBe(false);

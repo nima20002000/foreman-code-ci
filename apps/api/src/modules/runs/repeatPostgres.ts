@@ -1,4 +1,4 @@
-import { IntervalCheckAcceptedInputSchema } from '@foreman-code/contracts/current'
+import { IntervalCheckAcceptedInputSchema } from '@foreman-code/contracts/wave25'
 import {
   SourceSchema, EntrySchema, readStoredRepeatOccurrence, readStoredRepeatExecution,
   readRepeatExecutionLocked, retainRepeatEffectReceipt, type StoredOccurrence, type StoredRepeatExecution,
@@ -16,25 +16,25 @@ import { AgentConfigurationVersionSchema, ExecutionResultSchema, HarnessExecutio
 import {
   AcceptedCurrentNodeResultSchema, GraphDigestSchema, GraphExecutionIdentitySchema, GraphIdSchema, NodeResolutionSchema,
   RepeatDecisionMetadataV1Schema, RepeatDecisionV1Schema,
-  RepeatOccurrenceIdentityV1Schema, RepeatOccurrenceV1Schema, WorkflowVersionCurrentSchema,
+  RepeatOccurrenceIdentityV1Schema, RepeatOccurrenceV1Schema, WorkflowVersionV3Schema,
   canonicalGraphJson, parseRepeatExitResultV1,
   WorkActivationInputSchema, WorkReturnSchema,
   validateRepeatDecisionV1, validateRepeatSuccessorV1,
-  type WorkflowRunCurrent, type WorkActivationInput, type RepeatDecisionMetadataV1,
-  type RepeatDecisionV1, type RepeatOccurrenceV1, type WorkflowVersionCurrent,
-} from '@foreman-code/contracts/current'
+  type WorkflowRunV3, type WorkActivationInput, type RepeatDecisionMetadataV1,
+  type RepeatDecisionV1, type RepeatOccurrenceV1, type WorkflowVersionV3,
+} from '@foreman-code/contracts/wave25'
 
 import { enterWorkflowNativeLocked, releaseWorkflowNativeEntryPermit, reserveWorkflowNativeEntryLocked, readWorkflowNativeEntryLocked,
   sealWorkflowPreparationFailureLocked,
   sealWorkflowNativeEntryLocked, workflowNativeReservation, type WorkflowNativeEntryPermit, type WorkflowNativeEntryRecord } from './workflowNativeEntry.js'
 import {
-  beforeGraphCommit
+  beforeGraphCommit,
+  type GraphSqlClient, type GraphTransactionSql,
 } from '../run-graph/connection.js'
-import type { SqlQuery, SqlTransaction } from '../../infrastructure/transaction.js'
 import type { RunOwnership } from './ownership.js'
 import type { AcceptedRepeatRunSnapshot } from './repeatStartRead.js'
 import { readWorkflowClosure, readUnboundWorkflowClosure } from '../interactions/workflowClosure.js'
-import { assertApprovalTerminalSettlement } from '../interactions/current/resume.js'
+import { assertApprovalTerminalSettlement } from '../interactions/wave25/resume.js'
 import { settleRepeatNativeExecutionLocked } from '../interactions/repeatNativeSettlement.js'
 import { finalizeRetainedRemoteReviewerLocked } from '../interactions/retainedRemoteReviewer.js'
 import { visitRepeatNativeAttemptsLocked, type RepeatNativeAttemptSelection } from './repeatNativeAttempts.js'
@@ -63,8 +63,6 @@ import type { WorkflowCollaborationHooks } from '../collaboration/workflowHooks.
 import { workflowAdmissionLifecycleLocked, workflowLifecycleLocked,
   workflowNativeLifecycleLocked } from './workflowCollaborationRuntime.js'
 import { parseWorkflowWorkResult } from './workflowCoordinationResult.js'
-import { readAcceptedWorkResults, readUnresolvedWork, readUnreturnedWorkRequests, readWorkActivationStates,
-  readWorkDenialContinuations } from './workCompletionReads.js'
 import { readWorkflowResultEffectFailureLocked, type WorkflowResultEffectFailure } from './workflowResultEffectFailure.js'
 import { recordWorkflowCoordinationTerminalLocked } from './workflowCoordinationTerminal.js'
 import { readWorkflowControlDispositionLocked } from '../collaboration/workflowControlDisposition.js'
@@ -89,7 +87,7 @@ import { CLOSED_RUN_STATES_SQL, isClosedRunState } from './runState.js'
 export { readRepeatExecutionLocked, type StoredRepeatExecution } from './repeatExecutionRead.js'
 
 /** This is an internal projection of the SHELL-validated v3 Run, not a new wire schema. */
-export type RepeatRuntimeRun = Pick<WorkflowRunCurrent, 'id' | 'workspaceId' | 'workflowId' | 'workflowVersionId'
+export type RepeatRuntimeRun = Pick<WorkflowRunV3, 'id' | 'workspaceId' | 'workflowId' | 'workflowVersionId'
   | 'agentConfigurationVersionIds' | 'approval' | 'input' | 'executionState' | 'resultProtocol'> & { executionSemanticsVersion: 3 }
 export type RepeatFact =
   | { type: 'repeat.occurrence'; occurrence: RepeatOccurrenceV1 }
@@ -113,35 +111,35 @@ export interface RepeatLockedHooks {
    * closed unless the complete native capability is installed. */
   native?: RepeatNativeLockedHooks
   collaboration?: WorkflowCollaborationHooks
-  validateMemoryResultLocked?(sql: SqlTransaction, execution: HarnessExecution, result: ExecutionResult): Promise<void>
-  memoryWorkChangedLocked?(sql: SqlTransaction, executionId: string, sourceEventKey: string): Promise<void>
-  prepareMemoryLaunchLocked?(sql: SqlTransaction, execution: HarnessExecution): Promise<HarnessExecution>
+  validateMemoryResultLocked?(sql: GraphTransactionSql, execution: HarnessExecution, result: ExecutionResult): Promise<void>
+  memoryWorkChangedLocked?(sql: GraphTransactionSql, executionId: string, sourceEventKey: string): Promise<void>
+  prepareMemoryLaunchLocked?(sql: GraphTransactionSql, execution: HarnessExecution): Promise<HarnessExecution>
   run: RepeatRuntimeRun
-  assertAuthorityLocked(sql: SqlTransaction): Promise<void>
+  assertAuthorityLocked(sql: GraphTransactionSql): Promise<void>
   /** SQL-only durable completeness for declared original artifacts. Optional
    * for workflows without declarations; declared success fails closed. */
-  assertWorkflowArtifactOutputsLocked?(sql: SqlTransaction, execution: HarnessExecution): Promise<void>
-  persistDispatchLocked?(sql: SqlTransaction, execution: HarnessExecution, ref: RepeatNodeRef, inputDigest: string): Promise<void>
-  assertAdmissionLocked(sql: SqlTransaction, execution: HarnessExecution, ref: RepeatNodeRef): Promise<void>
+  assertWorkflowArtifactOutputsLocked?(sql: GraphTransactionSql, execution: HarnessExecution): Promise<void>
+  persistDispatchLocked?(sql: GraphTransactionSql, execution: HarnessExecution, ref: RepeatNodeRef, inputDigest: string): Promise<void>
+  assertAdmissionLocked(sql: GraphTransactionSql, execution: HarnessExecution, ref: RepeatNodeRef): Promise<void>
   /** Exact terminal approval acknowledgement AND required native/reviewer cleanup;
    * process absence, graph.resume alone, or a delivered response are insufficient. */
-  assertSettlementLocked(sql: SqlTransaction, executionIds: readonly string[]): Promise<void>
+  assertSettlementLocked(sql: GraphTransactionSql, executionIds: readonly string[]): Promise<void>
   /** Existing pinned technical policy only; called after exact negative settlement.
    * False closes the node. True does not change occurrence or permit native dispatch. */
-  allowTechnicalRetryLocked(sql: SqlTransaction, execution: HarnessExecution): Promise<boolean>
-  publishLocked(sql: SqlTransaction, effect: RepeatEffect, facts: readonly RepeatFact[], mutate: () => Promise<void>): Promise<void>
-  assertPublicationReceiptLocked(sql: SqlTransaction, effect: RepeatEffect): Promise<void>
+  allowTechnicalRetryLocked(sql: GraphTransactionSql, execution: HarnessExecution): Promise<boolean>
+  publishLocked(sql: GraphTransactionSql, effect: RepeatEffect, facts: readonly RepeatFact[], mutate: () => Promise<void>): Promise<void>
+  assertPublicationReceiptLocked(sql: GraphTransactionSql, effect: RepeatEffect): Promise<void>
   /** Existing selected-work terminal writer + cleanup intent, in this transaction. */
-  completeRunLocked(sql: SqlTransaction, terminals: readonly RepeatSource[]): Promise<void>
+  completeRunLocked(sql: GraphTransactionSql, terminals: readonly RepeatSource[]): Promise<void>
 }
 export interface RepeatRepositoryHost {
   /** Lock order: Run (already held), graph head, exact execution children, receipts.
    * Parse the actual v3 Run union, retain all admission/approval/configuration pins,
    * and open the existing publication. Never initialize a missing history head. */
-  openLocked(sql: SqlTransaction, scope: RepeatScope, runRecord: unknown, version: WorkflowVersionCurrent): Promise<RepeatLockedHooks>
+  openLocked(sql: GraphTransactionSql, scope: RepeatScope, runRecord: unknown, version: WorkflowVersionV3): Promise<RepeatLockedHooks>
 }
 interface Context {
-  sql: SqlTransaction; scope: RepeatScope; version: WorkflowVersionCurrent; hooks: RepeatLockedHooks
+  sql: GraphTransactionSql; scope: RepeatScope; version: WorkflowVersionV3; hooks: RepeatLockedHooks
   stopped: boolean; cleanup: boolean; now: string; fence: { ownerId: string; fence: string }
 }
 export type RepeatTickAdmission = { kind: 'busy'; execution?: HarnessExecution }
@@ -165,7 +163,7 @@ const ResolutionSchema = z.object({
 
 /** Read helpers are authorization-neutral. B must authorize scope/detail before use.
  * These bounded reads never acquire an execution owner or progress an occurrence. */
-export async function readRepeatOccurrences(sql: SqlQuery, scope: RepeatScope, blockId: string,
+export async function readRepeatOccurrences(sql: GraphSqlClient, scope: RepeatScope, blockId: string,
   afterIndex = 0, limit = 100): Promise<RepeatOccurrenceV1[]> {
   if (!Number.isInteger(limit) || limit < 1 || limit > 1000 || !Number.isInteger(afterIndex) || afterIndex < 0) return repeatConflict('REPEAT_READ_BOUND_INVALID')
   const rows = await sql.query<{ record: unknown }>(`select record from run_repeat_occurrences
@@ -178,7 +176,7 @@ export async function readRepeatOccurrences(sql: SqlQuery, scope: RepeatScope, b
     return value
   })
 }
-export async function readRepeatDecision(sql: SqlQuery, scope: RepeatScope,
+export async function readRepeatDecision(sql: GraphSqlClient, scope: RepeatScope,
   occurrenceId: string): Promise<RepeatDecisionMetadataV1 | undefined> {
   const rows = await sql.query<{ record: unknown }>(`select d.record - 'resultData' as record from run_repeat_decisions d
     join run_repeat_occurrences o on o.occurrence_id=d.occurrence_id
@@ -196,11 +194,11 @@ class MemoryValidationComplete extends Error {}
 
 export class RepeatRunRepository {
   constructor(private readonly owner: Pick<RunOwnership, 'runId' | 'assertOwned' | 'oneShotConnection' | 'readOneShotFence'>,
-    private readonly host: RepeatRepositoryHost, expectedVersion: WorkflowVersionCurrent) {
-    this.expectedVersion = WorkflowVersionCurrentSchema.parse(expectedVersion)
+    private readonly host: RepeatRepositoryHost, expectedVersion: WorkflowVersionV3) {
+    this.expectedVersion = WorkflowVersionV3Schema.parse(expectedVersion)
     if (!host || typeof host.openLocked !== 'function') repeatConflict('REPEAT_SHELL_WIRING_REQUIRED')
   }
-  private readonly expectedVersion: WorkflowVersionCurrent
+  private readonly expectedVersion: WorkflowVersionV3
   private readonly launchPermits = new Set<string>()
 
   /** A durable claim read after recovery cannot reconstruct this one-use permit. */
@@ -220,7 +218,7 @@ export class RepeatRunRepository {
          from runs r join workflow_versions v on v.id=r.workflow_version_id where r.id=$1 ${lock}`, [this.owner.runId])
       const row = found.rows[0]
       if (!row) return repeatConflict('RUN_NOT_FOUND')
-      const version = WorkflowVersionCurrentSchema.parse(row.version)
+      const version = WorkflowVersionV3Schema.parse(row.version)
       if (!sameRepeatValue(version, this.expectedVersion)) return repeatConflict('RUN_PIN_CONFLICT')
       const scope: RepeatScope = { workspaceId: version.workspaceId, workflowId: version.workflowId,
         workflowVersionId: version.id, runId: this.owner.runId, executionSemanticsVersion: 3 }
@@ -811,7 +809,7 @@ export class RepeatRunRepository {
   }
 
   private async nativeEntry(executionId: string, prepared?: WorkflowNativeEntryPermit): Promise<WorkflowNativeEntryPermit> {
-    let committedSql: SqlTransaction | undefined
+    let committedSql: GraphTransactionSql | undefined
     await this.transaction(async (context) => {
       this.active(context)
       const stored = await this.execution(context, executionId)
@@ -1586,38 +1584,70 @@ export class RepeatRunRepository {
           () => context.hooks.completeRunLocked(context.sql, terminals))
         return 'completed'
       }
-      const activations = await readWorkActivationStates(context.sql, context.scope.runId)
+      const activations = await context.sql.query<{ activation_id: string; state: string }>(
+        'select activation_id,state from run_work_activations where run_id=$1 order by activation_id', [context.scope.runId])
       const failures = await this.workFailures(context)
       const failedActivations = new Set(failures.map(row => row.activationId))
-      if (!activations.length || activations.some(row =>
+      if (!activations.rows.length || activations.rows.some(row =>
         row.state !== 'completed' && !failedActivations.has(row.activation_id))) {
         return repeatConflict('WORK_ACTIVATIONS_UNRESOLVED')
       }
-      const unreturned = await readUnreturnedWorkRequests(context.sql, context.scope.runId, [...failedActivations])
+      const unreturned = await context.sql.query<{ result_json: string | null; destination_node_id: string }>(`select x.result_json,q.destination_node_id
+        from run_work_requests q left join run_work_results x on x.run_id=q.run_id and x.activation_id=q.destination_activation_id
+        where q.run_id=$1 and not (q.destination_activation_id=any($2::text[]))
+          and not exists(select 1 from run_work_returns t where t.run_id=q.run_id and t.request_id=q.request_id)`,
+      [context.scope.runId, [...failedActivations]])
       // A destination that finished its chain answered the request; only a pending return is unresolved.
-      if (unreturned.some(row => row.result_json === null || parseWorkflowWorkResult(
+      if (unreturned.rows.some(row => row.result_json === null || parseWorkflowWorkResult(
         AcceptedCurrentNodeResultSchema.parse(JSON.parse(row.result_json)), context.version,
         row.destination_node_id, context.hooks.run.resultProtocol).routing.kind !== 'finish')) {
         return repeatConflict('WORK_REQUEST_UNRESOLVED')
       }
       if (failures[0]) throw new WorkExecutionFailure(failures[0].result)
-      const activationIds = new Set(activations.map((row) => row.activation_id))
-      const denied = await readWorkDenialContinuations(context.sql, context.scope.runId)
-      if (denied.some((row) => !row.notice_id || row.delivery_state !== 'delivered'
+      const activationIds = new Set(activations.rows.map((row) => row.activation_id))
+      const denied = await context.sql.query<{ denial_id: string; notice_id: string | null;
+        delivery_state: string | null; continuation_activation_id: string | null;
+        activation_state: string | null; accepted: boolean }>(`
+        select d.denial_id,n.notice_id,n.delivery_state,n.continuation_activation_id,
+          a.state as activation_state,exists(select 1 from run_work_results x
+            where x.run_id=d.run_id and x.activation_id=n.continuation_activation_id) as accepted
+        from run_work_denials d left join run_work_notices n on n.run_id=d.run_id
+          and n.cause_kind='limit_denial' and n.cause_id=d.denial_id
+          left join run_work_activations a on a.run_id=d.run_id
+            and a.activation_id=n.continuation_activation_id
+        where d.run_id=$1 order by d.denial_id`, [context.scope.runId])
+      if (denied.rows.some((row) => !row.notice_id || row.delivery_state !== 'delivered'
         || !row.continuation_activation_id || row.activation_state !== 'completed' || !row.accepted)) {
         return repeatConflict('WORK_DENIAL_CONTINUATION_UNRESOLVED')
       }
-      const unresolved = await readUnresolvedWork(context.sql, context.scope.runId)
+      const unresolved = (await context.sql.query<{ unresolved_id: string; execution_id: string;
+        result_digest: string; reason: 'finish_with_findings' | 'repeated_exhausted_route'; resolved: boolean
+      }>(`select u.unresolved_id,u.execution_id,u.result_digest,u.reason,exists(
+          select 1 from durable_interactions i join run_work_direction_responses d on d.interaction_id=i.id
+          where i.run_id=u.run_id and i.record->>'kind'='work_direction' and i.status='delivered'
+            and (i.record->>'selectedOptionId'='finish'
+              or i.record->>'selectedOptionId'='continue' and d.continuation_run_id is not null)) as resolved
+          from run_work_unresolved u where u.run_id=$1 order by u.unresolved_id`,
+      [context.scope.runId])).rows
       const unresolvedByExecution = new Map<string, typeof unresolved>()
       for (const item of unresolved) {
         const causes = unresolvedByExecution.get(item.execution_id) ?? []
         causes.push(item)
         unresolvedByExecution.set(item.execution_id, causes)
       }
-      const accepted = await readAcceptedWorkResults(context.sql, context.scope.runId)
+      const accepted = await context.sql.query<{ record: unknown; result_json: string; result_digest: string;
+        execution_id: string; activation_id: string; stored_activation_id: string; accepted: boolean;
+        source_requests: string; source_denials: string; returned: unknown | null }>(`
+          select e.record,e.accepted,e.work_activation_id as stored_activation_id,
+          x.result_json,x.result_digest,x.execution_id,x.activation_id,
+          (select count(*)::text from run_work_requests q where q.run_id=x.run_id and q.requester_execution_id=x.execution_id) as source_requests,
+          (select count(*)::text from run_work_denials d where d.run_id=x.run_id and d.requester_execution_id=x.execution_id) as source_denials,
+          (select t.record from run_work_returns t where t.run_id=x.run_id and t.source_execution_id=x.execution_id) as returned
+        from run_work_results x join harness_executions e on e.id=x.execution_id
+        where x.run_id=$1 order by x.execution_id`, [context.scope.runId])
       const terminals: RepeatSource[] = []
       const acceptedActivations = new Set<string>()
-      for (const row of accepted) {
+      for (const row of accepted.rows) {
         const execution = HarnessExecutionSchema.parse(row.record)
         const result = AcceptedCurrentNodeResultSchema.parse(JSON.parse(row.result_json))
         if (execution.id !== row.execution_id || execution.runId !== context.scope.runId
@@ -1662,7 +1692,7 @@ export class RepeatRunRepository {
         terminals.push({ relationshipId: 'terminal', execution: repeatExecutionIdentity(execution),
           occurrence: null, acceptedResultDigest: row.result_digest, acceptedResult: result })
       }
-      if (unresolvedByExecution.size || acceptedActivations.size !== activations.length
+      if (unresolvedByExecution.size || acceptedActivations.size !== activations.rows.length
         || !terminals.length && !unresolved.length
         || terminals.length > context.version.definition.executionPolicy!.maxNodeExecutions) {
         return repeatConflict('WORKFLOW_UNRESOLVED')
@@ -1750,7 +1780,7 @@ function assertWorkActivationReplay(stored: StoredRepeatExecution, input: WorkAc
   }
 }
 
-async function readRepeatEffectReceipt(sql: SqlTransaction, scope: RepeatScope,
+async function readRepeatEffectReceipt(sql: GraphTransactionSql, scope: RepeatScope,
   kind: RepeatEffect['kind'], entityId: string): Promise<void> {
   const rows = await sql.query<{ payload_digest: string }>(
     'select payload_digest from run_repeat_effects where run_id=$1 and effect_kind=$2 and entity_id=$3', [scope.runId, kind, entityId])
@@ -1759,7 +1789,7 @@ async function readRepeatEffectReceipt(sql: SqlTransaction, scope: RepeatScope,
   await retainRepeatEffectReceipt(sql, scope, kind, entityId, digest)
 }
 
-async function readStoredExecutionResultLocked(sql: SqlTransaction, snapshot: AcceptedRepeatRunSnapshot,
+async function readStoredExecutionResultLocked(sql: GraphTransactionSql, snapshot: AcceptedRepeatRunSnapshot,
   stored: StoredRepeatExecution): Promise<HarnessExecution['result']> {
   if (!stored.accepted) return undefined
   const { run } = snapshot
@@ -1782,14 +1812,14 @@ async function readStoredExecutionResultLocked(sql: SqlTransaction, snapshot: Ac
 }
 
 /** Historical result reads validate stored bytes and receipts without recalculating routing. */
-export async function readRecordedExecutionResultLocked(sql: SqlTransaction, snapshot: AcceptedRepeatRunSnapshot,
+export async function readRecordedExecutionResultLocked(sql: GraphTransactionSql, snapshot: AcceptedRepeatRunSnapshot,
   executionId: string): Promise<HarnessExecution['result']> {
   const stored = await readRepeatExecutionLocked(sql, snapshot, executionId)
   return readStoredExecutionResultLocked(sql, snapshot, stored)
 }
 
 /** Input admission also requires the result to agree with the terminal routing calculation. */
-export async function readRepeatAcceptedResultLocked(sql: SqlTransaction, snapshot: AcceptedRepeatRunSnapshot,
+export async function readRepeatAcceptedResultLocked(sql: GraphTransactionSql, snapshot: AcceptedRepeatRunSnapshot,
   executionId: string): Promise<HarnessExecution['result']> {
   const stored = await readRepeatExecutionLocked(sql, snapshot, executionId)
   const result = await readStoredExecutionResultLocked(sql, snapshot, stored)

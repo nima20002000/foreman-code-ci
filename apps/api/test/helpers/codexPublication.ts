@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { expect, vi } from 'vitest'
 import type { MessageAttachmentRef } from '@foreman-code/contracts/files'
 import type { CodexFileCallResult } from '../../src/modules/harnesses/codexFiles/port.js'
-import type { nativePublicationFixture } from './nativePublicationFixture.js'
+import type { afPublicationFixture } from './afPublicationFixture.js'
 
 export function publicationValue(result: CodexFileCallResult): { value: { artifactId: string; file: { fileId: string }; revision: { revisionId: string } } } {
   expect(result.success, JSON.stringify(result)).toBe(true)
@@ -13,7 +13,7 @@ export function publicationValue(result: CodexFileCallResult): { value: { artifa
 export const publicationPin = (result: ReturnType<typeof publicationValue>): MessageAttachmentRef => ({
   fileId: result.value.file.fileId, revisionId: result.value.revision.revisionId,
 })
-export async function preparePublication(f: Awaited<ReturnType<typeof nativePublicationFixture>>, count: number,
+export async function preparePublication(f: Awaited<ReturnType<typeof afPublicationFixture>>, count: number,
   failure?: 'adopt_once' | 'revoke_after_finalize' | 'lose_close') {
   const attachments: MessageAttachmentRef[] = []
   for (let index = 0; index < count; index++) attachments.push(await f.upload(Buffer.from(`# input ${index}\n`)))

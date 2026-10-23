@@ -11,7 +11,7 @@ import { jobComputerCapacityDecision, type VerificationMemoryReader } from '../j
 import type { WorkerExecutionPolicy } from './workerExecution.js'
 import { DomainError } from '../errors.js'
 import { hostCiCapacity, readHostCiStatus } from '../ci/values.js'
-import { workerBundleErrorMessage } from '../computers/index.js'
+import { workerBundleErrorMessage } from '../computers/workerBundleReadiness.js'
 
 export function buildComputerReadiness(input: { endpoint(): DeviceEndpoint; profiles: JobRuntimeProfiles;
   workerExecution: WorkerExecutionPolicy; localExecutor: boolean; availableMemory?: VerificationMemoryReader | undefined }) {

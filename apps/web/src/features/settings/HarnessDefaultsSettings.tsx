@@ -11,7 +11,7 @@ import { ClaudePluginSummary } from './ClaudePluginSummary'
 import { CodexPluginManager } from './CodexPluginManager'
 import { HarnessMcpManager } from './HarnessMcpManager'
 import { OperatorMcpStatus } from './OperatorMcpStatus'
-import { ProviderAccountsSettings, type ProviderAccountNavigation } from '../provider-accounts'
+import { ProviderAccountsSettings, type ProviderAccountNavigation } from '../provider-accounts/ProviderAccountsSettings'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 
 /** Harnesses this app runs: Codex and Claude. */

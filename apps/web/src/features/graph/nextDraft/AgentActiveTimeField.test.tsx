@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import type { WorkflowExecutionPolicy } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { AgentActiveTimeField } from './AgentActiveTimeField'
 import { LocalWorkflowFormSchema } from './localGraph'
 

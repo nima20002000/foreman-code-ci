@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
-import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
+import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
 import { currentDatabase } from './helpers/database.js'
 import { graphFixture, graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 
@@ -16,7 +16,7 @@ it('reads persisted workflow versions, rejects corrupt hashes and rechecks live 
     const persisted = (await db.pool.query('select revision from workflows where id=$1', [f.scope.workflowId])).rows[0]!
     expect(result).toEqual({ ...input, revision: Number(persisted.revision), currentVersionId: f.version.id, version: f.version })
     expect(result.version.definition.repeat).toEqual(f.version.definition.repeat)
-    const corruptVersion = WorkflowVersionCurrentSchema.parse({ ...f.version, id: randomUUID(), version: f.version.version + 1,
+    const corruptVersion = WorkflowVersionV3Schema.parse({ ...f.version, id: randomUUID(), version: f.version.version + 1,
       definition: { ...f.version.definition, version: f.version.version + 1 },
       contentHash: `sha256:${'f'.repeat(64)}` })
     await db.pool.query(`insert into workflow_versions

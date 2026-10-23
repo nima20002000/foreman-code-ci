@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { type HarnessExecutionRequest } from '@foreman-code/contracts'
-import { HierarchyWorkGroupSchema, WorkActivationInputSchema, WorkRequestSchema, WorkReturnSchema } from '@foreman-code/contracts/current'
+import { HierarchyWorkGroupSchema, WorkActivationInputSchema, WorkRequestSchema, WorkReturnSchema } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../src/modules/errors.js'
 import { readHierarchyCoordinationLocked } from '../src/modules/runs/hierarchyCoordinationRead.js'
 import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'

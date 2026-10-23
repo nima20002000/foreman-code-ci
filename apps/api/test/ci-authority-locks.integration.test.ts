@@ -5,19 +5,18 @@ import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresInteractionCoordinationRepository } from '../src/modules/interactions/coordination.js'
 import { PostgresApprovalBudgetRepository } from '../src/modules/interactions/budget.js'
 import { acceptRunAuthority, bindRunAuthority } from '../src/modules/access/runAuthority.js'
-import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
+import { Wave25WorkerCredentialService } from '../src/modules/interactions/wave25/credentials.js'
 import { createTestPool } from './helpers/testPool.mjs'
-import { candidateFor, seedWorkflowFixture } from './helpers/workflowDatabase.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database, candidateFor, seedAgent3 } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('CI authority reads beside credential admission', () => {
   it('resolves live Worker CI reads while publication locks the Run, execution and credential rows', async () => {
-    const database = await migratedDatabase()
+    const database = await agent3Database()
     const pool = createTestPool({ connectionString: database.databaseUrl,
       options: '-c lock_timeout=500 -c statement_timeout=5000' })
     try {
-      const fixture = await seedWorkflowFixture(database.pool, database.directory)
+      const fixture = await seedAgent3(database.pool, database.directory)
       await pool.query(`update runs set execution_state='running',
         record=jsonb_set(record,'{executionState}','"running"'::jsonb) where id=$1`, [fixture.run.id])
       const execution = { ...candidateFor(fixture), state: 'running', startedAt: fixture.createdAt,

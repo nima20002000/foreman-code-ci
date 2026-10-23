@@ -5,8 +5,6 @@
 // - apps/ci/test imports only CI's own files, the repository's scripts, Node builtins, @foreman-code/contracts and CI's
 //   declared dependencies and dev dependencies: CI's tests never load the API.
 // - In apps/api/src only modules/ci/ (the adapter) imports @foreman-code/ci, and only by package name.
-// - apps/worker/src reaches API code only through the entry points of @foreman-code/api (`@foreman-code/api/worker/<module>`),
-//   never by relative path.
 // - apps/web and packages/contracts never import the CI package.
 // - Releases resolve CI's dependencies through the API's node_modules, so apps/ci dependencies are a subset of the
 //   API's at identical versions.
@@ -100,11 +98,6 @@ export function packageBoundaryViolations(root) {
     if (reachesCi(file, specifier)) violations.push(`${file} imports ${specifier}: import the CI package by name`)
     else if (namesCi(specifier) && !file.startsWith(adapter)) {
       violations.push(`${file} imports ${specifier}: only ${adapter} imports the CI package`)
-    }
-  }
-  for (const file of sourceFiles(root, 'apps/worker/src')) for (const { specifier } of imports(file)) {
-    if (specifier.startsWith('.') && target(file, specifier).startsWith('apps/api/')) {
-      violations.push(`${file} imports ${specifier}: import API code through @foreman-code/api/worker/<module>`)
     }
   }
   for (const directory of ['apps/web', 'packages/contracts']) {

@@ -4,7 +4,6 @@ import type { CompatibilityHarness } from '@foreman-code/contracts'
 import type { NativeProcessRegistry, NativeProcessRecovery } from '../recovery/processRegistry.js'
 import type { RegistryHarnessSelection } from '../installationRegistry.js'
 import { nativeCompatibilityProbe, type CompatibilityProbe, type HarnessInstallation } from './probe.js'
-import { hostEnvironment } from '../../../shared/process.js'
 
 interface OwnedProbe {
   harness: CompatibilityHarness
@@ -59,7 +58,7 @@ export function scopedCompatibilityProbe(options: {
     if (!launcher) throw new Error('The selected diagnostic launcher is unavailable.')
     const record: OwnedProbe = { harness, recovery, controller, admitted: false,
       probe: (options.nativeProbe ?? nativeCompatibilityProbe)({ codex: launcher },
-        options.workingDirectory, options.environment ?? hostEnvironment(), options.timeoutMs ?? 2000, {
+        options.workingDirectory, options.environment ?? process.env, options.timeoutMs ?? 2000, {
           recovery,
           async beforeCommand(binary, commandSignal) {
             assertOpen(); combined.throwIfAborted(); commandSignal.throwIfAborted()

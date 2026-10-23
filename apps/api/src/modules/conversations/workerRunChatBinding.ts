@@ -1,11 +1,11 @@
 import { isDeepStrictEqual } from 'node:util'
 import type pg from 'pg'
 import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
-import { WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
+import { WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import type { WorkerConversationBinding, WorkerConversationConfiguration } from '@foreman-code/contracts/remote-execution-rpc'
-import { configurationWithNodeSkills } from '../skills/index.js'
-import { verifiedSkills } from '../skills/index.js'
+import { configurationWithNodeSkills } from '../skills/nodeSkills.js'
+import { verifiedSkills } from '../skills/instructions.js'
 import { DomainError } from '../errors.js'
 import { harnessSessionChanged } from '../harnesses/providerAccountConfiguration.js'
 import { definedProperties } from '../definedProperties.js'
@@ -56,7 +56,7 @@ export async function readAgentChatConfigurationTransition(pool: pg.Pool,
   [previous.owner.configurationVersionId, original.record.origin?.runId ?? null, original.workflow_id])).rows[0]
   let base = AgentConfigurationVersionSchema.parse(found?.record)
   if (original.record.origin?.kind === 'run_execution') {
-    const version = WorkflowVersionCurrentSchema.parse(found?.version)
+    const version = WorkflowVersionV3Schema.parse(found?.version)
     const node = version.definition.nodes.find(item => item.id === original.workflow_node_id)
     if (version.workspaceId !== original.workspace_id || version.workflowId !== original.workflow_id
       || !node || node.kind === 'job' || node.agentId !== base.agentId) throw new DomainError(
@@ -100,7 +100,7 @@ export async function readRunChatSkillsTransition(pool: pg.Pool, original: RunCh
     where c.id=$1`, [previous.owner.configurationVersionId, original.record.origin.runId,
     original.workflow_id])).rows[0]
   const base = AgentConfigurationVersionSchema.parse(found?.record)
-  const version = WorkflowVersionCurrentSchema.parse(found?.version)
+  const version = WorkflowVersionV3Schema.parse(found?.version)
   const node = version.definition.nodes.find(item => item.id === original.workflow_node_id)
   if (version.workspaceId !== original.workspace_id || version.workflowId !== original.workflow_id
     || !node || node.kind === 'job' || node.agentId !== base.agentId || (!node.skills && !node.browser?.enabled)

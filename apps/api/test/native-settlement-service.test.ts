@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test, vi } from 'vitest'
-import { AcceptedWorkflowRunCurrentSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { AcceptedWorkflowRunV3Schema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import type { RunOwnership } from '../src/modules/runs/ownership.js'
 import type { StoredRepeatExecution } from '../src/modules/runs/repeatPostgres.js'
 import type { AcceptedRepeatRunSnapshot } from '../src/modules/runs/repeatStartRead.js'
@@ -14,7 +14,7 @@ import { nativeProofModel } from './native-proof-model.js'
  * suite verifies checkpoint retention, not actual SQL receipt/owner provenance. */
 function fixture() {
   const f = nativeProofModel(), base = makeCurrentWorkflowFixture('native-proof-service')
-  const run = AcceptedWorkflowRunCurrentSchema.parse({ ...base.run, id: f.execution.runId,
+  const run = AcceptedWorkflowRunV3Schema.parse({ ...base.run, id: f.execution.runId,
     workspaceId: 'workspace-proof-1', workflowId: 'workflow-proof-1', executionSemanticsVersion: 3,
     executionState: 'running', authorizationPrincipalId: 'principal-proof-model',
     agentConfigurationVersionIds: { [f.execution.agentId]: f.execution.agentConfigurationVersionId },

@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util'
 import { AgentConfigurationVersionSchema, type AgentConfigurationVersion } from '@foreman-code/contracts'
-import { SavedWorkflowVersionSchema, SavedWorkflowDefinitionSchema, canonicalGraphJson, type SavedWorkflowVersion } from '@foreman-code/contracts/current'
+import { SavedWorkflowVersionSchema, SavedWorkflowDefinitionSchema, canonicalGraphJson, type SavedWorkflowVersion } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../errors.js'
 import { sha256Hex } from '../../shared/hash.js'
 

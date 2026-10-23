@@ -1,9 +1,9 @@
 import { ApiError, isGatewayStatus } from './apiError'
 import { apiErrorFromPayload, apiUrl, beginFencedOperation, installationHeaders, sendRaw } from './transport'
 import {
-  CurrentWorkspaceDetailsSchema, CurrentGetWorkflowResponseSchema, CurrentRunDetailsSchema, CurrentManagedWorkflowCommandResultSchema, CurrentManagedWorkflowPageSchema, RunStartCurrentInputSchema, RunStartCurrentResultSchema, CurrentWorkflowCreateInputSchema, 
+  CurrentWorkspaceDetailsSchema, CurrentGetWorkflowResponseSchema, CurrentRunDetailsSchema, CurrentManagedWorkflowCommandResultSchema, CurrentManagedWorkflowPageSchema, RunStartV3InputSchema, RunStartV3ResultSchema, CurrentWorkflowCreateInputSchema, 
   type CurrentWorkspaceDetails, type CurrentGetWorkflowResponse, type CurrentRunDetails, type CurrentWorkflowCreateInput,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import {
   GetInteractionResponseSchema,
   ListInteractionsRequestSchema,
@@ -365,11 +365,11 @@ export class ApiClient {
       AgentMutationResultSchema, { ...options, method: 'PATCH', body: request })
   }
 
-  startManagedRun(input: z.input<typeof RunStartCurrentInputSchema>, options?: RequestOptions) {
-    const request = parseRequest(RunStartCurrentInputSchema, input)
+  startManagedRun(input: z.input<typeof RunStartV3InputSchema>, options?: RequestOptions) {
+    const request = parseRequest(RunStartV3InputSchema, input)
     return this.request(
       `/api/management/workspaces/${toPath(request.workspaceId)}/workflows/${toPath(request.workflowId)}/runs`,
-      RunStartCurrentResultSchema,
+      RunStartV3ResultSchema,
       { ...options, method: 'POST', body: request },
     )
   }

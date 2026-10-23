@@ -2,7 +2,7 @@ import { ChatDeliveryIntentSchema, DeliveryTargetSchema, ChatDeliveryReceiptSche
 import { EngineChatReadbackSchema } from './workflowChat.js';
 import { NativeSourceMessageSchema } from './messages.js';
 import { NativeInteractionResponseAvailabilitySchema } from './interaction-activity.js';
-import { ChatMessageContentSchema, refineChatPrompt } from './chatInput.js';
+import { ChatMessageContentSchema, refineChatMessageSize } from './chatInput.js';
 import { NativeMessageSubmissionSchema } from './claude.js';
 import { z } from "zod";
 import { ActivitySnapshotV1Schema } from "./activity.js";
@@ -322,7 +322,11 @@ export const SendAgentChatMessageRequestSchema = z.object({
   expectedConversationId: IdSchema.nullable(),
   /** Required for steer when capabilities.steer is "native_expected_turn". */
   expectedNativeTurnId: IdSchema.optional(),
-}).strict().superRefine((value, context) => refineChatPrompt(value, context));
+}).strict().refine((value) => value.content.length > 0 || value.attachments.length > 0, {
+  path: ["content"], message: "Message requires text or an attachment.",
+}).refine((value) => value.intent !== "steer" || value.attachments.length === 0, {
+  path: ["attachments"], message: "Attachment steering is not supported. Send attachments in a new turn.",
+}).superRefine(refineChatMessageSize);
 export type SendAgentChatMessageRequest = Omit<z.infer<typeof SendAgentChatMessageRequestSchema>, "attachments">
   & { attachments?: z.input<typeof MessageAttachmentFields.attachments> };
 /** Transport parsing retains the historical character limit so stored receipts remain recoverable.
@@ -330,7 +334,11 @@ export type SendAgentChatMessageRequest = Omit<z.infer<typeof SendAgentChatMessa
 export const AgentChatMessageCommandSchema = z.object({ ...SendAgentChatMessageRequestSchema.shape,
   content: z.string().trim().max(AGENT_CHAT_MAX_MESSAGE_CHARACTERS)
     .describe('New messages must fit within 768 KiB of UTF-8 JSON. Identical retries may recover older, larger receipts.'),
-}).strict().superRefine((value, context) => refineChatPrompt(value, context, { size: false }));
+}).strict().refine(value => value.content.length > 0 || value.attachments.length > 0, {
+  path: ['content'], message: 'Message requires text or an attachment.',
+}).refine(value => value.intent !== 'steer' || value.attachments.length === 0, {
+  path: ['attachments'], message: 'Attachment steering is not supported. Send attachments in a new turn.',
+});
 /** Legacy urgent receipts did not retain the original target. This is readback, not target verification. */
 const AgentChatReplayWarningSchema = z.object({
   code: z.literal("AGENT_CHAT_LEGACY_TARGET_UNVERIFIABLE"),

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import pg from 'pg'
 import { expect, it } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture, WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture, WorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
 import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-execution'
 import type { AcceptedExecutionBinding } from '../src/modules/placement/nativeComposition.js'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
@@ -28,7 +28,7 @@ it('closes a persisted completed retained reviewer only after its reviews settle
     const native = { sessionId: 'reviewer-session', turnId: 'workflow-turn', processIdentityDigest: 'a'.repeat(64) }
     const fixture = makeCurrentWorkflowFixture(randomUUID(), 'approval')
     const configuration = fixture.configurations[0]!
-    const run = WorkflowRunCurrentSchema.parse({ ...fixture.run, id: 'run', executionState: 'running' })
+    const run = WorkflowRunV3Schema.parse({ ...fixture.run, id: 'run', executionState: 'running' })
     const execution = HarnessExecutionSchema.parse({ id: 'execution', runId: run.id,
       workflowNodeId: fixture.version.entryNodeId, agentId: configuration.agentId,
       agentConfigurationVersionId: configuration.id, attempt: 1, input: {}, state: 'completed',

@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient, type InfiniteData } from '@tanstack/react-query'
 import type { WorkflowReorderInput } from '@foreman-code/contracts/management'
-import type { CurrentWorkspaceDetails } from '@foreman-code/contracts/current'
+import type { CurrentWorkspaceDetails } from '@foreman-code/contracts/wave25'
 import { apiClient } from './client'
 import { queryKeys } from './query'
 import { assertSession, sessionGeneration, sessionIsSwitching, SessionChangedError } from './sessionBoundary'

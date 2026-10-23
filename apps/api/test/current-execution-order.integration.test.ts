@@ -2,17 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { readPublicNodeProjection } from '../src/modules/run-graph/publicProjection.js'
 import { withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
-import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 const historySize = 4000
 
 describe.skipIf(!postgresEnabled)('current Board execution selection', () => {
   it('selects the latest occurrence, activation and retry while excluding interval ticks within a read deadline', async () => {
-    const db = await migratedDatabase()
+    const db = await agent3Database()
     try {
-      const f = await seedWorkflowFixture(db.pool, db.directory)
+      const f = await seedAgent3(db.pool, db.directory)
       const node = agentWorkflowNode(f.version.definition.nodes[0])
       const configurationId = f.version.agentConfigurationVersionIds[node.agentId]!
       await withExclusiveGraphConnection(db.pool, connection => connection.transaction(async sql => {

@@ -1,7 +1,6 @@
-import { AgentEffortSchema, ClaudeEffortSchema, type HarnessConfiguration } from '@foreman-code/contracts'
+import { AgentEffortSchema, ClaudeEffortSchema, RETIRED_OPENCODE_MESSAGE, type HarnessConfiguration } from '@foreman-code/contracts'
 import type { HarnessOptions } from '@foreman-code/contracts/management'
 import { DomainError } from '../errors.js'
-import { retiredHarnessError } from './retiredHarness.js'
 
 /** Recency comes from provider release metadata; preference comes from its
  * ranked native catalog. IDs and display labels never establish recency. */
@@ -17,7 +16,7 @@ export function latestNativeModel(options: HarnessOptions): HarnessOptions['mode
 }
 
 export function nativeModelDefaults<T extends HarnessConfiguration>(configuration: T, options: HarnessOptions): T {
-  if (configuration.harness === 'opencode') throw retiredHarnessError()
+  if (configuration.harness === 'opencode') throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
   if (configuration.harness !== options.harness) throw new DomainError('HARNESS_CONFIGURATION_MISMATCH', 'The model catalog belongs to another harness.', 409)
   const model = latestNativeModel(options)
   if (configuration.harness === 'codex') {

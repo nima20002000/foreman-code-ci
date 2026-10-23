@@ -1,6 +1,6 @@
 import type pg from 'pg'
 import { describe, expect, it, vi } from 'vitest'
-import { makeCurrentWorkflowFixture, type RunGraphScope } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture, type RunGraphScope } from '@foreman-code/contracts/wave25'
 import type { JobExecution } from '@foreman-code/contracts/jobs'
 import { ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 import { readPublicNodeProjection, type PublicProjectionOverlay } from '../src/modules/run-graph/publicProjection.js'

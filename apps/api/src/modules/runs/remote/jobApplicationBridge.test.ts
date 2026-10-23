@@ -11,8 +11,7 @@ function fixture() {
   execution.acceptedSpec.target.registration=registration
   const binding={mainId:execution.acceptedSpec.target.mainId,deviceId,...registration,bootId:randomUUID(),connectionGeneration:1,connectionEpoch:randomUUID()}
   const intent:RemoteJobDispatchIntent={schemaVersion:1,protocolVersion:1,mainId:binding.mainId,subject:{kind:'manual-job',workspaceId:execution.workspaceId,jobExecutionId:execution.id,definitionId:execution.acceptedSpec.definitionId},executionId:execution.id,attemptId:execution.attemptId,operationId:execution.operationId,bindingHash:execution.acceptedSpec.bindingHash,inputDigest:`sha256:${execution.acceptedSpec.specDigest}`,owner:execution.owner}
-  // The Job read binds the workspace and execution ids; the dispatch intent and accepted-starter reads bind the execution id alone.
-  const sql={query:async (_query:string,values:unknown[]=[])=>({rows:values.length===2&&values[0]===execution.workspaceId&&values[1]===execution.id?[{record:execution,accepted_spec:execution.acceptedSpec}]:[{intent,accepted_by:'revoked-starter'}]}),release:vi.fn()}
+  const sql={query:async (query:string)=>({rows:query.startsWith('select record,accepted_spec')?[{record:execution,accepted_spec:execution.acceptedSpec}]:query.startsWith('select intent')?[{intent}]:[{accepted_by:'revoked-starter'}]}),release:vi.fn()}
   const pool={connect:async()=>sql} as unknown as pg.Pool
   const dispatch={requireLaunch:vi.fn(),require:vi.fn(async()=>{throw new Error('cleanup is stop-only')}),requireControl:vi.fn(async()=>{}),requireEvidence:vi.fn(async()=>{}),observeReceipt:vi.fn(async()=>{})}
   const bridge=new JobApplicationBridge(pool,dispatch,{appendLog:vi.fn()},{authorizePublication:vi.fn()})

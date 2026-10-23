@@ -18,7 +18,7 @@ import { PostgresFileRepository } from '../src/modules/files/postgres.js'
 import { TemporaryFileService } from '../src/modules/files/service.js'
 import { FileByteStorage } from '../src/modules/files/storage.js'
 import { registerFileRoutes } from '../src/routes/files.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 const body = Buffer.from('# upload action regression\n')
@@ -26,12 +26,12 @@ const metadata = { filename: 'upload.md', mediaType: 'text/markdown' as const,
   byteSize: body.length, sha256: createHash('sha256').update(body).digest('hex') }
 
 describe.skipIf(!postgresEnabled)('FIL-03 upload IDs are not Operator chat actions', () => {
-  let database: Awaited<ReturnType<typeof migratedDatabase>>, app: FastifyInstance, root: string
+  let database: Awaited<ReturnType<typeof agent3Database>>, app: FastifyInstance, root: string
   let access: PostgresAccessService, repository: PostgresFileRepository
   let operator: Awaited<ReturnType<PostgresOperatorRepository['ensure']>>
   let conversations: PostgresOperatorConversationRepository
   beforeAll(async () => {
-    database = await migratedDatabase()
+    database = await agent3Database()
     access = new PostgresAccessService(database.pool)
     repository = new PostgresFileRepository(database.pool)
     operator = await new PostgresOperatorRepository(database.pool).ensure()

@@ -3,7 +3,7 @@ import type pg from 'pg'
 
 import { DomainError } from '../errors.js'
 import { RunGraphError } from '../run-graph/errors.js'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import { normalizeNativeProducerEvent, NATIVE_PRODUCER_REJECTION_TYPE, NATIVE_PRODUCER_REJECTION_VERSION,
   type NormalizedNativeProducerEvent } from '../run-graph/nativeProducerNormalization.js'
 
@@ -15,7 +15,7 @@ export async function appendNativeEvent(client: pg.Pool | pg.ClientBase, event: 
 /** Shared raw append for the production callbacks and G1 ingester. G1 callers
  * check their existing owner/generation guards before entering this SQL boundary.
  * This function does not acquire ownership or begin/commit a caller transaction. */
-export async function appendNormalizedNativeEvent(client: SqlQuery,
+export async function appendNormalizedNativeEvent(client: GraphSqlClient,
   normalized: NormalizedNativeProducerEvent): Promise<{ inserted: boolean; rejected: boolean }> {
   const parsed = HarnessNativeEventSchema.parse(normalized.event)
   if (!Number.isSafeInteger(parsed.sequence) || parsed.sequence > 2147483647) {
@@ -64,7 +64,7 @@ export async function appendNormalizedNativeEvent(client: SqlQuery,
 }
 
 /** Translate provider positions without changing their stored source identity. */
-export async function readPersistedNativeSequence(client: SqlQuery, event: HarnessNativeEvent): Promise<string> {
+export async function readPersistedNativeSequence(client: GraphSqlClient, event: HarnessNativeEvent): Promise<string> {
   const result = await client.query<{ sequence: string }>(
     `select sequence::text from harness_native_events where execution_id=$1
       and (($2::text is not null and connection_id=$2 and source_sequence=$3)

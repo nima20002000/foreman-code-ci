@@ -9,7 +9,7 @@ import { HarnessRegistryReadbackSchema, HostHarnessOverrideSaveResultSchema,
   HostHarnessInstanceCheckResultSchema, HostHarnessOverrideListSchema, type HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
 import { NodePlacementChoicesResultSchema } from '@foreman-code/contracts/placement-readback'
 import { CurrentEditReadResultSchema, CurrentWorkflowReadResultSchema, SavedManagedWorkflowCommandResultSchema,
-  type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
+  type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 import { buildCrossComputerCiGraph, ciHarness, createCiTasks, type ScenarioAgent } from './crossComputerCiGraph.js'
 import type { ScenarioComputer, ScenarioWorkspace } from './crossComputerCiInput.js'
 import { CiWaitTimeout, waitForCi } from './crossComputerCiWait.js'
@@ -206,7 +206,7 @@ export async function disableCiProfiles(client: Client, profiles: Iterable<Owned
 }
 
 async function saveGraph(client: Client, input: {
-  graph: WorkflowDefinitionCurrent
+  graph: WorkflowDefinitionV3
   revision: number
   versionId: string | null
   configurations: Record<string, string>
@@ -234,7 +234,7 @@ async function saveGraph(client: Client, input: {
 export type PreparedCiWorkflow = {
   workspace: ScenarioWorkspace
   assignments: ScenarioAgent[]
-  graph: WorkflowDefinitionCurrent
+  graph: WorkflowDefinitionV3
   saved: SavedCiWorkflow
   locationRevision: number
   repository: string

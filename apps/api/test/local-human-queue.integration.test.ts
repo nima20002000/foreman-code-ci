@@ -6,11 +6,11 @@ import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { buildQueueFixture } from './helpers/buildComputerFixture.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('local human queue transport parity', () => {
-  let database: Awaited<ReturnType<typeof migratedDatabase>>
+  let database: Awaited<ReturnType<typeof agent3Database>>
   let access: PostgresAccessService
   let writer: Awaited<ReturnType<PostgresAccessService['issue']>>
   let reader: Awaited<ReturnType<PostgresAccessService['issue']>>
@@ -18,7 +18,7 @@ describe.skipIf(!postgresEnabled)('local human queue transport parity', () => {
   const apps: ReturnType<typeof buildApp>[] = []
   const clients: Client[] = []
   beforeEach(async () => {
-    database = await migratedDatabase()
+    database = await agent3Database()
     access = new PostgresAccessService(database.pool)
     writer = await access.issue({ name: 'Local queue fixture writer', audience: 'operator',
       expiresAt: new Date(Date.now() + 600_000), grants: [{

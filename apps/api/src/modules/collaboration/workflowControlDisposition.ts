@@ -1,13 +1,12 @@
 import { ChatSendRequestSchema, WorkflowControlContinuationSchema } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
-import { assertGraphTransaction } from '../run-graph/index.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { assertGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
 import { readControlCommand } from './workflowControlRecords.js'
 import type { WorkflowControlDisposition } from './workflowControlTypes.js'
 
 /** Consult BEFORE native effects, negative settlement, acceptance or parent returns.
  * Retained reservations fence late callbacks even after failure or Stop Run. */
-export async function readWorkflowControlDispositionLocked(sql: SqlTransaction,
+export async function readWorkflowControlDispositionLocked(sql: GraphTransactionSql,
   runId: string, executionId: string): Promise<WorkflowControlDisposition> {
   assertGraphTransaction(sql)
   const row = (await sql.query<{ record: unknown; reserved_successor_execution_id: string; delivery_id: string }>(

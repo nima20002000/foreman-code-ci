@@ -1,10 +1,9 @@
 import { ExecutionResultSchema, type ExecutionResult, type HarnessExecution } from '@foreman-code/contracts'
-import { GraphExecutionIdentitySchema, RunGraphScopeSchema, canonicalGraphJson } from '@foreman-code/contracts/current'
+import { GraphExecutionIdentitySchema, RunGraphScopeSchema, canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import { RemoteOperationReceiptSchema, remoteWorkflowTurnId } from '@foreman-code/contracts/remote-execution'
 import { REMOTE_NATIVE_SOURCE_LIMIT } from '@foreman-code/contracts/remote-workflow-physical'
 import { z } from 'zod'
-import { assertGraphTransaction } from '../run-graph/connection.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { assertGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
 import { assertRepeatCanonicalReceiptLocked, requireRepeatCanonicalReceiptBeforeCommit } from '../run-graph/repeatReceipts.js'
 import { repeatConflict, repeatDigest, repeatExecutionIdentity, sameRepeatValue } from './repeatResolution.js'
 import type { RepeatNativeChange } from './repeatNativeRepository.js'
@@ -27,7 +26,7 @@ export type WorkflowCoordinationTerminal = z.infer<typeof TerminalSchema>
 
 /** The native observation's existing canonical source owns this small retained
  * normalization receipt. It is written in the same terminal/F1 transaction. */
-export async function recordWorkflowCoordinationTerminalLocked(sql: SqlTransaction,
+export async function recordWorkflowCoordinationTerminalLocked(sql: GraphTransactionSql,
   change: RepeatNativeChange, proof: WorkflowNativeProofRecord): Promise<void> {
   assertGraphTransaction(sql)
   if (change.next.state !== 'completed' || !change.next.result
@@ -49,7 +48,7 @@ export async function recordWorkflowCoordinationTerminalLocked(sql: SqlTransacti
   if (inserted.rowCount !== 1) return repeatConflict('COORDINATION_TERMINAL_CONFLICT')
 }
 
-export async function readWorkflowCoordinationTerminalLocked(sql: SqlTransaction,
+export async function readWorkflowCoordinationTerminalLocked(sql: GraphTransactionSql,
   execution: HarnessExecution): Promise<(WorkflowCoordinationTerminal & { nativeResult: ExecutionResult; settled: boolean }) | undefined> {
   assertGraphTransaction(sql)
   const row = (await sql.query<{ record: unknown; record_digest: string; native_proof: WorkflowNativeProofRecord;
@@ -80,7 +79,7 @@ export async function readWorkflowCoordinationTerminalLocked(sql: SqlTransaction
     settled: row.settled_native_proof_id !== null }
 }
 
-export async function markWorkflowCoordinationTerminalSettledLocked(sql: SqlTransaction,
+export async function markWorkflowCoordinationTerminalSettledLocked(sql: GraphTransactionSql,
   execution: HarnessExecution, proof: WorkflowNativeProofRecord): Promise<void> {
   const retained = await readWorkflowCoordinationTerminalLocked(sql, execution)
   if (!retained || proof.original.type !== 'history'
@@ -109,7 +108,7 @@ export async function markWorkflowCoordinationTerminalSettledLocked(sql: SqlTran
 
 /** Original remote bytes can differ only by the already committed first-terminal
  * normalization, never by a newly supplied outcome or a repaired old terminal. */
-export async function matchesWorkflowNativeTerminalLocked(sql: SqlTransaction,
+export async function matchesWorkflowNativeTerminalLocked(sql: GraphTransactionSql,
   execution: HarnessExecution, nativeResult: ExecutionResult | undefined): Promise<boolean> {
   if (sameRepeatValue(execution.result, nativeResult)) return true
   if (!nativeResult || execution.state !== 'completed') return false

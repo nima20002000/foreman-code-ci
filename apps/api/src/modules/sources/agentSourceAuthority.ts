@@ -1,12 +1,13 @@
 import type pg from 'pg'
-import { withTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
+import { withTransaction } from '../../infrastructure/transaction.js'
 import { posix } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
-import { AcceptedWorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
+import { AcceptedWorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
 import { NativeExecutionPlacementSchema } from '@foreman-code/contracts/node-placement'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { SourceRootRecordSchema, type SourceRootRecord, type SourceMaterializationRecord } from '@foreman-code/contracts/source-admission'
-import { readAcceptedPlacement, readDispatchIntent } from '../placement/index.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
+import { readAcceptedPlacement, readDispatchIntent } from '../placement/persistence.js'
 import { readReconciledDispatchIntent } from '../runs/remote/persistence.js'
 import { currentOperatorAuthority } from '../access/runAuthority.js'
 import { requireAuthorization } from '../access/policy.js'
@@ -22,10 +23,10 @@ type AcceptedAgentSource = Awaited<ReturnType<AgentSourceAttemptAuthority['accep
 /** Source authority from the genuine accepted Agent execution/Run/dispatch.
  * No Agent is converted to a Job and no pre-Run materialization is fabricated. */
 export class AgentSourceAttemptAuthority implements SourceAttemptAuthority {
-  constructor(private readonly pool: pg.Pool, private readonly rootFence: (sql: SqlQuery, root: SourceRootRecord) => Promise<void>) {}
+  constructor(private readonly pool: pg.Pool, private readonly rootFence: (sql: GraphSqlClient, root: SourceRootRecord) => Promise<void>) {}
   /** Writers keep the Run rows locked until COMMIT. A read-only check (`lock` false) reads committed rows and acts
    * only after it returns, so it never queues behind the Run owner. */
-  private async accepted(sql: SqlQuery, executionId: string, attemptId: string, operationId: string, caller?: ManagementPrincipal,
+  private async accepted(sql: GraphSqlClient, executionId: string, attemptId: string, operationId: string, caller?: ManagementPrincipal,
     lock = true) {
     const share = lock ? ' for share' : ''
     const original = await readDispatchIntent(sql, executionId), intent = await readReconciledDispatchIntent(sql, operationId, lock)
@@ -42,7 +43,7 @@ export class AgentSourceAttemptAuthority implements SourceAttemptAuthority {
       exists(select 1 from run_cleanup_intents c where c.run_id=r.id and c.pending) cleanup from runs r where id=$1${share}`, [intent.runId])).rows[0]
     if (!placement || !row || placement.payload.kind !== 'agent' || placement.payload.agentId !== execution.agent_id || placement.bindingHash !== intent.bindingHash)
       throw new DomainError('AGENT_SOURCE_PIN_CONFLICT', 'Source authority must belong to the actual accepted Agent/configuration/placement.', 409)
-    const run = AcceptedWorkflowRunCurrentSchema.parse(row.record)
+    const run = AcceptedWorkflowRunV3Schema.parse(row.record)
     const principal = (await currentOperatorAuthority(sql, run.authorizationPrincipalId)).principal
     if (caller && caller.id !== principal.id || run.id !== intent.runId || row.stopped || row.cleanup || ['completed', 'interrupted'].includes(run.executionState)
       || run.agentConfigurationVersionIds[execution.agent_id] !== placement.payload.agentConfigurationVersionId)
@@ -51,11 +52,11 @@ export class AgentSourceAttemptAuthority implements SourceAttemptAuthority {
     requireAuthorization(principal, 'sources:read', { workspaceId: run.workspaceId }); requireAuthorization(principal, 'source_roots:read', { workspaceId: run.workspaceId })
     return { execution, intent, placement, run, principal }
   }
-  async authorize(sql: SqlQuery, principal: ManagementPrincipal, input: AuthorizationInput, lock = true): Promise<void> {
+  async authorize(sql: GraphSqlClient, principal: ManagementPrincipal, input: AuthorizationInput, lock = true): Promise<void> {
     const actual = await this.accepted(sql, input.attempt.executionId, input.attempt.attemptId, input.operationId, principal, lock)
     await this.authorizeAccepted(sql, actual, input)
   }
-  private async authorizeAccepted(sql: SqlQuery, actual: AcceptedAgentSource, input: AuthorizationInput): Promise<void> {
+  private async authorizeAccepted(sql: GraphSqlClient, actual: AcceptedAgentSource, input: AuthorizationInput): Promise<void> {
     const source = actual.placement.source
     if (!('kind' in source) || source.kind !== 'pending' || actual.run.workspaceId !== input.workspaceId || input.root.binding.workspaceId !== input.workspaceId
       || source.approvedSourceId !== input.root.source.approvedSourceId || source.snapshotId !== input.root.source.snapshotId || source.manifestDigest !== input.root.source.manifestDigest
@@ -65,12 +66,12 @@ export class AgentSourceAttemptAuthority implements SourceAttemptAuthority {
       throw new DomainError('AGENT_SOURCE_PIN_CONFLICT', 'Actual Agent source preparation cannot change accepted source/root/host/operation pins.', 409)
     await this.rootFence(sql, input.root)
   }
-  async authorizeFinal(sql: SqlQuery, principal: ManagementPrincipal, record: SourceMaterializationRecord, finalHash: string,
+  async authorizeFinal(sql: GraphSqlClient, principal: ManagementPrincipal, record: SourceMaterializationRecord, finalHash: string,
     lock = true): Promise<void> {
     const actual = await this.accepted(sql, record.receipt.executionId, record.receipt.attemptId, record.operationId, principal, lock)
     await this.assertFinal(sql, actual, record, finalHash, lock)
   }
-  private async assertFinal(sql: SqlQuery, actual: AcceptedAgentSource, record: SourceMaterializationRecord, finalHash: string,
+  private async assertFinal(sql: GraphSqlClient, actual: AcceptedAgentSource, record: SourceMaterializationRecord, finalHash: string,
     lock: boolean): Promise<void> {
     const share = lock ? ' for share' : ''
     const row = (await sql.query<{ record: unknown }>(`select record from execution_native_placements where execution_id=$1${share}`, [record.receipt.executionId])).rows[0]
@@ -83,7 +84,7 @@ export class AgentSourceAttemptAuthority implements SourceAttemptAuthority {
     await this.authorizeAccepted(sql, actual, { workspaceId: actual.run.workspaceId, root: SourceRootRecordSchema.parse(rootRow?.record), attempt: record.receipt, operationId: record.operationId })
   }
   /** Revalidation only reads: it uses committed rows and is replayed after a lock or statement timeout. */
-  private async read<T>(operation: (sql: SqlQuery) => Promise<T>): Promise<T> {
+  private async read<T>(operation: (sql: GraphSqlClient) => Promise<T>): Promise<T> {
     return retryDatabaseRead(() => withTransaction(this.pool, operation))
   }
   revalidate(root: SourceRootRecord, attempt: MaterializationAttempt): Promise<void> {
@@ -105,7 +106,7 @@ export class AgentSourceAttemptAuthority implements SourceAttemptAuthority {
 }
 /** Selection is actual persisted execution subject membership, never caller kind. */
 export function installedSourceAttemptAuthority(pool: pg.Pool, agent: SourceAttemptAuthority, job: SourceAttemptAuthority): SourceAttemptAuthority {
-  async function selected(sql: SqlQuery, id: string) {
+  async function selected(sql: GraphSqlClient, id: string) {
     const subjects = (await sql.query<{ kind: string }>(`select 'agent' kind from harness_executions where id=$1
       union all select 'job' kind from job_preparations where execution_id=$1
       union all select 'job' kind from workflow_job_preparations where preparation->>'executionId'=$1`, [id])).rows
@@ -128,7 +129,7 @@ export function installedSourceAttemptAuthority(pool: pg.Pool, agent: SourceAtte
 
 /** Full-tree verification is always allowed; a child CWD must be the exact
  * original accepted Agent path. Job preparations use their clone root. */
-export async function assertAcceptedSourceRelativeCwd(sql: SqlQuery, executionId: string, relativeCwd: string): Promise<void> {
+export async function assertAcceptedSourceRelativeCwd(sql: GraphSqlClient, executionId: string, relativeCwd: string): Promise<void> {
   if (!relativeCwd) return
   const execution = (await sql.query<{ run_id: string; workflow_node_id: string }>('select run_id,workflow_node_id from harness_executions where id=$1 for share', [executionId])).rows[0]
   const placement = execution ? await readAcceptedPlacement(sql, execution.run_id, execution.workflow_node_id) : undefined

@@ -1,25 +1,25 @@
 import { fork } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import type { WorkflowSchedule } from '@foreman-code/contracts/schedules'
-import type { ScheduleChildInput, ScheduleChildMessage } from './scheduleDispatcherChild.js'
-import type { ScheduleDispatchFixture } from './scheduleFixture.js'
+import type { Sch11ChildInput, Sch11ChildMessage } from './scheduleDispatcherChild.js'
+import type { Sch11Fixture } from './scheduleFixture.js'
 
 /** Real OS-process faults, with IPC barriers and watchdogs. All subprocesses are
  * owned by this fixture and reaped in finally blocks; no application is launched. */
-export function scheduleDispatcherProcess(f: ScheduleDispatchFixture, observed: WorkflowSchedule, mode: ScheduleChildInput['mode']) {
+export function sch11Child(f: Sch11Fixture, observed: WorkflowSchedule, mode: Sch11ChildInput['mode']) {
   const child = fork(fileURLToPath(new URL('./scheduleDispatcherChild.ts', import.meta.url)), [], {
     execArgv: ['--import', 'tsx'], stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     env: { ...process.env, TEST_DATABASE_URL: f.database.databaseUrl },
   })
   let stderr = '', terminalError: Error | undefined, finished = false
   let exitResult: { code: number | null; signal: NodeJS.Signals | null } | undefined
-  const messages: ScheduleChildMessage[] = []
+  const messages: Sch11ChildMessage[] = []
   const waiting = new Set<() => void>()
   const notify = () => { for (const fn of waiting) fn() }
   // Keep diagnostics bounded even when a product failure logs repeatedly.
   child.stderr?.on('data', (chunk: Buffer) => { stderr = (stderr + chunk.toString()).slice(-8_000) })
   child.stdout?.resume()
-  child.on('message', (message: ScheduleChildMessage) => {
+  child.on('message', (message: Sch11ChildMessage) => {
     messages.push(message)
     if (message.kind === 'error') terminalError = new Error(message.message ?? 'Child dispatch failed')
     notify()
@@ -28,14 +28,14 @@ export function scheduleDispatcherProcess(f: ScheduleDispatchFixture, observed: 
   const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
     child.once('exit', (code, signal) => { finished = true; exitResult = { code, signal }; resolve(exitResult); notify() })
   })
-  const input: ScheduleChildInput = { schema: f.database.schema, directory: f.database.directory,
+  const input: Sch11ChildInput = { schema: f.database.schema, directory: f.database.directory,
     projectRoot: f.projectRoot, runtimeRoot: f.runtimeRoot, now: f.time.now, observed, mode }
   child.send(input, (error) => { if (error) { terminalError = error; notify() } })
 
-  function waitFor(kind: ScheduleChildMessage['kind']): Promise<ScheduleChildMessage> {
+  function waitFor(kind: Sch11ChildMessage['kind']): Promise<Sch11ChildMessage> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => finish(new Error(`SCH-11 child did not reach ${kind}: ${stderr}`)), 15_000)
-      const finish = (error?: Error, value?: ScheduleChildMessage) => {
+      const finish = (error?: Error, value?: Sch11ChildMessage) => {
         clearTimeout(timer); waiting.delete(check)
         if (error) reject(error)
         else resolve(value!)

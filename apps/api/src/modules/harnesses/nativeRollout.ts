@@ -1,7 +1,7 @@
+import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
 import { readProductEnvironment } from '@foreman-code/contracts/product-environment'
 import type { RecordedAgentHarness, OperatorConfigurationVersion } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
-import { retiredHarnessError } from './retiredHarness.js'
 
 /** An exact provider version is necessary, but is not a production/parity approval. */
 export class NativeRollout {
@@ -28,7 +28,8 @@ export class NativeRollout {
   }
   assertChat(configuration: OperatorConfigurationVersion): void {
     const harness = configuration.harness.harness
-    if (harness === 'opencode') throw retiredHarnessError()
+    if (harness === 'opencode') throw new DomainError('HARNESS_RETIRED',
+      RETIRED_OPENCODE_MESSAGE, 409)
     if (!this.enabled(harness)) throw new DomainError('OPERATOR_NATIVE_CAPABILITY_DISABLED',
       harness === 'codex'
         ? 'Codex execution is disabled for this runtime. Supported local installations enable it by default; native qualification remains required.'

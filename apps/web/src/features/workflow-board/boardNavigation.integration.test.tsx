@@ -6,12 +6,14 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, Outlet, RouterProvider, useLocation, useNavigate } from '@tanstack/react-router'
-import { WorkspaceBoardSearchSchema, boardSearchForRun, resolveWorkflowBoardLocation } from '@foreman-code/contracts/current'
+import { WorkspaceBoardSearchSchema, boardSearchForRun, resolveWorkflowBoardLocation } from '@foreman-code/contracts/wave25'
 import { UnsavedChangesProvider } from '../../shared/ui/UnsavedChangesProvider'
 import { queryKeys } from '../../shared/api/query'
-import { NextDraftEditor, useGraphDraftStore } from '../graph'
-import { nextDraftKey, WorkflowBoardProvider } from '../board-core'
+import { NextDraftEditor } from '../graph/nextDraft/NextDraftEditor'
+import { nextDraftKey } from '../graph/nextDraft/state'
 import { fixture } from '../graph/nextDraft/core.cases'
+import { useGraphDraftStore } from '../graph/store'
+import { WorkflowBoardProvider } from './context'
 
 const mounts = vi.hoisted(() => ({ canvas: 0, disposed: 0 }))
 vi.mock('../graph/nextDraft/DraftCanvas', () => ({

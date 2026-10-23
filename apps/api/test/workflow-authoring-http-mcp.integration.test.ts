@@ -5,9 +5,9 @@ import { ManagementActionSchema, type ManagementGrant } from '@foreman-code/cont
 import {
   CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveInputSchema, CurrentWorkflowSaveResultSchema,
   CurrentWorkflowReadResultSchema, SavedManagedWorkflowCommandResultSchema, makeCurrentWorkflowFixture,
-  CANONICAL_RUN_GRAPH_MCP_TOOLS, RepeatGraphSnapshotCurrentSchema, CurrentEditReadResultSchema,
+  CANONICAL_RUN_GRAPH_MCP_TOOLS, RepeatGraphSnapshotV3Schema, CurrentEditReadResultSchema,
   type CurrentFixtureForm,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
@@ -21,7 +21,7 @@ import { RunManagementService } from '../src/modules/runs/management.js'
 import type { LangGraphWorkflowEngine } from '../src/modules/runs/engine.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { RunGraphReadService } from '../src/modules/run-graph/readService.js'
-import { currentDatabase, postgresEnabled } from './helpers/database.js'
+import { currentDatabase as agent3Database, postgresEnabled } from './helpers/database.js'
 import { graphRpc, graphRpcValue, graphHeaders } from './graph-composition-fixture.js'
 import { insertCurrentRunFixture as insertFixtureRepeatRun } from './helpers/currentRunFixture.js'
 
@@ -29,9 +29,9 @@ import { insertCurrentRunFixture as insertFixtureRepeatRun } from './helpers/cur
  * stateless Operator MCP. The engine below is a FAILING tripwire only for denied
  * admission tests; this suite does not claim native execution or native closure. */
 describe.skipIf(!postgresEnabled)('ENG04-B unified current workflow HTTP/MCP', () => {
-  let db: Awaited<ReturnType<typeof currentDatabase>>
+  let db: Awaited<ReturnType<typeof agent3Database>>
   const apps: ReturnType<typeof buildApp>[] = []
-  beforeAll(async () => { db = await currentDatabase() }, 60000)
+  beforeAll(async () => { db = await agent3Database() }, 60000)
   afterEach(async () => { await Promise.all(apps.splice(0).map((app) => app.close())) })
   afterAll(async () => { await db?.close() })
   async function fixture(form: CurrentFixtureForm = 'sequential') {
@@ -409,7 +409,7 @@ describe.skipIf(!postgresEnabled)('ENG04-B unified current workflow HTTP/MCP', (
       expect(http.body).not.toContain('CURRENT-PRIVATE-INPUT'); expect(http.body).not.toContain(db.directory)
       expect(http.body).not.toContain(t.writer.token); expect(http.body).not.toContain(t.writer.principal.id)
     }
-    const baseline = RepeatGraphSnapshotCurrentSchema.parse(graphRpcValue((await t.call(CANONICAL_RUN_GRAPH_MCP_TOOLS.snapshot, request, reader.token)).result))
+    const baseline = RepeatGraphSnapshotV3Schema.parse(graphRpcValue((await t.call(CANONICAL_RUN_GRAPH_MCP_TOOLS.snapshot, request, reader.token)).result))
     expect(baseline.state.occurrences).toEqual([]); expect(baseline.asOfSequence).toBe('1')
     expect(Object.hasOwn(accepted.run, 'repeat')).toBe(false)
     if (form !== 'repeat') {

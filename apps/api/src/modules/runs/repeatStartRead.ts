@@ -1,19 +1,18 @@
 import { timeRuntimeOperation } from '../../infrastructure/runtimeTiming.js'
 import type { AgentConfigurationVersion } from '@foreman-code/contracts'
 import {
-  AcceptedWorkflowRunCurrentSchema, assertExecutableWorkflow, assertSavedRunVersionSnapshot,
-  type AcceptedWorkflowRunCurrent, type RepeatWorkflowVersionV1,
-} from '@foreman-code/contracts/current'
+  AcceptedWorkflowRunV3Schema, assertExecutableWorkflow, assertSavedRunVersionSnapshot,
+  type AcceptedWorkflowRunV3, type RepeatWorkflowVersionV1,
+} from '@foreman-code/contracts/wave25'
 import { DomainError } from '../errors.js'
-import { assertGraphTransaction, isReadOnlyGraphTransaction } from '../run-graph/connection.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { assertGraphTransaction, isReadOnlyGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
 import {
   IMMUTABLE_WORKFLOW_VERSION_COLUMNS, readImmutableWorkflowVersion, readPinnedAgentConfigurations,
   type ImmutableWorkflowVersionRow, type ImmutableAgentConfigurationRow,
 } from '../workflows/immutableRead.js'
 
 export interface AcceptedRepeatRunSnapshot {
-  run: AcceptedWorkflowRunCurrent
+  run: AcceptedWorkflowRunV3
   version: RepeatWorkflowVersionV1
   configurations: AgentConfigurationVersion[]
   stopRequested: boolean
@@ -30,22 +29,22 @@ interface RunRow {
  * not read current workflow/draft/Agent heads or call filesystem/provider code.
  * Do not replace the central repository's old 1/2 parser with a permissive union;
  * its explicit third arm must call this after acquiring the appropriate locks. */
-export function readAcceptedRepeatRunLocked(sql: SqlTransaction, runId: string): Promise<AcceptedRepeatRunSnapshot> {
+export function readAcceptedRepeatRunLocked(sql: GraphTransactionSql, runId: string): Promise<AcceptedRepeatRunSnapshot> {
   return readAcceptedRepeatRun(sql, runId, 'for share of r', 'executable')
 }
 
 /** The Run, physical columns and lifecycle flags share one committed SQL cut.
  * Remaining rows are immutable pins. This read grants no mutation authority. */
-export function readAcceptedRepeatRunSnapshot(sql: SqlTransaction, runId: string): Promise<AcceptedRepeatRunSnapshot> {
+export function readAcceptedRepeatRunSnapshot(sql: GraphTransactionSql, runId: string): Promise<AcceptedRepeatRunSnapshot> {
   return readAcceptedRepeatRun(sql, runId, '', 'executable')
 }
 
 /** Unlocked committed history snapshot; it grants no execution authority. */
-export function readRecordedRepeatRunSnapshot(sql: SqlTransaction, runId: string): Promise<AcceptedRepeatRunSnapshot> {
+export function readRecordedRepeatRunSnapshot(sql: GraphTransactionSql, runId: string): Promise<AcceptedRepeatRunSnapshot> {
   return readAcceptedRepeatRun(sql, runId, '', 'recorded')
 }
 
-function readAcceptedRepeatRun(sql: SqlTransaction, runId: string,
+function readAcceptedRepeatRun(sql: GraphTransactionSql, runId: string,
   lock: '' | 'for share of r', configurationPolicy: 'executable' | 'recorded'): Promise<AcceptedRepeatRunSnapshot> {
   return timeRuntimeOperation('db', 'snapshot.read_run', async () => {
     assertGraphTransaction(sql)
@@ -56,7 +55,7 @@ function readAcceptedRepeatRun(sql: SqlTransaction, runId: string,
       from runs r where r.id=$1 ${lock}`, [runId])
     const row = found.rows[0]
     if (found.rows.length !== 1 || !row) throw new DomainError('RUN_NOT_FOUND', 'The exact Run was not found.', 404)
-    const run = AcceptedWorkflowRunCurrentSchema.parse(row.record)
+    const run = AcceptedWorkflowRunV3Schema.parse(row.record)
     if (run.id !== runId || row.id !== run.id || row.workspace_id !== run.workspaceId
       || row.workflow_id !== run.workflowId || row.workflow_version_id !== run.workflowVersionId
       || row.execution_state !== run.executionState || row.runner_id !== run.executionLocation.runnerId

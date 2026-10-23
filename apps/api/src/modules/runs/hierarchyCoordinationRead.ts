@@ -1,6 +1,6 @@
 import { ExecutionRefSchema, HarnessExecutionSchema, WorkflowHierarchyCoordinationSchema,
   type WorkflowHierarchyCoordination } from '@foreman-code/contracts'
-import type { WorkflowVersionCurrent } from '@foreman-code/contracts/current'
+import type { WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import { isHierarchyWorkflow, parseHierarchyWorkResult } from './hierarchyResults.js'
 import { repeatConflict, repeatDigest, sameRepeatValue } from './repeatResolution.js'
 
@@ -11,7 +11,7 @@ interface CoordinationQuery {
 /** Bounded read of the selected historical Run. Native payloads remain in their
  * existing evidence rows; the shared Overview receives exact references only. */
 export async function readHierarchyCoordinationLocked(sql: CoordinationQuery, runId: string,
-  version: WorkflowVersionCurrent): Promise<WorkflowHierarchyCoordination | undefined> {
+  version: WorkflowVersionV3): Promise<WorkflowHierarchyCoordination | undefined> {
   const run = (await sql.query<{ record: { id: string; workflowVersionId: string; resultProtocol?: 'f1-f4-v1';
     executionState: string; outcome: string }; stopped: boolean }>(
     `select record,stop_requested_at is not null as stopped from runs where id=$1 and workflow_version_id=$2`,

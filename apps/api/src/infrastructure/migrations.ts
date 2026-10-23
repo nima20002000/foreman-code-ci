@@ -1,35 +1,3 @@
-import {
-  agentCiActivityMigration,
-  ciActivityRequesterLookupMigration,
-  ciActivityRunLockMigration,
-  ciDirectoryRetentionMigration,
-  ciDispatchClaimsMigration,
-  ciEnrollmentMigration,
-  ciExecutionHistoryMigration,
-  ciExecutorCleanupMigration,
-  ciFailureHistoryMigration,
-  ciFileDurationsMigration,
-  ciGateSpeedIndexMigration,
-  ciGrantMigration,
-  ciGroupWaitMigration,
-  ciHostSlotsMigration,
-  ciIntegrationSelectionMigration,
-  ciLogTailMigration,
-  ciRecoveryIndexesMigration,
-  ciRequestSharingMigration,
-  ciRequesterHistoryMigration,
-  ciResultCacheMigration,
-  ciRetainedExecutorsMigration,
-  ciRuntimeMainComputerMigration,
-  ciRuntimePreparationMigration,
-  ciSharedActivityMigration,
-  ciTestResultsMigration,
-  ciTicketChangesMigration,
-  hostCiActivityMigration,
-  hostCiRunsMigration,
-  ciActivityEventsMigration,
-} from '../modules/ci/migrations.js'
-import { ciActivityConsumerMigration } from '../modules/runs/ciActivityConsumerMigration.js'
 import { memoryRepeatDecisionMigration } from './memoryRepeatDecisionMigration.js'
 import { memoryWaitingForUserMigration } from './memoryWaitingForUserMigration.js'
 import { workflowKanbanMigration } from './workflowKanbanMigration.js'
@@ -43,13 +11,19 @@ import { hierarchyControlSettlementMigration } from './hierarchyControlSettlemen
 import { workflowChatMigration } from './workflowChatMigration.js'
 import { operatorSummaryActivityMigration } from './operatorSummaryActivityMigration.js'
 import { workflowControlsMigration } from './workflowControlsMigration.js'
+import { ciIntegrationSelectionMigration } from './ciIntegrationSelectionMigration.js'
+import { ciExecutorCleanupMigration } from './ciExecutorCleanupMigration.js'
+import { ciRetainedExecutorsMigration } from './ciRetainedExecutorsMigration.js'
 import { computerNamesMigration } from './computerNamesMigration.js'
+import { ciFailureHistoryMigration } from './ciFailureHistoryMigration.js'
+import { ciGateSpeedIndexMigration } from './ciGateSpeedIndexMigration.js'
 import { commandReceiptRetentionMigration } from './commandReceiptRetentionMigration.js'
 import { activityHistoryIndexesMigration } from './activityHistoryIndexesMigration.js'
 import { artifactTransferLookupMigration } from './artifactTransferLookupMigration.js'
 import { jobInputTransferLookupMigration } from './jobInputTransferLookupMigration.js'
 import { deviceManagedMcpMigration } from './deviceManagedMcpMigration.js'
 import { workflowAuthoringMigration } from './workflowAuthoringMigration.js'
+import { ciGrantMigration } from './ciGrantMigration.js'
 import { runWorktreesMigration } from './runWorktreesMigration.js'
 import { executionWorktreesMigration } from './executionWorktreesMigration.js'
 import { workflowFileContextSessionMigration } from './workflowFileContextSessionMigration.js'
@@ -57,17 +31,35 @@ import { nativeBatchReadMigration } from './nativeBatchReadMigration.js'
 import { withTransaction } from './transaction.js'
 import { checkpointOwnerMigration } from './checkpointOwnerMigration.js'
 import { errorMessage } from '@foreman-code/contracts/server-kit'
-import { providerAccountsMigration, providerAccountObservationsMigration } from './providerAccountsMigration.js'
+import { providerAccountsMigration, providerAccountObservationsMigration } from '../modules/provider-accounts/migration.js'
 import { nativeProofSourceLimitMigration } from './nativeProofSourceLimitMigration.js'
 import { nativeActivityNoiseMigration } from './nativeActivityNoiseMigration.js'
 import { workspaceRepositoryImportsMigration } from './workspaceRepositoryImportsMigration.js'
 import { retiredHarnessCredentialsMigration } from './retiredHarnessCredentialsMigration.js'
 import { bugReportsMigration } from './bugReportsMigration.js'
 import { bugReportLifecycleMigration } from './bugReportLifecycleMigration.js'
+import { hostCiRunsMigration } from './hostCiRunsMigration.js'
+import { ciHostSlotsMigration } from './ciHostSlotsMigration.js'
+import { hostCiActivityMigration } from './hostCiActivityMigration.js'
+import { ciActivityRunLockMigration } from './ciActivityRunLockMigration.js'
+import { ciDispatchClaimsMigration } from './ciDispatchClaimsMigration.js'
 import { agentIntervalMigration } from './agentIntervalMigration.js'
+import { ciTestResultsMigration } from './ciTestResultsMigration.js'
+import { ciLogTailMigration } from './ciLogTailMigration.js'
 import { workResultRepairMigration } from './workResultRepairMigration.js'
 import { databaseHotQueriesMigration } from './databaseHotQueriesMigration.js'
 import { workflowOrderMigration } from './workflowOrderMigration.js'
+import { ciFileDurationsMigration } from './ciFileDurationsMigration.js'
+import { ciResultCacheMigration } from './ciResultCacheMigration.js'
+import { ciTicketChangesMigration } from './ciTicketChangesMigration.js'
+import { ciGroupWaitMigration } from './ciGroupWaitMigration.js'
+import { ciRecoveryIndexesMigration } from './ciRecoveryIndexesMigration.js'
+import { ciRequestSharingMigration } from './ciRequestSharingMigration.js'
+import { ciDirectoryRetentionMigration } from './ciDirectoryRetentionMigration.js'
+import { ciExecutionHistoryMigration } from './ciExecutionHistoryMigration.js'
+import { ciSharedActivityMigration } from './ciSharedActivityMigration.js'
+import { ciActivityRequesterLookupMigration } from './ciActivityRequesterLookupMigration.js'
+import { ciRequesterHistoryMigration } from './ciRequesterHistoryMigration.js'
 import { stateDeadlinesMigration } from './stateDeadlinesMigration.js'
 import { sessionControlsMigration } from './sessionControlsMigration.js'
 import { workerConversationBindingMigration } from './workerConversationBindingMigration.js'
@@ -98,15 +90,18 @@ import { operatorTurnRetirementMigration } from './operatorTurnRetirementMigrati
 import { claudeCallbackMigration } from './claudeCallbackMigration.js'
 import { nativeCorrelationProvidersMigration } from './nativeCorrelationProvidersMigration.js'
 import { runSubagentsMigration } from './runSubagentsMigration.js'
-import { deviceIdentityMigration } from './deviceIdentityMigration.js'
+import { deviceIdentityMigration } from '../modules/devices/migration.js'
 import { activitySnapshotMigration } from './activitySnapshotMigration.js'
 import { activitySourcesMigration } from './activitySourcesMigration.js'
 import { activityCommandSourcesMigration } from './activityCommandSourcesMigration.js'
-import { harnessInstanceSettingsMigration } from './harnessInstanceSettingsMigration.js'
-import { harnessInstanceProfileEvidenceMigration } from './harnessInstanceProfileEvidenceMigration.js'
+import { harnessInstanceSettingsMigration } from '../modules/harnesses/instanceSettings/migration.js'
+import { harnessInstanceProfileEvidenceMigration } from '../modules/harnesses/instanceSettings/profileMigration.js'
 import { computerSyncMigration } from './computerSyncMigration.js'
 import { computerSyncIdentityMigration } from './computerSyncIdentityMigration.js'
 import { buildComputersMigration } from './buildComputersMigration.js'
+import { ciRuntimePreparationMigration } from './ciRuntimePreparationMigration.js'
+import { ciRuntimeMainComputerMigration } from './ciRuntimeMainComputerMigration.js'
+import { ciEnrollmentMigration } from './ciEnrollmentMigration.js'
 import { workflowFailureCauseMigration } from './workflowFailureCauseMigration.js'
 import { workflowJobAttemptIdentityMigration } from './workflowJobAttemptIdentityMigration.js'
 import { workflowExecutionFailureMigration } from './workflowExecutionFailureMigration.js'
@@ -114,6 +109,7 @@ import { jobAdmissionQueueMigration } from './jobAdmissionQueueMigration.js'
 import { jobQueueCleanupMigration } from './jobQueueCleanupMigration.js'
 import { jobSourceCapacityWaitMigration } from './jobSourceCapacityWaitMigration.js'
 import { jobQueueCompletionMigration } from './jobQueueCompletionMigration.js'
+import { agentCiActivityMigration } from './agentCiActivityMigration.js'
 import { runActivityCommitOrderMigration } from './runActivityCommitOrderMigration.js'
 import { runActivityCommitLockMigration } from './runActivityCommitLockMigration.js'
 import { jobSelectionTimeMigration } from './jobSelectionTimeMigration.js'
@@ -144,9 +140,9 @@ import { jobArtifactXmlMigration } from './jobArtifactXmlMigration.js'
 import { jobOutputAdmissionMigration } from './jobOutputAdmissionMigration.js'
 import { jobInputAdmissionMigration } from './jobInputAdmissionMigration.js'
 import { agentPlacementProducerMigration } from './agentPlacementProducerMigration.js'
-import { sourceMetadataMigration } from './sourceMetadataMigration.js'
+import { sourceMetadataMigration } from '../modules/sources/migration.js'
 import { sourceSnapshotUsesMigration } from './sourceSnapshotUsesMigration.js'
-import { workspaceRootPoliciesMigration } from './workspaceRootPoliciesMigration.js'
+import { workspaceRootPoliciesMigration } from '../modules/sources/rootPoliciesMigration.js'
 import { sourcePreparationReconciliationMigration } from './sourcePreparationReconciliationMigration.js'
 import { workflowTerminalRecoveryMigration } from './workflowTerminalRecoveryMigration.js'
 import { workflowRestartRecoveryMigration } from './workflowRestartRecoveryMigration.js'
@@ -182,12 +178,12 @@ import { unifiedMcpMigration } from './unifiedMcpMigration.js'
 import { operatorApprovalRemovalMigration } from './operatorApprovalRemovalMigration.js'
 import { wave25RunGraphMigration } from './wave25RunGraphMigration.js'
 import { wave25ReliabilityMigration } from './wave25ReliabilityMigration.js'
-import { wave25ApprovalMigrationSql } from './wave25ApprovalMigration.js'
-import { nativeProjectionMigration } from './nativeProjectionMigration.js'
+import { wave25ApprovalMigrationSql } from '../modules/interactions/wave25/migration.js'
+import { nativeProjectionMigration } from '../modules/run-graph/nativeProjectionMigration.js'
 import { workHandoffMigration } from './workHandoffMigration.js'
 import { workNoticeMigration } from './workNoticeMigration.js'
 import { runActivitiesMigration } from './runActivitiesMigration.js'
-import { workflowScheduleDispatchMigration } from './workflowScheduleDispatchMigration.js'
+import { workflowScheduleDispatchMigration } from '../modules/schedules/dispatchMigration.js'
 import { workflowScheduleMigration } from './workflowScheduleMigration.js'
 import { runSnapshotMigration } from './runSnapshotMigration.js'
 import { runPresentationMigration } from './runPresentationMigration.js'
@@ -195,7 +191,7 @@ import { fileStorageMigration } from './fileStorageMigration.js'
 import { fileReferenceMigration } from './fileReferenceMigration.js'
 import { fileRetentionMigration } from './fileRetentionMigration.js'
 import { fileReferenceAccessMigration } from './fileReferenceAccessMigration.js'
-import { fileToolsMigration } from './fileToolsMigration.js'
+import { fileToolsMigration } from '../modules/files/tools/migration.js'
 import { harnessQualificationMigration } from './harnessQualificationMigration.js'
 import { workspaceProvisioningMigration } from './workspaceProvisioningMigration.js'
 import { workflowCollaborationMigration } from './workflowCollaborationMigration.js'
@@ -1060,8 +1056,6 @@ export const migrations = [
   draftChatCredentialsMigration,
   plainTextFilesMigration,
   workReplyRequestMigration,
-  ciActivityEventsMigration,
-  ciActivityConsumerMigration,
 ] as const
 
 /**

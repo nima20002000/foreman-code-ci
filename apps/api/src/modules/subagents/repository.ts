@@ -1,7 +1,7 @@
 import type { HarnessNativeEvent } from '@foreman-code/contracts'
 import { RunSubagentMessageSchema, RunSubagentSchema, RunSubagentToolSchema, subagentCapabilities,
   type RunSubagent, type SubagentSource } from '@foreman-code/contracts/subagents'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import { DomainError } from '../errors.js'
 import { sanitizeSubagentText, sanitizeSubagentValue } from './normalization.js'
 import type { SubagentChange, SubagentProjectionContext, SubagentStoredItem } from './types.js'
@@ -9,7 +9,7 @@ import { sha256Hex } from '../../shared/hash.js'
 
 export const subagentId = (...identity: unknown[]) => sha256Hex(JSON.stringify(identity))
 const terminal = (status: string) => ['completed', 'failed', 'canceled'].includes(status)
-export async function readChildren(sql: SqlQuery, runId: string, executionId?: string): Promise<RunSubagent[]> {
+export async function readChildren(sql: GraphSqlClient, runId: string, executionId?: string): Promise<RunSubagent[]> {
   const rows = (await sql.query<{ record: unknown }>('select record from run_subagents where run_id=$1 and ($2::text is null or parent_execution_id=$2) order by id limit 1001', [runId, executionId ?? null])).rows
   if (rows.length > 1000) throw new DomainError('SUBAGENT_REGISTRY_LIMIT', 'The bounded child projection is full.', 409)
   return rows.map(row => RunSubagentSchema.parse(row.record))
@@ -22,16 +22,16 @@ function source(event: HarnessNativeEvent): SubagentSource {
     ...(typeof payload.turnId === 'string' ? { nativeTurnId: payload.turnId } : {}),
     ...(typeof payload.runtimeGeneration === 'number' || typeof payload.runtimeGeneration === 'string' ? { generation: String(payload.runtimeGeneration) } : {}) }
 }
-async function writeChild(sql: SqlQuery, child: RunSubagent) {
+async function writeChild(sql: GraphSqlClient, child: RunSubagent) {
   const parsed = RunSubagentSchema.parse(child)
   await sql.query(`update run_subagents set revision=$2,record=$3::jsonb where id=$1`, [child.id, child.revision, JSON.stringify(parsed)])
 }
-async function writeItem(sql: SqlQuery, kind: 'message' | 'tool', item: SubagentStoredItem) {
+async function writeItem(sql: GraphSqlClient, kind: 'message' | 'tool', item: SubagentStoredItem) {
   await sql.query(`insert into run_subagent_items(subagent_id,kind,id,revision,record) values($1,$2,$3,$4,$5::jsonb)
     on conflict(subagent_id,kind,id) do update set revision=excluded.revision,record=excluded.record`,
   [item.subagentId, kind, item.id, item.revision, JSON.stringify(item)])
 }
-export async function applySubagentChanges(sql: SqlQuery, context: SubagentProjectionContext, event: HarnessNativeEvent,
+export async function applySubagentChanges(sql: GraphSqlClient, context: SubagentProjectionContext, event: HarnessNativeEvent,
   changes: readonly SubagentChange[]): Promise<void> {
   const digest = subagentId(event)
   for (const change of changes) {

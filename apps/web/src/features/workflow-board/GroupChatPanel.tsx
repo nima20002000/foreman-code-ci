@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import type { BoardSidePanel } from '@foreman-code/contracts/current'
+import type { BoardSidePanel } from '@foreman-code/contracts/wave25'
 import { identityEpoch } from '../../shared/api/protectedChatStorage'
-import { WorkflowChatPanel } from '../workflow-chat'
+import { WorkflowChatPanel } from '../workflow-chat/WorkflowChatPanel'
 import { groupTargetResolver, readGroupParticipants } from './groupChatClient'
 
 export function GroupChatPanel({ workspaceId, workflowId, runId, onSelect }: {

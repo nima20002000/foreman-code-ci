@@ -14,7 +14,7 @@ export async function sessionControlProduct(input) {
     import('../../packages/contracts/dist/index.js'), import('../../packages/contracts/dist/agentChat.js'),
     import('../../packages/contracts/dist/management/index.js'), import('../../packages/contracts/dist/harnessRegistry.js'),
     import('../../packages/contracts/dist/nodePlacement.js'),
-    import('../../packages/contracts/dist/current/index.js'),
+    import('../../packages/contracts/dist/wave25/index.js'),
     import('../../packages/contracts/dist/workspaceRootPolicies.js'),
     import('../../packages/contracts/dist/workspaceBoundLocation.js'),
   ])

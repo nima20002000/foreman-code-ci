@@ -18,8 +18,8 @@ import { workerToolServices } from './workerMcpServices.js'
 import { codexApprovalRuntime } from './codexApprovalRuntime.js'
 import { DomainError } from '../../src/modules/errors.js'
 import {
-  AcceptedRepeatStartV1Schema, AcceptedWorkflowRunCurrentSchema, makeCurrentWorkflowFixture,
-} from '@foreman-code/contracts/current'
+  AcceptedRepeatStartV1Schema, AcceptedWorkflowRunV3Schema, makeCurrentWorkflowFixture,
+} from '@foreman-code/contracts/wave25'
 import { PostgresAppInteractionService } from '../../src/modules/interactions/app.js'
 import {
   acceptRunAuthority, bindRunAuthority, currentOperatorAuthority,
@@ -226,7 +226,7 @@ export async function fixture(options: { repository?: boolean; github?: Record<s
         const version = runtime.f.version
         const workflow = (await sql.query<{ revision: string }>(
           'select revision::text from workflows where id=$1', [version.workflowId])).rows[0]!
-        const run = AcceptedWorkflowRunCurrentSchema.parse({ ...runtime.f.run, id: randomUUID(),
+        const run = AcceptedWorkflowRunV3Schema.parse({ ...runtime.f.run, id: randomUUID(),
           authorizationPrincipalId: authority.principal.id })
         const accepted = AcceptedRepeatStartV1Schema.parse({ run, snapshot: {
           request: { workspaceId, workflowId: version.workflowId, workflowVersionId: version.id,

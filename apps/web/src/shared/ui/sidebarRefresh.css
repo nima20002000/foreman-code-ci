@@ -15,7 +15,7 @@
 .workspace-shell .shell-sidebar .nav-item-icon { opacity: .8; }
 .workspace-shell .shell-sidebar .nav-item-label { max-width: none; }
 .workspace-shell .shell-navigation .nav-submenu { padding-left: 12px; }
-.workspace-shell .shell-navigation .nav-submenu::before { left: 7px; background: color-mix(in srgb, var(--border) 70%, transparent); }
+.workspace-shell .shell-navigation .nav-submenu::before { left: 7px; background: color-mix(in srgb, var(--color-border) 70%, transparent); }
 
 /* Add actions: text rows, not outlined or dashed buttons. */
 .workspace-shell:not(.workspace-shell-navigation-collapsed) .shell-navigation .workspace-navigation-add,
@@ -35,12 +35,12 @@
 .workspace-shell .workflow-navigation-move,
 .workspace-shell .workflow-navigation-row .workflow-navigation-remove { top: 50%; transform: translateY(-50%); }
 .workspace-shell .workflow-navigation-row:is(:hover, :focus-within) :is(.workflow-navigation-move, .workflow-navigation-remove) {
-  background: var(--sidebar); border-radius: 6px;
+  background: var(--color-sidebar); border-radius: 6px;
 }
 .workspace-shell .workflow-navigation-row:is(:hover, :focus-within) .workflow-navigation-item .workflow-draft-badge { visibility: hidden; }
 
 /* Footer: one calm row of icons above a hairline. */
-.workspace-shell:not(.workspace-shell-navigation-collapsed) .sidebar-footer { padding-top: 12px; border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent); }
+.workspace-shell:not(.workspace-shell-navigation-collapsed) .sidebar-footer { padding-top: 12px; border-top: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent); }
 /* Footer: one quiet row of status icons (computers, cloud CI, harnesses); settings live behind the product name. */
 .workspace-shell:not(.workspace-shell-navigation-collapsed) .sidebar-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; }
 .workspace-shell:not(.workspace-shell-navigation-collapsed) .sidebar-footer > .harness-status-menu { margin-left: auto; }

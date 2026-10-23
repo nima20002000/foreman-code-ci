@@ -2,7 +2,7 @@ import { conversationDeliveryFixture } from '../src/modules/conversations/conver
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import { canonicalJson, effectiveGraphqlTools, type AgentSubject, type AgentConfigurationVersion, type NodeBrowserSettings, type ResolvedSkill } from '@foreman-code/contracts'
 import { randomUUID } from 'node:crypto'
-import type { NodeSkillOverride } from '@foreman-code/contracts/current'
+import type { NodeSkillOverride } from '@foreman-code/contracts/wave25'
 import { currentDatabase } from './helpers/database.js'
 import { workflowSettlementFixture } from './helpers/workflowSettlementFixture.js'
 import { BrowserAuthority } from '../src/modules/collaboration/browserAuthority.js'

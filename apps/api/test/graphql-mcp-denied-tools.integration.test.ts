@@ -3,7 +3,7 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
 import { readdir } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
-import { CURRENT_WORKFLOW_TOOLS, RUN_INSPECTION_TOOLS } from '@foreman-code/contracts/current'
+import { CURRENT_WORKFLOW_TOOLS, RUN_INSPECTION_TOOLS } from '@foreman-code/contracts/wave25'
 import { ManagedWorkspaceSchema } from '@foreman-code/contracts/management'
 
 import { SkillCatalogService } from '../src/modules/skills/catalog.js'
@@ -48,7 +48,8 @@ describe.skipIf(!postgresEnabled)('authenticated calls to hidden MCP tools', () 
         'skill_update', 'skill_archive', 'skill_usage_get', 'skill_users_update'].sort())
       expect(catalog).toEqual(expect.arrayContaining([
         'operator_get_capabilities', 'workspace_get', 'workspace_create', 'workspace_update', 'workspace_archive',
-        'workspace_location_set', 'workspace_folders_list', 'workspace_folder_create',
+        'workspace_location_set', 'workspace_storage_folders_list', 'workspace_storage_folder_delete',
+        'workspace_folders_list', 'workspace_folder_create', 'workspace_folder_rename', 'workspace_folder_undo',
         'workspace_folders_delete', 'harness_list', 'harness_qualification_run', 'execution_readiness_get',
         'harness_mcp_servers_list', 'codex_plugins_list', 'harness_instances_list', 'harness_instance_save',
         'agent_defaults_get', 'workspace_defaults_update', 'worker_execution_settings_get',

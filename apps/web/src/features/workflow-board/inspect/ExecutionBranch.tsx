@@ -1,4 +1,4 @@
-import type { RunExecutionSummary } from '@foreman-code/contracts/current'
+import type { RunExecutionSummary } from '@foreman-code/contracts/wave25'
 
 /** The Agent's own branch of the workspace repository, when its workspace has one. */
 export function ExecutionBranch({ execution }: { execution: RunExecutionSummary }) {

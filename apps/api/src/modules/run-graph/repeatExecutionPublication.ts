@@ -1,5 +1,5 @@
 import { repeatExecutionStateDigest } from './graphDigest.js'
-import { GraphSequenceSchema, canonicalGraphJson, type RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
+import { GraphSequenceSchema, canonicalGraphJson, type RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
 import type { RunOwnership } from '../runs/ownership.js'
 import { beforeGraphCommit, poisonGraphTransaction } from './connection.js'
 import { RunGraphError } from './errors.js'
@@ -11,7 +11,7 @@ import { requireRepeatCanonicalReceiptBeforeCommit } from './repeatReceipts.js'
  * source/effect receipt. Both proofs are required by the canonical snapshot.
  * Revision is a position from the EXISTING head; no additional counter/store.
  */
-export async function publishRepeatExecutionStateLocked(publication: RunGraphPublication<RepeatGraphScopeCurrent>,
+export async function publishRepeatExecutionStateLocked(publication: RunGraphPublication<RepeatGraphScopeV3>,
   owner: RunOwnership, executionId: string): Promise<void> {
   const { sql, scope } = publication
   try {

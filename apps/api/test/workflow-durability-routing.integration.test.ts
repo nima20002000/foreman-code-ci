@@ -2,7 +2,7 @@ import { agentWorkflowVersion } from './helpers/agentWorkflowFixture.js'
 import { randomUUID } from 'node:crypto'
 import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { reduceRepeatGraphPageCurrent, makeCurrentWorkflowFixture, ExecutableWorkflowCurrentSchema } from '@foreman-code/contracts/current'
+import { reduceRepeatGraphPageV3, makeCurrentWorkflowFixture, ExecutableWorkflowV3Schema } from '@foreman-code/contracts/wave25'
 import { readRepeatGraphPage, readRepeatGraphSnapshot } from '../src/modules/run-graph/repeatReader.js'
 import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
 import { approvalResponse } from './helpers/approvalResponse.js'
@@ -26,7 +26,7 @@ function fanInFixture() {
     { id: 'm-unused-join', kind: 'execution' as const, source: 'unused', target: 'join' },
     { id: 'a-slow2-join', kind: 'execution' as const, source: 'slow2', target: 'join' },
   ]
-  const version = ExecutableWorkflowCurrentSchema.parse({ configurations, version: {
+  const version = ExecutableWorkflowV3Schema.parse({ configurations, version: {
     ...fixture.version, entryNodeId: 'entry',
     agentConfigurationVersionIds: Object.fromEntries(configurations.map((item) => [item.agentId, item.id])),
     definition: { ...fixture.version.definition, entryNodeId: 'entry',
@@ -87,7 +87,7 @@ describe.skipIf(!postgresEnabled)('Current workflow result and checkpoint durabi
       for (;;) {
         const page = await readRepeatGraphPage(t.db.pool, { scope: t.f.scope, protocolVersion: 1, afterSequence: replay.asOfSequence }, async () => undefined)
         if (page.kind !== 'page') throw new Error('Unexpected graph reset')
-        replay = reduceRepeatGraphPageCurrent(replay, page)
+        replay = reduceRepeatGraphPageV3(replay, page)
         if (page.kind === 'page' && !page.hasMore) break
       }
       expect(replay).toEqual(current)

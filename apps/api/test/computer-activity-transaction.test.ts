@@ -3,25 +3,27 @@ import { expect, it, vi } from 'vitest'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { ComputerActivityService, type CloudCiService } from '../src/modules/computers/activity.js'
 import type { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { liveAuthorityQuery, livePrincipalRow } from './helpers/livePrincipal.js'
 
 function fixture() {
-  const mainId = '11111111-1111-4111-8111-111111111111'
   const principal: ManagementPrincipal = { id: 'actor', name: 'Actor', audience: 'operator',
     grants: [{ actions: ['settings:read', 'jobs:read', 'runs:read'], scope: {} }],
     expiresAt: '2099-01-01T00:00:00.000Z', revokedAt: null }
   const state = { connections: 0, revoked: false }
   const pool = { connect: async () => {
     state.connections++
-    return { release: () => { state.connections-- }, query: liveAuthorityQuery(
-      id => id === principal.id ? livePrincipalRow(principal, { revoked: state.revoked }) : undefined,
-      // The running-count read binds the Main's cloud host-key pattern; every other read finds nothing.
-      (_sql, values) => values[0] === `${mainId}:cloud:%` ? { rows: [{ provider: 'github', running: 2 }] } : { rows: [] }) }
+    return { release: () => { state.connections-- }, query: async (sql: string) => {
+      if (sql.includes('from management_principals')) return { rows: [{
+        id: principal.id, name: principal.name, audience: principal.audience, grants: principal.grants,
+        expires_at: new Date(principal.expiresAt), revoked_at: state.revoked ? new Date() : null, delegated_from: null,
+      }] }
+      if (sql.includes('from ci_runs') && sql.includes('group by')) return { rows: [{ provider: 'github', running: 2 }] }
+      return { rows: [] }
+    } }
   } } as unknown as pg.Pool
   const cloud: CloudCiService = { provider: { id: 'github', label: 'GitHub Actions', slots: 16 },
     ready: vi.fn(async () => true) }
   const recordDenied = vi.fn(async () => undefined)
-  const service = new ComputerActivityService(pool, mainId, () => null,
+  const service = new ComputerActivityService(pool, '11111111-1111-4111-8111-111111111111', () => null,
     { recordDenied } as unknown as PostgresCommandCoordinator, [cloud])
   return { service, principal, cloud, state, recordDenied }
 }

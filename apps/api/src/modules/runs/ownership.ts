@@ -2,11 +2,10 @@ import { beginRuntimeTiming } from '../../infrastructure/runtimeTiming.js'
 import type pg from 'pg'
 import { createDedicatedClient } from '../../infrastructure/pool.js'
 
-import { ExclusiveGraphConnection } from '../run-graph/connection.js'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import { ExclusiveGraphConnection, type GraphSqlClient } from '../run-graph/connection.js'
 import { memoizeNativeRead } from '../run-graph/nativeBatch.js'
 import { DomainError } from '../errors.js'
-import { ignoreError } from '../diagnostics/index.js'
+import { ignoreError } from '../diagnostics/ignoredError.js'
 
 /**
  * PostgreSQL, not an API process's maps, arbitrates execution ownership.
@@ -58,13 +57,13 @@ export class RunOwnership {
   }
 
   /** PostgreSQL session identity and actual held lock, not a cached/echoed lease. */
-  async readOneShotFence(sql: SqlQuery): Promise<{ ownerId: string; fence: string }> {
+  async readOneShotFence(sql: GraphSqlClient): Promise<{ ownerId: string; fence: string }> {
     this.assertOwned()
     // Inside a native batch the session advisory lock is read once at start and once at COMMIT.
     return memoizeNativeRead(sql, `fence:${this.runId}`, () => this.readHeldFence(sql))
   }
 
-  private async readHeldFence(sql: SqlQuery): Promise<{ ownerId: string; fence: string }> {
+  private async readHeldFence(sql: GraphSqlClient): Promise<{ ownerId: string; fence: string }> {
     const result = await sql.query<{ owner_id: string; fence: string }>(
       `select pg_backend_pid()::text as owner_id,
               (extract(epoch from a.backend_start)*1000000)::bigint::text as fence

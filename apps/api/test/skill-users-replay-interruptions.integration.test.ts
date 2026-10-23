@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import * as c from '@foreman-code/contracts/management'
-import * as current from '@foreman-code/contracts/current'
+import * as current from '@foreman-code/contracts/wave25'
 import { describe, expect, it, vi } from 'vitest'
 import { DomainError } from '../src/modules/errors.js'
 import { postgresEnabled } from './helpers/database.js'

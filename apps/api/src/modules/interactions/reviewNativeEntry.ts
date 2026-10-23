@@ -1,6 +1,6 @@
-import { canonicalGraphJson, type GraphEvidence } from '@foreman-code/contracts/current'
+import { canonicalGraphJson, type GraphEvidence } from '@foreman-code/contracts/wave25'
 import type { ReviewJob } from '@foreman-code/contracts'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import type { GraphTransactionSql } from '../run-graph/connection.js'
 import type { RunGraphPublication } from '../run-graph/publication.js'
 import { readRepeatExecutionLocked } from '../runs/repeatPostgres.js'
 import { readAcceptedRepeatRunLocked } from '../runs/repeatStartRead.js'
@@ -20,7 +20,7 @@ export async function reserveReviewNativeEntryLocked(publication: RunGraphPublic
   if ((await publication.sql.query(`insert into review_native_entries(job_id,run_id,execution_id,phase,record,record_json)
     values($1,$2,$3,'reserved',$4::jsonb,$5::text)`, [job.id, publication.scope.runId, executionId, recordJson, recordJson])).rowCount !== 1) return conflict()
 }
-export async function reviewEntryPhaseLocked(sql: SqlTransaction, job: ReviewJob, executionId: string): Promise<string> {
+export async function reviewEntryPhaseLocked(sql: GraphTransactionSql, job: ReviewJob, executionId: string): Promise<string> {
   const row = (await sql.query<{ phase: string; record: { job: ReturnType<typeof reviewJobIdentity> } }>(
     'select phase,record from review_native_entries where job_id=$1 and execution_id=$2 for update', [job.id, executionId])).rows[0]
   if (!row || !sameRepeatValue(row.record.job, reviewJobIdentity(job))) return conflict()
@@ -28,7 +28,7 @@ export async function reviewEntryPhaseLocked(sql: SqlTransaction, job: ReviewJob
 }
 /** Invoked in the SAME mutation and publication as the review state change.
  * A recorded submitted state never authorizes resubmission after unknown COMMIT. */
-export async function transitionReviewNativeEntryLocked(sql: SqlTransaction, job: ReviewJob, executionId: string,
+export async function transitionReviewNativeEntryLocked(sql: GraphTransactionSql, job: ReviewJob, executionId: string,
   phase: 'entered' | 'not_submitted', source: { evidence: GraphEvidence; sourceDigest: string }, proof?: ReviewNativeProofRecord): Promise<void> {
   const current = await reviewEntryPhaseLocked(sql, job, executionId)
   if (current === phase && phase === 'not_submitted') return // immutable first sealed receipt remains authoritative

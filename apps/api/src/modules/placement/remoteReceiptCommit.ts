@@ -1,25 +1,25 @@
 import { DeviceConnectionIdentitySchema, type DeviceConnectionIdentity } from '@foreman-code/contracts/device-identity'
 import { RemoteOperationReceiptSchema, type RemoteOperationReceipt } from '@foreman-code/contracts/remote-execution'
 import type { DispatchIntent, AcceptedNodePlacement } from '@foreman-code/contracts/node-placement'
-import { sameWorkflowValue } from '@foreman-code/contracts/current'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
-import { beforeGraphCommit, isGraphTransactionFinalizing } from '../run-graph/index.js'
+import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
+import type { GraphTransactionSql } from '../run-graph/connection.js'
+import { beforeGraphCommit, isGraphTransactionFinalizing } from '../run-graph/connection.js'
 import type { RunOwnership } from '../runs/ownership.js'
 import { readReconciledDispatchIntent, persistVerifiedRemoteReceipt, auditRejectedRemoteReceipt } from '../runs/remote/persistence.js'
 import type { RemoteResultCommitPort, RemoteResultTransaction, VerifiedRemoteEvidence } from '../runs/remote/resultBridge.js'
 import { readAcceptedPlacement } from './persistence.js'
 import { DomainError } from '../errors.js'
-import { sameDeviceInstallation } from '../devices/index.js'
+import { sameDeviceInstallation } from '../devices/deviceReconnect.js'
 
 /** Live original owner/device/root/config/credential fences and the existing
  * native canonical writer, all on THIS branded main transaction. The writer
  * must consume verified remote original-source evidence, never a local capture
  * cast or a digest standing in for W11 physical/W09 artifact attestation. */
 export interface RemoteReceiptDomain {
-  assertCurrent(sql: SqlTransaction, intent: DispatchIntent, placement: AcceptedNodePlacement, connection: DeviceConnectionIdentity): Promise<void>
-  publishNative(sql: SqlTransaction, owner: RunOwnership, evidence: VerifiedRemoteEvidence): Promise<void>
+  assertCurrent(sql: GraphTransactionSql, intent: DispatchIntent, placement: AcceptedNodePlacement, connection: DeviceConnectionIdentity): Promise<void>
+  publishNative(sql: GraphTransactionSql, owner: RunOwnership, evidence: VerifiedRemoteEvidence): Promise<void>
 }
-async function accepted(sql: SqlTransaction, intent: DispatchIntent) {
+async function accepted(sql: GraphTransactionSql, intent: DispatchIntent) {
   const current = await readReconciledDispatchIntent(sql, intent.operationId, true)
   const placement = await readAcceptedPlacement(sql, intent.runId, intent.nodeId)
   if (!current || !placement || !sameWorkflowValue(current, intent) || placement.bindingHash !== intent.bindingHash) {
@@ -34,7 +34,7 @@ function matches(connection: DeviceConnectionIdentity, placement: AcceptedNodePl
 }
 /** Existing owner invokes BEFORE the first prepare request. Read-only status
  * reconciliation never replaces this original delivery connection. */
-export async function reserveRemoteDispatchOrigin(sql: SqlTransaction, owner: RunOwnership, intent: DispatchIntent,
+export async function reserveRemoteDispatchOrigin(sql: GraphTransactionSql, owner: RunOwnership, intent: DispatchIntent,
   raw: DeviceConnectionIdentity, domain: Pick<RemoteReceiptDomain, 'assertCurrent'>): Promise<void> {
   owner.assertOwned()
   if (owner.runId !== intent.runId) throw new DomainError('REMOTE_RUN_OWNER_CONFLICT', 'Use the original Run owner.', 409)

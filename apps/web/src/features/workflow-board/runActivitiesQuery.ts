@@ -1,7 +1,7 @@
 import type { ActivitySnapshotV1 } from '@foreman-code/contracts/activity'
 import { reconcileActivitySnapshot } from '../conversations/agentChat/activityMerge'
-import { RepeatGraphScopeCurrentSchema, RunActivitiesPageSchema, RUN_ACTIVITIES_RETAINED,
-  type RunActivitiesPage, type RunActivityPublic } from '@foreman-code/contracts/current'
+import { RepeatGraphScopeV3Schema, RunActivitiesPageSchema, RUN_ACTIVITIES_RETAINED,
+  type RunActivitiesPage, type RunActivityPublic } from '@foreman-code/contracts/wave25'
 import { apiClient, ApiError, type RequestOptions } from '../../shared/api/client'
 import { assertSession, sessionGeneration } from '../../shared/api/sessionBoundary'
 
@@ -19,7 +19,7 @@ export function isTransientRunActivityError(error: unknown): boolean {
 }
 
 export async function readRunActivities(scope: RunActivityScope, cursor: string | null = null, options?: RequestOptions): Promise<RunActivitiesPage> {
-  if ('executionSemanticsVersion' in scope) RepeatGraphScopeCurrentSchema.parse(scope)
+  if ('executionSemanticsVersion' in scope) RepeatGraphScopeV3Schema.parse(scope)
   RunActivitiesPageSchema.shape.scope.omit({ executionSemanticsVersion: true }).parse({
     workspaceId: scope.workspaceId, workflowId: scope.workflowId, runId: scope.runId, workflowVersionId: scope.workflowVersionId,
   })

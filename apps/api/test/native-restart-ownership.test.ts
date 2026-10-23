@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest'
 import { DEFAULT_HARNESS_DEFAULTS, type AgentConfigurationVersion, type HarnessExecution,
   type NativeSessionReference } from '@foreman-code/contracts'
 import type { NativeHarnessSessionManager } from '../src/modules/harnesses/port.js'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../src/modules/errors.js'
 import { RuntimeShutdown } from '../src/infrastructure/runtimeShutdown.js'
 import { deviceRequestTimeoutMs } from '../src/modules/devices/deviceRequestRetry.js'

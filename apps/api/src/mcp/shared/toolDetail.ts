@@ -1,6 +1,6 @@
 /**
  * Guidance beyond a tool's one- or two-sentence description. It travels in the tool's _meta, so
- * tools/list stays small, and tool_schema serves it on demand.
+ * tools/list stays small, and tool_schema and operator_tool_schema_get serve it on demand.
  */
 export const TOOL_DETAIL_META = 'foreman/detail'
 

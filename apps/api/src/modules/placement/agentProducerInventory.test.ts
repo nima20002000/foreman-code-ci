@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { expect, it, vi } from 'vitest'
-import { canonicalGraphJson, makeCurrentWorkflowFixture, RunStartCurrentInputSchema,
-  type SavedWorkflowVersion } from '@foreman-code/contracts/current'
+import { canonicalGraphJson, makeCurrentWorkflowFixture, RunStartV3InputSchema,
+  type SavedWorkflowVersion } from '@foreman-code/contracts/wave25'
 import type { CanonicalMachineReference } from '@foreman-code/contracts/device-identity'
 import { prepareRunStart, START_PREPARATION_TIMEOUT_MS } from '../runs/startPreparation.js'
 import { AgentPlacementProducer } from './agentProducer.js'
@@ -27,11 +27,10 @@ function fixture(kind: 'agent' | 'job', refresh: (
     definition: version.definition, configurations: version.agentConfigurationVersionIds, entryNodeId: version.entryNodeId,
   })).digest('hex')}`
   let transaction = false
-  const client = { query: async (text: string, values?: unknown[]) => {
+  const client = { query: async (text: string) => {
     if (text.startsWith('begin')) transaction = true
     if (text === 'commit' || text === 'rollback') transaction = false
-    // The exact saved version is the only statement keyed by the version id.
-    return { rows: values?.[0] === version.id ? [{ id: version.id, workspace_id: version.workspaceId,
+    return { rows: text.includes('from workflow_versions') ? [{ id: version.id, workspace_id: version.workspaceId,
       workflow_id: version.workflowId, version: version.version, entry_node_id: version.entryNodeId,
       execution_semantics_version: 3, record: version }] : [], rowCount: 1 }
   }, on: () => {}, removeListener: () => {}, release: vi.fn() }
@@ -39,7 +38,7 @@ function fixture(kind: 'agent' | 'job', refresh: (
     mainId, {} as never, {} as never, {} as never, { codex: 'suite' }, undefined, undefined,
     (hosts, signal) => { expect(transaction).toBe(false); return refresh(hosts, signal) }, undefined,
     assertBundleReady)
-  const input = RunStartCurrentInputSchema.parse({ workspaceId: version.workspaceId, workflowId: version.workflowId,
+  const input = RunStartV3InputSchema.parse({ workspaceId: version.workspaceId, workflowId: version.workflowId,
     workflowVersionId: version.id, expectedAgentConfigurationVersionIds: version.agentConfigurationVersionIds,
     commandId: 'start-inventory', executionSemanticsVersion: 3, expectedWorkflowRevision: 1,
     expectedLocationRevision: 1, input: {} })

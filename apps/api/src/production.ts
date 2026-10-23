@@ -37,7 +37,9 @@ import { ComputerGitHubService } from './modules/computers/github.js'
 import { COMPUTER_MAINTENANCE_NAMESPACE, COMPUTER_MAINTENANCE_VERSION } from '@foreman-code/contracts/computer-maintenance'
 import { COMPUTER_ACCOUNTS_NAMESPACE, COMPUTER_SYNC_NAMESPACE, COMPUTER_GITHUB_NAMESPACE } from '@foreman-code/contracts/computer-accounts'
 import { ComputerSyncService } from './modules/computers/sync.js'
-import { WORKSPACE_ROOT_EXTENSION } from '@foreman-code/contracts/workspace-root-policies'
+import { sessionStartDirectory } from './modules/harnesses/sessionStart.js'
+import { recoverPersistedClaudeCompaction } from './modules/harnesses/claudeSdk/recoverCompaction.js'
+import { ApprovedRootAllowlistSchema, WORKSPACE_ROOT_EXTENSION } from '@foreman-code/contracts/workspace-root-policies'
 import type { ClaudeHarnessConfiguration } from '@foreman-code/contracts/claude'
 import { readProductEnvironment } from '@foreman-code/contracts/product-environment'
 import { appLauncherPath, appMcpServerName } from './modules/harnesses/appMcpLauncher.js'
@@ -47,13 +49,17 @@ import type { AcceptedTransferAuthority } from './modules/byte-transfer/carrier.
 import type { InstalledMainRsyncProviders } from './modules/byte-transfer/productionComposition.js'
 import { createInstalledRsyncComposition } from './modules/byte-transfer/productionComposition.js'
 import { RSYNC_STAGE_EXTENSION, type TransferIntent } from '@foreman-code/contracts/byte-transfer'
+import { transferContextForBinding } from './modules/byte-transfer/carrier.js'
 import { JOB_RUNTIME_QUALIFICATION_EXTENSION } from '@foreman-code/contracts/job-runtime'
+import { deliveryTransactionClient } from './modules/interactions/connection.js'
 import { createProductionRemoteWorkflow } from './modules/placement/productionRemoteWorkflow.js'
+import { remoteMcpPreflight } from './modules/placement/remoteMcpPreflight.js'
 import { closeCompletedWorkflowSources } from './modules/sources/workflowCleanup.js'
 import { remoteWorkflowPreparationClosed } from './modules/sources/workflowPreparationCleanup.js'
-import { readExecutionPlacement } from './modules/placement/persistence.js'
+import { readExecutionPlacement, readNativePlacement } from './modules/placement/persistence.js'
 import { sourceNativeSessionContinues } from './modules/sources/workingDirectory.js'
 import { placedContinuationValidator } from './modules/placement/continuation.js'
+import { readLiveManagementPrincipal } from './modules/access/liveManagementPrincipal.js'
 import { readSourceCurrentNativeSession } from './modules/sources/activeNativeSession.js'
 import type { SourceActiveNativeSessionReader, SourceNativeSessionCaptureReader } from './modules/sources/executionHosts.js'
 import { EXECUTION_AUTHORITY_EXTENSION } from '@foreman-code/contracts/execution-authority'
@@ -63,12 +69,14 @@ import { RunPlacementReadService } from './modules/placement/readService.js'
 import { NodePlacementChoicesService } from './modules/placement/choicesService.js'
 import { ProductionPlacementChoiceDiscovery } from './modules/placement/choiceDiscovery.js'
 import { readRemoteObservations } from './modules/runs/remote/persistence.js'
+import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-execution'
 import { remoteExecutionStartupEnvironment } from './modules/settings/remoteExecutionConfig.js'
 import { RemoteExecutionSettingsService } from './modules/settings/remoteExecution.js'
 import { WorkerExecutionPolicy } from './modules/settings/workerExecution.js'
 import { AgentExecutionPreparation } from './modules/placement/agentExecutionPreparation.js'
-import { createExecutionAuthorityExtension } from './modules/placement/executionAuthority.js'
+import { assertRemoteExecutionAuthority, createExecutionAuthorityExtension } from './modules/placement/executionAuthority.js'
 import { MainWorkerMcpRelay, selectedMainMcpForward, createWorkerNativeOutputAuthorizationPort } from './modules/placement/workerMcpRelay.js'
+import { DeviceConnectionIdentitySchema } from '@foreman-code/contracts/device-identity'
 import { recoverWorkflowArtifactOutputs } from './modules/runs/remote/workflowArtifactRecovery.js'
 import { readAcceptedPlacement } from './modules/placement/persistence.js'
 import { repeatRuntimeDirectory, type RepeatRepositoryServices } from './modules/runs/repeatRepositoryHost.js'
@@ -110,12 +118,20 @@ import { NativeProviderAccountOperations } from './modules/provider-accounts/nat
 import { NativeAccountJournal } from './modules/provider-accounts/nativeJournal.js'
 import type { AcceptedProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
 import { ProviderAccountConfigurationService } from './modules/harnesses/providerAccountConfiguration.js'
+import { prepareClaudeWorkflowCredentials } from './modules/harnesses/claudeSdk/workflowCredentials.js'
 import { productionSelectedProfileManager } from './modules/harnesses/selectedProfileProduction.js'
 import { createProductionWorkerConversations } from './modules/conversations/workerProduction.js'
 import { REMOTE_EXECUTION_EXTENSION, REMOTE_PREPARATION_EXTENSION, WorkerConversationCallbackSchema } from '@foreman-code/contracts/remote-execution-rpc'
 import { executionExtension } from './modules/runs/remote/executionRouter.js'
+import { credentialAuthority } from './modules/interactions/wave25/credentialAuthority.js'
+import type { GraphSqlClient } from './modules/run-graph/connection.js'
 import { AcceptedHarnessProfileAdmission, AcceptedClaudeProfileAdmission, type AcceptedProfileAuthority } from './modules/harnesses/instanceSettings/acceptedProfile.js'
-import { RETIRED_OPENCODE_MESSAGE, type AgentConfigurationVersion, type AgentDefaults } from '@foreman-code/contracts'
+import { workflowProfileSelection } from './modules/harnesses/workflowProfileSelection.js'
+import {
+  HarnessExecutionRequestSchema,
+  RETIRED_OPENCODE_MESSAGE,
+  type AgentDefaults,
+} from '@foreman-code/contracts'
 import { inspectClaudeOperatorConfiguration } from './modules/harnesses/claudeSdk/operatorConfigurationInspection.js'
 import { inspectWorkerClaudeOperatorConfiguration } from './modules/harnesses/workerClaudeOperatorInspection.js'
 import { requireClaudePolicyQualification } from './modules/harnesses/claudeSdk/configuration.js'
@@ -128,6 +144,7 @@ import { randomUUID } from 'node:crypto'
 import { createWorkflowNativeCaptureChannel } from './modules/interactions/workflowNativeCapture.js'
 import { createReviewNativeCaptureChannel } from './modules/interactions/reviewNativeCapture.js'
 import { ReviewNativeProofServices } from './modules/interactions/reviewNativeProof.js'
+import { readRetainedRemoteReviewer } from './modules/interactions/retainedRemoteReviewer.js'
 import { PostgresRepeatReviewerBindings } from './modules/interactions/repeatReviewer.js'
 import { createWorkflowRepositoryServices } from './modules/runs/workflowRepositoryServices.js'
 import { createProductionWorkflowArtifactResultSource } from './modules/runs/remote/workflowArtifactResultProduction.js'
@@ -135,24 +152,22 @@ import { WorkflowArtifactResultAdoption } from './modules/runs/remote/workflowAr
 import { createWorkflowArtifactOutputsGate } from './modules/runs/remote/workflowArtifactAcceptance.js'
 import { LocalWorkflowArtifactAuthority, workflowArtifactsAreLocal } from './modules/runs/remote/localWorkflowArtifactAuthority.js'
 import { LocalWorkflowArtifacts } from './modules/runs/remote/localWorkflowArtifacts.js'
+import { createLocalWorkflowNativeOutputs } from './modules/runs/remote/localWorkflowNativeOutputs.js'
 import { readAcceptedRepeatRunLocked } from './modules/runs/repeatStartRead.js'
+import { WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { qualifyCodex } from './modules/harnesses/codexProtocol.js'
 import { PostgresWorkflowPhysicalArtifacts } from './modules/runs/remote/workflowPhysicalArtifacts.js'
 import { readRuntimeIdentity, readRuntimeBuildIdentity } from './infrastructure/runtimeIdentity.js'
 import { readTestResourcesIdentity } from './infrastructure/testRuntimeResources.js'
 import { fileURLToPath } from 'node:url'
 import { AppMcpRoutes } from './modules/harnesses/appMcpRoutes.js'
-import { approvalCheckpointConsumers } from './modules/runs/approvalCheckpointRegistration.js'
+import { registerApprovalCheckpointResume } from './modules/runs/approvalCheckpointRegistration.js'
 import { createCurrentNativeProductionFactory, isCurrentNativeProductionBinding } from './modules/runs/workflowProduction.js'
 import { isDeepStrictEqual } from 'node:util'
 import { NativeResponseJournal } from './modules/harnesses/recovery/responseJournal.js'
-import { hasDetachedStdioProcess, hasNativeRestartDetachment, NativeProcessRegistry } from './modules/harnesses/recovery/processRegistry.js'
+import { hasDetachedStdioProcess, hasNativeRestartDetachment, NativeProcessRegistry,
+  type NativeProcessRecovery } from './modules/harnesses/recovery/processRegistry.js'
 import { join, resolve } from 'node:path'
-import { NativeLaunchRecords } from './modules/harnesses/nativeLaunchRecords.js'
-import { createExecutionCredentialProvider } from './modules/interactions/executionCredentials.js'
-import { createWorkflowManagerResolver } from './modules/runs/workflowManagerResolver.js'
-import { createWorkflowManagerContextPreparer } from './modules/runs/workflowManagerContext.js'
-import { createAcceptedDestinationContinuation } from './modules/placement/continuationAuthority.js'
-import { workerNativeOutputContext } from './modules/placement/workerNativeOutputContext.js'
 
 import type { ApiConfig } from './config.js'
 import { buildApp } from './app.js'
@@ -163,8 +178,7 @@ import { mainProvisioningTarget, readMainProvisioningTarget } from './modules/pr
 import { readMainInstallationId } from './modules/devices/mainIdentity.js'
 import { createProductionProfileAuthority } from './modules/harnesses/instanceSettings/productionProfileAuthority.js'
 import { deviceHostOverrideAuthority } from './modules/harnesses/instanceSettings/authority.js'
-import { createHarnessHost } from './composition/harnessHost.js'
-import { late, type Late } from './composition/late.js'
+import { createHarnessHost, type HarnessHost } from './composition/harnessHost.js'
 import { createProductionFileStorage, type ProductionFileStorage } from './modules/files/production.js'
 import { registerApiRoutes, type ApiRouteServices } from './routes/registry.js'
 import { createProductionWorkflowFileContexts } from './modules/runs/remote/workflowNativeFilesProduction.js'
@@ -182,7 +196,7 @@ import { codexChatHostDirectory, localCodexChatHost } from './modules/harnesses/
 import { productionFileTools } from './modules/files/tools/production.js'
 import { FileRetentionService } from './modules/files/retention.js'
 import { PostgresCommandReceiptRetention } from './modules/commands/receiptRetention.js'
-import { createOperatorExtensions } from './composition/operatorExtensions.js'
+import { createOperatorExtensions } from './mcp/operator/extensions.js'
 import { NativeConfigurationService } from './modules/harnesses/nativeConfiguration.js'
 import { HarnessMcpSettingsService } from './modules/harnesses/mcpSettings.js'
 import { ClaudePluginSettingsService } from './modules/harnesses/claudePlugins.js'
@@ -199,17 +213,14 @@ import { OperatorRuntimeOwner } from './infrastructure/operatorRuntimeOwner.js'
 import { RuntimeShutdown } from './infrastructure/runtimeShutdown.js'
 import { PostgresAccessService } from './modules/access/postgres.js'
 import { PostgresLocalHumanAccess } from './modules/access/localHuman.js'
-import { Wave25WorkerCredentialService as WorkerCredentialService } from './modules/interactions/current/credentials.js'
+import { Wave25WorkerCredentialService as WorkerCredentialService } from './modules/interactions/wave25/credentials.js'
 import {
   ensureOperatorRuntimeDirectory,
   OperatorChatService,
   PostgresOperatorConversationRepository,
 } from './modules/conversations/operatorChat.js'
 import { PostgresOperatorChatAuthority } from './modules/conversations/operatorChatAuthority.js'
-import { AgentChatService, withAgentChatHooks } from './modules/conversations/agentChat.js'
-import type { ConversationFeatureContext } from './modules/conversations/conversationFeatureSubject.js'
-import { createAgentChatAvailability, createAgentChatCompactionRecovery, createAgentChatProfileSelection,
-  createChatCompactionRecovery, createWorkerChatPreflight } from './modules/conversations/chatSources.js'
+import { AgentChatService, type AgentChatManagerFactory } from './modules/conversations/agentChat.js'
 import { qualifiedAgentChatSteer } from './modules/conversations/chatSteerQualification.js'
 import { PostgresAgentChatRepository } from './modules/conversations/agentChatRepository.js'
 import { PostgresCommandCoordinator } from './modules/commands/postgres.js'
@@ -230,7 +241,7 @@ import type { CompatibilityHarness } from '@foreman-code/contracts'
 import { NativeHarnessFactories } from './modules/harnesses/runtimeFactory.js'
 import type { ProductionHarnessInfrastructure } from './modules/harnesses/productionInfrastructure.js'
 import { productionCodexChatFiles, type ProductionCodexChatFiles } from './modules/harnesses/codexFiles/production.js'
-import { McpDetectionService } from './modules/harnesses/mcpDetection.js'
+import { McpDetectionService, WorkerLaunchCredentialService, type ExecutionCredentialProvider } from './modules/harnesses/mcpDetection.js'
 import { productionOperatorManagers } from './modules/harnesses/operatorFiles/managers.js'
 import { ExecutionReadinessService } from './modules/harnesses/executionReadiness.js'
 import { NativeRollout } from './modules/harnesses/nativeRollout.js'
@@ -242,7 +253,9 @@ import { ApprovalExecutionCoordinator, type CurrentApprovalExecutionDependencies
 import { PostgresWorkflowClosureStore } from './modules/interactions/workflowClosure.js'
 import { retryStartupDatabase } from './infrastructure/databaseRetry.js'
 import { OperatorInteractionService } from './modules/interactions/operator.js'
-import { Wave25InteractionRepository as PostgresInteractionRepository } from './modules/interactions/current/repository.js'
+import { Wave25InteractionRepository as PostgresInteractionRepository } from './modules/interactions/wave25/repository.js'
+import { ExecutionScopedNativeSessionManagerResolver,
+  type NativeManagerResolutionContext } from './modules/interactions/runtimePorts.js'
 import { InteractionService } from './modules/interactions/service.js'
 import { AutomaticReviewService } from './modules/interactions/automaticReview.js'
 import { PostgresOperatorRepository } from './modules/operators/postgres.js'
@@ -279,7 +292,196 @@ export type ProductionProviderAccountSelection = AccountNativeSelection & {
 }
 
 type ProductionMainInstallation = Awaited<ReturnType<ProductionDeviceRuntime['initializeFromRuntime']>>
-type JobRuntime = Awaited<ReturnType<typeof createProductionJobs>>
+
+interface ProductionComposition {
+  collaborationPorts: WorkflowFeaturePorts | undefined
+  computerUpkeep: boolean
+  harnessHost: HarnessHost
+  workflowCollaboration: WorkflowCollaborationIntegration
+  config: ApiConfig
+  database: ReturnType<typeof createDatabase>
+  checkpoints: CheckpointStore
+  logger: boolean | FastifyBaseLogger
+  createCurrentProduction: CurrentRunProductionFactory | undefined
+  codexChatFiles: ProductionCodexChatFiles | undefined
+  qualificationSuites: Record<CompatibilityHarness, QualificationSuite> | undefined
+  infrastructure: ProductionHarnessInfrastructure | undefined
+  accountSelection: ProductionProviderAccountSelection | undefined
+  mainCodex: MainCodexSelection
+  mainBinaries: { readonly codexBinary: string }
+  workerExecution: WorkerExecutionPolicy
+  fileStorage: TemporaryFileService | undefined
+  files: ProductionFileStorage | undefined
+  routes: ApiRouteServices
+  /** Main's installation, once startup has read it. */
+  machine: ProductionMainInstallation | undefined
+  /** Computer root policies, once Main's own root is bootstrapped. */
+  rootPolicies: WorkspaceRootPolicyPort | undefined
+  /** Paired-device MCP management, once startup knows Main's installation. */
+  managedMcp: DeviceManagedMcp | undefined
+  fileStorageRoot: string
+  chatFileAdmissions: ProductionCodexChatFiles
+  responseJournal: NativeResponseJournal
+  processRegistry: NonNullable<ProductionHarnessInfrastructure['auxiliary']>['recovery'] | NativeProcessRegistry
+  access: PostgresAccessService
+  agentPlacement: AgentPlacementProducer | undefined
+  agentPreparation: AgentExecutionPreparation | undefined
+  executionAuthority: ReturnType<typeof createExecutionAuthorityExtension> | undefined
+  workflowArtifacts: ReturnType<typeof createProductionWorkflowArtifacts> | undefined
+  workflowPhysicalArtifacts: PostgresWorkflowPhysicalArtifacts | undefined
+  artifactComposition: {
+    mainId: string
+    authority: PostgresArtifactPublicationAuthority
+    fence: PostgresAcceptedArtifactAttemptFence
+  } | undefined
+  mainWorkerMcp: MainWorkerMcpRelay | undefined
+  trustedConnections: PostgresTrustedConnectionSetup | undefined
+  inputAcknowledgements: Map<string, TransferIntent>
+  acceptedRsync: AcceptedTransferAuthority
+  entrypoint: ReturnType<typeof createMainRsyncEntrypoint> | undefined
+  installedRsync: InstalledMainRsyncProviders | undefined
+  rsync: ReturnType<typeof createInstalledRsyncComposition>
+  remoteTelemetry: ReturnType<typeof createMainResourceTelemetryBindings>
+  deviceRuntime: ProductionDeviceRuntime
+  commands: PostgresCommandCoordinator
+  bugReports: BugReportService
+  selectedAccounts: ProductionProviderAccountSelection
+  providerAccounts: ProviderAccountsService
+  workflowAccountBindings: Map<string, AcceptedProviderAccountBinding>
+  accountConfigurations: ProviderAccountConfigurationService
+  workflowCapture: ReturnType<typeof createWorkflowNativeCaptureChannel>
+  reviewCapture: ReturnType<typeof createReviewNativeCaptureChannel>
+  admitWorkflowFileContext: ReturnType<typeof createProductionWorkflowFileContexts> | undefined
+  artifactResultSource: ReturnType<typeof createProductionWorkflowArtifactResultSource> | undefined
+  artifactOutputsGate: ReturnType<typeof createWorkflowArtifactOutputsGate> | undefined
+  localWorkflowArtifacts: LocalWorkflowArtifacts | undefined
+  memoryBoards: ReturnType<typeof createMemoryBoardService>
+  workflowRuntime: ReturnType<typeof createWorkflowRepositoryServices>
+  repository: PostgresInteractionRepository
+  budgets: PostgresApprovalBudgetRepository
+  projectRoot: string
+  runWorktrees: RunWorktrees
+  locations: WorkspaceLocationService
+  workflows: PostgresWorkflowRepository
+  runs: PostgresRunRepository
+  remoteWorkflow: ReturnType<typeof createProductionRemoteWorkflow>
+  workspaces: PostgresWorkspaceRepository
+  settings: PostgresSettingsRepository
+  hostProfileEvidence: HostHarnessProfileEvidenceRepository
+  claudeDiscovery: ReturnType<typeof createClaudeProductionDiscovery>
+  harnessRegistry: ProductionHarnessRegistry
+  foundationSettings: PostgresFoundationSettingsRepository
+  remoteExecution: RemoteExecutionSettingsService
+  operators: PostgresOperatorRepository
+  rollout: NativeRollout
+  compatibilityProbe: (
+    timeoutMs?: number,
+    expected?: { harness: CompatibilityHarness; binary: string },
+  ) => ReturnType<typeof scopedCompatibilityProbe>
+  qualificationRepository: HarnessQualificationRepository
+  selectedSuites: Record<CompatibilityHarness, QualificationSuite> | undefined
+  qualificationRegistry: HarnessQualificationRegistry | undefined
+  harnessQualifications: HarnessQualificationService | undefined
+  harnessCompatibility: HarnessCompatibilityService
+  appMcpEndpoint: string
+  nativeFactories: NativeHarnessFactories
+  hostSettings: HarnessInstanceSettingsRepository
+  hostAuthority: HostHarnessOverrideAuthority
+  profileAuthority: AcceptedProfileAuthority<ClaudeProfileOwner>
+  selectedProfiles: AcceptedHarnessProfileAdmission<ClaudeProfileOwner>
+  claudeProfiles: AcceptedClaudeProfileAdmission<ClaudeProfileOwner>
+  hostProfileChecks: HostHarnessInstanceProfileChecks
+  harnessInstances: HostHarnessOverrideService
+  installationMonitor: HarnessInstallationMonitor
+  harnessCatalog: HarnessCatalogService
+  nativeConfigurations: NativeConfigurationService
+  appRoutes: AppMcpRoutes
+  maintenancePorts: ReturnType<typeof systemMaintenancePorts>
+  harnessSettings: {
+    claudePlugins: ClaudePluginSettingsService
+    directories: HarnessDirectoryBrowser
+    plugins: CodexPluginSettingsService
+    mcp: HarnessMcpSettingsService
+  }
+  launchScopes: WeakMap<NativeHarnessSessionManager, NativeProcessRecovery>
+  claudeLaunches: WeakMap<NativeHarnessSessionManager, ReturnType<typeof productionClaudeManager>>
+  managers: ExecutionScopedNativeSessionManagerResolver
+  validateContinuation: ReturnType<typeof placedContinuationValidator>
+  credentials: WorkerCredentialService
+  prepareWorkflowManagerContext: (context: NativeManagerResolutionContext) => Promise<NativeManagerResolutionContext>
+  launchCredentials: ExecutionCredentialProvider
+  approvals: ApprovalExecutionCoordinator
+  telemetry: ResourceTelemetryRuntime | undefined
+  telemetryLifetime: AbortController
+  mainTelemetryContext: Extract<TrustedTelemetryContext, { kind: 'main-local' }> | null
+  jobRuntime: Awaited<ReturnType<typeof createProductionJobs>> | undefined
+  hostCi: HostCiService | undefined
+  engine: LangGraphWorkflowEngine
+  interactions: InteractionService
+  operatorWorkingDirectory: string
+  operatorManagers: Map<string, NativeHarnessSessionManager>
+  operatorConversations: PostgresOperatorConversationRepository
+  agentConversations: PostgresAgentChatRepository
+  browser: ReturnType<typeof createProductionBrowser>
+  browserRemote: ReturnType<typeof createMainBrowserRemote>
+  conversationNativeAccess: ConversationNativeAccess
+  workflowChat: ReturnType<typeof createProductionWorkflowChat>
+  stopWorkflowChat?: () => void
+  cloudCis?: CloudCis
+  workerChats: ReturnType<typeof createProductionWorkerConversations>
+  agentChatProfileSelection: (
+    configuration: import('@foreman-code/contracts').AgentConfigurationVersion,
+    workingDirectory: string,
+    executionId?: string,
+  ) => Promise<{
+    profileSelection: import('@foreman-code/contracts').AgentConfigurationVersion['harnessProfileSelection']
+    sourceExecution: import('@foreman-code/contracts/remote-execution-rpc').WorkerConversationBinding['sourceExecution'] | undefined
+  }>
+  recoverChatCompaction: (
+    configuration: import('@foreman-code/contracts').OperatorConfigurationVersion
+      | import('@foreman-code/contracts').AgentConfigurationVersion,
+    conversationId: string,
+    session: import('@foreman-code/contracts').NativeSessionReference,
+    start: import('./modules/harnesses/port.js').NativeSessionStart,
+    state: import('@foreman-code/contracts').CompactionState,
+    principalId: string,
+    signal: AbortSignal,
+    profileSelection?: import('@foreman-code/contracts').AgentConfigurationVersion['harnessProfileSelection'],
+    sourceExecution?: import('@foreman-code/contracts/remote-execution-rpc').WorkerConversationBinding['sourceExecution'],
+  ) => Promise<import('@foreman-code/contracts').CompactionState>
+  operatorAccountBindings: Map<string, AcceptedProviderAccountBinding>
+  resolveOperatorManager: ReturnType<typeof productionOperatorManagers>
+  chatAuthority: PostgresOperatorChatAuthority
+  chat: OperatorChatService
+  agentChat: AgentChatService
+  reviews: AutomaticReviewService
+  closing: boolean
+  initialized: boolean
+  operatorServices: OperatorServices & { fileRetention: FileRetentionService }
+  runtimeServices: OperatorServices
+  app: ReturnType<typeof buildApp>
+  mountArtifacts: () => void
+  httpClosing: boolean
+  startupLifetime: AbortController
+  schemaPreparation: Promise<void> | undefined
+  initialization: Promise<void> | undefined
+  nativeDefaultsInitialization: Promise<void> | undefined
+  reconciliation: Promise<void> | undefined
+  applicationClose: Promise<void> | undefined
+  stopComputerTimers: () => void
+  stopSyncTimer: () => void
+  runtimeOwner: OperatorRuntimeOwner
+  lifecycle: RuntimeShutdown
+  beginShutdown: () => void
+  assertOpen: () => void
+  startupDatabase: <T>(work: () => Promise<T>) => Promise<T>
+  synchronizeOperatorDefaults: (template: AgentDefaults['operator']) => Promise<void>
+  prepareSchema: () => Promise<void>
+  initialize: () => Promise<void>
+  reconcile: (report: (error: unknown) => void) => Promise<void>
+  drainShutdown: () => Promise<void>
+  shutdown: () => Promise<void>
+}
 
 export interface ProductionAppOptions {
   config: ApiConfig
@@ -299,347 +501,164 @@ export interface ProductionAppOptions {
   computerUpkeep?: boolean
 }
 
-/** What the caller passed, with defaults applied. */
-interface ProductionBase {
-  config: ApiConfig
-  database: ReturnType<typeof createDatabase>
-  checkpoints: CheckpointStore
-  logger: boolean | FastifyBaseLogger
-  computerUpkeep: boolean
-  createCurrentProduction: CurrentRunProductionFactory | undefined
-  codexChatFiles: ProductionCodexChatFiles | undefined
-  qualificationSuites: Record<CompatibilityHarness, QualificationSuite> | undefined
-  infrastructure: ProductionHarnessInfrastructure | undefined
-  accountSelection: ProductionProviderAccountSelection | undefined
-  collaborationPorts: WorkflowFeaturePorts | undefined
-}
-
-/**
- * Services that code built in an earlier stage reaches before the later stage has built them. Each slot is bound once,
- * by `buildProductionApp`, right after the stage that creates the service returns; the callers only read it when they run.
- */
-interface ProductionCallbacks {
-  app: Late<ReturnType<typeof buildApp>>
-  deviceRuntime: Late<ProductionDeviceRuntime>
-  browser: Late<ReturnType<typeof createProductionBrowser>>
-  browserRemote: Late<ReturnType<typeof createMainBrowserRemote>>
-  workerChats: Late<ReturnType<typeof createProductionWorkerConversations>>
-  providerAccounts: Late<ProviderAccountsService>
-  harnessRegistry: Late<ProductionHarnessRegistry>
-  qualificationRepository: Late<HarnessQualificationRepository>
-  selectedSuites: Late<Record<CompatibilityHarness, QualificationSuite> | undefined>
-  installationMonitor: Late<HarnessInstallationMonitor>
-  runtimeServices: Late<OperatorServices>
-  remoteWorkflow: Late<ReturnType<typeof createProductionRemoteWorkflow>>
-  nativeConfigurations: Late<NativeConfigurationService>
-  harnessInstances: Late<HostHarnessOverrideService>
-  hostProfileChecks: Late<HostHarnessInstanceProfileChecks>
-  approvals: Late<ApprovalExecutionCoordinator>
-  nativeFactories: Late<NativeHarnessFactories>
-  runtimeOwner: Late<OperatorRuntimeOwner>
-  operatorServices: Late<OperatorServices & { fileRetention: FileRetentionService }>
-  shutdown: Late<() => Promise<void>>
-}
-
-function createProductionCallbacks(): ProductionCallbacks {
-  return {
-    app: late('app'),
-    deviceRuntime: late('deviceRuntime'),
-    browser: late('browser'),
-    browserRemote: late('browserRemote'),
-    workerChats: late('workerChats'),
-    providerAccounts: late('providerAccounts'),
-    harnessRegistry: late('harnessRegistry'),
-    qualificationRepository: late('qualificationRepository'),
-    selectedSuites: late('selectedSuites'),
-    installationMonitor: late('installationMonitor'),
-    runtimeServices: late('runtimeServices'),
-    remoteWorkflow: late('remoteWorkflow'),
-    nativeConfigurations: late('nativeConfigurations'),
-    harnessInstances: late('harnessInstances'),
-    hostProfileChecks: late('hostProfileChecks'),
-    approvals: late('approvals'),
-    nativeFactories: late('nativeFactories'),
-    runtimeOwner: late('runtimeOwner'),
-    operatorServices: late('operatorServices'),
-    shutdown: late('shutdown'),
-  }
-}
-
-/** Services that exist only once startup has run, or once file storage is registered. */
-interface StartedServices {
-  /** Main's installation, once startup has read it. */
-  machine?: ProductionMainInstallation
-  /** Computer root policies, once Main's own root is bootstrapped. */
-  rootPolicies?: WorkspaceRootPolicyPort
-  /** Paired-device MCP management, once startup knows Main's installation. */
-  managedMcp?: DeviceManagedMcp
-  fileStorage?: TemporaryFileService
-  files?: ProductionFileStorage
-  trustedConnections?: PostgresTrustedConnectionSetup
-  jobRuntime?: JobRuntime
-  agentPlacement?: AgentPlacementProducer
-  agentPreparation?: AgentExecutionPreparation
-  executionAuthority?: ReturnType<typeof createExecutionAuthorityExtension>
-  workflowArtifacts?: ReturnType<typeof createProductionWorkflowArtifacts>
-  workflowPhysicalArtifacts?: PostgresWorkflowPhysicalArtifacts
-  artifactComposition?: {
-    mainId: string
-    authority: PostgresArtifactPublicationAuthority
-    fence: PostgresAcceptedArtifactAttemptFence
-  }
-  mainWorkerMcp?: MainWorkerMcpRelay
-  admitWorkflowFileContext?: ReturnType<typeof createProductionWorkflowFileContexts>
-  artifactResultSource?: ReturnType<typeof createProductionWorkflowArtifactResultSource>
-  artifactOutputsGate?: ReturnType<typeof createWorkflowArtifactOutputsGate>
-  localWorkflowArtifacts?: LocalWorkflowArtifacts
-  telemetry?: ResourceTelemetryRuntime
-  hostCi?: HostCiService
-  cloudCis?: CloudCis
-}
-
-/** Lifecycle flags and in-flight startup work. */
-interface ProductionState {
-  closing: boolean
-  initialized: boolean
-  httpClosing: boolean
-  schemaPreparation: Promise<void> | undefined
-  initialization: Promise<void> | undefined
-  nativeDefaultsInitialization: Promise<void> | undefined
-  reconciliation: Promise<void> | undefined
-  applicationClose: Promise<void> | undefined
-  stopComputerTimers: () => void
-  stopSyncTimer: () => void
-  stopWorkflowChat: (() => void) | undefined
-}
-
-type MainTransport = ReturnType<typeof createMainTransport>
-type BrowserStage = ReturnType<typeof createBrowser>
-type AccountStage = ReturnType<typeof createProviderAccounts>
-type RepositoryStage = ReturnType<typeof createWorkflowRepositories>
-type QualificationStage = ReturnType<typeof createHarnessQualifications>
-type ProfileStage = ReturnType<typeof createHarnessProfiles>
-type ManagerStage = ReturnType<typeof createWorkflowManagers>
-type ExecutionStage = ReturnType<typeof createExecutionCoordinator>
-type ConversationStage = ReturnType<typeof createConversationManagers>
-type OperatorChatStage = ReturnType<typeof createOperatorChat>
-type AgentChatStage = ReturnType<typeof createAgentChat>
-type OperatorStage = ReturnType<typeof createOperatorServices>
-type HttpStage = ReturnType<typeof createHttpApplication>
-type ControlStage = ReturnType<typeof createRuntimeControl>
-
-/** Everything the startup, shutdown and reconciliation stages work with. */
-interface ProductionServices {
-  base: ProductionBase
-  callbacks: ProductionCallbacks
-  started: StartedServices
-  runtimeState: ProductionState
-  transport: MainTransport
-  deviceRuntime: ProductionDeviceRuntime
-  browserStage: BrowserStage
-  accountStage: AccountStage
-  repositoryStage: RepositoryStage
-  qualificationStage: QualificationStage
-  profileStage: ProfileStage
-  managerStage: ManagerStage
-  executionStage: ExecutionStage
-  conversationStage: ConversationStage
-  operatorChatStage: OperatorChatStage
-  agentChatStage: AgentChatStage
-  operatorStage: OperatorStage
-  httpStage: HttpStage
-  controlStage: ControlStage
-}
-
 /** The startup composition is shared with regression tests; infrastructure owns its lifecycle. */
 export function buildProductionApp(options: ProductionAppOptions) {
-  const base: ProductionBase = {
-    config: options.config,
-    database: options.database,
-    checkpoints: options.checkpoints,
+  // Service callbacks read the same slots as later startup and shutdown stages.
+  const composition = {
+    ...options,
     logger: options.logger ?? componentLogger('http'),
     computerUpkeep: options.computerUpkeep ?? false,
-    createCurrentProduction: options.createCurrentProduction,
-    codexChatFiles: options.codexChatFiles,
-    qualificationSuites: options.qualificationSuites,
-    infrastructure: options.infrastructure,
-    accountSelection: options.accountSelection,
-    collaborationPorts: options.collaborationPorts,
-  }
-  const callbacks = createProductionCallbacks()
-  const started: StartedServices = {}
-  const runtimeState: ProductionState = {
-    closing: false,
-    initialized: false,
-    httpClosing: false,
-    schemaPreparation: undefined,
-    initialization: undefined,
-    nativeDefaultsInitialization: undefined,
-    reconciliation: undefined,
-    applicationClose: undefined,
-    stopComputerTimers: () => {},
-    stopSyncTimer: () => {},
-    stopWorkflowChat: undefined,
-  }
-  // Each stage is built from the stages before it. Code that must reach a later stage reads it through `callbacks`
-  // or, for services that exist only after startup, through `started`.
-  const transport = createMainTransport({ base, callbacks, started })
-  const deviceRuntime = callbacks.deviceRuntime.bind(createDeviceRuntime({ base, callbacks, started, transport }))
-  const browserStage = createBrowser({ base, callbacks, deviceRuntime })
-  callbacks.browser.bind(browserStage.browser)
-  const accountStage = createProviderAccounts({ base, callbacks, started, transport, deviceRuntime })
-  callbacks.providerAccounts.bind(accountStage.providerAccounts)
-  const repositoryStage = createWorkflowRepositories({ base, callbacks, started, transport, deviceRuntime, browserStage, accountStage })
-  callbacks.remoteWorkflow.bind(repositoryStage.remoteWorkflow)
-  callbacks.harnessRegistry.bind(repositoryStage.harnessRegistry)
-  callbacks.qualificationRepository.bind(repositoryStage.qualificationRepository)
-  callbacks.selectedSuites.bind(repositoryStage.selectedSuites)
-  const qualificationStage = createHarnessQualifications({ base, callbacks, transport, accountStage, repositoryStage })
-  callbacks.nativeFactories.bind(qualificationStage.nativeFactories)
-  const profileStage = createHarnessProfiles({ base, callbacks, started, transport, deviceRuntime, accountStage, repositoryStage, qualificationStage })
-  callbacks.nativeConfigurations.bind(profileStage.nativeConfigurations)
-  callbacks.harnessInstances.bind(profileStage.harnessInstances)
-  callbacks.hostProfileChecks.bind(profileStage.hostProfileChecks)
-  callbacks.installationMonitor.bind(profileStage.installationMonitor)
-  const managerStage = createWorkflowManagers({ base, started, transport, deviceRuntime, accountStage, repositoryStage, qualificationStage, profileStage })
-  const executionStage = createExecutionCoordinator({ base, runtimeState, transport, accountStage, repositoryStage, qualificationStage, profileStage, managerStage })
-  callbacks.approvals.bind(executionStage.approvals)
-  const conversationStage = createConversationManagers({ base, callbacks, started, transport, deviceRuntime, accountStage, repositoryStage,
-    qualificationStage, profileStage, executionStage })
-  callbacks.workerChats.bind(conversationStage.workerChats)
-  const operatorChatStage = createOperatorChat({ base, transport, deviceRuntime, accountStage, repositoryStage, qualificationStage, profileStage,
-    conversationStage })
-  const agentChatStage = createAgentChat({ base, callbacks, transport, accountStage, repositoryStage, qualificationStage, profileStage,
-    executionStage, conversationStage })
-  const operatorStage = createOperatorServices({ base, callbacks, started, runtimeState, transport, deviceRuntime, browserStage, accountStage,
-    repositoryStage, qualificationStage, profileStage, managerStage, executionStage, conversationStage, operatorChatStage, agentChatStage })
-  callbacks.operatorServices.bind(operatorStage.operatorServices)
-  const httpStage = createHttpApplication({ base, started, transport, accountStage, repositoryStage, qualificationStage, profileStage,
-    conversationStage, operatorChatStage, operatorStage })
-  const { app } = httpStage
-  callbacks.app.bind(app)
-  callbacks.runtimeServices.bind(httpStage.runtimeServices)
-  const controlStage = createRuntimeControl({ base, callbacks, started, runtimeState, transport, deviceRuntime, browserStage, accountStage,
-    repositoryStage, qualificationStage, profileStage, managerStage, executionStage, conversationStage, operatorChatStage, agentChatStage, httpStage })
-  callbacks.runtimeOwner.bind(controlStage.runtimeOwner)
-  const services: ProductionServices = { base, callbacks, started, runtimeState, transport, deviceRuntime, browserStage, accountStage,
-    repositoryStage, qualificationStage, profileStage, managerStage, executionStage, conversationStage, operatorChatStage, agentChatStage,
-    operatorStage, httpStage, controlStage }
-  const { prepareSchema, initialize } = createRuntimeStartup(services)
-  const { reconcile, drainShutdown, shutdown } = createRuntimeHooks(services)
-  callbacks.shutdown.bind(shutdown)
+  } as ProductionComposition
+  configureMainTransport(composition)
+  configureDeviceRuntime(composition)
+  configureBrowser(composition)
+  configureProviderAccounts(composition)
+  configureWorkflowRepositories(composition)
+  configureHarnessQualifications(composition)
+  configureHarnessProfiles(composition)
+  configureWorkflowManagers(composition)
+  configureExecutionCoordinator(composition)
+  configureConversationManagers(composition)
+  configureOperatorChat(composition)
+  configureAgentChat(composition)
+  configureOperatorServices(composition)
+  configureHttpApplication(composition)
+  configureRuntimeLifecycle(composition)
+  configureRuntimeStartup(composition)
+  configureRuntimeHooks(composition)
   return {
-    app,
-    engine: conversationStage.engine,
-    prepareSchema,
-    initialize,
-    reconcile,
-    shutdown,
-    drainShutdown,
-    rsync: transport.rsync,
-    shutdownPending: () => controlStage.lifecycle.pending(),
+    app: composition.app,
+    engine: composition.engine,
+    prepareSchema: composition.prepareSchema,
+    initialize: composition.initialize,
+    reconcile: composition.reconcile,
+    shutdown: composition.shutdown,
+    drainShutdown: composition.drainShutdown,
+    rsync: composition.rsync,
+    shutdownPending: () => composition.lifecycle.pending(),
     registerFileStorage: () => {
-      const files = started.files ??= createProductionFileStorage(app, base.database.pool, base.config)
-      started.fileStorage = files.service
-      controlStage.mountArtifacts()
-      registerApiRoutes(app, productionRoutes(httpStage, started))
-      return files.service
+      composition.files ??= createProductionFileStorage(composition.app, composition.database.pool, composition.config)
+      composition.fileStorage = composition.files.service
+      composition.mountArtifacts()
+      registerApiRoutes(composition.app, productionRoutes(composition))
+      return composition.fileStorage
     },
-    startDeviceListener: () => deviceRuntime.startListener(),
+    startDeviceListener: () => composition.deviceRuntime.startListener(),
   }
 }
 
-function createMainTransport({ base, callbacks, started }: {
-  base: ProductionBase
-  callbacks: ProductionCallbacks
-  started: StartedServices
-}) {
-  const { codexChatFiles, config, database, infrastructure, qualificationSuites } = base
-  const mainCodex = new MainCodexSelection(config.harnesses.codexBinary,
+function configureBrowser(composition: ProductionComposition) {
+  const { config, database, deviceRuntime } = composition
+  const reportFailure = (error: unknown) => componentLogger('harness').warn({ err: error }, 'Browser runtime requires attention')
+  composition.browser = createProductionBrowser({ pool: database.pool,
+    stateDirectory: config.browserStateDirectory ?? resolve(config.harnesses.workspaceRoot, 'browser-state'),
+    runtimeRoot: config.browserRuntimeRoot,
+    binding: id => deviceRuntime.currentBinding(id),
+    assertHostOwnership: async () => {
+      if (!composition.runtimeOwner?.active) throw new DomainError('NATIVE_RUNTIME_UNAVAILABLE', 'The browser runtime owner is unavailable.', 503)
+    }, reportFailure,
+    remote: (pairing, authority) => {
+      const remote = createMainBrowserRemote({ pool: database.pool, pairing, authority,
+        endpoint: () => deviceRuntime.endpointForDomains(), browser: () => composition.browser, reportFailure })
+      composition.browserRemote = remote
+      return remote
+    },
+  })
+  composition.collaborationPorts = { ...composition.collaborationPorts, browser: composition.browser.lifecycle }
+}
+
+function configureMainTransport(composition: ProductionComposition) {
+  const {
+    config,
+    database,
+    codexChatFiles,
+    qualificationSuites,
+    infrastructure,
+  } = composition
+  const mainCodex = composition.mainCodex = new MainCodexSelection(config.harnesses.codexBinary,
     resolve(config.harnesses.workspaceRoot, 'main-codex-selection.json'), systemMaintenancePorts())
-  const mainBinaries = { get codexBinary() { return mainCodex.binary } }
-  const workerExecution = new WorkerExecutionPolicy(config.workerExecution)
-  const harnessHost = createHarnessHost(infrastructure, qualificationSuites)
-  const fileStorageRoot = config.fileStorageRoot ?? defaultFileStorageRoot()
-  const chatFileAdmissions: ProductionCodexChatFiles = codexChatFiles ?? postgresCodexChatFiles(database.pool, () => {
-    if (!started.fileStorage) throw new Error('Production file storage is not registered.')
-    return started.fileStorage
+  composition.mainBinaries = { get codexBinary() { return mainCodex.binary } }
+  composition.workerExecution = new WorkerExecutionPolicy(config.workerExecution)
+  composition.harnessHost = createHarnessHost(infrastructure, qualificationSuites)
+  const fileStorageRoot = composition.fileStorageRoot = config.fileStorageRoot ?? defaultFileStorageRoot()
+  composition.chatFileAdmissions = codexChatFiles ?? postgresCodexChatFiles(database.pool, () => {
+    if (!composition.fileStorage) throw new Error('Production file storage is not registered.')
+    return composition.fileStorage
   }, () => localCodexChatHost(fileStorageRoot), codexChatHostDirectory(fileStorageRoot))
-  const responseJournal = new NativeResponseJournal(resolve(config.harnesses.workspaceRoot, 'native-response-receipts'))
-  const processRegistry: NonNullable<ProductionHarnessInfrastructure['auxiliary']>['recovery'] | NativeProcessRegistry = infrastructure?.auxiliary?.recovery
+  composition.responseJournal = new NativeResponseJournal(resolve(config.harnesses.workspaceRoot, 'native-response-receipts'))
+  composition.processRegistry = infrastructure?.auxiliary?.recovery
     ?? new NativeProcessRegistry(resolve(config.harnesses.workspaceRoot, 'native-process-registry'))
-  const access = new PostgresAccessService(database.pool)
-  const inputAcknowledgements = new Map<string, TransferIntent>()
-  const acceptedRsync: AcceptedTransferAuthority = createMainTransferAuthority({ pool: database.pool,
-    endpoint: () => callbacks.deviceRuntime.get().endpointForDomains(), jobs: () => started.jobRuntime })
-  const entrypoint: ReturnType<typeof createMainRsyncEntrypoint> | undefined = infrastructure?.rsyncInstallation?.kind === 'configured' && !infrastructure.rsync
-    ? createMainRsyncEntrypoint({ installation: infrastructure.rsyncInstallation, endpoint: () => callbacks.deviceRuntime.get().endpointForDomains(), accepted: acceptedRsync,
+  composition.access = new PostgresAccessService(database.pool)
+  const inputAcknowledgements = composition.inputAcknowledgements = new Map<string, TransferIntent>()
+  const acceptedRsync = composition.acceptedRsync = createMainTransferAuthority({ pool: database.pool,
+    endpoint: () => composition.deviceRuntime.endpointForDomains(), jobs: () => composition.jobRuntime })
+  const entrypoint: ProductionComposition['entrypoint'] = composition.entrypoint = infrastructure?.rsyncInstallation?.kind === 'configured' && !infrastructure.rsync
+    ? createMainRsyncEntrypoint({ installation: infrastructure.rsyncInstallation, endpoint: () => composition.deviceRuntime.endpointForDomains(), accepted: acceptedRsync,
       setup: { checkAcceptedTransfer: (...args) => {
-        if (!started.trustedConnections) throw new DomainError('RSYNC_COMPOSITION_UNAVAILABLE', 'The original Main trusted connection authority has not initialized.', 503)
-        return started.trustedConnections.checkAcceptedTransfer(...args)
+        if (!composition.trustedConnections) throw new DomainError('RSYNC_COMPOSITION_UNAVAILABLE', 'The original Main trusted connection authority has not initialized.', 503)
+        return composition.trustedConnections.checkAcceptedTransfer(...args)
       }, readAcceptedTransfer: (...args) => {
-        if (!started.trustedConnections) throw new DomainError('RSYNC_COMPOSITION_UNAVAILABLE', 'Connection consent is unavailable.', 503)
-        return started.trustedConnections.readAcceptedTransfer(...args)
+        if (!composition.trustedConnections) throw new DomainError('RSYNC_COMPOSITION_UNAVAILABLE', 'Connection consent is unavailable.', 503)
+        return composition.trustedConnections.readAcceptedTransfer(...args)
       } },
       ownership: () => rsync.kind === 'configured' ? rsync.ownership : undefined }) : undefined
-  const installedRsync: InstalledMainRsyncProviders | undefined = infrastructure?.rsync ?? entrypoint?.providers
+  const installedRsync: ProductionComposition['installedRsync'] = composition.installedRsync = infrastructure?.rsync ?? entrypoint?.providers
   const rsyncProviders = installedRsync ? routeMainRsyncAcknowledgements(installedRsync, {
-    endpoint: () => callbacks.deviceRuntime.get().endpointForDomains(), jobs: () => started.jobRuntime,
+    endpoint: () => composition.deviceRuntime.endpointForDomains(), jobs: () => composition.jobRuntime,
     inputAcknowledgements }) : undefined
-  const rsync: ReturnType<typeof createInstalledRsyncComposition> = createInstalledRsyncComposition({ side: 'main', providers: rsyncProviders,
-    current: deviceId => callbacks.deviceRuntime.get().endpointForDomains().captureRequest(deviceId, RSYNC_STAGE_EXTENSION.namespace)?.binding })
-  const remoteTelemetry = createMainResourceTelemetryBindings(() => started.telemetry?.service)
-  return { mainCodex, mainBinaries, workerExecution, harnessHost, fileStorageRoot, chatFileAdmissions, responseJournal, processRegistry, access, inputAcknowledgements, acceptedRsync, entrypoint, installedRsync, rsync, remoteTelemetry }
+  const rsync: ProductionComposition['rsync'] = composition.rsync = createInstalledRsyncComposition({ side: 'main', providers: rsyncProviders,
+    current: deviceId => composition.deviceRuntime.endpointForDomains().captureRequest(deviceId, RSYNC_STAGE_EXTENSION.namespace)?.binding })
+  composition.remoteTelemetry = createMainResourceTelemetryBindings(() => composition.telemetry?.service)
 }
 
-function createDeviceRuntime({ base, callbacks, started, transport }: {
-  base: ProductionBase
-  callbacks: ProductionCallbacks
-  started: StartedServices
-  transport: MainTransport
-}) {
-  const { database, infrastructure } = base
-  const { acceptedRsync, remoteTelemetry, rsync } = transport
-  const deviceRuntime = new ProductionDeviceRuntime(database.pool, infrastructure?.deviceListener, {
+function configureDeviceRuntime(composition: ProductionComposition) {
+  const {
+    database,
+    infrastructure,
+    acceptedRsync,
+    rsync,
+    remoteTelemetry,
+  } = composition
+  const deviceRuntime: ProductionDeviceRuntime = composition.deviceRuntime = new ProductionDeviceRuntime(database.pool, infrastructure?.deviceListener, {
     workerArtifacts: workerArtifactLocation({ environment: process.env,
       releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }),
-    browserMedia: (request, socket, head) => callbacks.browserRemote.get().mediaUpgrade(request, socket, head),
+    browserMedia: (request, socket, head) => composition.browserRemote.mediaUpgrade(request, socket, head),
     extensions: [
       remoteTelemetry.extension,
       ...mainRsyncAuthorizationExtensions(rsync.extensions, acceptedRsync),
-      { ...BROWSER_DEVICE_EXTENSION, handle: (payload, context) => callbacks.browserRemote.get().handle(payload, context) },
+      { ...BROWSER_DEVICE_EXTENSION, handle: (payload, context) => composition.browserRemote.handle(payload, context) },
       { namespace: WORKSPACE_ROOT_EXTENSION.namespace, version: WORKSPACE_ROOT_EXTENSION.version, role: 'client', maxJsonBytes: WORKSPACE_ROOT_EXTENSION.maxPayloadBytes, maxBinaryBytes: 0 },
       { ...JOB_RUNTIME_QUALIFICATION_EXTENSION, role: 'duplex', async handle(payload, context) {
-        const handler = started.jobRuntime?.qualificationExtension.handle
+        const handler = composition.jobRuntime?.qualificationExtension.handle
         if (!handler) throw new DomainError('JOB_RUNTIME_UNAVAILABLE', 'The actual diagnostic qualification authority is unavailable.', 503)
         return handler(payload, context)
       } },
       { ...EXECUTION_AUTHORITY_EXTENSION, role: 'server', async handle(payload, context) {
-        if (!started.executionAuthority?.handle) throw new DomainError('AGENT_PLACEMENT_UNAVAILABLE', 'The actual Main Agent placement authority has not initialized.', 503)
-        return started.executionAuthority.handle(payload, context)
+        if (!composition.executionAuthority?.handle) throw new DomainError('AGENT_PLACEMENT_UNAVAILABLE', 'The actual Main Agent placement authority has not initialized.', 503)
+        return composition.executionAuthority.handle(payload, context)
       } },
       { namespace: WORKER_MCP_EXTENSION.namespace, version: WORKER_MCP_EXTENSION.version, role: 'server',
         maxJsonBytes: WORKER_MCP_EXTENSION.maxJsonBytes, maxBinaryBytes: WORKER_MCP_EXTENSION.maxBinaryBytes, async handle(raw, context) {
           const payload = decodeWorkerMcpRequest({ payload: raw, ...(context.bytes ? { bytes: context.bytes } : {}) })
           if (payload && typeof payload === 'object' && 'operation' in payload
             && typeof payload.operation === 'string' && payload.operation.startsWith('conversation-mcp.')) {
-            return encodeWorkerMcpResult(await callbacks.workerChats.get().mcp.handle(payload, context.binding, context.signal))
+            return encodeWorkerMcpResult(await composition.workerChats.mcp.handle(payload, context.binding, context.signal))
           }
-          if (!started.mainWorkerMcp) throw new DomainError('WORKER_MCP_UNAVAILABLE', 'The original Main worker MCP authority has not initialized.', 503)
+          if (!composition.mainWorkerMcp) throw new DomainError('WORKER_MCP_UNAVAILABLE', 'The original Main worker MCP authority has not initialized.', 503)
           context.signal.throwIfAborted()
-          const result = await started.mainWorkerMcp.handle(payload, context.binding, context.signal)
+          const result = await composition.mainWorkerMcp.handle(payload, context.binding, context.signal)
           context.signal.throwIfAborted()
           return encodeWorkerMcpResult(result)
         } },
       { ...SOURCE_OPERATION_EXTENSION, role: 'duplex', async handle(payload, context) {
-        const handler = started.jobRuntime?.sourceExtension.handle
+        const handler = composition.jobRuntime?.sourceExtension.handle
         if (!handler) throw new DomainError('SOURCE_RUNTIME_UNAVAILABLE', 'The actual Main source domain has not initialized.', 503)
         return handler(payload, context)
       } },
-      createMainWorkflowArtifactTransferExtension(() => started.workflowArtifacts?.receiver,
-        infrastructure?.deviceDomains?.extensions.find(value => value.namespace === BYTE_TRANSFER_NAMESPACE),()=>started.jobRuntime?.outputs),
+      createMainWorkflowArtifactTransferExtension(() => composition.workflowArtifacts?.receiver,
+        infrastructure?.deviceDomains?.extensions.find(value => value.namespace === BYTE_TRANSFER_NAMESPACE),()=>composition.jobRuntime?.outputs),
       { namespace: 'harness-discovery-v1', version: 1, role: 'client', maxJsonBytes: 1_048_576, maxBinaryBytes: 0 },
-      createMainProviderAccountExtension({ accounts: () => callbacks.providerAccounts.get(),
+      createMainProviderAccountExtension({ accounts: () => composition.providerAccounts,
         currentBinding: deviceId => deviceRuntime.endpointForDomains().currentBinding(deviceId) }),
       { namespace: COMPUTER_ACCOUNTS_NAMESPACE, version: 1, role: 'client', maxJsonBytes: 65_536, maxBinaryBytes: 0 },
       { namespace: COMPUTER_MAINTENANCE_NAMESPACE, version: COMPUTER_MAINTENANCE_VERSION, role: 'client', maxJsonBytes: 1_048_576, maxBinaryBytes: 0 },
@@ -658,13 +677,13 @@ function createDeviceRuntime({ base, callbacks, started, transport }: {
       { ...REMOTE_PREPARATION_EXTENSION, role: 'client' },
       executionExtension({ routes: [
         { matches: payload => WorkerConversationCallbackSchema.safeParse(payload).success, handle: async (payload, context) => {
-          if (context.bytes !== undefined) throw new DomainError('WORKER_CONVERSATION_UNAVAILABLE',
+          if (!composition.workerChats || context.bytes !== undefined) throw new DomainError('WORKER_CONVERSATION_UNAVAILABLE',
             'The Main conversation callback authority is unavailable.', 503)
-          return { payload: await callbacks.workerChats.get().bridge.handle(payload, context.binding, context.signal) }
+          return { payload: await composition.workerChats.bridge.handle(payload, context.binding, context.signal) }
         } },
         { matches: payload => RemoteJobMainRpcRequestRecordSchema.safeParse(payload).success, handle: async (payload, context) => {
-          if (!started.jobRuntime) throw new DomainError('JOB_RUNTIME_UNAVAILABLE', 'The actual main Job application bridge is unavailable.', 503)
-          return { payload: await started.jobRuntime.application.handle(payload, context.binding) }
+          if (!composition.jobRuntime) throw new DomainError('JOB_RUNTIME_UNAVAILABLE', 'The actual main Job application bridge is unavailable.', 503)
+          return { payload: await composition.jobRuntime.application.handle(payload, context.binding) }
         } }],
       dispatch: async (payload, context) => {
         const native = infrastructure?.deviceDomains?.extensions.find(value => value.namespace === REMOTE_EXECUTION_EXTENSION)
@@ -673,7 +692,7 @@ function createDeviceRuntime({ base, callbacks, started, transport }: {
       } }),
       { namespace: JOB_INPUT_NAMESPACE, version: 1, role: 'server', maxJsonBytes: 1_048_576, maxBinaryBytes: 8192,
         handle: async (payload, context) => {
-          const handler = started.jobRuntime?.inputs.extension.handle
+          const handler = composition.jobRuntime?.inputs.extension.handle
           if (!handler) throw new DomainError('JOB_RUNTIME_UNAVAILABLE', 'The actual Job input authority is unavailable.', 503)
           return handler(payload, context)
         } },
@@ -689,32 +708,31 @@ function createDeviceRuntime({ base, callbacks, started, transport }: {
       if (failures.length) throw new AggregateError(failures, 'Original device domain binding cleanup remains incomplete')
     },
     async bindingReady(binding, signal, endpoint) {
-      const { ci, ciEnrollment, computerSync } = callbacks.runtimeServices.get()
       if (!signal.aborted) {
-        callbacks.browser.get().profiles.wake()
-        started.jobRuntime?.requestQueueWake()
-        ciEnrollment?.request({
+        composition.browser.profiles.wake()
+        composition.jobRuntime?.requestQueueWake()
+        composition.runtimeServices.ciEnrollment?.request({
           hostRef: { kind: 'device', mainId: binding.mainId, deviceId: binding.deviceId },
           applicationInstallationId: binding.workerInstallationId,
           keyRevision: binding.keyRevision, authorizationRevision: binding.authorizationRevision,
         })
-        void ci?.dispatch()
+        void composition.runtimeServices.ci?.dispatch()
       }
-      if (computerSync) {
-        void computerSync.paired({
+      if (composition.runtimeServices.computerSync) {
+        void composition.runtimeServices.computerSync.paired({
           hostRef: { kind: 'device', mainId: binding.mainId, deviceId: binding.deviceId },
           applicationInstallationId: binding.workerInstallationId,
           keyRevision: binding.keyRevision, authorizationRevision: binding.authorizationRevision,
-        }).catch(error => callbacks.app.get().log.warn({ err: error, deviceId: binding.deviceId }, 'Shared file pairing is pending'))
+        }).catch(error => composition.app.log.warn({ err: error, deviceId: binding.deviceId }, 'Shared file pairing is pending'))
       }
-      callbacks.installationMonitor.get().workerReady(binding, signal)
+      composition.installationMonitor.workerReady(binding, signal)
       try {
         const session = await remoteTelemetry.ready(binding, signal, endpoint)
         if (session) void session.completion.catch(error => {
-          if (!signal.aborted) callbacks.app.get().log.error({ err: error, deviceId: binding.deviceId }, 'Remote resource telemetry collector failed')
+          if (!signal.aborted) composition.app.log.error({ err: error, deviceId: binding.deviceId }, 'Remote resource telemetry collector failed')
         })
       } catch (error) {
-        if (!signal.aborted) callbacks.app.get().log.error({ err: error, deviceId: binding.deviceId }, 'Remote resource telemetry collector did not start')
+        if (!signal.aborted) composition.app.log.error({ err: error, deviceId: binding.deviceId }, 'Remote resource telemetry collector did not start')
       }
     },
     async reconcile(binding, signal, endpoint) {
@@ -722,60 +740,33 @@ function createDeviceRuntime({ base, callbacks, started, transport }: {
         const result = await endpoint.request(binding.deviceId, 'harness-discovery-v1',
           { operation: 'discover', refreshId: randomUUID() }, { signal })
         signal.throwIfAborted()
-        const selectedSuites = callbacks.selectedSuites.get()
-        if (selectedSuites) await retainInstalledHarnessInventory({ registry: callbacks.harnessRegistry.get(), qualifications: callbacks.qualificationRepository.get(),
-          binding, inventory: result.payload, suiteRevision: selectedSuites.codex.revision })
-        else callbacks.harnessRegistry.get().acceptRemoteSnapshot(binding, result.payload)
+        if (composition.selectedSuites) await retainInstalledHarnessInventory({ registry: composition.harnessRegistry, qualifications: composition.qualificationRepository,
+          binding, inventory: result.payload, suiteRevision: composition.selectedSuites.codex.revision })
+        else composition.harnessRegistry.acceptRemoteSnapshot(binding, result.payload)
       }
       if (infrastructure?.deviceDomains) await infrastructure.deviceDomains.reconcile(binding, signal, endpoint)
     },
   })
-  return deviceRuntime
 }
 
-function createBrowser({ base, callbacks, deviceRuntime }: {
-  base: ProductionBase
-  callbacks: ProductionCallbacks
-  deviceRuntime: ProductionDeviceRuntime
-}) {
-  const { config, database } = base
-  const reportFailure = (error: unknown) => componentLogger('harness').warn({ err: error }, 'Browser runtime requires attention')
-  const browser = createProductionBrowser({ pool: database.pool,
-    stateDirectory: config.browserStateDirectory ?? resolve(config.harnesses.workspaceRoot, 'browser-state'),
-    runtimeRoot: config.browserRuntimeRoot,
-    binding: id => deviceRuntime.currentBinding(id),
-    assertHostOwnership: async () => {
-      if (!callbacks.runtimeOwner.get().active) throw new DomainError('NATIVE_RUNTIME_UNAVAILABLE', 'The browser runtime owner is unavailable.', 503)
-    }, reportFailure,
-    remote: (pairing, authority) => {
-      const remote = createMainBrowserRemote({ pool: database.pool, pairing, authority,
-        endpoint: () => deviceRuntime.endpointForDomains(), browser: () => callbacks.browser.get(), reportFailure })
-      return callbacks.browserRemote.bind(remote)
-    },
-  })
-  const collaborationPorts: WorkflowFeaturePorts = { ...base.collaborationPorts, browser: browser.lifecycle }
-  return { browser, collaborationPorts }
-}
-
-function createProviderAccounts({ base, callbacks, started, transport, deviceRuntime }: {
-  base: ProductionBase
-  callbacks: ProductionCallbacks
-  started: StartedServices
-  transport: MainTransport
-  deviceRuntime: ProductionDeviceRuntime
-}) {
-  const { accountSelection, config, database } = base
-  const { processRegistry } = transport
-  const commands = new PostgresCommandCoordinator(database.pool)
-  const bugReports = new BugReportService(database.pool, commands)
+function configureProviderAccounts(composition: ProductionComposition) {
+  const {
+    config,
+    database,
+    accountSelection,
+    processRegistry,
+    deviceRuntime,
+  } = composition
+  const commands = composition.commands = new PostgresCommandCoordinator(database.pool)
+  composition.bugReports = new BugReportService(database.pool, commands)
   const accountCredentials = new LocalProviderCredentials(resolve(config.harnesses.workspaceRoot, 'provider-accounts'))
-  const selectedAccounts: ProductionProviderAccountSelection = accountSelection ?? createProductionAccountSelection({
+  const selectedAccounts: ProductionComposition['selectedAccounts'] = composition.selectedAccounts = accountSelection ?? createProductionAccountSelection({
     path: resolve(config.harnesses.workspaceRoot, 'provider-account-qualifications.json'),
     managedPaths: accountId => accountCredentials.paths(accountId),
-    validate: () => callbacks.harnessRegistry.get().refreshMain(),
-    pin: record => callbacks.harnessRegistry.get().pinOverride(record.override),
+    validate: () => composition.harnessRegistry.refreshMain(),
+    pin: record => composition.harnessRegistry.pinOverride(record.override),
     models: async (binding, generation) => {
-      const options = await callbacks.nativeConfigurations.get().options(binding.provider, binding)
+      const options = await composition.nativeConfigurations.options(binding.provider, binding)
       const selected = selectedAccounts.selectAccount?.(binding)
       if (!selected) throw new DomainError('PROVIDER_ACCOUNT_UNQUALIFIED', 'Account model installation is unavailable.', 409)
       return { binding, generation, observedAt: options.checkedAt,
@@ -789,109 +780,111 @@ function createProviderAccounts({ base, callbacks, started, transport, deviceRun
       input => providerAccounts.assertAuthenticationEligibility(input.operation))
     : accountCommands
   // Main's own accounts belong to its installation: read from the database until startup knows it.
-  const mainTarget = async (sql: Parameters<typeof readMainProvisioningTarget>[0]) => started.machine
-    ? mainProvisioningTarget(started.machine.installationId) : readMainProvisioningTarget(sql)
-  const providerAccounts: ProviderAccountsService = new ProviderAccountsService(database.pool,
+  const mainTarget = async (sql: Parameters<typeof readMainProvisioningTarget>[0]) => composition.machine
+    ? mainProvisioningTarget(composition.machine.installationId) : readMainProvisioningTarget(sql)
+  const providerAccounts: ProductionComposition['providerAccounts'] = composition.providerAccounts = new ProviderAccountsService(database.pool,
     new ProviderAccountsRepository(database.pool, () => accountCredentials.hostId(), mainTarget), accountCredentials,
     accountNative, commands, undefined, local => createRemoteAccountServices({ pool: database.pool, commands, local,
       endpoint: () => deviceRuntime.endpointForDomains() }))
-  const workflowAccountBindings = new Map<string, AcceptedProviderAccountBinding>()
-  const accountConfigurations = new ProviderAccountConfigurationService(providerAccounts, {
-    selectionForConfiguration: (...args) => callbacks.harnessInstances.get().selectionForConfiguration(...args),
-    prepareOperatorConfiguration: (...args) => callbacks.harnessInstances.get().prepareOperatorConfiguration(...args),
-    validateSelection: (...args) => callbacks.harnessInstances.get().validateSelection(...args),
+  composition.workflowAccountBindings = new Map<string, AcceptedProviderAccountBinding>()
+  composition.accountConfigurations = new ProviderAccountConfigurationService(providerAccounts, {
+    selectionForConfiguration: (...args) => composition.harnessInstances.selectionForConfiguration(...args),
+    prepareOperatorConfiguration: (...args) => composition.harnessInstances.prepareOperatorConfiguration(...args),
+    validateSelection: (...args) => composition.harnessInstances.validateSelection(...args),
   })
-  const workflowCapture = createWorkflowNativeCaptureChannel()
-  const reviewCapture = createReviewNativeCaptureChannel()
-  const memoryBoards = createMemoryBoardService(database.pool, memoryBoardAuthority)
-  const workflowRuntime = createWorkflowRepositoryServices(workflowCapture.verify, (sql, owner, capture) => {
-    return callbacks.remoteWorkflow.get().assertPhysical(sql, owner, capture)
+  const workflowCapture = composition.workflowCapture = createWorkflowNativeCaptureChannel()
+  composition.reviewCapture = createReviewNativeCaptureChannel()
+  composition.memoryBoards = createMemoryBoardService(database.pool, memoryBoardAuthority)
+  composition.workflowRuntime = createWorkflowRepositoryServices(workflowCapture.verify, (sql, owner, capture) => {
+    if (!composition.remoteWorkflow) throw new DomainError('REMOTE_WORKFLOW_UNAVAILABLE', 'The actual original native physical composition is unavailable.', 503)
+    return composition.remoteWorkflow.assertPhysical(sql, owner, capture)
   }, async (sql, evidence, proof) => {
     // Event file contexts are admitted at turn start; artifact results arrive in captured history.
     if (proof.original.type === 'event' && proof.original.event.type !== 'turn.started') return
-    if (!started.admitWorkflowFileContext) throw new DomainError('NATIVE_ARTIFACT_CONTEXT_UNAVAILABLE', 'The original Main file-context composition is unavailable.', 503)
-    await started.admitWorkflowFileContext(sql, evidence, proof)
+    if (!composition.admitWorkflowFileContext) throw new DomainError('NATIVE_ARTIFACT_CONTEXT_UNAVAILABLE', 'The original Main file-context composition is unavailable.', 503)
+    await composition.admitWorkflowFileContext(sql, evidence, proof)
     if (await workflowArtifactsAreLocal(sql, proof.scope.runId, proof.ref.nodeId)) {
       const snapshot = await readAcceptedRepeatRunLocked(sql, proof.scope.runId)
       const node = snapshot.version.definition.nodes.find(item => item.id === proof.ref.nodeId)
       if (node && node.kind !== 'job' && node.artifactOutputs) {
-        if (!started.localWorkflowArtifacts) throw new DomainError('WORKFLOW_ARTIFACT_SOURCE_UNAVAILABLE',
+        if (!composition.localWorkflowArtifacts) throw new DomainError('WORKFLOW_ARTIFACT_SOURCE_UNAVAILABLE',
           'Local workflow artifact storage is unavailable.', 503)
-        await started.localWorkflowArtifacts.admitContextLocked(sql, workflowCapture.verify.read(evidence), proof)
+        await composition.localWorkflowArtifacts.admitContextLocked(sql, workflowCapture.verify.read(evidence), proof)
       }
       return
     }
-    await started.artifactResultSource?.retainOriginalLocked(sql, evidence, proof)
+    await composition.artifactResultSource?.retainOriginalLocked(sql, evidence, proof)
   })
-  return { commands, bugReports, selectedAccounts, providerAccounts, workflowAccountBindings, accountConfigurations, workflowCapture, reviewCapture, memoryBoards, workflowRuntime }
 }
 
-function createWorkflowRepositories({ base, callbacks, started, transport, deviceRuntime, browserStage, accountStage }: {
-  base: ProductionBase
-  callbacks: ProductionCallbacks
-  started: StartedServices
-  transport: MainTransport
-  deviceRuntime: ProductionDeviceRuntime
-  browserStage: BrowserStage
-  accountStage: AccountStage
-}) {
-  const { config, database, infrastructure, qualificationSuites } = base
-  const { mainBinaries, processRegistry, workerExecution } = transport
-  const { collaborationPorts } = browserStage
-  const { accountConfigurations, commands, memoryBoards, reviewCapture, workflowCapture, workflowRuntime } = accountStage
-  const workflowCollaboration = new WorkflowCollaborationIntegration(
-    collaborationPorts, async (owner, execution) => {
+function configureWorkflowRepositories(composition: ProductionComposition) {
+  const {
+    config,
+    database,
+    qualificationSuites,
+    infrastructure,
+    mainBinaries,
+    workerExecution,
+    processRegistry,
+    deviceRuntime,
+    commands,
+    accountConfigurations,
+    workflowCapture,
+    reviewCapture,
+    workflowRuntime,
+  } = composition
+  const collaboration = composition.workflowCollaboration = new WorkflowCollaborationIntegration(
+    composition.collaborationPorts, async (owner, execution) => {
       const placement = await owner.oneShotConnection().transaction(sql =>
         readAcceptedPlacement(sql, execution.runId, execution.workflowNodeId), true)
       if (placement) return placement.hostRef.kind === 'device' ? placement.hostRef.deviceId : placement.hostRef.mainId
-      const mainId = started.artifactComposition?.mainId
+      const mainId = composition.artifactComposition?.mainId
       if (!mainId) throw new DomainError('BROWSER_COMPUTER_UNAVAILABLE', 'The accepted Main computer is unavailable.', 503)
       return mainId
     })
   const workflowServices: RepeatRepositoryServices = { ...workflowRuntime.services,
-    collaboration: workflowCollaboration.hooks,
-    prepareCollaborationExecution: (owner, run, version, execution) => workflowCollaboration.prepare(owner, run, version, execution),
-    readCollaborationPrompt: (owner, execution, version) => workflowCollaboration.readPrompt(owner, execution, version),
-    releaseCollaborationExecution: (owner, execution, version) => workflowCollaboration.release(owner, execution, 'terminal', version),
-    memoryBoards,
+    collaboration: collaboration.hooks,
+    prepareCollaborationExecution: (owner, run, version, execution) => collaboration.prepare(owner, run, version, execution),
+    readCollaborationPrompt: (owner, execution, version) => collaboration.readPrompt(owner, execution, version),
+    releaseCollaborationExecution: (owner, execution, version) => collaboration.release(owner, execution, 'terminal', version),
+    memoryBoards: composition.memoryBoards,
     async reconcileWorkflowArtifacts(owner, run, execution, signal) {
       signal.throwIfAborted()
       const snapshot = await runs.getRepeatSnapshot(run.id, owner)
       const node = snapshot.version.definition.nodes.find((item) => item.id === execution.workflowNodeId)
       if (!node || node.kind === 'job' || !node.artifactOutputs) return
       if (await workflowArtifactsAreLocal(database.pool, execution.runId, execution.workflowNodeId)) {
-        if (!started.localWorkflowArtifacts) throw new DomainError('WORKFLOW_ARTIFACT_SOURCE_UNAVAILABLE',
+        if (!composition.localWorkflowArtifacts) throw new DomainError('WORKFLOW_ARTIFACT_SOURCE_UNAVAILABLE',
           'Local workflow artifact storage is unavailable.', 503)
-        await started.localWorkflowArtifacts.recover(owner, execution, signal)
+        await composition.localWorkflowArtifacts.recover(owner, execution, signal)
         return
       }
-      if (!started.artifactComposition || !started.workflowArtifacts) {
+      if (!composition.artifactComposition || !composition.workflowArtifacts) {
         throw new DomainError('WORKFLOW_ARTIFACT_SOURCE_UNAVAILABLE', 'The original artifact composition is unavailable.', 503)
       }
-      await recoverWorkflowArtifactOutputs({ owner, execution, authority: started.artifactComposition.authority,
-        outputs: started.workflowArtifacts.artifacts.outputs })
+      await recoverWorkflowArtifactOutputs({ owner, execution, authority: composition.artifactComposition.authority,
+        outputs: composition.workflowArtifacts.artifacts.outputs })
     },
     async assertWorkflowArtifactOutputsLocked(sql, run, version, execution) {
       if (await workflowArtifactsAreLocal(sql, execution.runId, execution.workflowNodeId)) {
-        if (!started.localWorkflowArtifacts) throw new DomainError('WORKFLOW_ARTIFACT_SOURCE_UNAVAILABLE',
+        if (!composition.localWorkflowArtifacts) throw new DomainError('WORKFLOW_ARTIFACT_SOURCE_UNAVAILABLE',
           'Local workflow artifact storage is unavailable.', 503)
-        await started.localWorkflowArtifacts.assertOutputsLocked(sql, run, version, execution)
+        await composition.localWorkflowArtifacts.assertOutputsLocked(sql, run, version, execution)
         return
       }
-      if (!started.artifactOutputsGate) throw new DomainError('WORKFLOW_ARTIFACT_SOURCE_UNAVAILABLE', 'The original workflow artifact acceptance composition is unavailable.', 503)
-      await started.artifactOutputsGate(sql, run, version, execution)
+      if (!composition.artifactOutputsGate) throw new DomainError('WORKFLOW_ARTIFACT_SOURCE_UNAVAILABLE', 'The original workflow artifact acceptance composition is unavailable.', 503)
+      await composition.artifactOutputsGate(sql, run, version, execution)
     },
     async admitPlacementExecutionLocked(sql, owner, run, execution, ref, inputDigest) {
-      if (started.agentPlacement) { await started.agentPlacement.admitExecution(sql, owner, execution, ref, inputDigest, run.authorizationPrincipalId); return }
+      if (composition.agentPlacement) { await composition.agentPlacement.admitExecution(sql, owner, execution, ref, inputDigest, run.authorizationPrincipalId); return }
       if (await readAcceptedPlacement(sql, run.id, execution.workflowNodeId)) throw new DomainError('AGENT_PLACEMENT_UNAVAILABLE', 'The actual Agent placement producer is unavailable.', 503)
     },
     async preparePlacementExecution(owner, run, execution) {
-      const { artifactResultSource, agentPreparation } = started
-      if (!artifactResultSource) throw new DomainError('WORKFLOW_ARTIFACT_SOURCE_UNAVAILABLE', 'The original workflow artifact composition is unavailable.', 503)
-      await owner.oneShotConnection().transaction(sql => artifactResultSource.assertLaunchDeclarationLocked(sql, execution.id, run.id))
-      if (agentPreparation) {
-        const prepared = await callbacks.approvals.get().withSourceObservationLane(owner, execution, () => agentPreparation.prepare(owner, run, execution))
-        if (prepared) return { ...prepared, revalidate: () => callbacks.approvals.get().withSourceObservationLane(owner, execution, prepared.revalidate) }
+      if (!composition.artifactResultSource) throw new DomainError('WORKFLOW_ARTIFACT_SOURCE_UNAVAILABLE', 'The original workflow artifact composition is unavailable.', 503)
+      await owner.oneShotConnection().transaction(sql => composition.artifactResultSource!.assertLaunchDeclarationLocked(sql, execution.id, run.id))
+      if (composition.agentPreparation) {
+        const prepared = await composition.approvals.withSourceObservationLane(owner, execution, () => composition.agentPreparation!.prepare(owner, run, execution))
+        if (prepared) return { ...prepared, revalidate: () => composition.approvals.withSourceObservationLane(owner, execution, prepared.revalidate) }
       }
       const placed = await owner.oneShotConnection().transaction(sql => readAcceptedPlacement(sql, run.id, execution.workflowNodeId))
       if (placed) throw new DomainError('AGENT_PLACEMENT_UNAVAILABLE', 'The actual Agent source preparation producer is unavailable.', 503)
@@ -914,56 +907,56 @@ function createWorkflowRepositories({ base, callbacks, started, transport, devic
   }
   const reviewNativeProofs = new ReviewNativeProofServices(reviewCapture.verify,
     (sql, capture) => remoteWorkflow.assertReviewPhysical(sql, capture))
-  const repository = new PostgresInteractionRepository(database.pool, reviewNativeProofs)
-  const budgets = new PostgresApprovalBudgetRepository(database.pool)
-  const projectRoot = config.workspaceStorageRoot ?? workspaceStorageRoot()
-  const runWorktrees = new RunWorktrees(database.pool, join(config.harnesses.workspaceRoot, 'run-worktrees'))
-  const locations = new WorkspaceLocationService(database.pool, commands, config.harnesses.workspaceRoot, 'runner-local',
-    () => started.rootPolicies)
-  const workflows = new PostgresWorkflowRepository(database.pool)
-  const runs = new PostgresRunRepository(database.pool, workflows, locations,
+  composition.repository = new PostgresInteractionRepository(database.pool, reviewNativeProofs)
+  composition.budgets = new PostgresApprovalBudgetRepository(database.pool)
+  const projectRoot = composition.projectRoot = config.workspaceStorageRoot ?? workspaceStorageRoot()
+  const runWorktrees = composition.runWorktrees = new RunWorktrees(database.pool, join(config.harnesses.workspaceRoot, 'run-worktrees'))
+  const locations = composition.locations = new WorkspaceLocationService(database.pool, commands, config.harnesses.workspaceRoot, 'runner-local',
+    () => composition.rootPolicies)
+  const workflows = composition.workflows = new PostgresWorkflowRepository(database.pool)
+  const runs = composition.runs = new PostgresRunRepository(database.pool, workflows, locations,
     { runtimeRoot: config.harnesses.workspaceRoot, ...workflowRuntime, services: workflowServices }, async evidence => {
-      const accepted = started.artifactResultSource?.acceptedAfterCommit(evidence)
+      const accepted = composition.artifactResultSource?.acceptedAfterCommit(evidence)
       if (accepted) {
-        if (!started.workflowArtifacts || !started.artifactResultSource) throw new DomainError('WORKFLOW_ARTIFACT_SOURCE_UNAVAILABLE', 'The original workflow artifact composition is unavailable.', 503)
-        await new WorkflowArtifactResultAdoption(started.artifactResultSource.source, started.workflowArtifacts.artifacts.outputs).adoptOriginalOutputs(accepted)
-        await started.artifactResultSource.assertAdoptedAfterCommit(evidence)
+        if (!composition.workflowArtifacts || !composition.artifactResultSource) throw new DomainError('WORKFLOW_ARTIFACT_SOURCE_UNAVAILABLE', 'The original workflow artifact composition is unavailable.', 503)
+        await new WorkflowArtifactResultAdoption(composition.artifactResultSource.source, composition.workflowArtifacts.artifacts.outputs).adoptOriginalOutputs(accepted)
+        await composition.artifactResultSource.assertAdoptedAfterCommit(evidence)
       }
       try { await remoteWorkflow.afterCommit(workflowCapture.verify.read(evidence)) }
-      catch (error) { callbacks.app.get().log.warn({ err: error }, 'Original remote metadata acknowledgment remains pending') }
+      catch (error) { composition.app.log.warn({ err: error }, 'Original remote metadata acknowledgment remains pending') }
     })
-  const remoteWorkflow = createProductionRemoteWorkflow({ pool: database.pool, locations, endpoint: () => deviceRuntime.endpointForDomains(),
+  const remoteWorkflow = composition.remoteWorkflow = createProductionRemoteWorkflow({ pool: database.pool, locations, endpoint: () => deviceRuntime.endpointForDomains(),
     preparationTimeoutMs: config.harnesses.timeoutMs,
     workerExecution,
-    producer: () => started.agentPlacement, execution: id => runs.getExecution(id), artifacts: {
+    producer: () => composition.agentPlacement, execution: id => runs.getExecution(id), artifacts: {
       assertPublications: (sql, readout, binding) => {
-        if (!started.workflowPhysicalArtifacts) throw new DomainError('REMOTE_ARTIFACT_PHYSICAL_UNAVAILABLE', 'The original canonical artifact physical composition is unavailable.', 503)
-        return started.workflowPhysicalArtifacts.assertPublications(sql, readout, binding)
+        if (!composition.workflowPhysicalArtifacts) throw new DomainError('REMOTE_ARTIFACT_PHYSICAL_UNAVAILABLE', 'The original canonical artifact physical composition is unavailable.', 503)
+        return composition.workflowPhysicalArtifacts.assertPublications(sql, readout, binding)
       },
       assertAdopted: (sql, readout, binding) => {
-        if (!started.workflowPhysicalArtifacts) throw new DomainError('REMOTE_ARTIFACT_PHYSICAL_UNAVAILABLE', 'The original canonical artifact physical composition is unavailable.', 503)
-        return started.workflowPhysicalArtifacts.assertAdopted(sql, readout, binding)
+        if (!composition.workflowPhysicalArtifacts) throw new DomainError('REMOTE_ARTIFACT_PHYSICAL_UNAVAILABLE', 'The original canonical artifact physical composition is unavailable.', 503)
+        return composition.workflowPhysicalArtifacts.assertAdopted(sql, readout, binding)
       },
     } })
-  const workspaces = new PostgresWorkspaceRepository(database.pool, workflows, runs)
-  const settings = new PostgresSettingsRepository(database.pool)
-  const hostProfileEvidence = new HostHarnessProfileEvidenceRepository(database.pool)
-  const claudeDiscovery: ReturnType<typeof createClaudeProductionDiscovery> = createClaudeProductionDiscovery({ registry: () => harnessRegistry, factories: () => callbacks.nativeFactories.get(),
+  composition.workspaces = new PostgresWorkspaceRepository(database.pool, workflows, runs)
+  const settings = composition.settings = new PostgresSettingsRepository(database.pool)
+  const hostProfileEvidence = composition.hostProfileEvidence = new HostHarnessProfileEvidenceRepository(database.pool)
+  const claudeDiscovery: ProductionComposition['claudeDiscovery'] = composition.claudeDiscovery = createClaudeProductionDiscovery({ registry: () => harnessRegistry, factories: () => composition.nativeFactories,
     workingDirectory: config.harnesses.workspaceRoot })
-  const harnessRegistry: ProductionHarnessRegistry = new ProductionHarnessRegistry(database.pool, mainBinaries,
+  const harnessRegistry: ProductionComposition['harnessRegistry'] = composition.harnessRegistry = new ProductionHarnessRegistry(database.pool, mainBinaries,
     (client) => settings.getManagedHarnessDefaults(client), hostProfileEvidence,
     (deviceId) => { const view = deviceRuntime.presenceFor(deviceId); return view?.phase === 'ready' ? view.binding : null },
     process.env, infrastructure?.inventoryDiscovery ?? { launcher: discoverInventoryLauncher, payloads: inventoryDriverPayloads,
       claude: claudeDiscovery.discover }, (deviceId) => deviceRuntime.currentBinding(deviceId),
     (deviceId) => deviceRuntime.presenceFor(deviceId))
-  const foundationSettings = new PostgresFoundationSettingsRepository(database.pool, projectRoot)
-  const remoteExecution = new RemoteExecutionSettingsService(foundationSettings, commands, workerExecution,
+  const foundationSettings = composition.foundationSettings = new PostgresFoundationSettingsRepository(database.pool, projectRoot)
+  composition.remoteExecution = new RemoteExecutionSettingsService(foundationSettings, commands, workerExecution,
     deviceRuntime, remoteExecutionStartupEnvironment({ listener: infrastructure?.deviceListener,
       workerExecution: config.workerExecution, environment: config.remoteExecutionEnvironment ?? {} }), config.port,
-    error => callbacks.app.get().log.error({ err: error }, 'device listener settings could not be applied'))
-  const operators = new PostgresOperatorRepository(database.pool, accountConfigurations)
-  const rollout = new NativeRollout(process.env)
-  const compatibilityProbe = (timeoutMs = 2000, expected?: { harness: CompatibilityHarness; binary: string }) => scopedCompatibilityProbe({
+    error => composition.app.log.error({ err: error }, 'device listener settings could not be applied'))
+  composition.operators = new PostgresOperatorRepository(database.pool, accountConfigurations)
+  composition.rollout = new NativeRollout(process.env)
+  composition.compatibilityProbe = (timeoutMs = 2000, expected?: { harness: CompatibilityHarness; binary: string }) => scopedCompatibilityProbe({
     registry: processRegistry, pin: (harness) => {
       const binding = harnessRegistry.pinDefault(harness)
       if (expected && (harness !== expected.harness || binding.installation.launcher.resolvedLauncher !== expected.binary)) {
@@ -971,35 +964,43 @@ function createWorkflowRepositories({ base, callbacks, started, transport, devic
       }
       return binding
     },
-    assertInstallation: (binding, signal) => callbacks.nativeFactories.get().assertInstallationUnchanged(binding, signal),
+    assertInstallation: (binding, signal) => composition.nativeFactories.assertInstallationUnchanged(binding, signal),
     workingDirectory: config.harnesses.workspaceRoot, environment: process.env, timeoutMs,
   })
-  const qualificationRepository = new HarnessQualificationRepository(database.pool)
+  composition.qualificationRepository = new HarnessQualificationRepository(database.pool)
   const identity = infrastructure?.qualificationIdentity ?? {
     registry: harnessRegistry.installations, pin: (harness: CompatibilityHarness) => harnessRegistry.pinDefault(harness),
   }
-  const selectedSuites: Record<CompatibilityHarness, QualificationSuite> | undefined = qualificationSuites && identity ? {
+  composition.selectedSuites = qualificationSuites && identity ? {
     codex: withQualificationIdentity(withNativeQualificationOwnership(qualificationSuites.codex, processRegistry,
-      (input) => { const binding = identity.pin('codex', input); return (signal) => callbacks.nativeFactories.get().assertInstallationUnchanged(binding, signal) }), identity.registry, (input) => identity.pin('codex', input)),
+      (input) => { const binding = identity.pin('codex', input); return (signal) => composition.nativeFactories.assertInstallationUnchanged(binding, signal) }), identity.registry, (input) => identity.pin('codex', input)),
   } : qualificationSuites
-  return { workflowCollaboration, repository, budgets, projectRoot, runWorktrees, locations, workflows, runs, remoteWorkflow, workspaces, settings, hostProfileEvidence, claudeDiscovery, harnessRegistry, foundationSettings, remoteExecution, operators, rollout, compatibilityProbe, qualificationRepository, selectedSuites }
 }
 
-function createHarnessQualifications({ base, callbacks, transport, accountStage, repositoryStage }: {
-  base: ProductionBase
-  callbacks: ProductionCallbacks
-  transport: MainTransport
-  accountStage: AccountStage
-  repositoryStage: RepositoryStage
-}) {
-  const { config, database, infrastructure } = base
-  const { access, harnessHost, mainCodex, processRegistry, responseJournal } = transport
-  const { commands, providerAccounts, selectedAccounts } = accountStage
-  const { claudeDiscovery, compatibilityProbe, harnessRegistry, hostProfileEvidence, qualificationRepository, selectedSuites, settings } = repositoryStage
-  const qualificationRegistry = selectedSuites ? new HarnessQualificationRegistry(qualificationRepository, {
+function configureHarnessQualifications(composition: ProductionComposition) {
+  const {
+    config,
+    database,
+    infrastructure,
+    mainCodex,
+    responseJournal,
+    processRegistry,
+    access,
+    commands,
+    selectedAccounts,
+    providerAccounts,
+    settings,
+    hostProfileEvidence,
+    claudeDiscovery,
+    harnessRegistry,
+    compatibilityProbe,
+    qualificationRepository,
+    selectedSuites,
+  } = composition
+  const qualificationRegistry = composition.qualificationRegistry = selectedSuites ? new HarnessQualificationRegistry(qualificationRepository, {
     codex: selectedSuites.codex.revision,
   }) : undefined
-  const harnessQualifications = selectedSuites && qualificationRegistry ? new HarnessQualificationService(
+  composition.harnessQualifications = selectedSuites && qualificationRegistry ? new HarnessQualificationService(
     qualificationRepository, qualificationRegistry, selectedSuites,
     { get codex() { return mainCodex.binary } }, commands, settings,
     undefined, (harness) => harnessCompatibility.refreshAfterQualification(harness),
@@ -1010,13 +1011,13 @@ function createHarnessQualifications({ base, callbacks, transport, accountStage,
     },
     harness => commandInputHash(qualificationIdentity(harnessRegistry.pinDefault(harness), selectedSuites[harness].revision)),
   ) : undefined
-  const harnessCompatibility = infrastructure?.auxiliary
+  const harnessCompatibility = composition.harnessCompatibility = infrastructure?.auxiliary
     ? new HarnessCompatibilityService({ ...infrastructure.auxiliary.compatibility, commands })
     : new HarnessCompatibilityService({ probe: compatibilityProbe(), cache: new FileCompatibilityCache(), commands })
   const endpointHost = config.host === '0.0.0.0' ? '127.0.0.1'
     : config.host === '::' || config.host === '::1' ? '[::1]' : config.host
-  const appMcpEndpoint = `http://${endpointHost}:${config.port}/mcp`
-  const nativeFactories = new NativeHarnessFactories({ get codexBinary() { return mainCodex.binary }, responseJournal,
+  composition.appMcpEndpoint = `http://${endpointHost}:${config.port}/mcp`
+  composition.nativeFactories = new NativeHarnessFactories({ get codexBinary() { return mainCodex.binary }, responseJournal,
     accounts: providerAccounts,
     ...(selectedAccounts.selectAccount ? { selectAccount: selectedAccounts.selectAccount } : {}),
     refreshInstallations: signal => harnessRegistry.refreshMain(signal),
@@ -1026,7 +1027,7 @@ function createHarnessQualifications({ base, callbacks, transport, accountStage,
       id: `configuration-check:${commandInputHash(configuration)}`, agentId: 'configuration-qualification', harness: configuration,
     }),
     ...(infrastructure?.inventoryDiscovery ? { installationDiscovery: infrastructure.inventoryDiscovery.launcher } : {}),
-    auxiliaryRecovery: (role) => processRegistry.scope(`${role}:${harnessHost.auxiliaryLaunchId()}`),
+    auxiliaryRecovery: (role) => processRegistry.scope(`${role}:${composition.harnessHost.auxiliaryLaunchId()}`),
     admitRecovery: async (recovery) => { Object.assign(recovery, await processRegistry.reserveLaunch(recovery.owner)) },
     abandonRecovery: async (recovery) => { await processRegistry.abandonReservedLaunch(recovery) },
     claudeVersionCommand: infrastructure?.auxiliary?.command ?? runCommand,
@@ -1034,36 +1035,47 @@ function createHarnessQualifications({ base, callbacks, transport, accountStage,
       if (!await processRegistry.closeOwner(recovery.owner)) throw new Error('Diagnostic native process closure is unconfirmed.')
     },
   }, infrastructure)
-  const hostSettings = new HarnessInstanceSettingsRepository(database.pool)
-  const hostAuthority: HostHarnessOverrideAuthority = deviceHostOverrideAuthority(database.pool)
-  const profileAuthority: AcceptedProfileAuthority<ClaudeProfileOwner> = createProductionProfileAuthority({ access, providerAccounts, registry: harnessRegistry,
+  composition.hostSettings = new HarnessInstanceSettingsRepository(database.pool)
+  composition.hostAuthority = deviceHostOverrideAuthority(database.pool)
+  composition.profileAuthority = createProductionProfileAuthority({ access, providerAccounts, registry: harnessRegistry,
     evidence: hostProfileEvidence,
     claudeCurrent: () => infrastructure?.claudeCurrentProfile
-      ?? (harnessHost.installedClis ? claudeDiscovery.current : undefined),
-    checks: () => callbacks.hostProfileChecks.get() })
-  return { qualificationRegistry, harnessQualifications, harnessCompatibility, appMcpEndpoint, nativeFactories, hostSettings, hostAuthority, profileAuthority }
+      ?? (composition.harnessHost.installedClis ? claudeDiscovery.current : undefined),
+    checks: () => composition.hostProfileChecks })
 }
 
-function createHarnessProfiles({ base, callbacks, started, transport, deviceRuntime, accountStage, repositoryStage, qualificationStage }: {
-  base: ProductionBase
-  callbacks: ProductionCallbacks
-  started: StartedServices
-  transport: MainTransport
-  deviceRuntime: ProductionDeviceRuntime
-  accountStage: AccountStage
-  repositoryStage: RepositoryStage
-  qualificationStage: QualificationStage
-}) {
-  const { config, database, infrastructure } = base
-  const { harnessHost, mainCodex, processRegistry, workerExecution } = transport
-  const { accountConfigurations, commands, providerAccounts, selectedAccounts } = accountStage
-  const { claudeDiscovery, harnessRegistry, hostProfileEvidence, projectRoot, qualificationRepository, selectedSuites, settings } = repositoryStage
-  const { appMcpEndpoint, harnessQualifications, hostAuthority, hostSettings, nativeFactories, profileAuthority } = qualificationStage
-  const selectedProfiles = new AcceptedHarnessProfileAdmission<ClaudeProfileOwner>(hostSettings, hostProfileEvidence, profileAuthority)
-  const claudeProfiles: AcceptedClaudeProfileAdmission<ClaudeProfileOwner> = infrastructure?.claudeProfiles ?? new AcceptedClaudeProfileAdmission<ClaudeProfileOwner>(hostSettings, hostProfileEvidence, profileAuthority)
-  const hostProfileChecks = new HostHarnessInstanceProfileChecks(hostSettings, hostProfileEvidence, commands, hostAuthority,
+function configureHarnessProfiles(composition: ProductionComposition) {
+  const {
+    config,
+    database,
+    infrastructure,
+    mainCodex,
+    workerExecution,
+    processRegistry,
+    deviceRuntime,
+    commands,
+    selectedAccounts,
+    providerAccounts,
+    accountConfigurations,
+    projectRoot,
+    settings,
+    hostProfileEvidence,
+    claudeDiscovery,
+    harnessRegistry,
+    qualificationRepository,
+    selectedSuites,
+    harnessQualifications,
+    appMcpEndpoint,
+    nativeFactories,
+    hostSettings,
+    hostAuthority,
+    profileAuthority,
+  } = composition
+  composition.selectedProfiles = new AcceptedHarnessProfileAdmission<ClaudeProfileOwner>(hostSettings, hostProfileEvidence, profileAuthority)
+  composition.claudeProfiles = infrastructure?.claudeProfiles ?? new AcceptedClaudeProfileAdmission<ClaudeProfileOwner>(hostSettings, hostProfileEvidence, profileAuthority)
+  const hostProfileChecks = composition.hostProfileChecks = new HostHarnessInstanceProfileChecks(hostSettings, hostProfileEvidence, commands, hostAuthority,
     new ProductionHostHarnessProfileQualifier(harnessRegistry, nativeFactories, () => deviceRuntime.endpointForDomains(), config.harnesses.workspaceRoot,
-      !harnessHost.installedClis ? undefined : { async qualify(value, input) {
+      !composition.harnessHost.installedClis ? undefined : { async qualify(value, input) {
         const apiKey = await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef,
           value.target.applicationInstallationId)
         const current = await claudeDiscovery.currentForConfiguration(value, input.signal)
@@ -1093,7 +1105,7 @@ function createHarnessProfiles({ base, callbacks, started, transport, deviceRunt
           binding: captured.binding, inventory: result.payload, suiteRevision: selectedSuites.codex.revision })
       },
     }) : undefined)
-  const harnessInstances = new HostHarnessOverrideService(hostSettings, commands, hostAuthority, async (value, client) => {
+  composition.harnessInstances = new HostHarnessOverrideService(hostSettings, commands, hostAuthority, async (value, client) => {
     await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef,
           value.target.applicationInstallationId)
     const proof = await harnessRegistry.profileEvidence(value, client, { includeFailed: true })
@@ -1108,7 +1120,7 @@ function createHarnessProfiles({ base, callbacks, started, transport, deviceRunt
   }, accountConfigurations, value => hostProfileChecks.checkAutomatically(
     value, harnessRegistry.pinOverride(value).installation,
   ))
-  const installationMonitor = new HarnessInstallationMonitor(harnessRegistry, hostProfileChecks,
+  composition.installationMonitor = new HarnessInstallationMonitor(harnessRegistry, hostProfileChecks,
     () => deviceRuntime.endpointForDomains(), async (binding, inventory) => {
       if (selectedSuites) await retainInstalledHarnessInventory({ registry: harnessRegistry,
         qualifications: qualificationRepository, binding, inventory, suiteRevision: selectedSuites.codex.revision })
@@ -1118,31 +1130,31 @@ function createHarnessProfiles({ base, callbacks, started, transport, deviceRunt
       const result = await harnessQualifications.verify('codex', { force: true })
       if (result.status === 'qualified') return
       // A signed-out Codex cannot run the check's model turn. That is the owner's sign-in to do, not a fault.
-      if (await nativeConfigurations.options('codex').then(() => false, harnessSignInRequired)) {
+      if (await composition.nativeConfigurations.options('codex').then(() => false, harnessSignInRequired)) {
         throw new DomainError('HARNESS_SIGN_IN_REQUIRED', 'Sign in to Codex on the server; its updated installation is checked after sign-in.',
           409, { signInRequired: true })
       }
       throw new DomainError('HARNESS_REQUALIFICATION_FAILED',
         result.failureReason ?? 'The updated Codex installation failed its native checks.', 409)
     }, error => {
-      if (onlySignInRequired(error)) callbacks.app.get().log.warn({ err: error }, 'Automatic harness installation checks wait for sign-in')
-      else if (isDatabasePoolTimeout(error)) callbacks.app.get().log.warn({ err: error }, 'Automatic harness installation checks retry after a busy database')
-      else callbacks.app.get().log.error({ err: error }, 'Automatic harness installation checks failed')
+      if (onlySignInRequired(error)) composition.app.log.warn({ err: error }, 'Automatic harness installation checks wait for sign-in')
+      else if (isDatabasePoolTimeout(error)) composition.app.log.warn({ err: error }, 'Automatic harness installation checks retry after a busy database')
+      else composition.app.log.error({ err: error }, 'Automatic harness installation checks failed')
     },
     infrastructure?.installationRefreshIntervalMs)
-  const claudeMetadata = !harnessHost.installedClis ? undefined : productionClaudeMetadata({ registry: harnessRegistry,
+  const claudeMetadata = !composition.harnessHost.installedClis ? undefined : productionClaudeMetadata({ registry: harnessRegistry,
     accounts: providerAccounts,
     ...(selectedAccounts.selectAccount ? { selectAccount: selectedAccounts.selectAccount } : {}),
     processes: processRegistry, factories: nativeFactories, settings: hostSettings, defaults: () => settings.getHarnessDefaults(), current: claudeDiscovery.currentForConfiguration })
   const qualifier = new NativeHarnessConfigurationQualifier(config.harnesses.codexBinary, nativeFactories, claudeMetadata, providerAccounts)
-  const harnessCatalog = new HarnessCatalogService(qualifier, settings, commands, config.harnesses.workspaceRoot, appMcpEndpoint)
-  const nativeConfigurations = new NativeConfigurationService(
+  const harnessCatalog = composition.harnessCatalog = new HarnessCatalogService(qualifier, settings, commands, config.harnesses.workspaceRoot, appMcpEndpoint)
+  const nativeConfigurations = composition.nativeConfigurations = new NativeConfigurationService(
     config.harnesses.codexBinary, config.harnesses.workspaceRoot, nativeFactories, claudeMetadata, providerAccounts,
     { mainId: async () => await readMainInstallationId(database.pool) ?? '',
     endpoint: () => deviceRuntime.endpointForDomains() },
   )
-  const appRoutes = new AppMcpRoutes(database.pool, appMcpEndpoint, appLauncherPath(), () => callbacks.runtimeOwner.get())
-  const maintenancePorts = systemMaintenancePorts(process.env, { get codex() { return mainCodex.binary } })
+  composition.appRoutes = new AppMcpRoutes(database.pool, appMcpEndpoint, appLauncherPath(), () => composition.runtimeOwner)
+  const maintenancePorts = composition.maintenancePorts = systemMaintenancePorts(process.env, { get codex() { return mainCodex.binary } })
   maintenancePorts.selectInstalledCodex = async signal => {
     const binary = await mainCodex.selectInstalled(signal)
     await harnessRegistry.refreshMain(signal)
@@ -1150,7 +1162,7 @@ function createHarnessProfiles({ base, callbacks, started, transport, deviceRunt
     nativeConfigurations.invalidateOptions()
     return binary
   }
-  const harnessSettings = {
+  composition.harnessSettings = {
     claudePlugins: new ClaudePluginSettingsService(maintenancePorts, commands),
     directories: new HarnessDirectoryBrowser([projectRoot], database.pool),
     plugins: new CodexPluginSettingsService(database.pool, infrastructure?.auxiliary?.plugins ?? new NativeCodexPlugins(() => mainCodex.binary, config.harnesses.workspaceRoot,
@@ -1159,66 +1171,299 @@ function createHarnessProfiles({ base, callbacks, started, transport, deviceRunt
       codex: infrastructure?.auxiliary?.mcp.codex ?? new CodexMcpConnections(() => mainCodex.binary, config.harnesses.workspaceRoot, processRegistry.scope('settings:mcp:codex')),
     }, () => { harnessCatalog.invalidateChecks(); nativeConfigurations.invalidateOptions() }, async () => {
       await processRegistry.closeOwner('settings:mcp:codex')
-    }, appMcpEndpoint, () => started.managedMcp),
+    }, appMcpEndpoint, () => composition.managedMcp),
   }
-  const launches = new NativeLaunchRecords()
-  return { selectedProfiles, claudeProfiles, hostProfileChecks, harnessInstances, installationMonitor, harnessCatalog, nativeConfigurations, appRoutes, maintenancePorts, harnessSettings, launches }
+  composition.launchScopes = new WeakMap<NativeHarnessSessionManager, NativeProcessRecovery>()
+  composition.claudeLaunches = new WeakMap<NativeHarnessSessionManager, ReturnType<typeof productionClaudeManager>>()
 }
 
-function createWorkflowManagers({ base, started, transport, deviceRuntime, accountStage, repositoryStage, qualificationStage, profileStage }: {
-  base: ProductionBase
-  started: StartedServices
-  transport: MainTransport
-  deviceRuntime: ProductionDeviceRuntime
-  accountStage: AccountStage
-  repositoryStage: RepositoryStage
-  qualificationStage: QualificationStage
-  profileStage: ProfileStage
-}) {
-  const { database, infrastructure } = base
-  const { access, fileStorageRoot, harnessHost, processRegistry } = transport
-  const { providerAccounts, workflowAccountBindings } = accountStage
-  const { harnessRegistry, locations, remoteWorkflow, runs } = repositoryStage
-  const { nativeFactories } = qualificationStage
-  const { claudeProfiles, launches, selectedProfiles } = profileStage
-  const managers = createWorkflowManagerResolver({ pool: database.pool, harnessMode: harnessHost.mode,
-    claudeClient: infrastructure?.claudeClient, fileStorageRoot, processRegistry, workflowAccountBindings, remoteWorkflow,
-    localWorkflowArtifacts: () => {
-      if (!started.localWorkflowArtifacts) throw new DomainError('WORKFLOW_ARTIFACT_SOURCE_UNAVAILABLE',
-        'Local workflow artifact storage is unavailable.', 503)
-      return started.localWorkflowArtifacts
+function configureWorkflowManagers(composition: ProductionComposition) {
+  const {
+    database,
+    infrastructure,
+    fileStorageRoot,
+    processRegistry,
+    access,
+    deviceRuntime,
+    providerAccounts,
+    workflowAccountBindings,
+    locations,
+    runs,
+    remoteWorkflow,
+    harnessRegistry,
+    nativeFactories,
+    selectedProfiles,
+    claudeProfiles,
+    launchScopes,
+    claudeLaunches,
+  } = composition
+  composition.managers = new ExecutionScopedNativeSessionManagerResolver((context, getOwner) => {
+    const configuration = context.configuration.harness
+    const acceptedAccount = workflowAccountBindings.get(context.executionId)
+    const accountBinding = acceptedAccount?.kind === 'slot' ? acceptedAccount : undefined
+    if (configuration.harness === 'opencode') {
+      throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
+    }
+    if (configuration.harness !== context.harness) {
+      throw new DomainError('HARNESS_CONFIGURATION_MISMATCH', 'The pinned configuration does not match the execution harness.', 409)
+    }
+    const remoteAccount = context.acceptedPlacement?.hostRef.kind === 'device'
+      || context.configuration.harnessProfileSelection?.target.hostRef.kind === 'device'
+    if (configuration.accountId && remoteAccount) {
+      throw new DomainError('PROVIDER_ACCOUNT_LOCAL_ONLY', 'Managed provider accounts cannot run on another computer.', 409)
+    }
+    // Object allocation remains native/registry IO-free. The coordinator reserves
+    // this SAME scope immediately before its lifetime/entered commits.
+    const processOwner = context.purpose === 'consultation' && context.consultation
+      ? `consultation:${context.consultation.consultationId}` : `execution:${context.executionId}`
+    const recovery = processRegistry.scope(processOwner)
+    const remote = remoteWorkflow!.manager(context, getOwner)
+    if (remote) return remote
+    const nativeOutputs = configuration.harness === 'codex' && context.artifactOutputs && !context.purpose
+      ? createLocalWorkflowNativeOutputs({ executionId: context.executionId, artifacts: () => {
+        if (!composition.localWorkflowArtifacts) throw new DomainError('WORKFLOW_ARTIFACT_SOURCE_UNAVAILABLE',
+          'Local workflow artifact storage is unavailable.', 503)
+        return composition.localWorkflowArtifacts
+      }, stateDirectory: fileStorageRoot, assertCurrent: async signal => {
+        signal?.throwIfAborted()
+        const owner = getOwner()
+        if (!owner || owner.runId !== context.runId) throw new DomainError('RUN_OWNERSHIP_LOST',
+          'The local workflow no longer owns its native output turn.', 409)
+        owner.assertOwned()
+      }, qualification: { registry: processRegistry, qualify: qualifyCodex, command: runCommand } }) : undefined
+    const selector = workflowProfileSelection(context,
+      remoteWorkflow!.binding(context.executionId)?.executionPlacement?.workingTree.canonicalCwd)
+    if (configuration.harness === 'claude') {
+      if (!context.runId || !context.attempt) throw new DomainError('CLAUDE_OWNER_UNAVAILABLE',
+        'Claude requires the persisted Run and execution attempt.', 409)
+      const claude = productionClaudeManager({ pool: database.pool, factories: nativeFactories, registry: harnessRegistry,
+        accounts: providerAccounts,
+        ...(accountBinding ? { accountBinding } : {}),
+        profiles: claudeProfiles, ...(selector ? { selector } : {}),
+        binding: { kind: 'workflow', runId: context.runId, executionId: context.executionId, attempt: context.attempt, getOwner },
+        ...(context.consultation ? { consultation: context.consultation } : {}),
+        role: 'workflow', configuration, workingDirectory: context.workingDirectory, ownerAgentId: context.agentId,
+        recovery, appMcpAccess: 'scoped', mode: composition.harnessHost.mode,
+        ...(infrastructure?.claudeClient ? { loadClient: infrastructure.claudeClient } : {}),
+        inspectionStart: async () => {
+          const owner = getOwner()
+          if (!owner) throw new DomainError('CLAUDE_OWNER_UNAVAILABLE', 'The workflow native owner is unavailable.', 409)
+          const execution = await runs.getExecution(context.executionId, owner), run = await runs.get(context.runId!, owner)
+          if (!execution || !run || execution.attempt !== context.attempt) throw new DomainError('CLAUDE_OWNER_UNAVAILABLE', 'The persisted execution attempt changed.', 409)
+          const request = HarnessExecutionRequestSchema.parse({ ...context.workflowRequest,
+            executionId: execution.id, runId: execution.runId,
+            workspaceId: run.workspaceId, workflowNodeId: execution.workflowNodeId, workingDirectory: execution.workingDirectory,
+            runtimeDirectory: execution.runtimeDirectory, configuration: context.configuration, input: execution.input })
+          return execution.nativeSessionId ? { kind: 'workflow', correlationId: `execution:${execution.id}`, request }
+            : { request, correlationId: `execution:${execution.id}` }
+        },
+      })
+      claudeLaunches.set(claude.manager, claude)
+      launchScopes.set(claude.manager, recovery)
+      return claude.manager
+    }
+    if (selector) {
+      if (!context.runId || !context.attempt) throw new DomainError('HARNESS_PROFILE_OWNER_CONFLICT', 'The exact Run attempt is unavailable.', 409)
+      const { manager } = productionSelectedProfileManager({ factories: nativeFactories, registry: harnessRegistry, profiles: selectedProfiles,
+        ...(accountBinding ? { accountBinding } : {}),
+        selector, binding: { kind: 'workflow', runId: context.runId, executionId: context.executionId, attempt: context.attempt, getOwner,
+          ...(context.purpose ? { purpose: context.purpose } : {}),
+          ...(context.consultation ? { consultation: context.consultation } : {}) },
+        configuration, role: 'workflow', workingDirectory: context.workingDirectory, ownerAgentId: context.agentId,
+        recovery, appMcpAccess: 'scoped', ...(nativeOutputs ? { nativeOutputs } : {}) })
+      launchScopes.set(manager, recovery)
+      return manager
+    }
+    const selection = harnessRegistry.initialized ? harnessRegistry.pinAccepted(context.configuration) : undefined
+    const { manager } = nativeFactories.allocate({
+      ...(accountBinding ? { accountBinding } : {}),
+      ...(selection ? { selection } : {}),
+      role: 'workflow', workingDirectory: context.workingDirectory, ownerAgentId: context.agentId,
+      configured: { instanceId: selection?.instance.instanceId ?? context.agentId, instanceRevision: context.configuration.id, driverId: configuration.harness,
+        enabled: true, configuration },
+      processRecovery: recovery, appMcpAccess: 'scoped',
+      harness: 'codex',
+      ...(nativeOutputs ? { nativeOutputs } : {}),
+    })
+    launchScopes.set(manager, recovery)
+    return manager
+  })
+  composition.validateContinuation = placedContinuationValidator(database.pool, locations, remoteWorkflow, {
+    async assertCurrent(binding, signal, purpose) {
+      signal?.throwIfAborted()
+      const sql = deliveryTransactionClient() ?? database.pool
+      if (!composition.agentPlacement) {
+        throw new DomainError('AGENT_PLACEMENT_UNAVAILABLE', 'The current accepted placement authority is unavailable.', 503)
+      }
+      if (binding.placement.hostRef.kind === 'device') {
+        const stored = (await sql.query<{ receipt: unknown }>(
+          'select receipt from remote_execution_receipts where operation_id=$1',
+          [binding.intent.operationId])).rows[0]
+        const receipt = stored && RemoteOperationReceiptSchema.parse(stored.receipt)
+        if (receipt?.native) {
+          // Restart preserves Main's admitted lifetime; it does not authorize a new Worker operation.
+          const authenticated = purpose === 'restart' ? receipt.connection
+            : deviceRuntime.endpointForDomains().currentBinding(binding.placement.hostRef.deviceId)
+          if (!authenticated) {
+            throw new DomainError('REMOTE_DISPATCH_UNAVAILABLE', 'The authenticated execution connection is unavailable.', 503)
+          }
+          if (authenticated.bootId !== receipt.connection.bootId) {
+            throw new DomainError('REMOTE_NATIVE_OWNER_CLOSED', 'The connected computer restarted during the run.', 409)
+          }
+          await assertRemoteExecutionAuthority(sql, locations, {
+            version: 1, intent: binding.intent, placement: binding.placement, action: 'read',
+          }, authenticated, composition.agentPlacement)
+          signal?.throwIfAborted()
+          return
+        }
+      }
+      const row = (await sql.query<{ principal_id: string; workspace_id: string }>("select record->>'authorizationPrincipalId' as principal_id,workspace_id from runs where id=$1", [binding.intent.runId])).rows[0]
+      if (!row) throw new DomainError('AGENT_PLACEMENT_UNAVAILABLE', 'The current accepted placement authority is unavailable.', 503)
+      const current = await credentialAuthority(sql as GraphSqlClient, binding.intent.executionId, 'workflow')
+      await composition.agentPlacement.assertPinsCurrent(sql, binding.placement,
+        await readLiveManagementPrincipal(sql, row.principal_id), row.workspace_id,
+        current.nativeSessionId ? { purpose: 'resident' } : undefined)
+      signal?.throwIfAborted()
     },
-    nativeFactories, harnessRegistry, providerAccounts, claudeProfiles, selectedProfiles, runs, launches })
-  const validateContinuation = placedContinuationValidator(database.pool, locations, remoteWorkflow,
-    createAcceptedDestinationContinuation({ pool: database.pool, locations, devices: deviceRuntime,
-      placement: () => started.agentPlacement }))
-  const credentials = new WorkerCredentialService(database.pool, access)
-  const prepareWorkflowManagerContext = createWorkflowManagerContextPreparer({ pool: database.pool, remoteWorkflow, providerAccounts,
-    workflowAccountBindings })
-  return { managers, validateContinuation, credentials, prepareWorkflowManagerContext }
+  })
+  composition.credentials = new WorkerCredentialService(database.pool, access)
+  composition.prepareWorkflowManagerContext = async (context: NativeManagerResolutionContext) => {
+    const prepared = await remoteWorkflow!.prepareContext(context)
+    if (!context.runId) return prepared
+    const row = (await database.pool.query<{ version: unknown; node_id: string }>(
+      `select v.record as version,e.workflow_node_id as node_id from harness_executions e
+       join runs r on r.id=e.run_id join workflow_versions v on v.id=r.workflow_version_id
+       where e.id=$1 and r.id=$2`, [context.executionId, context.runId])).rows[0]
+    if (!row) throw new DomainError('WORKFLOW_ARTIFACT_SOURCE_UNAVAILABLE', 'The saved native execution is unavailable.', 409)
+    const binding = await providerAccounts.runtimeBinding('run-node', context.purpose
+      ? `${context.runId}:agent:${context.configuration.agentId}` : `${context.runId}:${row.node_id}`,
+    context.configuration.harness, context.configuration.harnessProfileSelection)
+    if (binding) workflowAccountBindings.set(context.executionId, binding)
+    if (context.purpose) return prepared
+    const node = WorkflowVersionV3Schema.parse(row.version).definition.nodes.find(item => item.id === row.node_id)
+    return node && node.kind !== 'job' && node.artifactOutputs
+      ? { ...prepared, artifactOutputs: node.artifactOutputs } : prepared
+  }
 }
 
-function createExecutionCoordinator({ base, runtimeState, transport, accountStage, repositoryStage, qualificationStage, profileStage, managerStage }: {
-  base: ProductionBase
-  runtimeState: ProductionState
-  transport: MainTransport
-  accountStage: AccountStage
-  repositoryStage: RepositoryStage
-  qualificationStage: QualificationStage
-  profileStage: ProfileStage
-  managerStage: ManagerStage
-}) {
-  const { config, database } = base
-  const { access, processRegistry } = transport
-  const { reviewCapture, workflowCapture } = accountStage
-  const { budgets, locations, remoteWorkflow, repository, runs, workflowCollaboration } = repositoryStage
-  const { appMcpEndpoint, nativeFactories } = qualificationStage
-  const { appRoutes, launches } = profileStage
-  const { credentials, managers, prepareWorkflowManagerContext, validateContinuation } = managerStage
-  const launchCredentials = createExecutionCredentialProvider({ pool: database.pool, access, credentials, appRoutes,
-    isClosing: () => runtimeState.closing, validateContinuation, runs, remoteWorkflow, locations, managers, nativeFactories,
-    appMcpEndpoint, prepareWorkflowManagerContext, launches })
-  const approvals = new ApprovalExecutionCoordinator({
+function configureExecutionCoordinator(composition: ProductionComposition) {
+  const {
+    config,
+    database,
+    processRegistry,
+    access,
+    workflowCapture,
+    reviewCapture,
+    repository,
+    budgets,
+    locations,
+    runs,
+    remoteWorkflow,
+    appMcpEndpoint,
+    nativeFactories,
+    appRoutes,
+    launchScopes,
+    claudeLaunches,
+    managers,
+    validateContinuation,
+    credentials,
+    prepareWorkflowManagerContext,
+  } = composition
+  const launchCredentials = composition.launchCredentials = {
+    async restoreConsultation(binding, environment) {
+      const credential = await credentials.restoreForConsultation(binding, environment)
+      await appRoutes.refresh()
+      return credential
+    },
+    async renewConsultation(binding, credential, signal) {
+      signal?.throwIfAborted()
+      const expiresAt = await credentials.renewForConsultation(binding, credential)
+      if (!composition.closing) await appRoutes.refresh({ signal })
+      return expiresAt
+    },
+    async restore(executionId, environment) {
+      await validateContinuation(executionId)
+      const credential = await credentials.restoreForExecution(executionId, environment)
+      await appRoutes.refresh()
+      return credential
+    },
+    async recoverRemote(executionId, applicationAccess, job) {
+      const execution = await runs.getExecution(executionId)
+      const binding = remoteWorkflow.binding(executionId)
+      const retained = execution && await readRetainedRemoteReviewer(database.pool, execution)
+      if (!execution || !binding || !retained || applicationAccess.executionId !== executionId
+        || applicationAccess.operationId !== binding.intent.operationId || applicationAccess.attemptId !== binding.intent.attemptId
+        || applicationAccess.bindingHash !== binding.intent.bindingHash || applicationAccess.agentId !== execution.agentId)
+        throw new DomainError('REVIEWER_CREDENTIAL_LOST', 'The original process credential cannot be recovered.', 409)
+      if (job) await credentials.bindReviewerJob(executionId, { principalId: retained.principalId }, job)
+      const principal = await access.authenticate(applicationAccess.token, 'worker')
+      if (principal.id !== retained.principalId || principal.agentId !== execution.agentId)
+        throw new DomainError('REVIEWER_CREDENTIAL_LOST', 'The original process credential changed.', 409)
+      return { principalId: principal.id, expiresAt: principal.expiresAt,
+        environment: { agentId: execution.agentId, variables: { GRAPHQL_MCP_TOKEN: applicationAccess.token } } }
+    },
+    async bindReviewerJob(executionId, credential, job, lane) {
+      await credentials.bindReviewerJob(executionId, credential, job, lane)
+      await appRoutes.refresh()
+    },
+    async prepare(input) {
+      await validateContinuation(input.executionId, input.signal)
+      const execution = await runs.getExecution(input.executionId)
+      if (!execution || execution.workingDirectory !== input.workingDirectory) {
+        throw new DomainError('WORKER_EXECUTION_IDENTITY_INVALID', 'Credential preflight must use the accepted execution directory.', 409)
+      }
+      const configuration = await runs.getExecutionConfiguration(execution.agentConfigurationVersionId, execution)
+      const run = await runs.get(execution.runId)
+      if (!configuration || configuration.id !== execution.agentConfigurationVersionId
+        || configuration.agentId !== execution.agentId || configuration.harness.harness !== input.harness
+        || !run?.executionLocation) {
+        throw new DomainError('WORKER_EXECUTION_IDENTITY_INVALID', 'Credential preflight requires the pinned execution identity.', 409)
+      }
+      const context = {
+        executionId: execution.id, agentId: execution.agentId, harness: input.harness,
+        workingDirectory: input.workingDirectory, configuration, runId: execution.runId, attempt: execution.attempt,
+        ...(input.purpose ? { purpose: input.purpose } : {}),
+        ...(input.consultation ? { consultation: input.consultation } : {}),
+      }
+      const preparedContext = await prepareWorkflowManagerContext(context)
+      const placement = preparedContext.acceptedPlacement
+      if (!placement && run.executionLocation.runnerId !== locations.runnerId) {
+        throw new DomainError('WORKER_EXECUTION_IDENTITY_INVALID', 'An unplaced execution requires the local workspace runner.', 409)
+      }
+      let runnerId = run.executionLocation.runnerId
+      if (placement?.hostRef.kind === 'main') runnerId = locations.runnerId
+      if (placement?.hostRef.kind === 'device') runnerId = placement.registration!.workerInstallationId
+      const manager = input.manager ?? managers.resolve(preparedContext).manager
+      const detection = remoteWorkflow.isRemote(input.executionId)
+        ? remoteMcpPreflight(manager, preparedContext)
+        : new McpDetectionService(nativeFactories.inspector(manager), appMcpEndpoint)
+      if (input.harness === 'claude') {
+        const claude = claudeLaunches.get(manager)
+        if (!claude || configuration.harness.harness !== 'claude') throw new DomainError('CLAUDE_OWNER_UNAVAILABLE', 'The exact Claude launch is unavailable.', 409)
+        return prepareClaudeWorkflowCredentials({ input, configuration: configuration.harness, claude,
+          inspector: nativeFactories.inspector(manager), detection, credentials, runnerId, endpoint: appMcpEndpoint,
+          refreshRoutes: () => appRoutes.refresh({ signal: input.signal }) })
+      }
+      const launch = new WorkerLaunchCredentialService(detection, credentials, runnerId)
+      // The coordinator reserved and retained this exact manager lifetime
+      // BEFORE preflight. It owns disposal + durable closure on every failure;
+      // releasing an empty resolver here would destroy the only positive proof.
+      const prepared = await launch.prepare(input)
+      try { await appRoutes.refresh({ signal: input.signal }) } catch (error) { await credentials.revoke(prepared.credential); throw error }
+      return prepared
+    },
+    revoke: (credential) => credentials.revoke(credential),
+    revokeForExecution: (executionId) => credentials.revokeForExecution(executionId),
+    revokeForRun: (runId, client) => credentials.revokeForRun(runId, client),
+    reconcileTerminalCredentials: () => credentials.reconcileTerminalCredentials(),
+    renew: async (executionId, credential, signal) => {
+      signal?.throwIfAborted()
+      const expiresAt = await credentials.renewForExecution(executionId, credential)
+      if (!composition.closing) await appRoutes.refresh({ signal })
+      return expiresAt
+    },
+  }
+  composition.approvals = new ApprovalExecutionCoordinator({
     runs, interactions: repository, budgets, managers, activeTimeoutMs: config.harnesses.timeoutMs, credentials: launchCredentials, validateContinuation,
     workflowClosures: new PostgresWorkflowClosureStore(database.pool, executionId =>
       processRegistry instanceof NativeProcessRegistry
@@ -1226,7 +1471,7 @@ function createExecutionCoordinator({ base, runtimeState, transport, accountStag
     repeatReviewerBindings: new PostgresRepeatReviewerBindings(database.pool),
     nativeCaptures: { capture(input) {
       const evidence = workflowCapture.capture.capture(input)
-      remoteWorkflow.capture(input, workflowCapture.verify.read(evidence))
+      remoteWorkflow!.capture(input, workflowCapture.verify.read(evidence))
       return evidence
     } }, reviewNativeCaptures: { capture(input) {
       const evidence = reviewCapture.capture.capture(input)
@@ -1244,8 +1489,8 @@ function createExecutionCoordinator({ base, runtimeState, transport, accountStag
       return closed
     },
     reserveNativeLaunch: async (executionId, manager, consultation) => {
-      if (remoteWorkflow.isRemote(executionId)) return
-      const scope = launches.scopeOf(manager)
+      if (remoteWorkflow!.isRemote(executionId)) return
+      const scope = launchScopes.get(manager)
       const expectedOwner = consultation ? `consultation:${consultation.consultationId}` : `execution:${executionId}`
       if (!scope || scope.owner !== expectedOwner || scope.launchId) throw new DomainError(
         'NATIVE_LAUNCH_RESERVATION_CONFLICT', 'The exact manager launch scope is unavailable or already reserved.', 409)
@@ -1254,86 +1499,162 @@ function createExecutionCoordinator({ base, runtimeState, transport, accountStag
     },
     prepareManagerContext: prepareWorkflowManagerContext,
     commitReviewNative: executionId => remoteWorkflow.afterReviewCommit(executionId),
-    collaboration: workflowCollaboration } satisfies CurrentApprovalExecutionDependencies)
-  const telemetryLifetime = new AbortController()
-  return { launchCredentials, approvals, telemetryLifetime }
+    collaboration: composition.workflowCollaboration } satisfies CurrentApprovalExecutionDependencies)
+  composition.telemetryLifetime = new AbortController()
+  composition.mainTelemetryContext = null
 }
 
-function createConversationManagers({ base, callbacks, started, transport, deviceRuntime, accountStage, repositoryStage, qualificationStage, profileStage, executionStage }: {
-  base: ProductionBase
-  callbacks: ProductionCallbacks
-  started: StartedServices
-  transport: MainTransport
-  deviceRuntime: ProductionDeviceRuntime
-  accountStage: AccountStage
-  repositoryStage: RepositoryStage
-  qualificationStage: QualificationStage
-  profileStage: ProfileStage
-  executionStage: ExecutionStage
-}) {
-  const { checkpoints, config, database, infrastructure } = base
-  const { access, fileStorageRoot, harnessHost, processRegistry, responseJournal } = transport
-  const { accountConfigurations, providerAccounts } = accountStage
-  const { budgets, harnessRegistry, locations, qualificationRepository, repository, runs, selectedSuites, workflows } = repositoryStage
-  const { nativeFactories } = qualificationStage
-  const { claudeProfiles, launches, nativeConfigurations, selectedProfiles } = profileStage
-  const { approvals, launchCredentials } = executionStage
-  const engine = new LangGraphWorkflowEngine(
+function configureConversationManagers(composition: ProductionComposition) {
+  const {
+    config,
+    database,
+    checkpoints,
+    infrastructure,
+    fileStorageRoot,
+    responseJournal,
+    processRegistry,
+    access,
+    deviceRuntime,
+    providerAccounts,
+    accountConfigurations,
+    repository,
+    budgets,
+    locations,
+    workflows,
+    runs,
+    harnessRegistry,
+    qualificationRepository,
+    selectedSuites,
+    nativeFactories,
+    selectedProfiles,
+    claudeProfiles,
+    claudeLaunches,
+    launchCredentials,
+    approvals,
+  } = composition
+  const engine = composition.engine = new LangGraphWorkflowEngine(
     runs, workflows, approvals, checkpoints.saver, config.harnesses.workspaceRoot,
     locations, launchCredentials, repository, async runId => {
-      await started.hostCi?.cancelStoppedRun(runId)
+      await composition.hostCi?.cancelStoppedRun(runId)
     }, {}, (owner, version) => {
-      if (!started.jobRuntime) throw new DomainError('WORKFLOW_JOB_COMPOSITION_REQUIRED', 'The actual Job domain has not initialized.', 503)
-      const bound = started.jobRuntime.workflow.forOwner(owner, version)
+      if (!composition.jobRuntime) throw new DomainError('WORKFLOW_JOB_COMPOSITION_REQUIRED', 'The actual Job domain has not initialized.', 503)
+      const bound = composition.jobRuntime.workflow.forOwner(owner, version)
       return { store: new PostgresWorkflowJobNodeStore(owner, version, runs.repeatRepositoryFactory().hostForOwner(owner, version),
         bound.locked, workflowJobStorePublication()), driver: bound.driver }
     },
   )
-  const interactions = new InteractionService(
+  const interactions = composition.interactions = new InteractionService(
     repository, budgets, approvals, (interaction) => engine.resumeInteraction(interaction), responseJournal,
     (interaction) => approvals.inspectInteractionActivity(interaction), {
-      start: (principal, source, input, options) => callbacks.operatorServices.get().runs.start(principal, source, input, options),
+      start: (principal, source, input, options) => composition.operatorServices.runs.start(principal, source, input, options),
       wake: () => engine.reconcile(),
     },
-    approvalCheckpointConsumers(engine),
   )
-  const operatorWorkingDirectory = resolve(config.harnesses.workspaceRoot, 'operator')
-  const operatorManagers = new Map<string, NativeHarnessSessionManager>()
-  const operatorConversations = new PostgresOperatorConversationRepository(database.pool, accountConfigurations)
-  const agentConversations = new PostgresAgentChatRepository(database.pool, providerAccounts.acceptedBindings)
-  const workerChats = createProductionWorkerConversations({ pool: database.pool,
+  registerApprovalCheckpointResume(interactions, engine)
+  const operatorWorkingDirectory = composition.operatorWorkingDirectory = resolve(config.harnesses.workspaceRoot, 'operator')
+  const operatorManagers = composition.operatorManagers = new Map<string, NativeHarnessSessionManager>()
+  const operatorConversations = composition.operatorConversations = new PostgresOperatorConversationRepository(database.pool, accountConfigurations)
+  const agentConversations = composition.agentConversations = new PostgresAgentChatRepository(database.pool, providerAccounts.acceptedBindings)
+  const workerChats = composition.workerChats = createProductionWorkerConversations({ pool: database.pool,
     endpoint: () => deviceRuntime.endpointForDomains(), profiles: selectedProfiles, claudeProfiles,
     operators: operatorConversations, agents: agentConversations, registry: harnessRegistry,
-    qualifications: qualificationRepository, access, mcpForward: () => selectedMainMcpForward(callbacks.app.get()),
+    qualifications: qualificationRepository, access, mcpForward: () => selectedMainMcpForward(composition.app),
     agentMcp: { authorize: async request => {
       const principal = await access.authenticate(request.token, 'worker')
       const credential = await readConversationCredential(database.pool, principal.id)
       if (!credential) throw new DomainError('ACCESS_DENIED', 'A scoped Agent conversation credential is required.', 403)
       return { subject: credential.subject, expiresAt: principal.expiresAt }
-    }, forward: () => selectedMainMcpForward(callbacks.app.get()) },
-    fileService: () => productionFileTools(callbacks.app.get()),
+    }, forward: () => selectedMainMcpForward(composition.app) },
+    fileService: () => productionFileTools(composition.app),
     files: (conversationId, configuration, workingDirectory) => async ({ host, assertHost, ...turn }) => {
       const admissions = 'operatorId' in configuration
-        ? operatorCodexFileAdmissions(() => callbacks.app.get(), database.pool, configuration, workingDirectory, fileStorageRoot,
+        ? operatorCodexFileAdmissions(() => composition.app, database.pool, configuration, workingDirectory, fileStorageRoot,
           { host, assertCurrent: assertHost })
         : postgresCodexChatFiles(database.pool, () => {
-          if (!started.fileStorage) throw new Error('Production file storage is not registered.')
-          return started.fileStorage
+          if (!composition.fileStorage) throw new Error('Production file storage is not registered.')
+          return composition.fileStorage
         }, async () => host, { assertCurrent: assertHost })
-      return productionCodexChatFiles(() => callbacks.app.get(), conversationId, admissions).prepare(turn)
+      return productionCodexChatFiles(() => composition.app, conversationId, admissions).prepare(turn)
     },
     suiteRevisions: selectedSuites ? {
       codex: selectedSuites.codex.revision,
     } : {} })
-  const agentChatProfileSelection = createAgentChatProfileSelection({ pool: database.pool, runs })
-  const recoverChatCompaction = createChatCompactionRecovery({ workerChats, selectedProfiles, harnessRegistry, processRegistry,
-    nativeFactories, operatorConversations, agentConversations })
-  const operatorAccountBindings = new Map<string, AcceptedProviderAccountBinding>()
-  const resolveOperatorManager = productionOperatorManagers({
-    app: () => callbacks.app.get(), pool: database.pool, config, workingDirectory: operatorWorkingDirectory,
+  composition.agentChatProfileSelection = async (
+    configuration: import('@foreman-code/contracts').AgentConfigurationVersion,
+    workingDirectory: string, executionId?: string,
+  ) => {
+    if (!executionId) return { profileSelection: configuration.harnessProfileSelection, sourceExecution: undefined }
+    const source = await runs.getExecution(executionId)
+    if (!source || source.agentId !== configuration.agentId
+      || source.agentConfigurationVersionId !== configuration.id || source.workingDirectory !== workingDirectory) {
+      throw new DomainError('PLACEMENT_BINDING_CONFLICT', 'The chat source execution changed.', 409)
+    }
+    const placement = await readExecutionPlacement(database.pool, executionId)
+    if (!placement) {
+      if (await readAcceptedPlacement(database.pool, source.runId, source.workflowNodeId)) {
+        throw new DomainError('PLACEMENT_BINDING_CONFLICT', 'The chat source placement is unavailable.', 409)
+      }
+      return { profileSelection: configuration.harnessProfileSelection, sourceExecution: undefined }
+    }
+    const native = await readNativePlacement(database.pool, executionId)
+    if (!native) {
+      throw new DomainError('PLACEMENT_BINDING_CONFLICT', 'The chat source working tree is unavailable.', 409)
+    }
+    const harness = configuration.harness.harness
+    if (harness === 'opencode') throw new DomainError('HARNESS_RETIRED', 'OpenCode is retired; this chat source cannot continue.', 409)
+    const profileSelection = workflowProfileSelection({ executionId, runId: source.runId, agentId: source.agentId,
+      harness, configuration, workingDirectory, acceptedPlacement: placement },
+    native?.workingTree.canonicalCwd)
+    return { profileSelection, sourceExecution: { executionId, placement, workingTree: native.workingTree } }
+  }
+  composition.recoverChatCompaction = async (
+      configuration: import('@foreman-code/contracts').OperatorConfigurationVersion | import('@foreman-code/contracts').AgentConfigurationVersion,
+      conversationId: string, session: import('@foreman-code/contracts').NativeSessionReference,
+      start: import('./modules/harnesses/port.js').NativeSessionStart, state: import('@foreman-code/contracts').CompactionState,
+      principalId: string, signal: AbortSignal,
+      profileSelection = configuration.harnessProfileSelection,
+      sourceExecution?: import('@foreman-code/contracts/remote-execution-rpc').WorkerConversationBinding['sourceExecution'],
+    ) => {
+      if (session.harness === 'opencode' || configuration.harness.harness === 'opencode') {
+        throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
+      }
+      if (profileSelection?.target.hostRef.kind === 'device') {
+        const manager = workerChats.create({ configuration, conversationId, workingDirectory: sessionStartDirectory(start),
+          appMcpAccess: 'none', lifecycle: 'observer', observationPrincipalId: principalId, profileSelection, sourceExecution })
+        try { return await manager.readCompaction!(session, start, state, signal) }
+        finally { await manager.dispose?.() }
+      }
+      if (session.harness === 'claude') return recoverPersistedClaudeCompaction(state)
+      const binding: ClaudeProfileOwner = 'operatorId' in configuration
+        ? { kind: 'operator', conversationId, repository: operatorConversations, observationPrincipalId: principalId }
+        : { kind: 'agent', conversationId, workspaceId: configuration.workspaceId,
+          repository: agentConversations, observationPrincipalId: principalId }
+      const accepted = profileSelection
+        ? await selectedProfiles.admit({ ...binding, admissionSignal: signal }, profileSelection) : undefined
+      const selection = accepted ? harnessRegistry.pinOverride(accepted.override)
+        : harnessRegistry.pinAccepted({ id: configuration.id,
+          agentId: 'operatorId' in configuration ? configuration.operatorId : configuration.agentId,
+          harness: configuration.harness })
+      const common = { selection, configured: selection.instance, role: 'diagnostics' as const,
+        accountRecovery: processRegistry.scope('operatorId' in configuration
+          ? `conversation:${conversationId}` : `conversation:agent-chat:${conversationId}`),
+        workingDirectory: sessionStartDirectory(start),
+        ownerAgentId: 'operatorId' in configuration ? configuration.operatorId : configuration.agentId,
+        appMcpAccess: 'none' as const,
+        ...(accepted ? { revalidateSelection: (effectSignal?: AbortSignal) => selectedProfiles.revalidate(
+          { ...binding, admissionSignal: effectSignal ?? signal }, accepted) } : {}) }
+      const { manager } = nativeFactories.allocate({ ...common, harness: session.harness })
+      try {
+        await nativeFactories.admitAuxiliary(manager)
+        return await manager.readCompaction!(session, start, state, signal)
+      } finally { await nativeFactories.disposeAuxiliary(manager) }
+    }
+  const operatorAccountBindings = composition.operatorAccountBindings = new Map<string, AcceptedProviderAccountBinding>()
+  composition.resolveOperatorManager = productionOperatorManagers({
+    app: () => composition.app, pool: database.pool, config, workingDirectory: operatorWorkingDirectory,
     processRegistry, responseJournal, managers: operatorManagers, nativeFactories,
     accountBinding: conversationId => operatorAccountBindings.get(conversationId),
-    createDevice: (configuration, conversationId, fileInputs) => workerChats.create({
+    createDevice: (configuration, conversationId, fileInputs) => workerChats!.create({
       configuration, conversationId, workingDirectory: operatorWorkingDirectory, fileInputs,
       appMcpAccess: fileInputs && configuration.harness.harness === 'claude' ? 'none' : 'scoped' }),
     createSelected: (configuration, conversationId, fileInputs, recovery) => {
@@ -1347,7 +1668,7 @@ function createConversationManagers({ base, callbacks, started, transport, devic
         selector: configuration.harnessProfileSelection, binding: { kind: 'operator', conversationId, repository: operatorConversations },
         configuration: configuration.harness, role: 'operator', workingDirectory: operatorWorkingDirectory, ownerAgentId: configuration.operatorId,
         recovery, appMcpAccess: 'scoped',
-        ...(fileInputs ? { files: productionCodexChatFiles(() => callbacks.app.get(), conversationId, operatorCodexFileAdmissions(() => callbacks.app.get(), database.pool,
+        ...(fileInputs ? { files: productionCodexChatFiles(() => composition.app, conversationId, operatorCodexFileAdmissions(() => composition.app, database.pool,
           configuration, operatorWorkingDirectory, fileStorageRoot)) } : {}),
       }).manager
     },
@@ -1363,8 +1684,8 @@ function createConversationManagers({ base, callbacks, started, transport, devic
         ...(configuration.harnessProfileSelection ? { selector: configuration.harnessProfileSelection } : {}),
         binding: controlBinding, role: 'operator',
         configuration: configuration.harness, workingDirectory: operatorWorkingDirectory, ownerAgentId: configuration.operatorId,
-        recovery, appMcpAccess: fileInputs ? 'none' : 'scoped', mode: harnessHost.mode,
-        ...(fileInputs ? { files: { service: () => productionFileTools(callbacks.app.get()), ...(infrastructure?.claudeFileSdk ? { sdk: infrastructure.claudeFileSdk } : {}) } } : {}),
+        recovery, appMcpAccess: fileInputs ? 'none' : 'scoped', mode: composition.harnessHost.mode,
+        ...(fileInputs ? { files: { service: () => productionFileTools(composition.app), ...(infrastructure?.claudeFileSdk ? { sdk: infrastructure.claudeFileSdk } : {}) } } : {}),
         ...(infrastructure?.claudeClient ? { loadClient: infrastructure.claudeClient } : {}),
         inspectionStart: async () => {
           const row = await operatorConversations.active(conversationId)
@@ -1374,55 +1695,67 @@ function createConversationManagers({ base, callbacks, started, transport, devic
             workingDirectory: operatorWorkingDirectory, environment: { agentId: configuration.operatorId, variables: {} } }
         },
       })
-      launches.recordClaude(claude)
+      claudeLaunches.set(claude.manager, claude)
       return claude.manager
     },
     selectInstallation: (configuration) => harnessRegistry.initialized
       ? harnessRegistry.pinAccepted({ ...configuration, agentId: configuration.operatorId }) : undefined,
-    chat: {
-      prepareInput: prepareOperatorChatInput(database.pool, createWorkerChatPreflight(deviceRuntime)),
-      prepareAccountBinding: async (configuration, conversationId) => {
-        const binding = await providerAccounts.runtimeBinding('operator-command', `${conversationId}:session`,
-          configuration.harness, configuration.harnessProfileSelection)
-        if (binding) operatorAccountBindings.set(conversationId, binding)
-        else operatorAccountBindings.delete(conversationId)
-      },
-      modelOptions: configuration => chatModelOptions(configuration, harness => nativeConfigurations.options(harness)),
-      qualifiedSteer: qualifiedAgentChatSteer,
-      recoverCompaction: recoverChatCompaction,
-    },
   })
-  return { engine, interactions, operatorWorkingDirectory, operatorManagers, operatorConversations, agentConversations, workerChats, agentChatProfileSelection, recoverChatCompaction, operatorAccountBindings, resolveOperatorManager }
 }
 
-function createOperatorChat({ base, transport, deviceRuntime, accountStage, repositoryStage, qualificationStage, profileStage, conversationStage }: {
-  base: ProductionBase
-  transport: MainTransport
-  deviceRuntime: ProductionDeviceRuntime
-  accountStage: AccountStage
-  repositoryStage: RepositoryStage
-  qualificationStage: QualificationStage
-  profileStage: ProfileStage
-  conversationStage: ConversationStage
-}) {
-  const { database, infrastructure } = base
-  const { access, processRegistry } = transport
-  const { providerAccounts } = accountStage
-  const { harnessRegistry, operators, rollout } = repositoryStage
-  const { appMcpEndpoint, nativeFactories } = qualificationStage
-  const { claudeProfiles, harnessInstances, launches } = profileStage
-  const { operatorConversations, operatorWorkingDirectory, resolveOperatorManager, workerChats } = conversationStage
-  const chatAuthority = new PostgresOperatorChatAuthority(
+function configureOperatorChat(composition: ProductionComposition) {
+  const {
+    database,
+    infrastructure,
+    processRegistry,
+    access,
+    deviceRuntime,
+    providerAccounts,
+    harnessRegistry,
+    operators,
+    rollout,
+    appMcpEndpoint,
+    nativeFactories,
+    claudeProfiles,
+    harnessInstances,
+    claudeLaunches,
+    operatorWorkingDirectory,
+    operatorConversations,
+    workerChats,
+    recoverChatCompaction,
+    operatorAccountBindings,
+    resolveOperatorManager,
+  } = composition
+  resolveOperatorManager.prepareInput = prepareOperatorChatInput(database.pool, async profile => {
+    const host = profile.target.hostRef
+    if (host.kind !== 'device') throw new DomainError('CHAT_PREFLIGHT_UNAVAILABLE', 'The Worker profile is unavailable.', 409)
+    const endpoint = deviceRuntime.endpointForDomains()
+    const channel = endpoint.captureRequest(host.deviceId, WORKSPACE_ROOT_EXTENSION.namespace)
+    if (!channel || channel.binding.mainId !== host.mainId
+      || channel.binding.workerInstallationId !== profile.target.applicationInstallationId) {
+      throw new DomainError('CHAT_PREFLIGHT_UNAVAILABLE', 'The selected Worker is unavailable.', 503)
+    }
+    const response = await channel.request({ version: 1, operation: 'workspace-roots.configuration' },
+      { signal: new AbortController().signal })
+    const roots = ApprovedRootAllowlistSchema.parse(response.payload)
+    if (response.bytes !== undefined || !isDeepStrictEqual(roots.hostRef, host)
+      || roots.applicationInstallationId !== profile.target.applicationInstallationId
+      || !isDeepStrictEqual(endpoint.captureRequest(host.deviceId, WORKSPACE_ROOT_EXTENSION.namespace)?.binding, channel.binding)) {
+      throw new DomainError('CHAT_PREFLIGHT_UNAVAILABLE', 'The selected Worker root changed during input preparation.', 409)
+    }
+    return roots.managedRuntimeRoot
+  })
+  const chatAuthority = composition.chatAuthority = new PostgresOperatorChatAuthority(
     database.pool, access, rollout, operatorWorkingDirectory, appMcpEndpoint,
-    (manager) => workerChats.inspector(manager) ?? nativeFactories.inspector(manager),
+    (manager) => workerChats!.inspector(manager) ?? nativeFactories.inspector(manager),
     async (manager, configuration, environment, signal) => {
-      const claude = launches.claudeOf(manager)
+      const claude = claudeLaunches.get(manager)
       const servers: ClaudeHarnessConfiguration['mcpServers'] = configuration.harness.harness === 'claude'
         ? configuration.harness.mcpServers : {}
       const serverName = appMcpServerName(servers)
       const configured = servers[serverName]
       const token = readProductEnvironment(environment.variables, 'MCP_TOKEN')
-      const worker = workerChats.deliverClaudeCredential(manager)
+      const worker = workerChats!.deliverClaudeCredential(manager)
       if ((!claude && !worker) || !configured || configured.type !== 'http' || configured.url !== appMcpEndpoint || !token) throw new DomainError('OPERATOR_MCP_SETUP_REQUIRED', 'The accepted Claude HTTP credential arrangement is unavailable.', 409)
       if (worker) await worker(token, signal)
       else if (claude) await claude.manager.refreshInspectionCredentials({ ...await claude.inspectionStart(), environment }, {
@@ -1431,7 +1764,7 @@ function createOperatorChat({ base, transport, deviceRuntime, accountStage, repo
         }, signal)
       const context = manager.mcpInspectionContext ? await manager.mcpInspectionContext(signal)
         : { runnerId: 'runner-local', workingDirectory: operatorWorkingDirectory }
-      const checked = await new McpDetectionService(workerChats.inspector(manager) ?? nativeFactories.inspector(manager), appMcpEndpoint).preflight({
+      const checked = await new McpDetectionService(workerChats!.inspector(manager) ?? nativeFactories.inspector(manager), appMcpEndpoint).preflight({
         harness: 'claude', ...context, signal,
       })
       if (checked.detection.state !== 'connected' || checked.detection.credentialArrangement?.kind !== 'scoped_http_header') throw new DomainError('OPERATOR_MCP_SETUP_REQUIRED', 'Claude did not acknowledge the scoped Operator credential on its current query.', 409)
@@ -1464,7 +1797,17 @@ function createOperatorChat({ base, transport, deviceRuntime, accountStage, repo
       finally { await close() }
     },
   )
-  const chat = new OperatorChatService(
+  resolveOperatorManager.prepareAccountBinding = async (configuration, conversationId) => {
+    const binding = await providerAccounts.runtimeBinding('operator-command', `${conversationId}:session`,
+      configuration.harness, configuration.harnessProfileSelection)
+    if (binding) operatorAccountBindings.set(conversationId, binding)
+    else operatorAccountBindings.delete(conversationId)
+  }
+  resolveOperatorManager.modelOptions = configuration =>
+    chatModelOptions(configuration, harness => composition.nativeConfigurations.options(harness))
+  resolveOperatorManager.qualifiedSteer = qualifiedAgentChatSteer
+  resolveOperatorManager.recoverCompaction = recoverChatCompaction
+  composition.chat = new OperatorChatService(
     operatorConversations, operators,
     resolveOperatorManager, operatorWorkingDirectory, chatAuthority,
     async (principal, configuration, commandId) => {
@@ -1473,32 +1816,37 @@ function createOperatorChat({ base, transport, deviceRuntime, accountStage, repo
       return selection ?? harnessInstances.prepareOperatorConfiguration(principal, 'http', configuration, commandId)
     },
   )
-  return { chatAuthority, chat }
 }
 
-function createAgentChat({ base, callbacks, transport, accountStage, repositoryStage, qualificationStage, profileStage, executionStage, conversationStage }: {
-  base: ProductionBase
-  callbacks: ProductionCallbacks
-  transport: MainTransport
-  accountStage: AccountStage
-  repositoryStage: RepositoryStage
-  qualificationStage: QualificationStage
-  profileStage: ProfileStage
-  executionStage: ExecutionStage
-  conversationStage: ConversationStage
-}) {
-  const { config, database, infrastructure } = base
-  const { chatFileAdmissions, harnessHost, processRegistry } = transport
-  const { accountConfigurations, providerAccounts } = accountStage
-  const { harnessRegistry, locations, rollout, runs, workflows } = repositoryStage
-  const { hostSettings, nativeFactories } = qualificationStage
-  const { claudeProfiles, hostProfileChecks, nativeConfigurations, selectedProfiles } = profileStage
-  const { approvals } = executionStage
-  const { agentChatProfileSelection, agentConversations, engine, recoverChatCompaction, workerChats } = conversationStage
+function configureAgentChat(composition: ProductionComposition) {
+  const {
+    config,
+    database,
+    infrastructure,
+    chatFileAdmissions,
+    processRegistry,
+    providerAccounts,
+    accountConfigurations,
+    locations,
+    workflows,
+    runs,
+    harnessRegistry,
+    rollout,
+    nativeFactories,
+    hostSettings,
+    selectedProfiles,
+    claudeProfiles,
+    hostProfileChecks,
+    approvals,
+    engine,
+    agentConversations,
+    workerChats,
+    agentChatProfileSelection,
+    recoverChatCompaction,
+  } = composition
   const agentChatManagers = new Map<string, NativeHarnessSessionManager>()
-  const conversationNativeAccess = new ConversationNativeAccess(new ConversationCredentials(database.pool))
-  const resolveAgentChatManager = async (conversationId: string, configuration: AgentConfigurationVersion, workingDirectory: string,
-    accountSource?: { executionId: string }, featureContext?: ConversationFeatureContext): Promise<NativeHarnessSessionManager> => {
+  const nativeAccess = composition.conversationNativeAccess = new ConversationNativeAccess(new ConversationCredentials(database.pool))
+  const resolveAgentChatManager: AgentChatManagerFactory = async (conversationId, configuration, workingDirectory, accountSource, featureContext) => {
     if (configuration.harness.harness === 'opencode') {
       throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
     }
@@ -1512,13 +1860,13 @@ function createAgentChat({ base, callbacks, transport, accountStage, repositoryS
     if (resolved) return resolved
     const appMcpAccess = featureContext && conversationChatTools(featureContext).length ? 'scoped' as const : 'none' as const
     if (selector?.target.hostRef.kind === 'device') {
-      const manager = workerChats.create({ configuration, conversationId, workingDirectory, appMcpAccess, fileInputs: true,
+      const manager = workerChats!.create({ configuration, conversationId, workingDirectory, appMcpAccess, fileInputs: true,
         profileSelection: selector, sourceExecution: selected.sourceExecution,
         applicationAccess: start => {
           const token = start.environment?.variables.FOREMAN_CODE_MCP_TOKEN ?? start.environment?.variables.GRAPHQL_MCP_TOKEN
           return token ? { kind: 'agent-chat-mcp', token } : undefined
         } })
-      if (featureContext) await conversationNativeAccess.bind(manager, featureContext)
+      if (featureContext) await nativeAccess.bind(manager, featureContext)
       agentChatManagers.set(conversationId, manager)
       return manager
     }
@@ -1536,12 +1884,12 @@ function createAgentChat({ base, callbacks, transport, accountStage, repositoryS
         ...(selector ? { selector } : {}),
         binding: { kind: 'agent', conversationId, workspaceId: configuration.workspaceId, repository: agentConversations },
         role: 'agent-chat', configuration: harness, workingDirectory, ownerAgentId: configuration.agentId, recovery,
-        appMcpAccess, mode: harnessHost.mode,
-        files: { service: () => productionFileTools(callbacks.app.get()), ...(infrastructure?.claudeFileSdk ? { sdk: infrastructure.claudeFileSdk } : {}) },
+        appMcpAccess, mode: composition.harnessHost.mode,
+        files: { service: () => productionFileTools(composition.app), ...(infrastructure?.claudeFileSdk ? { sdk: infrastructure.claudeFileSdk } : {}) },
         ...(infrastructure?.claudeClient ? { loadClient: infrastructure.claudeClient } : {}),
         inspectionStart: async () => { throw new DomainError('CLAUDE_MANAGEMENT_MCP_FORBIDDEN', 'Agent chat has no management MCP inspection authority.', 403) },
       })
-      if (featureContext) await conversationNativeAccess.bind(manager, featureContext)
+      if (featureContext) await nativeAccess.bind(manager, featureContext)
       agentChatManagers.set(conversationId, manager)
       return manager
     }
@@ -1552,8 +1900,8 @@ function createAgentChat({ base, callbacks, transport, accountStage, repositoryS
         selector,
         binding: { kind: 'agent', conversationId, workspaceId: configuration.workspaceId, repository: agentConversations },
         configuration: harness, role: 'agent-chat', workingDirectory, ownerAgentId: configuration.agentId, recovery, appMcpAccess,
-        files: productionCodexChatFiles(() => callbacks.app.get(), conversationId, chatFileAdmissions) })
-      if (featureContext) await conversationNativeAccess.bind(manager, featureContext)
+        files: productionCodexChatFiles(() => composition.app, conversationId, chatFileAdmissions) })
+      if (featureContext) await nativeAccess.bind(manager, featureContext)
       agentChatManagers.set(conversationId, manager)
       return manager
     }
@@ -1567,28 +1915,47 @@ function createAgentChat({ base, callbacks, transport, accountStage, repositoryS
         enabled: true, configuration: harness },
       processRecovery: recovery, appMcpAccess,
       harness: 'codex',
-      chatFiles: productionCodexChatFiles(() => callbacks.app.get(), conversationId, chatFileAdmissions),
+      chatFiles: productionCodexChatFiles(() => composition.app, conversationId, chatFileAdmissions),
     })
-    if (featureContext) await conversationNativeAccess.bind(manager, featureContext)
+    if (featureContext) await nativeAccess.bind(manager, featureContext)
     agentChatManagers.set(conversationId, manager)
     return manager
   }
-  const agentChatManagerFactory = withAgentChatHooks(resolveAgentChatManager, {
-    recoverCompaction: createAgentChatCompactionRecovery({ agentConversations, profileSelection: agentChatProfileSelection,
-      recover: recoverChatCompaction }),
-    unavailable: createAgentChatAvailability({ profileSelection: agentChatProfileSelection, hostSettings, hostProfileChecks,
-      harnessRegistry }),
-    prepareInput: prepareAgentChatInput(database.pool),
-    qualifiedSteer: qualifiedAgentChatSteer,
-    modelOptions: configuration => chatModelOptions(configuration, harness => nativeConfigurations.options(harness)),
-    release: (conversationId) => { agentChatManagers.delete(conversationId) },
-    closeRetainedSession: (conversationId, configuration, principalId, signal) =>
-      workerChats.closeRetainedSession(conversationId, configuration, principalId, signal),
-    closeRecoveredSession: (id, signal) => workerChats.closeConversation(id, signal),
-  })
-  const agentChat = new AgentChatService(database.pool, agentConversations,
-    new PostgresOperatorConversationRepository(database.pool, accountConfigurations), workflows, runs, agentChatManagerFactory, config.harnesses.workspaceRoot)
-  const reviews = new AutomaticReviewService(database.pool, runs, approvals, locations, rollout,
+  resolveAgentChatManager.recoverCompaction = async (configuration, conversationId, session, start, state, principalId, signal) => {
+    const row = await agentConversations.get(conversationId)
+    if (!row || row.agent_configuration_version_id !== configuration.id) {
+      throw new DomainError('PLACEMENT_BINDING_CONFLICT', 'The chat configuration changed.', 409)
+    }
+    const executionId = row.record.origin.kind === 'run_execution' && !row.record.sourceConfigurationVersionId
+      ? row.record.origin.executionId : undefined
+    const selected = await agentChatProfileSelection(configuration, sessionStartDirectory(start), executionId)
+    return recoverChatCompaction(configuration, conversationId, session, start, state, principalId, signal,
+      selected.profileSelection, selected.sourceExecution)
+  }
+  resolveAgentChatManager.unavailable = async (configuration, workingDirectory, executionId) => {
+    const { profileSelection } = await agentChatProfileSelection(configuration, workingDirectory, executionId)
+    if (!profileSelection) return undefined
+    const profile = await hostSettings.readAuthorized(client => hostSettings.latest(client, profileSelection.instanceId))
+    if (profile && hostProfileChecks.pending(profile)) {
+      return { reason: 'harness_unavailable', message: 'This harness profile is being checked. Retry shortly.' }
+    }
+    if (!profile || !profile.enabled || profile.instanceRevision !== profileSelection.instanceRevision
+      || !await harnessRegistry.profileEvidence(profile)) {
+      return { reason: 'harness_unavailable', message: 'The harness profile used by this Run is unavailable.' }
+    }
+    return undefined
+  }
+  resolveAgentChatManager.prepareInput = prepareAgentChatInput(database.pool)
+  resolveAgentChatManager.qualifiedSteer = qualifiedAgentChatSteer
+  resolveAgentChatManager.modelOptions = configuration =>
+    chatModelOptions(configuration, harness => composition.nativeConfigurations.options(harness))
+  resolveAgentChatManager.release = (conversationId) => { agentChatManagers.delete(conversationId) }
+  resolveAgentChatManager.closeRetainedSession = (conversationId, configuration, principalId, signal) =>
+    workerChats!.closeRetainedSession(conversationId, configuration, principalId, signal)
+  resolveAgentChatManager.closeRecoveredSession = (id, signal) => workerChats!.closeConversation(id, signal)
+  composition.agentChat = new AgentChatService(database.pool, agentConversations,
+    new PostgresOperatorConversationRepository(database.pool, accountConfigurations), workflows, runs, resolveAgentChatManager, config.harnesses.workspaceRoot)
+  composition.reviews = new AutomaticReviewService(database.pool, runs, approvals, locations, rollout,
     async (runId) => {
       // AutomaticReviewService committed the exact review cause and durable Stop
       // intent first. A process restart or failed closure cannot lose that cause.
@@ -1596,42 +1963,51 @@ function createAgentChat({ base, callbacks, transport, accountStage, repositoryS
       // writer follows a successful cancel, and uncertainty remains retryable.
       await engine.cancel(runId)
     })
-  return { conversationNativeAccess, agentChat, reviews }
+  composition.closing = false
+  composition.initialized = false
 }
 
-function createOperatorServices({ base, callbacks, started, runtimeState, transport, deviceRuntime, browserStage, accountStage, repositoryStage, qualificationStage, profileStage, managerStage, executionStage, conversationStage, operatorChatStage, agentChatStage }: {
-  base: ProductionBase
-  callbacks: ProductionCallbacks
-  started: StartedServices
-  runtimeState: ProductionState
-  transport: MainTransport
-  deviceRuntime: ProductionDeviceRuntime
-  browserStage: BrowserStage
-  accountStage: AccountStage
-  repositoryStage: RepositoryStage
-  qualificationStage: QualificationStage
-  profileStage: ProfileStage
-  managerStage: ManagerStage
-  executionStage: ExecutionStage
-  conversationStage: ConversationStage
-  operatorChatStage: OperatorChatStage
-  agentChatStage: AgentChatStage
-}) {
-  const { checkpoints, config, createCurrentProduction, database } = base
-  const { access, workerExecution } = transport
-  const { browser } = browserStage
-  const { accountConfigurations, bugReports, commands, memoryBoards, providerAccounts } = accountStage
-  const { foundationSettings, harnessRegistry, locations, operators, projectRoot, remoteExecution, rollout, runs, selectedSuites, workflows } = repositoryStage
-  const { harnessCompatibility, harnessQualifications, hostSettings } = qualificationStage
-  const { claudeProfiles, harnessCatalog, harnessInstances, selectedProfiles } = profileStage
-  const { managers } = managerStage
-  const { approvals } = executionStage
-  const { agentConversations, engine, interactions, operatorConversations } = conversationStage
-  const { chat } = operatorChatStage
-  const { agentChat, conversationNativeAccess } = agentChatStage
+function configureOperatorServices(composition: ProductionComposition) {
+  const {
+    config,
+    database,
+    checkpoints,
+    createCurrentProduction,
+    workerExecution,
+    access,
+    deviceRuntime,
+    commands,
+    bugReports,
+    providerAccounts,
+    accountConfigurations,
+    projectRoot,
+    locations,
+    workflows,
+    runs,
+    harnessRegistry,
+    foundationSettings,
+    remoteExecution,
+    operators,
+    rollout,
+    selectedSuites,
+    harnessQualifications,
+    harnessCompatibility,
+    hostSettings,
+    selectedProfiles,
+    claudeProfiles,
+    harnessInstances,
+    harnessCatalog,
+    managers,
+    approvals,
+    engine,
+    interactions,
+    operatorConversations,
+    chat,
+    agentChat,
+  } = composition
   const nativeFactory = createCurrentNativeProductionFactory({
-    isRuntimeOpen: () => runtimeState.initialized && !runtimeState.closing,
-    reportDispatchFailure: (runId, code, error) => callbacks.app.get().log.error({ runId, code, err: error }, 'current workflow dispatch remains unresolved'),
+    isRuntimeOpen: () => composition.initialized && !composition.closing,
+    reportDispatchFailure: (runId, code, error) => composition.app.log.error({ runId, code, err: error }, 'current workflow dispatch remains unresolved'),
   })
   const productionContext = { primaryPool: database.pool, commands,
     runs, workflows, locations, engine, nativeExecutions: approvals, interactions, checkpointer: checkpoints.saver }
@@ -1639,24 +2015,24 @@ function createOperatorServices({ base, callbacks, started, runtimeState, transp
   if (!isCurrentNativeProductionBinding(binding, productionContext)) throw new DomainError(
     'CURRENT_PRODUCTION_BINDING_REQUIRED', 'Production requires the concrete constructor-bound native lifecycle, not a shape-only publisher.', 503)
   const assertRuntimeOpen = () => {
-    if (!runtimeState.initialized || runtimeState.closing) throw new DomainError('CURRENT_RUNTIME_UNAVAILABLE',
+    if (!composition.initialized || composition.closing) throw new DomainError('CURRENT_RUNTIME_UNAVAILABLE',
       'The native runtime has not acquired ownership or is shutting down.', 503)
   }
   const currentProduction: CurrentRunProductionBinding = Object.freeze({
     startPublication: { ...binding.startPublication, workerExecution, accountBindings: providerAccounts.acceptedBindings,
       ...(selectedSuites ? { placementAdmission: {
       prepare: (...args: Parameters<AgentPlacementProducer['prepare']>) => {
-        if (!started.agentPlacement) throw new DomainError('AGENT_PLACEMENT_UNAVAILABLE', 'The actual saved-placement admission producer is unavailable.', 503)
-        return started.agentPlacement.prepare(...args)
+        if (!composition.agentPlacement) throw new DomainError('AGENT_PLACEMENT_UNAVAILABLE', 'The actual saved-placement admission producer is unavailable.', 503)
+        return composition.agentPlacement.prepare(...args)
       },
     } } : {}) },
-    availability: () => runtimeState.initialized && !runtimeState.closing ? binding.availability() : { runtimeAdmission: false, stopAvailable: false },
+    availability: () => composition.initialized && !composition.closing ? binding.availability() : { runtimeAdmission: false, stopAvailable: false },
     assertStartReady: () => { assertRuntimeOpen(); binding.assertStartReady() },
     assertStopReady: () => { assertRuntimeOpen(); binding.assertStopReady() },
     stop: (context: CurrentStopContext) => { assertRuntimeOpen(); return binding.stop(context) },
     reportDispatchFailure: (runId: string, error: unknown) => binding.reportDispatchFailure(runId, error),
   })
-  const operatorServices: OperatorServices & { fileRetention: FileRetentionService } = {
+  composition.operatorServices = {
     bugReports,
     providerAccounts,
     devices: deviceRuntime.management,
@@ -1686,7 +2062,7 @@ function createOperatorServices({ base, callbacks, started, runtimeState, transp
     }),
     operatorChat: chat,
     agentChat,
-    memoryBoards,
+    memoryBoards: composition.memoryBoards,
     workspaces: new WorkspaceManagementService(database.pool, commands, locations, foundationSettings, projectRoot),
     locations,
     workflows: new WorkflowManagementService(database.pool, commands, {
@@ -1694,24 +2070,23 @@ function createOperatorServices({ base, callbacks, started, runtimeState, transp
       accountConfigurations,
       worktrees: {
         readyRoot: (principal, workspaceId, sql) => {
-          const { workspaceRepositories } = callbacks.runtimeServices.get()
-          if (!workspaceRepositories) return Promise.resolve(undefined)
-          return workspaceRepositories.readyRoot(principal, workspaceId, sql)
+          if (!composition.runtimeServices.workspaceRepositories) return Promise.resolve(undefined)
+          return composition.runtimeServices.workspaceRepositories.readyRoot(principal, workspaceId, sql)
         },
         sources: {
           resolveRootBinding: (...args) => {
-            if (!started.jobRuntime) throw new DomainError('SOURCE_UNAVAILABLE', 'Source services are not initialized.', 503)
-            return started.jobRuntime.sources.resolveRootBinding(...args)
+            if (!composition.jobRuntime) throw new DomainError('SOURCE_UNAVAILABLE', 'Source services are not initialized.', 503)
+            return composition.jobRuntime.sources.resolveRootBinding(...args)
           },
           resolveApprovedSource: (...args) => {
-            if (!started.jobRuntime) throw new DomainError('SOURCE_UNAVAILABLE', 'Source services are not initialized.', 503)
-            return started.jobRuntime.sources.resolveApprovedSource(...args)
+            if (!composition.jobRuntime) throw new DomainError('SOURCE_UNAVAILABLE', 'Source services are not initialized.', 503)
+            return composition.jobRuntime.sources.resolveApprovedSource(...args)
           },
         },
         roots: {
           resolve: (...args) => {
-            if (!started.jobRuntime) throw new DomainError('SOURCE_UNAVAILABLE', 'Root services are not initialized.', 503)
-            return started.jobRuntime.policies.resolve(...args)
+            if (!composition.jobRuntime) throw new DomainError('SOURCE_UNAVAILABLE', 'Root services are not initialized.', 503)
+            return composition.jobRuntime.policies.resolve(...args)
           },
         },
       },
@@ -1738,17 +2113,17 @@ function createOperatorServices({ base, callbacks, started, runtimeState, transp
     runPlacements: new RunPlacementReadService(database.pool, readRemoteObservations),
     placementChoices: new NodePlacementChoicesService(database.pool, new ProductionPlacementChoiceDiscovery(
       database.pool, () => {
-        if (!started.jobRuntime) throw new DomainError('PLACEMENT_CHOICES_UNAVAILABLE', 'Computer choices are not initialized.', 503)
-        const runtime = started.jobRuntime
+        if (!composition.jobRuntime) throw new DomainError('PLACEMENT_CHOICES_UNAVAILABLE', 'Computer choices are not initialized.', 503)
+        const runtime = composition.jobRuntime
         return { roots: runtime.policies, sources: runtime.sources, profiles: hostSettings, registry: harnessRegistry,
-          ensureProfileReady: profile => harnessInstances.ensureReady(profile),
+          ensureProfileReady: profile => composition.harnessInstances.ensureReady(profile),
           ensureComputerReady: async host => {
             workerExecution.requireEnabled(host)
             if (host.kind === 'device') await deviceRuntime.endpointForDomains().assertWorkerBundleReady(host.deviceId)
           },
           computerOnline: host => host.kind === 'main' || deviceRuntime.presenceFor(host.deviceId)?.phase === 'ready',
           provisionRoot: (...args: Parameters<ProductionCiEnrollmentInventory['root']>) => {
-            const workspaceRoots = callbacks.runtimeServices.get().workspaceRoots
+            const workspaceRoots = composition.runtimeServices.workspaceRoots
             if (!workspaceRoots) throw new DomainError('PLACEMENT_CHOICES_UNAVAILABLE', 'Workspace roots are not initialized.', 503)
             const inventory = new ProductionCiEnrollmentInventory(database.pool, runtime.sources,
               () => deviceRuntime.endpointForDomains(), () => runtime.mainCiRuntime, workerExecution,
@@ -1759,42 +2134,49 @@ function createOperatorServices({ base, callbacks, started, runtimeState, transp
       },
     )),
   }
-  operatorServices.workflowHierarchy = new WorkflowHierarchyService(database.pool, commands,
-    operatorServices.workflows)
+  composition.operatorServices.workflowHierarchy = new WorkflowHierarchyService(database.pool, commands,
+    composition.operatorServices.workflows)
   const executionChat = createWorkflowExecutionChatService(database.pool, approvals)
-  operatorServices.executionChat = executionChat
-  const workflowChat = createProductionWorkflowChat({ pool: database.pool,
-    agent: agentChat, agentRepository: agentConversations, operator: chat,
+  composition.operatorServices.executionChat = executionChat
+  composition.workflowChat = createProductionWorkflowChat({ pool: database.pool,
+    agent: composition.agentChat, agentRepository: composition.agentConversations, operator: composition.chat,
     execution: executionChat,
-    bindConversationScope: conversationNativeAccess.rebind,
+    bindConversationScope: composition.conversationNativeAccess.rebind,
   })
-  operatorServices.browser = browser
-  operatorServices.workflowChat = workflowChat.service
-  operatorServices.chatDelivery = workflowChat.router
-  return { operatorServices, workflowChat }
+  composition.operatorServices.browser = composition.browser
+  composition.operatorServices.workflowChat = composition.workflowChat.service
+  composition.operatorServices.chatDelivery = composition.workflowChat.router
 }
 
-function createHttpApplication({ base, started, transport, accountStage, repositoryStage, qualificationStage, profileStage, conversationStage, operatorChatStage, operatorStage }: {
-  base: ProductionBase
-  started: StartedServices
-  transport: MainTransport
-  accountStage: AccountStage
-  repositoryStage: RepositoryStage
-  qualificationStage: QualificationStage
-  profileStage: ProfileStage
-  conversationStage: ConversationStage
-  operatorChatStage: OperatorChatStage
-  operatorStage: OperatorStage
-}) {
-  const { checkpoints, config, database, infrastructure, logger } = base
-  const { access } = transport
-  const { accountConfigurations, bugReports, commands, providerAccounts } = accountStage
-  const { locations, projectRoot, repository, runs, workflows, workspaces } = repositoryStage
-  const { appMcpEndpoint, nativeFactories } = qualificationStage
-  const { harnessCatalog, harnessInstances, harnessSettings, nativeConfigurations } = profileStage
-  const { engine, interactions } = conversationStage
-  const { chat } = operatorChatStage
-  const { operatorServices } = operatorStage
+function configureHttpApplication(composition: ProductionComposition) {
+  const {
+    config,
+    database,
+    checkpoints,
+    logger,
+    infrastructure,
+    access,
+    commands,
+    bugReports,
+    providerAccounts,
+    accountConfigurations,
+    repository,
+    projectRoot,
+    locations,
+    workflows,
+    runs,
+    workspaces,
+    appMcpEndpoint,
+    nativeFactories,
+    harnessInstances,
+    harnessCatalog,
+    nativeConfigurations,
+    harnessSettings,
+    engine,
+    interactions,
+    chat,
+    operatorServices,
+  } = composition
   const detection = new McpDetectionService({
     async inspect(input) {
       if (input.runnerId !== 'runner-local') {
@@ -1815,15 +2197,15 @@ function createHttpApplication({ base, started, transport, accountStage, reposit
     provisioningRoot: projectRoot, harnessProfiles: harnessInstances,
     accountConfigurations,
     rebindRestoredFolder: (principal, selection) => {
-      const roots = runtimeServices.workspaceRoots
+      const roots = composition.runtimeServices.workspaceRoots
       if (!roots) throw new DomainError('WORKSPACE_ROOTS_UNAVAILABLE', 'Workspace folder binding is unavailable.', 503)
       return roots.set(principal, 'mcp', selection)
     },
   })
-  const runtimeServices: OperatorServices = { ...operatorServices, extensions: operatorExtensions, harnessSettings }
+  const runtimeServices = composition.runtimeServices = { ...operatorServices, extensions: operatorExtensions, harnessSettings }
   const localHuman = new PostgresLocalHumanAccess(database.pool, access)
   const runtimeBuildIdentity = readRuntimeBuildIdentity()
-  const routes = {
+  const routes = composition.routes = {
     runtimeBuildIdentity: () => runtimeBuildIdentity,
     runtimeIdentity: async () => {
       const identity = await readRuntimeIdentity(database.pool,
@@ -1840,85 +2222,89 @@ function createHttpApplication({ base, started, transport, accountStage, reposit
     appMcp: { access, commands, bugReports, interactions: Object.assign(new PostgresAppInteractionService(database.pool, repository, commands, interactions), {
       syncedFolder: (workspaceId: string, hostRef: { kind: 'main' } | { kind: 'device'; deviceId: string }) =>
         runtimeServices.computerSync?.sharedFolder(workspaceId, hostRef) ?? Promise.resolve(null) }) },
-    workerArtifacts: () => started.workflowArtifacts?.extension,
+    workerArtifacts: () => composition.workflowArtifacts?.extension,
     mcpDetection: { pool: database.pool, service: detection },
     production: { fileRetention: operatorServices.fileRetention },
   } satisfies ApiRouteServices
-  const app = buildApp({ ...routes, logger,
+  const app = composition.app = buildApp({ ...routes, logger,
     ...(infrastructure?.closeInfrastructure ? { closeInfrastructure: infrastructure.closeInfrastructure } : {}) })
   app.addHook('onClose', () => providerAccounts.close())
-  return { runtimeServices, routes, app }
 }
 
 /** Every route group the production runtime has published so far. */
-function productionRoutes(httpStage: HttpStage, started: StartedServices): ApiRouteServices {
-  const { routes, runtimeServices } = httpStage
-  return { ...routes, production: { ...routes.production, files: started.files,
-    workflowArtifacts: started.workflowArtifacts, trustedConnections: started.trustedConnections,
-    resourceTelemetry: runtimeServices.resourceTelemetry,
-    jobRuntimeProfiles: runtimeServices.jobRuntimeProfiles
-      ? { profiles: runtimeServices.jobRuntimeProfiles, ciRuntime: runtimeServices.ciRuntime } : undefined } }
+function productionRoutes(composition: ProductionComposition): ApiRouteServices {
+  const { routes, runtimeServices } = composition
+  return { ...routes, production: { ...routes.production,
+    ...(composition.files ? { files: composition.files } : {}),
+    ...(composition.workflowArtifacts ? { workflowArtifacts: composition.workflowArtifacts } : {}),
+    ...(composition.trustedConnections ? { trustedConnections: composition.trustedConnections } : {}),
+    ...(runtimeServices.resourceTelemetry ? { resourceTelemetry: runtimeServices.resourceTelemetry } : {}),
+    ...(runtimeServices.jobRuntimeProfiles ? { jobRuntimeProfiles: { profiles: runtimeServices.jobRuntimeProfiles,
+      ...(runtimeServices.ciRuntime ? { ciRuntime: runtimeServices.ciRuntime } : {}) } } : {}) } }
 }
 
-function createRuntimeControl({ base, callbacks, started, runtimeState, transport, deviceRuntime, browserStage, accountStage, repositoryStage, qualificationStage, profileStage, managerStage, executionStage, conversationStage, operatorChatStage, agentChatStage, httpStage }: {
-  base: ProductionBase
-  callbacks: ProductionCallbacks
-  started: StartedServices
-  runtimeState: ProductionState
-  transport: MainTransport
-  deviceRuntime: ProductionDeviceRuntime
-  browserStage: BrowserStage
-  accountStage: AccountStage
-  repositoryStage: RepositoryStage
-  qualificationStage: QualificationStage
-  profileStage: ProfileStage
-  managerStage: ManagerStage
-  executionStage: ExecutionStage
-  conversationStage: ConversationStage
-  operatorChatStage: OperatorChatStage
-  agentChatStage: AgentChatStage
-  httpStage: HttpStage
-}) {
-  const { config, database } = base
-  const { access, entrypoint, fileStorageRoot, rsync } = transport
-  const { browser } = browserStage
-  const { commands } = accountStage
-  const { harnessRegistry } = repositoryStage
-  const { harnessCompatibility, harnessQualifications, nativeFactories } = qualificationStage
-  const { appRoutes, harnessCatalog, harnessInstances, harnessSettings, installationMonitor, nativeConfigurations } = profileStage
-  const { managers } = managerStage
-  const { approvals, telemetryLifetime } = executionStage
-  const { engine, operatorManagers, workerChats } = conversationStage
-  const { chat } = operatorChatStage
-  const { agentChat, reviews } = agentChatStage
-  const { app, runtimeServices } = httpStage
-  const mountArtifacts = () => {
-    if (started.workflowArtifacts || !started.fileStorage || !started.artifactComposition) return
-    started.workflowPhysicalArtifacts = new PostgresWorkflowPhysicalArtifacts(started.artifactComposition.mainId,
-      { authority: started.artifactComposition.authority, files: started.fileStorage.repository })
-    started.workflowArtifacts = createProductionWorkflowArtifacts({ app, pool: database.pool, files: started.fileStorage,
-      ...started.artifactComposition, attempts: started.artifactComposition.fence, commands, access,
+function configureRuntimeLifecycle(composition: ProductionComposition) {
+  const {
+    config,
+    database,
+    fileStorageRoot,
+    access,
+    entrypoint,
+    rsync,
+    deviceRuntime,
+    commands,
+    harnessRegistry,
+    harnessQualifications,
+    harnessCompatibility,
+    nativeFactories,
+    harnessInstances,
+    installationMonitor,
+    harnessCatalog,
+    nativeConfigurations,
+    appRoutes,
+    harnessSettings,
+    managers,
+    approvals,
+    telemetryLifetime,
+    engine,
+    operatorManagers,
+    workerChats,
+    chat,
+    agentChat,
+    reviews,
+    runtimeServices,
+    app,
+  } = composition
+  composition.mountArtifacts = () => {
+    if (composition.workflowArtifacts || !composition.fileStorage || !composition.artifactComposition) return
+    composition.workflowPhysicalArtifacts = new PostgresWorkflowPhysicalArtifacts(composition.artifactComposition.mainId,
+      { authority: composition.artifactComposition.authority, files: composition.fileStorage.repository })
+    composition.workflowArtifacts = createProductionWorkflowArtifacts({ app, pool: database.pool, files: composition.fileStorage,
+      ...composition.artifactComposition, attempts: composition.artifactComposition.fence, commands, access,
       endpoint: deviceRuntime.endpointForDomains(), stagingRoot: resolve(fileStorageRoot, 'workflow-artifact-transfers') })
   }
-  const startupLifetime = new AbortController()
-  const runtimeOwner = new OperatorRuntimeOwner(config.database.connectionString, (error) => {
+  composition.httpClosing = false
+  const startupLifetime = composition.startupLifetime = new AbortController()
+  composition.stopComputerTimers = () => {}
+  composition.stopSyncTimer = () => {}
+  const runtimeOwner = composition.runtimeOwner = new OperatorRuntimeOwner(config.database.connectionString, (error) => {
     app.log.error({ err: error }, 'native runtime ownership lost; stopping execution')
     beginShutdown()
     // Never re-enter/await app.close() from an onClose cleanup. The failed
     // connection has already lost its lock; native recovery fencing still applies.
-    if (!runtimeState.httpClosing) void callbacks.shutdown.get()().catch((failure: unknown) => {
+    if (!composition.httpClosing) void composition.shutdown().catch((failure: unknown) => {
       app.log.error({ err: failure }, 'shutdown after native runtime ownership loss failed')
     })
   })
-  const lifecycle = new RuntimeShutdown({
+  const lifecycle = composition.lifecycle = new RuntimeShutdown({
     stop: [
       { name: 'shared file sync admission', run: () => {
-        runtimeState.stopSyncTimer()
+        composition.stopSyncTimer()
         runtimeServices.computerSync?.stopAdmission()
       } },
       { name: 'computer maintenance admission', run: () => {
-        runtimeState.stopComputerTimers()
-        browser.stopAdmission()
+        composition.stopComputerTimers()
+        composition.browser.stopAdmission()
         runtimeServices.computerMaintenance?.stopAdmission()
       } },
       { name: 'passive resource telemetry admission', run: async () => { telemetryLifetime.abort() } },
@@ -1935,33 +2321,33 @@ function createRuntimeControl({ base, callbacks, started, runtimeState, transpor
       { name: 'native MCP settings', run: () => harnessSettings.mcp.shutdown() },
       { name: 'Codex plugin settings', run: () => harnessSettings.plugins.shutdown() },
       { name: 'harness qualification checks', run: () => Promise.all([harnessCatalog.shutdownChecks(), nativeConfigurations.shutdownChecks()]).then(() => undefined) },
-      { name: 'browser runtime', run: async () => { await browser.stop(); callbacks.browserRemote.get().close() } },
-      { name: 'Group chat', run: async () => { runtimeState.stopWorkflowChat?.() } },
+      { name: 'browser runtime', run: async () => { await composition.browser.stop(); composition.browserRemote.close() } },
+      { name: 'Group chat', run: async () => { composition.stopWorkflowChat?.() } },
       { name: 'Operator chat', run: () => chat.shutdown() },
       { name: 'Agent chat', run: () => agentChat.shutdown() },
       { name: 'automatic reviews', run: () => reviews.shutdown() },
       { name: 'workflow engine', run: () => engine.shutdown() },
-      { name: 'cloud CI starts', run: () => { for (const cloud of started.cloudCis ?? []) cloud.stop() } },
+      { name: 'cloud CI starts', run: () => { for (const cloud of composition.cloudCis ?? []) cloud.stop() } },
     ],
     drain: [
-      { name: 'startup schema preparation', run: () => runtimeState.schemaPreparation?.then(() => undefined, () => undefined) },
+      { name: 'startup schema preparation', run: () => composition.schemaPreparation?.then(() => undefined, () => undefined) },
       { name: 'shared file sync work', run: () => runtimeServices.computerSync?.join() },
       { name: 'live harness qualification', run: () => harnessQualifications?.join() },
       // Initialization errors belong to initialize()'s caller, not to cleanup.
       // Wait for its last DB/filesystem operation even if startup was canceled.
-      { name: 'initialization', run: () => runtimeState.initialization?.then(() => undefined, () => undefined) },
-      { name: 'native defaults initialization', run: () => runtimeState.nativeDefaultsInitialization?.then(() => undefined, () => undefined) },
-      { name: 'reconciliation', run: () => runtimeState.reconciliation },
-      { name: 'source reservation reclamation', run: () => started.jobRuntime?.drainMaterializationReservationReconciliation() },
+      { name: 'initialization', run: () => composition.initialization?.then(() => undefined, () => undefined) },
+      { name: 'native defaults initialization', run: () => composition.nativeDefaultsInitialization?.then(() => undefined, () => undefined) },
+      { name: 'reconciliation', run: () => composition.reconciliation },
+      { name: 'source reservation reclamation', run: () => composition.jobRuntime?.drainMaterializationReservationReconciliation() },
     ],
     dispose: [
       { name: 'computer maintenance tasks', run: () => runtimeServices.computerMaintenance?.drain() },
       { name: 'worker conversation callback admissions', run: async () => { await workerChats?.close() } },
       { name: 'installed rsync canonical receiver', run: () => entrypoint ? entrypoint.close() : undefined },
-      { name: 'workflow artifact byte receiver', run: async () => { await started.workflowArtifacts?.receiver.close() } },
-      { name: 'passive resource telemetry collector', run: async () => { await started.telemetry?.close() } },
+      { name: 'workflow artifact byte receiver', run: async () => { await composition.workflowArtifacts?.receiver.close() } },
+      { name: 'passive resource telemetry collector', run: async () => { await composition.telemetry?.close() } },
       { name: 'diagnostic and configuration qualification native managers', run: () => nativeFactories.disposeAuxiliaries() },
-      { name: 'Job dispatch owners', run: async () => { await started.jobRuntime?.close() } },
+      { name: 'Job dispatch owners', run: async () => { await composition.jobRuntime?.close() } },
       { name: 'execution native managers', run: async () => {
         // Preserve the manager and authenticated channels until every restart detach commits, including retries.
         try {
@@ -1991,32 +2377,37 @@ function createRuntimeControl({ base, callbacks, started, runtimeState, transpor
       await runtimeOwner.close()
     },
   })
-  const beginShutdown = (): void => {
-    runtimeState.closing = true
+  const beginShutdown = composition.beginShutdown = (): void => {
+    composition.closing = true
     appRoutes.stopAdmission()
     startupLifetime.abort()
     lifecycle.begin()
   }
-  const assertOpen = (): void => {
-    if (runtimeState.closing) throw new DomainError('NATIVE_RUNTIME_CLOSING', 'The native runtime is shutting down.', 503)
+  const assertOpen = composition.assertOpen = (): void => {
+    if (composition.closing) throw new DomainError('NATIVE_RUNTIME_CLOSING', 'The native runtime is shutting down.', 503)
   }
-  const startupDatabase = <T>(work: () => Promise<T>): Promise<T> =>
+  composition.startupDatabase = <T>(work: () => Promise<T>): Promise<T> =>
     retryStartupDatabase(work, { signal: startupLifetime.signal, check: assertOpen })
-  return { mountArtifacts, startupLifetime, runtimeOwner, lifecycle, beginShutdown, assertOpen, startupDatabase }
 }
 
-function createRuntimeStartup(services: ProductionServices) {
-  const { base, started, runtimeState, transport, deviceRuntime, browserStage, repositoryStage, qualificationStage, profileStage, operatorStage, httpStage, controlStage } = services
-  const { checkpoints, config, database } = base
-  const { harnessHost } = transport
-  const { browser } = browserStage
-  const { foundationSettings, harnessRegistry, operators } = repositoryStage
-  const { appMcpEndpoint } = qualificationStage
-  const { nativeConfigurations } = profileStage
-  const { workflowChat } = operatorStage
-  const { app } = httpStage
-  const { assertOpen, runtimeOwner, startupDatabase, startupLifetime } = controlStage
-  const synchronizeOperatorDefaults = async (
+function configureRuntimeStartup(composition: ProductionComposition) {
+  const {
+    config,
+    database,
+    checkpoints,
+    deviceRuntime,
+    harnessRegistry,
+    foundationSettings,
+    operators,
+    appMcpEndpoint,
+    nativeConfigurations,
+    app,
+    startupLifetime,
+    runtimeOwner,
+    assertOpen,
+    startupDatabase,
+  } = composition
+  const synchronizeOperatorDefaults = composition.synchronizeOperatorDefaults = async (
     template: AgentDefaults['operator'],
   ): Promise<void> => {
     await withTransaction(database.pool, async client => {
@@ -2030,9 +2421,9 @@ function createRuntimeStartup(services: ProductionServices) {
       )
     })
   }
-  const prepareSchema = (): Promise<void> => {
-    if (runtimeState.closing) return Promise.reject(new DomainError('NATIVE_RUNTIME_CLOSING', 'The native runtime is shutting down.', 503))
-    runtimeState.schemaPreparation ??= Promise.resolve().then(async () => {
+  composition.prepareSchema = (): Promise<void> => {
+    if (composition.closing) return Promise.reject(new DomainError('NATIVE_RUNTIME_CLOSING', 'The native runtime is shutting down.', 503))
+    composition.schemaPreparation ??= Promise.resolve().then(async () => {
       await runtimeOwner.acquire()
       assertOpen()
       await startupDatabase(() => database.migrate())
@@ -2040,33 +2431,33 @@ function createRuntimeStartup(services: ProductionServices) {
       await startupDatabase(() => checkpoints.setup())
       assertOpen()
     })
-    return runtimeState.schemaPreparation
+    return composition.schemaPreparation
   }
-  const initialize = (): Promise<void> => {
-    if (runtimeState.closing) return Promise.reject(new DomainError('NATIVE_RUNTIME_CLOSING', 'The native runtime is shutting down.', 503))
-    if (runtimeState.initialized) return Promise.resolve()
+  composition.initialize = (): Promise<void> => {
+    if (composition.closing) return Promise.reject(new DomainError('NATIVE_RUNTIME_CLOSING', 'The native runtime is shutting down.', 503))
+    if (composition.initialized) return Promise.resolve()
     // Coalesce startup and publish its lifetime before starting any async work.
-    runtimeState.initialization ??= Promise.resolve().then(async () => {
-      await initializeRuntimeOwner(services, synchronizeOperatorDefaults)
+    composition.initialization ??= Promise.resolve().then(async () => {
+      await initializeRuntimeOwner(composition)
       const machine = await deviceRuntime.initializeFromRuntime(() => startupDatabase(() => readRuntimeIdentity(database.pool,
         fileURLToPath(new URL('../../../', import.meta.url)), config.database.connectionString)))
-      started.machine = machine
+      composition.machine = machine
       assertOpen()
-      await browser.start(machine.installationId)
-      const jobRuntime = await initializeJobServices(services, machine)
-      await initializeWorkflowArtifacts(services, machine, jobRuntime)
-      const computerServices = await initializeComputerServices(services, machine, jobRuntime)
-      await initializeCiServices(services, machine, jobRuntime, computerServices)
-      await initializeHarnessServices(services, machine)
+      await composition.browser.start(machine.installationId)
+      await initializeJobServices(composition, machine)
+      await initializeWorkflowArtifacts(composition, machine)
+      const computerServices = await initializeComputerServices(composition, machine)
+      await initializeCiServices(composition, machine, computerServices)
+      await initializeHarnessServices(composition, machine)
     })
     // On failure the startup caller closes the app. Only the shared shutdown
     // barrier may release the owner, after any already-admitted work drains.
-    return runtimeState.initialization
+    return composition.initialization
   }
   app.addHook('onListen', async () => {
-    runtimeState.stopWorkflowChat ??= workflowChat.start()
-    if (!runtimeState.initialized || runtimeState.closing || !harnessHost.installedClis) return
-    runtimeState.nativeDefaultsInitialization ??= (async () => {
+    composition.stopWorkflowChat ??= composition.workflowChat.start()
+    if (!composition.initialized || composition.closing || !composition.harnessHost.installedClis) return
+    composition.nativeDefaultsInitialization ??= (async () => {
       await initializeNativeDefaults({
         pool: database.pool,
         options: harness => startupDatabase(() => nativeConfigurations.options(harness)),
@@ -2082,96 +2473,107 @@ function createRuntimeStartup(services: ProductionServices) {
         await startupDatabase(() => synchronizeOperatorDefaults(initializedDefaults.value.operator))
       }
     })()
-    await runtimeState.nativeDefaultsInitialization
+    await composition.nativeDefaultsInitialization
   })
-  return { synchronizeOperatorDefaults, prepareSchema, initialize }
 }
 
-function createRuntimeHooks({ base, started, runtimeState, accountStage, repositoryStage, profileStage, conversationStage, operatorChatStage, agentChatStage, httpStage, controlStage }: ProductionServices) {
-  const { config, database } = base
-  const { bugReports } = accountStage
-  const { runWorktrees } = repositoryStage
-  const { appRoutes } = profileStage
-  const { engine, interactions } = conversationStage
-  const { chat } = operatorChatStage
-  const { reviews } = agentChatStage
-  const { app } = httpStage
-  const { beginShutdown, lifecycle } = controlStage
+function configureRuntimeHooks(composition: ProductionComposition) {
+  const {
+    config,
+    database,
+    bugReports,
+    runWorktrees,
+    appRoutes,
+    engine,
+    interactions,
+    chat,
+    reviews,
+    app,
+    lifecycle,
+    beginShutdown,
+  } = composition
   const SNAPSHOT_RELEASE_INTERVAL_MS = 10 * 60_000
   let lastSnapshotRelease = 0
   const commandReceiptRetention = new PostgresCommandReceiptRetention(database.pool)
   let lastReceiptCleanup = 0
-  const reconcile = (report: (error: unknown) => void): Promise<void> => {
-    if (runtimeState.closing) return Promise.resolve()
-    if (runtimeState.reconciliation) return runtimeState.reconciliation
-    runtimeState.reconciliation = trackService('run-reconciliation', { cadenceMs: 5_000, deadlineMs: 10 * 60_000 }, async () => {
+  composition.reconcile = (report: (error: unknown) => void): Promise<void> => {
+    if (composition.closing) return Promise.resolve()
+    if (composition.reconciliation) return composition.reconciliation
+    composition.reconciliation = trackService('run-reconciliation', { cadenceMs: 5_000, deadlineMs: 10 * 60_000 }, async () => {
       await bugReports.detectStuckExecutions(config.stuckExecutionIdleMs ?? DEFAULT_STUCK_EXECUTION_IDLE_MS)
-      if (started.jobRuntime) await started.jobRuntime.reconcileFailedCaptures(report)
-      started.jobRuntime?.startMaterializationReservationReconciliation(report)
-      if (started.jobRuntime) await closeCompletedWorkflowSources(database.pool, started.jobRuntime.sources, report)
+      if (composition.jobRuntime) await composition.jobRuntime.reconcileFailedCaptures(report)
+      composition.jobRuntime?.startMaterializationReservationReconciliation(report)
+      if (composition.jobRuntime) await closeCompletedWorkflowSources(database.pool, composition.jobRuntime.sources, report)
       // Age-based release is not urgent; storage pressure still releases on demand during approval and preparation.
-      if (started.jobRuntime && Date.now() - lastSnapshotRelease >= SNAPSHOT_RELEASE_INTERVAL_MS) {
+      if (composition.jobRuntime && Date.now() - lastSnapshotRelease >= SNAPSHOT_RELEASE_INTERVAL_MS) {
         lastSnapshotRelease = Date.now()
-        await started.jobRuntime.sources.releaseUnusedSnapshots(report)
+        await composition.jobRuntime.sources.releaseUnusedSnapshots(report)
       }
       await engine.reconcile(report)
-      if (runtimeState.closing) return
+      if (composition.closing) return
       await runWorktrees.cleanup(report)
-      if (runtimeState.closing) return
+      if (composition.closing) return
       if (Date.now() - lastReceiptCleanup >= SNAPSHOT_RELEASE_INTERVAL_MS) {
         lastReceiptCleanup = Date.now()
         try { await commandReceiptRetention.prune() } catch (error) { report(error) }
       }
-      if (runtimeState.initialized) {
+      if (composition.initialized) {
         await appRoutes.refresh()
-        if (runtimeState.closing) return
+        if (composition.closing) return
         await chat.reconcileActive()
-        if (runtimeState.closing) return
+        if (composition.closing) return
         await reviews.tick()
       }
       let afterId: string | undefined
       do {
-        if (runtimeState.closing) return
+        if (composition.closing) return
         const page = await interactions.recover({ limit: 100, ...(afterId ? { afterId } : {}) })
         for (const failure of page.errors) report(new Error(`Interaction ${failure.interactionId}: ${failure.error}`))
         afterId = page.nextCursor ?? undefined
       } while (afterId)
-    }).finally(() => { runtimeState.reconciliation = undefined })
-    return runtimeState.reconciliation
+    }).finally(() => { composition.reconciliation = undefined })
+    return composition.reconciliation
   }
   app.addHook('preClose', async () => {
-    runtimeState.httpClosing = true
+    composition.httpClosing = true
     beginShutdown()
     // Signal now, but do not release ownership before in-flight HTTP handlers
     // have drained. They may still finish native/DB lifecycle operations.
   })
-  const drainShutdown = (): Promise<void> => {
-    runtimeState.httpClosing = true
+  const drainShutdown = composition.drainShutdown = (): Promise<void> => {
+    composition.httpClosing = true
     beginShutdown()
     return lifecycle.finish()
   }
   app.addHook('onClose', async () => { await drainShutdown() })
-  const shutdown = (): Promise<void> => {
+  composition.shutdown = (): Promise<void> => {
     beginShutdown()
     // External callers close HTTP first. Repeated calls share app.close(), and
     // cannot release ownership while HTTP is draining in preClose.
     // onClose hooks must use drainShutdown(), not await this enclosing close.
-    runtimeState.applicationClose ??= Promise.resolve().then(() => app.close())
-    return runtimeState.applicationClose
+    composition.applicationClose ??= Promise.resolve().then(() => app.close())
+    return composition.applicationClose
   }
-  return { reconcile, drainShutdown, shutdown }
 }
 
-async function initializeRuntimeOwner(services: ProductionServices, synchronizeOperatorDefaults: (template: AgentDefaults['operator']) => Promise<void>) {
-  const { base, transport, repositoryStage, profileStage, conversationStage, operatorChatStage, operatorStage, controlStage } = services
-  const { config } = base
-  const { entrypoint, harnessHost, mainCodex } = transport
-  const { foundationSettings, operators, remoteExecution } = repositoryStage
-  const { appRoutes, harnessSettings } = profileStage
-  const { operatorWorkingDirectory } = conversationStage
-  const { chatAuthority } = operatorChatStage
-  const { operatorServices } = operatorStage
-  const { assertOpen, runtimeOwner, startupDatabase } = controlStage
+async function initializeRuntimeOwner(composition: ProductionComposition) {
+  const {
+    mainCodex,
+    entrypoint,
+    foundationSettings,
+    remoteExecution,
+    operators,
+    appRoutes,
+    harnessSettings,
+    operatorWorkingDirectory,
+    chatAuthority,
+    operatorServices,
+    runtimeOwner,
+    assertOpen,
+    startupDatabase,
+    synchronizeOperatorDefaults,
+    config,
+  } = composition
 
   assertOpen()
   await runtimeOwner.acquire()
@@ -2179,7 +2581,7 @@ async function initializeRuntimeOwner(services: ProductionServices, synchronizeO
   await startupDatabase(() => remoteExecution.initialize())
   await entrypoint?.recover()
   assertOpen()
-  if (harnessHost.installedClis) await mainCodex.initialize()
+  if (composition.harnessHost.installedClis) await mainCodex.initialize()
   assertOpen()
   const canonicalDirectory = await ensureOperatorRuntimeDirectory(config.harnesses.workspaceRoot)
   assertOpen()
@@ -2207,18 +2609,26 @@ async function initializeRuntimeOwner(services: ProductionServices, synchronizeO
 
 }
 
+async function initializeJobServices(composition: ProductionComposition, machine: ProductionMainInstallation) {
+  const {
+    workerExecution,
+    fileStorageRoot,
+    processRegistry,
+    inputAcknowledgements,
+    installedRsync,
+    rsync,
+    deviceRuntime,
+    commands,
+    locations,
+    approvals,
+    runtimeServices,
+    config,
+    database,
+    infrastructure,
+  } = composition
 
-async function initializeJobServices(services: ProductionServices, machine: ProductionMainInstallation) {
-  const { base, started, transport, accountStage, repositoryStage, executionStage, httpStage, deviceRuntime } = services
-  const { config, database, infrastructure } = base
-  const { fileStorageRoot, inputAcknowledgements, installedRsync, processRegistry, rsync, workerExecution } = transport
-  const { commands } = accountStage
-  const { locations } = repositoryStage
-  const { approvals } = executionStage
-  const { runtimeServices } = httpStage
-
-  started.trustedConnections = new PostgresTrustedConnectionSetup(database.pool, machine.installationId)
-  runtimeServices.trustedConnections = started.trustedConnections
+  composition.trustedConnections = new PostgresTrustedConnectionSetup(database.pool, machine.installationId)
+  runtimeServices.trustedConnections = composition.trustedConnections
   const activeNativeSession: SourceActiveNativeSessionReader = (sql, record) =>
     readSourceCurrentNativeSession(sql, record, approvals.passiveOwnedNativeSessions())
   const captureNativeSession: SourceNativeSessionCaptureReader = async record => {
@@ -2240,12 +2650,12 @@ async function initializeJobServices(services: ProductionServices, machine: Prod
       capture.signal.throwIfAborted(); capture.assertCurrent()
     } }
   }
-  const jobRuntime = await createProductionJobs({ pool: database.pool, commands, locations, mainId: machine.installationId,
+  composition.jobRuntime = await createProductionJobs({ pool: database.pool, commands, locations, mainId: machine.installationId,
     availableMemory: async profile => {
       const fingerprint = profile.measurement?.fingerprint
-      if (!started.telemetry || !fingerprint) return null
+      if (!composition.telemetry || !fingerprint) return null
       const registration = profile.root.registration
-      return started.telemetry.service.availableComputerMemory({ hostRef: profile.root.selection.hostRef,
+      return composition.telemetry.service.availableComputerMemory({ hostRef: profile.root.selection.hostRef,
         applicationInstallationId: registration?.workerInstallationId ?? fingerprint.mainInstallationId,
         bootId: fingerprint.bootId, keyRevision: registration?.keyRevision ?? null,
         authorizationRevision: registration?.authorizationRevision ?? null }, AbortSignal.timeout(5000))
@@ -2283,91 +2693,122 @@ async function initializeJobServices(services: ProductionServices, machine: Prod
         await rsync.backend.acknowledge(intent)
       } } : {}),
     ...(processRegistry instanceof NativeProcessRegistry ? { nativeRegistry: processRegistry } : {}),
-    ...(infrastructure?.jobs ? { infrastructure: infrastructure.jobs } : {}),
-    ci: { enrollment: () => runtimeServices.ciEnrollment, runtime: () => runtimeServices.ciRuntime } })
-  started.jobRuntime = jobRuntime
-  return jobRuntime
+    ...(infrastructure?.jobs ? { infrastructure: infrastructure.jobs } : {}) })
+
 }
 
-
-async function initializeWorkflowArtifacts(services: ProductionServices, machine: ProductionMainInstallation, jobRuntime: JobRuntime) {
-  const { base, started, transport, accountStage, repositoryStage, profileStage, httpStage, controlStage, deviceRuntime } = services
-  const { database, infrastructure } = base
-  const { access, workerExecution } = transport
-  const { providerAccounts, workflowCapture } = accountStage
-  const { harnessRegistry, locations, remoteWorkflow, selectedSuites } = repositoryStage
-  const { harnessInstances, installationMonitor } = profileStage
-  const { app } = httpStage
-  const { mountArtifacts } = controlStage
+async function initializeWorkflowArtifacts(composition: ProductionComposition, machine: ProductionMainInstallation) {
+  const {
+    workerExecution,
+    access,
+    deviceRuntime,
+    providerAccounts,
+    workflowCapture,
+    locations,
+    remoteWorkflow,
+    harnessRegistry,
+    selectedSuites,
+    harnessInstances,
+    installationMonitor,
+    app,
+    mountArtifacts,
+    database,
+    infrastructure,
+  } = composition
+  const jobRuntime = composition.jobRuntime!
 
   if (selectedSuites) {
-    const agentPlacement = new AgentPlacementProducer(database.pool, machine.installationId, jobRuntime.sources, jobRuntime.policies,
+    composition.agentPlacement = new AgentPlacementProducer(database.pool, machine.installationId, jobRuntime.sources, jobRuntime.policies,
       harnessRegistry, { codex: selectedSuites.codex.revision },
       workerExecution, profile => harnessInstances.ensureReady(profile),
       (hosts, signal) => installationMonitor.refreshHosts(hosts, signal), providerAccounts, async host => {
         if (host.kind === 'device') await deviceRuntime.endpointForDomains().assertWorkerBundleReady(host.deviceId)
       })
-    started.agentPlacement = agentPlacement
-    started.agentPreparation = new AgentExecutionPreparation(jobRuntime.sources, agentPlacement)
-    started.executionAuthority = createExecutionAuthorityExtension(database.pool, locations, agentPlacement)
+    composition.agentPreparation = new AgentExecutionPreparation(jobRuntime.sources, composition.agentPlacement)
+    composition.executionAuthority = createExecutionAuthorityExtension(database.pool, locations, composition.agentPlacement)
   }
   const artifactPorts: NativeArtifactAuthorityPorts = { locations,
     producer: { assertPinsCurrent: (...args) => {
-      if (!started.agentPlacement) throw new DomainError('AGENT_PLACEMENT_UNAVAILABLE', 'The actual artifact placement producer is unavailable.', 503)
-      return started.agentPlacement.assertPinsCurrent(...args)
+      if (!composition.agentPlacement) throw new DomainError('AGENT_PLACEMENT_UNAVAILABLE', 'The actual artifact placement producer is unavailable.', 503)
+      return composition.agentPlacement.assertPinsCurrent(...args)
     } } }
   const artifactAuthority = new PostgresArtifactPublicationAuthority(machine.installationId, database.pool, artifactPorts)
-  started.localWorkflowArtifacts = new LocalWorkflowArtifacts(database.pool,
+  composition.localWorkflowArtifacts = new LocalWorkflowArtifacts(database.pool,
     new LocalWorkflowArtifactAuthority(machine.installationId, database.pool, locations, artifactPorts.producer), () => {
-      if (!started.fileStorage) throw new DomainError('WORKFLOW_ARTIFACT_SOURCE_UNAVAILABLE',
+      if (!composition.fileStorage) throw new DomainError('WORKFLOW_ARTIFACT_SOURCE_UNAVAILABLE',
         'Local workflow artifact storage is unavailable.', 503)
-      return started.fileStorage
+      return composition.fileStorage
     })
   const outputAuthorization = infrastructure?.nativeOutputAuthorization?.(artifactAuthority)
-    ?? createWorkerNativeOutputAuthorizationPort(artifactAuthority, workerNativeOutputContext({ artifactAuthority, devices: deviceRuntime }))
-  started.mainWorkerMcp = new MainWorkerMcpRelay(machine.installationId, database.pool, access, selectedMainMcpForward(app), outputAuthorization)
-  started.artifactOutputsGate = createWorkflowArtifactOutputsGate(machine.installationId, artifactAuthority)
-  started.artifactResultSource = createProductionWorkflowArtifactResultSource({ captures: workflowCapture.verify,
+    ?? createWorkerNativeOutputAuthorizationPort(artifactAuthority, async (input, connection, sql) => {
+      const binding = deviceRuntime.currentBinding(connection.deviceId)
+      const identity = binding && DeviceConnectionIdentitySchema.parse({ mainId: binding.mainId,
+        deviceId: binding.deviceId, workerInstallationId: binding.workerInstallationId, keyRevision: binding.keyRevision,
+        authorizationRevision: binding.authorizationRevision, bootId: binding.bootId,
+        connectionGeneration: binding.connectionGeneration })
+      const original = DeviceConnectionIdentitySchema.parse({ mainId: connection.mainId, deviceId: connection.deviceId,
+        workerInstallationId: connection.workerInstallationId, keyRevision: connection.keyRevision,
+        authorizationRevision: connection.authorizationRevision, bootId: connection.bootId,
+        connectionGeneration: connection.connectionGeneration })
+      if (!binding || !isDeepStrictEqual(identity, original)) {
+        throw new DomainError('NATIVE_ARTIFACT_AUTHORITY_DENIED', 'The original artifact connection changed.', 403)
+      }
+      const row = (await sql.query<{ workspace_id: string; workflow_id: string }>(
+        'select workspace_id,workflow_id from runs where id=$1 for share', [input.intent.runId])).rows[0]
+      if (!row) throw new DomainError('NATIVE_ARTIFACT_CONTEXT_UNAVAILABLE', 'The original artifact Run is unavailable.', 409)
+      return artifactAuthority.resolveWorkflowContext({ workspaceId: row.workspace_id, workflowId: row.workflow_id,
+        runId: input.intent.runId, nodeId: input.intent.nodeId, executionId: input.intent.executionId,
+        attemptId: input.intent.attemptId, placementHash: input.intent.bindingHash }, transferContextForBinding(binding), sql)
+    })
+  composition.mainWorkerMcp = new MainWorkerMcpRelay(machine.installationId, database.pool, access, selectedMainMcpForward(app), outputAuthorization)
+  composition.artifactOutputsGate = createWorkflowArtifactOutputsGate(machine.installationId, artifactAuthority)
+  composition.artifactResultSource = createProductionWorkflowArtifactResultSource({ captures: workflowCapture.verify,
     physical: remoteWorkflow, authority: artifactAuthority })
-  started.admitWorkflowFileContext = createProductionWorkflowFileContexts(machine.installationId, { captures: workflowCapture.verify,
+  composition.admitWorkflowFileContext = createProductionWorkflowFileContexts(machine.installationId, { captures: workflowCapture.verify,
     assertPhysical: remoteWorkflow.assertPhysical, authority: artifactAuthority, transferContext: remoteWorkflow.fileTransferContext })
-  started.artifactComposition = { mainId: machine.installationId, authority: artifactAuthority,
+  composition.artifactComposition = { mainId: machine.installationId, authority: artifactAuthority,
     fence: new PostgresAcceptedArtifactAttemptFence(machine.installationId, artifactPorts) }
   mountArtifacts()
 
 }
 
+async function initializeComputerServices(composition: ProductionComposition, machine: ProductionMainInstallation) {
+  const {
+    mainCodex,
+    deviceRuntime,
+    commands,
+    projectRoot,
+    maintenancePorts,
+    harnessSettings,
+    runtimeServices,
+    app,
+    runtimeOwner,
+    assertOpen,
+    startupDatabase,
+    config,
+    database,
+  } = composition
+  const jobRuntime = composition.jobRuntime!
 
-async function initializeComputerServices(services: ProductionServices, machine: ProductionMainInstallation, jobRuntime: JobRuntime) {
-  const { base, started, runtimeState, transport, browserStage, accountStage, repositoryStage, profileStage, httpStage, controlStage, deviceRuntime } = services
-  const { computerUpkeep, config, database } = base
-  const { mainCodex } = transport
-  const { browser } = browserStage
-  const { commands } = accountStage
-  const { projectRoot } = repositoryStage
-  const { harnessSettings, maintenancePorts } = profileStage
-  const { app, runtimeServices } = httpStage
-  const { assertOpen, runtimeOwner, startupDatabase } = controlStage
-
-  await startupDatabase(() => bootstrapLocalMainWorkspaceRoot({ pool: database.pool, policies: jobRuntime.policies,
+  await startupDatabase(() => bootstrapLocalMainWorkspaceRoot({ pool: database.pool, policies: jobRuntime!.policies,
     mainId: machine.installationId, runtimeRoot: config.harnesses.workspaceRoot, appStorageRoot: projectRoot }))
   const workspaceRoots = runtimeServices.workspaceRoots = new WorkspaceBoundLocationService(
     database.pool, commands, jobRuntime.policies,
   )
-  started.rootPolicies = jobRuntime.policies
+  composition.rootPolicies = jobRuntime.policies
   runtimeServices.sources = jobRuntime.sources
   runtimeServices.workspaceRepositories = new WorkspaceRepositoryService(database.pool, commands,
     runtimeServices.workspaces, runtimeServices.workspaceRoots, jobRuntime.policies, jobRuntime.sources,
     machine.installationId, projectRoot)
-  const { clouds, discoverClouds, circleCredits, circleStandby } = await initializeCircleCi(services, machine)
+  const { clouds, discoverClouds, circleCredits, circleStandby } = await initializeCircleCi(composition, machine)
   runtimeServices.computerActivity = new ComputerActivityService(database.pool, machine.installationId,
     id => deviceRuntime.presenceFor(id), commands, clouds, circleCredits)
-  const computerAccounts = runtimeServices.computerAccounts = new ComputerAccountsService(database.pool, machine.installationId,
+  runtimeServices.computerAccounts = new ComputerAccountsService(database.pool, machine.installationId,
     () => deviceRuntime.endpointForDomains(), commands)
-  const computerMaintenance = runtimeServices.computerMaintenance = new FleetMaintenanceService(database.pool, machine.installationId,
+  runtimeServices.computerMaintenance = new FleetMaintenanceService(database.pool, machine.installationId,
     () => deviceRuntime.endpointForDomains(), commands, new ComputerMaintenance({ ...maintenancePorts, browserRuntime: {
-      status: () => browser.runtime.status(), retry: async () => {
-        const status = await browser.runtime.retry(); browser.profiles.wake(); return status
+      status: () => composition.browser.runtime.status(), retry: async () => {
+        const status = await composition.browser.runtime.retry(); composition.browser.profiles.wake(); return status
       } } }), {
       workerManifestSha256s: () => readProductionWorkerManifestSha256s({ environment: process.env,
         releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }),
@@ -2375,7 +2816,7 @@ async function initializeComputerServices(services: ProductionServices, machine:
         releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }),
       workerPublication: () => readProductionWorkerReleasePublication({ environment: process.env,
         releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }),
-      connections: computerConnectionsReader(computerAccounts, {
+      connections: computerConnectionsReader(runtimeServices.computerAccounts, {
         list: (principal, harness, hostRef) => harnessSettings.mcp.list(principal, harness, hostRef),
         readMainClaudeServers: () => claudeUserMcpServers(maintenancePorts),
       }),
@@ -2396,45 +2837,45 @@ async function initializeComputerServices(services: ProductionServices, machine:
         ? (await pluginMarketplaces(maintenancePorts, mainCodex.binary, AbortSignal.timeout(60_000)))
           .flatMap(marketplace => marketplace.gitSource ? [{ name: marketplace.name, source: marketplace.gitSource }] : []) : [],
     })
-  if (runtimeState.closing) computerMaintenance.stopAdmission()
+  if (composition.closing) runtimeServices.computerMaintenance.stopAdmission()
   // Keep harnesses current and Main's MCP servers and plugins on every computer.
-  if (computerUpkeep) {
+  if (composition.computerUpkeep) {
     const upkeep = () => { void trackService('computer-upkeep', { cadenceMs: 6 * 60 * 60_000, deadlineMs: 2 * 60 * 60_000 },
-      () => computerMaintenance.keepCurrent()).catch(error => app.log.warn({ err: error }, 'Computer upkeep failed')) }
+      () => runtimeServices.computerMaintenance!.keepCurrent()).catch(error => app.log.warn({ err: error }, 'Computer upkeep failed')) }
     const firstUpkeep = setTimeout(upkeep, 120_000)
     const upkeepTimer = setInterval(upkeep, 6 * 60 * 60_000)
     // MCP server and plugin changes on Main reach the other computers within about a minute.
     const stopSourceSync = startWorkerPublicationSync(workerArtifactLocation({ environment: process.env,
       releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }),
     () => trackService('fleet-source-sync', { cadenceMs: 60_000, deadlineMs: 30 * 60_000 },
-      () => computerMaintenance.syncChangedSources()),
+      () => runtimeServices.computerMaintenance!.syncChangedSources()),
     error => app.log.warn({ err: error }, 'Fleet MCP and plugin sync failed'))
     firstUpkeep.unref(); upkeepTimer.unref()
-    runtimeState.stopComputerTimers = () => {
+    composition.stopComputerTimers = () => {
       clearTimeout(firstUpkeep)
       clearInterval(upkeepTimer)
       stopSourceSync()
     }
-    if (runtimeState.closing) runtimeState.stopComputerTimers()
+    if (composition.closing) composition.stopComputerTimers()
   }
   runtimeServices.computerGitHub = new ComputerGitHubService(database.pool, machine.installationId,
     () => deviceRuntime.endpointForDomains(), commands, {
-      accountChanged: target => computerAccounts.invalidate(target),
+      accountChanged: target => runtimeServices.computerAccounts!.invalidate(target),
     })
-  const computerSync = runtimeServices.computerSync = new ComputerSyncService(database.pool, machine.installationId,
+  runtimeServices.computerSync = new ComputerSyncService(database.pool, machine.installationId,
     () => deviceRuntime.endpointForDomains(), commands, undefined, () => {
       assertOpen()
       if (!runtimeOwner.active) throw new DomainError('NATIVE_RUNTIME_UNAVAILABLE', 'Shared file sync requires the runtime owner.', 503)
     })
   const syncTimer = setInterval(() => {
     void trackService('computer-sync', { cadenceMs: 30_000, deadlineMs: 10 * 60_000 },
-      () => computerSync.poll()).catch(error => {
+      () => runtimeServices.computerSync!.poll()).catch(error => {
       app.log.warn({ err: error }, 'Shared file sync setup is pending')
     })
   }, 30_000)
   syncTimer.unref()
-  runtimeState.stopSyncTimer = () => { clearInterval(syncTimer) }
-  if (runtimeState.closing) { runtimeState.stopSyncTimer(); computerSync.stopAdmission() }
+  composition.stopSyncTimer = () => { clearInterval(syncTimer) }
+  if (composition.closing) { composition.stopSyncTimer(); runtimeServices.computerSync.stopAdmission() }
   runtimeServices.buildComputers = jobRuntime.buildComputers
   runtimeServices.jobs = jobRuntime.jobs
   const readAgentFiles = agentFileReader(() => deviceRuntime.endpointForDomains())
@@ -2442,24 +2883,17 @@ async function initializeComputerServices(services: ProductionServices, machine:
   return { clouds, discoverClouds, readAgentFiles, workspaceRoots, circleCredits, circleStandby }
 }
 
-
-async function initializeCircleCi(services: ProductionServices, machine: ProductionMainInstallation) {
-  const { base, accountStage, repositoryStage, httpStage } = services
-  const { database } = base
-  const { commands } = accountStage
-  const { foundationSettings } = repositoryStage
-  const { runtimeServices } = httpStage
+async function initializeCircleCi(composition: ProductionComposition, machine: ProductionMainInstallation) {
+  const { database, foundationSettings, commands, runtimeServices } = composition
   const { circleAccounts, ...circleCi } = await createCircleCi({ pool: database.pool, mainId: machine.installationId,
     foundationSettings, commands })
   runtimeServices.circleAccounts = circleAccounts
   return circleCi
 }
 
-
 async function initializeCiServices(
-  services: ProductionServices,
+  composition: ProductionComposition,
   machine: ProductionMainInstallation,
-  jobRuntime: JobRuntime,
   computerServices: {
     clouds: CloudCis
     discoverClouds: () => Promise<void>
@@ -2469,37 +2903,44 @@ async function initializeCiServices(
     circleStandby: CircleStandby
   },
 ) {
-  const { base, started, runtimeState, transport, accountStage, httpStage, controlStage, deviceRuntime } = services
-  const { database } = base
-  const { workerExecution } = transport
-  const { commands } = accountStage
-  const { app, runtimeServices } = httpStage
-  const { assertOpen, startupDatabase } = controlStage
   const { clouds, discoverClouds, readAgentFiles, workspaceRoots, circleCredits, circleStandby } = computerServices
   // Stopped with the runtime so a start our shutdown interrupts is resumed, not failed.
-  started.cloudCis = clouds
+  composition.cloudCis = clouds
+  const {
+    workerExecution,
+    deviceRuntime,
+    commands,
+    runtimeServices,
+    app,
+    assertOpen,
+    startupDatabase,
+    database,
+  } = composition
+  const jobRuntime = composition.jobRuntime!
 
-  const hostCi = createHostCi({ pool: database.pool, mainId: machine.installationId, commands,
+  composition.hostCi = createHostCi({ pool: database.pool, mainId: machine.installationId, commands,
     devices: () => deviceRuntime.endpointForDomains(), workerExecution, clouds, discoverClouds, readAgentFiles,
     circleCredits, circleStandby })
-  started.hostCi = hostCi
-  hostCi.start()
-  app.addHook('onClose', async () => { await hostCi.close() })
+  composition.hostCi.start()
+  app.addHook('onClose', async () => { await composition.hostCi?.close() })
   const stopDeadlineSweeper = startStateDeadlineSweeper(database.pool, {
-    ciRuns: now => hostCi.expireOverdueRuns(now),
+    ciRuns: now => composition.hostCi!.expireOverdueRuns(now),
     workerPublication: () => readProductionWorkerReleasePublication({ environment: process.env,
       releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }) })
   app.addHook('onClose', async () => { stopDeadlineSweeper() })
-  runtimeServices.ci = hostCi
+  runtimeServices.ci = composition.hostCi
   runtimeServices.jobRuntimeProfiles = jobRuntime.profiles
-  const ciRuntime = runtimeServices.ciRuntime = new CiRuntimeProvisioner(database.pool, jobRuntime.profiles, jobRuntime.sources,
-    () => deviceRuntime.endpointForDomains(), commands, { changed: () => jobRuntime.jobs.requestQueueWake(),
-      main: () => jobRuntime.mainCiRuntime })
+  runtimeServices.ciRuntime = new CiRuntimeProvisioner(database.pool, jobRuntime.profiles, jobRuntime.sources,
+    () => deviceRuntime.endpointForDomains(), commands, { changed: () => jobRuntime?.jobs.requestQueueWake(),
+      main: () => jobRuntime?.mainCiRuntime })
+  jobRuntime.jobs.runtimePreparation = runtimeServices.ciRuntime
   runtimeServices.ciEnrollment = new CiEnrollment(database.pool, commands, jobRuntime.profiles,
-    ciRuntime, new ProductionCiEnrollmentInventory(database.pool, jobRuntime.sources,
-      () => deviceRuntime.endpointForDomains(), () => jobRuntime.mainCiRuntime, workerExecution,
+    runtimeServices.ciRuntime, new ProductionCiEnrollmentInventory(database.pool, jobRuntime.sources,
+      () => deviceRuntime.endpointForDomains(), () => jobRuntime?.mainCiRuntime, workerExecution,
       new ManagedWorkspaceRootService(commands, workspaceRoots, jobRuntime.policies)),
-    () => { if (!runtimeState.closing) void hostCi.dispatch() })
+    () => { if (!composition.closing) void composition.hostCi?.dispatch() })
+  jobRuntime.profiles.enrollment = runtimeServices.ciEnrollment
+  jobRuntime.buildComputers.enrollment = runtimeServices.ciEnrollment
   runtimeServices.ciEnrollment.request()
   const enrollmentTimer = setInterval(() => runtimeServices.ciEnrollment?.request(), 30_000)
   enrollmentTimer.unref()
@@ -2507,52 +2948,63 @@ async function initializeCiServices(
     clearInterval(enrollmentTimer)
     await runtimeServices.ciEnrollment?.close()
   })
-  await startupDatabase(() => ciRuntime.recover())
+  await startupDatabase(() => runtimeServices.ciRuntime!.recover())
   jobRuntime.jobs.requestQueueWake()
   assertOpen()
 
 }
 
+async function initializeHarnessServices(composition: ProductionComposition, machine: ProductionMainInstallation) {
+  const {
+    processRegistry,
+    deviceRuntime,
+    commands,
+    remoteWorkflow,
+    harnessRegistry,
+    qualificationRegistry,
+    harnessQualifications,
+    harnessCompatibility,
+    installationMonitor,
+    harnessCatalog,
+    nativeConfigurations,
+    harnessSettings,
+    launchScopes,
+    approvals,
+    telemetryLifetime,
+    agentChat,
+    runtimeServices,
+    app,
+    runtimeOwner,
+    assertOpen,
+    startupDatabase,
+    database,
+  } = composition
 
-async function initializeHarnessServices(services: ProductionServices, machine: ProductionMainInstallation) {
-  const { base, started, runtimeState, transport, accountStage, repositoryStage, qualificationStage, profileStage, executionStage, agentChatStage, httpStage, controlStage, deviceRuntime } = services
-  const { database } = base
-  const { processRegistry } = transport
-  const { commands } = accountStage
-  const { harnessRegistry, remoteWorkflow } = repositoryStage
-  const { harnessCompatibility, harnessQualifications, qualificationRegistry } = qualificationStage
-  const { harnessCatalog, harnessSettings, installationMonitor, launches, nativeConfigurations } = profileStage
-  const { approvals, telemetryLifetime } = executionStage
-  const { agentChat } = agentChatStage
-  const { app, runtimeServices } = httpStage
-  const { assertOpen, runtimeOwner, startupDatabase } = controlStage
-
-  started.managedMcp = new DeviceManagedMcp(database.pool, machine.installationId,
+  composition.managedMcp = new DeviceManagedMcp(database.pool, machine.installationId,
     () => deviceRuntime.endpointForDomains(), commands)
   await startupDatabase(() => harnessRegistry.initialize(machine.installationId))
   assertOpen()
   if (processRegistry instanceof NativeProcessRegistry) {
     const registry = processRegistry
-    const mainTelemetryContext: Extract<TrustedTelemetryContext, { kind: 'main-local' }> = { kind: 'main-local', mainId: machine.installationId,
+    composition.mainTelemetryContext = { kind: 'main-local', mainId: machine.installationId,
       // Approved canonical alias for the Main, not a separate hardware UUID.
       deviceId: machine.installationId, applicationInstallationId: machine.installationId,
       bootId: (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim(),
       runtimeEpoch: await startupDatabase(() => runtimeOwner.readRuntimeEpoch()), capability: RESOURCE_TELEMETRY_CAPABILITY }
     const authorities = createPassiveTelemetryAuthorities({ pool: database.pool, registry,
-      mainContext: () => mainTelemetryContext, mainActive: () => !runtimeState.closing && runtimeOwner.active,
+      mainContext: () => composition.mainTelemetryContext, mainActive: () => !composition.closing && runtimeOwner.active,
       deviceBinding: id => deviceRuntime.currentBinding(id), presence: id => deviceRuntime.presenceFor(id),
       deviceCapabilities: id => deviceRuntime.endpointForDomains().capabilities(id),
       getRemoteNativeOwners: () => remoteWorkflow.getRemoteNativeOwners(),
       getNativeOwners: () => approvals.passiveOwnedNativeSessions().flatMap(owned => {
-        const captured = launches.scopeOf(owned.manager)
+        const captured = launchScopes.get(owned.manager)
         return captured ? [{ execution: owned.execution, session: owned.session, writer: owned.writer, generation:owned.generation, assertCurrent: owned.assertCurrent, nativeOwner: captured.owner }] : []
       }) })
-    const telemetry = await createResourceTelemetryRuntime({ localContext: mainTelemetryContext, registry, ...authorities,
+    composition.telemetry = await createResourceTelemetryRuntime({ localContext: composition.mainTelemetryContext, registry, ...authorities,
       // A Main inside a container sees only its namespace, never the whole computer.
       wholeHostVisible: !existsSync('/.dockerenv') && !existsSync('/run/.containerenv'), signal: telemetryLifetime.signal })
-    started.telemetry = telemetry
-    runtimeServices.resourceTelemetry = { reads: telemetry.service, selectors: telemetry.selectors }
-    void telemetry.completion.then(result => {
+    runtimeServices.resourceTelemetry = { reads: composition.telemetry.service, selectors: composition.telemetry.selectors }
+    void composition.telemetry.completion.then(result => {
       if (result.kind !== 'failed') return
       reportServiceFailure('telemetry-collector', result.error)
       app.log.error({ err: result.error }, 'passive resource telemetry collector failed')
@@ -2567,8 +3019,8 @@ async function initializeHarnessServices(services: ProductionServices, machine: 
   }
   harnessCompatibility.start()
   assertOpen()
-  registerApiRoutes(app, productionRoutes(httpStage, started))
-  runtimeState.initialized = true
+  registerApiRoutes(app, productionRoutes(composition))
+  composition.initialized = true
   // Reconcile chat turns interrupted by the previous process; never blocks startup.
   void agentChat.recover().catch((error: unknown) => app.log.error({ err: error }, 'agent chat recovery failed'))
   // Fill the settings status and model caches in the background so first reads do not wait on native checks.
@@ -2579,4 +3031,3 @@ async function initializeHarnessServices(services: ProductionServices, machine: 
     app.log.warn({ err: error }, 'Main Codex requalification after restart failed'))
   installationMonitor.start(machine.installationId)
 }
-

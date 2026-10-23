@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { useHarnessSessionEpoch } from '../../shared/api/harnessSettings'
 import { assertSession, sessionGeneration, sessionIsSwitching } from '../../shared/api/sessionBoundary'
-import { type SelectedRunState, isRunAccessError } from '../runs-selector'
+import type { SelectedRunState } from '../runs-selector/useSelectedRun'
+import { isRunAccessError } from '../runs-selector/query'
 
 export function runNodeInspectionKey(selection: SelectedRunState) {
   return ['saved-run-inspection', sessionGeneration(), selection.identity,

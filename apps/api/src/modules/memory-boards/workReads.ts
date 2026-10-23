@@ -1,7 +1,7 @@
 import type { z } from 'zod'
 import { MemoryCardWorkBindingSchema, MemoryCardWorkClaimSchema,
   type MemoryCardWorkBinding, type MemoryCardWorkClaim } from '@foreman-code/contracts'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import type { GraphTransactionSql } from '../run-graph/connection.js'
 import type { BoardRow, Page, ReadRequest } from './types.js'
 import { decodeCursor, page } from './pagination.js'
 import { inputHash } from './identity.js'
@@ -10,7 +10,7 @@ const unresolved = "record->'resolution' is null and record->>'state'<>'accepted
 const bindingPriority = `case when ${unresolved} then 0 else 1 end`
 const claimPriority = "case when state='armed' then 0 else 1 end"
 
-async function readWorkPage<T>(tx: SqlTransaction, row: BoardRow, request: ReadRequest,
+async function readWorkPage<T>(tx: GraphTransactionSql, row: BoardRow, request: ReadRequest,
   kind: 'bindings' | 'claims', schema: z.ZodType<T>, priority: string): Promise<Page<T>> {
   const limit = request.limit ?? 20
   const key = inputHash({ boardId: row.board.id, cardId: request.cardId, kind })
@@ -25,13 +25,13 @@ async function readWorkPage<T>(tx: SqlTransaction, row: BoardRow, request: ReadR
   return { ...result, items: result.items.map(record => schema.parse(record.record)) }
 }
 
-export function readBindingsPage(tx: SqlTransaction, row: BoardRow, request: ReadRequest): Promise<Page<MemoryCardWorkBinding>> {
+export function readBindingsPage(tx: GraphTransactionSql, row: BoardRow, request: ReadRequest): Promise<Page<MemoryCardWorkBinding>> {
   return readWorkPage(tx, row, request, 'bindings', MemoryCardWorkBindingSchema, bindingPriority)
 }
-export function readClaimsPage(tx: SqlTransaction, row: BoardRow, request: ReadRequest): Promise<Page<MemoryCardWorkClaim>> {
+export function readClaimsPage(tx: GraphTransactionSql, row: BoardRow, request: ReadRequest): Promise<Page<MemoryCardWorkClaim>> {
   return readWorkPage(tx, row, request, 'claims', MemoryCardWorkClaimSchema, claimPriority)
 }
-export async function readWorkSummary(tx: SqlTransaction, cardId: string) {
+export async function readWorkSummary(tx: GraphTransactionSql, cardId: string) {
   const bindings = (await tx.query<{ active: string; failed: string }>(`select
     count(*) filter(where record->>'state' not in ('failed','canceled'))::text as active,
     count(*) filter(where record->>'state' in ('failed','canceled'))::text as failed

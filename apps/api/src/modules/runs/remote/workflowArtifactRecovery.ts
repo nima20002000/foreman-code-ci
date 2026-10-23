@@ -6,8 +6,7 @@ import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-exe
 import { digest } from '../../files/tools/context.js'
 import { DomainError } from '../../errors.js'
 import { readDispatchIntent } from '../../placement/persistence.js'
-import { beforeGraphCommit } from '../../run-graph/connection.js'
-import type { SqlTransaction } from '../../../infrastructure/transaction.js'
+import { beforeGraphCommit, type GraphTransactionSql } from '../../run-graph/connection.js'
 import { readRepeatExecutionLocked } from '../repeatPostgres.js'
 import { readAcceptedRepeatRunLocked } from '../repeatStartRead.js'
 import { assertSettlementLocked } from '../repeatSettlementServices.js'
@@ -34,7 +33,7 @@ export async function recoverWorkflowArtifactOutputs(input: {
   const { owner, execution, authority } = input
   if (execution.state !== 'completed' || execution.result?.outcome !== 'succeeded') return
   owner.assertOwned()
-  const read = async (sql: SqlTransaction) => {
+  const read = async (sql: GraphTransactionSql) => {
     const snapshot = await readAcceptedRepeatRunLocked(sql, owner.runId)
     const node = snapshot.version.definition.nodes.find((item) => item.id === execution.workflowNodeId)
     if (!node || node.kind === 'job' || !node.artifactOutputs) return undefined

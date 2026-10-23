@@ -1,11 +1,11 @@
 import type { AgentConfigurationVersion } from '@foreman-code/contracts'
-import { sameWorkflowValue, type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
+import { sameWorkflowValue, type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../errors.js'
 
 export function reconcileAgentProfilePlacements(
-  graph: WorkflowDefinitionCurrent,
+  graph: WorkflowDefinitionV3,
   configurations: readonly AgentConfigurationVersion[],
-): WorkflowDefinitionCurrent {
+): WorkflowDefinitionV3 {
   const byAgent = new Map(configurations.map(configuration => [configuration.agentId, configuration]))
   const nodes = graph.nodes.map((node, index) => {
     if (node.kind === 'job' || !node.placement) return node

@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import { afterEach, expect, it, vi } from 'vitest'
 import { HarnessExecutionSchema, type HarnessNativeEvent } from '@foreman-code/contracts'
-import type { AcceptedWorkflowRunCurrent } from '@foreman-code/contracts/current'
+import type { AcceptedWorkflowRunV3 } from '@foreman-code/contracts/wave25'
 import { ExclusiveGraphConnection, beforeGraphCommit } from '../src/modules/run-graph/connection.js'
 import * as snapshots from '../src/modules/runs/repeatStartRead.js'
 import * as executions from '../src/modules/runs/repeatPostgres.js'
@@ -30,7 +30,7 @@ function fixture() {
     workflowVersionId: 'version', executionSemanticsVersion: 3 as const }
   const stored = { execution, ref: { nodeId: 'node', occurrence: null },
     inputDigest: repeatDigest(execution.input) } as executions.StoredRepeatExecution
-  const run = { id: 'run', workspaceId: 'workspace', workflowId: 'workflow', workflowVersionId: 'version' } as AcceptedWorkflowRunCurrent
+  const run = { id: 'run', workspaceId: 'workspace', workflowId: 'workflow', workflowVersionId: 'version' } as AcceptedWorkflowRunV3
   const readSnapshot = vi.spyOn(snapshots, 'readAcceptedRepeatRunLocked').mockResolvedValue({ run } as
     Awaited<ReturnType<typeof snapshots.readAcceptedRepeatRunLocked>>)
   vi.spyOn(executions, 'readRepeatExecutionLocked').mockResolvedValue(stored)

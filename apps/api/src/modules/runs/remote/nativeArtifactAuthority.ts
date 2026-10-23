@@ -31,12 +31,6 @@ export interface NativeArtifactAuthorityPorts {
   producer: Pick<AgentPlacementProducer, 'assertPinsCurrent'>
 }
 const denied = (): never => { throw new DomainError('NATIVE_ARTIFACT_AUTHORITY_DENIED', 'The original accepted artifact attempt or native authority is unavailable.', 403) }
-/** The workspace and workflow a Run belongs to, locked for the rest of the transaction. */
-export async function readRunWorkflowScopeForShare(sql: FileQuery, runId: string): Promise<{ workspaceId: string; workflowId: string } | undefined> {
-  const row = (await sql.query<{ workspace_id: string; workflow_id: string }>(
-    'select workspace_id,workflow_id from runs where id=$1 for share', [runId])).rows[0]
-  return row && { workspaceId: row.workspace_id, workflowId: row.workflow_id }
-}
 /** Shared SQL-only accepted attempt fence; consumer need not have launched a native session. */
 async function acceptedAttempt(mainId: string, ports: NativeArtifactAuthorityPorts, raw: ArtifactAttempt, sql: FileQuery, grant?: ArtifactGrantReference) {
   const attempt = ArtifactAttemptSchema.parse(raw)

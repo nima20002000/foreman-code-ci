@@ -1,4 +1,4 @@
-import type { RunActivityPublic } from '@foreman-code/contracts/current'
+import type { RunActivityPublic } from '@foreman-code/contracts/wave25'
 
 export function requireCiWorkflowActivity(items: readonly RunActivityPublic[], expected: {
   runId: string

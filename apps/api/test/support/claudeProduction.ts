@@ -11,7 +11,7 @@ import type { OperatorRequestContext } from '../../src/mcp/operator/types.js'
 import { vi } from 'vitest'
 import type pg from 'pg'
 import { AgentConfigurationVersionSchema, HarnessExecutionSchema, OperatorConfigurationVersionSchema, type CoordinatorConsultationBinding } from '@foreman-code/contracts'
-import { WorkflowRunCurrentSchema, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
+import { WorkflowRunV3Schema, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
 import { CLAUDE_QUALIFICATION_CHECKS } from '@foreman-code/contracts/claude-qualification'
 import type { HostHarnessOverride, HostHarnessProfileEvidence } from '@foreman-code/contracts/harness-registry'
 import { AcceptedClaudeProfileAdmission } from '../../src/modules/harnesses/instanceSettings/acceptedProfile.js'
@@ -86,11 +86,11 @@ export function productionClaudeFixture(surface: 'workflow' | 'operator' | 'agen
   const agent = AgentConfigurationVersionSchema.parse({ id: 'configuration-1', workspaceId: 'workspace', agentId: 'agent', productRole: workflowOptions?.coordinator ? 'orchestrator' : 'coder', version: 1,
     harness, prompt: {}, assignedSkills: [], contentHash: `sha256:${'0'.repeat(64)}`, createdAt })
   const operator = OperatorConfigurationVersionSchema.parse({ id: 'configuration-1', operatorId: 'operator', version: 1, harness, contentHash: `sha256:${'0'.repeat(64)}`, createdAt })
-  const version = WorkflowVersionCurrentSchema.parse({ id: 'version', workspaceId: 'workspace', workflowId: 'workflow', version: 1, executionSemanticsVersion: 3,
+  const version = WorkflowVersionV3Schema.parse({ id: 'version', workspaceId: 'workspace', workflowId: 'workflow', version: 1, executionSemanticsVersion: 3,
     entryNodeId: 'node', approval: { handler: 'user' }, agentConfigurationVersionIds: { agent: agent.id }, contentHash: `sha256:${'0'.repeat(64)}`, createdAt,
     definition: { id: 'workflow', workspaceId: 'workspace', name: 'Synthetic replay', version: 1, executionSemanticsVersion: 3, entryNodeId: 'node', approval: { handler: 'user' },
       executionCondition: { kind: 'manual' }, executionPolicy: { maxParallelism: 1, maxNodeExecutions: 1 }, nodes: [{ id: 'node', agentId: 'agent', name: 'Agent' }], edges: [] } })
-  const run = WorkflowRunCurrentSchema.parse({ id: 'run', workspaceId: 'workspace', workflowId: 'workflow', workflowVersionId: version.id, executionSemanticsVersion: 3,
+  const run = WorkflowRunV3Schema.parse({ id: 'run', workspaceId: 'workspace', workflowId: 'workflow', workflowVersionId: version.id, executionSemanticsVersion: 3,
     agentConfigurationVersionIds: version.agentConfigurationVersionIds, approval: version.approval, executionCondition: { kind: 'manual' }, executionState: 'running', outcome: 'pending', input: {}, createdAt })
   const execution = HarnessExecutionSchema.parse({ id: 'execution', runId: 'run', workflowNodeId: 'node', agentId: 'agent', agentConfigurationVersionId: agent.id, attempt: 1, state: 'starting', input: {}, createdAt })
   const workflow = { run, version, execution, configuration: agent, consultation: workflowOptions?.consultation }

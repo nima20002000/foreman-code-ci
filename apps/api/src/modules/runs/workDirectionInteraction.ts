@@ -1,10 +1,10 @@
 import { DurableInteractionSchema, HarnessExecutionSchema, WorkDirectionRequestSchema,
   type ApprovalResponseOption } from '@foreman-code/contracts'
-import { parseWorkHandoffResult, type AcceptedWorkflowRunCurrent } from '@foreman-code/contracts/current'
+import { parseWorkHandoffResult, type AcceptedWorkflowRunV3 } from '@foreman-code/contracts/wave25'
 import type { RunGraphPublication } from '../run-graph/publication.js'
 import { graphSourceDigest } from '../run-graph/publication.js'
-import { approvalAttentionFacts } from '../interactions/current/attention.js'
-import { interactionFact } from '../interactions/current/publication.js'
+import { approvalAttentionFacts } from '../interactions/wave25/attention.js'
+import { interactionFact } from '../interactions/wave25/publication.js'
 import { DomainError } from '../errors.js'
 import { readAcceptedRepeatRunLocked } from './repeatStartRead.js'
 import { parseWorkflowWorkResult } from './workflowCoordinationResult.js'
@@ -17,7 +17,7 @@ const option = (optionId: string, label: string, semantic: ApprovalResponseOptio
 })
 
 /** Publish both newly reached waits and waits retained before this interaction existed. */
-export async function ensureWorkDirectionInteraction(publication: RunGraphPublication, run: AcceptedWorkflowRunCurrent): Promise<void> {
+export async function ensureWorkDirectionInteraction(publication: RunGraphPublication, run: AcceptedWorkflowRunV3): Promise<void> {
   const sql = publication.sql
   const id = workDirectionInteractionId(run.id)
   if ((await sql.query('select 1 from durable_interactions where id=$1', [id])).rowCount) return

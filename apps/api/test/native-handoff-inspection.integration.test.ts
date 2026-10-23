@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { RUN_INSPECTION_TOOLS, RunExecutionsPageSchema, RunExecutionDetailSchema, RunExecutionBindingsPageSchema } from '@foreman-code/contracts/current'
+import { RUN_INSPECTION_TOOLS, RunExecutionsPageSchema, RunExecutionDetailSchema, RunExecutionBindingsPageSchema } from '@foreman-code/contracts/wave25'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
@@ -14,12 +14,12 @@ import { createWorkflowRepositoryServices } from '../src/modules/runs/workflowRe
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { graphFixture, graphHeaders, graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
-import { withTaskDatabase } from './helpers/taskDatabase.js'
+import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('current handoff inspection over authenticated HTTP/MCP', () => {
   it('reads the persisted activation slot and denies another workspace without changing Run facts', async () => {
-    await withTaskDatabase(async (pool, directory) => {
+    await nim2691TaskDatabase(async (pool, directory) => {
       await applyApplicationMigrations(pool)
       const db = { pool, directory, schema: 'public', close: async () => undefined }
       const t = await graphFixture(db, { form: 'single', handoffs: true, qualifiedReads: true })

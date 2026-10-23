@@ -22,11 +22,10 @@ import { jobEligibilityReason, releaseClosedJobComputers, releaseUnstartedJobCom
   type JobComputerSelection } from './computerSelection.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { requireAuthorization } from '../access/policy.js'
-import { beforeGraphCommit } from '../run-graph/connection.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
-import { lockActiveWorkspace } from '../workspaces/index.js'
+import { beforeGraphCommit, type GraphTransactionSql } from '../run-graph/connection.js'
+import { lockActiveWorkspace } from '../workspaces/admission.js'
 import { requireJobPreparationDeadline } from './preparationDeadline.js'
-import { componentLogger } from '../diagnostics/index.js'
+import { componentLogger } from '../diagnostics/logger.js'
 export interface JobPreparationSources {
   revalidateAccepted(sql:JobSql,principal:ManagementPrincipal,execution:JobExecutionRecord,
     options?: { requireQualification: boolean }):Promise<void>
@@ -189,7 +188,7 @@ export class JobQueuePreparation {
     return principal
   }
 
-  private async fence(sql: SqlTransaction,
+  private async fence(sql: GraphTransactionSql,
     owner: JobOwnership, ticket: JobQueueTicket): Promise<void> {
     const fence = await owner.readFence(sql)
     await sql.query('update job_admission_queue set owner_id=$2,owner_fence=$3 where id=$1',
@@ -197,7 +196,7 @@ export class JobQueuePreparation {
     beforeGraphCommit(sql, async () => { owner.assertOwned() })
   }
 
-  private async claim(sql: SqlTransaction,
+  private async claim(sql: GraphTransactionSql,
     principal: ManagementPrincipal, ticket: JobQueueTicket, owner: JobOwnership,
     barriers: { id: string; hosts: string[]; claims: number }[]): Promise<JobQueueTicket | null> {
     const excluded = new Set(barriers.filter(barrier => barrier.claims >= this.ports.configuration.limits.maxBackfillClaims)

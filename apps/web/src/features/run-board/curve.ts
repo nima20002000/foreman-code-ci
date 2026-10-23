@@ -1,5 +1,5 @@
 import type { Position } from '@xyflow/react'
-import type { FloatingCurve } from '../board-core'
+import type { FloatingCurve } from '../graph/signalEdge'
 
 type Point = { x: number; y: number }
 const direction: Record<Position, Point> = {

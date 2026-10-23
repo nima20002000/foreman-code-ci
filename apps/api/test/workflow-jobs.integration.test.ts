@@ -7,19 +7,19 @@ import type { HarnessExecution } from '@foreman-code/contracts'
 import { WorkflowJobPageSchema, type JobDefinitionRecord, type JobExecutionRecord } from '@foreman-code/contracts/job-verification'
 import { JobAdmissionResultSchema, JobQueuePageSchema, JobQueueTicketSchema } from '@foreman-code/contracts/job-admission'
 import { JobWorkflowExecutionReferenceSchema, type JobWorkflowExecutionReference } from '@foreman-code/contracts/job-workflow'
-import { AcceptedWorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
+import { AcceptedWorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { buildQueueFixture } from './helpers/buildComputerFixture.js'
 import { workHandoffFixture } from './helpers/workHandoffFixture.js'
 
 // Accepted Jobs are fixture data; reads use the authenticated application and real PostgreSQL.
 describe.skipIf(!postgresEnabled)('workflow job history HTTP and Operator MCP', () => {
-  let database: Awaited<ReturnType<typeof migratedDatabase>>
+  let database: Awaited<ReturnType<typeof agent3Database>>
   let workflow: Awaited<ReturnType<typeof workHandoffFixture>>
   let queue: Awaited<ReturnType<typeof buildQueueFixture>>
   let access: PostgresAccessService
@@ -46,7 +46,7 @@ describe.skipIf(!postgresEnabled)('workflow job history HTTP and Operator MCP', 
   }
   const input = () => ({ workspaceId: workflow.run.workspaceId, workflowId: workflow.run.workflowId })
   beforeAll(async () => {
-    database = await migratedDatabase()
+    database = await agent3Database()
     workflow = await workHandoffFixture(database.pool, randomUUID(), version => ({ ...version,
       definition: { ...version.definition, handoffs: { contractVersion: 1 } } }))
     agentExecution = (await workflow.queue(await workflow.store.ensureWorkEntry())).execution
@@ -54,7 +54,7 @@ describe.skipIf(!postgresEnabled)('workflow job history HTTP and Operator MCP', 
     writer = await access.issue({ name: 'Job author', audience: 'operator',
       expiresAt: new Date(Date.now() + 3600000), grants: [{ scope: {},
         actions: ['job_definitions:read', 'job_definitions:write', 'jobs:start', 'jobs:read', 'jobs:cancel', 'settings:read', 'settings:update'] }] })
-    const acceptedRun = AcceptedWorkflowRunCurrentSchema.parse({ ...workflow.run,
+    const acceptedRun = AcceptedWorkflowRunV3Schema.parse({ ...workflow.run,
       authorizationPrincipalId: writer.principal.id,
       executionLocation: { runnerId: 'fixture-runner', rootPath: '/synthetic/workflow-jobs',
         locationRevision: 1, identityHash: `sha256:${'a'.repeat(64)}` },

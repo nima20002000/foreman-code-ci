@@ -1,9 +1,8 @@
 import type pg from 'pg'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture, RunGraphScopeSchema, type NativeGraphCorrelationRecord } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture, RunGraphScopeSchema, type NativeGraphCorrelationRecord } from '@foreman-code/contracts/wave25'
 import { afterEach, expect, it, vi } from 'vitest'
-import { didGraphTransactionCommit, ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
-import type { SqlTransaction } from '../src/infrastructure/transaction.js'
+import { didGraphTransactionCommit, ExclusiveGraphConnection, type GraphTransactionSql } from '../src/modules/run-graph/connection.js'
 import { PostgresNativeGraphProjectionWriter } from '../src/modules/run-graph/nativeWriter.js'
 import { appendWorkflowNativeGraphEventLocked } from '../src/modules/runs/workflowNativeGraph.js'
 import * as ingestion from '../src/modules/run-graph/nativeIngestion.js'
@@ -40,7 +39,7 @@ function fixture(type: string, expiresBeforeCommit = false, persistedSequences =
     correlationId?: string } = {
     leaseToken: 'original-lease', leaseExpiresAt: '2099-01-01T00:00:00Z', connectionGeneration: 1,
   }
-  let transaction: SqlTransaction | undefined
+  let transaction: GraphTransactionSql | undefined
   const connection = new ExclusiveGraphConnection({ query: async (sql: string, values: unknown[]) => {
     if (sql.startsWith('select sequence::text from harness_native_events')) {
       const position = values[2] as number

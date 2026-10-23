@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { MemoryBoardMutationSchema, type AgentSubject, type LogicalWorkRef, type MemoryBoardMutation } from '@foreman-code/contracts'
 import { lockSelectionRuns } from './runLocks.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import type { GraphTransactionSql } from '../run-graph/connection.js'
 import type { BoardRow, MemoryBoardAuthority, MemoryTool, MutationContext, Operation } from './types.js'
 import { authorizeCaller, authorizeSubject } from './authorization.js'
 import { invalid, nodeKey, workKey } from './identity.js'
@@ -14,7 +14,7 @@ export function parseOperations(input: readonly MemoryBoardMutation[]): Operatio
   if (!input.length || input.length>32 || Buffer.byteLength(JSON.stringify(input))>65536) invalid('Use 1–32 memory operations and at most 64 KiB per batch.')
   return input.map(value => { const parsed=MemoryBoardMutationSchema.parse(value);return { ...parsed,commandId:parsed.commandId ?? randomUUID() } })
 }
-export async function lockSelections(tx: SqlTransaction, operations: readonly Operation[], extraWork: string[] = []): Promise<void> {
+export async function lockSelections(tx: GraphTransactionSql, operations: readonly Operation[], extraWork: string[] = []): Promise<void> {
   const work = new Set<string>(extraWork), nodes = new Set<string>()
   for (const operation of operations) if ('workSelections' in operation) for (const selection of operation.workSelections ?? []) {
     if (selection.kind==='current') work.add(workKey(selection.work))
@@ -23,7 +23,7 @@ export async function lockSelections(tx: SqlTransaction, operations: readonly Op
   for (const key of [...work].sort()) await lockIdentity(tx,`work:${key}`)
   for (const key of [...nodes].sort()) await lockIdentity(tx,`node:${key}`)
 }
-export async function applyBatch(tx: SqlTransaction, authority: MemoryBoardAuthority, operations: Operation[],
+export async function applyBatch(tx: GraphTransactionSql, authority: MemoryBoardAuthority, operations: Operation[],
   caller: { principal:ManagementPrincipal } | { subject:AgentSubject }, now: string, extraBoardIds: string[] = []): Promise<{
     receipts: Awaited<ReturnType<typeof mutateLocked>>[]; rows: Map<string,BoardRow>
   }> {

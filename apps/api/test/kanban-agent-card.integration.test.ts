@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 import { DEFAULT_CODEX_ADVANCED_CONFIGURATION, MemoryBoardViewSchema, MemoryBoardWireSchemas,
   MemoryCardDetailSchema, newAgentGraphqlTools, type HarnessExecutionRequest, type MemoryCard } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture, WorkActivationInputSchema, WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture, WorkActivationInputSchema, WorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
 import { HarnessExecutionError } from '../src/modules/harnesses/errors.js'
 import { isWorkflowStart } from '../src/modules/harnesses/sessionStart.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
@@ -43,7 +43,7 @@ it.runIf(postgresEnabled).each([false, true])('reuses one engine card across Run
     boardId = ((await memoryCall(runtime.client, 'memory_board_get', { scope })).board as { id: string }).id
     const runIds = [runtime.f.run.id]
     await runtime.engine.start(runIds[0]!)
-    const run = WorkflowRunCurrentSchema.parse({ ...runtime.f.run, id: `run-${randomUUID()}` })
+    const run = WorkflowRunV3Schema.parse({ ...runtime.f.run, id: `run-${randomUUID()}` })
     await insertProviderRun(runtime.db.pool, { ...runtime.f, run })
     runIds.push(run.id)
     await runtime.engine.start(run.id)
@@ -101,7 +101,7 @@ it.runIf(postgresEnabled)('blocks the engine card with the execution error and r
       provenance: expect.objectContaining({ execution: expect.objectContaining({ runId: runtime.f.run.id }) }),
       changes: expect.objectContaining({ status: { before: 'doing', after: 'blocked' }, reason: { before: null, after: reason } }) }))
     fail = false
-    const run = WorkflowRunCurrentSchema.parse({ ...runtime.f.run, id: `run-${randomUUID()}` })
+    const run = WorkflowRunV3Schema.parse({ ...runtime.f.run, id: `run-${randomUUID()}` })
     await insertProviderRun(runtime.db.pool, { ...runtime.f, run })
     await runtime.engine.start(run.id)
     expect((await runtime.runs.get(run.id))?.outcome).toBe('succeeded')

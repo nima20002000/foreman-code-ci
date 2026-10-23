@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import * as c from '@foreman-code/contracts/management'
-import * as current from '@foreman-code/contracts/current'
+import * as current from '@foreman-code/contracts/wave25'
 import { describe, expect, it } from 'vitest'
 import { skillConsumerFixture } from './helpers/skillConsumerFixture.js'
 

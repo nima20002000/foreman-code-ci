@@ -33,8 +33,7 @@ export function importSpecifiers(text) {
 }
 
 /** Workspace packages whose bare specifiers name repository source: the package name and its directory. */
-export const ciWorkspacePackages = Object.freeze({ '@foreman-code/contracts': 'packages/contracts', '@foreman-code/ci': 'apps/ci',
-  '@foreman-code/api': 'apps/api' })
+export const ciWorkspacePackages = Object.freeze({ '@foreman-code/contracts': 'packages/contracts', '@foreman-code/ci': 'apps/ci' })
 
 /** Each workspace package's `exports` map, from its package.json text; a missing manifest has no exports.
  * @param {(path: string) => string | undefined} read

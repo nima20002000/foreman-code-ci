@@ -1,14 +1,14 @@
 import type pg from 'pg'
 
 import type { ApiConfig } from '../../config.js'
-import type { PostgresAccessService } from '../access/index.js'
-import { Wave25WorkerCredentialService } from '../interactions/index.js'
-import type { PostgresCommandCoordinator } from '../commands/index.js'
-import { CodexAppServerSessionManager } from '../harnesses/index.js'
-import { codexMcpInspectorAdapter } from '../harnesses/index.js'
-import { McpDetectionService, WorkerLaunchCredentialService } from '../harnesses/index.js'
-import { PostgresAppInteractionService } from '../interactions/index.js'
-import type { PostgresInteractionRepository } from '../interactions/index.js'
+import type { PostgresAccessService } from '../access/postgres.js'
+import { Wave25WorkerCredentialService } from '../interactions/wave25/credentials.js'
+import type { PostgresCommandCoordinator } from '../commands/postgres.js'
+import { CodexAppServerSessionManager } from '../harnesses/codexAppServer.js'
+import { codexMcpInspectorAdapter } from '../harnesses/codexMcpInspectorAdapter.js'
+import { McpDetectionService, WorkerLaunchCredentialService } from '../harnesses/mcpDetection.js'
+import { PostgresAppInteractionService } from '../interactions/app.js'
+import type { PostgresInteractionRepository } from '../interactions/postgres.js'
 
 export function localAppMcpEndpoint(host: string, port: number): string {
   const localHost = host === '0.0.0.0' ? '127.0.0.1' : host === '::' ? '::1' : host

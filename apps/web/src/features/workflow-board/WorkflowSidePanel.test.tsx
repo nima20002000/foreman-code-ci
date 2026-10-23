@@ -8,11 +8,12 @@ import { createMemoryHistory, createRootRoute, createRoute, createRouter, Outlet
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EngineChatReadbackSchema, collaborationContractFixtures } from '@foreman-code/contracts'
 import { Button, Dialog, Textarea } from '../../shared/ui/nocturne'
-import { resolveRunsSelectorBoardLocation, RunsSelectorSearchSchema, useSelectedRun } from '../runs-selector'
+import { resolveRunsSelectorBoardLocation, RunsSelectorSearchSchema } from '../runs-selector/search'
 import { useWorkflowSidePanel } from './useWorkflowSidePanel'
 import { WorkflowSidePanel, type WorkflowCollaborationSlots as PanelSlots } from './WorkflowSidePanel'
 
 type WorkflowCollaborationSlots = PanelSlots & { memoryBoard?(): ReactNode }
+import { useSelectedRun } from '../runs-selector/useSelectedRun'
 import { queryKeys } from '../../shared/api/query'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })

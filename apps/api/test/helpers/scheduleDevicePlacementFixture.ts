@@ -5,7 +5,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { publicKeyFingerprint } from '@foreman-code/contracts/device-identity-node'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
-import { sameWorkflowValue } from '@foreman-code/contracts/current'
+import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { withTransaction } from '../../src/infrastructure/transaction.js'
 import { PostgresDeviceAccessService, pairingProof } from '../../src/modules/devices/access.js'
 import { inspectInstalledCodex } from '../../src/modules/harnesses/installedCodexInspection.js'
@@ -14,12 +14,12 @@ import { WorkerExecutionPolicy } from '../../src/modules/settings/workerExecutio
 import { createWorkspaceRootWorkerHandler } from '../../src/modules/sources/rootAttestation.js'
 import { sourceSha256 } from '../../src/modules/sources/manifest.js'
 import { WorkspaceBoundLocationService } from '../../src/modules/workspace-roots/service.js'
-import type { ScheduleDispatchFixture } from './scheduleFixture.js'
+import type { Sch11Fixture } from './scheduleFixture.js'
 import type { schedulePlacementFixture } from './schedulePlacementFixture.js'
 import { agentWorkflowVersion } from './agentWorkflowFixture.js'
 
 /** Real pairing, root attestation, source binding and installed launcher discovery on the test host. */
-export async function scheduleDevicePlacementFixture(f: ScheduleDispatchFixture,
+export async function scheduleDevicePlacementFixture(f: Sch11Fixture,
   placement: Awaited<ReturnType<typeof schedulePlacementFixture>>) {
   const pool = f.database.pool
   const mainId = placement.policy.hostRef.mainId

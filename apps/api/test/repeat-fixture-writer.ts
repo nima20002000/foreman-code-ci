@@ -3,9 +3,9 @@ import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { ManagementActionSchema, type ManagementGrant } from '@foreman-code/contracts/management'
 import {
-  AcceptedRepeatStartV1Schema, AcceptedWorkflowRunCurrentSchema, CurrentWorkflowSaveResultSchema, WorkflowVersionCurrentSchema,
-  type RepeatGraphScopeCurrent, type CurrentWorkflowSaveInput, type CurrentWorkflowSavedSchema, type makeCurrentWorkflowFixture,
-} from '@foreman-code/contracts/current'
+  AcceptedRepeatStartV1Schema, AcceptedWorkflowRunV3Schema, CurrentWorkflowSaveResultSchema, WorkflowVersionV3Schema,
+  type RepeatGraphScopeV3, type CurrentWorkflowSaveInput, type CurrentWorkflowSavedSchema, type makeCurrentWorkflowFixture,
+} from '@foreman-code/contracts/wave25'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
@@ -15,13 +15,13 @@ import type { z } from 'zod'
 import { withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 import { repeatStartPublication } from '../src/modules/run-graph/repeatStartPublication.js'
 import { insertRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
-type CurrentWorkflowFixture = ReturnType<typeof makeCurrentWorkflowFixture>
+type Agent3Fixture = ReturnType<typeof makeCurrentWorkflowFixture>
 type RepeatSavedWorkflow = z.infer<typeof CurrentWorkflowSavedSchema>
 
 /** Prepare a current V3 graph for an explicit bounded repeat publication. */
-export function repeatReadyWorkflowFixture(fixture: CurrentWorkflowFixture): CurrentWorkflowFixture {
+export function repeatReadyAgent3Fixture(fixture: Agent3Fixture): Agent3Fixture {
   const entry = fixture.version.definition.nodes[0]!, exit = fixture.version.definition.nodes[1]!
-  fixture.version = agentWorkflowVersion(WorkflowVersionCurrentSchema.parse({ ...fixture.version, definition: { ...fixture.version.definition,
+  fixture.version = agentWorkflowVersion(WorkflowVersionV3Schema.parse({ ...fixture.version, definition: { ...fixture.version.definition,
     executionPolicy: { maxParallelism: 1, maxNodeExecutions: 6 }, nodes: [entry, { ...exit, choice: { outcomes: [
       { outcome: 'pass', target: { kind: 'branch_end' } }, { outcome: 'issues', target: { kind: 'branch_end' } },
     ] } }],
@@ -32,7 +32,7 @@ export function repeatReadyWorkflowFixture(fixture: CurrentWorkflowFixture): Cur
 /** Real bearer credential + authenticated production HTTP repeat writer. The
  * request therefore reaches the same authoring service, additive SQL witness,
  * command receipt, success audit and immutable v3 publication as the product. */
-export async function createRepeatFixtureWriter(pool: pg.Pool, fixture: CurrentWorkflowFixture) {
+export async function createRepeatFixtureWriter(pool: pg.Pool, fixture: Agent3Fixture) {
   const access = new PostgresAccessService(pool), commands = new PostgresCommandCoordinator(pool)
   const grantScope = { workspaceIds: [fixture.scope.workspaceId], workflowIds: [fixture.scope.workflowId] }
   const credential = (grants: ManagementGrant[]) => access.issue({ name: 'ENG04 PostgreSQL fixture writer', audience: 'operator',
@@ -79,10 +79,10 @@ export async function createRepeatFixtureWriter(pool: pg.Pool, fixture: CurrentW
 /** Build the same accepted v3 Start cut used by the real admission layer, then
  * insert through the owner-safe repeat Run transaction and canonical baseline
  * producer. No raw Run row, graph receipt or workflow pointer is synthesized. */
-export async function insertFixtureRepeatRun(pool: pg.Pool, fixture: CurrentWorkflowFixture, saved: RepeatSavedWorkflow,
+export async function insertFixtureRepeatRun(pool: pg.Pool, fixture: Agent3Fixture, saved: RepeatSavedWorkflow,
   authorizationPrincipalId: string, options: { insert?: boolean; input?: unknown } = {}) {
   const version = saved.version
-  const run = AcceptedWorkflowRunCurrentSchema.parse({ ...fixture.run, workflowVersionId: version.id,
+  const run = AcceptedWorkflowRunV3Schema.parse({ ...fixture.run, workflowVersionId: version.id,
     executionSemanticsVersion: 3, authorizationPrincipalId,
     ...(options.input === undefined ? {} : { input: options.input }) })
   const request = { workspaceId: version.workspaceId, workflowId: version.workflowId, workflowVersionId: version.id,
@@ -97,7 +97,7 @@ export async function insertFixtureRepeatRun(pool: pg.Pool, fixture: CurrentWork
   } })
   if (options.insert !== false) await withExclusiveGraphConnection(pool,
     (connection) => connection.transaction((sql) => insertRepeatRun(sql, accepted, repeatStartPublication)))
-  const scope: RepeatGraphScopeCurrent = { workspaceId: run.workspaceId, workflowId: run.workflowId,
+  const scope: RepeatGraphScopeV3 = { workspaceId: run.workspaceId, workflowId: run.workflowId,
     workflowVersionId: version.id, runId: run.id, executionSemanticsVersion: 3 }
   return { version, run, accepted, scope }
 }

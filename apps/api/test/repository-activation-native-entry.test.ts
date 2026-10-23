@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AgentConfigurationVersionSchema, HarnessExecutionSchema, type HarnessExecution } from '@foreman-code/contracts'
 import type pg from 'pg'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
-import { assertApprovalTerminalSettlement } from '../src/modules/interactions/current/resume.js'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { assertApprovalTerminalSettlement } from '../src/modules/interactions/wave25/resume.js'
 import { beforeGraphCommit, ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 import { RepeatRunRepository, type RepeatLockedHooks } from '../src/modules/runs/repeatPostgres.js'
 import { repeatDigest, repeatExecutionIdentity, repeatSlotId, freezeRepeatEntry } from '../src/modules/runs/repeatResolution.js'
@@ -13,7 +13,7 @@ import { nativeAt, nativeCompleted, nativeFixture } from './native-repeat-fixtur
 
 // Exact approval/native acknowledgement is an explicit TEST DOUBLE here. The
 // integrated PostgreSQL/provider gate must exercise the real approval service.
-vi.mock('../src/modules/interactions/current/resume.js', () => ({ assertApprovalTerminalSettlement: vi.fn(async () => undefined) }))
+vi.mock('../src/modules/interactions/wave25/resume.js', () => ({ assertApprovalTerminalSettlement: vi.fn(async () => undefined) }))
 beforeEach(() => vi.mocked(assertApprovalTerminalSettlement).mockClear())
 
 /** Real repository + transaction facade over scripted, rollback-capable pg

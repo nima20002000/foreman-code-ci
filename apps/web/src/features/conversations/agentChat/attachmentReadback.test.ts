@@ -3,7 +3,7 @@ import { agentChatFixtures, type AgentChatState } from '@foreman-code/contracts/
 import { ActivitySnapshotV1Schema, type ActivityScope } from '@foreman-code/contracts/activity'
 import { FileWithRevisionSchema } from '@foreman-code/contracts/files'
 import { acceptAgentChatState } from './model'
-import { newerOperatorConversationState as newer } from '../../operator-chat'
+import { newerOperatorConversationState as newer } from '../../operator-chat/operatorConversationReadback'
 import { operatorState } from '../../operator-chat/pr17-test-fixtures'
 
 function attachment(conversationId: string, kind: 'agent' | 'operator', state = 'ready', context = agentChatFixtures.idleAfterCompletion.context) {

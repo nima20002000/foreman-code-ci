@@ -4,9 +4,9 @@ import { createHash } from 'node:crypto'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { boardSearchForRun, canonicalGraphJson, RunExecutionDetailSchema, readRunInspectionKey, runInspectionKey } from '@foreman-code/contracts/current'
-import { useGraphDraftStore } from '../graph'
-import { nextDraftKey } from '../board-core'
+import { boardSearchForRun, canonicalGraphJson, RunExecutionDetailSchema, readRunInspectionKey, runInspectionKey } from '@foreman-code/contracts/wave25'
+import { useGraphDraftStore } from '../graph/store'
+import { nextDraftKey } from '../graph/nextDraft/state'
 import { inspectionBoardFixture } from './inspect/inspectionFixtures'
 import {
   boardHref, installBoardTestLifecycle, measureBoardWire, mountMeasuredBoard, openRunDetails,

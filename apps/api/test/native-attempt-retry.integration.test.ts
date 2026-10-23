@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { makeCurrentWorkflowFixture, SavedRunDetailsSchema } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture, SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
 import { HarnessExecutionError } from '../src/modules/harnesses/errors.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'

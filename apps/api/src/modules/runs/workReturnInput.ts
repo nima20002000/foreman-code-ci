@@ -1,7 +1,7 @@
 import {
   AcceptedCurrentNodeResultSchema, WorkActivationInputSchema, WorkReturnSchema, canonicalGraphJson,
   type WorkActivationInput, type WorkReturn,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import { frozenWorkNotice, readWorkLimitNoticeLocked } from './workHandoffNotice.js'
 import { repeatConflict, repeatDigest, sameRepeatValue } from './repeatResolution.js'
 import { workReturnGroupSettlementsLocked, type WorkReturnContext } from './workReturnContinuation.js'

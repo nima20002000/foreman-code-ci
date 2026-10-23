@@ -1,10 +1,11 @@
 import { asRecord } from '../shared/records.js'
 import type pg from 'pg'
-import type { BaseCheckpointSaver, LangGraphPostgresSaver, SerializerProtocol } from './langgraph.js'
+import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres'
+import type { BaseCheckpointSaver, SerializerProtocol } from '@langchain/langgraph-checkpoint'
 import type { DurableInteraction } from '@foreman-code/contracts'
-import type { SqlTransaction } from './transaction.js'
+import type { GraphTransactionSql } from '../modules/run-graph/connection.js'
 import { assertGraphTransaction } from '../modules/run-graph/connection.js'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '../modules/errors.js'
 import { nextApprovalResumeValues } from './approvalCheckpointPlan.js'
 import { CheckpointMutationSaver } from './checkpointMutations.js'
 
@@ -20,7 +21,7 @@ function denied(code = 'GRAPH_INTERRUPT_INVALID'): never {
 }
 
 /** The SAME production PostgresSaver, not a second checkpoint table or MemorySaver.
- * Pinned ABI (see infrastructure/langgraph.ts): checkpoint-postgres 1.0.5's _dumpWrites, serializer,
+ * Pinned ABI: checkpoint-postgres 1.0.5's protected _dumpWrites, serializer,
  * schema-qualified checkpoint_writes and reserved write indexes. Interrupt
  * persistence notifies the live Run owner after COMMIT. Approval consumption
  * uses the owner's transaction rather than the saver's private pool transaction.
@@ -30,7 +31,7 @@ export class ApprovalPostgresSaver extends CheckpointMutationSaver {
   // Bookkeeping for writes made by THIS saver in THIS live SQL transaction.
   // Publication stages receipts until its commit finalizer. This is not a
   // durable receipt or continuation authority, and cannot cross a transaction.
-  private readonly transactionWrites = new WeakMap<SqlTransaction, Set<string>>()
+  private readonly transactionWrites = new WeakMap<GraphTransactionSql, Set<string>>()
   private readonly interruptObservers = new Map<string, () => Promise<void>>()
   constructor(pool: pg.Pool, serde?: SerializerProtocol, options: { schema: string } = { schema: 'public' }) {
     if (!/^[a-z_][a-z0-9_]*$/.test(options.schema)) throw new Error('Invalid checkpoint schema')
@@ -47,7 +48,7 @@ export class ApprovalPostgresSaver extends CheckpointMutationSaver {
     }
   }
 
-  override async putWrites(...args: Parameters<LangGraphPostgresSaver['putWrites']>): Promise<void> {
+  override async putWrites(...args: Parameters<PostgresSaver['putWrites']>): Promise<void> {
     const [config, writes] = args
     const rootInterrupt = (config.configurable?.checkpoint_ns ?? '') === ''
       && writes.some(([channel]) => channel === INTERRUPT)
@@ -56,7 +57,7 @@ export class ApprovalPostgresSaver extends CheckpointMutationSaver {
     await observer?.()
   }
 
-  private async readApprovalInterrupt(sql: SqlTransaction,
+  private async readApprovalInterrupt(sql: GraphTransactionSql,
     interaction: Pick<DurableInteraction, 'id' | 'runId' | 'graphThreadId' | 'graphInterruptId'>) {
     assertGraphTransaction(sql)
     if (interaction.runId !== interaction.graphThreadId || !interaction.graphInterruptId) denied()
@@ -94,12 +95,12 @@ export class ApprovalPostgresSaver extends CheckpointMutationSaver {
     return { thread, namespace, latest, writes, selected }
   }
 
-  async inspectApprovalInterrupt(sql: SqlTransaction,
+  async inspectApprovalInterrupt(sql: GraphTransactionSql,
     interaction: Pick<DurableInteraction, 'id' | 'runId' | 'graphThreadId' | 'graphInterruptId'>): Promise<string> {
     return (await this.readApprovalInterrupt(sql, interaction)).latest.checkpoint_id
   }
 
-  async consumeApprovalInterrupt(sql: SqlTransaction, interaction: DurableInteraction): Promise<void> {
+  async consumeApprovalInterrupt(sql: GraphTransactionSql, interaction: DurableInteraction): Promise<void> {
     assertGraphTransaction(sql)
     if (interaction.graphThreadId !== interaction.runId || !interaction.graphInterruptId
       || interaction.status !== 'delivered' || interaction.deliveryState !== 'delivered') denied()
@@ -124,7 +125,7 @@ export class ApprovalPostgresSaver extends CheckpointMutationSaver {
     }
     // Reuse the installed saver's actual serialization and WRITES_IDX_MAP.
     // Exactly one task-local reserved channel is changed; no node is invoked.
-    const encoded = await this.dumpWrites(thread, namespace, latest.checkpoint_id, task.taskId, [[RESUME, plan.values]])
+    const encoded = await this._dumpWrites(thread, namespace, latest.checkpoint_id, task.taskId, [[RESUME, plan.values]])
     const row = encoded[0]
     if (encoded.length !== 1 || !row || row[7].byteLength > MAX_WRITE_BYTES) denied('GRAPH_RESUME_LIMIT')
     await sql.query(`insert into "${this.approvalSchema}".checkpoint_writes

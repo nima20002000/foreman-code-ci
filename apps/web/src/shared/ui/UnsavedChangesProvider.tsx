@@ -1,7 +1,7 @@
 import { errorMessage } from '../errorMessage'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useBlocker } from '@tanstack/react-router'
-import { staysOnWorkflowBoard } from '@foreman-code/contracts/current'
+import { staysOnWorkflowBoard } from '@foreman-code/contracts/wave25'
 import { Alert, Button, Dialog } from './nocturne'
 import { UnsavedChangesContext, type EditorRegistration, type LeaveTarget } from './unsavedChanges'
 

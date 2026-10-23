@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import { BrowserSessionSchema } from '@foreman-code/contracts/browser-sessions'
 import { DomainError } from '../errors.js'
-import { componentLogger } from '../diagnostics/index.js'
+import { componentLogger } from '../diagnostics/logger.js'
 import type { BrowserPairingAuthority, BrowserInstallationBinding } from '../browser-profiles/keys.js'
 import type { BrowserSessionService, BrowserSessionAuthority, BrowserSessionPort, BrowserSessionListInput } from './service.js'
 import type { AgentSubject, BrowserSession } from './types.js'

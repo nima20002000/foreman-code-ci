@@ -1,16 +1,15 @@
-import type { MemoryBoardPort } from '../collaboration/index.js'
+import type { MemoryBoardPort } from '../collaboration/ports.js'
 import {
   HarnessExecutionSchema, HarnessNativeEventSchema, RunActivitySchema,
   type ExecutionResult, type HarnessExecution, type HarnessNativeEvent, type RunActivity, type WorkflowRunSummary,
 } from '@foreman-code/contracts'
-import { RunDetailsCurrentSchema, canonicalGraphJson } from '@foreman-code/contracts/current'
+import { RunDetailsV3Schema, canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import type pg from 'pg'
 import { DomainError } from '../errors.js'
-import type { PostgresWorkflowRepository } from '../workflows/index.js'
-import type { WorkspaceLocationService } from '../workspaces/index.js'
+import type { PostgresWorkflowRepository } from '../workflows/postgres.js'
+import type { WorkspaceLocationService } from '../workspaces/location.js'
 import { assertSameRepeatExecution } from '../interactions/repeatObservation.js'
-import { beforeGraphCommit, withExclusiveGraphConnection } from '../run-graph/connection.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { beforeGraphCommit, withExclusiveGraphConnection, type GraphTransactionSql } from '../run-graph/connection.js'
 import { openRepeatCanonicalPublicationLocked } from '../run-graph/repeatPublication.js'
 import { withNativeGraphProjectionBatch } from '../run-graph/nativeIngestion.js'
 import { RunOwnership } from './ownership.js'
@@ -76,10 +75,10 @@ export class PostgresRunRepository {
     return owner
   }
   private async read<T>(runId: string, owner: RunOwnership | undefined,
-    work: (sql: SqlTransaction, snapshot: AcceptedRepeatRunSnapshot) => Promise<T>,
+    work: (sql: GraphTransactionSql, snapshot: AcceptedRepeatRunSnapshot) => Promise<T>,
     readAcceptedRun = readAcceptedRepeatRunSnapshot): Promise<T> {
     this.owned(runId, owner)
-    const body = async (sql: SqlTransaction) => {
+    const body = async (sql: GraphTransactionSql) => {
       const fence = owner && await owner.readOneShotFence(sql)
       const snapshot = await readAcceptedRun(sql, runId)
       const value = await work(sql, snapshot)
@@ -364,10 +363,10 @@ export class PostgresRunRepository {
       const activity = await this.activityLocked(sql, runId)
       const details = { run: snapshot.run, executions, activity, cleanupPending: snapshot.cleanupPending }
       try { canonicalGraphJson(details, 4 * 1024 * 1024) } catch { throw new DomainError('RUN_DETAIL_LIMIT', 'Use paged history for this Run.', 409) }
-      return RunDetailsCurrentSchema.parse(details)
+      return RunDetailsV3Schema.parse(details)
     })
   }
-  private async activityLocked(sql: SqlTransaction, runId: string): Promise<RunActivity[]> {
+  private async activityLocked(sql: GraphTransactionSql, runId: string): Promise<RunActivity[]> {
     const rows = (await sql.query<{ sequence: string; source: RunActivity['source']; kind: RunActivity['kind'];
       harness_execution_id: string | null; occurred_at: Date; payload: Record<string, unknown> }>(
       'select sequence::text,source,kind,harness_execution_id,occurred_at,payload from run_activity where run_id=$1 order by sequence limit 1001', [runId])).rows

@@ -1,20 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import {
-  makeCurrentWorkflowFixture, WorkflowVersionCurrentSchema, repeatGraphTopologyCurrent,
-  RepeatGraphSnapshotCurrentSchema, RepeatGraphCurrentStateSchema, RepeatGraphFactCurrentSchema,
-  RepeatGraphPageCurrentSchema, RepeatGraphBatchCurrentSchema, reduceRepeatGraphPageCurrent,
+  makeCurrentWorkflowFixture, WorkflowVersionV3Schema, repeatGraphTopologyV3,
+  RepeatGraphSnapshotV3Schema, RepeatGraphCurrentV3Schema, RepeatGraphFactV3Schema,
+  RepeatGraphPageV3Schema, RepeatGraphBatchV3Schema, reduceRepeatGraphPageV3,
   CanonicalRunGraphReadRequestSchema, CanonicalRunGraphEventsRequestSchema,
   CanonicalRunGraphHttpSnapshotQuerySchema, CanonicalRunGraphHttpEventsQuerySchema,
-  type RepeatGraphSnapshotCurrent, type RepeatGraphBatchCurrent,
-} from '@foreman-code/contracts/current'
+  type RepeatGraphSnapshotV3, type RepeatGraphBatchV3,
+} from '@foreman-code/contracts/wave25'
 import { graphSourceDigest, repeatGraphBatchReceipt } from '../src/modules/run-graph/publication.js'
 
 /** Pure actual shared-schema/reducer tests. Not PG, HTTP authentication, native
  * provider or browser evidence. No mock contract implementation is used. */
-function fixture(): RepeatGraphSnapshotCurrent {
+function fixture(): RepeatGraphSnapshotV3 {
   const f = makeCurrentWorkflowFixture('eng04-graph-contract')
   const entry = f.version.definition.nodes[0]!, exit = f.version.definition.nodes[1]!
-  const version = WorkflowVersionCurrentSchema.parse({ ...f.version, executionSemanticsVersion: 3,
+  const version = WorkflowVersionV3Schema.parse({ ...f.version, executionSemanticsVersion: 3,
     definition: { ...f.version.definition, executionSemanticsVersion: 3,
       nodes: [entry, { ...exit, choice: { outcomes: [
         { outcome: 'pass', target: { kind: 'branch_end' } }, { outcome: 'issues', target: { kind: 'branch_end' } },
@@ -22,17 +22,17 @@ function fixture(): RepeatGraphSnapshotCurrent {
       repeat: { contractVersion: 1, blocks: [{ id: 'repair', nodeIds: [entry.id, exit.id], entryNodeId: entry.id,
         exitNodeId: exit.id, maxOccurrences: 3, repeatOutcome: 'issues', earlyExitOutcome: 'pass', limitExit: { kind: 'branch_end' } }] },
     } })
-  return RepeatGraphSnapshotCurrentSchema.parse({ kind: 'snapshot', protocolVersion: 1,
+  return RepeatGraphSnapshotV3Schema.parse({ kind: 'snapshot', protocolVersion: 1,
     scope: { ...f.scope, executionSemanticsVersion: 3 }, asOfSequence: '1', retentionFloor: '0', historyCoverage: 'from_admission',
-    topology: repeatGraphTopologyCurrent(version), state: { run: { executionState: 'queued', outcome: 'pending', stopRequested: false,
+    topology: repeatGraphTopologyV3(version), state: { run: { executionState: 'queued', outcome: 'pending', stopRequested: false,
       cleanupPending: false, unsettledReviewCount: 0, pendingInteractionCount: 0 },
       nodes: [], inputBindings: [], interactions: [], reviews: [],
       occurrences: [], executions: [], resolutions: [], results: [], bindings: [], decisions: [] },
   })
 }
-function batch(snapshot: RepeatGraphSnapshotCurrent, sequence: number, state = snapshot.state.run): RepeatGraphBatchCurrent {
+function batch(snapshot: RepeatGraphSnapshotV3, sequence: number, state = snapshot.state.run): RepeatGraphBatchV3 {
   const fact = { type: 'repeat.run.state' as const, state }
-  return RepeatGraphBatchCurrentSchema.parse({ protocolVersion: 1, scope: snapshot.scope,
+  return RepeatGraphBatchV3Schema.parse({ protocolVersion: 1, scope: snapshot.scope,
     batchId: `11111111-1111-4111-8111-${String(sequence).padStart(12, '0')}`,
     previousSequence: String(sequence - 1), sequence: String(sequence), events: [{
       eventId: `22222222-2222-4222-8222-${String(sequence).padStart(12, '0')}`,
@@ -41,7 +41,7 @@ function batch(snapshot: RepeatGraphSnapshotCurrent, sequence: number, state = s
     }],
   })
 }
-function page(snapshot: RepeatGraphSnapshotCurrent, batches: RepeatGraphBatchCurrent[]) {
+function page(snapshot: RepeatGraphSnapshotV3, batches: RepeatGraphBatchV3[]) {
   const through = batches.at(-1)?.sequence ?? snapshot.asOfSequence
   return { kind: 'page' as const, protocolVersion: 1 as const, scope: snapshot.scope, baseSequence: snapshot.asOfSequence,
     throughSequence: through, headSequence: through, retentionFloor: snapshot.retentionFloor, hasMore: false, batches }
@@ -72,42 +72,42 @@ describe('ENG04 graph composition / shared contracts', () => {
   })
   it('keeps current and snapshot wire tags explicit', () => {
     const snapshot = fixture(), current = { ...snapshot, kind: 'current' }
-    expect(RepeatGraphCurrentStateSchema.parse(current)).toEqual(current)
-    expect(RepeatGraphSnapshotCurrentSchema.safeParse(current).success).toBe(false)
+    expect(RepeatGraphCurrentV3Schema.parse(current)).toEqual(current)
+    expect(RepeatGraphSnapshotV3Schema.safeParse(current).success).toBe(false)
   })
   it('reduces complete batches atomically and never labels an unfinished empty page complete', () => {
     const snapshot = fixture(), running = { ...snapshot.state.run, executionState: 'running' as const }
     const value = page(snapshot, [batch(snapshot, 2, running), batch(snapshot, 3, { ...running, executionState: 'waiting' })])
-    expect(reduceRepeatGraphPageCurrent(snapshot, value)).toEqual({ ...snapshot, asOfSequence: '3',
+    expect(reduceRepeatGraphPageV3(snapshot, value)).toEqual({ ...snapshot, asOfSequence: '3',
       state: { ...snapshot.state, run: { ...running, executionState: 'waiting' } } })
     expect(snapshot.state.run.executionState).toBe('queued')
-    expect(RepeatGraphPageCurrentSchema.safeParse({ ...page(snapshot, []), headSequence: '2' }).success).toBe(false)
-    expect(RepeatGraphPageCurrentSchema.safeParse({ ...page(snapshot, []), headSequence: '2', hasMore: true }).success).toBe(false)
+    expect(RepeatGraphPageV3Schema.safeParse({ ...page(snapshot, []), headSequence: '2' }).success).toBe(false)
+    expect(RepeatGraphPageV3Schema.safeParse({ ...page(snapshot, []), headSequence: '2', hasMore: true }).success).toBe(false)
   })
   it('rejects a gap, reordered complete batches and scope drift without mutating the original cut', () => {
     const snapshot = fixture(), original = structuredClone(snapshot), two = batch(snapshot, 2), three = batch(snapshot, 3)
     for (const value of [page(snapshot, [three]), page(snapshot, [three, two]),
       { ...page(snapshot, [two]), scope: { ...snapshot.scope, runId: 'another-run' } }]) {
-      expect(() => reduceRepeatGraphPageCurrent(snapshot, value)).toThrow()
+      expect(() => reduceRepeatGraphPageV3(snapshot, value)).toThrow()
       expect(snapshot).toEqual(original)
     }
   })
   it('rejects Stop reversal and changes to a completed Run', () => {
     const snapshot = fixture()
     const stopped = { ...snapshot, state: { ...snapshot.state, run: { ...snapshot.state.run, stopRequested: true } } }
-    expect(RepeatGraphSnapshotCurrentSchema.safeParse(stopped).success).toBe(true)
-    expect(() => reduceRepeatGraphPageCurrent(stopped, page(stopped, [batch(stopped, 2, snapshot.state.run)]))).toThrow()
+    expect(RepeatGraphSnapshotV3Schema.safeParse(stopped).success).toBe(true)
+    expect(() => reduceRepeatGraphPageV3(stopped, page(stopped, [batch(stopped, 2, snapshot.state.run)]))).toThrow()
     const terminal = { ...snapshot, state: { ...snapshot.state, run: {
       ...snapshot.state.run, executionState: 'completed' as const, outcome: 'succeeded' as const, stopRequested: false,
     } } }
-    expect(RepeatGraphSnapshotCurrentSchema.safeParse(terminal).success).toBe(true)
-    expect(() => reduceRepeatGraphPageCurrent(terminal, page(terminal, [batch(terminal, 2, snapshot.state.run)]))).toThrow()
+    expect(RepeatGraphSnapshotV3Schema.safeParse(terminal).success).toBe(true)
+    expect(() => reduceRepeatGraphPageV3(terminal, page(terminal, [batch(terminal, 2, snapshot.state.run)]))).toThrow()
   })
   it('rejects private input/result/native fields instead of stripping them into public facts', () => {
     const snapshot = fixture(), fact = { type: 'repeat.run.state', state: snapshot.state.run }
     for (const field of ['input', 'result', 'nativeSessionId', 'providerPayload', 'workingDirectory']) {
-      expect(RepeatGraphFactCurrentSchema.safeParse({ ...fact, [field]: 'private-canary' }).success).toBe(false)
-      expect(RepeatGraphFactCurrentSchema.safeParse({ ...fact, state: { ...fact.state, [field]: 'private-canary' } }).success).toBe(false)
+      expect(RepeatGraphFactV3Schema.safeParse({ ...fact, [field]: 'private-canary' }).success).toBe(false)
+      expect(RepeatGraphFactV3Schema.safeParse({ ...fact, state: { ...fact.state, [field]: 'private-canary' } }).success).toBe(false)
     }
   })
   it('binds source-group order and exact event identity in the permanent complete-envelope digest', () => {
@@ -115,8 +115,8 @@ describe('ENG04 graph composition / shared contracts', () => {
     const together = { ...first, events: [first.events[0]!, second.events[0]!] }
     const swapped = { ...together, events: [...together.events].reverse() }
     // Both still pass the structural batch schema. Permanent proof distinguishes them.
-    expect(RepeatGraphBatchCurrentSchema.safeParse(together).success).toBe(true)
-    expect(RepeatGraphBatchCurrentSchema.safeParse(swapped).success).toBe(true)
+    expect(RepeatGraphBatchV3Schema.safeParse(together).success).toBe(true)
+    expect(RepeatGraphBatchV3Schema.safeParse(swapped).success).toBe(true)
     expect(repeatGraphBatchReceipt(together).sourceDigest).not.toBe(repeatGraphBatchReceipt(swapped).sourceDigest)
     expect(repeatGraphBatchReceipt(structuredClone(together))).toEqual(repeatGraphBatchReceipt(together))
   })

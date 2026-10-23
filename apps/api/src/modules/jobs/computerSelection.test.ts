@@ -356,8 +356,7 @@ it('selects the fallback computer when only it fits the captured source and Git 
         ? String(SOURCE_AGGREGATE_LIMITS.bytes - 4 * 1024 * 1024) : '0',
       verification_bytes: '0', materializations: '0', verification_materializations: '0',
     }] }
-    // The selection insert is the only statement that binds its eleven columns.
-    if (values?.length === 11) {
+    if (text.startsWith('insert into job_computer_selections')) {
       saved = { spec: JSON.parse(String(values![6])), bytes: Number(values![10]) }
     }
     return { rowCount: 0, rows: [] }

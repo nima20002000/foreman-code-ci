@@ -1,6 +1,6 @@
 import type pg from 'pg'
 import { createAuxiliaryPool, createDedicatedClient } from './pool.js'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '../modules/errors.js'
 import { isDatabaseTimeout, retryDatabaseOperation, retryStartupDatabase } from './databaseRetry.js'
 import { withAbortSignal } from './abortSignal.js'
 import { componentLogger } from './logger.js'

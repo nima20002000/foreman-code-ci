@@ -5,10 +5,10 @@ import type { JobInputDeliveryReceipt } from '@foreman-code/contracts/job-inputs
 import { StringDecoder } from 'node:string_decoder'
 import { AcceptedJobSpecSchema, JobExecutionSchema, type AcceptedJobSpec, type PreparedJobSpec, type JobExecution } from '@foreman-code/contracts'
 import { jobSpecDigests } from '@foreman-code/contracts/jobs-node'
-import { componentLogger } from '../diagnostics/index.js'
-import { fallbackOnError } from '../diagnostics/index.js'
+import { componentLogger } from '../diagnostics/logger.js'
+import { fallbackOnError } from '../diagnostics/ignoredError.js'
 import { isDeepStrictEqual } from 'node:util'
-import { canonicalGraphJson } from '@foreman-code/contracts/current'
+import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import { AcceptedVerificationJobSpecSchema, VerificationJobExecutionSchema, JobExecutionRecordSchema,
   type AcceptedVerificationJobSpec } from '@foreman-code/contracts/job-verification'
 import type { z } from 'zod'

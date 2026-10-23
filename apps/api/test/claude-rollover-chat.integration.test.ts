@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
 import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
 import { AgentChatStateSchema, SendAgentChatMessageResponseSchema } from '@foreman-code/contracts/agent-chat'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import type { ClaudeHarnessConfiguration } from '@foreman-code/contracts/claude'
 import { buildApp } from '../src/app.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
@@ -12,8 +12,7 @@ import { AgentChatService } from '../src/modules/conversations/agentChat.js'
 import { PostgresAgentChatRepository } from '../src/modules/conversations/agentChatRepository.js'
 import { PostgresOperatorConversationRepository } from '../src/modules/conversations/operatorChatRepository.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
-import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
 import { waitForDelivery } from './helpers/agentChatDelivery.js'
 import { graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 import { productionClaudeFixture } from './support/claudeProduction.js'
@@ -21,7 +20,7 @@ import { claudeSdkToolTransport } from './support/claudeSdkToolTransport.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
 it('settles an unoffered rollover failure and retries through authenticated Agent MCP without replaying earlier inputs', async () => {
-  const db = await migratedDatabase()
+  const db = await agent3Database()
   const claimReady = rejectableDeferred()
   const resumeEntered = rejectableDeferred()
   const resumeReady = rejectableDeferred()
@@ -37,7 +36,7 @@ it('settles an unoffered rollover failure and retries through authenticated Agen
       permissionRules: [], instructions: '', mcpServers: {} }
     const fixture = makeCurrentWorkflowFixture(randomUUID(), 'sequential')
     fixture.configurations = fixture.configurations.map(value => AgentConfigurationVersionSchema.parse({ ...value, harness }))
-    const seeded = await seedWorkflowFixture(db.pool, db.directory, fixture, { run: false })
+    const seeded = await seedAgent3(db.pool, db.directory, fixture, { run: false })
     const node = seeded.version.definition.nodes[0]!
     const access = new PostgresAccessService(db.pool)
     const owner = await access.issue({ name: 'rollover writer', audience: 'operator', expiresAt: new Date(Date.now() + 600_000),

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import type { RunStartCurrentInput } from '@foreman-code/contracts/current'
+import type { RunStartV3Input } from '@foreman-code/contracts/wave25'
 import { RunManagementService } from '../src/modules/runs/management.js'
 
 // This is a negative service-boundary guard, not an old-version fixture or a
@@ -14,7 +14,7 @@ describe('ENG05-D explicit unsupported-semantics guard', () => {
     const principal: ManagementPrincipal = { id: 'eng05d-reader', name: 'ENG05-D', audience: 'operator',
       grants: [], revokedAt: null, expiresAt: '2099-01-01T00:00:00.000Z' }
     // Deliberately untrusted transport input. A cast does not parse/convert it.
-    const input = { executionSemanticsVersion: 99 } as unknown as RunStartCurrentInput
+    const input = { executionSemanticsVersion: 99 } as unknown as RunStartV3Input
     await expect(service.start(principal, 'http', input)).rejects.toMatchObject({
       code: 'EXECUTION_SEMANTICS_UNSUPPORTED', status: 409,
     })

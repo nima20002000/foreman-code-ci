@@ -1,11 +1,10 @@
 import { ChatDeliveryReceiptSchema } from '@foreman-code/contracts'
-import { assertGraphTransaction } from '../run-graph/index.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { assertGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
 import { CONTROL_COMMAND_SUMMARY_COLUMNS, updateControlCommand, type ControlCommandSummary } from './workflowControlRecords.js'
 
 /** The existing owner closes queued input after final acceptance or proven
  * negative settlement. Native success alone does not close an unaccepted work. */
-export async function closeWorkflowControlInputLocked(sql:SqlTransaction,
+export async function closeWorkflowControlInputLocked(sql:GraphTransactionSql,
   input:{runId:string;executionId:string;now:string}):Promise<void> {
   assertGraphTransaction(sql)
   const rows=(await sql.query<ControlCommandSummary>(`with recursive lineage(id) as (
@@ -18,14 +17,14 @@ export async function closeWorkflowControlInputLocked(sql:SqlTransaction,
 }
 
 /** A Run that completes or fails gives its Agents no further turn, so input still queued for them closes with it. */
-export async function closeRunControlInputsLocked(sql:SqlTransaction,input:{runId:string;now:string}):Promise<void> {
+export async function closeRunControlInputsLocked(sql:GraphTransactionSql,input:{runId:string;now:string}):Promise<void> {
   assertGraphTransaction(sql)
   await failQueued(sql,(await sql.query<ControlCommandSummary>(`select ${CONTROL_COMMAND_SUMMARY_COLUMNS} from run_chat_commands c
     where c.run_id=$1 and c.kind='delivery' and c.state='queued' and c.target->>'kind'='workflow_execution'
     order by c.sequence`,[input.runId])).rows,input.now)
 }
 
-async function failQueued(sql:SqlTransaction,rows:readonly ControlCommandSummary[],now:string) {
+async function failQueued(sql:GraphTransactionSql,rows:readonly ControlCommandSummary[],now:string) {
   for(const row of rows) await updateControlCommand(sql,row,{
     ...ChatDeliveryReceiptSchema.parse(row.receipt),state:'failed',errorCode:'TARGET_SETTLED',updatedAt:now,
   },now)

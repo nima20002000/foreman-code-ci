@@ -1,8 +1,8 @@
 import type { HarnessConfiguration } from '@foreman-code/contracts'
-import type { WorkflowVersionCurrent } from '@foreman-code/contracts/current'
+import type { WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 
 /** These are immutable accepted versions, never a current editable workflow. */
-export type ApprovalRouteVersion = WorkflowVersionCurrent
+export type ApprovalRouteVersion = WorkflowVersionV3
 
 export interface ImmutableApprovalRoute {
   workspaceId: string
@@ -26,7 +26,7 @@ export function usesNativeSelfReview(configuration: HarnessConfiguration | undef
 }
 
 /** Approval topology does not schedule, infer roles, select sessions, or grant access. */
-export function hasSupportedApprovalTopology(version: WorkflowVersionCurrent): boolean {
+export function hasSupportedApprovalTopology(version: WorkflowVersionV3): boolean {
   const graph = version.definition
   if (version.executionSemanticsVersion !== 3 || graph.executionSemanticsVersion !== 3
     || !graph.entryNodeId || graph.entryNodeId !== version.entryNodeId) return false

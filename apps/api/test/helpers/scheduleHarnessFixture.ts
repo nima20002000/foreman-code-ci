@@ -13,10 +13,10 @@ import { codexQualificationSuite } from '../../src/modules/harnesses/qualificati
 
 import { qualificationRevisionWithIdentity } from '../../src/modules/harnesses/qualification/identity.js'
 import { qualifyScheduleHarness } from './qualifyScheduleHarness.js'
-import type { ScheduleDispatchFixture } from './scheduleFixture.js'
+import type { Sch11Fixture } from './scheduleFixture.js'
 
 /** Production discovery and settings; qualification is an explicit native operation. */
-export async function scheduleHarnessFixture(f: ScheduleDispatchFixture, mainId: string, principal: ManagementPrincipal) {
+export async function scheduleHarnessFixture(f: Sch11Fixture, mainId: string, principal: ManagementPrincipal) {
   const pool = f.database.pool
   const profiles = new HostHarnessProfileEvidenceRepository(pool)
   const defaults = new PostgresSettingsRepository(pool)

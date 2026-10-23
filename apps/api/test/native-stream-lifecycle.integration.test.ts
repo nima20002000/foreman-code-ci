@@ -1,4 +1,4 @@
-import { makeCurrentWorkflowFixture, RunStartCurrentResultSchema } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture, RunStartV3ResultSchema } from '@foreman-code/contracts/wave25'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DomainError } from '../src/modules/errors.js'
 import { streamingOperator } from './helpers/streamingRunOperator.js'
@@ -221,7 +221,7 @@ describe.skipIf(!postgresEnabled)('native stream lifecycle', () => {
     })
     expect(start.status).toBe(200)
     expect(start.result?.isError).not.toBe(true)
-    const accepted = RunStartCurrentResultSchema.parse(graphRpcValue(start.result))
+    const accepted = RunStartV3ResultSchema.parse(graphRpcValue(start.result))
     expect(accepted).toMatchObject({ accepted: true, replayed: false })
     const runId = accepted.run.id
     const scope = { ...f.f.scope, runId }
@@ -240,7 +240,7 @@ describe.skipIf(!postgresEnabled)('native stream lifecycle', () => {
       })
       expect(replay.status).toBe(200)
       expect(replay.result?.isError).not.toBe(true)
-      expect(RunStartCurrentResultSchema.parse(graphRpcValue(replay.result))).toEqual({ ...accepted, replayed: true })
+      expect(RunStartV3ResultSchema.parse(graphRpcValue(replay.result))).toEqual({ ...accepted, replayed: true })
       expect(f.provider.counts).toMatchObject({ sessions: 3, starts: 3 })
       await f.engine.reconcile()
       expect(f.engine.start(runId)).toBe(task)

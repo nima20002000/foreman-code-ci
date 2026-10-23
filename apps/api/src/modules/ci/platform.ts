@@ -5,11 +5,11 @@ import {
   queueCiDatabaseWork, waitForCiDispatch, withCiDatabasePriority, withCiDatabaseReservation, withoutCiDatabaseDeadline,
   withoutCiDatabasePriority, withoutCiDatabaseReservation,
 } from '../../infrastructure/ciDatabasePriority.js'
-import { componentLogger } from '../diagnostics/index.js'
-import { fallbackOnError, fallbackOnMissing, logIgnoredError } from '../diagnostics/index.js'
-import { reportServiceFailure, trackService } from '../diagnostics/index.js'
-import { failedReadObservation, successfulReadObservation } from '../diagnostics/index.js'
-import { updateOperationalFailure } from '../diagnostics/index.js'
+import { componentLogger } from '../diagnostics/logger.js'
+import { fallbackOnError, fallbackOnMissing, logIgnoredError } from '../diagnostics/ignoredError.js'
+import { reportServiceFailure, trackService } from '../diagnostics/serviceHealth.js'
+import { failedReadObservation, successfulReadObservation } from '../diagnostics/readObservation.js'
+import { updateOperationalFailure } from '../diagnostics/operationalFailures.js'
 import {
   deepenUntilConnected, ensureClone, ensureCommit, fetchRepositoryBranch, systemGitWorktreePorts,
 } from '../sources/gitWorktree.js'
@@ -24,7 +24,7 @@ import { DeviceConnectionError } from '../devices/deviceWire.js'
 import { fingerprintQualificationPath } from '../jobs/qualificationFingerprint.js'
 import { readJobProjectQuota } from '../jobs/quotaOwnership.js'
 import { buildCiRuntimeContext, ciRuntimeInputDigest, parseCiLock } from '../jobs/ciRuntimeContext.mjs'
-import { expectedPortions } from '../../shared/verificationRunner.js'
+import { expectedPortions } from '../../../../../scripts/verification-runner.mjs'
 
 // This process's single-instance services for CI, on Main and on a Worker. It imports nothing server-only, so the Worker
 // can load it.

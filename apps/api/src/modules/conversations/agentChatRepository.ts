@@ -15,7 +15,7 @@ import { messageAttachmentIdentity } from '@foreman-code/contracts/files'
 
 import { validateMessageAttachments, withMessageAttachmentRefs, hydrateMessageAttachments } from './messageAttachments.js'
 
-import { ExecutionResultSchema, MessageSchema, PendingNativeInteractionSchema, type DeliveryTarget, type ExecutionResult, type ActivitySourceRevision, type AgentHarness, type RecordedAgentHarness, type Message, type NativeSessionReference, type PendingNativeInteraction, type PromptSettingSnapshot, type ActivityScope, type NodeBrowserSettings } from '@foreman-code/contracts'
+import { ExecutionResultSchema, MessageSchema, PendingNativeInteractionSchema, type ExecutionResult, type ActivitySourceRevision, type AgentHarness, type RecordedAgentHarness, type Message, type NativeSessionReference, type PendingNativeInteraction, type PromptSettingSnapshot, type ActivityScope, type NodeBrowserSettings } from '@foreman-code/contracts'
 import {
   AgentChatTurnSchema, AgentConversationSchema, type AgentChatContext, type AgentChatIntent, type AgentChatOrigin,
   type AgentChatTurn, type AgentConversation, type AgentChatReplayWarning, type SendAgentChatMessageRequest,
@@ -23,7 +23,7 @@ import {
 } from '@foreman-code/contracts/agent-chat'
 
 import { DomainError } from '../errors.js'
-import { readSystemPromptSetting } from '../settings/index.js'
+import { readSystemPromptSetting } from '../settings/foundation.js'
 import { assertConversationCursor, withConversationPageRead } from './activityCursor.js'
 import { readActivityCommands } from './activityCommands.js'
 import { readConversationPublicationReceipts, type ConversationPublicationReceipt } from './messagePublications.js'
@@ -32,7 +32,7 @@ import { OPERATOR_SNAPSHOT_MESSAGE_BYTES, OPERATOR_HISTORY_PAGE_BYTES } from './
 import { agentConfigurationHandoff } from './agentConfigurationTransition.js'
 import { AgentConfigurationVersionSchema, type AgentConfigurationVersion } from '@foreman-code/contracts'
 import { legacyProviderAccountBinding, readProviderAccountBinding, type AcceptedProviderAccountBindings }
-  from '../provider-accounts/index.js'
+  from '../provider-accounts/acceptedBindings.js'
 import type { AcceptedProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
 import { sha256Hex } from '../../shared/hash.js'
 
@@ -356,97 +356,6 @@ export class PostgresAgentChatRepository extends ConversationRepositoryCore<Agen
     const result = await this.pool.query<{ owner: string | null }>(`select payload->>'ownerPrincipalId' as owner
       from operator_conversation_turns where conversation_id=$1 and request_id=$2`, [id, requestId])
     return result.rows[0]?.owner ?? undefined
-  }
-
-  /** The exact Agent node (and Run) a conversation belongs to. */
-  async conversationScope(conversationId: string, query: SqlQuery = this.pool): Promise<
-    Pick<AgentConversationRow, 'workspace_id' | 'workflow_id' | 'workflow_node_id' | 'agent_id' | 'origin_run_id'> | undefined> {
-    return (await query.query<Pick<AgentConversationRow, 'workspace_id' | 'workflow_id' | 'workflow_node_id' | 'agent_id' | 'origin_run_id'>>(
-      "select workspace_id,workflow_id,workflow_node_id,agent_id,origin_run_id from operator_conversations where kind='agent' and id=$1",
-    [conversationId])).rows[0]
-  }
-
-  /** The Agent target of a deleted conversation, from the first delivery command that addressed it. */
-  async retainedDeliveryTarget(workspaceId: string, conversationId: string): Promise<DeliveryTarget | undefined> {
-    return (await this.pool.query<{ target: DeliveryTarget }>(`select request->'target' as target from chat_delivery_commands
-        where workspace_id=$1 and request->'target'->>'kind'='agent_conversation'
-          and request->'target'->>'conversationId'=$2 limit 1`, [workspaceId, conversationId])).rows[0]?.target
-  }
-
-  /** Conversations of one Agent node (and Run) that already carry the request, newest first; at most two. */
-  async conversationsForRequest(input: { workspaceId: string; workflowId: string; workflowNodeId: string; agentId: string
-    requestId: string; runId: string | null; expectedConversationId: string | null }): Promise<AgentConversationRow[]> {
-    return (await this.pool.query<AgentConversationRow>(`select c.* from operator_conversations c
-      join operator_conversation_turns t on t.conversation_id=c.id and t.request_id=$5
-      where c.kind='agent' and c.workspace_id=$1 and c.workflow_id=$2 and c.workflow_node_id=$3 and c.agent_id=$4
-        and c.origin_run_id is not distinct from $6::text
-        and ($7::text is null or c.id=$7) order by c.created_at desc limit 2`,
-    [input.workspaceId, input.workflowId, input.workflowNodeId, input.agentId, input.requestId,
-      input.runId, input.expectedConversationId])).rows
-  }
-
-  /** Serializes everything that creates or replaces the conversation of one Agent key. */
-  async lockContextKey(tx: SqlQuery, key: string): Promise<void> {
-    await tx.query('select pg_advisory_xact_lock(hashtext($1))', [`agent-chat:${key}`])
-  }
-
-  async workflowIsActive(sql: SqlQuery, workspaceId: string, workflowId: string): Promise<boolean> {
-    return Boolean((await sql.query('select 1 from workflows where id=$1 and workspace_id=$2 and archived_at is null',
-      [workflowId, workspaceId])).rowCount)
-  }
-
-  /** Share-locks the workflow and Agent a conversation is created under. */
-  async shareLockWorkflow(tx: SqlQuery, workspaceId: string, workflowId: string): Promise<void> {
-    await tx.query('select id from workflows where workspace_id=$1 and id=$2 for share', [workspaceId, workflowId])
-  }
-  async shareLockAgent(tx: SqlQuery, workspaceId: string, agentId: string): Promise<void> {
-    await tx.query('select id from agents where workspace_id=$1 and id=$2 for share', [workspaceId, agentId])
-  }
-
-  /** The Agent's saved current configuration pointer, archived or not. */
-  async agentConfigurationPointer(sql: SqlQuery, workspaceId: string, agentId: string): Promise<
-    { current_configuration_version_id: string | null; archived_at: Date | null } | undefined> {
-    return (await sql.query<{ current_configuration_version_id: string | null; archived_at: Date | null }>(
-      'select current_configuration_version_id,archived_at from agents where workspace_id=$1 and id=$2', [workspaceId, agentId])).rows[0]
-  }
-
-  /** The current configuration of an Agent that is not archived. */
-  async activeAgentConfigurationId(sql: SqlQuery, workspaceId: string, agentId: string): Promise<string | null | undefined> {
-    return (await sql.query<{ current_configuration_version_id: string | null }>(
-      'select current_configuration_version_id from agents where workspace_id=$1 and id=$2 and archived_at is null',
-      [workspaceId, agentId])).rows[0]?.current_configuration_version_id
-  }
-
-  async workspaceExecutionLocation(sql: SqlQuery, workspaceId: string): Promise<unknown> {
-    return (await sql.query<{ execution_location: unknown }>('select execution_location from workspaces where id=$1', [workspaceId])).rows[0]
-      ?.execution_location
-  }
-
-  /** The newest conversation id of one Agent node, which a candidate id is derived from. */
-  async newestConversationId(sql: SqlQuery, context: AgentChatContext): Promise<string | null> {
-    return (await sql.query<{ id: string }>(`select id from operator_conversations
-      where kind='agent' and workspace_id=$1 and workflow_id=$2 and workflow_node_id=$3 and agent_id=$4
-      order by created_at desc,id desc limit 1`, [context.workspaceId, context.workflowId, context.workflowNodeId, context.agentId])).rows[0]?.id ?? null
-  }
-
-  async sessionDefaults(principalId: string, subject: string, profileKey: string): Promise<unknown> {
-    return (await this.pool.query<{ record: unknown }>(`select record from conversation_session_defaults
-      where principal_id=$1 and role='agent' and subject=$2 and profile_key=$3`, [principalId, subject, profileKey])).rows[0]?.record
-  }
-
-  /** The Board's browser switch for a chat outside any Run; null clears it back to the saved node. */
-  async setChatBrowser(id: string, browser: NodeBrowserSettings | null): Promise<void> {
-    await this.pool.query(`update operator_conversations set record=case when $2::jsonb is null then record - 'chatBrowser'
-      else record || jsonb_build_object('chatBrowser',$2::jsonb) end where id=$1 and kind='agent'`,
-    [id, browser ? JSON.stringify(browser) : null])
-  }
-
-  /** The stored provider reference of one Run execution's native session. */
-  async runExecutionSessionReference(executionId: string, runId: string): Promise<{ reference: unknown } | undefined> {
-    return (await this.pool.query<{ reference: unknown }>(`
-      select s.reference from execution_native_sessions s
-      join harness_executions e on e.id=s.execution_id
-      where s.execution_id=$1 and e.run_id=$2`, [executionId, runId])).rows[0]
   }
 
   async turnSessionMode(id: string, requestId: string): Promise<'regular' | 'plan' | undefined> {

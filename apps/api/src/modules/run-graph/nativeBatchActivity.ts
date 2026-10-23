@@ -1,11 +1,11 @@
-import { canonicalGraphJson, type NativeGraphActivityRecord, type RunGraphScope } from '@foreman-code/contracts/current'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { canonicalGraphJson, type NativeGraphActivityRecord, type RunGraphScope } from '@foreman-code/contracts/wave25'
+import type { GraphTransactionSql } from './connection.js'
 import { readCurrentNativeActivities, type CurrentNativeActivity } from './currentActivity.js'
 import { activeNativeBatch, memoizeNativeRead } from './nativeBatch.js'
 import type { PublicNodeInputs } from './publicProjection.js'
 
 /** Compose successive frames from the initial rows and staged writes, without flushing after each frame. */
-export async function readBatchNativeActivities(sql: SqlTransaction, scope: RunGraphScope,
+export async function readBatchNativeActivities(sql: GraphTransactionSql, scope: RunGraphScope,
   inputs: PublicNodeInputs): Promise<CurrentNativeActivity[]> {
   const rows = await memoizeNativeRead(sql, `current-native-activities:${canonicalGraphJson(inputs.nodeIds)}`,
     () => readCurrentNativeActivities(sql, scope, inputs.nodeIds))

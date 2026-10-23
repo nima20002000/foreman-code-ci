@@ -7,7 +7,7 @@ import { anchored } from './privateFilesystem.js'
 import { withSourceDirectoryParents } from './directoryParents.js'
 import { SourceError, verifySourceBytes } from './manifest.js'
 import { sourceFileWriter } from './sourceFileWriter.js'
-import { componentLogger } from '../diagnostics/index.js'
+import { componentLogger } from '../diagnostics/logger.js'
 
 /** Copies raw files without Git filters, shared writable inodes or per-file thread-pool queues. */
 export async function copySourceTree(input: {

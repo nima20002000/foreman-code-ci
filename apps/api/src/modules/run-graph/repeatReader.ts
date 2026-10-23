@@ -2,15 +2,14 @@ import { readPublicProjectionLocked } from './compactSnapshot.js'
 import { assertPublicProjectionCommittedLocked } from './publicProjectionReceipt.js'
 import type pg from 'pg'
 import {
-  GraphSequenceSchema, RUN_GRAPH_LIMITS, RepeatGraphReadRequestCurrentSchema, RepeatGraphEventsRequestCurrentSchema,
-  RepeatGraphBatchCurrentSchema, RepeatGraphPageCurrentSchema, RepeatGraphResetCurrentSchema, RepeatGraphCurrentStateSchema,
-  RepeatGraphStateCurrentSchema, repeatGraphTopologyCurrent, sortRepeatGraphState, validateRepeatGraphSnapshotCurrent,
+  GraphSequenceSchema, RUN_GRAPH_LIMITS, RepeatGraphReadRequestV3Schema, RepeatGraphEventsRequestV3Schema,
+  RepeatGraphBatchV3Schema, RepeatGraphPageV3Schema, RepeatGraphResetV3Schema, RepeatGraphCurrentV3Schema,
+  RepeatGraphStateV3Schema, repeatGraphTopologyV3, sortRepeatGraphState, validateRepeatGraphSnapshotV3,
   graphJsonBytes, canonicalGraphJson, sameCanonicalGraphScope,
-  type RepeatGraphScopeCurrent, type RepeatGraphSnapshotCurrent, type RepeatGraphPageCurrent, type RepeatGraphResetCurrent,
-  type RepeatGraphBatchCurrent,
-} from '@foreman-code/contracts/current'
-import { withExclusiveGraphConnection } from './connection.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+  type RepeatGraphScopeV3, type RepeatGraphSnapshotV3, type RepeatGraphPageV3, type RepeatGraphResetV3,
+  type RepeatGraphBatchV3,
+} from '@foreman-code/contracts/wave25'
+import { withExclusiveGraphConnection, type GraphTransactionSql } from './connection.js'
 import { RunGraphError } from './errors.js'
 import { DomainError } from '../errors.js'
 import {
@@ -23,12 +22,12 @@ import { assertRepeatGraphCommittedState, assertRepeatGraphBatchesCommitted } fr
 /** Inject the existing authenticated Run read policy in BOTH HTTP and Operator
  * MCP. Never replace this with permission=true, a service principal or a cached
  * workflow read. These entry points do not enable the v3 rollout themselves. */
-export type AuthorizeRepeatGraphRead = (sql: SqlTransaction, scope: RepeatGraphScopeCurrent) => Promise<void>
+export type AuthorizeRepeatGraphRead = (sql: GraphTransactionSql, scope: RepeatGraphScopeV3) => Promise<void>
 export interface RepeatGraphHead {
   head_sequence: string; retention_floor: string; protocol_version: number;
   history_coverage: 'from_admission' | 'from_snapshot';
 }
-async function authorizedHead(sql: SqlTransaction, scope: RepeatGraphScopeCurrent,
+async function authorizedHead(sql: GraphTransactionSql, scope: RepeatGraphScopeV3,
   authorize: AuthorizeRepeatGraphRead): Promise<RepeatGraphHead> {
   if (typeof authorize !== 'function') throw new RunGraphError('GRAPH_READ_ACCESS_DENIED')
   try { await authorize(sql, scope) } catch (error) {
@@ -54,20 +53,20 @@ function readRequest(input: unknown) {
   if (typeof input !== 'object' || input === null || !('protocolVersion' in input) || input.protocolVersion !== 1) {
     throw new RunGraphError('GRAPH_UNSUPPORTED_PROTOCOL')
   }
-  const result = RepeatGraphReadRequestCurrentSchema.safeParse(input)
+  const result = RepeatGraphReadRequestV3Schema.safeParse(input)
   if (!result.success) throw new RunGraphError('GRAPH_SCOPE_MISMATCH')
   return result.data
 }
-function reset(scope: RepeatGraphScopeCurrent, requestedSequence: string, head: RepeatGraphHead,
-  reason: RepeatGraphResetCurrent['reason']): RepeatGraphResetCurrent {
-  return RepeatGraphResetCurrentSchema.parse({ kind: 'reset', protocolVersion: 1, scope, requestedSequence,
+function reset(scope: RepeatGraphScopeV3, requestedSequence: string, head: RepeatGraphHead,
+  reason: RepeatGraphResetV3['reason']): RepeatGraphResetV3 {
+  return RepeatGraphResetV3Schema.parse({ kind: 'reset', protocolVersion: 1, scope, requestedSequence,
     headSequence: head.head_sequence, retentionFloor: head.retention_floor, reason, action: 'fetch_snapshot' })
 }
 
 /** Reused by snapshot AND delta, including an empty delta. Otherwise a
  * domain update missing publication could masquerade as a complete empty page.
  * One bounded primary repeatable-read cut; no second source of live facts. */
-async function verifiedRepeatCut(sql: SqlTransaction, scope: RepeatGraphScopeCurrent, head: RepeatGraphHead): Promise<RepeatGraphSnapshotCurrent> {
+async function verifiedRepeatCut(sql: GraphTransactionSql, scope: RepeatGraphScopeV3, head: RepeatGraphHead): Promise<RepeatGraphSnapshotV3> {
   try {
     const { version } = await readRecordedRepeatGraphPinsLocked(sql, scope)
     const run = await readRepeatRunStateLocked(sql, scope)
@@ -81,12 +80,12 @@ async function verifiedRepeatCut(sql: SqlTransaction, scope: RepeatGraphScopeCur
     await assertPublicProjectionCommittedLocked(sql, scope, head.head_sequence, readPublicProjectionLocked, publicView)
     const data = { ...publicView, run, occurrences, executions, bindings, resolutions, results, decisions }
     if (graphJsonBytes(data) > RUN_GRAPH_LIMITS.snapshotBytes) throw new RunGraphError('GRAPH_SNAPSHOT_TOO_LARGE')
-    const state = sortRepeatGraphState(RepeatGraphStateCurrentSchema.parse(data))
+    const state = sortRepeatGraphState(RepeatGraphStateV3Schema.parse(data))
     const candidate = { kind: 'snapshot' as const, protocolVersion: 1 as const, scope,
       asOfSequence: head.head_sequence, retentionFloor: head.retention_floor, historyCoverage: head.history_coverage,
-      topology: repeatGraphTopologyCurrent(version), state }
+      topology: repeatGraphTopologyV3(version), state }
     if (graphJsonBytes(candidate) > RUN_GRAPH_LIMITS.snapshotBytes) throw new RunGraphError('GRAPH_SNAPSHOT_TOO_LARGE')
-    const snapshot = validateRepeatGraphSnapshotCurrent(version, candidate)
+    const snapshot = validateRepeatGraphSnapshotV3(version, candidate)
     await assertRepeatGraphCommittedState(sql, scope, head.head_sequence, snapshot.state)
     return snapshot
   } catch (error) {
@@ -100,7 +99,7 @@ async function verifiedRepeatCut(sql: SqlTransaction, scope: RepeatGraphScopeCur
  * permanent receipt verification. No retained-batch replay used as a new store.
  * A capacity excess returns an error; never partial state labelled complete. */
 export async function readRepeatGraphSnapshot(pool: pg.Pool, input: unknown,
-  authorize: AuthorizeRepeatGraphRead): Promise<RepeatGraphSnapshotCurrent> {
+  authorize: AuthorizeRepeatGraphRead): Promise<RepeatGraphSnapshotV3> {
   const request = readRequest(input)
   return withExclusiveGraphConnection(pool, (connection) => connection.transaction(async (sql) => {
     const head = await authorizedHead(sql, request.scope, authorize)
@@ -109,16 +108,16 @@ export async function readRepeatGraphSnapshot(pool: pg.Pool, input: unknown,
 }
 export async function readRepeatGraphCurrent(pool: pg.Pool, input: unknown, authorize: AuthorizeRepeatGraphRead) {
   const snapshot = await readRepeatGraphSnapshot(pool, input, authorize)
-  return RepeatGraphCurrentStateSchema.parse({ ...snapshot, kind: 'current' })
+  return RepeatGraphCurrentV3Schema.parse({ ...snapshot, kind: 'current' })
 }
 
 /** V3 branch of the EXISTING complete-batch journal reader. The 1/2 reader and
  * its schemas remain unchanged; callers must dispatch by the exact saved pin.
  * This returns whole publication positions even for non-occurrence facts. */
 export async function readRepeatGraphPage(pool: pg.Pool, input: unknown,
-  authorize: AuthorizeRepeatGraphRead): Promise<RepeatGraphPageCurrent | RepeatGraphResetCurrent> {
+  authorize: AuthorizeRepeatGraphRead): Promise<RepeatGraphPageV3 | RepeatGraphResetV3> {
   readRequestForEvents(input)
-  const request = RepeatGraphEventsRequestCurrentSchema.parse(input)
+  const request = RepeatGraphEventsRequestV3Schema.parse(input)
   return withExclusiveGraphConnection(pool, (connection) => connection.transaction(async (sql) => {
     const { scope, afterSequence } = request
     const head = await authorizedHead(sql, scope, authorize), after = BigInt(afterSequence)
@@ -131,8 +130,8 @@ export async function readRepeatGraphPage(pool: pg.Pool, input: unknown,
       `select b.sequence::text,b.kind,b.payload_bytes from run_graph_batches b
        where b.run_id=$1 and b.sequence>$2::bigint and b.sequence<=$3::bigint order by b.sequence limit $4`,
       [scope.runId, afterSequence, head.head_sequence, RUN_GRAPH_LIMITS.pageBatches])
-    const batches: RepeatGraphBatchCurrent[] = []
-    const page = (through: string): RepeatGraphPageCurrent => ({ kind: 'page', protocolVersion: 1, scope,
+    const batches: RepeatGraphBatchV3[] = []
+    const page = (through: string): RepeatGraphPageV3 => ({ kind: 'page', protocolVersion: 1, scope,
       baseSequence: afterSequence, throughSequence: through, headSequence: head.head_sequence,
       retentionFloor: head.retention_floor, hasMore: BigInt(through) < BigInt(head.head_sequence), batches: [...batches] })
     let through = afterSequence
@@ -154,8 +153,8 @@ export async function readRepeatGraphPage(pool: pg.Pool, input: unknown,
       if (bodies.rows.length !== selected.length) return reset(scope, afterSequence, head, 'gap')
       let previous = afterSequence
       for (const row of bodies.rows) {
-        let batch: RepeatGraphBatchCurrent
-        try { batch = RepeatGraphBatchCurrentSchema.parse(JSON.parse(row.payload)) }
+        let batch: RepeatGraphBatchV3
+        try { batch = RepeatGraphBatchV3Schema.parse(JSON.parse(row.payload)) }
         catch { return reset(scope, afterSequence, head, 'schema_changed') }
         if (batch.sequence !== row.sequence || batch.previousSequence !== previous || !sameCanonicalGraphScope(batch.scope, scope)) {
           return reset(scope, afterSequence, head, 'gap')
@@ -164,7 +163,7 @@ export async function readRepeatGraphPage(pool: pg.Pool, input: unknown,
       }
     }
     if (through === afterSequence && after < BigInt(head.head_sequence)) return reset(scope, afterSequence, head, 'gap')
-    const response = RepeatGraphPageCurrentSchema.safeParse(page(through))
+    const response = RepeatGraphPageV3Schema.safeParse(page(through))
     if (!response.success) return reset(scope, afterSequence, head, 'schema_changed')
     try { await assertRepeatGraphBatchesCommitted(sql, scope, head.head_sequence, response.data.batches) }
     catch (error) {
@@ -179,5 +178,5 @@ function readRequestForEvents(input: unknown): void {
   if (typeof input !== 'object' || input === null || !('afterSequence' in input)
     || !GraphSequenceSchema.safeParse(input.afterSequence).success) throw new RunGraphError('GRAPH_INVALID_CURSOR')
   if (!('protocolVersion' in input) || input.protocolVersion !== 1) throw new RunGraphError('GRAPH_UNSUPPORTED_PROTOCOL')
-  if (!RepeatGraphEventsRequestCurrentSchema.safeParse(input).success) throw new RunGraphError('GRAPH_SCOPE_MISMATCH')
+  if (!RepeatGraphEventsRequestV3Schema.safeParse(input).success) throw new RunGraphError('GRAPH_SCOPE_MISMATCH')
 }

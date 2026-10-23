@@ -15,7 +15,7 @@ import { CodexRpcError } from '../src/modules/harnesses/codexStdioTransport.js'
 import { HarnessExecutionError, NativeDeliveryError } from '../src/modules/harnesses/errors.js'
 import type { NativeSessionStart } from '../src/modules/harnesses/port.js'
 import type { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
-import { context, ScriptedConversationNative, ScriptedConversationStore } from './helpers/agentChatF1.js'
+import { context, F1Native, F1Store } from './helpers/agentChatF1.js'
 import { deferred } from './helpers/deferred.js'
 
 async function eventually(check: () => boolean | Promise<boolean>) {
@@ -29,7 +29,7 @@ async function eventually(check: () => boolean | Promise<boolean>) {
 /** Real service/repository, scripted SQL and a fake native manager. NOT a PostgreSQL/native test. */
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'agent-chat-h1-'))
-  const store = new ScriptedConversationStore()
+  const store = new F1Store()
   store.row.native_session_id = null; store.row.provider_version = null
   delete store.row.record.startupDelivered
   store.row.record.workingDirectory = root; store.row.record.runtimeDirectory = root
@@ -101,7 +101,7 @@ async function fixture() {
   let disposal = disposeGate
   const owners = new Map<string, Native>()
   const natives: Native[] = []
-  class Native extends ScriptedConversationNative {
+  class Native extends F1Native {
     override readonly harness = 'codex' as const
     disposed = 0
     override async createSession(input?: NativeSessionStart) {

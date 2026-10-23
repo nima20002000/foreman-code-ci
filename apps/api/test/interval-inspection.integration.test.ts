@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import {
   RUN_INSPECTION_TOOLS, RunExecutionDetailSchema, RunExecutionBindingsPageSchema, RunExecutionsPageSchema,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'

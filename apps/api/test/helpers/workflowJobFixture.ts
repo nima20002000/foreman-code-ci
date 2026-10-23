@@ -2,7 +2,7 @@ import { readPublicProjectionLocked } from '../../src/modules/run-graph/compactS
 import assert from 'node:assert/strict'
 import { JobExecutionRecordSchema } from '@foreman-code/contracts/job-verification'
 import type { JobWorkflowNode } from '@foreman-code/contracts/job-workflow'
-import type { CurrentFixtureForm, WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
+import type { CurrentFixtureForm, WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 import { requireAuthorization } from '../../src/modules/access/policy.js'
 import { openRunGraphPublication } from '../../src/modules/run-graph/publication.js'
 import { publicNodeProjectionFacts, readPublicNodeProjection } from '../../src/modules/run-graph/publicProjection.js'
@@ -16,7 +16,7 @@ import { workflowSettlementFixture } from './workflowSettlementFixture.js'
 /** Job transport/source and native closure are fixtures; admission, typed Job
  * persistence, acceptance, canonical publication and source binding are real. */
 export async function workflowJobFixture(db: Awaited<ReturnType<typeof currentDatabase>>,
-  configure: (graph: WorkflowDefinitionCurrent, job: JobWorkflowNode) => WorkflowDefinitionCurrent,
+  configure: (graph: WorkflowDefinitionV3, job: JobWorkflowNode) => WorkflowDefinitionV3,
   form: CurrentFixtureForm = 'sequential') {
   let queue: Awaited<ReturnType<typeof buildQueueFixture>> | undefined
   let definition: Awaited<ReturnType<Awaited<ReturnType<typeof buildQueueFixture>>['save']>> | undefined

@@ -5,7 +5,7 @@ import type { McpServer } from '@modelcontextprotocol/server'
 import {
   CANONICAL_RUN_GRAPH_MCP_TOOLS, CANONICAL_RUN_GRAPH_ROUTES,
   CanonicalRunGraphReadRequestSchema, CanonicalRunGraphCurrentSchema, CanonicalRunGraphEventsResponseSchema,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import { DomainError } from '../src/modules/errors.js'
 import { registerOperatorHttpSecurity } from '../src/modules/access/http.js'
 import type { PostgresAccessService } from '../src/modules/access/postgres.js'

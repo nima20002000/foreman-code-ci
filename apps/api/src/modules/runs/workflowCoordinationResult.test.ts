@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { COORDINATION_RESULT_PROTOCOL, HarnessExecutionSchema, type ExecutionResult } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture, WorkActivationInputSchema } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture, WorkActivationInputSchema } from '@foreman-code/contracts/wave25'
 import { parseWorkflowCoordinationResult, parseWorkflowWorkResult, workflowArtifactResult } from './workflowCoordinationResult.js'
 import { normalizeRepeatTerminal, repeatTerminalResolution } from './repeatNode.js'
 import { workflowExecutionRequest } from './workflowExecutionRequest.js'

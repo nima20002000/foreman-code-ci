@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { expect, it, vi } from 'vitest'
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
+import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { ComputerMaintenance } from './maintenance.js'
 import type { PostgresCommandCoordinator } from '../commands/postgres.js'
@@ -80,7 +82,7 @@ it.each(['fleet', 'target'] as const)('reports failed %s observations beside the
   await f.fleet.drain()
 })
 
-it.each(['fleet', 'target'] as const)('returns %s maintenance failure observations through authenticated HTTP and denies an unauthorized caller', async kind => {
+it.each(['fleet', 'target'] as const)('returns %s maintenance failure observations through authenticated MCP and denies an unauthorized caller', async kind => {
   const f = fixture()
   f.probe.mockRejectedValue(Object.assign(new Error('private transport data'), { code: 'DEVICE_TRANSPORT_ERROR' }))
   const access = { authenticate: async (token: string) => token === 'reader'
@@ -88,24 +90,33 @@ it.each(['fleet', 'target'] as const)('returns %s maintenance failure observatio
   const app = buildApp({ logger: false,
     readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
     operator: { access, services: { commands: f.commands, computerMaintenance: f.fleet } as unknown as OperatorServices } })
-  const read = (token: string) => kind === 'target'
-    ? app.inject({ method: 'POST', url: '/api/management/computers/maintenance/read',
-      headers: { authorization: `Bearer ${token}` }, payload: { target: f.target } })
-    : app.inject({ method: 'GET', url: '/api/management/computers/maintenance',
-      headers: { authorization: `Bearer ${token}` } })
+  const address = await app.listen({ host: '127.0.0.1', port: 0 })
+  const argumentsForRead = kind === 'target' ? { target: f.target } : {}
+  const clients: Client[] = []
+  const connect = async (token: string) => {
+    const client = new Client({ name: 'maintenance-reader', version: '1' })
+    clients.push(client)
+    await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), {
+      authProvider: { token: async () => token },
+    }))
+    return client
+  }
   try {
-    const result = await read('reader')
-    expect(result.statusCode).toBe(200)
-    expect(result.json()).toMatchObject({ computers: [{ status: null,
+    const reader = await connect('reader')
+    const result = await reader.callTool({ name: 'computers_maintenance_status', arguments: argumentsForRead })
+    expect(result.isError).not.toBe(true)
+    expect(decodeMcpToolResult(result)).toMatchObject({ computers: [{ status: null,
       observation: { status: 'unavailable', consecutiveFailures: 1,
         lastError: expect.stringContaining('DEVICE_TRANSPORT_ERROR') } }] })
-    expect((await read('denied')).statusCode).toBe(403)
+    const denied = await connect('denied')
+    expect((await denied.callTool({ name: 'computers_maintenance_status', arguments: argumentsForRead })).isError).toBe(true)
     expect(f.probe).toHaveBeenCalledOnce()
     f.probe.mockResolvedValue(f.status)
-    const recovered = await read('reader')
-    expect(recovered.json()).toMatchObject({ computers: [{ status: f.status,
+    const recovered = await reader.callTool({ name: 'computers_maintenance_status', arguments: argumentsForRead })
+    expect(decodeMcpToolResult(recovered)).toMatchObject({ computers: [{ status: f.status,
       observation: { status: 'available', lastError: null, consecutiveFailures: 0 } }] })
   } finally {
+    await Promise.all(clients.map(client => client.close()))
     await app.close()
     await f.fleet.drain()
   }

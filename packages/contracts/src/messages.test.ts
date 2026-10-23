@@ -5,8 +5,8 @@ import { MessageSchema as RootMessageSchema, RecordedAgentHarnessSchema as RootH
 import { MessageSchema, NativeSourceMessageSchema } from './messages.js';
 import { RecordedAgentHarnessSchema } from './harnessIdentity.js';
 import { AgentChatStateSchema, agentChatFixtures, AgentChatSourceTranscriptSchema } from './agentChat.js';
-import { WorkflowRunCurrentSchema, WorkflowVersionCurrentSchema } from './current/saved.js';
-import { makeCurrentWorkflowFixture } from './current/currentFixture.js';
+import { WorkflowRunV3Schema, WorkflowVersionV3Schema } from './wave25/saved.js';
+import { makeCurrentWorkflowFixture } from './wave25/currentFixture.js';
 import { AgentSettingsSearchSchema } from './management/settingsExperience.js';
 
 describe('shared message and identity compatibility', () => {
@@ -36,8 +36,8 @@ describe('shared message and identity compatibility', () => {
     expect(stored).not.toHaveProperty('master');
     expect(stored.operator).toMatchObject({ role: 'operator', boardAddable: false });
     const old = makeCurrentWorkflowFixture('compatibility', 'approval');
-    expect(WorkflowVersionCurrentSchema.parse(old.version)).toEqual(old.version);
-    expect(WorkflowRunCurrentSchema.parse(old.run)).toEqual(old.run);
+    expect(WorkflowVersionV3Schema.parse(old.version)).toEqual(old.version);
+    expect(WorkflowRunV3Schema.parse(old.run)).toEqual(old.run);
     const result = { outcome: 'succeeded', output: { original: ['business', 3] } };
     expect(ExecutionResultSchema.parse(result)).toEqual(result);
   });

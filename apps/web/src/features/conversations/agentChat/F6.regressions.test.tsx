@@ -9,7 +9,7 @@ import { agentChatFixtures, type AgentChatState, type AgentChatTurn, type SendAg
 import { server } from '../../../mocks/server'
 import { createAgentChatMock } from '../../../shared/mocks/agentChatHandlers'
 import { AgentPopover } from '../../../shared/ui/nocturne'
-import { AgentChatPanel } from '../../graph'
+import { AgentChatPanel } from '../../graph/AgentPanels'
 import { clearRememberedChatScroll } from '../chatScrollStore'
 import { getConversationDraft, useConversationDraftStore } from '../conversationDraftStore'
 import { agentChatContextKey } from './model'

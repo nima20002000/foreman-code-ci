@@ -2,10 +2,10 @@ import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { WorkspaceLocationSetResultSchema } from '@foreman-code/contracts/management'
-import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveResultSchema, RunStartCurrentResultSchema,
-  SavedRunDetailsSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveResultSchema, RunStartV3ResultSchema,
+  SavedRunDetailsSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import type { NativeHarnessSessionManager } from '../src/modules/harnesses/port.js'
-import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
+import { Wave25WorkerCredentialService } from '../src/modules/interactions/wave25/credentials.js'
 import { databaseCredentialDeadline } from '../src/modules/access/credentialLifetime.js'
 import { LOCAL_RUNNER_ID } from '../src/modules/workspaces/location.js'
 import type { RunOwnership } from '../src/modules/runs/ownership.js'
@@ -67,7 +67,7 @@ async function start(runtime: Runtime) {
   expect(decodeMcpToolResult(denied)).toMatchObject({ error: { code: 'ACCESS_DENIED' } })
   const response = await runtime.client.callTool({ name: 'run_start', arguments: input })
   expect(response.isError, JSON.stringify(decodeMcpToolResult(response))).not.toBe(true)
-  const started = RunStartCurrentResultSchema.parse(decodeMcpToolResult(response))
+  const started = RunStartV3ResultSchema.parse(decodeMcpToolResult(response))
   const read = async () => {
     const result = await deniedClient.callTool({ name: 'run_get', arguments: {
       workspaceId: saved.workspaceId, runId: started.run.id, detail: 'full',

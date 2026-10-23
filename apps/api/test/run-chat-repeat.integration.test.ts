@@ -1,13 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import {
   allExecutions, historicalFixture, historicalRows, openHistoricalApi, readSelected, runA,
   selectedPath, sendAndFinish, targetFor, type HistoricalApi,
 } from './helpers/historicalRuns.js'
-import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { approvalFixture } from './helpers/approvalFixture.js'
 import { assertExactOrigin, expectProtocolDenial, retainedChatRows } from './helpers/historicalRunChat.js'
@@ -120,7 +119,7 @@ describe.skipIf(!postgresEnabled)('Historical Run-scoped chat repeat PostgreSQL 
   }, 120_000)
 
   it('routed workflow rejects an ephemeral Codex configuration before admission', async () => {
-    const db = await migratedDatabase()
+    const db = await agent3Database()
     try {
       const fixture = makeCurrentWorkflowFixture(randomUUID(), 'sequential')
       const harness = approvalFixture().configurations[1]!.harness
@@ -130,7 +129,7 @@ describe.skipIf(!postgresEnabled)('Historical Run-scoped chat repeat PostgreSQL 
         harness: { ...harness, advanced: { ...harness.advanced!, sessionPersistence: 'ephemeral' } },
       }))
       // Seed calls the production Save service without the runtime fixture's harness normalization.
-      await expect(seedWorkflowFixture(db.pool, db.directory, fixture)).rejects.toMatchObject({
+      await expect(seedAgent3(db.pool, db.directory, fixture)).rejects.toMatchObject({
         code: 'WORKFLOW_HARNESS_APPROVAL_CONFLICT',
         status: 409,
         message: expect.stringContaining('Routed approval requires a persistent Codex session'),

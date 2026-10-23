@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { Button, Select, Switch } from '../../shared/ui/nocturne'
-import { NodeRow } from '../graph'
-import type { BrowserComputerLabel, BrowserProfileCatalog } from '../browser-profiles'
+import { NodeRow } from '../graph/AgentMainFields'
+import type { BrowserComputerLabel, BrowserProfileCatalog } from '../browser-profiles/types'
 import { DEFAULT_AGENT_BROWSER_TABS } from '@foreman-code/contracts/browser-profiles'
 import type { NodeBrowserSettings } from './types'
 

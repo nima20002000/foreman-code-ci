@@ -1,12 +1,12 @@
 import { canonicalJson, type EngineChatReadback, type HarnessExecution,
   type NativeSessionReference } from '@foreman-code/contracts'
-import type { SqlQuery, SqlTransaction } from '../../infrastructure/transaction.js'
+import type { GraphSqlClient, GraphTransactionSql } from '../run-graph/connection.js'
 import { DomainError } from '../errors.js'
 import type { PostgresRunRepository } from '../runs/postgres.js'
 import type { RunOwnership } from '../runs/ownership.js'
-import { markWorkflowControlCommandLocked, readWorkflowControlCommandLocked } from '../collaboration/index.js'
+import { markWorkflowControlCommandLocked, readWorkflowControlCommandLocked } from '../collaboration/workflowControlRecords.js'
 import type { WorkflowChatNativeTarget, WorkflowChatOwnerPort,
-  WorkflowChatTarget, WorkflowControlCommand } from '../collaboration/index.js'
+  WorkflowChatTarget, WorkflowControlCommand } from '../collaboration/workflowControlTypes.js'
 import type { SessionWriteLease, SingleWriterSessionManager } from './sessionWriter.js'
 import { readWorkflowNativeChat } from './workflowChatNativeRead.js'
 import { admittedWorkflowChatPrompt } from './workflowChatInput.js'
@@ -19,7 +19,7 @@ export interface WorkflowChatNativeCapture {
   assertCurrent(): void
 }
 export interface WorkflowChatNativeOwnerDependencies {
-  sql: SqlQuery
+  sql: GraphSqlClient
   runs: PostgresRunRepository
   withOwner<T>(target: WorkflowChatTarget,
     work: (owner: RunOwnership, source: HarnessExecution) => Promise<T>): Promise<T>
@@ -30,7 +30,7 @@ export interface WorkflowChatNativeOwnerDependencies {
     owner: RunOwnership, source: HarnessExecution): Promise<void>
 }
 
-async function assertCapturedWriterLocked(sql: SqlTransaction, capture: WorkflowChatNativeCapture,
+async function assertCapturedWriterLocked(sql: GraphTransactionSql, capture: WorkflowChatNativeCapture,
   agentId: string): Promise<void> {
   capture.assertCurrent()
   const { lease, native, session } = capture

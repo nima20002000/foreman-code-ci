@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util'
 import { ProviderAccountWorkerAuthorityRequestSchema } from '@foreman-code/contracts/provider-accounts'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
-import type { DeviceExtensionRegistration } from '../devices/index.js'
+import type { DeviceExtensionRegistration } from '../devices/deviceApplicationChannel.js'
 import { DomainError } from '../errors.js'
 import type { ProviderAccountsService } from './service.js'
 

@@ -17,9 +17,8 @@ it('ends an expired session lock wait with a retryable domain error before execu
     grants: [], expiresAt: '2099-01-01T00:00:00.000Z', revokedAt: null }
   const release = vi.fn()
   const end = vi.fn(async () => undefined)
-  // The lock statements are the only ones that bind a single key.
-  const client = { release, query: async (_statement: string, values: unknown[] = []) => ({
-    rows: values.length === 1 ? [{ locked: false }] : [], rowCount: 0,
+  const client = { release, query: async (statement: string) => ({
+    rows: statement.includes('advisory_lock(') ? [{ locked: false }] : [], rowCount: 0,
   }) }
   const pool = { options: {}, connect: vi.fn(), end: vi.fn() }
   const dedicatedPool = { connect: vi.fn(async () => client), end, on: () => undefined }
@@ -45,10 +44,8 @@ it.each([0, 0.99])('backs off contended session locks with bounded jitter (rando
     grants: [], expiresAt: '2099-01-01T00:00:00.000Z', revokedAt: null }
   const attempts: number[] = []
   let available = false
-  const perform = vi.fn(async () => 'captured')
-  // Before the command runs, the only statements that bind a single key are the lock attempts.
-  const client = { release: vi.fn(), query: async (_sql: string, values: unknown[] = []) => {
-    if (values.length === 1 && !perform.mock.calls.length) {
+  const client = { release: vi.fn(), query: async (sql: string) => {
+    if (sql.includes('pg_try_advisory_lock(')) {
       attempts.push(performance.now())
       return { rows: [{ locked: available }] }
     }
@@ -57,6 +54,7 @@ it.each([0, 0.99])('backs off contended session locks with bounded jitter (rando
   const dedicatedPool = { connect: async () => client, end: vi.fn(async () => undefined), on: () => undefined }
   vi.spyOn(pg, 'Pool').mockImplementation(function () { return dedicatedPool } as never)
   const coordinator = new PostgresCommandCoordinator({ options: {}, end: vi.fn() } as unknown as pg.Pool)
+  const perform = vi.fn(async () => 'captured')
   const pending = coordinator.execute({ principal, source: 'mcp', operation: 'capture',
     commandId: 'capture', targetKey: 'workspace', payload: {}, dedicatedConnection: true, perform })
   await vi.advanceTimersByTimeAsync(10_000)
@@ -79,9 +77,8 @@ it('keeps the ten-minute deadline while backing off a permanently contended lock
   const principal: ManagementPrincipal = { id: 'fixture', name: 'Fixture', audience: 'operator',
     grants: [], expiresAt: '2099-01-01T00:00:00.000Z', revokedAt: null }
   let attempts = 0
-  // No command runs here, so every statement that binds a single key is a lock attempt.
-  const client = { release: vi.fn(), query: async (_sql: string, values: unknown[] = []) => {
-    if (values.length === 1) {
+  const client = { release: vi.fn(), query: async (sql: string) => {
+    if (sql.includes('pg_try_advisory_lock(')) {
       attempts++
       return { rows: [{ locked: false }] }
     }

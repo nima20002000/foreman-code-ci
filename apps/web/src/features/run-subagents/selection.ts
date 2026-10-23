@@ -1,7 +1,7 @@
 import { useCallback, useSyncExternalStore } from 'react'
 import { defaultParseSearch, defaultStringifySearch, useRouter } from '@tanstack/react-router'
 import { RunSubagentGetInputSchema } from '@foreman-code/contracts/subagents'
-import { readRunSelection, SELECTED_SUBAGENT_FRAGMENT_PARAM } from '../runs-selector'
+import { readRunSelection, SELECTED_SUBAGENT_FRAGMENT_PARAM } from '../runs-selector/search'
 import type { SubagentsScope } from './query'
 
 export const SUBAGENT_SEARCH_PARAM = SELECTED_SUBAGENT_FRAGMENT_PARAM

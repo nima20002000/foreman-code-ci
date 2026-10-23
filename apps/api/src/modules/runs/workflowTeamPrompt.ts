@@ -1,5 +1,5 @@
 import { AGENT_PRODUCT_ROLE_LABELS, type AgentConfigurationVersion, type AgentProductRole } from '@foreman-code/contracts'
-import type { WorkflowDefinitionCurrent, WorkflowVersionCurrent } from '@foreman-code/contracts/current'
+import type { WorkflowDefinitionV3, WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 
 /** The pinned facts of one connected Agent that its neighbours are told about. */
 export interface WorkflowTeamMember { productRole?: AgentProductRole | undefined; instructions?: string | undefined }
@@ -9,14 +9,14 @@ export type WorkflowTeam = Readonly<Record<string, WorkflowTeamMember>>
 /** An Orchestrator or Master receives the result of the work it hands out and checks it. */
 export const isCoordinatorRole = (role: string | null | undefined) => role === 'orchestrator' || role === 'master'
 
-function connectedNodeIds(definition: WorkflowDefinitionCurrent, nodeId: string): string[] {
+function connectedNodeIds(definition: WorkflowDefinitionV3, nodeId: string): string[] {
   const ids = definition.edges.flatMap(edge => edge.kind !== 'execution' ? []
     : edge.source === nodeId ? [edge.target] : edge.target === nodeId ? [edge.source] : [])
   return [...new Set(ids)].filter(id => id !== nodeId && definition.nodes.some(node => node.id === id && node.kind !== 'job'))
 }
 
 /** Reads the exact pinned configurations of the Agent and its connected Agents. */
-export async function readWorkflowTeam(version: WorkflowVersionCurrent, nodeId: string,
+export async function readWorkflowTeam(version: WorkflowVersionV3, nodeId: string,
   read: (configurationVersionId: string) => Promise<Pick<AgentConfigurationVersion, 'productRole' | 'prompt'> | undefined>,
 ): Promise<WorkflowTeam> {
   const team: Record<string, WorkflowTeamMember> = {}
@@ -32,7 +32,7 @@ export async function readWorkflowTeam(version: WorkflowVersionCurrent, nodeId: 
 const short = (text: string, limit = 240) => text.length > limit ? `${text.slice(0, limit - 1)}…` : text
 
 /** Request-only: who this Agent works with and how work moves between them. Compact by design. */
-export function workflowTeamPrompt(definition: WorkflowDefinitionCurrent, nodeId: string, team: WorkflowTeam,
+export function workflowTeamPrompt(definition: WorkflowDefinitionV3, nodeId: string, team: WorkflowTeam,
   callerNodeId?: string): string | undefined {
   const node = definition.nodes.find(item => item.id === nodeId)
   const connected = connectedNodeIds(definition, nodeId)

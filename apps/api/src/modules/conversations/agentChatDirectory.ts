@@ -9,7 +9,7 @@ import { ApprovedRootAllowlistSchema, WorkspaceRootPolicySchema } from '@foreman
 import { requiredLocationAccess } from '../workspaces/location.js'
 import { DomainError } from '../errors.js'
 import { workspaceRootHostScope } from '../sources/rootPolicies.js'
-import { readAcceptedPlacement } from '../placement/index.js'
+import { readAcceptedPlacement } from '../placement/persistence.js'
 import { lockWorkspaceFolders } from '../workspaces/folderLocks.js'
 
 function unavailable(message: string): never { throw new DomainError('AGENT_CHAT_DIRECTORY_UNAVAILABLE', message, 409) }

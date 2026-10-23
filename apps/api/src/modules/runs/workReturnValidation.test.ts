@@ -1,18 +1,18 @@
 import { HarnessExecutionSchema, type ExecutionResult } from '@foreman-code/contracts'
 import {
-  WorkActivationInputSchema, WorkflowVersionCurrentSchema, makeCurrentWorkflowFixture, parseWorkHandoffResult,
-} from '@foreman-code/contracts/current'
+  WorkActivationInputSchema, WorkflowVersionV3Schema, makeCurrentWorkflowFixture, parseWorkHandoffResult,
+} from '@foreman-code/contracts/wave25'
 import { describe, expect, it } from 'vitest'
 import { workResultRepairPrompt } from '../interactions/workResultRepair.js'
 import { currentInitialPrompt } from './currentRouting.js'
 import { normalizeRepeatTerminal } from './repeatNode.js'
 import { parseWorkResultForInput } from './workHandoffResult.js'
 import { assertWorkHandoffDeliveryLocked } from './workHandoffDelivery.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import type { GraphTransactionSql } from '../run-graph/connection.js'
 
 function fixture() {
   const saved = makeCurrentWorkflowFixture('received-work-return')
-  const version = WorkflowVersionCurrentSchema.parse({ ...saved.version,
+  const version = WorkflowVersionV3Schema.parse({ ...saved.version,
     definition: { ...saved.version.definition, handoffs: { contractVersion: 1 } } })
   const [requester, receiver] = saved.version.definition.nodes
   const requestId = `work-request-${'abcd1234'.repeat(8)}`
@@ -122,7 +122,7 @@ describe('received work return identity', () => {
         return { rows: values[1] === f.requestId ? [{ record: request, parent_id: f.requestId }] : [], rowCount: 1 }
       }
       return { rows: [{ bytes: 1000 }], rowCount: 1 }
-    } } as unknown as SqlTransaction
+    } } as unknown as GraphTransactionSql
     await expect(assertWorkHandoffDeliveryLocked({ sql, scope: f.scope, version: f.version, now: f.createdAt },
       execution, request.destinationActivationId, parseWorkHandoffResult(result))).resolves.toBeUndefined()
     expect(execution.result).toEqual(result)

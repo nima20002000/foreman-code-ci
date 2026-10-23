@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import type pg from 'pg'
 import { DEFAULT_HARNESS_DEFAULTS, AgentConfigurationVersionSchema, AgentSchema } from '@foreman-code/contracts'
-import { WorkflowDefinitionCurrentSchema, WorkflowVersionCurrentSchema, ExecutableWorkflowCurrentSchema, canonicalGraphJson } from '@foreman-code/contracts/current'
+import { WorkflowDefinitionV3Schema, WorkflowVersionV3Schema, ExecutableWorkflowV3Schema, canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import { ensureAcceptanceSeed } from '../src/infrastructure/seed.js'
 import { readImmutableWorkflowVersion } from '../src/modules/workflows/immutableRead.js'
 
@@ -25,9 +25,9 @@ describe('ENG07 R01 clean-start seed uses real current V3 read contracts', () =>
     const db = seedDatabase()
     await ensureAcceptanceSeed(db.pool)
     const one = (table: string) => db.statements.find((statement) => statement.text.startsWith(`insert into ${table} (`))!
-    const workflow = WorkflowDefinitionCurrentSchema.parse(record(one('workflows'), 3))
+    const workflow = WorkflowDefinitionV3Schema.parse(record(one('workflows'), 3))
     const statement = one('workflow_versions')
-    const version = WorkflowVersionCurrentSchema.parse(record(statement, 5))
+    const version = WorkflowVersionV3Schema.parse(record(statement, 5))
     const configurations = db.statements.filter((item) => item.text.startsWith('insert into agent_configuration_versions '))
       .map((item) => AgentConfigurationVersionSchema.parse(record(item, 4)))
     const agents = db.statements.filter((item) => item.text.startsWith('insert into agents '))
@@ -44,7 +44,7 @@ describe('ENG07 R01 clean-start seed uses real current V3 read contracts', () =>
     expect(agents.map((agent) => agent.productRole)).toEqual(['coder', 'coder', 'coder'])
     expect(configurations.map((configuration) => configuration.harness.harness)).toEqual(['codex', 'codex', 'codex'])
     expect(configurations[1]!.harness.model).toBe(DEFAULT_HARNESS_DEFAULTS.codex.model)
-    expect(ExecutableWorkflowCurrentSchema.parse({ version, configurations })).toEqual({ version, configurations })
+    expect(ExecutableWorkflowV3Schema.parse({ version, configurations })).toEqual({ version, configurations })
     expect(statement.text).toMatch(/execution_semantics_version\) values \(\$1, \$2, \$3, \$4, \$5, \$6::jsonb, 3\)/)
     expect(version.contentHash).toBe(`sha256:${createHash('sha256').update(canonicalGraphJson({
       definition: workflow, configurations: version.agentConfigurationVersionIds, entryNodeId: version.entryNodeId,
@@ -63,7 +63,7 @@ describe('ENG07 R01 clean-start seed uses real current V3 read contracts', () =>
     const db = seedDatabase()
     await ensureAcceptanceSeed(db.pool)
     const statement = db.statements.find((item) => item.text.startsWith('insert into workflow_versions '))!
-    const version = WorkflowVersionCurrentSchema.parse(record(statement, 5))
+    const version = WorkflowVersionV3Schema.parse(record(statement, 5))
     const row = { id: version.id, workspace_id: version.workspaceId, workflow_id: version.workflowId,
       version: version.version, entry_node_id: version.entryNodeId, execution_semantics_version: 3, record: version }
     for (const tag of [undefined, null, 1, 2, '3', 4]) {

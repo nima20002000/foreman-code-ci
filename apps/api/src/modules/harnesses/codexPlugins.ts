@@ -1,4 +1,5 @@
-import { resolve } from 'node:path'
+import { homedir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { z } from 'zod'
 import type { CodexPluginDetailResult, CodexPluginSummary } from '@foreman-code/contracts/management'
 import { DomainError } from '../errors.js'
@@ -11,7 +12,6 @@ import { BoundedPluginFiles, safePluginPart } from './boundedPluginFiles.js'
 import { inspectCodexPluginBundle } from './codexPluginInspection.js'
 import { pluginHash } from './codexPluginIdentity.js'
 import { NativePluginCatalogSchema, normalizeCodexPluginCatalog, type CodexPluginCatalog } from './codexPluginCatalog.js'
-import { codexHomeDirectory } from '../../config.js'
 
 export type { CodexPluginCatalog } from './codexPluginCatalog.js'
 export type CodexPluginMutation = { acknowledged: true; version: string | null }
@@ -46,7 +46,7 @@ export class NativeCodexPlugins implements CodexPluginAdapter {
     return runCommand(qualified.binary, args, this.directory, signal, environment,
       { maxOutputBytes: 8_000_000, ...(mutation && this.processRecovery ? { recovery: this.processRecovery } : {}) })
   }
-  private cache() { return resolve(codexHomeDirectory(), 'plugins', 'cache') }
+  private cache() { return resolve(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'plugins', 'cache') }
   private async cachedIds(signal: AbortSignal): Promise<string[]> {
     try {
       const cache = this.cache()

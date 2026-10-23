@@ -4,22 +4,21 @@ import { CURRENT_NATIVE_ACTIVITIES_SQL } from '../src/modules/run-graph/currentA
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import type pg from 'pg'
-import { GraphRunStateSchema, type RepeatGraphScopeCurrent, type RepeatGraphFactCurrent, type RepeatGraphEffectCurrent, type PublicGraphProjection } from '@foreman-code/contracts/current'
+import { GraphRunStateSchema, type RepeatGraphScopeV3, type RepeatGraphFactV3, type RepeatGraphEffectV3, type PublicGraphProjection } from '@foreman-code/contracts/wave25'
 import { graphSourceDigest, openRunGraphPublication } from '../src/modules/run-graph/publication.js'
 import { currentUnitSnapshot } from './helpers/currentUnitSnapshot.js'
-import { ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
-import type { SqlTransaction } from '../src/infrastructure/transaction.js'
+import { ExclusiveGraphConnection, type GraphTransactionSql } from '../src/modules/run-graph/connection.js'
 import type { RunOwnership } from '../src/modules/runs/ownership.js'
 
-export const projectionScope: RepeatGraphScopeCurrent = { workspaceId: 'ws', workflowId: 'wf', workflowVersionId: 'v3', runId: 'run', executionSemanticsVersion: 3 }
+export const projectionScope: RepeatGraphScopeV3 = { workspaceId: 'ws', workflowId: 'wf', workflowVersionId: 'v3', runId: 'run', executionSemanticsVersion: 3 }
 export const projectionDigest = `sha256:${'a'.repeat(64)}`
-export function occurrenceFact(id = 'one'): RepeatGraphFactCurrent {
+export function occurrenceFact(id = 'one'): RepeatGraphFactV3 {
   return { type: 'repeat.occurrence', occurrence: { contractVersion: 1,
     identity: { scope: projectionScope, blockId: `block-${id}`, occurrenceId: `occ-${id}`, occurrenceIndex: 1 },
     input: { bindingId: `binding-${id}`, inputDigest: projectionDigest, previous: null } } }
 }
 export function publicationInput(id = 'one') {
-  const effect: RepeatGraphEffectCurrent = { identity: { kind: 'input.bind', entityId: `effect-${id}` }, digest: projectionDigest,
+  const effect: RepeatGraphEffectV3 = { identity: { kind: 'input.bind', entityId: `effect-${id}` }, digest: projectionDigest,
     operation: 'occurrence.create', subjectId: `occ-${id}` }
   return { evidence: { sourceKind: 'input_binding' as const, sourceId: `source-${id}`, sourceRevision: '1' }, sourceDigest: projectionDigest, effect }
 }
@@ -136,7 +135,7 @@ export class ProjectionDatabase {
     assert.equal(this.historyBodyReads, 0)
   }
   readonly owner = { runId: projectionScope.runId, assertOwned: () => { if (this.ownerLost) throw new Error('RUN_OWNERSHIP_LOST') },
-    readOneShotFence: async (sql: SqlTransaction) => {
+    readOneShotFence: async (sql: GraphTransactionSql) => {
       const row = (await sql.query<{ owner_id: string; fence: string }>('select projection_test_owner_fence')).rows[0]
       assert.ok(row); return { ownerId: row.owner_id, fence: row.fence }
     } } as unknown as RunOwnership

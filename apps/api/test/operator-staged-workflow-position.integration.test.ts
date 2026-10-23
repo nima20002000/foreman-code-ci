@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 import {
   CurrentEditReadResultSchema, CurrentWorkflowReadResultSchema, SavedManagedWorkflowSchema,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import { graphHeaders, graphRpcValue } from './graph-composition-fixture.js'
 import { useWorkflowManagementFixture } from './workflowManagement.helpers.js'
 

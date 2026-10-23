@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { AgentMutationResultSchema, ManagedAgentDetailSchema } from '@foreman-code/contracts/management'
-import { CurrentWorkflowSaveResultSchema, RunStartCurrentInputSchema, RunStartCurrentResultSchema,
-  makeCurrentWorkflowFixture, type RunStartCurrentInput } from '@foreman-code/contracts/current'
+import { CurrentWorkflowSaveResultSchema, RunStartV3InputSchema, RunStartV3ResultSchema,
+  makeCurrentWorkflowFixture, type RunStartV3Input } from '@foreman-code/contracts/wave25'
 import * as startLocks from '../src/modules/runs/startLocks.js'
 import { LOCAL_RUNNER_ID } from '../src/modules/workspaces/location.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
@@ -25,7 +25,7 @@ describe.runIf(postgresEnabled)('authenticated Start command resolution', () => 
       commandId: randomUUID(), expectedLocationRevision: 1, runnerId: LOCAL_RUNNER_ID, rootPath: database.directory })
     const save = await runtime.create()
     const saved = CurrentWorkflowSaveResultSchema.parse(await call(runtime, 'workflow_save_v3', save)).value
-    const input = RunStartCurrentInputSchema.parse({ workspaceId: saved.version.workspaceId, workflowId: saved.workflowId,
+    const input = RunStartV3InputSchema.parse({ workspaceId: saved.version.workspaceId, workflowId: saved.workflowId,
       workflowVersionId: saved.version.id, executionSemanticsVersion: 3, commandId: randomUUID(),
       expectedWorkflowRevision: saved.revision, expectedAgentConfigurationVersionIds: saved.version.agentConfigurationVersionIds,
       expectedLocationRevision: 2, input: {} })
@@ -38,7 +38,7 @@ describe.runIf(postgresEnabled)('authenticated Start command resolution', () => 
     return decodeMcpToolResult(reply)
   }
 
-  function http(runtime: Runtime, input: RunStartCurrentInput, suffix = '', token = runtime.writer.token) {
+  function http(runtime: Runtime, input: RunStartV3Input, suffix = '', token = runtime.writer.token) {
     return runtime.app.inject({ method: 'POST',
       url: `/api/management/workspaces/${input.workspaceId}/workflows/${input.workflowId}/runs${suffix}`,
       headers: { authorization: `Bearer ${token}` }, payload: input })
@@ -113,11 +113,11 @@ describe.runIf(postgresEnabled)('authenticated Start command resolution', () => 
   it('returns a committed Run after a lost reply and never permits its command to be canceled', async () => {
     const { runtime, input } = await setup()
     try {
-      const accepted = RunStartCurrentResultSchema.parse((await http(runtime, input)).json())
+      const accepted = RunStartV3ResultSchema.parse((await http(runtime, input)).json())
       const resolved = await call(runtime, 'run_start_resolve', input)
       expect(resolved).toMatchObject({ status: 'accepted', run: { id: accepted.run.id } })
       expect((await http(runtime, input, '/start-resolution')).json()).toEqual(resolved)
-      expect(RunStartCurrentResultSchema.parse((await http(runtime, input)).json())).toMatchObject({
+      expect(RunStartV3ResultSchema.parse((await http(runtime, input)).json())).toMatchObject({
         replayed: true, run: { id: accepted.run.id } })
       expect((await database.pool.query('select id from runs where workflow_id=$1', [input.workflowId])).rows).toHaveLength(1)
       const reader = await runtime.access.issue({ name: 'Read-only caller', audience: 'operator',
@@ -179,7 +179,7 @@ describe.runIf(postgresEnabled)('authenticated Start command resolution', () => 
       await vi.waitFor(() => expect(recoveryWaiting).toBe(true), { timeout: 5_000 })
       release.resolve()
       const [accepted, resolved] = await Promise.all([pending, resolution])
-      const run = RunStartCurrentResultSchema.parse(accepted.json()).run
+      const run = RunStartV3ResultSchema.parse(accepted.json()).run
       expect(resolved.isError).not.toBe(true)
       expect(decodeMcpToolResult(resolved)).toMatchObject({ status: 'accepted', run: { id: run.id } })
       expect((await database.pool.query('select id from runs where workflow_id=$1', [input.workflowId])).rows).toHaveLength(1)

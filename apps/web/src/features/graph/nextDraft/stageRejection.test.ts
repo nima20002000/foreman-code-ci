@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../../shared/api/client'
 import { protectedKey } from '../../../shared/api/protectedChatStorage'
 import { repairFixture } from './nim2644State.cases'
-import { nextDraftKey, newNextDraft } from '../../board-core'
+import { nextDraftKey, newNextDraft } from './state'
 import { isDefinitiveStageRejection, rejectEditOutbox, readEditOutbox, readEditSnapshot,
   reserveEditOutbox, storeEditSnapshot, withEditIntentLock, type EditIntentOutbox } from './editIntentStorage'
 

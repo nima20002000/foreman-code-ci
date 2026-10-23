@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
-import { GraphDraftOperationCurrentSchema, WorkflowDefinitionCurrentSchema } from '@foreman-code/contracts/current'
+import { GraphDraftOperationV3Schema, WorkflowDefinitionV3Schema } from '@foreman-code/contracts/wave25'
 import { fixture } from '../graph/nextDraft/core.cases'
-import { authoringHints, draftOperations, removeNode, stageAgentEdits, newNextDraft, undoNextDraft } from '../board-core'
+import { authoringHints, draftOperations, removeNode } from '../graph/nextDraft/model'
+import { stageAgentEdits } from '../graph/nextDraft/agentEdits'
+import { newNextDraft, undoNextDraft } from '../graph/nextDraft/state'
 import { applyMasterHierarchy, removeMasterHierarchy, reparentHierarchyWorker, stageHierarchyAgent } from './authoring'
 
 function draft() {
@@ -31,7 +33,7 @@ describe('explicit Master authoring through the ordinary staged Agent journal', 
     } }])
     const operation = draftOperations(changed.context, changed.graph, changed.agentEdits)
       .find(item => item.type === 'agent.configure')
-    expect(GraphDraftOperationCurrentSchema.parse(operation)).toMatchObject({ type: 'agent.configure',
+    expect(GraphDraftOperationV3Schema.parse(operation)).toMatchObject({ type: 'agent.configure',
       agentId: 'agent-0', expectedAgentRevision: 3, productRole: 'master' })
     expect(original.context.agents[0]!.agent.productRole).toBe('orchestrator')
     expect(undoNextDraft(changed).graph).toEqual(original.graph)
@@ -119,7 +121,7 @@ describe('explicit Master authoring through the ordinary staged Agent journal', 
     expect(replaced.graph.edges).toHaveLength(first.graph.edges.length)
     expect(replaced.graph.edges.find(item => item.id === edge.id)).toMatchObject({ source: 'node-1', target: 'node-0', workRequestDirection: 'both' })
     expect(replaced.graph.nodes[0]!.choice?.outcomes).toEqual(expect.arrayContaining(first.graph.nodes[0]!.choice!.outcomes))
-    expect(WorkflowDefinitionCurrentSchema.safeParse(replaced.graph).success).toBe(true)
+    expect(WorkflowDefinitionV3Schema.safeParse(replaced.graph).success).toBe(true)
     expect(authoringHints(replaced.graph, replaced.context, replaced.agentEdits)).toEqual([])
   })
 })

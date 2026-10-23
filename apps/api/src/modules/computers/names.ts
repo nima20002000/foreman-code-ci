@@ -3,7 +3,7 @@ import { ComputerRenameInputSchema, ComputerRenameResultSchema, type ComputerRen
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { requireAuthorization } from '../access/policy.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
-import type { PostgresCommandCoordinator } from '../commands/index.js'
+import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
 import { assertDeviceHostInstallation } from '../devices/hostAuthorization.js'
 import { buildComputerKey } from '../settings/buildComputers.js'

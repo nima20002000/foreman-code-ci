@@ -3,9 +3,8 @@ import {
   canonicalGraphJson, parseNativeGraphObservation, sameGraphScope,
   assertNativeGraphProjectionAuthority, type GraphFact, type NativeGraphObservation, type NativeGraphCorrelationRecord, type RunGraphScope,
   type NativeGraphProjectionKey,
-} from '@foreman-code/contracts/current'
-import { poisonGraphTransaction } from './connection.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+} from '@foreman-code/contracts/wave25'
+import { poisonGraphTransaction, type GraphTransactionSql } from './connection.js'
 import { type CurrentNativeActivity } from './currentActivity.js'
 import { readBatchNativeActivities } from './nativeBatchActivity.js'
 import { composePublicNodes, readPublicNodeInputs, type PublicNodeInputs } from './publicProjection.js'
@@ -196,7 +195,7 @@ async function ingest(publication: RunGraphPublication, input: HarnessNativeEven
 
 /** Runs one native batch: authority is read once, staged projection rows flush as
  * multi-row statements, and a single live COMMIT check runs after the publication writes. */
-export async function withNativeGraphProjectionBatch<T>(sql: SqlTransaction, runId: string, work: () => Promise<T>): Promise<T> {
+export async function withNativeGraphProjectionBatch<T>(sql: GraphTransactionSql, runId: string, work: () => Promise<T>): Promise<T> {
   if (hasNativeBatch(sql)) return work()
   const batch = openNativeBatch(sql, runId)
   try {
@@ -208,7 +207,7 @@ export async function withNativeGraphProjectionBatch<T>(sql: SqlTransaction, run
 
 /** Once per group: one native append per frame in frame order and one source-row read for the group.
  * Per-frame callers reuse these results from the batch instead of repeating the statements. */
-export async function prefetchNativeFrames(sql: SqlTransaction, runId: string,
+export async function prefetchNativeFrames(sql: GraphTransactionSql, runId: string,
   frames: readonly NormalizedNativeProducerEvent[]): Promise<void> {
   if (!activeNativeBatch(sql) || !frames.length) return
   const appended = await appendNormalizedNativeEvents(sql, frames)
@@ -223,7 +222,7 @@ export async function prefetchNativeFrames(sql: SqlTransaction, runId: string,
 
 /** Scopes read-once projection inputs to one native batch transaction. Inside it the
  * only writes are native-proof rows, which never change these non-native inputs. */
-async function projectionInputs(sql: SqlTransaction, scope: RunGraphScope, nodeIds: readonly string[]): Promise<PublicNodeInputs> {
+async function projectionInputs(sql: GraphTransactionSql, scope: RunGraphScope, nodeIds: readonly string[]): Promise<PublicNodeInputs> {
   return memoizeNativeRead(sql, `projection-inputs:${canonicalGraphJson(nodeIds)}`, () => readPublicNodeInputs(sql, scope, nodeIds))
 }
 

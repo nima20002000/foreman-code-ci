@@ -9,7 +9,7 @@ import {
   RunRecordDetailSchema, RunExecutionsPageSchema, RunVersionDetailSchema,
   RunExecutionDetailSchema, RunExecutionBindingsPageSchema,
   canonicalGraphJson, SavedWorkflowVersionSchema, SavedRunVersionSnapshotSchema,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import { PostgresSettingsRepository } from '../src/modules/settings/postgres.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'

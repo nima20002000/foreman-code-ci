@@ -1,14 +1,14 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { AgentHarnessSchema, HarnessConfigurationSchema } from '@foreman-code/contracts'
-import { AgentIdentity } from '../agents'
-import { AgentSettingsForm } from '../graph'
+import { AgentIdentity } from '../agents/AgentIdentity'
+import { AgentSettingsForm } from '../graph/AgentSettingsForm'
 import { HarnessBasicFields } from './HarnessBasicFields'
 import { HarnessConfigurationFields } from './HarnessConfigurationFields'
 import { HarnessSectionFields } from './HarnessSectionFields'
-import { OperatorAccessPicker } from '../operator-chat'
+import { OperatorAccessPicker } from '../operator-chat/OperatorAccessPicker'
 import { createHarnessEditor, prepareHarnessEditor } from './harnessEditor'
-import { agentNodeFacts, agentSettingRows } from '../board-core'
+import { agentNodeFacts, agentSettingRows } from '../graph/signalEdge'
 import { harnessSummary, retiredHarnessLabel } from './settingsPresentation'
 
 const configuration = HarnessConfigurationSchema.parse({
@@ -22,7 +22,7 @@ afterEach(cleanup)
 it('preserves saved OpenCode agent facts without mounting an editor or offering actions', () => {
   const original = structuredClone(agent)
   const onSave = vi.fn()
-  render(<AgentSettingsForm agent={agent} node={{ initialPrompt: 'Saved task' }} onSave={onSave} onClose={vi.fn()} onRemove={vi.fn()} />)
+  render(<AgentSettingsForm agent={agent} initialPrompt="Saved task" onSave={onSave} onClose={vi.fn()} onRemove={vi.fn()} />)
   expect(screen.getByRole('status')).toHaveTextContent(retiredHarnessLabel)
   expect(screen.getByText('Model: provider/saved-model')).toBeVisible()
   expect(screen.getByText('Saved task')).toBeVisible()

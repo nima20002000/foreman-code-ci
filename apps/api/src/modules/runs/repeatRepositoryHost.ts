@@ -4,20 +4,17 @@ import { applyMemoryEffectLocked, applyMemoryNativeLocked, prepareMemoryLaunchLo
 import { createMemoryBoardHooks } from './memoryBoardHooks.js'
 import { AgentConfigurationVersionSchema, SourceCapacityErrorDetailsSchema, type HarnessExecution, type ExecutionResult } from '@foreman-code/contracts'
 import {
-  AcceptedWorkflowRunCurrentSchema, ExecutableWorkflowCurrentSchema, WorkflowVersionCurrentSchema, RunWorktreeSchema,
-  CurrentRunVersionSnapshotSchema, type AcceptedWorkflowRunCurrent, type WorkflowVersionCurrent,
-} from '@foreman-code/contracts/current'
+  AcceptedWorkflowRunV3Schema, ExecutableWorkflowV3Schema, WorkflowVersionV3Schema, RunWorktreeSchema,
+  CurrentRunVersionSnapshotSchema, type AcceptedWorkflowRunV3, type WorkflowVersionV3,
+} from '@foreman-code/contracts/wave25'
 import type { WorkflowNativeProofRecord } from './workflowNativeProof.js'
 import type { WorkflowResultEffectFailure } from './workflowResultEffectFailure.js'
 import { DomainError } from '../errors.js'
 import type { WorkflowCollaborationHooks } from '../collaboration/workflowHooks.js'
 
 import {
-  assertGraphTransaction,
-  beforeGraphCommit,
-  isReadOnlyGraphTransaction
+  assertGraphTransaction, beforeGraphCommit, isReadOnlyGraphTransaction, type GraphTransactionSql,
 } from '../run-graph/connection.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { requireRepeatCanonicalReceiptBeforeCommit } from '../run-graph/repeatReceipts.js'
 import { assertNativeWorkflowConfiguration } from '../harnesses/nativeWorkflowConfiguration.js'
 import type { WorkspaceLocationService } from '../workspaces/location.js'
@@ -33,7 +30,7 @@ import { assertRepeatExecution, repeatConflict, repeatId, sameRepeatValue, type 
  * The central repository binds the real N1 producer; native authority and Run
  * lifecycle services remain mandatory. No v3 -> v2 coercion is permitted. */
 export interface RepeatCanonicalPublication {
-  readonly sql: SqlTransaction
+  readonly sql: GraphTransactionSql
   readonly scope: RepeatScope
   publishEffectLocked(effect: RepeatEffect, facts: readonly RepeatFact[], mutate: () => Promise<void>): Promise<void>
   assertEffectReceiptLocked(effect: RepeatEffect): Promise<void>
@@ -45,37 +42,37 @@ export interface RepeatCanonicalPublication {
 }
 export interface RepeatRepositoryServices {
   collaboration?: WorkflowCollaborationHooks
-  prepareCollaborationExecution?(owner: RunOwnership, run: AcceptedWorkflowRunCurrent,
-    version: WorkflowVersionCurrent, execution: HarnessExecution): Promise<void>
-  readCollaborationPrompt?(owner: RunOwnership, execution: HarnessExecution, version: WorkflowVersionCurrent): Promise<string | undefined>
-  releaseCollaborationExecution?(owner: RunOwnership, execution: HarnessExecution, version: WorkflowVersionCurrent): Promise<void>
+  prepareCollaborationExecution?(owner: RunOwnership, run: AcceptedWorkflowRunV3,
+    version: WorkflowVersionV3, execution: HarnessExecution): Promise<void>
+  readCollaborationPrompt?(owner: RunOwnership, execution: HarnessExecution, version: WorkflowVersionV3): Promise<string | undefined>
+  releaseCollaborationExecution?(owner: RunOwnership, execution: HarnessExecution, version: WorkflowVersionV3): Promise<void>
   memoryBoards?: MemoryBoardService
-  reconcileWorkflowArtifacts?(owner: RunOwnership, run: AcceptedWorkflowRunCurrent,
+  reconcileWorkflowArtifacts?(owner: RunOwnership, run: AcceptedWorkflowRunV3,
     execution: HarnessExecution, signal: AbortSignal): Promise<void>
-  preparePlacementExecution?(owner: RunOwnership, run: AcceptedWorkflowRunCurrent, execution: HarnessExecution): Promise<
+  preparePlacementExecution?(owner: RunOwnership, run: AcceptedWorkflowRunV3, execution: HarnessExecution): Promise<
     { workingDirectory: string; runtimeDirectory: string; revalidate(): Promise<void> } | undefined>
-  admitPlacementExecutionLocked?(sql: SqlTransaction, owner: RunOwnership, run: AcceptedWorkflowRunCurrent,
+  admitPlacementExecutionLocked?(sql: GraphTransactionSql, owner: RunOwnership, run: AcceptedWorkflowRunV3,
     execution: HarnessExecution, ref: RepeatNodeRef, inputDigest: string): Promise<void>
   /** Must open the EXISTING canonical publication on this exact transaction and
    * existing head. It must enlist same-transaction receipt checks before COMMIT. */
-  openPublicationLocked(sql: SqlTransaction, scope: RepeatScope, owner: RunOwnership): Promise<RepeatCanonicalPublication>
+  openPublicationLocked(sql: GraphTransactionSql, scope: RepeatScope, owner: RunOwnership): Promise<RepeatCanonicalPublication>
   /** Existing coordinator/manager authority; verifies exact owner/session/lane,
    * generation, possible-submission, command and raw-event provenance. */
-  assertNativeBoundaryLocked(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent,
+  assertNativeBoundaryLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
     execution: HarnessExecution, ref: RepeatNodeRef, evidence: RepeatNativeBoundaryEvidence, owner: RunOwnership): Promise<void>
-  assertNativeUpdateLocked(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent,
+  assertNativeUpdateLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
     previous: HarnessExecution, incoming: HarnessExecution, ref: RepeatNodeRef, evidence: RepeatNativeEvidence, owner: RunOwnership,
     resultEffectFailure?: WorkflowResultEffectFailure): Promise<WorkflowNativeProofRecord>
   /** Existing engine/lifecycle policy, not a second scheduler or finishRun call. */
-  assertSettlementLocked(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent, ids: readonly string[], owner: RunOwnership): Promise<void>
-  allowTechnicalRetryLocked(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent,
-    version: WorkflowVersionCurrent, execution: HarnessExecution): Promise<boolean>
+  assertSettlementLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3, ids: readonly string[], owner: RunOwnership): Promise<void>
+  allowTechnicalRetryLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
+    version: WorkflowVersionV3, execution: HarnessExecution): Promise<boolean>
   /** Complete immutable original publication mappings, resampled in this same
    * SQL transaction and before COMMIT. Never performs byte/native IO. */
-  assertWorkflowArtifactOutputsLocked?(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent,
-    version: WorkflowVersionCurrent, execution: HarnessExecution): Promise<void>
-  completeRunLocked(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent,
-    version: WorkflowVersionCurrent, terminals: readonly RepeatSource[], owner: RunOwnership): Promise<void>
+  assertWorkflowArtifactOutputsLocked?(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
+    version: WorkflowVersionV3, execution: HarnessExecution): Promise<void>
+  completeRunLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
+    version: WorkflowVersionV3, terminals: readonly RepeatSource[], owner: RunOwnership): Promise<void>
 }
 
 /** The same lexical isolation helper as native runs, with the globally unique
@@ -86,24 +83,10 @@ export function repeatRuntimeDirectory(root: string, scope: RepeatScope, executi
   return resolveExecutionDirectory(root, scope.runId, execution.id, execution.attempt, scope.workspaceId)
 }
 
-/** What every locked hook of one open Run transaction shares. */
-interface LockedRun {
-  owner: RunOwnership
-  sql: SqlTransaction
-  scope: RepeatScope
-  run: AcceptedWorkflowRunCurrent
-  version: WorkflowVersionCurrent
-  /** Rejects any transaction other than the one this Run was opened on. */
-  sameTransaction(transaction: SqlTransaction): void
-  /** Immutable configuration pins, share-locked until the mutation commits. */
-  configurations(): Promise<void>
-  authority(transaction: SqlTransaction, atCommit?: boolean): Promise<void>
-}
-
 /** One factory/store/ephemeral permit set per EXISTING Run owner. A recovered
  * owner gets a new repository and cannot inherit a prior native launch permit. */
 export class RepeatRepositoryFactory {
-  private readonly stores = new WeakMap<RunOwnership, { version: WorkflowVersionCurrent; store: RepeatRunRepository }>()
+  private readonly stores = new WeakMap<RunOwnership, { version: WorkflowVersionV3; store: RepeatRunRepository }>()
   private readonly collaboration: WorkflowCollaborationHooks | undefined
   constructor(private readonly locations: Pick<WorkspaceLocationService, 'revalidateRunAuthorization'>,
     private readonly runtimeRoot: string, private readonly services: RepeatRepositoryServices) {
@@ -113,9 +96,9 @@ export class RepeatRepositoryFactory {
         'assertSettlementLocked', 'allowTechnicalRetryLocked', 'completeRunLocked'].some((key) =>
         typeof services[key as keyof RepeatRepositoryServices] !== 'function')) return repeatConflict('REPEAT_NATIVE_HOST_REQUIRED')
   }
-  forOwner(owner: RunOwnership, suppliedVersion: WorkflowVersionCurrent): RepeatRunRepository {
+  forOwner(owner: RunOwnership, suppliedVersion: WorkflowVersionV3): RepeatRunRepository {
     owner.assertOwned()
-    const version = WorkflowVersionCurrentSchema.parse(suppliedVersion)
+    const version = WorkflowVersionV3Schema.parse(suppliedVersion)
     const prior = this.stores.get(owner)
     if (prior) {
       if (!sameRepeatValue(prior.version, version)) return repeatConflict('RUN_PIN_CONFLICT')
@@ -142,7 +125,7 @@ export class RepeatRepositoryFactory {
     return placement?.hostRef.kind === 'device' ? `device:${placement.hostRef.deviceId}` : 'main'
   }
 
-  async preparePlacementExecution(owner: RunOwnership, run: AcceptedWorkflowRunCurrent, execution: HarnessExecution) {
+  async preparePlacementExecution(owner: RunOwnership, run: AcceptedWorkflowRunV3, execution: HarnessExecution) {
     owner.assertOwned()
     try {
       const current = this.stores.get(owner)
@@ -180,7 +163,7 @@ export class RepeatRepositoryFactory {
       throw unavailable
     }
   }
-  async reconcileWorkflowArtifacts(owner: RunOwnership, run: AcceptedWorkflowRunCurrent,
+  async reconcileWorkflowArtifacts(owner: RunOwnership, run: AcceptedWorkflowRunV3,
     execution: HarnessExecution, signal: AbortSignal): Promise<void> {
     owner.assertOwned()
     const current = this.stores.get(owner)
@@ -198,7 +181,7 @@ export class RepeatRepositoryFactory {
   }
 
   /** Same actual Run owner and locked hooks for the concrete Job store. */
-  hostForOwner(owner: RunOwnership, version: WorkflowVersionCurrent): RepeatRepositoryHost {
+  hostForOwner(owner: RunOwnership, version: WorkflowVersionV3): RepeatRepositoryHost {
     this.forOwner(owner, version)
     return { openLocked: (sql, scope, record, actualVersion) => this.openLocked(owner, sql, scope, record, actualVersion) }
   }
@@ -209,29 +192,12 @@ export class RepeatRepositoryFactory {
     return this.stores.get(owner)?.store.consumeLaunchPermit(executionId) === true
   }
 
-  private async openLocked(owner: RunOwnership, sql: SqlTransaction, scope: RepeatScope,
-    record: unknown, version: WorkflowVersionCurrent): Promise<RepeatLockedHooks> {
-    const run = await this.pinnedRunLocked(owner, sql, scope, record, version)
-    const publication = await this.openPublication(owner, sql, scope)
-    const locked = this.lockedRun(owner, sql, scope, run, version)
-    const hooks: RepeatLockedHooks = {
-      run,
-      ...(this.collaboration ? { collaboration: this.collaboration } : {}),
-      ...(this.services.memoryBoards ? this.memoryHooks(locked, this.services.memoryBoards) : {}),
-      ...this.runHooks(locked, publication),
-      native: this.nativeHooks(locked, publication),
-    }
-    requireRepeatNativeHooks(hooks.native)
-    return hooks
-  }
-
-  /** The accepted Run record, parsed and checked against the scope, the physical row and the graph head. */
-  private async pinnedRunLocked(owner: RunOwnership, sql: SqlTransaction, scope: RepeatScope,
-    record: unknown, version: WorkflowVersionCurrent): Promise<AcceptedWorkflowRunCurrent> {
+  private async openLocked(owner: RunOwnership, sql: GraphTransactionSql, scope: RepeatScope,
+    record: unknown, version: WorkflowVersionV3): Promise<RepeatLockedHooks> {
     assertGraphTransaction(sql)
     owner.assertOwned()
     if (scope.runId !== owner.runId) return repeatConflict('REPEAT_SCOPE_CONFLICT')
-    const run = AcceptedWorkflowRunCurrentSchema.parse(record)
+    const run = AcceptedWorkflowRunV3Schema.parse(record)
     if (run.resultProtocol && !this.services.memoryBoards && !this.collaboration) throw new DomainError(
       'MEMORY_BOARDS_UNAVAILABLE', 'The coordination protocol requires memory board services.', 503)
     CurrentRunVersionSnapshotSchema.parse({ run, version })
@@ -249,12 +215,6 @@ export class RepeatRepositoryFactory {
       `select protocol_version from run_graph_heads where run_id=$1${isReadOnlyGraphTransaction(sql) ? '' : ' for update'}`,
       [run.id])
     if (!head.rows[0] || head.rows[0].protocol_version !== 1) return repeatConflict('GRAPH_NOT_INITIALIZED')
-    return run
-  }
-
-  /** Opens the existing canonical publication on this exact transaction and takes the owner fence. */
-  private async openPublication(owner: RunOwnership, sql: SqlTransaction,
-    scope: RepeatScope): Promise<RepeatCanonicalPublication> {
     const publication = await this.services.openPublicationLocked(sql, scope, owner)
     if (publication.sql !== sql || !sameRepeatValue(publication.scope, scope)
       || ['publishEffectLocked', 'assertEffectReceiptLocked', 'publishNativeLocked', 'assertNativeReceiptLocked',
@@ -262,13 +222,7 @@ export class RepeatRepositoryFactory {
       return repeatConflict('REPEAT_PUBLICATION_CONFLICT')
     }
     await owner.readOneShotFence(sql)
-    return publication
-  }
-
-  /** The transaction, authority and configuration checks every locked hook of one open Run shares. */
-  private lockedRun(owner: RunOwnership, sql: SqlTransaction, scope: RepeatScope, run: AcceptedWorkflowRunCurrent,
-    version: WorkflowVersionCurrent): LockedRun {
-    const sameTransaction = (transaction: SqlTransaction) => {
+    const sameTransaction = (transaction: GraphTransactionSql) => {
       assertGraphTransaction(transaction)
       if (transaction !== sql) return repeatConflict('REPEAT_PUBLICATION_CONFLICT')
       owner.assertOwned()
@@ -286,13 +240,13 @@ export class RepeatRepositoryFactory {
           || item.workspace_id !== scope.workspaceId) return repeatConflict('RUN_PIN_CONFLICT')
         return value
       })
-      ExecutableWorkflowCurrentSchema.parse({ version, configurations: parsed })
+      ExecutableWorkflowV3Schema.parse({ version, configurations: parsed })
       for (const value of parsed) assertNativeWorkflowConfiguration(value.harness, run.approval,
         run.approval.handler === 'orchestrator' && value.agentId === run.approval.designatedOrchestratorAgentId)
       configurationsRead = true
     }
     let authorityEnlisted = false
-    const authority = async (transaction: SqlTransaction, atCommit = false) => {
+    const authority = async (transaction: GraphTransactionSql, atCommit = false) => {
       sameTransaction(transaction)
       // Require the authenticated accepted Run authority. No uncredentialed-v3
       // fixture exception, inherited new grant, or read-only promotion exists.
@@ -312,35 +266,24 @@ export class RepeatRepositoryFactory {
         beforeGraphCommit(sql, () => authority(sql, true))
       }
     }
-    return { owner, sql, scope, run, version, sameTransaction, authority, configurations }
-  }
-
-  private memoryHooks(locked: LockedRun, memoryBoards: MemoryBoardService): Pick<RepeatLockedHooks,
-    'validateMemoryResultLocked' | 'memoryWorkChangedLocked' | 'prepareMemoryLaunchLocked'> {
-    const { version, sameTransaction } = locked
-    return {
-      validateMemoryResultLocked: (transaction: SqlTransaction, execution: HarnessExecution, result: ExecutionResult) => {
-        sameTransaction(transaction)
-        return validateMemoryResultLocked(transaction, memoryBoards, execution, result)
-      },
-      memoryWorkChangedLocked: (transaction: SqlTransaction, executionId: string, sourceEventKey: string) => {
-        sameTransaction(transaction)
-        if (version.definition.hierarchy) return Promise.resolve()
-        return reconcileMemoryHandoffsLocked(transaction, memoryBoards, executionId, sourceEventKey)
-      },
-      prepareMemoryLaunchLocked: (transaction: SqlTransaction, execution: HarnessExecution) => {
-        sameTransaction(transaction)
-        return prepareMemoryLaunchLocked(transaction, memoryBoards, execution)
-      },
-    }
-  }
-
-  private runHooks(locked: LockedRun, publication: RepeatCanonicalPublication): Pick<RepeatLockedHooks,
-    'persistDispatchLocked' | 'assertAuthorityLocked' | 'assertWorkflowArtifactOutputsLocked' | 'assertAdmissionLocked'
-    | 'assertSettlementLocked' | 'allowTechnicalRetryLocked' | 'publishLocked' | 'assertPublicationReceiptLocked'
-    | 'completeRunLocked'> {
-    const { owner, sql, scope, run, version, sameTransaction, authority, configurations } = locked
-    return {
+    const hooks: RepeatLockedHooks = {
+      run,
+      ...(this.collaboration ? { collaboration: this.collaboration } : {}),
+      ...(this.services.memoryBoards ? {
+        validateMemoryResultLocked: (transaction: GraphTransactionSql, execution: HarnessExecution, result: ExecutionResult) => {
+          sameTransaction(transaction)
+          return validateMemoryResultLocked(transaction, this.services.memoryBoards!, execution, result)
+        },
+        memoryWorkChangedLocked: (transaction: GraphTransactionSql, executionId: string, sourceEventKey: string) => {
+          sameTransaction(transaction)
+          if (version.definition.hierarchy) return Promise.resolve()
+          return reconcileMemoryHandoffsLocked(transaction, this.services.memoryBoards!, executionId, sourceEventKey)
+        },
+        prepareMemoryLaunchLocked: (transaction: GraphTransactionSql, execution: HarnessExecution) => {
+          sameTransaction(transaction)
+          return prepareMemoryLaunchLocked(transaction, this.services.memoryBoards!, execution)
+        },
+      } : {}),
       persistDispatchLocked: async (transaction, execution, ref, inputDigest) => {
         sameTransaction(transaction)
         const node = version.definition.nodes.find(node => node.id === ref.nodeId)
@@ -349,7 +292,7 @@ export class RepeatRepositoryFactory {
       },
       assertAuthorityLocked: authority,
       ...(this.services.assertWorkflowArtifactOutputsLocked ? {
-        assertWorkflowArtifactOutputsLocked: async (transaction: SqlTransaction, execution: HarnessExecution) => {
+        assertWorkflowArtifactOutputsLocked: async (transaction: GraphTransactionSql, execution: HarnessExecution) => {
           sameTransaction(transaction)
           await authority(transaction)
           await this.services.assertWorkflowArtifactOutputsLocked!(transaction, run, version, execution)
@@ -393,67 +336,65 @@ export class RepeatRepositoryFactory {
         sameTransaction(transaction)
         await this.services.completeRunLocked(sql, run, version, terminals, owner)
       },
-    }
-  }
-
-  private nativeHooks(locked: LockedRun, publication: RepeatCanonicalPublication): NonNullable<RepeatLockedHooks['native']> {
-    const { owner, sql, scope, run, version, sameTransaction, authority, configurations } = locked
-    return {
-      assertLaunchLocked: async (transaction, execution, ref, paths) => {
-        sameTransaction(transaction)
-        assertRepeatExecution(version, scope, ref, execution)
-        await authority(sql)
-        await configurations()
-        const placement = await readAcceptedPlacement(sql, run.id, execution.workflowNodeId)
-        const native = placement && await readNativePlacement(sql, execution.id)
-        if (placement && !native) return repeatConflict('RUN_LOCATION_MISSING')
-        const worktreeRow = !placement && (await sql.query<{ record: unknown }>(
-          `select record from run_worktrees where run_id=$1 and allocation_id in ($2,'')
-            order by (allocation_id=$2) desc limit 1`, [run.id, execution.id])).rows[0]
-        const worktree = worktreeRow ? RunWorktreeSchema.parse(worktreeRow.record) : undefined
-        if (worktree && worktree.state !== 'active') return repeatConflict('RUN_LOCATION_MISSING')
-        if (paths.workingDirectory !== (native?.workingTree.canonicalCwd ?? worktree?.workingDirectory ?? run.executionLocation.rootPath)
-          || paths.runtimeDirectory !== repeatRuntimeDirectory(placement?.destination.managedRuntimeRoot ?? this.runtimeRoot, scope, execution)) return repeatConflict('RUN_LOCATION_MISSING')
-      },
-      assertBoundaryLocked: async (transaction, execution, ref, evidence) => {
-        sameTransaction(transaction)
-        assertRepeatExecution(version, scope, ref, execution)
-        await authority(sql)
-        await configurations()
-        await this.services.assertNativeBoundaryLocked(sql, run, execution, ref, evidence, owner)
-      },
-      assertUpdateLocked: async (transaction, previous, incoming, ref, evidence, resultEffectFailure) => {
-        sameTransaction(transaction)
-        assertRepeatExecution(version, scope, ref, previous)
-        assertRepeatExecution(version, scope, ref, incoming)
-        return this.services.assertNativeUpdateLocked(sql, run, previous, incoming, ref, evidence, owner, resultEffectFailure)
-      },
-      publishLocked: async (transaction, change, mutate) => {
-        sameTransaction(transaction)
-        await publication.publishNativeLocked(change, async () => {
-          await mutate()
-          if (this.services.memoryBoards && !version.definition.hierarchy) {
-            await applyMemoryNativeLocked(transaction, this.services.memoryBoards, run, change)
-          }
-        })
-      },
-      assertReceiptLocked: async (transaction, change) => {
-        sameTransaction(transaction)
-        await publication.assertNativeReceiptLocked(change)
-        requireRepeatCanonicalReceiptBeforeCommit(sql, {
-          scope, evidence: { sourceKind: 'execution', sourceId: change.sourceId, sourceRevision: change.sourceRevision },
-          sourceDigest: change.sourceDigest, effect: change.effect,
-        })
-      },
-      assertLaunchReceiptLocked: async (transaction, claim, digest) => {
-        sameTransaction(transaction)
-        await publication.assertLaunchReceiptLocked(claim, digest)
-        requireRepeatCanonicalReceiptBeforeCommit(sql, {
-          scope, evidence: { sourceKind: 'execution', sourceId: repeatId('repeat-native', scope.runId,
-            claim.ref.occurrence?.occurrenceId ?? 'outside', claim.executionId, 'launch', digest), sourceRevision: '1' },
-          sourceDigest: digest, effect: { kind: 'execution.launch', entityId: claim.executionId, digest },
-        })
+      native: {
+        assertLaunchLocked: async (transaction, execution, ref, paths) => {
+          sameTransaction(transaction)
+          assertRepeatExecution(version, scope, ref, execution)
+          await authority(sql)
+          await configurations()
+          const placement = await readAcceptedPlacement(sql, run.id, execution.workflowNodeId)
+          const native = placement && await readNativePlacement(sql, execution.id)
+          if (placement && !native) return repeatConflict('RUN_LOCATION_MISSING')
+          const worktreeRow = !placement && (await sql.query<{ record: unknown }>(
+            `select record from run_worktrees where run_id=$1 and allocation_id in ($2,'')
+              order by (allocation_id=$2) desc limit 1`, [run.id, execution.id])).rows[0]
+          const worktree = worktreeRow ? RunWorktreeSchema.parse(worktreeRow.record) : undefined
+          if (worktree && worktree.state !== 'active') return repeatConflict('RUN_LOCATION_MISSING')
+          if (paths.workingDirectory !== (native?.workingTree.canonicalCwd ?? worktree?.workingDirectory ?? run.executionLocation.rootPath)
+            || paths.runtimeDirectory !== repeatRuntimeDirectory(placement?.destination.managedRuntimeRoot ?? this.runtimeRoot, scope, execution)) return repeatConflict('RUN_LOCATION_MISSING')
+        },
+        assertBoundaryLocked: async (transaction, execution, ref, evidence) => {
+          sameTransaction(transaction)
+          assertRepeatExecution(version, scope, ref, execution)
+          await authority(sql)
+          await configurations()
+          await this.services.assertNativeBoundaryLocked(sql, run, execution, ref, evidence, owner)
+        },
+        assertUpdateLocked: async (transaction, previous, incoming, ref, evidence, resultEffectFailure) => {
+          sameTransaction(transaction)
+          assertRepeatExecution(version, scope, ref, previous)
+          assertRepeatExecution(version, scope, ref, incoming)
+          return this.services.assertNativeUpdateLocked(sql, run, previous, incoming, ref, evidence, owner, resultEffectFailure)
+        },
+        publishLocked: async (transaction, change, mutate) => {
+          sameTransaction(transaction)
+          await publication.publishNativeLocked(change, async () => {
+            await mutate()
+            if (this.services.memoryBoards && !version.definition.hierarchy) {
+              await applyMemoryNativeLocked(transaction, this.services.memoryBoards, run, change)
+            }
+          })
+        },
+        assertReceiptLocked: async (transaction, change) => {
+          sameTransaction(transaction)
+          await publication.assertNativeReceiptLocked(change)
+          requireRepeatCanonicalReceiptBeforeCommit(sql, {
+            scope, evidence: { sourceKind: 'execution', sourceId: change.sourceId, sourceRevision: change.sourceRevision },
+            sourceDigest: change.sourceDigest, effect: change.effect,
+          })
+        },
+        assertLaunchReceiptLocked: async (transaction, claim, digest) => {
+          sameTransaction(transaction)
+          await publication.assertLaunchReceiptLocked(claim, digest)
+          requireRepeatCanonicalReceiptBeforeCommit(sql, {
+            scope, evidence: { sourceKind: 'execution', sourceId: repeatId('repeat-native', scope.runId,
+              claim.ref.occurrence?.occurrenceId ?? 'outside', claim.executionId, 'launch', digest), sourceRevision: '1' },
+            sourceDigest: digest, effect: { kind: 'execution.launch', entityId: claim.executionId, digest },
+          })
+        },
       },
     }
+    requireRepeatNativeHooks(hooks.native)
+    return hooks
   }
 }

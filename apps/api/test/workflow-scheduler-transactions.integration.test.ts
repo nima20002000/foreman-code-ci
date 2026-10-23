@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { AcceptedWorkflowRunCurrentSchema, type RunStartCurrentInput } from '@foreman-code/contracts/current'
+import { AcceptedWorkflowRunV3Schema, type RunStartV3Input } from '@foreman-code/contracts/wave25'
 import { RunBoardSnapshotSchema } from '@foreman-code/contracts/run-snapshots'
 import { PostgresCommandCoordinator, commandInputHash } from '../src/modules/commands/postgres.js'
 import { withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
@@ -10,10 +10,10 @@ import { admitRepeatRun, repeatStartReceipt } from '../src/modules/runs/repeatSt
 import type { ScheduledStart } from '../src/modules/schedules/postgresDispatcher.js'
 import { WorkflowScheduleService } from '../src/modules/schedules/service.js'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
-import { minuteSchedule, onceSchedule } from './helpers/scheduleClockCases.js'
-import { waitForLockWait, scheduleDomainState, scheduleDispatchFixture, scheduleSecondSession, type ScheduleDatabase, type ScheduleDispatchFixture } from './helpers/scheduleFixture.js'
+import { sch11Minute, sch11Once } from './helpers/scheduleClockCases.js'
+import { sch11Blocked, sch11DomainState, sch11Fixture, sch11Pool, type Sch11Database, type Sch11Fixture } from './helpers/scheduleFixture.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
 async function reached(signal: Promise<unknown>, work: Promise<unknown>) {
@@ -21,15 +21,15 @@ async function reached(signal: Promise<unknown>, work: Promise<unknown>) {
 }
 
 describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and common Start shape', () => {
-  let database: ScheduleDatabase
-  let f: ScheduleDispatchFixture
-  beforeAll(async () => { database = await migratedDatabase() }, 60_000)
+  let database: Sch11Database
+  let f: Sch11Fixture
+  beforeAll(async () => { database = await agent3Database() }, 60_000)
   afterAll(async () => { await database?.close() })
-  beforeEach(async () => { f = await scheduleDispatchFixture(database) }, 60_000)
+  beforeEach(async () => { f = await sch11Fixture(database) }, 60_000)
 
   it('a peer session reads the schedule persisted in the fixture database', async () => {
     const saved = await f.save()
-    const peer = scheduleSecondSession(database)
+    const peer = sch11Pool(database)
     const peerService = new WorkflowScheduleService(peer.pool, new PostgresCommandCoordinator(peer.pool), f.clock)
     try {
       expect(await peerService.get(f.reader.principal, f.scope)).toEqual({ schedule: saved })
@@ -44,11 +44,11 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
     const work = f.dispatcher(async (...args) => { prepared.resolve(); await release.promise; await f.startUsing()(...args) }).dispatch(saved)
     try {
       await reached(prepared.promise, work)
-      const edited = await f.save({ ...onceSchedule, time: '10:30' }, 1)
+      const edited = await f.save({ ...sch11Once, time: '10:30' }, 1)
       release.resolve(); await work
       expect(await f.countRuns()).toBe(0); expect(await f.history()).toEqual([])
       expect(await f.current()).toEqual(edited)
-      expect((await scheduleDomainState(f)).snapshots).toEqual([])
+      expect((await sch11DomainState(f)).snapshots).toEqual([])
       f.time.now = edited.nextOccurrenceAt!
       await f.dispatcher().dispatch(edited)
       expect(await f.history()).toEqual([expect.objectContaining({ status: 'accepted', scheduleRevision: 2,
@@ -69,7 +69,7 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
       await reached(prepared.promise, work)
       await f.service[operation](f.writer.principal, 'http', f.command())
       release.resolve(); await work
-      const state = await scheduleDomainState(f)
+      const state = await sch11DomainState(f)
       for (const key of ['runs', 'snapshots', 'runAuthority', 'graphHeads'] as const) expect(state[key]).toEqual([])
       expect((await database.pool.query(`select 1 from management_command_receipts
         where operation='run.start' and result->>'workflowId'=$1`, [f.scope.workflowId])).rows).toEqual([])
@@ -85,7 +85,7 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
 
   it.each(['disable', 'edit'] as const)('claim winning the row locks commits once; a blocked %s changes only future admissions', async (operation) => {
     const saved = await f.save(); f.time.now = saved.nextOccurrenceAt!
-    const peer = scheduleSecondSession(database), entered = rejectableDeferred<number>(), release = rejectableDeferred()
+    const peer = sch11Pool(database), entered = rejectableDeferred<number>(), release = rejectableDeferred()
     const peerPid = (await peer.pool.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
     const peerService = new WorkflowScheduleService(peer.pool, new PostgresCommandCoordinator(peer.pool), f.clock)
     let mutation: ReturnType<WorkflowScheduleService['save']> | undefined
@@ -100,11 +100,11 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
       await reached(entered.promise, work)
       mutation = operation === 'disable'
         ? peerService.disable(f.writer.principal, 'mcp', f.command())
-        : peerService.save(f.writer.principal, 'mcp', { ...f.command(), schedule: { ...onceSchedule, time: '10:30' } })
+        : peerService.save(f.writer.principal, 'mcp', { ...f.command(), schedule: { ...sch11Once, time: '10:30' } })
       void mutation.catch(() => {
         // ignore: attach while row locks are held; the original mutation is awaited below.
       })
-      await waitForLockWait(database.pool, peerPid, await entered.promise)
+      await sch11Blocked(database.pool, peerPid, await entered.promise)
       expect(await f.countRuns()).toBe(0)
       release.resolve(); await work
       const changed = (await mutation).value
@@ -115,9 +115,9 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
       expect(facts).toHaveLength(1); expect(facts[0]?.status).toBe('accepted')
       expect((await database.pool.query('select execution_state from runs where workflow_id=$1', [f.scope.workflowId])).rows)
         .toEqual([{ execution_state: 'queued' }])
-      const state = await scheduleDomainState(f)
+      const state = await sch11DomainState(f)
       await f.dispatcher().dispatch(saved)
-      expect(await scheduleDomainState(f)).toEqual(state)
+      expect(await sch11DomainState(f)).toEqual(state)
     } finally {
       release.resolve()
       await work.catch(() => {
@@ -172,7 +172,7 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
   it('claim winning before a blocked meaningful save preserves its pin and rejects the now-unsettled edit', async () => {
     const saved = await f.save(); f.time.now = saved.nextOccurrenceAt!
     const input = await versionInput()
-    const peer = scheduleSecondSession(database), entered = rejectableDeferred<number>(), release = rejectableDeferred()
+    const peer = sch11Pool(database), entered = rejectableDeferred<number>(), release = rejectableDeferred()
     const peerPid = (await peer.pool.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
     const peerWorkflows = new WorkflowManagementService(peer.pool, new PostgresCommandCoordinator(peer.pool))
     let saving: ReturnType<WorkflowManagementService['current']['save']> | undefined
@@ -189,7 +189,7 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
       void saving.catch(() => {
         // ignore: attach while row locks are held; the original save rejection is asserted below.
       })
-      await waitForLockWait(database.pool, peerPid, await entered.promise)
+      await sch11Blocked(database.pool, peerPid, await entered.promise)
       release.resolve(); await work
       await expect(saving).rejects.toMatchObject({ code: 'WORKFLOW_RUNS_UNSETTLED' })
       expect((await database.pool.query('select current_version_id from workflows where id=$1', [f.scope.workflowId])).rows)
@@ -222,7 +222,7 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
         JSON.stringify(f.writer.principal.grants.map((grant) => ({ ...grant, actions: grant.actions.filter((action) => action !== 'runs:start') })))])
       release.resolve(); await work
       expect(await f.history()).toEqual([expect.objectContaining({ status: 'rejected', reason: 'schedule_authorization_denied' })])
-      const state = await scheduleDomainState(f)
+      const state = await sch11DomainState(f)
       for (const key of ['runs', 'snapshots', 'runAuthority', 'graphHeads'] as const) expect(state[key]).toEqual([])
       expect((await f.current())?.nextOccurrenceAt).toBeNull()
       expect((await database.pool.query(`select 1 from management_command_receipts
@@ -236,15 +236,15 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
   }, 60_000)
 
   it('skips queued scheduled overlap and does not cancel or rewrite its accepted artifacts on disable', async () => {
-    const saved = await f.save(minuteSchedule); f.time.now = saved.nextOccurrenceAt!
+    const saved = await f.save(sch11Minute); f.time.now = saved.nextOccurrenceAt!
     await f.dispatcher().dispatch(saved)
-    const before = await scheduleDomainState(f)
+    const before = await sch11DomainState(f)
     const next = (await f.current())!; f.time.now = next.nextOccurrenceAt!
     await f.dispatcher().dispatch(next)
     expect(await f.history()).toEqual([expect.objectContaining({ status: 'skipped', reason: 'overlap' }),
       expect.objectContaining({ status: 'accepted' })])
     await f.service.disable(f.writer.principal, 'http', f.command())
-    const after = await scheduleDomainState(f)
+    const after = await sch11DomainState(f)
     for (const key of ['runs', 'snapshots', 'runAuthority', 'graphHeads'] as const) expect(after[key]).toEqual(before[key])
     expect(await f.countRuns()).toBe(1)
   }, 60_000)
@@ -252,7 +252,7 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
   it('scheduled and manual Start share the exact accepted Run, board snapshot, canonical receipt and replay shapes', async () => {
     const saved = await f.save(); f.time.now = saved.nextOccurrenceAt!
     const captured: Array<Parameters<ScheduledStart>> = []
-    const manualInputs: RunStartCurrentInput[] = []
+    const manualInputs: RunStartV3Input[] = []
     const outcomes: Array<Awaited<ReturnType<typeof admitRepeatRun>>> = []
     await f.dispatcher(async (principal, request, guard) => {
       captured.push([principal, request, guard])
@@ -262,8 +262,8 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
     }).dispatch(saved)
     expect(captured).toHaveLength(1); expect(outcomes).toHaveLength(2)
     expect(outcomes.map((outcome) => outcome.replayed)).toEqual([false, false])
-    const manual = AcceptedWorkflowRunCurrentSchema.parse(outcomes[0]!.value)
-    const scheduled = AcceptedWorkflowRunCurrentSchema.parse(outcomes[1]!.value)
+    const manual = AcceptedWorkflowRunV3Schema.parse(outcomes[0]!.value)
+    const scheduled = AcceptedWorkflowRunV3Schema.parse(outcomes[1]!.value)
     expect(Object.keys(scheduled).sort()).toEqual(Object.keys(manual).sort())
     const normalizeRun = (value: typeof manual) => ({ ...value, id: '<run>', authorizationPrincipalId: '<authority>', createdAt: '<instant>' })
     expect(normalizeRun(scheduled)).toEqual(normalizeRun(manual))
@@ -275,7 +275,7 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
         join management_command_receipts c on c.operation='run.start' and c.result->>'id'=s.run_id where s.run_id=$1`, [id])).rows
       expect(row).toHaveLength(1)
       return { ...row[0]!, snapshot: RunBoardSnapshotSchema.parse(row[0]!.snapshot),
-        receipt: AcceptedWorkflowRunCurrentSchema.parse(row[0]!.receipt) }
+        receipt: AcceptedWorkflowRunV3Schema.parse(row[0]!.receipt) }
     }
     const manualRows = await read(manual.id), scheduledRows = await read(scheduled.id)
     expect(manualRows.receipt).toEqual(manual); expect(scheduledRows.receipt).toEqual(scheduled)
@@ -295,12 +295,12 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL transaction ordering and co
       await assertRepeatCanonicalReceiptLocked(sql, repeatStartReceipt(manual))
       await assertRepeatCanonicalReceiptLocked(sql, repeatStartReceipt(scheduled))
     }))
-    const state = await scheduleDomainState(f)
+    const state = await sch11DomainState(f)
     expect(await admitRepeatRun(database.pool, f.locations, principal, 'mcp', manualInputs[0]!, repeatStartPublication))
       .toEqual({ value: manual, replayed: true })
     expect(await admitRepeatRun(database.pool, f.locations, principal, 'schedule', request, repeatStartPublication, { schedule: guard }))
       .toEqual({ value: scheduled, replayed: true })
-    expect(await scheduleDomainState(f)).toEqual(state)
+    expect(await sch11DomainState(f)).toEqual(state)
     // The manual Run is not classified as scheduled overlap.
     expect(await f.history()).toEqual([expect.objectContaining({ status: 'accepted', runId: scheduled.id })])
   }, 60_000)

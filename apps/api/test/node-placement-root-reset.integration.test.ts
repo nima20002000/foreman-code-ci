@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { CurrentWorkflowReadResultSchema } from '@foreman-code/contracts/current'
+import { CurrentWorkflowReadResultSchema } from '@foreman-code/contracts/wave25'
 import { RunPlacementGetResultSchema } from '@foreman-code/contracts/placement-readback'
 import { SourceRootListResultSchema } from '@foreman-code/contracts/source-admission'
 import { WorkspaceBoundLocationSetResultSchema } from '@foreman-code/contracts/workspace-bound-location'

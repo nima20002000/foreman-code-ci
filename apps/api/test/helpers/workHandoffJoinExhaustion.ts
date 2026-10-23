@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { expect } from 'vitest'
-import { WorkActivationInputSchema, makeCurrentWorkflowFixture, parseWorkHandoffResult } from '@foreman-code/contracts/current'
+import { WorkActivationInputSchema, makeCurrentWorkflowFixture, parseWorkHandoffResult } from '@foreman-code/contracts/wave25'
 import { finished } from './workHandoffFixture.js'
 import { runWorkHandoffWithRestart, workHandoffRuntimeFixture } from './workHandoffRuntimeFixture.js'
 

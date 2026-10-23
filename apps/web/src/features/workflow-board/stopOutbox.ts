@@ -1,39 +1,39 @@
 import { z } from 'zod'
 import { RunStopInputSchema, RunStopResultSchema } from '@foreman-code/contracts/management'
-import { RepeatGraphScopeCurrentSchema, sameWorkflowValue, type RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
+import { RepeatGraphScopeV3Schema, sameWorkflowValue, type RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
 import { apiClient, ApiError, type ApiClient } from '../../shared/api/client'
 import { protectedKey } from '../../shared/api/protectedChatStorage'
 import { createOutboxView, readStoredCommand, withCommandLock, writeStoredCommand } from '../../shared/api/commandOutbox'
 import { sessionIsSwitching, SessionChangedError } from '../../shared/api/sessionBoundary'
 
-const StopJournalSchema = z.object({ scope: RepeatGraphScopeCurrentSchema, request: RunStopInputSchema, receipt: RunStopResultSchema.optional() }).strict()
+const StopJournalSchema = z.object({ scope: RepeatGraphScopeV3Schema, request: RunStopInputSchema, receipt: RunStopResultSchema.optional() }).strict()
   .superRefine((value, context) => {
     if (value.request.runId !== value.scope.runId || value.request.workspaceId !== value.scope.workspaceId
       || value.receipt && value.receipt.runId !== value.scope.runId) context.addIssue({ code: 'custom', message: 'Stop scope mismatch' })
   })
 export type BoardStopJournal = z.infer<typeof StopJournalSchema>
-export const boardStopKey = (scope: RepeatGraphScopeCurrent) => protectedKey('outbox', `board-stop:${JSON.stringify(RepeatGraphScopeCurrentSchema.parse(scope))}`)
+export const boardStopKey = (scope: RepeatGraphScopeV3) => protectedKey('outbox', `board-stop:${JSON.stringify(RepeatGraphScopeV3Schema.parse(scope))}`)
 const failure = 'Retained Stop storage is unavailable. No replacement command was sent.'
 type Local = { journal?: BoardStopJournal; error?: string }
 const view = createOutboxView<Local>()
-export function readBoardStop(scope: RepeatGraphScopeCurrent): BoardStopJournal | undefined {
+export function readBoardStop(scope: RepeatGraphScopeV3): BoardStopJournal | undefined {
   if (sessionIsSwitching()) throw new SessionChangedError()
-  RepeatGraphScopeCurrentSchema.parse(scope)
+  RepeatGraphScopeV3Schema.parse(scope)
   const raw = readStoredCommand(boardStopKey(scope), failure)
   if (raw === undefined) return undefined
   const value = StopJournalSchema.parse(JSON.parse(raw))
   if (!sameWorkflowValue(value.scope, scope)) throw new Error('Retained Stop pins differ from this Run. No work was dispatched.')
   return value
 }
-function store(scope: RepeatGraphScopeCurrent, value?: BoardStopJournal) {
+function store(scope: RepeatGraphScopeV3, value?: BoardStopJournal) {
   writeStoredCommand(boardStopKey(scope), value ? JSON.stringify(StopJournalSchema.parse(value)) : undefined, failure)
   view.publish(boardStopKey(scope), { journal: value })
 }
-function locked<T>(scope: RepeatGraphScopeCurrent, action: () => T): Promise<T> {
+function locked<T>(scope: RepeatGraphScopeV3, action: () => T): Promise<T> {
   return withCommandLock(boardStopKey(scope), action,
     { unavailable: 'Cross-tab command reservation is unavailable. No Stop was sent.' })
 }
-export function reserveBoardStop(scope: RepeatGraphScopeCurrent): Promise<BoardStopJournal> {
+export function reserveBoardStop(scope: RepeatGraphScopeV3): Promise<BoardStopJournal> {
   return locked(scope, () => {
     const existing = readBoardStop(scope)
     if (existing) return existing
@@ -60,7 +60,7 @@ export async function recordBoardStopReceipt(journal: BoardStopJournal, receipt:
 }
 /** Only called after exact, authenticated terminal AND cleanup-settled readback.
  * An accepted or already-terminal command receipt alone never clears this journal. */
-export async function settleBoardStop(scope: RepeatGraphScopeCurrent, request: BoardStopJournal['request']) {
+export async function settleBoardStop(scope: RepeatGraphScopeV3, request: BoardStopJournal['request']) {
   return locked(scope, () => {
     const current = readBoardStop(scope)
     if (!current) return
@@ -68,7 +68,7 @@ export async function settleBoardStop(scope: RepeatGraphScopeCurrent, request: B
     store(scope)
   })
 }
-export function useBoardStopOutbox(scope: RepeatGraphScopeCurrent): Local {
+export function useBoardStopOutbox(scope: RepeatGraphScopeV3): Local {
   return view.useRecord(boardStopKey(scope), () => ({ journal: readBoardStop(scope) }),
     (error) => ({ error: error instanceof Error ? error.message : failure }))
     ?? { error: 'Checking retained Stop command.' }

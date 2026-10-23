@@ -1,5 +1,5 @@
 import { DomainError } from '../errors.js'
-import { RunGraphError } from '../run-graph/index.js'
+import { RunGraphError } from '../run-graph/errors.js'
 import { DeviceAccessError } from '../devices/access.js'
 
 const deviceAccessCodes = new Map<DeviceAccessError['code'], string>([

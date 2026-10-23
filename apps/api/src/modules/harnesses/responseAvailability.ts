@@ -1,4 +1,4 @@
-import { logIgnoredError } from '../diagnostics/index.js'
+import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import type { NativeSessionReference, PendingNativeInteraction } from '@foreman-code/contracts'
 
 import type { NativeResponseAvailability, NativeResponseAvailabilityQuery }

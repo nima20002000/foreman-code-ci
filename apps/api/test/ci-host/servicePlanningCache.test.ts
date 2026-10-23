@@ -26,8 +26,7 @@ it('plans from an observed computer’s capacity while its expired status refres
         provider: 'github', owner: 'fixture', name: 'project', defaultBranch: 'main',
       },
     } }] }
-    // Only the Run insert binds nine values (record at position 3).
-    if (parameters?.length === 9) records.push(CiRunRecordSchema.parse(JSON.parse(parameters![3] as string)))
+    if (sql.startsWith('insert into ci_runs')) records.push(CiRunRecordSchema.parse(JSON.parse(parameters![3] as string)))
     return { rows: [], rowCount: 1 }
   } } as unknown as pg.Pool
   const commands = { execute: async (input: Parameters<PostgresCommandCoordinator['execute']>[0]) => {

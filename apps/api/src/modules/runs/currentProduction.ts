@@ -1,16 +1,16 @@
 import type pg from 'pg'
-import type { BaseCheckpointSaver } from '../../infrastructure/langgraph.js'
+import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint'
 import type { InteractionService } from '../interactions/service.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import type { WorkflowRunCurrent } from '@foreman-code/contracts/current'
+import type { WorkflowRunV3 } from '@foreman-code/contracts/wave25'
 import type { RepeatStartPublication } from './repeatStartAdmission.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import type { GraphTransactionSql } from '../run-graph/connection.js'
 import type { LangGraphWorkflowEngine } from './engine.js'
 import type { PostgresRunRepository } from './postgres.js'
-import type { PostgresWorkflowRepository } from '../workflows/index.js'
-import type { WorkspaceLocationService } from '../workspaces/index.js'
+import type { PostgresWorkflowRepository } from '../workflows/postgres.js'
+import type { WorkspaceLocationService } from '../workspaces/location.js'
 import type { ApprovalExecutionCoordinator } from '../interactions/execution.js'
-import type { PostgresCommandCoordinator } from '../commands/index.js'
+import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 
 export interface CurrentRuntimeAvailability { runtimeAdmission: boolean; stopAvailable: boolean }
 export interface CurrentStopReceipt {
@@ -19,10 +19,10 @@ export interface CurrentStopReceipt {
 export interface CurrentStopContext {
   principal: ManagementPrincipal; source: 'http' | 'mcp'
   input: { workspaceId: string; runId: string; commandId: string }
-  run: WorkflowRunCurrent
+  run: WorkflowRunV3
   /** A MUST call this while holding the same parent lock as durable Stop.
    * It reads live authority again; the captured principal is not authorization. */
-  authorizeLocked(sql: SqlTransaction): Promise<void>
+  authorizeLocked(sql: GraphTransactionSql): Promise<void>
 }
 /** Trusted production composition, not a request flag, test receipt or second
  * engine. A supplies ALL of this only with the actual configured engine,

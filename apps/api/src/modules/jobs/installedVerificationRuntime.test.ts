@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { rm,writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach,expect,it,vi } from 'vitest'
-import { canonicalGraphJson } from '@foreman-code/contracts/current'
+import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import { JobVerificationOfflineSeedReceiptSchema,JobVerificationProfileSchema }
   from '@foreman-code/contracts/job-verification-runtime'
 import { privateFixtureDirectory } from '../../../test/helpers/privateFixtureDirectory.js'

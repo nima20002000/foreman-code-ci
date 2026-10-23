@@ -1,7 +1,7 @@
 import { constants } from 'node:fs';
 import { lstat, open, rename, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { anchored, openChildDirectory } from '@foreman-code/api/worker/sources';
+import { anchored, openChildDirectory } from '../../../apps/api/src/modules/sources/privateFilesystem.ts';
 import { readPrivateJson } from './jobRuntimeCapture.mjs';
 
 export async function optionalManagedJson(directory, name, maximumBytes = 65536) {

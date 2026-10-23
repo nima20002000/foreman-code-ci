@@ -26,7 +26,6 @@ import { DeviceEndpoint, type AuthenticatedDevice } from '../src/modules/devices
 import { DeviceConnectionSupervisor } from '../src/modules/devices/connectionSupervisor.js'
 import { deviceConnector, deviceUpgradeHandler } from '../src/modules/devices/deviceCarrier.js'
 import { adaptDeviceSocket, DeviceConnectionError, readFrame, sendFrame } from '../src/modules/devices/deviceWire.js'
-import { liveAuthorityQuery, livePrincipalRow } from './helpers/livePrincipal.js'
 
 class Socket extends EventEmitter {
   bufferedAmount = 0
@@ -564,7 +563,9 @@ it('refuses a GitHub mutation on a replacement authenticated installation after 
   const caller: ManagementPrincipal = { id: 'github-owner', name: 'Owner', audience: 'operator',
     expiresAt: '2099-01-01T00:00:00Z', revokedAt: null, grants: [{ actions: ['settings:update'], scope: {} }] }
   let registrationIdentity = identity
-  const query = liveAuthorityQuery(id => id === caller.id ? livePrincipalRow(caller) : undefined, async () => {
+  const query = async (text: string) => {
+    if (text.includes('from management_principals')) return { rows: [{ ...caller,
+      expires_at: new Date(caller.expiresAt), revoked_at: null, delegated_from: null }] }
     const record = { mainId: registrationIdentity.mainId, deviceId: registrationIdentity.deviceId,
       workerInstallationId: registrationIdentity.workerInstallationId, keyRevision: registrationIdentity.keyRevision,
       authorizationRevision: registrationIdentity.authorizationRevision, status: 'paired',
@@ -572,7 +573,7 @@ it('refuses a GitHub mutation on a replacement authenticated installation after 
     validated()
     await validation
     return { rows: [{ record }] }
-  })
+  }
   const pool = { connect: async () => ({ query, release() {} }) } as unknown as pg.Pool
   const commands = { recordAudit: vi.fn(async () => {}), recordDenied: vi.fn(async () => {}) } as unknown as PostgresCommandCoordinator
   const local = { handle: vi.fn(async () => { throw new Error('Device requests must use the captured remote handler.') }) }

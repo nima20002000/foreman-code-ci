@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { SavedNodePlacement } from '@foreman-code/contracts/node-placement'
-import { sameWorkflowValue } from '@foreman-code/contracts/current'
+import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { Select } from '../../shared/ui/nocturne'
 import { NodeRow } from '../graph/AgentMainFields'
 

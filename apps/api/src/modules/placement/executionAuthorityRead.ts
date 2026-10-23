@@ -1,6 +1,6 @@
 import { DispatchIntentSchema, type DispatchIntent } from '@foreman-code/contracts/node-placement'
 import { RemoteOwnerReconciliationSchema } from '@foreman-code/contracts/remote-execution'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import { DomainError } from '../errors.js'
 import { readPlacement } from './binding.js'
 
@@ -29,7 +29,7 @@ interface AuthorityRow {
 }
 
 /** One committed snapshot per admission check; mutating callers retain their ordered row locks. */
-export async function readExecutionAuthoritySnapshot(sql: SqlQuery,
+export async function readExecutionAuthoritySnapshot(sql: GraphSqlClient,
   intent: DispatchIntent) {
   const rows = await sql.query<AuthorityRow>(`select i.record as dispatch,i.operation_id,i.execution_id,i.run_id,
       i.node_id,i.binding_hash,i.attempt_id,t.transition,p.record as placement,

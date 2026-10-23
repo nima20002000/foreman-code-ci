@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it, vi } from 'vitest'
 import { decodeMcpToolResult, OperatorRunCompactSchema } from '@foreman-code/contracts/operator-mcp'
-import { RunExecutionsPageSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { RunExecutionsPageSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { DomainError } from '../src/modules/errors.js'
 

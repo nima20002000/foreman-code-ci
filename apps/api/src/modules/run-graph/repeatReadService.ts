@@ -1,11 +1,11 @@
 import type pg from 'pg'
 import { ManagementPrincipalSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import { CanonicalRunGraphScopeSchema, CanonicalRunGraphReadCapabilitiesSchema, type CanonicalRunGraphReadCapabilities,
-  type RepeatGraphSnapshotCurrent, type RepeatGraphPageCurrent, type RepeatGraphResetCurrent, type RepeatGraphCurrentState } from '@foreman-code/contracts/current'
-import { hasAction, requireAuthorization } from '../access/index.js'
+  type RepeatGraphSnapshotV3, type RepeatGraphPageV3, type RepeatGraphResetV3, type RepeatGraphCurrentV3 } from '@foreman-code/contracts/wave25'
+import { hasAction, requireAuthorization } from '../access/policy.js'
 import { readRepeatGraphSnapshot, readRepeatGraphPage, readRepeatGraphCurrent, type AuthorizeRepeatGraphRead } from './repeatReader.js'
 import { RunGraphError } from './errors.js'
-import { componentLogger } from '../diagnostics/index.js'
+import { componentLogger } from '../diagnostics/logger.js'
 
 /** Authenticated, rollout-gated HTTP/Operator-MCP read boundary. The default is
  * closed. Uses the SAME access policy and actual Run tuple as RunGraphReadService;
@@ -62,17 +62,17 @@ export class RepeatGraphReadService {
 }
 export interface RunGraphReadApi {
   capabilities(principal: ManagementPrincipal): CanonicalRunGraphReadCapabilities
-  current(principal: ManagementPrincipal, request: unknown): Promise<RepeatGraphCurrentState>
-  snapshot(principal: ManagementPrincipal, request: unknown): Promise<RepeatGraphSnapshotCurrent>
-  events(principal: ManagementPrincipal, request: unknown): Promise<RepeatGraphPageCurrent | RepeatGraphResetCurrent>
+  current(principal: ManagementPrincipal, request: unknown): Promise<RepeatGraphCurrentV3>
+  snapshot(principal: ManagementPrincipal, request: unknown): Promise<RepeatGraphSnapshotV3>
+  events(principal: ManagementPrincipal, request: unknown): Promise<RepeatGraphPageV3 | RepeatGraphResetV3>
 }
 
 export interface CanonicalRunGraphReadApi {
   capabilities: RunGraphReadApi['capabilities']
   readCapabilities(principal: ManagementPrincipal): CanonicalRunGraphReadCapabilities
-  current(principal: ManagementPrincipal, request: unknown): Promise<RepeatGraphCurrentState>
-  snapshot(principal: ManagementPrincipal, request: unknown): Promise<RepeatGraphSnapshotCurrent>
-  events(principal: ManagementPrincipal, request: unknown): Promise<RepeatGraphPageCurrent | RepeatGraphResetCurrent>
+  current(principal: ManagementPrincipal, request: unknown): Promise<RepeatGraphCurrentV3>
+  snapshot(principal: ManagementPrincipal, request: unknown): Promise<RepeatGraphSnapshotV3>
+  events(principal: ManagementPrincipal, request: unknown): Promise<RepeatGraphPageV3 | RepeatGraphResetV3>
 }
 /** One current execution reader, not a semantics dispatcher. Retired/unknown
  * tags fail before any database work. Wire protocol names remain unchanged. */

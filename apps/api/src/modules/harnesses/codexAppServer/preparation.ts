@@ -2,7 +2,7 @@
 import { worktreeSecurity } from '../worktreeSecurity.js'
 import { codexDisabledMcpTransports } from '../codexNativeTools.js'
 import { APP_MCP_SERVER_NAMES, APP_MCP_TOKEN_NAMES } from '@foreman-code/contracts/product'
-import { timeRuntimeOperation } from '../../diagnostics/index.js'
+import { timeRuntimeOperation } from '../../diagnostics/runtimeTiming.js'
 import { isWorkflowStart, hasWorkflowRequest, sessionStartDirectory } from '../sessionStart.js'
 import { chatExcludedAppMcpServerNames, appMcpServerName, appLauncherTokenName, isAppLauncher,
   isSupportedAppMcpServerName, isSupportedAppMcpTokenName } from '../appMcpLauncher.js'

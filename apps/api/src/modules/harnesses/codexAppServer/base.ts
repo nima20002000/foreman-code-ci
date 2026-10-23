@@ -1,5 +1,5 @@
 /** Manager state, ownership guards and the bounded native event log. */
-import { beginRuntimeTiming, runtimeTimingPoint } from '../../diagnostics/index.js'
+import { beginRuntimeTiming, runtimeTimingPoint } from '../../diagnostics/runtimeTiming.js'
 import { isWorkflowStart, sessionStartSystemPrompt } from '../sessionStart.js'
 import { type SessionPreferences, NativeHarnessEventSchema, type NativeSessionReference } from '@foreman-code/contracts'
 import { APP_MCP_SERVER_NAME } from '../appMcpLauncher.js'
@@ -17,7 +17,6 @@ import { CodexChildControls } from '../codexChildControls.js'
 import { codexResponseDeliveryEvidence } from '../codexResponseDelivery.js'
 import type { NativeResponseJournal } from '../recovery/responseJournal.js'
 import type { RunSubagent } from '@foreman-code/contracts/subagents'
-import { CODEX_CAPABILITY_DESCRIPTORS } from '../capabilities.js'
 import { CodexStdioTransport, isObject, type JsonObject } from '../codexStdioTransport.js'
 import type { CodexTransport, CodexSessionOperations, CodexSessionDependencies, CodexInspectionOptions, Runtime,
   Creation } from './types.js'
@@ -26,7 +25,6 @@ import { MAX_EVENTS, MAX_EVENT_BYTES, MAX_UNREAD_EVENT_BYTES, MAX_INTERACTIONS, 
 
 export abstract class CodexManagerBase {
   readonly harness = 'codex' as const
-  readonly harnessCapabilities = CODEX_CAPABILITY_DESCRIPTORS
   protected startupPreferences: SessionPreferences | undefined
   protected readonly runtimes = new Map<string, Runtime>()
   protected readonly locks = new Set<string>()

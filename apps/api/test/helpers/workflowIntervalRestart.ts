@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { expect } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { SavedRunDetailsSchema } from '@foreman-code/contracts/current'
+import { SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
 import { startWhenReady } from './harnessInstallationUpdate.js'
 import { expectMcpAccessDenied } from './deniedMcpTool.js'
 import { remoteReviewProduction } from './remoteReviewProduction.js'

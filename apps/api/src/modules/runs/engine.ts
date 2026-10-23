@@ -1,10 +1,9 @@
 import { beginRuntimeTiming, runtimeTimingPoint, withRuntimeTimingContext } from '../../infrastructure/runtimeTiming.js'
 import { resolve } from 'node:path'
-import type { BaseCheckpointSaver } from '../../infrastructure/langgraph.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint'
 import type { DurableInteraction } from '@foreman-code/contracts'
-import { CurrentRunVersionSnapshotSchema, ExecutableWorkflowCurrentSchema,
-  type WorkflowRunCurrent } from '@foreman-code/contracts/current'
+import { CurrentRunVersionSnapshotSchema, ExecutableWorkflowV3Schema,
+  type WorkflowRunV3 } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../errors.js'
 import { assertNativeWorkflowConfiguration } from '../harnesses/nativeWorkflowConfiguration.js'
 import type { ExecutionCredentialProvider } from '../harnesses/mcpDetection.js'
@@ -13,7 +12,7 @@ import type { PostgresInteractionRepository } from '../interactions/postgres.js'
 import type { GraphResumeClaim } from '../interactions/deliveryPostgres.js'
 import { hasRecoveredWorkflowNativeLifetime } from '../interactions/workflowClosure.js'
 import { withCleanupDeadline } from '../interactions/cleanup.js'
-import type { PostgresWorkflowRepository } from '../workflows/index.js'
+import type { PostgresWorkflowRepository } from '../workflows/postgres.js'
 import { requiredLocationAccess, type WorkspaceLocationService } from '../workspaces/location.js'
 import { executeRepeatEngineStart } from './repeatStartComposition.js'
 import { repeatSettlementPending } from './repeatRuntime.js'
@@ -25,14 +24,13 @@ import type { AuthorizeWorkflowStop } from './repeatLifecycle.js'
 import type { PostgresRunRepository } from './postgres.js'
 import type { RunOwnership } from './ownership.js'
 import { RunnerAdmission } from './runnerAdmission.js'
-import { componentLogger } from '../diagnostics/index.js'
+import { componentLogger } from '../diagnostics/logger.js'
 import { isAtomicApprovalCheckpointSaver } from '../../infrastructure/approvalCheckpointSaver.js'
 import type { WorkflowRestartApprovals } from './workflowRepositoryServices.js'
 import { readRunAcceptedPlacements } from '../placement/persistence.js'
-import { ignoreError } from '../diagnostics/index.js'
+import { ignoreError } from '../diagnostics/ignoredError.js'
 import { executionFailureClass } from './executionRetryPolicy.js'
 import { isOpenRunState, isRunInProgress } from './runState.js'
-import { usesWorkHandoffGraph } from './workflowRunMode.js'
 
 /** One engine, Run owner, checkpoint thread and repository for all current V3
  * graphs. Optional bounded blocks are compiled into this same LangGraph; an
@@ -185,7 +183,7 @@ export class LangGraphWorkflowEngine {
       }
       if (!isOpenRunState(snapshot.run.executionState)) throw new DomainError(
         'RUN_NOT_RESUMABLE', 'This Run requires Stop settlement or a separately authorized new Run.', 409)
-      if (snapshot.run.executionState === 'waiting' && usesWorkHandoffGraph(snapshot.version)
+      if (snapshot.run.executionState === 'waiting' && snapshot.version.definition.handoffs
         && await hasWorkDirectionWait(owner)) {
         await persistWorkDirectionWait(owner, this.locations)
         const store = await this.runs.repeat(owner)
@@ -242,7 +240,7 @@ export class LangGraphWorkflowEngine {
           preflight: async () => {
             owner.assertOwned(); controller.signal.throwIfAborted()
             const current = await this.runs.getRepeatSnapshot(runId, owner)
-            ExecutableWorkflowCurrentSchema.parse({ version: current.version, configurations: current.configurations })
+            ExecutableWorkflowV3Schema.parse({ version: current.version, configurations: current.configurations })
             for (const configuration of current.configurations) assertNativeWorkflowConfiguration(configuration.harness, run.approval,
               run.approval.handler === 'orchestrator' && configuration.agentId === run.approval.designatedOrchestratorAgentId)
             await this.locations.revalidateRunAuthorization(run.authorizationPrincipalId, run.workspaceId, run.workflowId, owner.client)
@@ -272,7 +270,7 @@ export class LangGraphWorkflowEngine {
           persistWait: async (current) => {
             const waiting = (await persistWorkflowApprovalWait(owner, this.checkpointer, current)).length > 0
             // A finished graph needs retained reviewer closure before the Run completion transaction.
-            if (!waiting && !current.next.length && !usesWorkHandoffGraph(snapshot.version)) {
+            if (!waiting && !current.next.length && !snapshot.version.definition.handoffs) {
               await this.nativeExecutions.finishIdleReviewers(runId, owner, controller.signal)
             }
             return waiting
@@ -327,7 +325,7 @@ export class LangGraphWorkflowEngine {
     }
   }
 
-  private authorize(sql: SqlTransaction, run: WorkflowRunCurrent): Promise<void> {
+  private authorize(sql: import('../run-graph/connection.js').GraphTransactionSql, run: WorkflowRunV3): Promise<void> {
     if (!run.authorizationPrincipalId) throw new DomainError('RUN_AUTHORIZATION_REVOKED', 'The accepted Run authority is missing.', 403)
     return this.locations.revalidateRunAuthorization(run.authorizationPrincipalId, run.workspaceId, run.workflowId, sql)
   }
@@ -500,7 +498,7 @@ export class LangGraphWorkflowEngine {
               const version = run && await this.workflows.getVersion(run.workflowVersionId)
               const accepted = CurrentRunVersionSnapshotSchema.parse({ run, version })
               let approvals: WorkflowRestartApprovals | undefined
-              if (usesWorkHandoffGraph(accepted.version)) {
+              if (accepted.version.definition.handoffs) {
                 const checkpoint = await readWorkflowCheckpoint(runId, accepted.version, this.checkpointer)
                 const interactions = checkpoint.tasks.some(task => task.interrupts?.length)
                   ? await persistWorkflowApprovalWait(owner, this.checkpointer, checkpoint) : []
@@ -519,7 +517,7 @@ export class LangGraphWorkflowEngine {
               if (preserved) this.restartPreservedOwners.add(owner)
               // Freeze handoff tasks before classifying their queued reservations.
               // These tasks do not abort Jobs, which require the cleanup fence first.
-              if (usesWorkHandoffGraph(accepted.version)) this.activeRuns.get(runId)?.abort(reason)
+              if (accepted.version.definition.handoffs) this.activeRuns.get(runId)?.abort(reason)
               if (!preserved) await this.requestRestartCleanup(owner, approvals)
             })
           }

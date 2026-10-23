@@ -5,7 +5,7 @@ import { http, HttpResponse } from 'msw'
 import { afterEach, expect, it } from 'vitest'
 import { DEFAULT_AGENT_DEFAULTS } from '@foreman-code/contracts'
 import { server } from '../../mocks/server'
-import { useOperatorChatStore } from '../operator-chat'
+import { useOperatorChatStore } from '../operator-chat/operatorChatStore'
 import { AgentDefaultsSettings } from './AgentDefaultsSettings'
 
 const clients: QueryClient[] = []

@@ -1,5 +1,5 @@
 import { RunEventsPageSchema } from '@foreman-code/contracts/management'
-import { CurrentRunDetailsSchema, CurrentRunPageSchema, RepeatGraphScopeCurrentSchema, type RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
+import { CurrentRunDetailsSchema, CurrentRunPageSchema, RepeatGraphScopeV3Schema, type RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
 import { apiClient, ApiError, type RequestOptions } from '../../shared/api/client'
 
 export async function readBoardRun(workspaceId: string, workflowId: string, runId: string, options?: RequestOptions) {
@@ -11,14 +11,14 @@ export async function readBoardRun(workspaceId: string, workflowId: string, runI
   }
   return result
 }
-export function scopeForBoardRun(run: Awaited<ReturnType<typeof readBoardRun>>['run']): RepeatGraphScopeCurrent {
-  return RepeatGraphScopeCurrentSchema.parse({ workspaceId: run.workspaceId, workflowId: run.workflowId,
+export function scopeForBoardRun(run: Awaited<ReturnType<typeof readBoardRun>>['run']): RepeatGraphScopeV3 {
+  return RepeatGraphScopeV3Schema.parse({ workspaceId: run.workspaceId, workflowId: run.workflowId,
     runId: run.id, workflowVersionId: run.workflowVersionId,
     executionSemanticsVersion: run.executionSemanticsVersion })
 }
 
 /** Deliberate detail read, never part of the current-state polling loop. */
-export async function readBoardHistory(scope: RepeatGraphScopeCurrent, cursor: string | null, options?: RequestOptions) {
+export async function readBoardHistory(scope: RepeatGraphScopeV3, cursor: string | null, options?: RequestOptions) {
   const query = new URLSearchParams({ limit: '50' })
   if (cursor !== null) query.set('cursor', cursor)
   const result = await apiClient.request(

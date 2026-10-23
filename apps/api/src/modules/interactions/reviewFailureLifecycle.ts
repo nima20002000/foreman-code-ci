@@ -1,8 +1,8 @@
 import { DurableInteractionSchema, ReviewJobSchema, RunStopCauseSchema, WorkflowRunSchema } from '@foreman-code/contracts'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
-import { transact } from './current/transaction.js'
-import { recoverApprovalFailure } from './current/failureRecovery.js'
+import { transact } from './wave25/transaction.js'
+import { recoverApprovalFailure } from './wave25/failureRecovery.js'
 import { DomainError } from '../errors.js'
 import { publicReviewStopError, reviewNeedsStop } from './reviewPolicy.js'
 

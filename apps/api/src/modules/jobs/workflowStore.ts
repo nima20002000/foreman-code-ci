@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { JobExecutionRecordSchema, type JobExecutionRecord, type PreparedJobSpecRecord } from '@foreman-code/contracts/job-verification'
 import {
-  AcceptedWorkflowRunCurrentSchema,
+  AcceptedWorkflowRunV3Schema,
   AcceptedCurrentNodeResultSchema,
   GraphDigestSchema,
   GraphIdSchema,
@@ -11,22 +11,21 @@ import {
   NodeResolutionSchema,
   RepeatOccurrenceIdentityV1Schema,
   RepeatExecutionIdentityV1Schema,
-  RepeatGraphExecutionIdentityCurrentSchema,
+  RepeatGraphExecutionIdentityV3Schema,
   RepeatOccurrenceV1Schema,
   RepeatDecisionV1Schema,
   RepeatDecisionMetadataV1Schema,
-  WorkflowVersionCurrentSchema,
+  WorkflowVersionV3Schema,
   canonicalGraphJson,
   qualifyRepeatGraphExecution,
-  validateRepeatGraphFactsCurrent,
+  validateRepeatGraphFactsV3,
   validateRepeatSuccessorV1,
-  type RepeatGraphFactCurrent,
-  type WorkflowVersionCurrent,
+  type RepeatGraphFactV3,
+  type WorkflowVersionV3,
   type RepeatDecisionV1,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import type { RunOwnership } from '../runs/ownership.js'
-import { beforeGraphCommit } from '../run-graph/connection.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { beforeGraphCommit,type GraphTransactionSql } from '../run-graph/connection.js'
 import { currentRunGraphPublication } from '../run-graph/publication.js'
 import { canonicalRepeatEffect,canonicalRepeatEffectReceipt } from '../run-graph/repeatPublication.js'
 import { requireRepeatCanonicalReceiptBeforeCommit } from '../run-graph/repeatReceipts.js'
@@ -63,7 +62,7 @@ import {
 import { readAcceptedRepeatRunLocked } from '../runs/repeatStartRead.js'
 import { hasWorkflowExecutionCapacityLocked } from '../runs/workflowExecutionBudget.js'
 import { visitRepeatNativeAttemptsLocked } from '../runs/repeatNativeAttempts.js'
-import { settleRepeatNativeExecutionLocked } from '../interactions/index.js'
+import { settleRepeatNativeExecutionLocked } from '../interactions/repeatNativeSettlement.js'
 import { readRepeatRunStateLocked } from '../run-graph/repeatProjectionRows.js'
 import { graphSourceDigest } from '../run-graph/publication.js'
 import { readPublicNodeProjection,publicNodeProjectionFacts } from '../run-graph/publicProjection.js'
@@ -77,11 +76,11 @@ const Source=z.object({relationshipId:GraphIdSchema,execution:GraphExecutionIden
 const Entry=z.object({runInput:z.unknown(),external:z.array(Source).max(8000),carry:z.object({decisionId:GraphIdSchema,execution:RepeatExecutionIdentityV1Schema,acceptedResultDigest:GraphDigestSchema,acceptedResult:AcceptedCurrentNodeResultSchema}).strict().nullable()}).strict()
 const Resolution=z.object({ref:z.object({nodeId:GraphIdSchema,occurrence:RepeatOccurrenceIdentityV1Schema.nullable()}).strict(),value:NodeResolutionSchema,deferredRelationshipIds:z.array(GraphIdSchema).max(8000)}).strict()
 type Occurrence={occurrence:z.infer<typeof RepeatOccurrenceV1Schema>;input:RepeatEntryInput}
-type Context={sql:SqlTransaction;scope:RepeatScope;version:WorkflowVersionCurrent;hooks:RepeatLockedHooks;now:string;fence:{ownerId:string;fence:string}}
+type Context={sql:GraphTransactionSql;scope:RepeatScope;version:WorkflowVersionV3;hooks:RepeatLockedHooks;now:string;fence:{ownerId:string;fence:string}}
 export interface WorkflowJobStorePublication {
-  effect(sql:SqlTransaction,owner:RunOwnership,scope:RepeatScope,version:WorkflowVersionCurrent,effect:RepeatEffect,mutate:()=>Promise<void>,facts:()=>Promise<readonly RepeatGraphFactCurrent[]>):Promise<void>
-  assertReceipt(sql:SqlTransaction,scope:RepeatScope,effect:RepeatEffect):Promise<void>
-  observe(sql:SqlTransaction,scope:RepeatScope,execution:JobExecutionRecord):Promise<void>
+  effect(sql:GraphTransactionSql,owner:RunOwnership,scope:RepeatScope,version:WorkflowVersionV3,effect:RepeatEffect,mutate:()=>Promise<void>,facts:()=>Promise<readonly RepeatGraphFactV3[]>):Promise<void>
+  assertReceipt(sql:GraphTransactionSql,scope:RepeatScope,effect:RepeatEffect):Promise<void>
+  observe(sql:GraphTransactionSql,scope:RepeatScope,execution:JobExecutionRecord):Promise<void>
 }
 /** Effects reuse the existing Run head, canonical receipts and repeat ledger. */
 export function workflowJobStorePublication():WorkflowJobStorePublication {
@@ -90,7 +89,7 @@ export function workflowJobStorePublication():WorkflowJobStorePublication {
       const publication=currentRunGraphPublication(sql,scope)
       const receipt=canonicalRepeatEffectReceipt(scope,effect)
       const result=await publication.repeatChange({evidence:receipt.evidence,sourceDigest:receipt.sourceDigest,effect:canonicalRepeatEffect(scope,effect)},owner,mutate,async()=>{
-        const values=[...await facts()];if(!values.length)values.push({type:'repeat.run.state',state:await readRepeatRunStateLocked(sql,scope)});validateRepeatGraphFactsCurrent(version,scope,values);return values
+        const values=[...await facts()];if(!values.length)values.push({type:'repeat.run.state',state:await readRepeatRunStateLocked(sql,scope)});validateRepeatGraphFactsV3(version,scope,values);return values
       })
       const nodeFacts=publicNodeProjectionFacts(await readPublicNodeProjection(sql,scope,version.definition.nodes.filter(node=>node.kind==='job').map(node=>node.id)))
       if(nodeFacts.length)await publication.source({evidence:{sourceKind:'input_binding',sourceId:repeatId('job-public-effect',effect.kind,effect.entityId,effect.digest),sourceRevision:'1'},sourceDigest:graphSourceDigest(nodeFacts),facts:nodeFacts},async()=>undefined)
@@ -102,14 +101,14 @@ export function workflowJobStorePublication():WorkflowJobStorePublication {
 }
 /** One adapter per existing Run owner; preparation performs no native/source I/O. */
 export class PostgresWorkflowJobNodeStore implements WorkflowJobNodeStore {
-  private readonly version:WorkflowVersionCurrent
-  constructor(private readonly owner:RunOwnership,version:WorkflowVersionCurrent,private readonly host:RepeatRepositoryHost,private readonly jobs:WorkflowJobLockedPort,private readonly publication:WorkflowJobStorePublication){this.version=WorkflowVersionCurrentSchema.parse(version)}
+  private readonly version:WorkflowVersionV3
+  constructor(private readonly owner:RunOwnership,version:WorkflowVersionV3,private readonly host:RepeatRepositoryHost,private readonly jobs:WorkflowJobLockedPort,private readonly publication:WorkflowJobStorePublication){this.version=WorkflowVersionV3Schema.parse(version)}
   private async transaction<T>(work:(context:Context)=>Promise<T>):Promise<T>{
     return this.owner.oneShotConnection().transaction(async sql=>{
       this.owner.assertOwned()
       const row=(await sql.query<{run:unknown;version:unknown;stopped:boolean;cleanup:boolean;state:string;now:string}>(`select r.record as run,v.record as version,r.stop_requested_at is not null as stopped,r.execution_state as state,exists(select 1 from run_cleanup_intents c where c.run_id=r.id and c.pending) as cleanup,transaction_timestamp()::text as now from runs r join workflow_versions v on v.id=r.workflow_version_id where r.id=$1 for update of r`,[this.owner.runId])).rows[0]
       if(!row)repeatConflict('RUN_NOT_FOUND')
-      const version=WorkflowVersionCurrentSchema.parse(row.version),run=AcceptedWorkflowRunCurrentSchema.parse(row.run)
+      const version=WorkflowVersionV3Schema.parse(row.version),run=AcceptedWorkflowRunV3Schema.parse(row.run)
       if(!sameRepeatValue(version,this.version)||run.workflowVersionId!==version.id||run.workspaceId!==version.workspaceId||run.workflowId!==version.workflowId||run.id!==this.owner.runId||row.state!==run.executionState||!sameRepeatValue(run.agentConfigurationVersionIds,version.agentConfigurationVersionIds))repeatConflict('RUN_PIN_CONFLICT')
       if(row.stopped||row.cleanup)repeatConflict('GRAPH_STOP_CONFLICT')
       if(['completed','interrupted'].includes(row.state))repeatConflict('GRAPH_TERMINAL_CONFLICT')
@@ -121,7 +120,7 @@ export class PostgresWorkflowJobNodeStore implements WorkflowJobNodeStore {
     })
   }
   private node(context:Context,ref:RepeatNodeRef){assertRepeatRef(context.version,context.scope,ref);const node=context.version.definition.nodes.find(node=>node.id===ref.nodeId);if(node?.kind!=='job')return repeatConflict('JOB_WORKFLOW_PIN_CONFLICT');if(context.version.definition.handoffs)repeatConflict('JOB_HANDOFF_POLICY_UNSUPPORTED');return node}
-  private async effect(context:Context,kind:RepeatEffect['kind'],entityId:string,value:unknown,mutate:()=>Promise<void>,facts:()=>Promise<readonly RepeatGraphFactCurrent[]>){
+  private async effect(context:Context,kind:RepeatEffect['kind'],entityId:string,value:unknown,mutate:()=>Promise<void>,facts:()=>Promise<readonly RepeatGraphFactV3[]>){
     const effect={kind,entityId,digest:repeatDigest(value)},prior=(await context.sql.query<{payload_digest:string}>('select payload_digest from run_repeat_effects where run_id=$1 and effect_kind=$2 and entity_id=$3',[context.scope.runId,kind,entityId])).rows[0]
     if(prior){if(prior.payload_digest!==effect.digest)repeatConflict('REPEAT_EFFECT_CONFLICT');await this.publication.assertReceipt(context.sql,context.scope,effect);return}
     let count=0
@@ -173,7 +172,7 @@ export class PostgresWorkflowJobNodeStore implements WorkflowJobNodeStore {
     if(execution.workspaceId!==context.scope.workspaceId||execution.workflow?.runId!==context.scope.runId||execution.workflow.workflowId!==context.scope.workflowId||execution.workflow.nodeId!==ref.nodeId||execution.acceptedSpec.definitionId!==node.jobDefinitionId||execution.acceptedSpec.definitionRevision!==node.jobDefinitionRevision||execution.acceptedSpec.definitionVersionId!==node.jobDefinitionVersionId)repeatConflict('JOB_WORKFLOW_PIN_CONFLICT')
     if(preparation&&(execution.id!==preparation.executionId||execution.attemptId!==preparation.attemptId||execution.operationId!==preparation.operationId||!sameRepeatValue(execution.acceptedSpec.workflowInput,preparation.input)))repeatConflict('JOB_PREPARATION_PIN_CONFLICT')
   }
-  private async slot(context:Context,ref:RepeatNodeRef,executionId:string){const row=(await context.sql.query<{execution_id:string;identity:unknown;input_digest:string;input_json:string}>(`select x.execution_id,x.identity,s.input_digest,s.input_json from run_repeat_executions x join run_repeat_slots s on s.slot_id=x.slot_id where x.run_id=$1 and x.slot_id=$2 order by x.technical_attempt desc limit 1`,[context.scope.runId,repeatSlotId(context.scope.runId,ref)])).rows[0];if(!row||row.execution_id!==executionId||row.input_digest!==repeatDigest(JSON.parse(row.input_json),4*1024*1024))repeatConflict('JOB_WORKFLOW_PIN_CONFLICT');const identity=ref.occurrence?RepeatGraphExecutionIdentityCurrentSchema.parse(row.identity):GraphExecutionIdentitySchema.parse(row.identity);if(ref.occurrence&&(!('occurrence' in identity)||!sameRepeatValue(identity.occurrence,ref.occurrence)))repeatConflict('REPEAT_OCCURRENCE_CONFLICT');if(identity.kind!=='job'||identity.workflowNodeId!==ref.nodeId||identity.executionId!==executionId)repeatConflict('JOB_WORKFLOW_PIN_CONFLICT');return row}
+  private async slot(context:Context,ref:RepeatNodeRef,executionId:string){const row=(await context.sql.query<{execution_id:string;identity:unknown;input_digest:string;input_json:string}>(`select x.execution_id,x.identity,s.input_digest,s.input_json from run_repeat_executions x join run_repeat_slots s on s.slot_id=x.slot_id where x.run_id=$1 and x.slot_id=$2 order by x.technical_attempt desc limit 1`,[context.scope.runId,repeatSlotId(context.scope.runId,ref)])).rows[0];if(!row||row.execution_id!==executionId||row.input_digest!==repeatDigest(JSON.parse(row.input_json),4*1024*1024))repeatConflict('JOB_WORKFLOW_PIN_CONFLICT');const identity=ref.occurrence?RepeatGraphExecutionIdentityV3Schema.parse(row.identity):GraphExecutionIdentitySchema.parse(row.identity);if(ref.occurrence&&(!('occurrence' in identity)||!sameRepeatValue(identity.occurrence,ref.occurrence)))repeatConflict('REPEAT_OCCURRENCE_CONFLICT');if(identity.kind!=='job'||identity.workflowNodeId!==ref.nodeId||identity.executionId!==executionId)repeatConflict('JOB_WORKFLOW_PIN_CONFLICT');return row}
   async prepareJob(ref:RepeatNodeRef):Promise<WorkflowJobAdmission>{return this.transaction(async context=>{
     const node=this.node(context,ref);const occurrence=await this.occurrence(context,ref),resolutions=await this.resolutions(context,ref.occurrence?.occurrenceId??null),admission=decideRepeatAdmission(context.version,ref,resolutions)
     if(admission.kind==='resolved'){const resolution=resolutions.get(ref.nodeId)!;await this.recorded(context,resolution.value.execution?'terminal.accept':'node.inactive',resolution.value.execution?.executionId??repeatSlotId(context.scope.runId,ref));return {kind:'resolved',resolution}}
@@ -237,7 +236,7 @@ export class PostgresWorkflowJobNodeStore implements WorkflowJobNodeStore {
       decision=workflowJobRepeatDecision(context.version,current.occurrence,execution,result,context.now)
       if(decision.reason==='repeat'){successor=makeRepeatOccurrence(context.scope,block,repeatSuccessorInput(current.input,decision,result),decision);validateRepeatSuccessorV1(context.version,decision,successor.occurrence,result)}else exported=finalRepeatExport(context.version,resolution,decision)
     }
-    const facts:RepeatGraphFactCurrent[]=[{type:'repeat.node.resolved',resolution:{...resolution,outside:ref.occurrence===null}}]
+    const facts:RepeatGraphFactV3[]=[{type:'repeat.node.resolved',resolution:{...resolution,outside:ref.occurrence===null}}]
     if(resolution.value.acceptedResultDigest)facts.unshift({type:'repeat.result.accepted',result:{execution:qualifyRepeatGraphExecution(resolution.value.execution!,ref.occurrence),resultDigest:resolution.value.acceptedResultDigest}})
     if(decision){const {resultData:_data,...metadata}=decision;void _data;facts.push({type:'repeat.decision',decision:RepeatDecisionMetadataV1Schema.parse(metadata)})}
     if(successor)facts.push({type:'repeat.occurrence',occurrence:successor.occurrence})

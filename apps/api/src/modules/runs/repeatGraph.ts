@@ -1,7 +1,8 @@
 import { workflowJobNodeAction, type WorkflowJobNodeStore } from '../jobs/workflowNode.js'
 import type { WorkflowJobDriver } from '../jobs/workflowRuntimePorts.js'
-import { Annotation, END, START, StateGraph, type Command, type BaseCheckpointSaver } from '../../infrastructure/langgraph.js'
-import { WorkflowVersionCurrentSchema, type RepeatOccurrenceV1, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
+import { Annotation, END, START, StateGraph, type Command } from '@langchain/langgraph'
+import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint'
+import { WorkflowVersionV3Schema, type RepeatOccurrenceV1, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 
 import { ExecutionLimiter } from './limiter.js'
 import { repeatNodeAction, type RepeatExecutionDriver, type RepeatGraphState, type RepeatNodeStore } from './repeatNode.js'
@@ -37,14 +38,14 @@ export type RepeatGraphStore = RepeatNodeStore & Pick<RepeatRunRepository, 'ente
  * an external barrier; intermediate exits cannot select OR deselect external edges.
  */
 export function buildRepeatGraph(input: {
-  runId: string; version: WorkflowVersionCurrent; store: RepeatGraphStore; driver: RepeatExecutionDriver
+  runId: string; version: WorkflowVersionV3; store: RepeatGraphStore; driver: RepeatExecutionDriver
   checkpointer: BaseCheckpointSaver; signal: AbortSignal; configuredParallelism?: number; maximumWaiting?: number
   jobs?: { store: WorkflowJobNodeStore; driver: WorkflowJobDriver }
   track?: (task: Promise<Partial<RepeatGraphState>>) => void
   /** The Run-local limiter shared with interval checks. */
   limiter?: ExecutionLimiter
 }) {
-  const version = WorkflowVersionCurrentSchema.parse(input.version), layout = compileRepeatLayout(version)
+  const version = WorkflowVersionV3Schema.parse(input.version), layout = compileRepeatLayout(version)
   const configured = input.configuredParallelism ?? 4
   if (!Number.isSafeInteger(configured) || configured < 1) return repeatConflict('INVALID_RUNNER_PARALLELISM')
   const limiter = input.limiter ?? new ExecutionLimiter(version.definition.executionPolicy!.maxParallelism, input.maximumWaiting ?? 1000)
@@ -94,9 +95,9 @@ export function buildRepeatGraph(input: {
 /** The one current graph compiler is shared by execution and read-only recovery
  * inspection. Getting a checkpoint does not invoke wrappers, allocate an attempt
  * or reconstruct a native launch permit. Graph names stay stable across restarts. */
-export function compileWorkflowGraph(version: WorkflowVersionCurrent, checkpointer: BaseCheckpointSaver,
+export function compileWorkflowGraph(version: WorkflowVersionV3, checkpointer: BaseCheckpointSaver,
   action: (node: ReturnType<typeof compileRepeatLayout>['nodes'][number], state: RepeatGraphState) => Promise<Partial<RepeatGraphState>>) {
-  const layout = compileRepeatLayout(WorkflowVersionCurrentSchema.parse(version))
+  const layout = compileRepeatLayout(WorkflowVersionV3Schema.parse(version))
   const graph = new StateGraph(RepeatState) as unknown as GraphBuilder
   for (const node of layout.nodes) graph.addNode(node.name, (state) => action(node, state))
   graph.addEdge(START, layout.start)
@@ -111,7 +112,7 @@ export function compileWorkflowGraph(version: WorkflowVersionCurrent, checkpoint
   return graph.compile({ checkpointer })
 }
 
-export async function readWorkflowCheckpoint(runId: string, version: WorkflowVersionCurrent,
+export async function readWorkflowCheckpoint(runId: string, version: WorkflowVersionV3,
   saver: BaseCheckpointSaver): Promise<RepeatCheckpoint> {
   if (version.definition.handoffs) {
     const unavailable = async (): Promise<never> => { throw new Error('Checkpoint inspection cannot execute work activations.') }

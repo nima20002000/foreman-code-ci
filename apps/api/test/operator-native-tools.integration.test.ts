@@ -43,7 +43,7 @@ it('supports role native-tool policies through authenticated MCP with denied wri
     expect.objectContaining({ feature: 'native_tool_loading' }),
   ]))
   for (const name of ['agent_defaults_update', 'agent_update']) {
-    const schema = decodeMcpToolResult(await owner.callTool({ name: 'tool_schema',
+    const schema = decodeMcpToolResult(await owner.callTool({ name: 'operator_tool_schema_get',
       arguments: { name } })) as { inputSchema: unknown; description: string }
     expect(JSON.stringify(schema.inputSchema)).toContain('nativeTools')
     expect(schema.description).toContain('nativeTools')

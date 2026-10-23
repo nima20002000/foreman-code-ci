@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { ExecutableWorkflowCurrentSchema } from '@foreman-code/contracts/current'
+import { ExecutableWorkflowV3Schema } from '@foreman-code/contracts/wave25'
 import { resolveImmutableApprovalRoute } from '../src/modules/workflows/approvalRoutes.js'
 import { approvalFixture } from './helpers/approvalFixture.js'
 
@@ -11,7 +11,7 @@ it('routes two Worker nodes sharing one Agent through their exact approval relat
     { id: 'approval-2', kind: 'approval', source: 'node-reviewer', target: 'node-worker-2' },
   )
   version.definition.executionPolicy!.maxNodeExecutions = 3
-  expect(() => ExecutableWorkflowCurrentSchema.parse({ version, configurations })).not.toThrow()
+  expect(() => ExecutableWorkflowV3Schema.parse({ version, configurations })).not.toThrow()
   for (const [nodeId, relationshipId] of [['node-worker', 'approval-edge'], ['node-worker-2', 'approval-2']]) {
     expect(resolveImmutableApprovalRoute(version, nodeId!, 'agent-worker')).toMatchObject({
       requestingNodeId: nodeId, requestingConfigurationVersionId: 'cfg-worker',

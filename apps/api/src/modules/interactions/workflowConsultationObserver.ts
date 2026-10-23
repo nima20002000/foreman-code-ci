@@ -2,13 +2,12 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { canonicalJson, ExecutionResultSchema, type CoordinatorConsultationBinding,
   type NativeHarnessEvent, type NativeSessionReference } from '@foreman-code/contracts'
 import type { NativeHarnessSessionManager, NativeHistory } from '../harnesses/port.js'
-import { supportsExpectedTurnSteer } from '../harnesses/capabilities.js'
 import { DomainError } from '../errors.js'
-import type { ConsultationTransaction } from '../collaboration/index.js'
+import type { ConsultationTransaction } from '../collaboration/consultationBrowser.js'
 import { bindCoordinatorConsultationNativeLocked, captureCoordinatorConsultationNativeLocked,
-  readCoordinatorConsultationLocked, settleCoordinatorConsultationLocked } from '../collaboration/index.js'
-import { markWorkflowControlCommandLocked } from '../collaboration/index.js'
-import type { WorkflowChatNativeTarget, WorkflowConsultationAdmission } from '../collaboration/index.js'
+  readCoordinatorConsultationLocked, settleCoordinatorConsultationLocked } from '../collaboration/workflowConsultations.js'
+import { markWorkflowControlCommandLocked } from '../collaboration/workflowControlRecords.js'
+import type { WorkflowChatNativeTarget, WorkflowConsultationAdmission } from '../collaboration/workflowControlTypes.js'
 import { appendConsultationNativeLocked, assertConsultationWriterLocked, type ConsultationWriter } from './workflowConsultationJournal.js'
 import { nativePersistenceRedactor } from './nativePersistence.js'
 import { reviewTurnEvidence } from './reviewerEvidence.js'
@@ -35,7 +34,7 @@ export interface ConsultationObservationInput {
 
 function nativeTarget(input: ConsultationObservationInput, providerId?: string): WorkflowChatNativeTarget {
   return { nativeSessionId: input.session.nativeSessionId, ownerRequestId: `consultation:${input.binding.consultationId}`,
-    sessionMode: input.sessionMode, steer: supportsExpectedTurnSteer(input.session), interruptAndSend: true,
+    sessionMode: input.sessionMode, steer: input.session.harness === 'codex', interruptAndSend: true,
     ...(providerId ? { providerId, ...(input.session.harness === 'codex' ? { nativeTurnId: providerId }
       : { inputMessageId: providerId }) } : {}) }
 }

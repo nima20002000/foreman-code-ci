@@ -1,5 +1,5 @@
-import { DeviceApplicationError, deviceApplicationFailure } from '../devices/index.js'
-import { DeviceConnectionError } from '../devices/index.js'
+import { DeviceApplicationError, deviceApplicationFailure } from '../devices/deviceApplicationError.js'
+import { DeviceConnectionError } from '../devices/deviceWire.js'
 import { DomainError } from '../errors.js'
 
 export interface ComputerAvailability {

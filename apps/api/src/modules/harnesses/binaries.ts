@@ -1,9 +1,8 @@
 import { createRequire } from 'node:module'
 import { accessSync, constants, readFileSync, realpathSync } from 'node:fs'
 import { delimiter, dirname, isAbsolute, join } from 'node:path'
-import { logIgnoredError } from '../diagnostics/index.js'
-import { updateOperationalFailure } from '../diagnostics/index.js'
-import { hostEnvironment } from '../../shared/process.js'
+import { logIgnoredError } from '../diagnostics/ignoredError.js'
+import { updateOperationalFailure } from '../diagnostics/operationalFailures.js'
 
 const nativeTargets: Record<string, string> = {
   'linux-x64': 'x86_64-unknown-linux-musl', 'linux-arm64': 'aarch64-unknown-linux-musl',
@@ -67,7 +66,7 @@ export function harnessBinaries(environment: NodeJS.ProcessEnv): { codexBinary: 
   catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'MODULE_NOT_FOUND') throw error
   }
-  let selected = installedCodex(environment.PATH ?? hostEnvironment().PATH ?? '', bundled)
+  let selected = installedCodex(environment.PATH ?? process.env.PATH ?? '', bundled)
   let selectedSource = 'installed-native'
   if (!selected && environment.CODEX_BINARY === undefined && bundled) {
     selected = bundled

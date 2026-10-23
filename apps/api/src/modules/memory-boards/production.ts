@@ -1,5 +1,5 @@
 import type pg from 'pg'
-import { withExclusiveGraphConnection } from '../run-graph/index.js'
+import { withExclusiveGraphConnection } from '../run-graph/connection.js'
 import { MemoryBoardService } from './service.js'
 import type { MemoryBoardAuthority } from './types.js'
 import { postgresMemoryBoardListener } from './notifications.js'

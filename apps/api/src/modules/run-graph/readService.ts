@@ -1,6 +1,6 @@
 import type pg from 'pg'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { graphJsonBytes } from '@foreman-code/contracts/current'
+import { graphJsonBytes } from '@foreman-code/contracts/wave25'
 import { RepeatGraphReadService, type RunGraphReadApi } from './repeatReadService.js'
 import { RunGraphError } from './errors.js'
 import { observeGraph, type GraphMeasurementSink } from './measurements.js'

@@ -1,12 +1,11 @@
-import { logIgnoredError } from '../diagnostics/index.js'
+import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import { beginRuntimeTiming, timeRuntimeOperation, runtimeTimingPoint } from '../../infrastructure/runtimeTiming.js'
 import type { ResponseAvailabilityInspector } from '../harnesses/responseAvailability.js'
-import { supportsExpectedTurnSteer } from '../harnesses/capabilities.js'
 import { randomUUID } from 'node:crypto'
 import { nativeEventBatches } from './nativeEventBatches.js'
 import { reviewPreflightIdentity } from './reviewPolicy.js'
 import { setImmediate as yieldToEventLoop } from 'node:timers/promises'
-import { componentLogger } from '../diagnostics/index.js'
+import { componentLogger } from '../diagnostics/logger.js'
 import { isDatabaseTimeout, retryDatabaseTimeout, retryDatabaseOperation } from '../../infrastructure/databaseRetry.js'
 import { isTransactionConflict } from '../../infrastructure/transaction.js'
 import { isRetryableLaneRenewal } from './laneRenewal.js'
@@ -781,7 +780,7 @@ export class SingleWriterSessionManager implements NativeHarnessSessionManager {
     beforeDispatch: (signal: AbortSignal) => Promise<void>, signal?: AbortSignal): Promise<{ nativeTurnId: string }> {
     const target = { ...input, nativeTurnId: input.expectedTurnId }
     const captured = this.qualifiedControlLease(session, target)
-    if (!this.manager.steerTurn || !supportsExpectedTurnSteer(session) || input.clientCorrelationId !== input.controlCommandId) {
+    if (!this.manager.steerTurn || session.harness !== 'codex' || input.clientCorrelationId !== input.controlCommandId) {
       throw new DomainError('STEER_UNAVAILABLE', 'This writer has no exact expected-turn steering operation.', 409)
     }
     return this.control(session, signal, async owned => {

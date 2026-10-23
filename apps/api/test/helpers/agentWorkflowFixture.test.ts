@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { JobWorkflowNodeSchema } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { agentWorkflowNode, agentWorkflowVersion } from './agentWorkflowFixture.js'
 
 describe('Agent-only workflow fixtures', () => {

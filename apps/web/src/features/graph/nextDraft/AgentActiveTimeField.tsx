@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { WorkflowExecutionPolicy } from '@foreman-code/contracts'
-import { MAX_AGENT_ACTIVE_TIMEOUT_MS } from '@foreman-code/contracts/current'
+import { MAX_AGENT_ACTIVE_TIMEOUT_MS } from '@foreman-code/contracts/wave25'
 import { TextField } from '../../../shared/ui/nocturne'
 import { InfoHint } from '../../../shared/ui'
 

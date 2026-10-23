@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { ExecutionLimiter } from '../src/modules/runs/limiter.js'
 import { repeatNodeAction, inactiveRepeatResolution, repeatTerminalResolution, type RepeatNodeStore } from '../src/modules/runs/repeatNode.js'
 import type { RepeatResolution } from '../src/modules/runs/repeatResolution.js'

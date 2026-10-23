@@ -1,8 +1,8 @@
 import { ScopedMcpDetectionSchema } from '@foreman-code/contracts'
 import { APP_MCP_SERVER_NAMES, APP_MCP_TOKEN_NAMES } from '@foreman-code/contracts/product'
 import { DomainError } from '../errors.js'
-import type { McpDetectionService } from '../harnesses/index.js'
-import type { NativeHarnessSessionManager } from '../harnesses/index.js'
+import type { McpDetectionService } from '../harnesses/mcpDetection.js'
+import type { NativeHarnessSessionManager } from '../harnesses/port.js'
 import type { NativeManagerResolutionContext } from '../interactions/runtimePorts.js'
 
 /** The authenticated remote manager checks configuration on its owning device. */

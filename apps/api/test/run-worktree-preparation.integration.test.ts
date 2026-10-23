@@ -3,30 +3,29 @@ import { randomUUID } from 'node:crypto'
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { AcceptedWorkflowRunCurrentSchema, RunWorktreeSchema, RunStartCurrentResultSchema } from '@foreman-code/contracts/current'
+import { AcceptedWorkflowRunV3Schema, RunWorktreeSchema, RunStartV3ResultSchema } from '@foreman-code/contracts/wave25'
 import { decodeMcpToolResult, OperatorRunGetResultSchema } from '@foreman-code/contracts/operator-mcp'
 import { RunWorktrees } from '../src/modules/runs/runWorktrees.js'
 import { repeatRuntimeDirectory } from '../src/modules/runs/repeatRepositoryHost.js'
 import { systemGitWorktreePorts } from '../src/modules/sources/gitWorktree.js'
-import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { gitFixtureEnvironment } from './helpers/gitFixture.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 
 async function fixture() {
-  const db = await migratedDatabase()
+  const db = await agent3Database()
   const env = gitFixtureEnvironment()
   const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, env, encoding: 'utf8' }).trim()
   try {
-    const seeded = await seedWorkflowFixture(db.pool, db.directory)
+    const seeded = await seedAgent3(db.pool, db.directory)
     git(db.directory, 'init', '-b', 'main')
     await mkdir(join(db.directory, 'apps', 'api'), { recursive: true })
     await writeFile(join(db.directory, 'project.txt'), 'project\n')
     await writeFile(join(db.directory, 'apps', 'api', 'service.txt'), 'service\n')
     git(db.directory, 'add', 'project.txt', 'apps')
     git(db.directory, 'commit', '-m', 'Project')
-    const run = AcceptedWorkflowRunCurrentSchema.parse(seeded.run)
+    const run = AcceptedWorkflowRunV3Schema.parse(seeded.run)
     const ports = systemGitWorktreePorts(env)
     const managed = join(db.directory, 'managed')
     return { db, run, ports, managed, git, service: new RunWorktrees(db.pool, managed, ports),
@@ -86,7 +85,7 @@ describe.runIf(postgresEnabled)('Local execution worktree preparation', () => {
       expect((await deniedClient.callTool({ name: 'run_start', arguments: input })).isError).toBe(true)
       const started = await f.client.callTool({ name: 'run_start', arguments: input })
       expect(started.isError, JSON.stringify(started)).not.toBe(true)
-      const runId = RunStartCurrentResultSchema.parse(decodeMcpToolResult(started)).run.id
+      const runId = RunStartV3ResultSchema.parse(decodeMcpToolResult(started)).run.id
       await expect.poll(async () => (await f.runs.get(runId))?.executionState, { timeout: 10_000 }).toBe('waiting')
       const args = { workspaceId: f.f.run.workspaceId, runId, detail: 'full' }
       const details = OperatorRunGetResultSchema.parse(decodeMcpToolResult(

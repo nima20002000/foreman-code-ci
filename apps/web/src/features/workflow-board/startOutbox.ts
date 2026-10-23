@@ -1,9 +1,9 @@
-import { sameWorkflowValue } from '@foreman-code/contracts/current'
+import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { createOutboxView, readStoredCommand, withCommandLock, writeStoredCommand } from '../../shared/api/commandOutbox'
 import { protectedKey } from '../../shared/api/protectedChatStorage'
 import { sessionIsSwitching, SessionChangedError } from '../../shared/api/sessionBoundary'
 import { ApiError } from '../../shared/api/client'
-import { nextDraftKey } from '../board-core'
+import { nextDraftKey } from '../graph/nextDraft/state'
 import { parseBoardStart, type BoardStartInput } from './startClient'
 
 /** One principal-scoped durable journal and cross-tab lock for current Start.

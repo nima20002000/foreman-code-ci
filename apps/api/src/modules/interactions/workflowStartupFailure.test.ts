@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest'
 import { HarnessExecutionSchema, type ExecutionResult } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { nativeLanes } from '../../../test/helpers/memorySessionCoordination.js'
 import { idleWorkflowControls, idleWorkflowRepeat } from '../../../test/helpers/idleWorkflowControls.js'
 import { DomainError } from '../errors.js'

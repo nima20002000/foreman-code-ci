@@ -3,8 +3,8 @@ import { vi } from 'vitest'
 import { ApiClient } from '../../shared/api/client'
 import { createCurrentBoardMock } from '../../shared/mocks/currentBoard'
 import { currentWorkflowFixture } from '../../shared/mocks/currentWorkflow'
-import { createNextDraftApi } from '../graph'
-import type { DraftRequest } from '../board-core'
+import { createNextDraftApi } from '../graph/nextDraft/transport'
+import type { DraftRequest } from '../graph/nextDraft/state'
 import { savedPlacementFixture as placement } from './fixtures'
 
 function harness() {

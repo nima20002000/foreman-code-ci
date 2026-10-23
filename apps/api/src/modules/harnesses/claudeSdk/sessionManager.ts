@@ -1,4 +1,3 @@
-import { CLAUDE_CAPABILITY_DESCRIPTORS } from '../capabilities.js'
 import { runtimeFor, createClaudeManagerContext } from './sessionState.js'
 import * as callbacks from './sessionCallbacks.js'
 import * as inspection from './sessionInspection.js'
@@ -20,7 +19,6 @@ export function createClaudeNativeSessionManager(options: ClaudeNativeSessionMan
   const ctx = createClaudeManagerContext(options)
   const manager: ClaudeNativeSessionManager = {
     harness: ctx.harness,
-    harnessCapabilities: CLAUDE_CAPABILITY_DESCRIPTORS,
     hasResidentSession(session) {
       const runtime = ctx.resident.get(session.nativeSessionId)
       return !ctx.disposed && runtime !== undefined && !runtime.closed && !runtime.failure

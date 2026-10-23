@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import * as retiredCurrent from './runCurrent.js'
 import * as retiredHistory from './runHistory.js'
-import { GraphSequenceSchema, RunGraphScopeSchema } from './current/graphPrimitives.js'
-import { RunDetailsCurrentSchema } from './current/saved.js'
-import { makeCurrentWorkflowFixture } from './current/currentFixture.js'
+import { GraphSequenceSchema, RunGraphScopeSchema } from './wave25/graphPrimitives.js'
+import { RunDetailsV3Schema } from './wave25/saved.js'
+import { makeCurrentWorkflowFixture } from './wave25/currentFixture.js'
 
 const fixture = makeCurrentWorkflowFixture('current-read-retirement')
 const identity = fixture.identities[0]!
@@ -20,9 +20,9 @@ describe('FE-R2-001 read invariants on the sole current V3 pipeline', () => {
     expect(Object.keys(retiredHistory).sort()).toEqual(['RUN_HISTORY_MCP_TOOL', 'RUN_HISTORY_ROUTE'])
     expect(retiredCurrent.RUN_CURRENT_MCP_TOOL).toBe('run_current_get_v1')
     expect(retiredHistory.RUN_HISTORY_MCP_TOOL).toBe('run_history_get_v1')
-    expect(RunDetailsCurrentSchema.parse(current())).toEqual(current())
+    expect(RunDetailsV3Schema.parse(current())).toEqual(current())
     for (const extension of [{ history: 'complete' }, { settlement: 'settled' }, { kind: 'legacy-run-current' }]) {
-      expect(RunDetailsCurrentSchema.safeParse({ ...current(), ...extension }).success).toBe(false)
+      expect(RunDetailsV3Schema.safeParse({ ...current(), ...extension }).success).toBe(false)
     }
   })
 
@@ -30,7 +30,7 @@ describe('FE-R2-001 read invariants on the sole current V3 pipeline', () => {
     expect(RunGraphScopeSchema.parse(fixture.scope)).toEqual(fixture.scope)
     for (const executionSemanticsVersion of [undefined, null, 1, 2, '3', 4]) {
       expect(RunGraphScopeSchema.safeParse({ ...fixture.scope, executionSemanticsVersion }).success).toBe(false)
-      expect(RunDetailsCurrentSchema.safeParse({ ...current(), run: { ...fixture.run, executionSemanticsVersion } }).success).toBe(false)
+      expect(RunDetailsV3Schema.safeParse({ ...current(), run: { ...fixture.run, executionSemanticsVersion } }).success).toBe(false)
     }
   })
 
@@ -38,13 +38,13 @@ describe('FE-R2-001 read invariants on the sole current V3 pipeline', () => {
     for (const cleanupPending of [false, true]) {
       const run = { ...fixture.run, executionState: 'completed', outcome: 'succeeded',
         result: { outcome: 'succeeded' }, finishedAt: fixture.createdAt }
-      const parsed = RunDetailsCurrentSchema.parse({ ...current(), run, cleanupPending })
+      const parsed = RunDetailsV3Schema.parse({ ...current(), run, cleanupPending })
       expect(parsed.cleanupPending).toBe(cleanupPending)
       expect(parsed).not.toHaveProperty('settlement')
       expect(parsed.run.outcome).toBe('succeeded')
     }
-    expect(RunDetailsCurrentSchema.safeParse({ ...current(), run: { ...fixture.run, outcome: 'succeeded' } }).success).toBe(false)
-    expect(RunDetailsCurrentSchema.safeParse({ ...current(), run: { ...fixture.run, executionState: 'completed' } }).success).toBe(false)
+    expect(RunDetailsV3Schema.safeParse({ ...current(), run: { ...fixture.run, outcome: 'succeeded' } }).success).toBe(false)
+    expect(RunDetailsV3Schema.safeParse({ ...current(), run: { ...fixture.run, executionState: 'completed' } }).success).toBe(false)
   })
 
   it('validates exact decimal graph batch positions without rounding or invalid BigInt conversion', () => {
@@ -60,11 +60,11 @@ describe('FE-R2-001 read invariants on the sole current V3 pipeline', () => {
   it('rejects duplicate identities, foreign-Run attempts and changed immutable configuration pins', () => {
     for (const extra of [execution, { ...execution, id: 'foreign-execution', runId: 'foreign-run' },
       { ...execution, id: 'wrong-config', agentConfigurationVersionId: 'not-the-pin' }]) {
-      expect(RunDetailsCurrentSchema.safeParse({ ...current(), executions: [execution, extra] }).success).toBe(false)
+      expect(RunDetailsV3Schema.safeParse({ ...current(), executions: [execution, extra] }).success).toBe(false)
     }
     // Current detail is real attempt history, not the retired latest-per-node projection.
     const secondAttempt = { ...execution, id: 'second-attempt', attempt: 2 }
-    expect(RunDetailsCurrentSchema.parse({ ...current(), executions: [execution, secondAttempt] }).executions)
+    expect(RunDetailsV3Schema.parse({ ...current(), executions: [execution, secondAttempt] }).executions)
       .toEqual([execution, secondAttempt])
   })
 })

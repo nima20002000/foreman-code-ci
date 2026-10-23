@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { HarnessExecution } from '@foreman-code/contracts'
 import {
-  WorkflowVersionCurrentSchema, makeCurrentWorkflowFixture, validateRepeatDecisionV1,
-  type GraphExecutionIdentity, type RepeatDecisionV1, type WorkflowVersionCurrent,
-} from '@foreman-code/contracts/current'
+  WorkflowVersionV3Schema, makeCurrentWorkflowFixture, validateRepeatDecisionV1,
+  type GraphExecutionIdentity, type RepeatDecisionV1, type WorkflowVersionV3,
+} from '@foreman-code/contracts/wave25'
 import { publicNodeState } from '../src/modules/run-graph/publicLifecycle.js'
 import type { CurrentNativeActivity } from '../src/modules/run-graph/nativeActivitySelection.js'
 import {
@@ -19,7 +19,7 @@ function jobNode(id: string) {
 }
 function repeated() {
   const f = makeCurrentWorkflowFixture('node-compat-repeat', 'repeat')
-  const version: WorkflowVersionCurrent = structuredClone(f.version)
+  const version: WorkflowVersionV3 = structuredClone(f.version)
   const block = version.definition.repeat!.blocks[0]!
   const entry = freezeRepeatEntry({}, [])
   const { occurrence } = makeRepeatOccurrence(f.scope, block, entry, null)
@@ -35,14 +35,14 @@ function repeated() {
 describe('current mixed Agent/Job node boundaries', () => {
   it('resolves the exact Agent approval route alongside multiple Job execution nodes', () => {
     const f = makeCurrentWorkflowFixture('node-compat-approval', 'approval')
-    const version: WorkflowVersionCurrent = structuredClone(f.version)
+    const version: WorkflowVersionV3 = structuredClone(f.version)
     version.definition.nodes.push(jobNode('build'), jobNode('publish'))
     version.definition.edges.push(
       { id: 'build-edge', kind: 'execution', source: f.identities[1]!.workflowNodeId, target: 'build' },
       { id: 'publish-edge', kind: 'execution', source: 'build', target: 'publish' },
     )
     version.definition.executionPolicy!.maxNodeExecutions = 4
-    expect(WorkflowVersionCurrentSchema.safeParse(version).success).toBe(true)
+    expect(WorkflowVersionV3Schema.safeParse(version).success).toBe(true)
     const before = structuredClone(version)
     expect(hasSupportedApprovalTopology(version)).toBe(true)
     expect(resolveImmutableApprovalRoute(version, f.identities[1]!.workflowNodeId, f.identities[1]!.agentId))
@@ -53,7 +53,7 @@ describe('current mixed Agent/Job node boundaries', () => {
   })
   it.each(['requester', 'reviewer', 'extra-assignment'])('refuses a Job %s in native approval topology', (role) => {
     const f = makeCurrentWorkflowFixture('node-compat-denial', 'approval')
-    const version: WorkflowVersionCurrent = structuredClone(f.version)
+    const version: WorkflowVersionV3 = structuredClone(f.version)
     if (role === 'extra-assignment') {
       version.definition.nodes.push(jobNode('build'))
       version.definition.edges.push({ id: 'job-approval', kind: 'approval', source: version.entryNodeId, target: 'build' })
@@ -66,7 +66,7 @@ describe('current mixed Agent/Job node boundaries', () => {
   })
   it('allows distinct Worker nodes to reuse an Agent in a mixed graph', () => {
     const f = makeCurrentWorkflowFixture('node-compat-duplicate', 'approval')
-    const version: WorkflowVersionCurrent = structuredClone(f.version)
+    const version: WorkflowVersionV3 = structuredClone(f.version)
     version.definition.nodes.push(jobNode('build'), { ...f.version.definition.nodes[1]!, id: 'duplicate-agent' })
     expect(hasSupportedApprovalTopology(version)).toBe(true)
     expect(resolveImmutableApprovalRoute(version, f.identities[1]!.workflowNodeId, f.identities[1]!.agentId))
@@ -93,11 +93,11 @@ describe('current mixed Agent/Job node boundaries', () => {
   })
   it('leaves ordinary mixed DAGs without repeat metadata or occurrence boundaries', () => {
     const f = makeCurrentWorkflowFixture('node-compat-ordinary')
-    const version: WorkflowVersionCurrent = structuredClone(f.version)
+    const version: WorkflowVersionV3 = structuredClone(f.version)
     version.definition.nodes.push(jobNode('build'))
     version.definition.edges.push({ id: 'build-edge', kind: 'execution', source: f.identities[1]!.workflowNodeId, target: 'build' })
     version.definition.executionPolicy!.maxNodeExecutions = 3
-    const accepted = WorkflowVersionCurrentSchema.parse(version), before = structuredClone(accepted)
+    const accepted = WorkflowVersionV3Schema.parse(version), before = structuredClone(accepted)
     const layout = compileRepeatLayout(accepted)
     expect(layout.boundaries).toEqual([])
     expect(layout.nodes.every((node) => node.kind === 'once')).toBe(true)
@@ -144,7 +144,7 @@ describe('current mixed Agent/Job node boundaries', () => {
       f.block.repeatOutcome = 'build_failed'
       const accepted = { outcome: 'succeeded' as const, output: { routing: { outcome: 'succeeded' }, data: full.resultData } }
       full = { ...full, outcome: 'succeeded', acceptedResultDigest: repeatDigest(accepted) }
-      expect(WorkflowVersionCurrentSchema.safeParse(f.version).success).toBe(true)
+      expect(WorkflowVersionV3Schema.safeParse(f.version).success).toBe(true)
       expect(validateRepeatDecisionV1(f.version, full, accepted)).toEqual(full)
     } else {
       expect(validateRepeatDecisionV1(f.version, full, f.execution.result)).toEqual(full)

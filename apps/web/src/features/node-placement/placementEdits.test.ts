@@ -1,7 +1,7 @@
 import { nativeNode } from '../../shared/mocks/nativeFixtureTypes'
-import { sameExecutableWorkflow, WorkflowDefinitionCurrentSchema } from '@foreman-code/contracts/current'
+import { sameExecutableWorkflow, WorkflowDefinitionV3Schema } from '@foreman-code/contracts/wave25'
 import { fixture } from '../graph/nextDraft/core.cases'
-import { draftOperations, mergeAcknowledgement } from '../board-core'
+import { draftOperations, mergeAcknowledgement } from '../graph/nextDraft/model'
 import { savedPlacementFixture as placement } from './fixtures'
 
 it('classifies a placement edit as executable meaning and keeps per-node saved geometry', () => {
@@ -30,7 +30,7 @@ it('serializes clearing placement as a node replacement with inherited Main and 
   context.draft.graph.nodes = context.draft.graph.nodes.map(node => ({ ...node, placement }))
   const graph = structuredClone(context.draft.graph)
   delete nativeNode(graph.nodes[0]).placement
-  const saved = WorkflowDefinitionCurrentSchema.parse(JSON.parse(JSON.stringify(graph)))
+  const saved = WorkflowDefinitionV3Schema.parse(JSON.parse(JSON.stringify(graph)))
   expect(saved.nodes[0]).not.toHaveProperty('placement')
   expect(nativeNode(saved.nodes[1]).placement).toEqual(placement)
   expect(sameExecutableWorkflow(context.draft.graph, saved)).toBe(false)

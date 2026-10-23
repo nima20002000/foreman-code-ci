@@ -1,6 +1,6 @@
 import type { HarnessNativeEvent } from '@foreman-code/contracts'
 import { canonicalGraphJson, type NativeGraphObservation, type NativeGraphProjectionKey,
-  type RunGraphScope } from '@foreman-code/contracts/current'
+  type RunGraphScope } from '@foreman-code/contracts/wave25'
 import { selectNativeGraphEvidence } from './nativeEvidence.js'
 import { nativeProjectionId } from './nativeProjection.js'
 

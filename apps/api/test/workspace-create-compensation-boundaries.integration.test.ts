@@ -21,8 +21,8 @@ describe('workspace project folder compensation through authenticated MCP', () =
       vi.spyOn(pg.Client.prototype, 'query').mockImplementation(function (this: pg.Client, ...args: unknown[]) {
         const sql = args[0]
         const values = args[1] as unknown[] | undefined
-        // The command receipt write binds six values, the command id third.
-        if (values?.length === 6 && values[2] === input.commandId) creatingClients.add(this)
+        if (typeof sql === 'string' && sql.includes('insert into management_command_receipts')
+          && values?.[2] === input.commandId) creatingClients.add(this)
         const response = query.apply(this, args)
         if (sql === 'commit' && creatingClients.has(this) && loseAcknowledgement) {
           loseAcknowledgement = false

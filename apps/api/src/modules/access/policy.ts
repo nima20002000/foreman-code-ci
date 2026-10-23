@@ -6,7 +6,7 @@ import {
 } from '@foreman-code/contracts/management'
 
 import { DomainError } from '../errors.js'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 
 export interface AuthorizedResource {
   workspaceId?: string
@@ -98,7 +98,7 @@ interface AccountAccessRow {
 }
 
 /** Account target restrictions apply to every live delegation link. */
-export async function requireLiveAccountAuthorization(sql: SqlQuery, principalId: string,
+export async function requireLiveAccountAuthorization(sql: GraphSqlClient, principalId: string,
   action: 'provider_accounts:read' | 'provider_accounts:manage', resource: AuthorizedResource): Promise<void> {
   const seen = new Set<string>()
   let id: string | null = principalId

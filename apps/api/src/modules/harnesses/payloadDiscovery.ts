@@ -1,4 +1,4 @@
-import { logIgnoredError } from '../diagnostics/index.js'
+import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import { access, open, realpath } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { createRequire } from 'node:module'

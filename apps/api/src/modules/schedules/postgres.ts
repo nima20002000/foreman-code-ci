@@ -7,7 +7,7 @@ import {
 } from '@foreman-code/contracts/schedules'
 import { commandInputHash } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
-import { lockActiveWorkspace } from '../workspaces/index.js'
+import { lockActiveWorkspace } from '../workspaces/admission.js'
 import { decodeScheduleCursor, DueCursorSchema, encodeScheduleCursor, OccurrenceCursorSchema } from './cursors.js'
 import {
   ScheduleOccurrenceListInputSchema, ScheduleOccurrencePageSchema,

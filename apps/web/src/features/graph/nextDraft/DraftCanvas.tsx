@@ -2,32 +2,35 @@ import { useHoverControls } from '../../../shared/ui/useHoverControls'
 import type { JobWorkflowAdmissionReference } from '@foreman-code/contracts/job-workflow'
 import { createContext, forwardRef, memo, useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { Background, ConnectionMode, ReactFlow, type Edge, type EdgeProps, type NodeChange, type NodeProps } from '@xyflow/react'
-import { WorkflowRelationshipSchema, type WorkflowDefinitionCurrent, type WorkflowRelationship } from '@foreman-code/contracts/current'
+import { WorkflowRelationshipSchema, type WorkflowDefinitionV3, type WorkflowRelationship } from '@foreman-code/contracts/wave25'
 import { isHierarchyReportingRoute, type Agent } from '@foreman-code/contracts'
 import { AgentNodeView, IconButton, Icon, type AgentPanel } from '../../../shared/ui/nocturne'
 import { createGraphTopologyProjector } from '../topology'
-import {
-  GRAPH_NODE_DEFAULT_SIZE, createGraphGeometryAdapter, type GraphGeometryChange, agentNodeFacts, edgeBend,
-  relationshipLines, useFloatingCurve, type GraphNode, type AgentGraphNode, type JobGraphNode, nodeTitle,
-  putRelationship, removeRelationship, setWorkConnectionLimit, useBoardSelection,
-} from '../../board-core'
+import { GRAPH_NODE_DEFAULT_SIZE } from '../mapper'
+import { createGraphGeometryAdapter, type GraphGeometryChange } from '../geometry'
 import { CircularNodeResizer } from '../CircularNodeResizer'
 import { useGraphDraftStore } from '../store'
 import { useGraphPresentation, useGraphPresentationStore } from '../useGraphPresentation'
 import { AgentHandles } from '../AgentHandles'
 import { intervalLabel } from './intervalLabel'
+import { agentNodeFacts, edgeBend, relationshipLines, useFloatingCurve } from '../signalEdge'
 import { SignalEdgeShape } from '../SignalEdgeShape'
 import { RESPONSIVE_FIT_OPTIONS, RESPONSIVE_MIN_ZOOM, useResponsiveGraphViewport } from '../useResponsiveGraphViewport'
 import { boardViewportKey } from '../boardViewport'
+import type { GraphNode, AgentGraphNode, JobGraphNode } from '../types'
+import { nodeTitle, putRelationship, removeRelationship, setWorkConnectionLimit } from './model'
 import { pinGraphLayout } from './placement'
 import { WorkConnectionLimitEditor } from './WorkConnectionLimitEditor'
 import type { EditGraph } from './AuthoringFields'
-import {
-  WorkflowAgentPanel, CiServerNode, type CiServerFlowNode, CI_SERVER_NODE_ID, useBoardCiServer, BoardKanbanNode,
-  KanbanActivityEdge, KANBAN_NODE_ID, type KanbanActivityFlowEdge, type KanbanFlowNode, useBoardKanban,
-  BoardDock,
-} from '../../workflow-board'
-import { connectHierarchyMember } from '../../workflow-hierarchy'
+import { useBoardSelection } from '../../workflow-board/context'
+import { WorkflowAgentPanel } from '../../workflow-board/WorkflowAgentPanel'
+import { CiServerNode, type CiServerFlowNode } from '../../workflow-board/inspect/CiServer'
+import { CI_SERVER_NODE_ID } from '../../workflow-board/inspect/ciServer'
+import { useBoardCiServer } from '../../workflow-board/inspect/useBoardCiServer'
+import { BoardKanbanNode, KanbanActivityEdge, KANBAN_NODE_ID, type KanbanActivityFlowEdge, type KanbanFlowNode } from '../../workflow-board/kanban/BoardKanban'
+import { useBoardKanban } from '../../workflow-board/kanban/useBoardKanban'
+import { BoardDock } from '../../workflow-board/dock/BoardDock'
+import { connectHierarchyMember } from '../../workflow-hierarchy/authoring'
 import { useAgentProximity } from '../useAgentProximity'
 import '@xyflow/react/dist/style.css'
 
@@ -133,8 +136,8 @@ const proOptions = { hideAttribution: true }
 export type DraftCanvasHandle = { flush(): void; cancel(): void }
 
 export const DraftCanvas = forwardRef<DraftCanvasHandle, {
-  draftKey: string; graph: WorkflowDefinitionCurrent; agents: readonly Agent[]; kind: WorkflowRelationship['kind']
-  baseGraph?: WorkflowDefinitionCurrent; semanticLocked?: boolean
+  draftKey: string; graph: WorkflowDefinitionV3; agents: readonly Agent[]; kind: WorkflowRelationship['kind']
+  baseGraph?: WorkflowDefinitionV3; semanticLocked?: boolean
   change: EditGraph; geometry: (changes: GraphGeometryChange[]) => void; pending: (pending: boolean) => void
   report: (error: unknown) => void; inspect?: (action: () => void) => void; removalDisabled?: boolean
   open?: OpenAgentPanel; setOpen?: (next?: OpenAgentPanel) => void; panels?: AgentPanelRenderer

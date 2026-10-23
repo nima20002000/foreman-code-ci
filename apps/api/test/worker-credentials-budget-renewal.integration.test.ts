@@ -2,7 +2,7 @@ import { beforeEach, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { AgentConfigurationVersionSchema, HarnessExecutionSchema } from '@foreman-code/contracts'
 import { PostgresInteractionCoordinationRepository } from '../src/modules/interactions/coordination.js'
-import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
+import { Wave25WorkerCredentialService } from '../src/modules/interactions/wave25/credentials.js'
 import { workerCredentialBudgetFixture } from './helpers/workerCredentialBudgetFixture.js'
 
 const fixture = workerCredentialBudgetFixture()

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { buildApp } from '../src/app.js'
 import { DomainError } from '../src/modules/errors.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'

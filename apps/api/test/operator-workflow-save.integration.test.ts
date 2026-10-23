@@ -4,7 +4,7 @@ import { DEFAULT_CODEX_ADVANCED_CONFIGURATION } from '@foreman-code/contracts'
 import { AgentMutationResultSchema } from '@foreman-code/contracts/management'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { CurrentWorkflowSaveResultSchema, CurrentWorkflowReadResultSchema,
-  SavedManagedWorkflowCommandResultSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+  SavedManagedWorkflowCommandResultSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 
 it('creates and saves without echoed stamps, checks revisions and grants, and replays after later saves', async () => {

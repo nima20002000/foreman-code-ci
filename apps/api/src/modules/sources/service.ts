@@ -1,5 +1,5 @@
 import type { RetainedSourceFootprint, SourceStorageCapacity } from '@foreman-code/contracts/source-operations'
-import { withTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
+import { withTransaction } from '../../infrastructure/transaction.js'
 import type { SourceWorktreeRequest } from '@foreman-code/contracts/source-materialization'
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
@@ -14,7 +14,7 @@ import type { RootBinding, SourceManifest } from '@foreman-code/contracts/source
 import { requireAuthorization } from '../access/policy.js'
 import { commandInputHash, type PostgresCommandCoordinator } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
-import type { WorkspaceLocationService } from '../workspaces/index.js'
+import type { WorkspaceLocationService } from '../workspaces/location.js'
 import { WorkspaceSchema, type RunExecutionLocation } from '@foreman-code/contracts'
 import { approvedGitTreePaths, captureGitSource, qualifiedGit } from './capture.js'
 import { ensureClone, ensureCommit, fetchRepositoryBranch, systemGitWorktreePorts, type GitWorktreePorts } from './gitWorktree.js'
@@ -29,12 +29,13 @@ import { sourceMaterializationBytes, sourceStructureBytes } from './footprint.js
 import { PostgresSourceReservations, requireUnreclaimedSourceOperation, type SourceReservation } from './reservations.js'
 import type { RegisteredSourceRootPort, SourceAdmissionPort, SourceClosureProofPort } from './admissionPorts.js'
 import type { MaterializationAttempt, SourceExecutionHostPort } from './ports.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import { PostgresSourcePreparationReconciliation } from './preparationReconciliation.js'
 import type { SourcePreparationClosure } from '@foreman-code/contracts/source-admission'
 import type { JobQueueTicket } from '@foreman-code/contracts/job-admission'
 import { QueuedSourcePreparationCleanup } from './queuedPreparationCleanup.js'
 import { releaseUnusedSourceSnapshots } from './snapshotRetention.js'
-import { readPlacement } from '../placement/index.js'
+import { readPlacement } from '../placement/binding.js'
 import { assertWorktreeReceipt, bindGeneratedWorktreeRun, generatedWorktreePrefix } from './worktreeRequest.js'
 import { reconcileFailedCaptures } from './failedCaptureCleanup.js'
 import { readSourceStorageCapacity } from './storageCapacity.js'
@@ -47,7 +48,7 @@ import { sha256Hex } from '../../shared/hash.js'
 
 export type { SourceExecutionHostPort }
 type Transport = 'http' | 'mcp'
-type Sql = SqlQuery
+type Sql = GraphSqlClient
 interface ApprovalRow { approved_source_id: string; snapshot_id: string; input_hash: string; state: string;
   origin: { location: RunExecutionLocation; mainId: string; ownerId: string; reservation: SourceReservation; repository?: string; approvedPaths?: string[] }; request: unknown }
 interface SourceLifecycle {

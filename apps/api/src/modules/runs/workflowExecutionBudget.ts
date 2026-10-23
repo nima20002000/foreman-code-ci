@@ -1,7 +1,6 @@
-import type { WorkflowVersionCurrent } from '@foreman-code/contracts/current'
+import type { WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../errors.js'
-import { assertGraphTransaction } from '../run-graph/connection.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { assertGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
 import { repeatConflict } from './repeatResolution.js'
 
 /** Call while holding the Run lock. Starting an unissued activation consumes
@@ -9,8 +8,8 @@ import { repeatConflict } from './repeatResolution.js'
  * except that an attempt abandoned for an infrastructure cause (a recorded
  * retryable failure) gives its capacity to its replacement.
  * Interval checks are bounded by their interval and the Run's lifetime, not this budget. */
-export async function hasWorkflowExecutionCapacityLocked(sql: SqlTransaction, runId: string,
-  version: WorkflowVersionCurrent, activationId: string | null = null, additionalExecutions = 1,
+export async function hasWorkflowExecutionCapacityLocked(sql: GraphTransactionSql, runId: string,
+  version: WorkflowVersionV3, activationId: string | null = null, additionalExecutions = 1,
   controlContinuationId: string | null = null): Promise<boolean> {
   assertGraphTransaction(sql)
   if (!Number.isSafeInteger(additionalExecutions) || additionalExecutions < 1) {
@@ -41,8 +40,8 @@ export async function hasWorkflowExecutionCapacityLocked(sql: SqlTransaction, ru
   return BigInt(row.total) + BigInt(additionalExecutions) <= BigInt(maximum)
 }
 
-export async function assertWorkflowExecutionCapacityLocked(sql: SqlTransaction, runId: string,
-  version: WorkflowVersionCurrent, activationId: string | null = null, additionalExecutions = 1,
+export async function assertWorkflowExecutionCapacityLocked(sql: GraphTransactionSql, runId: string,
+  version: WorkflowVersionV3, activationId: string | null = null, additionalExecutions = 1,
   controlContinuationId: string | null = null): Promise<void> {
   if (!await hasWorkflowExecutionCapacityLocked(sql, runId, version, activationId, additionalExecutions, controlContinuationId)) {
     if (version.definition.handoffs) {

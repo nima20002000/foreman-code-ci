@@ -10,15 +10,15 @@ import {
   RunExecutionsListInputSchema, RunExecutionsPageSchema, RunInspectionRunSchema,
   RunVersionDetailSchema, RunVersionGetInputSchema, RepeatOccurrenceIdentityV1Schema,
   AcceptedCurrentNodeResultSchema, GraphDigestSchema, NodeResolutionSchema,
-  canonicalGraphJson, RunRecordGetInputSchema, RunRecordDetailSchema, WorkflowRunCurrentSchema,
+  canonicalGraphJson, RunRecordGetInputSchema, RunRecordDetailSchema, WorkflowRunV3Schema,
   type RunExecutionBindingsPage, type RunExecutionDetail, type RunExecutionSummary,
   type RunExecutionsPage, type RunVersionDetail, type RunRecordDetail, type GraphExecutionIdentity,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import { isAuthorized, requireAuthorization } from '../access/policy.js'
 import { DomainError } from '../errors.js'
 import { JobRepository } from '../jobs/repository.js'
 import { WorkflowJobPreparationSchema } from '../jobs/workflowPreparation.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import type { GraphTransactionSql } from '../run-graph/connection.js'
 import { canonicalRepeatEffectReceipt } from '../run-graph/repeatPublication.js'
 import { assertRepeatCanonicalReceiptLocked } from '../run-graph/repeatReceipts.js'
 import { withCurrentRunRead } from './currentRead.js'
@@ -163,7 +163,7 @@ export class RunInspectionService {
   constructor(private readonly pool: pg.Pool) {}
 
   private async read<T>(principal: ManagementPrincipal, input: { workspaceId: string; runId: string },
-    work: (sql: SqlTransaction, snapshot: AcceptedRepeatRunSnapshot, live: ManagementPrincipal) => Promise<T>,
+    work: (sql: GraphTransactionSql, snapshot: AcceptedRepeatRunSnapshot, live: ManagementPrincipal) => Promise<T>,
     readAcceptedRun = readRecordedRepeatRunSnapshot): Promise<T> {
     try {
       return await withCurrentRunRead(this.pool, principal, input.workspaceId, input.runId, 'runs:read', work, readAcceptedRun)
@@ -204,7 +204,7 @@ export class RunInspectionService {
     const input = RunRecordGetInputSchema.parse(raw)
     return this.read(principal, input, async (_sql, snapshot, live) => {
       // Parse a public copy: redaction must not mutate the accepted snapshot.
-      const run = WorkflowRunCurrentSchema.parse(snapshot.run)
+      const run = WorkflowRunV3Schema.parse(snapshot.run)
       delete run.authorizationPrincipalId
       if (!isAuthorized(live, 'workspace_locations:read', { workspaceId: run.workspaceId })) delete run.executionLocation
       // Bound before output validation so an oversized exact record has the same
@@ -245,7 +245,7 @@ export class RunInspectionService {
     })
   }
 
-  private async execution(sql: SqlTransaction, snapshot: AcceptedRepeatRunSnapshot, executionId: string): Promise<StoredInspectionExecution> {
+  private async execution(sql: GraphTransactionSql, snapshot: AcceptedRepeatRunSnapshot, executionId: string): Promise<StoredInspectionExecution> {
     const found = await sql.query('select id from harness_executions where id=$1 and run_id=$2', [executionId, snapshot.run.id])
     if (found.rows.length === 1) return { ...await readRepeatExecutionLocked(sql, snapshot, executionId), executorKind: 'agent' }
     const row = (await sql.query<OccurrenceRow & { reference: unknown; input_json: string; accepted: boolean;
@@ -293,14 +293,14 @@ export class RunInspectionService {
       slotId: row.slot_id, accepted: row.accepted, terminalProcessed: row.terminal_processed }
   }
 
-  private async jobEffect(sql: SqlTransaction, scope: RepeatScope, kind: 'input.bind' | 'terminal.accept', entityId: string) {
+  private async jobEffect(sql: GraphTransactionSql, scope: RepeatScope, kind: 'input.bind' | 'terminal.accept', entityId: string) {
     const rows = (await sql.query<{ payload_digest: string }>(
       'select payload_digest from run_repeat_effects where run_id=$1 and effect_kind=$2 and entity_id=$3', [scope.runId, kind, entityId])).rows
     evidence(rows.length === 1 && GraphDigestSchema.safeParse(rows[0]?.payload_digest).success)
     await assertRepeatCanonicalReceiptLocked(sql, canonicalRepeatEffectReceipt(scope, { kind, entityId, digest: rows[0]!.payload_digest }))
   }
 
-  private async acceptedResult(sql: SqlTransaction, snapshot: AcceptedRepeatRunSnapshot, stored: StoredInspectionExecution) {
+  private async acceptedResult(sql: GraphTransactionSql, snapshot: AcceptedRepeatRunSnapshot, stored: StoredInspectionExecution) {
     if (stored.executorKind === 'agent') return readRecordedExecutionResultLocked(sql, snapshot, stored.execution.id)
     if (!stored.accepted) {
       if (stored.terminalProcessed) await this.jobEffect(sql, scopeOf(snapshot), 'terminal.accept', stored.execution.id)

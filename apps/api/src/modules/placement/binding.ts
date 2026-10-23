@@ -2,10 +2,9 @@ import { posix } from 'node:path'
 import {
   AcceptedNodePlacementSchema, DispatchIntentSchema, type AcceptedNodePlacement, type DispatchIntent,
 } from '@foreman-code/contracts/node-placement'
-import { canonicalGraphJson } from '@foreman-code/contracts/current'
+import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../errors.js'
 import { sha256Hex } from '../../shared/hash.js'
-import { deepFreeze } from '../../shared/deepFreeze.js'
 
 export function placementDigest(value: unknown): string {
   return sha256Hex(canonicalGraphJson(value))
@@ -30,18 +29,25 @@ export function assertDestinationPolicy(placement: AcceptedNodePlacement): void 
 export function freezePlacement(input: Omit<AcceptedNodePlacement, 'bindingHash'>): AcceptedNodePlacement {
   const placement = AcceptedNodePlacementSchema.parse({ ...structuredClone(input), bindingHash: placementDigest(input) })
   assertDestinationPolicy(placement)
-  return deepFreeze(placement)
+  return freeze(placement)
+}
+function freeze<T>(value: T): T {
+  if (value && typeof value === 'object') {
+    for (const child of Object.values(value)) freeze(child)
+    Object.freeze(value)
+  }
+  return value
 }
 export function readPlacement(input: unknown): AcceptedNodePlacement {
   const parsed = AcceptedNodePlacementSchema.parse(input)
   const { bindingHash, ...pins } = parsed
   if (bindingHash !== placementDigest(pins)) throw new DomainError('PLACEMENT_BINDING_CONFLICT', 'Accepted placement hash does not match its immutable pins.', 409)
   assertDestinationPolicy(parsed)
-  return deepFreeze(parsed)
+  return freeze(parsed)
 }
 /** Called lazily for an eligible occurrence; never reads a current Board/configuration. */
 export function deriveDispatch(placement: AcceptedNodePlacement, identity: Omit<DispatchIntent, 'schemaVersion' | 'protocolVersion' | 'mainId' | 'runId' | 'nodeId' | 'bindingHash'>): DispatchIntent {
   const pins = readPlacement(placement)
-  return deepFreeze(DispatchIntentSchema.parse({ ...identity, schemaVersion: 1, protocolVersion: 1,
+  return freeze(DispatchIntentSchema.parse({ ...identity, schemaVersion: 1, protocolVersion: 1,
     mainId: pins.mainId, runId: pins.runId, nodeId: pins.nodeId, bindingHash: pins.bindingHash }))
 }

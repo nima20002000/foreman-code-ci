@@ -9,7 +9,7 @@ import { AgentConfigurationVersionSchema, type ExecutionResult } from '@foreman-
 import { SendAgentChatMessageResponseSchema, type SendAgentChatMessageRequest } from '@foreman-code/contracts/agent-chat'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { APP_MCP_SERVER_NAMES } from '@foreman-code/contracts/product'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
@@ -24,8 +24,7 @@ import { CodexRpcError, type CodexStdioTransport, type JsonObject } from '../src
 import { HarnessExecutionError } from '../src/modules/harnesses/errors.js'
 import { runCommand } from '../src/modules/harnesses/process.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
-import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { deferred } from './helpers/deferred.js'
 
@@ -53,7 +52,7 @@ type Mode = 'reject' | 'success' | 'uncertain' | 'cleanup-failure' | 'activation
 /** Opt in with the repository's PostgreSQL test setting. Never real-native acceptance evidence. */
 describe.skipIf(!postgresEnabled).each(APP_MCP_SERVER_NAMES)(
   'Agent chat creation and replay with %s MCP', { timeout: 60_000 }, (serverName) => {
-  let database: Awaited<ReturnType<typeof migratedDatabase>>
+  let database: Awaited<ReturnType<typeof agent3Database>>
   let pool: pg.Pool
   let saved: ReturnType<typeof makeCurrentWorkflowFixture>
   let access: PostgresAccessService
@@ -62,12 +61,12 @@ describe.skipIf(!postgresEnabled).each(APP_MCP_SERVER_NAMES)(
   let readerToken: string
   let deniedToken: string
   beforeAll(async () => {
-    database = await migratedDatabase(); pool = database.pool
+    database = await agent3Database(); pool = database.pool
     const seed = makeCurrentWorkflowFixture(`h1-${randomUUID()}`, 'single')
     seed.configurations = seed.configurations.map((configuration) => AgentConfigurationVersionSchema.parse({
       ...configuration, harness: { ...configuration.harness, sandbox: 'read-only' },
     }))
-    saved = await seedWorkflowFixture(pool, database.directory, seed, { run: false })
+    saved = await seedAgent3(pool, database.directory, seed, { run: false })
     access = new PostgresAccessService(pool)
     const issue = (name: string, actions: ManagementPrincipal['grants'][number]['actions'], workflowId = saved.scope.workflowId) => access.issue({
       name, audience: 'operator', expiresAt: new Date(Date.now() + 600_000),

@@ -16,7 +16,7 @@ import { assertSession, sessionGeneration } from '../../shared/api/sessionBounda
 import { keepLatestWorkspaceLocation } from '../../shared/api/workspaceLocationCache'
 import { Alert, Button, Select, TextField } from '../../shared/ui/nocturne'
 import { useUnsavedChanges } from '../../shared/ui/unsavedChanges'
-import { useRevisionedForm } from '../settings'
+import { useRevisionedForm } from '../settings/revisionedForm'
 
 interface RepositoryFields { slug: string; branch: string }
 

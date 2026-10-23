@@ -1,5 +1,5 @@
 import { errorMessage } from '../../shared/errorMessage'
-import type { WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
+import type { WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 import { useState } from 'react'
 import type { Agent } from '@foreman-code/contracts'
 import { Link } from '@tanstack/react-router'
@@ -9,8 +9,8 @@ import {
   Button, Card, CardHeader, EmptyState, Icon, LoadingState, PageHeader,
 } from '../../shared/ui/nocturne'
 import { ResourceActionsMenu } from '../../shared/ui/ResourceCard'
-import { useGraphDraftStore } from '../graph'
-import { nextDraftKey } from '../board-core'
+import { useGraphDraftStore } from '../graph/store'
+import { nextDraftKey } from '../graph/nextDraft/state'
 import { useAgentDirectoryStore } from './agentDirectoryStore'
 import { useReorderableAgents, type AgentReorderCardProps } from './useReorderableAgents'
 import './agents.css'
@@ -30,7 +30,7 @@ function AgentCard({
   agent: Agent
   reorderProps?: AgentReorderCardProps
   workspaceId: string
-  blockers: readonly Pick<WorkflowDefinitionCurrent, 'id' | 'name'>[]
+  blockers: readonly Pick<WorkflowDefinitionV3, 'id' | 'name'>[]
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const role = agent.role ?? 'Agent'
@@ -64,7 +64,7 @@ export function AgentsDirectoryContent({
 }: {
   workspaceId: string
   agents: readonly Agent[]
-  workflows?: readonly WorkflowDefinitionCurrent[]
+  workflows?: readonly WorkflowDefinitionV3[]
 }) {
   const graphDrafts = useGraphDraftStore((state) => state.nextDrafts)
   const announcement = useAgentDirectoryStore((state) => state.announcement)

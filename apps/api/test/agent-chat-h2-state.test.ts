@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'vitest'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { AgentChatStateSchema } from '@foreman-code/contracts/agent-chat'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { AgentChatService } from '../src/modules/conversations/agentChat.js'
-import { liveAuthorityQuery, livePrincipalRow } from './helpers/livePrincipal.js'
 
 const principal: ManagementPrincipal = { id: 'h2-reader', name: 'Reader', audience: 'operator', revokedAt: null,
   expiresAt: '2099-01-01T00:00:00Z', grants: [{ actions: ['agent_chat:read'], scope: {} }] }
@@ -12,8 +11,11 @@ const principal: ManagementPrincipal = { id: 'h2-reader', name: 'Reader', audien
 function service() {
   type Ports = ConstructorParameters<typeof AgentChatService>
   const forbidden = () => { throw new Error('Unexpected I/O while describing an unopened chat.') }
-  return new AgentChatService({ query: liveAuthorityQuery(id => id === principal.id ? livePrincipalRow(principal) : undefined,
-    forbidden) } as unknown as Ports[0], {} as Ports[1], {} as Ports[2],
+  return new AgentChatService({ query: async (sql: string) => {
+    if (!sql.startsWith('select id,name,audience,grants,expires_at,revoked_at,delegated_from from management_principals')) forbidden()
+    return { rows: [{ id: principal.id, name: principal.name, audience: principal.audience, grants: principal.grants,
+      expires_at: new Date(principal.expiresAt), revoked_at: null, delegated_from: null }] }
+  } } as unknown as Ports[0], {} as Ports[1], {} as Ports[2],
     { getSavedVersion: forbidden, getCurrentSavedVersion: forbidden, getAgentConfiguration: forbidden },
     { getForWorkspace: forbidden, executionPages: forbidden, getExecution: forbidden }, forbidden, '/h2-not-used')
 }

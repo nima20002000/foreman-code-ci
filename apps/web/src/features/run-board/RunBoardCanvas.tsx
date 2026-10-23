@@ -4,27 +4,32 @@ import { Background, Controls, Handle, Position, ReactFlow, ReactFlowProvider, t
 import { AgentNodeView } from '../../shared/ui/nocturne/Canvas'
 import { useReducedMotion } from '../../shared/ui/nocturne'
 import type { ActivitySnapshotV1, Agent, WorkflowHierarchyReadResult } from '@foreman-code/contracts'
-import type { WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
-import {
-  useGraphDraftStore, SignalEdgeShape, RESPONSIVE_FIT_OPTIONS, RESPONSIVE_MIN_ZOOM, useResponsiveGraphViewport,
-  boardViewportKey,
-} from '../graph'
-import { nextDraftKey, editorAgents, useFloatingCurve, useWorkflowBoard } from '../board-core'
-import {
-  CiServerNode, CiTransferEdge, type CiServerFlowNode, type CiTransferFlowEdge, CI_SERVER_NODE_ID,
-  ciJobRefreshing, ciNodeActivities, runCiApi, useCiTransfers, runInspectionQueryKey, useBoardCiServer,
-  BoardKanbanNode, KanbanActivityEdge, KANBAN_NODE_ID, type KanbanActivityFlowEdge, type KanbanFlowNode,
-  useBoardKanban, BoardDock,
-} from '../workflow-board'
+import type { WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import { useGraphDraftStore } from '../graph/store'
+import { nextDraftKey } from '../graph/nextDraft/state'
+import { editorAgents } from '../graph/nextDraft/agentEdits'
+import { CiServerNode, CiTransferEdge, type CiServerFlowNode, type CiTransferFlowEdge } from '../workflow-board/inspect/CiServer'
+import { CI_SERVER_NODE_ID, ciJobRefreshing, ciNodeActivities, runCiApi } from '../workflow-board/inspect/ciServer'
+import { useCiTransfers } from '../workflow-board/inspect/useCiTransfers'
+import { runInspectionQueryKey } from '../workflow-board/inspect/queries'
+import { useBoardCiServer } from '../workflow-board/inspect/useBoardCiServer'
+import { BoardKanbanNode, KanbanActivityEdge, KANBAN_NODE_ID, type KanbanActivityFlowEdge, type KanbanFlowNode } from '../workflow-board/kanban/BoardKanban'
+import { useBoardKanban } from '../workflow-board/kanban/useBoardKanban'
+import { BoardDock } from '../workflow-board/dock/BoardDock'
 import '../workflow-board/inspect/inspection.css'
 import { ciNodePresentation } from './ciPresentation'
-import { isRunAccessError } from '../runs-selector'
-import { RunSubagentsOverlay } from '../run-subagents'
+import { SignalEdgeShape } from '../graph/SignalEdgeShape'
+import { useFloatingCurve } from '../graph/signalEdge'
+import { RESPONSIVE_FIT_OPTIONS, RESPONSIVE_MIN_ZOOM, useResponsiveGraphViewport } from '../graph/useResponsiveGraphViewport'
+import { boardViewportKey } from '../graph/boardViewport'
+import { isRunAccessError } from '../runs-selector/query'
+import { RunSubagentsOverlay } from '../run-subagents/RunSubagentsOverlay'
 import { savedEdgeCurve } from './curve'
 import { RunLiveNodes, RunLivePulses, useRunLiveNodes } from './useRunLiveNodes'
 import { projectRunBoard, runBoardCi, READ_ONLY_FLOW_PROPS, type AvailableRunBoardSnapshot, type SavedBoardEdge, type SavedBoardNode } from './model'
 import '@xyflow/react/dist/style.css'
 import './runBoard.css'
+import { useWorkflowBoard } from '../workflow-board/context'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
 
 const sides = [Position.Top, Position.Right, Position.Bottom, Position.Left] as const
@@ -86,7 +91,7 @@ function useDraftBoardAgents(workspaceId: string, workflowId: string) {
 export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hierarchy, definition, visible = true }: {
   snapshot: AvailableRunBoardSnapshot; activitySnapshot?: ActivitySnapshotV1 | undefined
   onInspectNode?: (nodeId: string) => void
-  hierarchy?: WorkflowHierarchyReadResult; definition?: WorkflowDefinitionCurrent; visible?: boolean
+  hierarchy?: WorkflowHierarchyReadResult; definition?: WorkflowDefinitionV3; visible?: boolean
 }) {
   const board = useWorkflowBoard()
   const { containerRef, onInit, onMove, onMoveEnd, onManualMove, refit, defaultViewport, fitOnMount } = useResponsiveGraphViewport<

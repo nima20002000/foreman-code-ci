@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { defaultAgentForHarness } from '../agents'
+import { defaultAgentForHarness } from '../agents/agentSettings'
 import { AgentSettingsForm } from './AgentSettingsForm'
 
 afterEach(cleanup)
@@ -16,7 +16,7 @@ function open(role: 'orchestrator' | 'coder', extra: { graphqlTools?: GraphqlAge
   const agent = { ...defaultAgentForHarness('codex', 'agent', 'Agent', DEFAULT_HARNESS_DEFAULTS.codex, role), graphqlTools: undefined, ...extra }
   const onSave = vi.fn()
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><AgentSettingsForm agent={agent} node={{ graphqlTools: nodeGraphqlTools }}
+  render(<QueryClientProvider client={client}><AgentSettingsForm agent={agent} nodeGraphqlTools={nodeGraphqlTools}
     creationDefaults={DEFAULT_HARNESS_DEFAULTS} onClose={() => undefined} onSave={onSave} /></QueryClientProvider>)
   fireEvent.click(screen.getByText('More settings'))
   return { onSave, tools: screen.getByRole('group', { name: 'Foreman Code MCP tools' }) }

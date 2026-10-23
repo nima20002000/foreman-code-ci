@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { setImmediate } from 'node:timers/promises'
 import pg from 'pg'
 import type { ManagementGrant } from '@foreman-code/contracts/management'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import type { ScheduleConfiguration, ScheduleOccurrence } from '@foreman-code/contracts/schedules'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
@@ -14,12 +14,11 @@ import { PostgresScheduleDispatcher, type ScheduledStart } from '../../src/modul
 import { WorkflowScheduleService } from '../../src/modules/schedules/service.js'
 import { WorkflowManagementService } from '../../src/modules/workflows/management.js'
 import { LOCAL_RUNNER_ID, WorkspaceLocationService } from '../../src/modules/workspaces/location.js'
-import { seedWorkflowFixture } from './workflowDatabase.js'
-import { migratedDatabase } from './migratedDatabase.js'
-import { onceSchedule } from './scheduleClockCases.js'
+import { agent3Database, seedAgent3 } from './workflowDatabase.js'
+import { sch11Once } from './scheduleClockCases.js'
 
-export type ScheduleDatabase = Awaited<ReturnType<typeof migratedDatabase>>
-export const scheduleManagementActions: ManagementGrant['actions'] = [
+export type Sch11Database = Awaited<ReturnType<typeof agent3Database>>
+export const sch11Actions: ManagementGrant['actions'] = [
   'workflows:create', 'workflows:read', 'workflows:update', 'graph:read', 'graph:edit', 'graph:save',
   'agents:read', 'workspace_locations:read', 'skills:read', 'harnesses:update',
   'runs:start', 'runs:read', 'capabilities:read',
@@ -28,7 +27,7 @@ export const scheduleManagementActions: ManagementGrant['actions'] = [
 /** Uses the existing loopback/test-name guard, registered migrations and real
  * current-workflow authoring. No direct Run inserts, fake canonical receipts,
  * provider processes, production DB fallback, auth bypass or migration shim. */
-export async function scheduleDispatchFixture(database: ScheduleDatabase, initialNow = '2030-01-07T09:00:00.000Z',
+export async function sch11Fixture(database: Sch11Database, initialNow = '2030-01-07T09:00:00.000Z',
   initialFixture = makeCurrentWorkflowFixture(randomUUID())) {
   const projectRoot = join(database.directory, 'projects'), runtimeRoot = join(database.directory, 'runtime')
   const directory = join(projectRoot, randomUUID())
@@ -36,7 +35,7 @@ export async function scheduleDispatchFixture(database: ScheduleDatabase, initia
     mkdir(directory, { recursive: true, mode: 0o700 }),
     mkdir(runtimeRoot, { recursive: true, mode: 0o700 }),
   ])
-  const fixture = await seedWorkflowFixture(database.pool, directory, initialFixture, { run: false })
+  const fixture = await seedAgent3(database.pool, directory, initialFixture, { run: false })
   const scope = { workspaceId: fixture.scope.workspaceId, workflowId: fixture.scope.workflowId }
   const identity = await stat(directory, { bigint: true })
   await database.pool.query('update workspaces set execution_location_identity=$2::jsonb where id=$1',
@@ -52,14 +51,14 @@ export async function scheduleDispatchFixture(database: ScheduleDatabase, initia
     name: 'SCH-11 synthetic human', audience: 'operator', expiresAt: new Date(Date.now() + 3_600_000),
     grants: [{ actions, scope: { workspaceIds: [workspaceId] } }],
   })
-  const writer = await issue(scheduleManagementActions)
+  const writer = await issue(sch11Actions)
   const reader = await issue(['workflows:read', 'capabilities:read'])
   const command = (expectedRevision = 1) => ({ ...scope, commandId: randomUUID(), expectedRevision })
   const startUsing = (pool = database.pool): ScheduledStart => async (principal, input, schedule) => {
     await admitRepeatRun(pool, locations, principal, 'schedule', input, repeatStartPublication, { schedule })
   }
   const dispatcher = (start = startUsing(), pool = database.pool) => new PostgresScheduleDispatcher(pool, start, clock)
-  const save = async (schedule: ScheduleConfiguration = onceSchedule, expectedRevision = 0) =>
+  const save = async (schedule: ScheduleConfiguration = sch11Once, expectedRevision = 0) =>
     (await service.save(writer.principal, 'http', { ...command(expectedRevision), schedule })).value
   const current = async () => (await service.get(reader.principal, scope)).schedule
   const history = async () => {
@@ -81,11 +80,11 @@ export async function scheduleDispatchFixture(database: ScheduleDatabase, initia
   return { database, fixture, scope, time, clock, projectRoot, runtimeRoot, access, commands, workflows,
     service, locations, writer, reader, issue, command, startUsing, dispatcher, save, current, history, countRuns }
 }
-export type ScheduleDispatchFixture = Awaited<ReturnType<typeof scheduleDispatchFixture>>
+export type Sch11Fixture = Awaited<ReturnType<typeof sch11Fixture>>
 
 /** A second real session, with a recognizable name for lock-order assertions.
- * Called only after migratedDatabase validated TEST_DATABASE_URL. */
-export function scheduleSecondSession(database: ScheduleDatabase) {
+ * Called only after agent3Database validated TEST_DATABASE_URL. */
+export function sch11Pool(database: Sch11Database) {
   const name = `sch11_${randomUUID().replaceAll('-', '')}`
   const pool = new pg.Pool({ connectionString: database.databaseUrl, max: 1,
     application_name: name,
@@ -95,7 +94,7 @@ export function scheduleSecondSession(database: ScheduleDatabase) {
 
 /** Wait for an observed lock dependency, never a sleep that merely assumes it.
  * The deadline is a failure watchdog, not a scheduler clock or race oracle. */
-export async function waitForLockWait(pool: pg.Pool, waiterPid: number, holderPid: number) {
+export async function sch11Blocked(pool: pg.Pool, waiterPid: number, holderPid: number) {
   const deadline = performance.now() + 5_000
   do {
     const row = (await pool.query<{ pids: number[] }>('select pg_blocking_pids($1) as pids', [waiterPid])).rows[0]!
@@ -108,7 +107,7 @@ export async function waitForLockWait(pool: pg.Pool, waiterPid: number, holderPi
 /** Domain state must remain byte-for-byte equivalent after denied commands.
  * Diagnostic failed/denied audits are deliberately allowed; successful audits,
  * command receipts, authorities, captures, Runs and occurrence cursors are not. */
-export async function scheduleDomainState(f: ScheduleDispatchFixture) {
+export async function sch11DomainState(f: Sch11Fixture) {
   const query = async (sql: string, values: string[] = [f.scope.workflowId]) =>
     (await f.database.pool.query<{ value: unknown }>(sql, values)).rows.map((row) => row.value)
   return {

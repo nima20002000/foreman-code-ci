@@ -9,11 +9,17 @@ import { SignedJobCancellationGrantSchema, SignedJobCancellationClosureSchema,
 import { WorkerPairingConfigurationSchema } from '../../../packages/contracts/src/deviceIdentity.ts';
 import { RemoteJobOperationReceiptRecordSchema } from '../../../packages/contracts/src/remoteJobExecution.ts';
 import { publicKeyFingerprint } from '../../../packages/contracts/src/deviceIdentityNode.ts';
-import { RemoteOperationJournal } from '@foreman-code/api/worker/runs';
-import { releaseMaterializationClaimForCancellation, preparationChildrenClosed, sourceBindingHash, sourceMaterializationDigest, anchored, identity as filesystemIdentity, openPrivateRoot, openChildDirectory } from '@foreman-code/api/worker/sources';
-import { InstalledJobRuntimeConfigurationRecordSchema, isPreparatoryVerificationOwner, JobNativeOwnerSchema, readVerificationQuotaPool } from '@foreman-code/api/worker/jobs';
+import { RemoteOperationJournal } from '../../../apps/api/src/modules/runs/remote/operationJournal.ts';
+import { releaseMaterializationClaimForCancellation,
+  preparationChildrenClosed } from '../../../apps/api/src/modules/sources/materialization.ts';
+import { InstalledJobRuntimeConfigurationRecordSchema } from '../../../apps/api/src/modules/jobs/installedRuntimeHost.ts';
+import { isPreparatoryVerificationOwner, JobNativeOwnerSchema } from '../../../apps/api/src/modules/jobs/executorJournal.ts';
+import { readVerificationQuotaPool } from '../../../apps/api/src/modules/jobs/quotaOwnership.ts';
 import { sourceMaterializationParent, sourceMaterializationComponents } from '../../../packages/contracts/src/sourceMaterialization.ts';
 import { ApprovedRootAllowlistSchema } from '../../../packages/contracts/src/workspaceRootPolicies.ts';
+import { sourceBindingHash, sourceMaterializationDigest } from '../../../apps/api/src/modules/sources/bindingHash.ts';
+import { anchored, identity as filesystemIdentity, openPrivateRoot,
+  openChildDirectory } from '../../../apps/api/src/modules/sources/privateFilesystem.ts';
 import { loadApprovedRoots } from './approvedRoots.mjs';
 import { acquireWorkerLock } from './runtime.mjs';
 import { WorkerError } from './diagnostics.mjs';

@@ -9,7 +9,7 @@ object is its last definition in that order, listed below as migration version a
 only by appending a new migration; never change an applied migration. Objects created through dynamic SQL
 (`execute format(...)`) are not detected.
 
-Current: 179 functions, 192 triggers.
+Current: 178 functions, 191 triggers.
 
 ## Functions
 
@@ -79,7 +79,7 @@ Current: 179 functions, 192 triggers.
 | `eng04_validate_repeat_plan` | 264502 (`apps/api/src/infrastructure/repeatWriterMigration.ts`) | 1 |
 | `file_reference_immutable_identity` | 273636 (`apps/api/src/infrastructure/fileReferenceMigration.ts`) | 1 |
 | `file_revision_immutable` | 273601 (`apps/api/src/infrastructure/fileStorageMigration.ts`) | 1 |
-| `file_tool_fact_immutable` | 273605 (`apps/api/src/infrastructure/fileToolsMigration.ts`) | 1 |
+| `file_tool_fact_immutable` | 273605 (`apps/api/src/modules/files/tools/migration.ts`) | 1 |
 | `graphql_keep_run_stop_cause` | 170025 (`apps/api/src/infrastructure/reviewFailureLifecycleMigration.ts`) | 1 |
 | `graphql_live_cleanup_trigger` | 170025 (`apps/api/src/infrastructure/reviewFailureLifecycleMigration.ts`) | 1 |
 | `graphql_live_execution_trigger` | 170024 (`apps/api/src/infrastructure/runLiveActivityMigration.ts`) | 1 |
@@ -95,7 +95,7 @@ Current: 179 functions, 192 triggers.
 | `guard_agent_owner_grant` | 284302 (`apps/api/src/infrastructure/agentPlacementProducerMigration.ts`) | 1 |
 | `guard_dispatch_owner` | 284301 (`apps/api/src/infrastructure/nodePlacementMigration.ts`) | 1 |
 | `guard_execution_native_recovery` | 2026101477 (`apps/api/src/infrastructure/workflowFailedAttemptRecoveryMigration.ts`) | 3 |
-| `guard_legacy_workflow_schedule` | 270204 (`apps/api/src/infrastructure/workflowScheduleDispatchMigration.ts`) | 1 |
+| `guard_legacy_workflow_schedule` | 270204 (`apps/api/src/modules/schedules/dispatchMigration.ts`) | 1 |
 | `guard_placement_admission` | 284301 (`apps/api/src/infrastructure/nodePlacementMigration.ts`) | 1 |
 | `guard_placement_immutable` | 284301 (`apps/api/src/infrastructure/nodePlacementMigration.ts`) | 1 |
 | `hierarchy_control_failure` | 2026102111 (`apps/api/src/infrastructure/hierarchyControlSettlementMigration.ts`) | 1 |
@@ -110,7 +110,7 @@ Current: 179 functions, 192 triggers.
 | `job_output_admission_immutable` | 285203 (`apps/api/src/infrastructure/jobOutputAdmissionMigration.ts`) | 1 |
 | `native_activity_finished` | 2026101517 (`apps/api/src/infrastructure/activityHistoryIndexesMigration.ts`) | 1 |
 | `native_activity_identity` | 2026101517 (`apps/api/src/infrastructure/activityHistoryIndexesMigration.ts`) | 1 |
-| `notify_ci_ticket_changed` | 2026101504 (`apps/ci/src/migrations/ciGroupWaitMigration.ts`) | 2 |
+| `notify_ci_ticket_changed` | 2026101504 (`apps/api/src/infrastructure/ciGroupWaitMigration.ts`) | 2 |
 | `notify_workflow_chat_message` | 2026102123 (`apps/api/src/infrastructure/workflowChatNotificationsMigration.ts`) | 1 |
 | `notify_workflow_chat_state` | 2026102123 (`apps/api/src/infrastructure/workflowChatNotificationsMigration.ts`) | 1 |
 | `order_run_activity_commit` | 2026101610 (`apps/api/src/infrastructure/runActivityCommitLockMigration.ts`) | 1 |
@@ -143,13 +143,12 @@ Current: 179 functions, 192 triggers.
 | `protect_work_unresolved` | 269401 (`apps/api/src/infrastructure/workNoticeMigration.ts`) | 1 |
 | `protect_work_usage_update` | 2026102310 (`apps/api/src/infrastructure/workReplyRequestMigration.ts`) | 2 |
 | `protect_workflow_coordination_terminal` | 2026102105 (`apps/api/src/infrastructure/coordinationResultMigration.ts`) | 1 |
-| `publish_ci_activity_event` | 2026102321 (`apps/api/src/modules/runs/ciActivityConsumerMigration.ts`) | 1 |
 | `queue_run_subagent_projection` | 3101001 (`apps/api/src/infrastructure/runSubagentsMigration.ts`) | 1 |
 | `read_harness_native_event_batch` | 2026101801 (`apps/api/src/infrastructure/nativeBatchReadMigration.ts`) | 1 |
-| `record_host_ci_activity` | 2026102320 (`apps/ci/src/migrations/ciActivityEventsMigration.ts`) | 5 |
-| `record_host_ci_state_change` | 2026101104 (`apps/ci/src/migrations/hostCiActivityMigration.ts`) | 1 |
-| `record_joined_ci_activity` | 2026101603 (`apps/ci/src/migrations/ciSharedActivityMigration.ts`) | 1 |
-| `record_requested_ci_activity` | 2026102320 (`apps/ci/src/migrations/ciActivityEventsMigration.ts`) | 3 |
+| `record_host_ci_activity` | 2026102101 (`apps/api/src/infrastructure/ciActivityRequesterLookupMigration.ts`) | 4 |
+| `record_host_ci_state_change` | 2026101104 (`apps/api/src/infrastructure/hostCiActivityMigration.ts`) | 1 |
+| `record_joined_ci_activity` | 2026101603 (`apps/api/src/infrastructure/ciSharedActivityMigration.ts`) | 1 |
+| `record_requested_ci_activity` | 2026101610 (`apps/api/src/infrastructure/runActivityCommitLockMigration.ts`) | 2 |
 | `record_workflow_worker_ack_activity` | 269501 (`apps/api/src/infrastructure/runActivitiesMigration.ts`) | 1 |
 | `reject_repeat_evidence_truncate` | 264501 (`apps/api/src/infrastructure/repeatOccurrenceMigration.ts`) | 1 |
 | `reject_repeat_evidence_update` | 264501 (`apps/api/src/infrastructure/repeatOccurrenceMigration.ts`) | 1 |
@@ -171,15 +170,15 @@ Current: 179 functions, 192 triggers.
 | `run_reference_provenance_immutable` | 273637 (`apps/api/src/infrastructure/fileReferenceAccessMigration.ts`) | 1 |
 | `run_reference_read_validate` | 273637 (`apps/api/src/infrastructure/fileReferenceAccessMigration.ts`) | 1 |
 | `set_native_event_occurred_at` | 2026101517 (`apps/api/src/infrastructure/activityHistoryIndexesMigration.ts`) | 1 |
-| `source_fact_immutable` | 285001 (`apps/api/src/infrastructure/sourceMetadataMigration.ts`) | 1 |
-| `source_snapshot_immutable` | 285001 (`apps/api/src/infrastructure/sourceMetadataMigration.ts`) | 1 |
+| `source_fact_immutable` | 285001 (`apps/api/src/modules/sources/migration.ts`) | 1 |
+| `source_snapshot_immutable` | 285001 (`apps/api/src/modules/sources/migration.ts`) | 1 |
 | `start_run_cleanup_episode` | 2026101520 (`apps/api/src/infrastructure/stateDeadlinesMigration.ts`) | 1 |
-| `suppress_legacy_workflow_schedule` | 270204 (`apps/api/src/infrastructure/workflowScheduleDispatchMigration.ts`) | 1 |
+| `suppress_legacy_workflow_schedule` | 270204 (`apps/api/src/modules/schedules/dispatchMigration.ts`) | 1 |
 | `sync_review_job_lease` | 503 (`apps/api/src/infrastructure/migrations.ts`) | 1 |
-| `wave25_approval_generation_monotonic` | 250003 (`apps/api/src/infrastructure/wave25ApprovalMigration.ts`) | 1 |
-| `wave25_approval_immutable_version` | 250003 (`apps/api/src/infrastructure/wave25ApprovalMigration.ts`) | 1 |
+| `wave25_approval_generation_monotonic` | 250003 (`apps/api/src/modules/interactions/wave25/migration.ts`) | 1 |
+| `wave25_approval_immutable_version` | 250003 (`apps/api/src/modules/interactions/wave25/migration.ts`) | 1 |
 | `wave25_approval_no_downgrade` | 264601 (`apps/api/src/infrastructure/currentWorkflowWriterMigration.ts`) | 3 |
-| `wave25_approval_requires_publication` | 250003 (`apps/api/src/infrastructure/wave25ApprovalMigration.ts`) | 1 |
+| `wave25_approval_requires_publication` | 250003 (`apps/api/src/modules/interactions/wave25/migration.ts`) | 1 |
 | `work_join_required_edges` | 269308 (`apps/api/src/infrastructure/workJoinDispositionMigration.ts`) | 2 |
 | `work_json_bytes` | 269305 (`apps/api/src/infrastructure/workDeliverySettlementMigration.ts`) | 1 |
 | `work_parent_request` | 2026102103 (`apps/api/src/infrastructure/hierarchyDirectionMigration.ts`) | 3 |
@@ -192,8 +191,8 @@ Current: 179 functions, 192 triggers.
 | `workflow_native_message_key` | 2026102112 (`apps/api/src/infrastructure/workflowChatIndexMigration.ts`) | 1 |
 | `workflow_node_presentation` | 270207 (`apps/api/src/infrastructure/workflowPresentationMigration.ts`) | 1 |
 | `workflow_schedule_occurrence_immutable` | 270203 (`apps/api/src/infrastructure/workflowScheduleMigration.ts`) | 1 |
-| `workspace_root_fact_immutable` | 285002 (`apps/api/src/infrastructure/workspaceRootPoliciesMigration.ts`) | 1 |
-| `workspace_root_policy_immutable` | 285002 (`apps/api/src/infrastructure/workspaceRootPoliciesMigration.ts`) | 1 |
+| `workspace_root_fact_immutable` | 285002 (`apps/api/src/modules/sources/rootPoliciesMigration.ts`) | 1 |
+| `workspace_root_policy_immutable` | 285002 (`apps/api/src/modules/sources/rootPoliciesMigration.ts`) | 1 |
 
 ## Triggers
 
@@ -212,10 +211,9 @@ Current: 179 functions, 192 triggers.
 | `agent_owner_grant on execution_dispatch_owner_grants` | `guard_agent_owner_grant` | 284302 (`apps/api/src/infrastructure/agentPlacementProducerMigration.ts`) | 1 |
 | `artifact_edge_immutable on file_artifact_edges` | `artifact_edge_fact_immutable` | 285201 (`apps/api/src/infrastructure/artifactEdgeMigration.ts`) | 1 |
 | `artifact_edge_read_immutable on file_artifact_edge_reads` | `artifact_edge_fact_immutable` | 285201 (`apps/api/src/infrastructure/artifactEdgeMigration.ts`) | 1 |
-| `ci_activity_event_published on ci_activity_events` | `publish_ci_activity_event` | 2026102321 (`apps/api/src/modules/runs/ciActivityConsumerMigration.ts`) | 1 |
 | `ci_activity_record_revision on ci_runs` | `advance_ci_activity_record_revision` | 2026101213 (`apps/api/src/infrastructure/databaseHotQueriesMigration.ts`) | 2 |
-| `ci_ticket_changed on ci_runs` | `notify_ci_ticket_changed` | 2026101504 (`apps/ci/src/migrations/ciGroupWaitMigration.ts`) | 2 |
-| `ci_ticket_inserted on ci_runs` | `notify_ci_ticket_changed` | 2026101504 (`apps/ci/src/migrations/ciGroupWaitMigration.ts`) | 1 |
+| `ci_ticket_changed on ci_runs` | `notify_ci_ticket_changed` | 2026101504 (`apps/api/src/infrastructure/ciGroupWaitMigration.ts`) | 2 |
+| `ci_ticket_inserted on ci_runs` | `notify_ci_ticket_changed` | 2026101504 (`apps/api/src/infrastructure/ciGroupWaitMigration.ts`) | 1 |
 | `command_activity_record_revision on management_command_receipts` | `advance_activity_record_revision` | 282503 (`apps/api/src/infrastructure/activityCommandSourcesMigration.ts`) | 1 |
 | `consultation_native_message_index on run_coordinator_native_events` | `index_workflow_native_message` | 2026102112 (`apps/api/src/infrastructure/workflowChatIndexMigration.ts`) | 1 |
 | `current_approval_interaction_publication on durable_interactions` | `current_approval_requires_publication` | 267202 (`apps/api/src/infrastructure/currentApprovalPublicationMigration.ts`) | 1 |
@@ -243,9 +241,9 @@ Current: 179 functions, 192 triggers.
 | `file_activity_record_revision on files` | `advance_activity_record_revision` | 282502 (`apps/api/src/infrastructure/activitySourcesMigration.ts`) | 1 |
 | `file_reference_immutable_identity on files` | `file_reference_immutable_identity` | 273636 (`apps/api/src/infrastructure/fileReferenceMigration.ts`) | 1 |
 | `file_revision_immutable on file_revisions` | `file_revision_immutable` | 273601 (`apps/api/src/infrastructure/fileStorageMigration.ts`) | 1 |
-| `file_tool_copy_immutable on file_tool_copy_receipts` | `file_tool_fact_immutable` | 273605 (`apps/api/src/infrastructure/fileToolsMigration.ts`) | 1 |
-| `file_tool_publication_immutable on file_tool_publications` | `file_tool_fact_immutable` | 273605 (`apps/api/src/infrastructure/fileToolsMigration.ts`) | 1 |
-| `file_tool_read_immutable on file_tool_read_provenance` | `file_tool_fact_immutable` | 273605 (`apps/api/src/infrastructure/fileToolsMigration.ts`) | 1 |
+| `file_tool_copy_immutable on file_tool_copy_receipts` | `file_tool_fact_immutable` | 273605 (`apps/api/src/modules/files/tools/migration.ts`) | 1 |
+| `file_tool_publication_immutable on file_tool_publications` | `file_tool_fact_immutable` | 273605 (`apps/api/src/modules/files/tools/migration.ts`) | 1 |
+| `file_tool_read_immutable on file_tool_read_provenance` | `file_tool_fact_immutable` | 273605 (`apps/api/src/modules/files/tools/migration.ts`) | 1 |
 | `graph_edit_intents_immutable on graph_edit_intents` | `protect_graph_edit_intent` | 264201 (`apps/api/src/infrastructure/graphEditIntentMigration.ts`) | 1 |
 | `graphql_live_cleanup on run_cleanup_intents` | `graphql_live_cleanup_trigger` | 170025 (`apps/api/src/infrastructure/reviewFailureLifecycleMigration.ts`) | 1 |
 | `graphql_live_execution on harness_executions` | `graphql_live_execution_trigger` | 170024 (`apps/api/src/infrastructure/runLiveActivityMigration.ts`) | 1 |
@@ -274,7 +272,7 @@ Current: 179 functions, 192 triggers.
 | `hierarchy_report_retention on run_hierarchy_reports` | `assert_work_evidence_retention` | 2026102100 (`apps/api/src/infrastructure/workflowHierarchyMigration.ts`) | 1 |
 | `hierarchy_retention on undefined` | `assert_work_evidence_retention` | 2026102102 (`apps/api/src/infrastructure/hierarchyGroupsMigration.ts`) | 1 |
 | `historical_workflow_version_immutable on workflow_versions` | `protect_historical_workflow_version` | 270206 (`apps/api/src/infrastructure/runPresentationMigration.ts`) | 1 |
-| `host_ci_run_activity on ci_runs` | `record_host_ci_state_change` | 2026101104 (`apps/ci/src/migrations/hostCiActivityMigration.ts`) | 1 |
+| `host_ci_run_activity on ci_runs` | `record_host_ci_state_change` | 2026101104 (`apps/api/src/infrastructure/hostCiActivityMigration.ts`) | 1 |
 | `interaction_delivery_attempt_lifecycle on interaction_delivery_attempts` | `audit_interaction_delivery_attempt` | 503 (`apps/api/src/infrastructure/migrations.ts`) | 1 |
 | `job_acceptance_immutable on job_executions` | `preserve_job_acceptance` | 283801 (`apps/api/src/infrastructure/jobsMigration.ts`) | 1 |
 | `job_accepted_identity_immutable on job_executions` | `preserve_job_accepted_identity` | 283807 (`apps/api/src/infrastructure/jobAcceptedIdentityMigration.ts`) | 1 |
@@ -290,7 +288,7 @@ Current: 179 functions, 192 triggers.
 | `job_run_cleanup_immutable on job_dispatch_intents` | `preserve_job_run_cleanup` | 283806 (`apps/api/src/infrastructure/jobRunCleanupMigration.ts`) | 1 |
 | `job_runtime_native_admission_immutable on job_runtime_qualification_approvals` | `preserve_job_runtime_native_admission` | 283809 (`apps/api/src/infrastructure/jobRuntimeNativeAdmissionMigration.ts`) | 1 |
 | `job_runtime_profile_version_immutable on job_runtime_profile_versions` | `preserve_job_runtime_profile_version` | 283804 (`apps/api/src/infrastructure/jobRuntimeProfilesMigration.ts`) | 1 |
-| `joined_ci_activity on ci_group_requesters` | `record_joined_ci_activity` | 2026101603 (`apps/ci/src/migrations/ciSharedActivityMigration.ts`) | 1 |
+| `joined_ci_activity on ci_group_requesters` | `record_joined_ci_activity` | 2026101603 (`apps/api/src/infrastructure/ciSharedActivityMigration.ts`) | 1 |
 | `message_activity_record_revision on operator_conversation_messages` | `advance_activity_record_revision` | 282502 (`apps/api/src/infrastructure/activitySourcesMigration.ts`) | 1 |
 | `native_event_occurred_at on harness_native_events` | `set_native_event_occurred_at` | 2026101517 (`apps/api/src/infrastructure/activityHistoryIndexesMigration.ts`) | 1 |
 | `queue_run_subagent_projection on harness_native_events` | `queue_run_subagent_projection` | 3101001 (`apps/api/src/infrastructure/runSubagentsMigration.ts`) | 1 |
@@ -332,14 +330,14 @@ Current: 179 functions, 192 triggers.
 | `run_reference_pins_immutable on run_reference_file_pins` | `run_reference_provenance_immutable` | 273637 (`apps/api/src/infrastructure/fileReferenceAccessMigration.ts`) | 1 |
 | `run_reference_read_validate on run_reference_file_reads` | `run_reference_read_validate` | 273637 (`apps/api/src/infrastructure/fileReferenceAccessMigration.ts`) | 1 |
 | `run_reference_reads_immutable on run_reference_file_reads` | `run_reference_provenance_immutable` | 273637 (`apps/api/src/infrastructure/fileReferenceAccessMigration.ts`) | 1 |
-| `source_roots_immutable on source_root_bindings` | `source_fact_immutable` | 285001 (`apps/api/src/infrastructure/sourceMetadataMigration.ts`) | 1 |
-| `source_snapshots_immutable on source_snapshots` | `source_snapshot_immutable` | 285001 (`apps/api/src/infrastructure/sourceMetadataMigration.ts`) | 1 |
-| `wave25_approval_draft_writer on graph_drafts` | `wave25_approval_no_downgrade` | 250003 (`apps/api/src/infrastructure/wave25ApprovalMigration.ts`) | 1 |
-| `wave25_approval_generation_guard on native_session_lanes` | `wave25_approval_generation_monotonic` | 250003 (`apps/api/src/infrastructure/wave25ApprovalMigration.ts`) | 1 |
-| `wave25_approval_interaction_publication on durable_interactions` | `wave25_approval_requires_publication` | 250003 (`apps/api/src/infrastructure/wave25ApprovalMigration.ts`) | 1 |
-| `wave25_approval_review_publication on review_jobs` | `wave25_approval_requires_publication` | 250003 (`apps/api/src/infrastructure/wave25ApprovalMigration.ts`) | 1 |
-| `wave25_approval_version_writer on workflow_versions` | `wave25_approval_immutable_version` | 250003 (`apps/api/src/infrastructure/wave25ApprovalMigration.ts`) | 1 |
-| `wave25_approval_workflow_writer on workflows` | `wave25_approval_no_downgrade` | 250003 (`apps/api/src/infrastructure/wave25ApprovalMigration.ts`) | 1 |
+| `source_roots_immutable on source_root_bindings` | `source_fact_immutable` | 285001 (`apps/api/src/modules/sources/migration.ts`) | 1 |
+| `source_snapshots_immutable on source_snapshots` | `source_snapshot_immutable` | 285001 (`apps/api/src/modules/sources/migration.ts`) | 1 |
+| `wave25_approval_draft_writer on graph_drafts` | `wave25_approval_no_downgrade` | 250003 (`apps/api/src/modules/interactions/wave25/migration.ts`) | 1 |
+| `wave25_approval_generation_guard on native_session_lanes` | `wave25_approval_generation_monotonic` | 250003 (`apps/api/src/modules/interactions/wave25/migration.ts`) | 1 |
+| `wave25_approval_interaction_publication on durable_interactions` | `wave25_approval_requires_publication` | 250003 (`apps/api/src/modules/interactions/wave25/migration.ts`) | 1 |
+| `wave25_approval_review_publication on review_jobs` | `wave25_approval_requires_publication` | 250003 (`apps/api/src/modules/interactions/wave25/migration.ts`) | 1 |
+| `wave25_approval_version_writer on workflow_versions` | `wave25_approval_immutable_version` | 250003 (`apps/api/src/modules/interactions/wave25/migration.ts`) | 1 |
+| `wave25_approval_workflow_writer on workflows` | `wave25_approval_no_downgrade` | 250003 (`apps/api/src/modules/interactions/wave25/migration.ts`) | 1 |
 | `work_accepted_result on run_work_results` | `assert_work_accepted_result` | 269301 (`apps/api/src/infrastructure/workHandoffMigration.ts`) | 1 |
 | `work_activation_native_identity on harness_executions` | `protect_work_activation_identity` | 269301 (`apps/api/src/infrastructure/workHandoffMigration.ts`) | 1 |
 | `work_activation_scope on run_work_activations` | `assert_work_handoff_scope` | 269301 (`apps/api/src/infrastructure/workHandoffMigration.ts`) | 1 |
@@ -386,29 +384,25 @@ Current: 179 functions, 192 triggers.
 | `workflow_order_prepare on workflows` | `prepare_workflow_order` | 2026101214 (`apps/api/src/infrastructure/workflowOrderMigration.ts`) | 1 |
 | `workflow_result_protocol_immutable on runs` | `preserve_workflow_result_protocol` | 2026102105 (`apps/api/src/infrastructure/coordinationResultMigration.ts`) | 1 |
 | `workflow_schedule_occurrences_immutable on workflow_schedule_occurrences` | `workflow_schedule_occurrence_immutable` | 270203 (`apps/api/src/infrastructure/workflowScheduleMigration.ts`) | 1 |
-| `workflow_schedule_suppresses_legacy on workflow_schedules` | `suppress_legacy_workflow_schedule` | 270204 (`apps/api/src/infrastructure/workflowScheduleDispatchMigration.ts`) | 1 |
-| `workflow_trigger_new_schedule_guard on workflow_triggers` | `guard_legacy_workflow_schedule` | 270204 (`apps/api/src/infrastructure/workflowScheduleDispatchMigration.ts`) | 1 |
+| `workflow_schedule_suppresses_legacy on workflow_schedules` | `suppress_legacy_workflow_schedule` | 270204 (`apps/api/src/modules/schedules/dispatchMigration.ts`) | 1 |
+| `workflow_trigger_new_schedule_guard on workflow_triggers` | `guard_legacy_workflow_schedule` | 270204 (`apps/api/src/modules/schedules/dispatchMigration.ts`) | 1 |
 | `workflow_worker_ack_activity on interaction_graph_resumes` | `record_workflow_worker_ack_activity` | 269501 (`apps/api/src/infrastructure/runActivitiesMigration.ts`) | 1 |
-| `workspace_root_config_immutable on workspace_root_host_configurations` | `workspace_root_fact_immutable` | 285002 (`apps/api/src/infrastructure/workspaceRootPoliciesMigration.ts`) | 1 |
-| `workspace_root_policy_immutable on workspace_root_policies` | `workspace_root_policy_immutable` | 285002 (`apps/api/src/infrastructure/workspaceRootPoliciesMigration.ts`) | 1 |
+| `workspace_root_config_immutable on workspace_root_host_configurations` | `workspace_root_fact_immutable` | 285002 (`apps/api/src/modules/sources/rootPoliciesMigration.ts`) | 1 |
+| `workspace_root_policy_immutable on workspace_root_policies` | `workspace_root_policy_immutable` | 285002 (`apps/api/src/modules/sources/rootPoliciesMigration.ts`) | 1 |
 
 ## Rules enforced in both SQL and TypeScript
 
-Error codes that a current SQL function raises (`raise exception 'CODE'`) and TypeScript also throws or matches.
-SQL that only uses a code as data (a default written into a record) is not listed: it duplicates no rule.
-
-Decision (#25): the SQL function is the canonical home of each rule, because a trigger holds for every writer.
-The TypeScript check stays as a typed pre-check, so the caller gets a stable 409 code and the transaction is not
-aborted; it must not grow beyond the SQL rule, and the two must agree when either changes. Removing a pre-check
-needs one mapping from the raised code to a `DomainError` (none exists yet) and the database tests. Add a new rule
-in SQL, and add a TypeScript pre-check only when a caller needs the code.
+Error codes raised by a current SQL function that TypeScript also raises or matches. The SQL check is the last
+line of defense; keep the two in agreement when either changes.
 
 | Code | SQL functions | TypeScript |
 |---|---|---|
+| `CONTROL_CONTINUATION_CLOSED` | `hierarchy_control_failure` | `apps/api/src/modules/collaboration/workflowControlStore.ts`<br>`apps/api/src/modules/runs/workflowControlFailure.ts` |
 | `COORDINATION_RESULT_INVALID` | `assert_repeat_decision` | `apps/api/src/modules/runs/repeatNode.ts` |
 | `COORDINATION_TERMINAL_CONFLICT` | `assert_workflow_coordination_terminal` | `apps/api/src/modules/runs/postgres.ts`<br>`apps/api/src/modules/runs/workflowCoordinationTerminal.ts`<br>`apps/api/src/modules/runs/workflowNativeProof.ts` |
 | `EXECUTION_SEMANTICS_UNSUPPORTED` | `wave25_approval_no_downgrade` | `apps/api/src/mcp/operator/retiredExecutionTools.ts`<br>`apps/api/src/modules/interactions/wave25/context.ts`<br>`apps/api/src/modules/runs/management.ts`<br>`apps/api/src/modules/runs/postgres.ts`<br>`apps/api/src/modules/runs/repeatStartAdmission.ts`<br>`apps/api/src/modules/runs/repeatStartDispatch.ts`<br>`apps/api/src/modules/runs/repeatStartRead.ts`<br>`apps/api/src/modules/schedules/postgresDispatcher.ts`<br>`apps/api/src/modules/workflows/immutableRead.ts`<br>`apps/api/src/modules/workflows/repeatStartRead.ts` |
 | `GRAPH_STALE_GENERATION` | `wave25_approval_generation_monotonic` | `apps/api/src/modules/interactions/wave25/delivery.ts`<br>`apps/api/src/modules/interactions/wave25/reviews.ts`<br>`apps/api/src/modules/run-graph/nativeIngestion.ts`<br>`apps/api/src/modules/run-graph/nativeWriter.ts`<br>`apps/api/src/modules/runs/workflowNativeGraph.ts` |
+| `INTERACTION_CANCELED` | `audit_interaction_lifecycle` | `apps/api/src/modules/interactions/postgres.ts`<br>`apps/api/src/modules/interactions/wave25/decisions.ts`<br>`apps/api/src/modules/interactions/workDirection.ts` |
 | `JOB_VERSION_PIN_CONFLICT` | `eng04_validate_current_graph` | `apps/api/src/modules/jobs/repository.ts`<br>`apps/api/src/modules/jobs/sourceAuthority.ts`<br>`apps/api/src/modules/jobs/workflowComposition.ts` |
 | `PLACEMENT_ADMISSION_CONFLICT` | `guard_placement_admission` | `apps/api/src/modules/placement/agentProducer.ts`<br>`apps/api/src/modules/placement/localMainPlacement.ts`<br>`apps/api/src/modules/schedules/postgresDispatcher.ts` |
 | `REPEAT_BODY_UNRESOLVED` | `assert_repeat_decision` | `apps/api/src/modules/runs/repeatResolution.ts` |
@@ -424,6 +418,7 @@ in SQL, and add a TypeScript pre-check only when a caller needs the code.
 | `WORK_DENIAL_ANCESTRY_CONFLICT` | `assert_work_denial` | `apps/api/src/modules/runs/workHandoffAdmission.ts` |
 | `WORK_DIRECTION_WAIT_CONFLICT` | `assert_work_direction_wait` | `apps/api/src/modules/interactions/wave25/context.ts`<br>`apps/api/src/modules/interactions/wave25/resume.ts`<br>`apps/api/src/modules/interactions/workDirection.ts`<br>`apps/api/src/modules/runs/workDirectionInteraction.ts`<br>`apps/api/src/modules/runs/workflowLifecycle.ts` |
 | `WORK_ENTRY_PIN_CONFLICT` | `assert_work_handoff_scope` | `apps/api/src/modules/runs/workHandoffAdmission.ts` |
+| `WORK_EXECUTION_FAILED` | `hierarchy_group_feedback` | `apps/api/src/modules/runs/hierarchyGroupSettlement.ts` |
 | `WORK_JOIN_ROUND_CONFLICT` | `work_round_id` | `apps/api/src/modules/runs/workHandoffAdmission.ts` |
 | `WORK_NOTICE_PIN_CONFLICT` | `assert_work_notice_scope` | `apps/api/src/modules/runs/workHandoffAdmission.ts`<br>`apps/api/src/modules/runs/workHandoffNotice.ts` |
 | `WORK_POLICY_PIN_CONFLICT` | `assert_work_handoff_scope`, `assert_work_request` | `apps/api/src/modules/runs/repeatPostgres.ts`<br>`apps/api/src/modules/runs/repeatRuntime.ts`<br>`apps/api/src/modules/runs/workHandoffAdmission.ts`<br>`apps/api/src/modules/runs/workHandoffGraph.ts`<br>`apps/api/src/modules/runs/workHandoffNotice.ts` |
@@ -434,8 +429,8 @@ in SQL, and add a TypeScript pre-check only when a caller needs the code.
 ## Dropped
 
 - function `order_run_activity_insert`: dropped in 2026101610 (`apps/api/src/infrastructure/runActivityCommitLockMigration.ts`)
-- function `record_agent_ci_activity`: dropped in 2026101104 (`apps/ci/src/migrations/hostCiActivityMigration.ts`)
-- function `record_agent_ci_process_activity`: dropped in 2026101104 (`apps/ci/src/migrations/hostCiActivityMigration.ts`)
-- function `record_agent_ci_queue_activity`: dropped in 2026101104 (`apps/ci/src/migrations/hostCiActivityMigration.ts`)
-- trigger `agent_ci_process_activity on job_executions`: dropped in 2026101104 (`apps/ci/src/migrations/hostCiActivityMigration.ts`)
-- trigger `agent_ci_queue_activity on job_admission_queue`: dropped in 2026101104 (`apps/ci/src/migrations/hostCiActivityMigration.ts`)
+- function `record_agent_ci_activity`: dropped in 2026101104 (`apps/api/src/infrastructure/hostCiActivityMigration.ts`)
+- function `record_agent_ci_process_activity`: dropped in 2026101104 (`apps/api/src/infrastructure/hostCiActivityMigration.ts`)
+- function `record_agent_ci_queue_activity`: dropped in 2026101104 (`apps/api/src/infrastructure/hostCiActivityMigration.ts`)
+- trigger `agent_ci_process_activity on job_executions`: dropped in 2026101104 (`apps/api/src/infrastructure/hostCiActivityMigration.ts`)
+- trigger `agent_ci_queue_activity on job_admission_queue`: dropped in 2026101104 (`apps/api/src/infrastructure/hostCiActivityMigration.ts`)

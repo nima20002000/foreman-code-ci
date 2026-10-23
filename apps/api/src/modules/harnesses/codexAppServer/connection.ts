@@ -1,4 +1,4 @@
-import { logIgnoredError } from '../../diagnostics/index.js'
+import { logIgnoredError } from '../../diagnostics/ignoredError.js'
 /** Native transport ownership, process restart, turn admission and native turn reconciliation. */
 import { isWorkflowStart } from '../sessionStart.js'
 import { chatExcludedAppMcpServerNames } from '../appMcpLauncher.js'

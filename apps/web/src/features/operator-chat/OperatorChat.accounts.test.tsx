@@ -14,7 +14,7 @@ import { accountBinding, accountTarget, accountTargetInfo, observedAccount } fro
 import { server } from '../../mocks/server'
 import { useConversationDraftStore } from '../conversations'
 import { savedClaudeConfiguration } from '../settings/claudeSettings.fixtures'
-import { clearRevisionedFormPersistence } from '../settings'
+import { clearRevisionedFormPersistence } from '../settings/revisionedForm'
 import { OperatorChat } from './OperatorChat'
 import { installCanonicalOperatorFixture } from './canonicalOperator.test-support'
 import { useOperatorChatStore } from './operatorChatStore'

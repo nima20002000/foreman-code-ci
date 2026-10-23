@@ -1,9 +1,8 @@
-import { readdir } from 'node:fs/promises'
+import { readFile, readdir, stat } from 'node:fs/promises'
 import { z } from 'zod'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { WorkerConversationReceiptSchema, workerConversationGeneration,
   type WorkerConversationReceipt } from '@foreman-code/contracts/remote-execution-rpc'
-import { readBoundedTextIfPresent, writeDurableFile } from '../../shared/durableFile.js'
 
 const ArchiveEntrySchema = z.object({ receipt: WorkerConversationReceiptSchema,
   digest: z.string().regex(/^sha256:[a-f0-9]{64}$/) }).strict()
@@ -12,7 +11,8 @@ const ArchiveSchema = ArchiveEntrySchema.extend({ generations: z.array(ArchiveEn
 /** Closed receipts retain all replay identities outside the bounded recovery snapshot. */
 export class WorkerConversationArchive {
   private previewPaths?: Promise<Map<string, string[]>>
-  constructor(private readonly path: string, private readonly byteLimit: number) {}
+  constructor(private readonly path: string, private readonly byteLimit: number,
+    private readonly write: (path: string, value: string) => Promise<void>) {}
 
   private recordPath(conversationId: string) {
     return `${this.path}.conversations/${commandInputHash(conversationId)}.json`
@@ -101,9 +101,14 @@ export class WorkerConversationArchive {
   }
 
   private async readFile(path: string, conversationId?: string): Promise<WorkerConversationReceipt[]> {
-    const serialized = await readBoundedTextIfPresent(path,
-      { maxBytes: this.byteLimit + 1024, message: 'Conversation archive byte limit reached' })
-    if (serialized === undefined) return []
+    let serialized: string
+    try {
+      if ((await stat(path)).size > this.byteLimit + 1024) throw new Error('Conversation archive byte limit reached')
+      serialized = await readFile(path, 'utf8')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+      throw error
+    }
     const archive = ArchiveSchema.parse(JSON.parse(serialized))
     conversationId ??= archive.receipt.binding.owner.conversationId
     const entries = [archive, ...(archive.generations ?? [])]
@@ -123,6 +128,6 @@ export class WorkerConversationArchive {
     if (!record.closed) throw new Error('Positive conversation closure required')
     const serialized = JSON.stringify({ receipt: record, digest: commandInputHash(record) })
     if (Buffer.byteLength(serialized) > this.byteLimit + 1024) throw new Error('Conversation archive byte limit reached')
-    await writeDurableFile(this.generationPath(record.binding.owner.conversationId, workerConversationGeneration(record.binding)), serialized)
+    await this.write(this.generationPath(record.binding.owner.conversationId, workerConversationGeneration(record.binding)), serialized)
   }
 }

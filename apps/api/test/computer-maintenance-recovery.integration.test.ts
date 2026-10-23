@@ -1,4 +1,6 @@
+import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { describe, expect, it } from 'vitest'
 import {
   COMPUTER_MAINTENANCE_NAMESPACE, ComputerMaintenanceListSchema, ComputerMaintenanceStartResultSchema,
@@ -10,10 +12,9 @@ import { FleetMaintenanceService, type FleetSources } from '../src/modules/compu
 import { ComputerMaintenance } from '../src/modules/computers/maintenance.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { fakeComputer, settle } from './helpers/fleetSync.js'
-import { computerMaintenanceHttp } from './support/computerMaintenanceHttp.js'
 
 function controlledRestart(computer: ReturnType<typeof fakeComputer>) {
   const callbacks: (() => void)[] = []
@@ -30,9 +31,10 @@ function controlledRestart(computer: ReturnType<typeof fakeComputer>) {
   return { callbacks, reboots: () => reboots }
 }
 
-describe.skipIf(!postgresEnabled)('maintenance command recovery through the authenticated HTTP API', () => {
+describe.skipIf(!postgresEnabled)('maintenance command recovery through authenticated Operator MCP', () => {
   it('recovers host work after the Main result transaction fails and refuses a mismatched protocol', async () => {
-    const database = await migratedDatabase()
+    const database = await agent3Database()
+    const clients: Client[] = []
     const apps: ReturnType<typeof buildApp>[] = []
     try {
       const mainId = (await database.pool.query<{ id: string }>('select id from application_installation')).rows[0]!.id
@@ -75,7 +77,13 @@ describe.skipIf(!postgresEnabled)('maintenance command recovery through the auth
         const app = buildApp({ readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
           operator: { access, services: { computerMaintenance: service, commands } as unknown as OperatorServices } })
         apps.push(app)
-        return computerMaintenanceHttp(app, token)
+        const address = await app.listen({ host: '127.0.0.1', port: 0 })
+        const client = new Client({ name: 'maintenance-recovery-test', version: '1' })
+        clients.push(client)
+        await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), {
+          requestInit: { headers: { authorization: `Bearer ${token}` } },
+        }))
+        return client
       }
       const commands = new PostgresCommandCoordinator(database.pool)
       const denied = await connect(commands, reader.token)
@@ -83,12 +91,12 @@ describe.skipIf(!postgresEnabled)('maintenance command recovery through the auth
         hostRef: { kind: 'device', mainId, deviceId: device.deviceId },
         applicationInstallationId: device.workerInstallationId, keyRevision: 1, authorizationRevision: 1,
       }] }
-      expect((await denied.start(input)).ok).toBe(false)
+      expect((await denied.callTool({ name: 'computers_maintenance_start', arguments: input })).isError).toBe(true)
       expect(wireCommands).toEqual([])
       await database.pool.query(`alter table management_command_receipts add constraint maintenance_result_fault
         check (operation <> 'computers.maintenance.start') not valid`)
       const first = await connect(commands, writer.token)
-      expect((await first.start(input)).ok).toBe(false)
+      expect((await first.callTool({ name: 'computers_maintenance_start', arguments: input })).isError).toBe(true)
       await settle(computer)
       await database.pool.query('alter table management_command_receipts drop constraint maintenance_result_fault')
       const receipt = await database.pool.query(`select result from management_command_receipts
@@ -97,20 +105,25 @@ describe.skipIf(!postgresEnabled)('maintenance command recovery through the auth
       computer.maintenance = new ComputerMaintenance(computer.ports)
       catalog = 'changed-after-crash'
       const recovered = await connect(commands, writer.token)
-      const replay = ComputerMaintenanceStartResultSchema.parse((await recovered.start(input)).body)
+      const replay = ComputerMaintenanceStartResultSchema.parse(decodeMcpToolResult((await recovered.callTool({
+        name: 'computers_maintenance_start', arguments: input,
+      }))))
       expect(replay.computers[0]?.task).toMatchObject({ id: input.commandId, state: 'succeeded' })
       expect(wireCommands).toEqual([input.commandId, input.commandId])
       expect([...computer.codexMcp]).toEqual(['original'])
       expect(computer.calls.filter(call => call.args[0] === 'mcp' && call.args[1] === 'add')).toHaveLength(1)
-      const readback = ComputerMaintenanceListSchema.parse((await recovered.status({ refresh: true })).body)
+      const readback = ComputerMaintenanceListSchema.parse(decodeMcpToolResult((await recovered.callTool({
+        name: 'computers_maintenance_status', arguments: { detail: 'full', refresh: true },
+      }))))
       expect(readback.computers.find(value => value.target.applicationInstallationId === device.workerInstallationId)
         ?.status?.tasks.find(task => task.id === input.commandId)).toMatchObject({ state: 'succeeded' })
       const persisted = await database.pool.query<{ result: unknown }>(`select result from management_command_receipts
         where operation='computers.maintenance.start' and command_id=$1`, [input.commandId])
       expect(ComputerMaintenanceStartResultSchema.parse(persisted.rows[0]?.result)).toEqual(replay)
       legacy = true
-      const incompatible = ComputerMaintenanceStartResultSchema.parse(
-        (await recovered.start({ ...input, commandId: randomUUID() })).body)
+      const incompatible = ComputerMaintenanceStartResultSchema.parse(decodeMcpToolResult((await recovered.callTool({
+        name: 'computers_maintenance_start', arguments: { ...input, commandId: randomUUID() },
+      }))))
       expect(incompatible.computers[0]).toMatchObject({ task: null,
         error: expect.stringContaining('without maintenance support') })
       expect(wireCommands).toHaveLength(2)
@@ -126,7 +139,7 @@ describe.skipIf(!postgresEnabled)('maintenance command recovery through the auth
       }, ...input.targets] }
       await database.pool.query(`alter table management_command_receipts add constraint maintenance_result_fault
         check (operation <> 'computers.maintenance.start') not valid`)
-      const waiting = first.start(restart)
+      const waiting = first.callTool({ name: 'computers_maintenance_start', arguments: restart })
       await expect.poll(() => mainRestart.callbacks.length).toBe(1)
       await expect.poll(() => workerRestart.callbacks.length).toBe(1)
       mainRestart.callbacks[0]!()
@@ -136,18 +149,21 @@ describe.skipIf(!postgresEnabled)('maintenance command recovery through the auth
       await computer.maintenance.drain()
       releaseReply()
       replyGate = undefined
-      expect((await waiting).ok).toBe(false)
+      expect((await waiting).isError).toBe(true)
       await database.pool.query('alter table management_command_receipts drop constraint maintenance_result_fault')
       main.maintenance = new ComputerMaintenance(main.ports)
       computer.maintenance = new ComputerMaintenance(computer.ports)
       const afterRestart = await connect(commands, writer.token)
-      const restarted = ComputerMaintenanceStartResultSchema.parse((await afterRestart.start(restart)).body)
+      const restarted = ComputerMaintenanceStartResultSchema.parse(decodeMcpToolResult((await afterRestart.callTool({
+        name: 'computers_maintenance_start', arguments: restart,
+      }))))
       expect(restarted.computers).toHaveLength(2)
       expect(restarted.computers.every(value => value.task?.state === 'succeeded')).toBe(true)
       expect(mainRestart.reboots()).toBe(1)
       expect(workerRestart.reboots()).toBe(1)
       expect(wireCommands.filter(commandId => commandId === restart.commandId)).toHaveLength(2)
     } finally {
+      await Promise.allSettled(clients.map(client => client.close()))
       await Promise.allSettled(apps.map(app => app.close()))
       await database.close()
     }

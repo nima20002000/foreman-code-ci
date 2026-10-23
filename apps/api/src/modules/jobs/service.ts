@@ -1,10 +1,10 @@
 import { JobInitiatingAgentSchema, type JobInitiatingAgent } from '@foreman-code/contracts/jobs'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import { jobDigest } from './digest.js'
-import { componentLogger } from '../diagnostics/index.js'
+import { componentLogger } from '../diagnostics/logger.js'
 import { requireJobPreparationDeadline } from './preparationDeadline.js'
 import { JobWorkflowExecutionReferenceSchema } from '@foreman-code/contracts/job-workflow'
-import { AcceptedWorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
+import { AcceptedWorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
 import { jobSpecDigests } from '@foreman-code/contracts/jobs-node'
 import type { RunInput } from '@foreman-code/contracts'
 import { randomUUID } from 'node:crypto'
@@ -29,8 +29,8 @@ import {
 import type { ManagementAction, ManagementPrincipal } from '@foreman-code/contracts/management'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { requireAuthorization, type AuthorizedResource } from '../access/policy.js'
-import { lockActiveWorkspace } from '../workspaces/index.js'
-import type { PostgresCommandCoordinator } from '../commands/index.js'
+import { lockActiveWorkspace } from '../workspaces/admission.js'
+import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
 import { jobCanWait, releaseUnstartedJobComputer, type JobComputerSelection,
   type JobPreparationIdentity } from './computerSelection.js'
@@ -46,7 +46,7 @@ import { JobQueueTicketSchema, JobQueuedStartSchema, JobQueueCancelSchema, JobQu
   JobLaunchValidationInputSchema, JobLaunchValidationSchema,
   jobQueueHasExecution, type JobQueueTicket } from '@foreman-code/contracts/job-admission'
 import { JobResourceRequestSchema } from '@foreman-code/contracts/job-verification-policy'
-import { WorkerExecutionPolicy } from '../settings/index.js'
+import { WorkerExecutionPolicy } from '../settings/workerExecution.js'
 import { acceptVerificationSpec } from './verificationAcceptance.js'
 import type { PostgresJobCancellationRecovery } from './cancellationRecovery.js'
 import type { JobCancellationRecoveryApply } from '@foreman-code/contracts/job-cancellation-recovery'
@@ -218,7 +218,7 @@ export class JobService {
       const reference = JobWorkflowExecutionReferenceSchema.parse(row.reference)
       const runRow = (await sql.query<{ record: unknown }>(
         'select record from runs where id=$1 and workspace_id=$2 for share', [runId, workspaceId])).rows[0]
-      const run = AcceptedWorkflowRunCurrentSchema.parse(runRow?.record)
+      const run = AcceptedWorkflowRunV3Schema.parse(runRow?.record)
       const execution = await this.repository.execution(sql, workspaceId, row.job_execution_id)
       const runMatches = run.id === runId && run.workspaceId === workspaceId && run.workflowId === scope.workflowId
       const referenceMatches = reference.workspaceId === workspaceId && reference.runId === runId

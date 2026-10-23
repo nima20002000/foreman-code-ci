@@ -1,7 +1,7 @@
 import { lstat, readdir, unlink } from 'node:fs/promises'
 import { setTimeout as delay } from 'node:timers/promises'
 import { basename, join, relative } from 'node:path'
-import { componentLogger } from '../diagnostics/index.js'
+import { componentLogger } from '../diagnostics/logger.js'
 
 /** What an interrupted fetch can leave in the common directory. Other writers' state (refs/heads, HEAD, index and
  * linked worktrees' files) is never touched. */

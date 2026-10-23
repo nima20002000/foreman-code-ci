@@ -11,12 +11,12 @@ import { PostgresFileReferenceAuthorization } from '../src/modules/files/referen
 import { AgentReferenceService } from '../src/modules/files/references/agentService.js'
 import { FileReferenceService } from '../src/modules/files/references/service.js'
 import type { AgentReferenceDependencies } from '../src/modules/files/references/agentAccess.js'
-import { assertWave25WorkerBinding } from '../src/modules/interactions/current/credentialAuthority.js'
+import { assertWave25WorkerBinding } from '../src/modules/interactions/wave25/credentialAuthority.js'
 import { FILE_REFERENCE_TOOL_NAMES } from '../src/mcp/operator/tools/fileReferences.js'
 import { toolRoles } from '../src/mcp/unified/roles.js'
 
 // This suite verifies FIL-37's delegation to existing worker authority, not the engine's native/session fixture.
-vi.mock('../src/modules/interactions/current/credentialAuthority.js', () => ({ assertWave25WorkerBinding: vi.fn(async () => undefined) }))
+vi.mock('../src/modules/interactions/wave25/credentialAuthority.js', () => ({ assertWave25WorkerBinding: vi.fn(async () => undefined) }))
 const worker: ManagementPrincipal = { id: 'worker', name: 'Worker', audience: 'worker', agentId: 'same-agent',
   expiresAt: '9999-12-31T00:00:00.000Z', revokedAt: null, grants: [{ actions: ['interactions:read'],
     scope: { workspaceIds: ['W'], workflowIds: ['A'], runIds: ['run-A'] } }] }

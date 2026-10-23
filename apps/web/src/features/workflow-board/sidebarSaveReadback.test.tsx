@@ -5,9 +5,10 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
 import { createCurrentBoardMock } from '../../shared/mocks/currentBoard'
 import { queryKeys } from '../../shared/api/query'
-import { useGraphDraftStore, graphEditIntentKey } from '../graph'
+import { useGraphDraftStore } from '../graph/store'
 import { fixture } from '../graph/nextDraft/core.cases'
-import { nextDraftDirty, nextDraftKey } from '../board-core'
+import { nextDraftDirty, nextDraftKey } from '../graph/nextDraft/state'
+import { graphEditIntentKey } from '../graph/nextDraft/useGraphEditIntent'
 import { installBoardTestLifecycle, measureBoardWire, mountMeasuredBoard, type ReplyOverride } from './eng05D.testSupport'
 
 installBoardTestLifecycle()

@@ -8,7 +8,7 @@ import { providerAppEndpoint, providerLaunchCredentials } from './helpers/checkp
 import { ExecutionScopedNativeSessionManagerResolver, type NativeManagerResolutionContext } from '../src/modules/interactions/runtimePorts.js'
 import type { NativeHarnessSessionManager } from '../src/modules/harnesses/port.js'
 import { HarnessExecutionRequestSchema } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { inspectNativeResponse, pendingResponseQuery } from '../src/modules/harnesses/responseAvailability.js'
 import { CheckpointTestProvider } from './helpers/checkpointProvider.js'
 

@@ -8,9 +8,9 @@ import type pg from 'pg'
 import { HarnessExecutionSchema, type NativeSessionReference } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { JobWorkflowNodeSchema } from '@foreman-code/contracts/job-workflow'
-import { makeCurrentWorkflowFixture, WorkflowRunCurrentSchema, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
-import type { SqlQuery } from '../src/infrastructure/transaction.js'
-import { credentialAuthority, assertWave25WorkerBinding } from '../src/modules/interactions/current/credentialAuthority.js'
+import { makeCurrentWorkflowFixture, WorkflowRunV3Schema, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import type { GraphSqlClient } from '../src/modules/run-graph/connection.js'
+import { credentialAuthority, assertWave25WorkerBinding } from '../src/modules/interactions/wave25/credentialAuthority.js'
 import { PostgresAppInteractionService } from '../src/modules/interactions/app.js'
 import { approvalFixture } from './helpers/approvalFixture.js'
 
@@ -18,7 +18,7 @@ import { approvalFixture } from './helpers/approvalFixture.js'
  * authority/binding predicates, including reviewer bootstrap validation. */
 function authorityRow(form: 'sequential' | 'repeat' | 'approval' = 'sequential', attempt = 2) {
   const f = makeCurrentWorkflowFixture('retry-credentials', form)
-  const version: WorkflowVersionCurrent = f.version
+  const version: WorkflowVersionV3 = f.version
   if (form === 'approval') {
     const approval = approvalFixture()
     f.configurations.forEach((configuration, index) => {
@@ -33,7 +33,7 @@ function authorityRow(form: 'sequential' | 'repeat' | 'approval' = 'sequential',
     attempt, input: {}, state: 'starting', createdAt: f.createdAt, startedAt: f.createdAt,
   })
   return {
-    run: WorkflowRunCurrentSchema.parse({ ...f.run, executionState: 'running', startedAt: f.createdAt }),
+    run: WorkflowRunV3Schema.parse({ ...f.run, executionState: 'running', startedAt: f.createdAt }),
     version, execution, configuration: f.configurations[0]!, configurations: f.configurations,
     attempt, stopped: false, execution_closed: false, native_reference: null as NativeSessionReference | null,
     finalized: false, generation: null as string | null, native_owner: null as string | null, budget_active: false,
@@ -76,7 +76,7 @@ function database(row: AuthorityRow, binding = bindingFor(row), currentReviewLea
     if (text.includes('select 1 from review_jobs')) return { rows: [], rowCount: currentReviewLease ? 1 : 0 }
     throw new Error(`Unexpected authority query: ${text}`)
   })
-  return { query, sql: { query } as unknown as SqlQuery }
+  return { query, sql: { query } as unknown as GraphSqlClient }
 }
 
 describe.each(['sequential', 'repeat'] as const)('ENG06 %s retry credential authority', (form) => {

@@ -1,6 +1,6 @@
 import type { FileReferenceToolName, RunHistoryToolName, WorkflowScheduleToolName } from './toolNames.js'
 import type { WORKFLOW_HIERARCHY_TOOLS } from '@foreman-code/contracts'
-import type { RunInspectionToolName } from '@foreman-code/contracts/current'
+import type { RunInspectionToolName } from '@foreman-code/contracts/wave25'
 import type { ManagementAction, OperatorToolName } from '@foreman-code/contracts/management'
 
 import { DomainError, databaseReadFailure } from '../../modules/errors.js'

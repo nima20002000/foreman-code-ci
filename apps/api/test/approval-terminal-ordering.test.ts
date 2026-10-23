@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HarnessExecutionRequestSchema } from '@foreman-code/contracts'
-import type { CanonicalRunGraphScope } from '@foreman-code/contracts/current'
+import type { CanonicalRunGraphScope } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../src/modules/errors.js'
 import * as publication from '../src/modules/run-graph/publication.js'
-import type { SqlTransaction } from '../src/infrastructure/transaction.js'
+import type { GraphTransactionSql } from '../src/modules/run-graph/connection.js'
 import { assertRepeatCanonicalReceiptLocked, type RepeatCanonicalReceipt } from '../src/modules/run-graph/repeatReceipts.js'
 import { repeatExecutionDriver } from '../src/modules/runs/repeatRuntime.js'
 import { currentApprovalSettlementUnit } from './helpers/currentApprovalSettlementUnit.js'
-import { nativeReviewerFixture } from './native-reviewer-fixtures.js'
+import { native2Fixture } from './native-reviewer-fixtures.js'
 
 const { graphSourceDigest } = publication
 
@@ -19,7 +19,7 @@ const { graphSourceDigest } = publication
 // evaluated, rather than importing the actual module inside a hoisted partial
 // factory. This keeps every consumer on the same spied lookup.
 beforeEach(() => {
-  vi.spyOn(publication, 'currentRunGraphPublication').mockImplementation(((sql: SqlTransaction, scope: CanonicalRunGraphScope) => ({
+  vi.spyOn(publication, 'currentRunGraphPublication').mockImplementation(((sql: GraphTransactionSql, scope: CanonicalRunGraphScope) => ({
     sql, scope,
     assertSourceEnlisted: (evidence: RepeatCanonicalReceipt['evidence'], sourceDigest: string, semanticDigest: string) =>
       assertRepeatCanonicalReceiptLocked(sql, { scope, evidence, sourceDigest, semanticDigest, effect: null }),
@@ -32,7 +32,7 @@ const pending = () => new DomainError('APPROVAL_SETTLEMENT_PENDING', 'Exact sett
 
 describe('NIM-2644 current native terminal / approval settlement ordering', () => {
   it.each(['submitted', 'uncertain'] as const)('does not recover a terminal execution through %s delivery', async (deliveryState) => {
-    const f = gateFixture(), native = nativeReviewerFixture()
+    const f = gateFixture(), native = native2Fixture()
     native.closed(); native.revoked()
     f.state.records = [{ ...f.interaction, status: 'delivery_pending', deliveryState, deliveredAt: undefined }]
     // Current terminal re-entry delegates to the exact SQL settlement gate. There
@@ -98,7 +98,7 @@ describe('NIM-2644 current native terminal / approval settlement ordering', () =
 })
 
 function coordinatorFixture() {
-  const f = nativeReviewerFixture(false)
+  const f = native2Fixture(false)
   f.set({ ...f.get(), state: 'waiting' })
   f.installResident()
   f.internals.resolveManager = () => ({ manager: f.manager, processState: 'resident' })
@@ -132,7 +132,7 @@ describe('NIM-2644 pending receipt is not native failure cleanup', () => {
     expect(f.coordinator.residentRunIds()).toContain(f.run.id)
   })
   it.each([false, true])('current driver preserves receipt gap; explicit Stop=%s stays distinct', async (stop) => {
-    const f = nativeReviewerFixture(false), controller = new AbortController(), before = structuredClone(f.get())
+    const f = native2Fixture(false), controller = new AbortController(), before = structuredClone(f.get())
     const observeExact = vi.fn(async () => {
       if (stop) controller.abort(new DomainError('GRAPH_STOP_CONFLICT', 'Committed Stop fixture', 409))
       throw pending()

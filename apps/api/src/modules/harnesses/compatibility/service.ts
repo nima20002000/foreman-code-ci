@@ -5,7 +5,7 @@ import {
 } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { isAuthorized, requireAuthorization } from '../../access/policy.js'
-import type { PostgresCommandCoordinator } from '../../commands/index.js'
+import type { PostgresCommandCoordinator } from '../../commands/postgres.js'
 import { FileCompatibilityCache, type CompatibilityCache, type CompatibilityCacheEntry } from './cache.js'
 import { CompatibilityCheckError, compatibilityReason } from './errors.js'
 import { nativeCompatibilityProbe, type CompatibilityProbe, type HarnessInstallation } from './probe.js'

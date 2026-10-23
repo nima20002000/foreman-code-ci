@@ -6,11 +6,11 @@ import { type ChatControlReceipt, type ChatDeliveryReceipt, type ChatSendRequest
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { withTransaction, type TransactionSql } from '../../infrastructure/transaction.js'
 import { DomainError } from '../errors.js'
-import type { ConversationDeliveryPort } from '../workflow-chat/index.js'
-import type { PostgresChatDeliveryRepository } from '../workflow-chat/index.js'
-import { PostgresChatControlRepository, type ControlOwnerBinding, type RetainedControlRequest } from '../workflow-chat/index.js'
-import type { ChatTargetRead, DeliveryQualification, StoredDelivery } from '../workflow-chat/index.js'
-import { assertChatCommandKind } from '../workflow-chat/index.js'
+import type { ConversationDeliveryPort } from '../workflow-chat/delivery.js'
+import type { PostgresChatDeliveryRepository } from '../workflow-chat/deliveryRepository.js'
+import { PostgresChatControlRepository, type ControlOwnerBinding, type RetainedControlRequest } from '../workflow-chat/controlRepository.js'
+import type { ChatTargetRead, DeliveryQualification, StoredDelivery } from '../workflow-chat/model.js'
+import { assertChatCommandKind } from '../workflow-chat/commandIdentity.js'
 
 export type ConversationTarget = Extract<DeliveryTarget, { kind: 'agent_conversation' | 'operator_conversation' }>
 export interface ConversationOwnerState {

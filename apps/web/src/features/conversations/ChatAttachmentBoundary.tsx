@@ -1,5 +1,6 @@
 import { useContext, type ReactNode } from 'react'
-import { AttachmentDraftProvider, createAttachmentHttpClient, AttachmentDraftContext } from '../attachments'
+import { AttachmentDraftProvider, createAttachmentHttpClient } from '../attachments'
+import { AttachmentDraftContext } from '../attachments/attachmentContext'
 import { sessionGeneration } from '../../shared/api/sessionBoundary'
 
 const attachmentClient = createAttachmentHttpClient()

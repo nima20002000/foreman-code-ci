@@ -1,4 +1,4 @@
-import type { SavedRunDetails } from '@foreman-code/contracts/current'
+import type { SavedRunDetails } from '@foreman-code/contracts/wave25'
 
 export async function waitForHandoffCompletion(
   fixture: { finished: Promise<void>; details(): Promise<SavedRunDetails> },

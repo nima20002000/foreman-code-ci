@@ -5,7 +5,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { useGraphDraftStore } from '../store'
 import { apiClient } from '../../../shared/api/client'
 import { fixture } from './core.cases'
-import { nextDraftKey, nextDraftDirty } from '../../board-core'
+import { nextDraftKey } from './state'
+import { nextDraftDirty } from './state'
 import { nextDraftApi } from './transport'
 import { clearCurrentLayoutJournals, useDraftLayout } from './useDraftLayout'
 
@@ -108,7 +109,7 @@ it('does not send positions against a different saved semantic revision', async 
 it('reloads stored geometry and current labels with immutable configuration pins', async () => {
   const { ApiClient } = await import('../../../shared/api/client')
   const { createNextDraftApi } = await import('./transport')
-  const { makeCurrentWorkflowFixture } = await import('@foreman-code/contracts/current')
+  const { makeCurrentWorkflowFixture } = await import('@foreman-code/contracts/wave25')
   const f = makeCurrentWorkflowFixture('layout-read', 'sequential')
   const stored = { ...f.version.definition, name: 'Current saved label',
     nodes: f.version.definition.nodes.map((node) => ({ ...node, name: 'Current node name',

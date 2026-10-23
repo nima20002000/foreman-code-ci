@@ -1,17 +1,16 @@
 import assert from 'node:assert/strict'
-import type { GraphDraftCurrent, WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
-import {
-  authoringHints, changeApprovalHandler, draftOperations, entryChoices, hasLocalChanges, mergeAcknowledgement,
-  putRelationship, relationshipPairs, removeNode, removeRelationship, roleEvidence, sameValue,
-  type NextDraftContext, createNextDraftSlice, editNextDraft, newNextDraft, nextDraftDirty, nextDraftKey,
-  undoNextDraft, type DraftRequest, type NextDraftEdit, type NextDraftSlice,
-} from '../../board-core'
+import type { GraphDraftV3, WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import { authoringHints, changeApprovalHandler, draftOperations, entryChoices, hasLocalChanges,
+  mergeAcknowledgement, putRelationship, relationshipPairs, removeNode, removeRelationship, roleEvidence, sameValue,
+  type NextDraftContext } from './model'
+import { createNextDraftSlice, editNextDraft, newNextDraft, nextDraftDirty, nextDraftKey, undoNextDraft,
+  type DraftRequest, type NextDraftEdit, type NextDraftSlice } from './state'
 import { createNextDraftWriter, draftFailure } from './writer'
 import type { NextDraftApi } from './transport'
 import { deferred } from '../../../test/deferred'
 
 export function fixture(roles: ('coder' | 'orchestrator')[] = ['coder', 'coder']): NextDraftContext {
-  const graph: WorkflowDefinitionCurrent = {
+  const graph: WorkflowDefinitionV3 = {
     id: 'workflow', workspaceId: 'workspace', name: 'Authoring fixture', executionSemanticsVersion: 3,
     entryNodeId: 'node-0', executionCondition: { kind: 'manual' }, approval: { handler: 'user' },
     executionPolicy: { maxParallelism: 4, maxNodeExecutions: 1000 }, version: 1,
@@ -24,15 +23,15 @@ export function fixture(roles: ('coder' | 'orchestrator')[] = ['coder', 'coder']
     productRole, configurationVersionId: `configuration-${index}` } })) }
 }
 const clone = <T>(value: T): T => structuredClone(value)
-const graphWith = (context: NextDraftContext, update: Partial<WorkflowDefinitionCurrent>) => ({ ...context.draft.graph, ...update })
-const issue = (graph: WorkflowDefinitionCurrent, context: NextDraftContext, code: string) => authoringHints(graph, context).some((item) => item.code === code)
+const graphWith = (context: NextDraftContext, update: Partial<WorkflowDefinitionV3>) => ({ ...context.draft.graph, ...update })
+const issue = (graph: WorkflowDefinitionV3, context: NextDraftContext, code: string) => authoringHints(graph, context).some((item) => item.code === code)
 
 /** Synthetic authoring transport only; not a PostgreSQL, authentication, or native fixture. */
 function harness(context = fixture()) {
   let edit: NextDraftEdit | undefined = newNextDraft(context, 'instance')
   let server = clone(context.draft)
   const calls: DraftRequest[] = []
-  const committed = new Map<string, { draft: GraphDraftCurrent; agents: undefined }>()
+  const committed = new Map<string, { draft: GraphDraftV3; agents: undefined }>()
   const write: NextDraftApi['write'] = async (request) => {
     calls.push(clone(request))
     const replay = committed.get(request.commandId)
@@ -80,12 +79,12 @@ function harness(context = fixture()) {
   const access = { get: () => edit, update: (_: string, update: (edit: NextDraftEdit) => NextDraftEdit) => { if (edit) edit = update(edit) } }
   let sequence = 0
   return { api, calls, committed, access, edit: () => edit!, server: () => server,
-    change: (update: (graph: WorkflowDefinitionCurrent) => WorkflowDefinitionCurrent) => { edit = editNextDraft(edit!, update) },
+    change: (update: (graph: WorkflowDefinitionV3) => WorkflowDefinitionV3) => { edit = editNextDraft(edit!, update) },
     replace: (next: NextDraftEdit | undefined) => { edit = next },
-    writer: (validate: (graph: WorkflowDefinitionCurrent, operations: unknown[]) => void = () => undefined, session?: () => () => void) =>
+    writer: (validate: (graph: WorkflowDefinitionV3, operations: unknown[]) => void = () => undefined, session?: () => () => void) =>
       createNextDraftWriter(api, access, validate, () => `command-${++sequence}`, session) }
 }
-const rename = (graph: WorkflowDefinitionCurrent, name = 'Edited node') => ({ ...graph, nodes: graph.nodes.map((node, index) => index === 0 ? { ...node, name } : node) })
+const rename = (graph: WorkflowDefinitionV3, name = 'Edited node') => ({ ...graph, nodes: graph.nodes.map((node, index) => index === 0 ? { ...node, name } : node) })
 export const coreCases: { name: string; run: () => void | Promise<void> }[] = [
   { name: 'saving and clearing the Agent active-time budget survives draft acknowledgements', async run() {
     const h = harness()

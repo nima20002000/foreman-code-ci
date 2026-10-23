@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { RunActivitiesPageSchema } from '@foreman-code/contracts/current'
+import { RunActivitiesPageSchema } from '@foreman-code/contracts/wave25'
 import { buildApp } from '../src/app.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { RunManagementService } from '../src/modules/runs/management.js'

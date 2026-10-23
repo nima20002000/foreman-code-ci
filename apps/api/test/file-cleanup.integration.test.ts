@@ -30,7 +30,7 @@ import { readFileRetentionSnapshot } from '../src/modules/files/retentionSnapsho
 import { TemporaryFileService } from '../src/modules/files/service.js'
 import { FileByteStorage } from '../src/modules/files/storage.js'
 import { PostgresOperatorRepository } from '../src/modules/operators/postgres.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { deferred } from './helpers/deferred.js'
 import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
@@ -47,7 +47,7 @@ const pins = (stored: StoredFile) => ({ fileId: stored.value.file.fileId, revisi
 /** Real PostgreSQL sessions + existing retention/allocation/download services + real managed bytes.
  * No model/native harness, DATABASE_URL fallback, or shared-schema reset. Skipped != passed. */
 describe.skipIf(!postgresEnabled)('FIL-04 temporary cleanup integration', () => {
-  let database: Awaited<ReturnType<typeof migratedDatabase>>, storageRoot: string
+  let database: Awaited<ReturnType<typeof agent3Database>>, storageRoot: string
   let access: PostgresAccessService, retention: FileRetentionService, files: PostgresFileRepository
   let bytes: FileByteStorage, cleanup: PostgresFileCleanupRepository, physical: ManagedFileCleanupBytes
   let authorization: PostgresFileConversationAuthorization, service: TemporaryFileService
@@ -55,7 +55,7 @@ describe.skipIf(!postgresEnabled)('FIL-04 temporary cleanup integration', () => 
   let operator: Awaited<ReturnType<PostgresOperatorRepository['ensure']>>
 
   beforeAll(async () => {
-    database = await migratedDatabase()
+    database = await agent3Database()
     for (const migration of [fileStorageMigration, fileReferenceMigration, fileRetentionMigration]) {
       if ((await database.pool.query('select 1 from application_migrations where version=$1', [migration.version])).rowCount) continue
       const client = await database.pool.connect()

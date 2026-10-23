@@ -1,12 +1,16 @@
-import { workspaceStorageFoldersHttp } from './support/workspaceStorageFoldersHttp.js'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
-import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { operatorCatalogNames } from './support/operatorCatalog.js'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
+import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
+import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
+import { callWorkspaceTool } from './helpers/workspaceMcp.js'
 import { removeFixtureDirectory } from './helpers/testResources.js'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, mkdir, writeFile, readFile, rename, lstat, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import * as c from '@foreman-code/contracts/management'
 import { expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
@@ -17,7 +21,7 @@ import { WorkspaceManagementService } from '../src/modules/workspaces/management
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 
-it('discovers real unregistered folders without writes and safely deletes contents through authenticated HTTP', async () => {
+it('discovers real unregistered folders without writes and safely deletes contents through authenticated MCP and HTTP', async () => {
   const connectionString = process.env.TEST_DATABASE_URL
   if (!connectionString || !['localhost', '127.0.0.1', '[::1]'].includes(new URL(connectionString).hostname)) {
     throw new Error('An explicit loopback TEST_DATABASE_URL is required.')
@@ -35,14 +39,21 @@ it('discovers real unregistered folders without writes and safely deletes conten
   const app = buildApp({ logger: false, readiness: {
     database: { ping: async () => undefined }, checkpoints: { ping: async () => undefined },
   }, operator: { access, services } })
+  const clients: Client[] = []
   try {
     const expiresAt = new Date(Date.now() + 120_000)
     const owner = await access.issue({ name: 'Folder owner', audience: 'operator',
       grants: [{ actions: [...c.ManagementActionSchema.options], scope: {} }], expiresAt })
-    const client = workspaceStorageFoldersHttp(app, owner.token)
+    const address = await app.listen({ host: '127.0.0.1', port: 0 })
+    const connect = async (token: string) => {
+      const client = new Client({ name: 'storage-folders-test', version: '1.0.0' }); clients.push(client)
+      await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), { authProvider: { token: async () => token } }))
+      return client
+    }
+    const client = await connect(owner.token)
     const reader = await access.issue({ name: 'Folder reader', audience: 'operator',
       grants: [{ actions: ['workspaces:read', 'workspace_locations:read', 'capabilities:read'], scope: {} }], expiresAt })
-    const denied = workspaceStorageFoldersHttp(app, reader.token)
+    const denied = await connect(reader.token)
     const scoped = await access.issue({ name: 'Scoped reader', audience: 'operator',
       grants: [{ actions: [...c.ManagementActionSchema.options], scope: { workspaceIds: ['only-one'] } }], expiresAt })
     await expect(workspaces.storageFolders.list(scoped.principal, {})).rejects.toMatchObject({ code: 'ACCESS_DENIED' })
@@ -53,16 +64,8 @@ it('discovers real unregistered folders without writes and safely deletes conten
     await writeFile(join(external, 'keep.txt'), 'keep outside')
     await symlink(external, join(root, 'A missing', 'external-link'))
     const registered = (await workspaces.create(owner.principal, 'http', { commandId: randomUUID(), name: 'Registered', parentPath: root })).value
-    const read = async (caller: typeof client, cursor?: string) => {
-      const response = await caller.list({ limit: 1, ...(cursor ? { cursor } : {}) })
-      expect(response.ok).toBe(true)
-      return c.WorkspaceStorageFoldersPageSchema.parse(response.body)
-    }
-    const remove = async (caller: typeof client, input: unknown) => {
-      const response = await caller.remove(input)
-      expect(response.ok).toBe(true)
-      return c.WorkspaceStorageFolderDeleteResultSchema.parse(response.body)
-    }
+    const read = (caller: Client, cursor?: string) => callWorkspaceTool(caller,
+      'workspace_storage_folders_list', c.WorkspaceStorageFoldersPageSchema, { limit: 1, ...(cursor ? { cursor } : {}) })
     const before = (await pool.query('select count(*)::int as count from workspaces')).rows[0].count
     const first = await read(denied)
     expect(first.rootPath).toBe(root)
@@ -74,12 +77,21 @@ it('discovers real unregistered folders without writes and safely deletes conten
     expect((await pool.query('select count(*)::int as count from workspaces')).rows[0].count).toBe(before)
     expect((await workspaces.list(owner.principal, { limit: 1, includeArchived: false })).items[0]!.workspace.id).toBe(registered.workspace.id)
     const input = { commandId: randomUUID(), path: first.items[0]!.path, expectedIdentity: first.items[0]!.identity }
-    const deniedHttp = await denied.remove(input)
+    const tools = await operatorCatalogNames(denied)
+    expect(tools).toContain('workspace_storage_folders_list')
+    expect(tools).not.toContain('workspace_storage_folder_delete')
+    const capabilities = decodeMcpToolResult((await denied.callTool({ name: 'operator_get_capabilities', arguments: { detail: 'full' } }))) as { tools: string[] }
+    expect(capabilities.tools).not.toContain('workspace_storage_folder_delete')
+    await expectMcpAccessDenied(denied.callTool({ name: 'workspace_storage_folder_delete', arguments: input }))
+    const deniedHttp = await app.inject({ method: 'POST', url: '/api/management/workspace-storage/folders/delete',
+      headers: { authorization: `Bearer ${reader.token}` }, payload: input })
     expect(deniedHttp.statusCode).toBe(403)
     expect(await readFile(join(input.path, 'content.txt'), 'utf8')).toBe('A missing')
-    const removed = await remove(client, input)
+    const removed = await callWorkspaceTool(client, 'workspace_storage_folder_delete',
+      c.WorkspaceStorageFolderDeleteResultSchema, input)
     expect(removed.value.path).toBe(input.path)
-    const replayed = await remove(client, input)
+    const replayed = await callWorkspaceTool(client, 'workspace_storage_folder_delete',
+      c.WorkspaceStorageFolderDeleteResultSchema, input)
     expect(replayed.replayed).toBe(true)
     await expect(lstat(input.path)).rejects.toMatchObject({ code: 'ENOENT' })
     expect((await read(client)).items[0]!.name).toBe('B missing')
@@ -88,15 +100,17 @@ it('discovers real unregistered folders without writes and safely deletes conten
     // The bulk UI uses these same authenticated per-folder commands and receipts.
     const bulkPaths = ['Bulk first', 'Bulk second'].map((name) => join(root, name))
     for (const path of bulkPaths) { await mkdir(path); await writeFile(join(path, 'owned.txt'), 'owned bulk test content') }
-    const bulkFolders = c.WorkspaceStorageFoldersPageSchema.parse((await client.list({ limit: 100 })).body)
-      .items.filter((item) => bulkPaths.includes(item.path))
+    const bulkFolders = (await callWorkspaceTool(client, 'workspace_storage_folders_list',
+      c.WorkspaceStorageFoldersPageSchema, { limit: 100 })).items.filter((item) => bulkPaths.includes(item.path))
     expect(bulkFolders).toHaveLength(2)
     for (const item of bulkFolders) {
       const command = { commandId: randomUUID(), path: item.path, expectedIdentity: item.identity }
-      expect((await denied.remove(command)).statusCode).toBe(403)
-      const result = await remove(client, command)
+      await expectMcpAccessDenied(denied.callTool({ name: 'workspace_storage_folder_delete', arguments: command }))
+      const result = await callWorkspaceTool(client, 'workspace_storage_folder_delete',
+        c.WorkspaceStorageFolderDeleteResultSchema, command)
       expect(result.value.path).toBe(item.path)
-      const replayed = await remove(client, command)
+      const replayed = await callWorkspaceTool(client, 'workspace_storage_folder_delete',
+        c.WorkspaceStorageFolderDeleteResultSchema, command)
       expect(replayed.replayed).toBe(true)
       expect((await pool.query("select result->>'path' as path from management_command_receipts where operation='workspace.storage_folder.delete' and command_id=$1", [command.commandId])).rows[0].path).toBe(item.path)
       await expect(lstat(item.path)).rejects.toMatchObject({ code: 'ENOENT' })
@@ -110,8 +124,8 @@ it('discovers real unregistered folders without writes and safely deletes conten
     await removeFixtureDirectory(replacement.path, { force: false }); await rename(moved, replacement.path)
     // Storage root, nested paths, external paths, links and registered destinations are protected.
     for (const path of [root, external, join(root, 'outside-link'), registered.executionLocation!.rootPath, join(root, 'C missing', 'nested')]) {
-      const result = await client.remove({ commandId: randomUUID(), path, expectedIdentity: third.items[0]!.identity })
-      expect(result.ok).toBe(false)
+      const result = await client.callTool({ name: 'workspace_storage_folder_delete', arguments: { commandId: randomUUID(), path, expectedIdentity: third.items[0]!.identity } })
+      expect(result.isError).toBe(true)
     }
     expect(await readFile(join(external, 'keep.txt'), 'utf8')).toBe('keep outside')
     // Assignment made after discovery is still checked by the deletion transaction.
@@ -135,7 +149,7 @@ it('discovers real unregistered folders without writes and safely deletes conten
     // A saved Run snapshot remains protected after its workspace location changes.
     const activePath = join(root, 'Active snapshot'); await mkdir(activePath)
     const activeFolder = (await workspaces.storageFolders.list(owner.principal, { limit: 100 })).items.find((item) => item.path === activePath)!
-    const snapshot = await seedWorkflowFixture(pool, activePath, makeCurrentWorkflowFixture(randomUUID(), 'single'))
+    const snapshot = await seedAgent3(pool, activePath, makeCurrentWorkflowFixture(randomUUID(), 'single'))
     await locations.set(owner.principal, 'http', { workspaceId: snapshot.run.workspaceId, commandId: randomUUID(),
       expectedLocationRevision: 1, runnerId: locations.runnerId, rootPath: external })
     await expect(workspaces.storageFolders.delete(owner.principal, 'http', { commandId: randomUUID(), path: activePath, expectedIdentity: activeFolder.identity })).rejects.toMatchObject({ code: 'DIRECTORY_IN_USE' })
@@ -152,6 +166,7 @@ it('discovers real unregistered folders without writes and safely deletes conten
     expect((await workspaces.storageFolders.list(owner.principal, { limit: 100 })).items.some((item) => item.path === httpPath)).toBe(false)
     expect((await pool.query("select 1 from management_audit where action='workspace.storage_folder.delete' and outcome='succeeded'")).rowCount).toBe(4)
   } finally {
+    for (const client of clients) await client.close()
     await app.close()
     await database.close()
     await removeFixtureDirectory(directory)

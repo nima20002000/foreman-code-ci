@@ -11,20 +11,20 @@ import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { repeatStartPublication } from '../src/modules/run-graph/repeatStartPublication.js'
 import { admitRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
 import { ScheduleOccurrencePageSchema } from '../src/modules/schedules/transportSchemas.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
-import { scheduleDispatchFixture, scheduleDomainState, type ScheduleDatabase, type ScheduleDispatchFixture } from './helpers/scheduleFixture.js'
-import { onceSchedule } from './helpers/scheduleClockCases.js'
+import { sch11Fixture, sch11DomainState, type Sch11Database, type Sch11Fixture } from './helpers/scheduleFixture.js'
+import { sch11Once } from './helpers/scheduleClockCases.js'
 import { schedulePlacementFixture } from './helpers/schedulePlacementFixture.js'
 import { scheduleDevicePlacementFixture } from './helpers/scheduleDevicePlacementFixture.js'
 import { assertDeviceHostInstallation } from '../src/modules/devices/hostAuthorization.js'
 
 describe.skipIf(!postgresEnabled)('scheduled placement rejection', () => {
-  let database: ScheduleDatabase
-  let f: ScheduleDispatchFixture
+  let database: Sch11Database
+  let f: Sch11Fixture
   beforeEach(async () => {
-    database = await migratedDatabase()
-    f = await scheduleDispatchFixture(database)
+    database = await agent3Database()
+    f = await sch11Fixture(database)
   }, 60_000)
   afterEach(async () => { await database?.close() })
 
@@ -50,7 +50,7 @@ describe.skipIf(!postgresEnabled)('scheduled placement rejection', () => {
       const owner = await connect(placement.writer.token)
       const reader = await connect(f.reader.token)
       const root = `/api/management/workspaces/${f.scope.workspaceId}/workflows/${f.scope.workflowId}/schedule`
-      const input = { ...f.command(0), schedule: { ...onceSchedule, localDate: '2099-01-01' } }
+      const input = { ...f.command(0), schedule: { ...sch11Once, localDate: '2099-01-01' } }
       const created = await owner.callTool({ name: 'workflow_schedule_save', arguments: input })
       expect(created.isError).not.toBe(true)
       const saved = ScheduleSaveResultSchema.parse(decodeMcpToolResult(created)).value
@@ -125,7 +125,7 @@ describe.skipIf(!postgresEnabled)('scheduled placement rejection', () => {
             ...(device ? { workerExecution: device.workerExecution } : {}) }, { schedule })
       }).dispatch(saved)
       expect(await f.history()).toEqual(page.items)
-      const before = await scheduleDomainState(f)
+      const before = await sch11DomainState(f)
       const denied = await reader.callTool({ name: 'workflow_schedule_save', arguments: {
         ...input, commandId: randomUUID(), expectedRevision: 1,
       } })
@@ -136,7 +136,7 @@ describe.skipIf(!postgresEnabled)('scheduled placement rejection', () => {
       const deniedHistory = await foreignClient.callTool({ name: 'workflow_schedule_occurrences_list', arguments: f.scope })
       expect(deniedHistory.isError).toBe(true)
       expect(JSON.stringify(deniedHistory.content)).toContain('ACCESS_DENIED')
-      expect(await scheduleDomainState(f)).toEqual(before)
+      expect(await sch11DomainState(f)).toEqual(before)
     } finally {
       await Promise.allSettled(clients.map((client) => client.close()))
       await app.close()
@@ -169,9 +169,9 @@ describe.skipIf(!postgresEnabled)('scheduled placement rejection', () => {
       await admitRepeatRun(database.pool, f.locations, principal, 'schedule', input,
         { ...repeatStartPublication, placementAdmission: placement.producer }, { schedule })
     })
-    const before = await scheduleDomainState(f)
+    const before = await sch11DomainState(f)
     await expect(dispatcher().dispatch(saved)).rejects.toMatchObject({ code: 'HARNESS_INVENTORY_UNAVAILABLE' })
-    expect(await scheduleDomainState(f)).toEqual(before)
+    expect(await sch11DomainState(f)).toEqual(before)
     expect(await f.history()).toEqual([])
     expect(await f.current()).toEqual(saved)
     expect(await f.countRuns()).toBe(0)
@@ -179,7 +179,7 @@ describe.skipIf(!postgresEnabled)('scheduled placement rejection', () => {
     // Native qualification has not run in this database test. Inventory recovery
     // reaches its real persisted profile check while retaining the same occurrence.
     await expect(dispatcher().dispatch((await f.current())!)).rejects.toMatchObject({ code: 'HARNESS_PROFILE_UNAVAILABLE' })
-    expect(await scheduleDomainState(f)).toEqual(before)
+    expect(await sch11DomainState(f)).toEqual(before)
     expect(await f.history()).toEqual([])
     expect(await f.current()).toEqual(saved)
     expect(await f.countRuns()).toBe(0)

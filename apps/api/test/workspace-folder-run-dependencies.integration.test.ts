@@ -4,8 +4,8 @@ import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ManagedWorkspaceCommandResultSchema, ManagedWorkspaceSchema } from '@foreman-code/contracts/management'
-import { CurrentWorkflowSaveResultSchema, RunStartCurrentResultSchema, makeCurrentWorkflowFixture }
-  from '@foreman-code/contracts/current'
+import { CurrentWorkflowSaveResultSchema, RunStartV3ResultSchema, makeCurrentWorkflowFixture }
+  from '@foreman-code/contracts/wave25'
 import { continuationValidator } from '../src/modules/runs/continuation.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import { WorkspaceManagementService } from '../src/modules/workspaces/management.js'
@@ -70,7 +70,7 @@ describe.skipIf(!postgresEnabled)('workspace folder dependencies retained by acc
         })
         const started = await f.client.callTool({ name: 'run_start', arguments: start })
         expect(started.isError, JSON.stringify(started)).not.toBe(true)
-        const runId = RunStartCurrentResultSchema.parse(decodeMcpToolResult(started)).run.id
+        const runId = RunStartV3ResultSchema.parse(decodeMcpToolResult(started)).run.id
         expect(await dispatched).toBe(runId)
         expect(await f.runs.get(runId)).toMatchObject({ executionState: 'waiting' })
         const acceptedRun = await f.client.callTool({ name: 'run_get', arguments: {

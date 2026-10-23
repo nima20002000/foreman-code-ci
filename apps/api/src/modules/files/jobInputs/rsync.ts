@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util'
 import type { TransferIntent } from '@foreman-code/contracts/byte-transfer'
-import type { ImmutableTransferSource } from '../../byte-transfer/index.js'
+import type { ImmutableTransferSource } from '../../byte-transfer/sender.js'
 import { DomainError } from '../../errors.js'
 import type { CanonicalJobInputs } from './service.js'
 

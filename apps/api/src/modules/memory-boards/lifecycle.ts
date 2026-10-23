@@ -2,14 +2,13 @@ import { randomUUID } from 'node:crypto'
 import { BoardLifecycleFactSchema, type BoardLifecycleFact, type BoardApplicationReceipt,
   type MemoryCardWorkBinding, type MemoryCardWorkClaim } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
-import { assertGraphTransaction } from '../run-graph/index.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { assertGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
 import type { BoardRow, MemoryBoardAuthority } from './types.js'
 import { inputHash, invalid, nodeKey, same, workKey } from './identity.js'
 import { aggregateCard } from './work.js'
 import { bindingsFor, cardBlockerSource, cardById, claimsFor, loadBoard, lockIdentity, saveBinding, saveCard, saveClaim } from './repository.js'
 
-export async function beginEffect(tx: SqlTransaction, kind: 'result' | 'lifecycle',
+export async function beginEffect(tx: GraphTransactionSql, kind: 'result' | 'lifecycle',
   work: BoardLifecycleFact['work'], sourceEventKey: string, input: unknown): Promise<{
     key: string; hash: string; replay?: BoardApplicationReceipt
   }> {
@@ -21,7 +20,7 @@ export async function beginEffect(tx: SqlTransaction, kind: 'result' | 'lifecycl
   if (saved && saved.input_hash !== hash) throw new DomainError('COMMAND_INPUT_CONFLICT','This engine effect identity has different input.',409)
   return { key,hash,...(saved ? { replay:{ ...saved.receipt,replayed:true } } : {}) }
 }
-export async function finishEffect(tx: SqlTransaction, key: string, hash: string, receipt: BoardApplicationReceipt): Promise<BoardApplicationReceipt> {
+export async function finishEffect(tx: GraphTransactionSql, key: string, hash: string, receipt: BoardApplicationReceipt): Promise<BoardApplicationReceipt> {
   await tx.query('insert into memory_board_effects(effect_key,input_hash,receipt) values($1,$2,$3)',[key,hash,receipt])
   return receipt
 }
@@ -63,7 +62,7 @@ function nextBinding(binding: MemoryCardWorkBinding, fact: BoardLifecycleFact): 
   next.revision += 1
   return next
 }
-async function claimAdmission(tx: SqlTransaction, row: BoardRow, cardId: string, fact: BoardLifecycleFact,
+async function claimAdmission(tx: GraphTransactionSql, row: BoardRow, cardId: string, fact: BoardLifecycleFact,
   bindings: MemoryCardWorkBinding[], claims: MemoryCardWorkClaim[]): Promise<boolean> {
   if (fact.phase !== 'admitted' || fact.continuationOf) return false
   let changed = false
@@ -78,7 +77,7 @@ async function claimAdmission(tx: SqlTransaction, row: BoardRow, cardId: string,
   }
   return changed
 }
-async function projectCard(tx: SqlTransaction, row: BoardRow, cardId: string, fact: BoardLifecycleFact, now: string): Promise<boolean> {
+async function projectCard(tx: GraphTransactionSql, row: BoardRow, cardId: string, fact: BoardLifecycleFact, now: string): Promise<boolean> {
   const card = await cardById(tx,row.board.id,cardId), bindings = await bindingsFor(tx,cardId), claims = await claimsFor(tx,cardId)
   const previous = structuredClone(bindings)
   let changed = await claimAdmission(tx,row,cardId,fact,bindings,claims)
@@ -107,7 +106,7 @@ async function projectCard(tx: SqlTransaction, row: BoardRow, cardId: string, fa
     provenance:{ work:fact.work,...(fact.execution ? { execution:fact.execution } : {}) } })
   return true
 }
-export async function applyLifecycle(tx: SqlTransaction, authority: MemoryBoardAuthority,
+export async function applyLifecycle(tx: GraphTransactionSql, authority: MemoryBoardAuthority,
   input: BoardLifecycleFact, now: string): Promise<BoardApplicationReceipt> {
   assertGraphTransaction(tx)
   const fact = BoardLifecycleFactSchema.parse(input)

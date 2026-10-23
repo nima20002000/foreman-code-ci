@@ -5,7 +5,7 @@ import {
 } from '@foreman-code/contracts/files'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 
-import type { PostgresCommandCoordinator } from '../../commands/index.js'
+import type { PostgresCommandCoordinator } from '../../commands/postgres.js'
 import { DomainError } from '../../errors.js'
 import type { FileMutationSource, FileReferenceRepository } from '../repository.js'
 import { fileScopeIdentity } from '../requests.js'

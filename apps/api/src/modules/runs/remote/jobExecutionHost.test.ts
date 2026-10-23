@@ -348,16 +348,14 @@ async function acceptedClosure(wrongInput=false) {
   const status=await f.journal.jobStatus(f.intent.operationId)
   if(status.status!=='known')throw new Error('Actual journal receipt required')
   const row={record:structuredClone(f.execution) as JobExecutionRecord,accepted_spec:structuredClone(f.execution.acceptedSpec),intent:structuredClone(f.intent),last_receipt:status.receipt as RemoteJobOperationReceiptRecord|null,receipt_sequence:String(status.receipt.sequence)}
-  // Statements are told apart by what they bind: the dispatch intent read the execution id, the dispatch update the execution id,
-  // sequence and receipt, the Job update the workspace id, execution id and record, the closure read seven values.
-  const query=vi.fn(async(_text:string,values:unknown[]=[])=>{
-    if(values.length===1)return {rows:[row]}
-    if(values.length===3&&values[0]===row.record.id) {
-      row.receipt_sequence=String(values[1]);row.last_receipt=JSON.parse(String(values[2])) as RemoteJobOperationReceiptRecord
+  const query=vi.fn(async(text:string,values?:unknown[])=>{
+    if(text.startsWith('select intent,receipt_sequence'))return {rows:[row]}
+    if(text.startsWith('update job_dispatch_intents set receipt_sequence')) {
+      row.receipt_sequence=String(values![1]);row.last_receipt=JSON.parse(String(values![2])) as RemoteJobOperationReceiptRecord
       return {rows:[]}
     }
-    if(values.length===3&&values[0]===row.record.workspaceId) {row.record=JSON.parse(String(values[2])) as JobExecutionRecord;return {rows:[]}}
-    if(values.length===7) {
+    if(text.startsWith('update job_executions set record')) {row.record=JSON.parse(String(values![2])) as JobExecutionRecord;return {rows:[]}}
+    if(text.startsWith('select e.record,e.accepted_spec')) {
       const expected=[row.record.workspaceId,row.record.id,row.record.attemptId,row.record.operationId,row.intent.bindingHash,row.intent.owner.grantId,row.intent.owner.epoch]
       return {rows:JSON.stringify(values)===JSON.stringify(expected)?[row]:[]}
     }

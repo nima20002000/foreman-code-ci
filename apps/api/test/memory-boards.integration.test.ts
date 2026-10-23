@@ -1,22 +1,22 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { parseCoordinationResult, type MemoryCard, type MemoryNote } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { memoryBoardsMigration } from '../src/infrastructure/memoryBoardsMigration.js'
 import type { BoardSnapshot, ChangesPage, Page } from '../src/modules/memory-boards/types.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { memoryFixture } from '../src/modules/memory-boards/testing/fixture.js'
 
 describe.skipIf(!postgresEnabled)('Memory boards public persistence and engine ports',()=>{
-  let database:Awaited<ReturnType<typeof migratedDatabase>>,f:ReturnType<typeof memoryFixture>,boardId:string
+  let database:Awaited<ReturnType<typeof agent3Database>>,f:ReturnType<typeof memoryFixture>,boardId:string
   const principal:ManagementPrincipal={id:'memory-test-operator',name:'Memory Operator',audience:'operator',
     grants:[{actions:['workspaces:read','workspaces:update','workflows:read','workflows:update'],scope:{}}],
     expiresAt:'9999-12-31T23:59:59.999Z',revokedAt:null}
   beforeAll(async()=>{
-    database=await migratedDatabase()
+    database=await agent3Database()
     await withTransaction(database.pool,async tx=>{
       const present=await tx.query("select to_regclass('memory_boards') as name")
       if(!present.rows[0]?.name)await tx.query(memoryBoardsMigration.sql)

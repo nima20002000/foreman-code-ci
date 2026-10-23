@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 import { RunGraphReadService } from '../src/modules/run-graph/readService.js'
-import { readCurrentGraphExchanges } from '../src/modules/interactions/current/currentExchanges.js'
+import { readCurrentGraphExchanges } from '../src/modules/interactions/wave25/currentExchanges.js'
 import { approvalDatabase } from './helpers/approvalDatabase.js'
 
 const closes: Array<() => Promise<void>> = []

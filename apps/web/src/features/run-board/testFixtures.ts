@@ -1,9 +1,9 @@
 import { RunBoardSnapshotSchema, type RunBoardSnapshotGetResult } from '@foreman-code/contracts/run-snapshots'
 import { http, HttpResponse } from 'msw'
 import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
-import { CurrentRunDetailsSchema, RepeatGraphCurrentStateSchema, repeatGraphTopologyCurrent,
-  makeCurrentWorkflowFixture, RunVersionDetailSchema } from '@foreman-code/contracts/current'
-import type { RunsSelectorScope } from '../runs-selector'
+import { CurrentRunDetailsSchema, RepeatGraphCurrentV3Schema, repeatGraphTopologyV3,
+  makeCurrentWorkflowFixture, RunVersionDetailSchema } from '@foreman-code/contracts/wave25'
+import type { RunsSelectorScope } from '../runs-selector/types'
 import type { AvailableRunBoardSnapshot } from './model'
 
 export const scope = { workspaceId: 'workspace-snap', workflowId: 'workflow-snap' }
@@ -99,8 +99,8 @@ export function pinnedRunHandlers(target: RunsSelectorScope) {
     http.get('*/api/workspaces/:workspaceId/workflows/:workflowId/runs/:runId/graph/v1/current', ({ params }) => {
       const runId = String(params.runId)
       const { scope, version } = saved(runId)
-      return HttpResponse.json(RepeatGraphCurrentStateSchema.parse({
-        kind: 'current', protocolVersion: 1, scope, topology: repeatGraphTopologyCurrent(version),
+      return HttpResponse.json(RepeatGraphCurrentV3Schema.parse({
+        kind: 'current', protocolVersion: 1, scope, topology: repeatGraphTopologyV3(version),
         asOfSequence: '0', retentionFloor: '0', historyCoverage: 'from_admission',
         state: { run: { executionState: 'completed', outcome: 'succeeded', stopRequested: false,
           cleanupPending: false, unsettledReviewCount: 0, pendingInteractionCount: 0 },

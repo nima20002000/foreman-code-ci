@@ -7,7 +7,6 @@ import type { PostgresCommandCoordinator } from '../src/modules/commands/postgre
 import type { JobComputerSelection } from '../src/modules/jobs/computerSelection.js'
 import { JobService } from '../src/modules/jobs/service.js'
 import { jobSpec } from './helpers/jobFixture.js'
-import { liveAuthorityQuery, livePrincipalRow } from './helpers/livePrincipal.js'
 
 function fixture() {
   const principal: ManagementPrincipal = { id: 'launch-writer', name: 'Launch writer', audience: 'operator',
@@ -17,7 +16,10 @@ function fixture() {
   const definition: JobDefinitionRecord = { schemaVersion: 1, id: 'job', workspaceId: 'workspace-fixture',
     name: 'Build', revision: 1, versionId: 'job-version', spec,
     createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-01T00:00:00Z' }
-  const query = vi.fn(liveAuthorityQuery(id => id === principal.id ? livePrincipalRow(principal) : undefined))
+  const query = vi.fn(async (sql: string) => ({ rows: sql.includes('select id,name,audience,grants') ? [{
+    id: principal.id, name: principal.name, audience: principal.audience, grants: principal.grants,
+    expires_at: new Date(principal.expiresAt), revoked_at: null, delegated_from: null,
+  }] : [] }))
   const connect = vi.fn(async () => ({ query, release: vi.fn() }))
   const recordDenied = vi.fn()
   const validate = vi.fn(async () => ({ valid: true, reasons: [] as string[], sideEffects: false as const }))

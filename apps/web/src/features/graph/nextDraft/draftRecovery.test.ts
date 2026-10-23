@@ -2,18 +2,17 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
 import { ApiError } from '../../../shared/api/client'
 import { protectedKey } from '../../../shared/api/protectedChatStorage'
-import { createHarnessEditor } from '../../settings'
-import {
-  roleEvidence, changeDraftAgent, editorAgents, stageAgentEdits, editNextDraft, newNextDraft, nextDraftDirty,
-  nextDraftKey, redoNextDraft, undoNextDraft,
-} from '../../board-core'
+import { createHarnessEditor } from '../../settings/harnessEditor'
+import { roleEvidence } from './model'
 import { fixture } from './core.cases'
 import { journalIntent, journalRequest, savedJournal } from './nim2644Journal.fixture'
 import { acknowledgeEditIntentSnapshot } from './useGraphEditIntent'
 import { deriveDraftEditorStatus } from './draftEditorStatus'
+import { changeDraftAgent, editorAgents, stageAgentEdits } from './agentEdits'
+import { editNextDraft, newNextDraft, nextDraftDirty, nextDraftKey, redoNextDraft, undoNextDraft } from './state'
 import { acknowledgeEditOutbox, editSnapshotAcknowledged, readEditSnapshot, readEditSubmission, rejectEditOutbox,
   reserveEditOutbox, storeEditSnapshot } from './editIntentStorage'
-import { boardScope, pendingBoardAction, publishDraftDepth, recordBoardAction, useBoardUndo } from '../../workflow-board'
+import { boardScope, pendingBoardAction, publishDraftDepth, recordBoardAction, useBoardUndo } from '../../workflow-board/boardUndo'
 
 const scope = nextDraftKey('workspace', 'workflow')
 const tabKey = protectedKey('ui', 'graph-edit-intent:tab')

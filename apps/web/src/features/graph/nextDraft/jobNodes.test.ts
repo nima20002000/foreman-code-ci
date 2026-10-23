@@ -2,8 +2,9 @@ import { describe,expect,it } from 'vitest'
 import { JobWorkflowNodeSchema } from '@foreman-code/contracts/job-workflow'
 import { currentWorkflowFixture } from '../../../shared/mocks/currentWorkflow'
 import { definition } from '../../jobs/fixtures'
-import { attachJob, draftOperations, workflowToGraph } from '../../board-core'
+import { attachJob,draftOperations } from './model'
 import { LocalWorkflowFormSchema } from './localGraph'
+import { workflowToGraph } from '../mapper'
 import { createGraphTopologyProjector } from '../topology'
 
 describe('shared explicit job authoring on the current Board',()=>{

@@ -191,14 +191,14 @@ it('notifies the actual owned observer after map insertion with distinct control
 
 it('workflow response uses original-source readback plus active delivery lease after the old drive owner is released', async () => {
   const { AgentConfigurationVersionSchema, HarnessExecutionSchema, DurableInteractionSchema } = await import('@foreman-code/contracts')
-  const { WorkflowRunCurrentSchema, WorkflowVersionCurrentSchema } = await import('@foreman-code/contracts/current')
+  const { WorkflowRunV3Schema, WorkflowVersionV3Schema } = await import('@foreman-code/contracts/wave25')
   const createdAt = '2026-10-01T00:00:00.000Z'
   const approval = { handler: 'user' as const }
   const cfg = AgentConfigurationVersionSchema.parse({ id: 'cfg', workspaceId: 'ws', agentId: 'agent', version: 1, productRole: 'coder', harness: configuration, prompt: {}, assignedSkills: [], contentHash: `sha256:${'0'.repeat(64)}`, createdAt })
-  const version = WorkflowVersionCurrentSchema.parse({ id: 'version', workspaceId: 'ws', workflowId: 'wf', version: 1, executionSemanticsVersion: 3, entryNodeId: 'node', approval,
+  const version = WorkflowVersionV3Schema.parse({ id: 'version', workspaceId: 'ws', workflowId: 'wf', version: 1, executionSemanticsVersion: 3, entryNodeId: 'node', approval,
     agentConfigurationVersionIds: { agent: cfg.id }, contentHash: `sha256:${'0'.repeat(64)}`, createdAt,
     definition: { id: 'wf', workspaceId: 'ws', name: 'Synthetic domain fixture', version: 1, executionSemanticsVersion: 3, entryNodeId: 'node', approval, executionCondition: { kind: 'manual' }, executionPolicy: { maxParallelism: 1, maxNodeExecutions: 1 }, nodes: [{ id: 'node', agentId: 'agent', name: 'Fixture' }], edges: [] } })
-  const run = WorkflowRunCurrentSchema.parse({ id: 'run', workspaceId: 'ws', workflowId: 'wf', workflowVersionId: version.id, executionSemanticsVersion: 3, agentConfigurationVersionIds: version.agentConfigurationVersionIds, approval, executionCondition: { kind: 'manual' }, executionState: 'waiting', outcome: 'pending', input: {}, createdAt })
+  const run = WorkflowRunV3Schema.parse({ id: 'run', workspaceId: 'ws', workflowId: 'wf', workflowVersionId: version.id, executionSemanticsVersion: 3, agentConfigurationVersionIds: version.agentConfigurationVersionIds, approval, executionCondition: { kind: 'manual' }, executionState: 'waiting', outcome: 'pending', input: {}, createdAt })
   const execution = HarnessExecutionSchema.parse({ id: 'exec', runId: run.id, workflowNodeId: 'node', agentId: 'agent', agentConfigurationVersionId: cfg.id, attempt: 2, nativeSessionId: session.nativeSessionId, state: 'waiting', input: {}, createdAt })
   const persisted: { interaction?: unknown } = {}; let claimed = false
   const callbacks = claudeCallbackDatabase()

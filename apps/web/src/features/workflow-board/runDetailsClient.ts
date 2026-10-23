@@ -1,23 +1,23 @@
 import { AgentVersionResultSchema } from '@foreman-code/contracts/management'
-import { CurrentRunVersionSnapshotSchema, RepeatGraphScopeCurrentSchema, canonicalGraphJson,
+import { CurrentRunVersionSnapshotSchema, RepeatGraphScopeV3Schema, canonicalGraphJson,
   RunVersionDetailSchema, RunExecutionsListInputSchema, RunExecutionsPageSchema, RunExecutionGetInputSchema,
   RunExecutionDetailSchema, RunExecutionBindingsListInputSchema, RunExecutionBindingsPageSchema,
   GraphExecutionIdentitySchema, RUN_INSPECTION_LIMITS,
-  type RunExecutionDetail, type RunExecutionSummary, type RunExecutionsListInput, type WorkflowVersionCurrent,
-  sameWorkflowValue, type RepeatGraphScopeCurrent, type RepeatGraphCurrentState, type CurrentRunDetails } from '@foreman-code/contracts/current'
+  type RunExecutionDetail, type RunExecutionSummary, type RunExecutionsListInput, type WorkflowVersionV3,
+  sameWorkflowValue, type RepeatGraphScopeV3, type RepeatGraphCurrentV3, type CurrentRunDetails } from '@foreman-code/contracts/wave25'
 import { apiClient, ApiError, type RequestOptions } from '../../shared/api/client'
 import { readBoardRun, scopeForBoardRun } from './client'
 import { assertSession, sessionGeneration } from '../../shared/api/sessionBoundary'
 const part = encodeURIComponent
 const invalid = (message: string) => new ApiError({ code: 'INVALID_RESPONSE', message })
 
-export async function readPinnedRun(scope: RepeatGraphScopeCurrent, options?: RequestOptions) {
-  RepeatGraphScopeCurrentSchema.parse(scope)
+export async function readPinnedRun(scope: RepeatGraphScopeV3, options?: RequestOptions) {
+  RepeatGraphScopeV3Schema.parse(scope)
   const detail = await readBoardRun(scope.workspaceId, scope.workflowId, scope.runId, options)
   if (!sameWorkflowValue(scopeForBoardRun(detail.run), scope)) throw invalid('Run details changed the selected immutable version pins.')
   return detail
 }
-export async function readPinnedRunVersion(scope: RepeatGraphScopeCurrent, detail: CurrentRunDetails, options?: RequestOptions) {
+export async function readPinnedRunVersion(scope: RepeatGraphScopeV3, detail: CurrentRunDetails, options?: RequestOptions) {
   assertInspectionScope(scope, scopeForBoardRun(detail.run))
   const { version } = await readRunInspectionVersion(scope, options)
   CurrentRunVersionSnapshotSchema.parse({ run: detail.run, version })
@@ -38,7 +38,7 @@ export async function digestCurrentValue(value: unknown, maxBytes = 4 * 1024 * 1
 }
 /** Private details can be read after a newer cut. Match exact identities and immutable
  * input/result digests; never substitute those mutable lifecycle fields for the cut. */
-export async function verifyRunExecutionDetails(snapshot: RepeatGraphCurrentState, detail: CurrentRunDetails) {
+export async function verifyRunExecutionDetails(snapshot: RepeatGraphCurrentV3, detail: CurrentRunDetails) {
   if (!sameWorkflowValue(scopeForBoardRun(detail.run), snapshot.scope)) throw invalid('Run evidence is out of scope.')
   const byId = new Map(detail.executions.map((execution) => [execution.id, execution]))
   return Promise.all(snapshot.state.executions.map(async (fact) => {
@@ -57,15 +57,15 @@ export async function verifyRunExecutionDetails(snapshot: RepeatGraphCurrentStat
 
 /** Inspectors use the authenticated, bounded history service, not the compact
  * current graph cut. A retired execution may be absent from that cut. */
-const runPath = (scope: RepeatGraphScopeCurrent) =>
+const runPath = (scope: RepeatGraphScopeV3) =>
   `/api/management/workspaces/${part(scope.workspaceId)}/runs/${part(scope.runId)}`
-export function assertInspectionScope(scope: RepeatGraphScopeCurrent, actual: RepeatGraphScopeCurrent) {
+export function assertInspectionScope(scope: RepeatGraphScopeV3, actual: RepeatGraphScopeV3) {
   if (scope.workspaceId !== actual.workspaceId || scope.workflowId !== actual.workflowId
     || scope.runId !== actual.runId || scope.workflowVersionId !== actual.workflowVersionId
     || scope.executionSemanticsVersion !== 3 || actual.executionSemanticsVersion !== 3) throw invalid('Inspection returned different immutable Run pins.')
 }
-export async function readRunInspectionVersion(scope: RepeatGraphScopeCurrent, options?: RequestOptions) {
-  RepeatGraphScopeCurrentSchema.parse(scope)
+export async function readRunInspectionVersion(scope: RepeatGraphScopeV3, options?: RequestOptions) {
+  RepeatGraphScopeV3Schema.parse(scope)
   const generation = sessionGeneration()
   const result = await apiClient.request(`${runPath(scope)}/version`, RunVersionDetailSchema, options)
   assertInspectionScope(scope, result.scope)
@@ -77,8 +77,8 @@ export async function readRunInspectionVersion(scope: RepeatGraphScopeCurrent, o
   return result
 }
 export type ExecutionFilters = Pick<RunExecutionsListInput, 'workflowNodeId' | 'occurrenceId'>
-export async function readRunExecutions(scope: RepeatGraphScopeCurrent, filters: ExecutionFilters = {}, cursor: string | null = null, options?: RequestOptions) {
-  RepeatGraphScopeCurrentSchema.parse(scope)
+export async function readRunExecutions(scope: RepeatGraphScopeV3, filters: ExecutionFilters = {}, cursor: string | null = null, options?: RequestOptions) {
+  RepeatGraphScopeV3Schema.parse(scope)
   const input = RunExecutionsListInputSchema.parse({ workspaceId: scope.workspaceId, runId: scope.runId, ...filters,
     ...(cursor !== null ? { cursor } : {}), limit: 25 })
   const query = new URLSearchParams({ limit: String(input.limit) })
@@ -101,8 +101,8 @@ export async function readRunExecutions(scope: RepeatGraphScopeCurrent, filters:
   assertSession(generation)
   return result
 }
-export async function readRunExecution(scope: RepeatGraphScopeCurrent, executionId: string, options?: RequestOptions) {
-  RepeatGraphScopeCurrentSchema.parse(scope)
+export async function readRunExecution(scope: RepeatGraphScopeV3, executionId: string, options?: RequestOptions) {
+  RepeatGraphScopeV3Schema.parse(scope)
   RunExecutionGetInputSchema.parse({ workspaceId: scope.workspaceId, runId: scope.runId, executionId })
   const generation = sessionGeneration()
   const result = await apiClient.request(`${runPath(scope)}/executions/${part(executionId)}`, RunExecutionDetailSchema, options)
@@ -138,7 +138,7 @@ export async function readRunExecution(scope: RepeatGraphScopeCurrent, execution
 }
 /** Schema validation is not enough to prove that an execution belongs to this
  * saved node and configuration. Never label a current draft Agent as historical. */
-export function assertExecutionVersion(version: WorkflowVersionCurrent, execution: RunExecutionSummary) {
+export function assertExecutionVersion(version: WorkflowVersionV3, execution: RunExecutionSummary) {
   const node = version.definition.nodes.find((item) => item.id === execution.workflowNodeId)
   const occurrence = execution.occurrence
   const block = version.definition.repeat?.blocks.find((item) => item.nodeIds.includes(execution.workflowNodeId))
@@ -149,8 +149,8 @@ export function assertExecutionVersion(version: WorkflowVersionCurrent, executio
     throw invalid('Execution node, configuration or occurrence is not in this immutable version.')
   }
 }
-export async function readRunExecutionBindings(scope: RepeatGraphScopeCurrent, detail: RunExecutionDetail, cursor: string | null = null, options?: RequestOptions) {
-  RepeatGraphScopeCurrentSchema.parse(scope)
+export async function readRunExecutionBindings(scope: RepeatGraphScopeV3, detail: RunExecutionDetail, cursor: string | null = null, options?: RequestOptions) {
+  RepeatGraphScopeV3Schema.parse(scope)
   assertInspectionScope(scope, detail.run)
   const input = RunExecutionBindingsListInputSchema.parse({ workspaceId: scope.workspaceId, runId: scope.runId,
     executionId: detail.execution.executionId, ...(cursor !== null ? { cursor } : {}), limit: 10 })

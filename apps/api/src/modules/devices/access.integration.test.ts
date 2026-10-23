@@ -12,7 +12,7 @@ import { PostgresAccessService } from '../access/postgres.js'
 import { publicKeyFingerprint } from '@foreman-code/contracts/device-identity-node'
 import { PostgresDeviceAccessService, pairingProof } from './access.js'
 import { loadOrCreateMainDeviceIdentity, mainDeviceIdentityMigration } from './mainIdentity.js'
-import { deviceIdentityMigration } from '../../infrastructure/deviceIdentityMigration.js'
+import { deviceIdentityMigration } from './migration.js'
 import { authorizeDeviceHost } from './hostAuthorization.js'
 import { registerDeviceManagementTools } from './management.js'
 

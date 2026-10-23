@@ -4,18 +4,18 @@ import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { MemoryBoardService } from '../src/modules/memory-boards/service.js'
 import { memoryFixture } from '../src/modules/memory-boards/testing/fixture.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('Memory board commands naming a missing item', () => {
-  let database: Awaited<ReturnType<typeof migratedDatabase>>
+  let database: Awaited<ReturnType<typeof agent3Database>>
   const principal: ManagementPrincipal = {
     id: 'missing-item-operator', name: 'Missing Item Operator', audience: 'operator',
     grants: [{ actions: ['workspaces:read', 'workspaces:update', 'workflows:read', 'workflows:update'], scope: {} }],
     expiresAt: '9999-12-31T23:59:59.999Z', revokedAt: null,
   }
   beforeAll(async () => {
-    database = await migratedDatabase()
+    database = await agent3Database()
     await withTransaction(database.pool, async tx => {
       await tx.query('create table memory_test_owner(id text primary key,record jsonb not null)')
       await tx.query('create table memory_test_facts(id text primary key,record jsonb not null)')

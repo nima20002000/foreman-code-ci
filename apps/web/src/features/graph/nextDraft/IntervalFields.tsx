@@ -1,14 +1,14 @@
 import { InfoHint } from '../../../shared/ui/InfoHint'
 import { useState } from 'react'
-import { AGENT_INTERVAL_MAX_SECONDS, AGENT_INTERVAL_MIN_SECONDS, AGENT_INTERVAL_PROMPT_MAX_LENGTH, type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
+import { AGENT_INTERVAL_MAX_SECONDS, AGENT_INTERVAL_MIN_SECONDS, AGENT_INTERVAL_PROMPT_MAX_LENGTH, type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 import { Select, Switch, Textarea, TextField } from '../../../shared/ui/nocturne'
-import type { DraftNode } from '../../board-core'
+import type { DraftNode } from './model'
 import { largestUnit, unitSeconds, UNITS, type Unit } from './intervalLabel'
 
 /** An Agent loop, off by default. While its Run is active, the Agent is re-activated in its own session on each loop,
  * with the loop prompt or a default check of the Run. Workflow schedules, which start Runs, are separate. */
 export function IntervalFields({ node, change }: {
-  node: DraftNode; change: (update: (graph: WorkflowDefinitionCurrent) => WorkflowDefinitionCurrent) => void
+  node: DraftNode; change: (update: (graph: WorkflowDefinitionV3) => WorkflowDefinitionV3) => void
 }) {
   const everySeconds = node.kind === 'job' ? undefined : node.interval?.everySeconds
   const [unit, setUnit] = useState<Unit>(() => everySeconds ? largestUnit(everySeconds) : 'minutes')

@@ -1,4 +1,4 @@
-import { logIgnoredError } from '../../diagnostics/index.js'
+import { logIgnoredError } from '../../diagnostics/ignoredError.js'
 /** Session creation, attachment, original residency, closure, login control and shutdown. */
 import { isWorkflowStart, sessionStartDirectory, sessionStartCorrelation, sessionStartSystemPrompt } from '../sessionStart.js'
 import { NativeSessionReferenceSchema, type ApprovalResponseOption, type NativeSessionReference } from '@foreman-code/contracts'

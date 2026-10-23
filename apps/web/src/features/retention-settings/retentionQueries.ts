@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tansta
 import type {
   FileRetentionGetResult, FileRetentionPreviewInput, FileRetentionSaveResult,
 } from '@foreman-code/contracts/files'
-import { attachmentLifecycleQueryKey } from '../attachments'
+import { attachmentLifecycleQueryKey } from '../attachments/attachmentLifecycle'
 import { ApiError } from '../../shared/api/client'
 import { assertSession, sessionGeneration, sessionIsSwitching } from '../../shared/api/sessionBoundary'
 import { retentionClient } from './retentionClient'

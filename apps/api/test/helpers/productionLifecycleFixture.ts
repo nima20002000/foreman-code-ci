@@ -11,8 +11,8 @@ import { afterEach, beforeEach, expect, vi } from 'vitest'
 import { loadConfig } from '../../src/config.js'
 import { createDatabase } from '../../src/infrastructure/database.js'
 import { createCheckpointStore } from '../../src/infrastructure/checkpoints.js'
-import { makeCurrentWorkflowFixture, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
-import { seedWorkflowFixture } from './workflowDatabase.js'
+import { makeCurrentWorkflowFixture, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { seedAgent3 } from './workflowDatabase.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { CodexAppServerSessionManager } from '../../src/modules/harnesses/codexAppServer.js'
 import type { NativeHistory, WorkflowNativeSessionStart } from '../../src/modules/harnesses/port.js'
@@ -215,7 +215,7 @@ export async function start(handler: 'user' | 'orchestrator', twoWorkers = false
       : fixture.configurations[1]!.harness,
   }))
   const approval = { handler, ...(handler === 'orchestrator' ? { designatedOrchestratorAgentId: 'agent-researcher' } : {}) }
-  fixture.version = agentWorkflowVersion(WorkflowVersionCurrentSchema.parse({ ...fixture.version, workspaceId, approval, entryNodeId: 'orchestrator',
+  fixture.version = agentWorkflowVersion(WorkflowVersionV3Schema.parse({ ...fixture.version, workspaceId, approval, entryNodeId: 'orchestrator',
     agentConfigurationVersionIds: Object.fromEntries(fixture.configurations.map((item) => [item.agentId, item.id])),
     definition: { ...fixture.version.definition, workspaceId, nodes, entryNodeId: 'orchestrator', approval,
       edges: [ ...nodes.slice(1).map((node, index) => ({ id: `edge-${index}`, kind: 'execution', source: nodes[index]!.id, target: node.id })),
@@ -223,7 +223,7 @@ export async function start(handler: 'user' | 'orchestrator', twoWorkers = false
       executionPolicy: { maxParallelism: 1, maxNodeExecutions: nodes.length },
     },
   }))
-  await seedWorkflowFixture(database.pool, project, fixture, { run: false })
+  await seedAgent3(database.pool, project, fixture, { run: false })
   const issuer = await access.issue({ name: 'Run owner', audience: 'operator', grants: [{ actions: ['runs:start', 'runs:stop', 'workspace_locations:read', 'workspace_locations:update', 'interactions:read', 'interactions:respond'], scope: {} }], expiresAt: new Date(Date.now() + 600_000) })
   const locations = new WorkspaceLocationService(database.pool, new PostgresCommandCoordinator(database.pool), root)
   const location = await locations.set(issuer.principal, 'http', { workspaceId, commandId: randomUUID(),

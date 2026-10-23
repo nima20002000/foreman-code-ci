@@ -4,7 +4,7 @@ import type { RemoteOperationReceipt } from '@foreman-code/contracts/remote-exec
 import type { JobExecution } from '@foreman-code/contracts/jobs'
 import type { RemoteJobOperationReceiptRecord } from '@foreman-code/contracts/remote-job-execution'
 import { TelemetrySelectorSchema, telemetryCanonical, type TelemetryIdentity, type TelemetryOwner } from '@foreman-code/contracts/resource-telemetry'
-import type { OCIHostCertificate } from '../../jobs/index.js'
+import type { OCIHostCertificate } from '../../jobs/executorContainerOwner.js'
 import type { TrustedNativeScope } from './registryAdapter.js'
 
 const same = (a: unknown, b: unknown) => telemetryCanonical(a) === telemetryCanonical(b)

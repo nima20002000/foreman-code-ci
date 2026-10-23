@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
 import { LocalHumanAccessSchema } from '@foreman-code/contracts/management'
-import { WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
+import { WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
 import type { AgentChatContext } from '@foreman-code/contracts/agent-chat'
 import type { ChatSendRequest, ChatStopRequest, EngineChatReadback } from '@foreman-code/contracts'
 import { server } from '../../../mocks/server'
@@ -38,7 +38,7 @@ async function selectionFixture(harness: typeof chatHarnesses[number], width: nu
     }
   }
   const saved = fixture.runs.before.scope, workflowId = saved.workflowId, workspaceId = saved.workspaceId
-  const currentVersion = WorkflowVersionCurrentSchema.parse({ ...fixture.after,
+  const currentVersion = WorkflowVersionV3Schema.parse({ ...fixture.after,
     agentConfigurationVersionIds: { [fixture.second.agentId]: fixture.after.agentConfigurationVersionIds[fixture.second.agentId] },
     definition: { ...fixture.after.definition, nodes: [{ ...fixture.first, agentId: fixture.second.agentId, name: 'Draft Agent' }], edges: [] } })
   mock.versions.set(currentVersion.id, currentVersion)

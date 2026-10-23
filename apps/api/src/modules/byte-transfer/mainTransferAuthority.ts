@@ -5,7 +5,7 @@ import { RSYNC_STAGE_EXTENSION, RsyncTransferAuthorizeRequestSchema, type Transf
 import type { DeviceExtensionContext, DeviceExtensionRegistration } from '../devices/deviceApplicationChannel.js'
 import type { DeviceEndpoint } from '../devices/deviceEndpoint.js'
 import { DomainError } from '../errors.js'
-import type { ProductionJobs } from '../jobs/index.js'
+import type { ProductionJobs } from '../jobs/production.js'
 import { transferContextForBinding, type AcceptedTransferAuthority } from './carrier.js'
 import type { InstalledMainRsyncProviders } from './productionComposition.js'
 import { requireRsyncTransferOwner } from './rsyncTransferOwner.js'

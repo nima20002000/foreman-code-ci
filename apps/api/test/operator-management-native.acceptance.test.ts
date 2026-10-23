@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 import { CreateOperatorConversationResponseSchema, GetOperatorConversationResponseSchema, SendOperatorMessageResponseSchema, type NativeHarnessEvent } from '@foreman-code/contracts'
 import { FileWithRevisionSchema } from '@foreman-code/contracts/files'
 import { ManagedWorkspaceCommandResultSchema } from '@foreman-code/contracts/management'
-import { SavedManagedWorkflowSchema } from '@foreman-code/contracts/current'
+import { SavedManagedWorkflowSchema } from '@foreman-code/contracts/wave25'
 import { APP_MCP_SERVER_NAMES } from '@foreman-code/contracts/product'
 import { APP_MCP_SERVER_NAME, APP_MCP_TOKEN } from '../src/modules/harnesses/appMcpLauncher.js'
 import type { ApiConfig } from '../src/config.js'
@@ -31,7 +31,7 @@ import { WorkflowManagementService } from '../src/modules/workflows/management.j
 import { callWorkspaceTool, workspaceMcpFixture } from './helpers/workspaceMcp.js'
 
 const enabled = process.env.RUN_REAL_HARNESS_TESTS === '1'
-const connectionString = process.env.OPERATOR_NATIVE_TEST_DATABASE_URL ?? process.env.TEST_DATABASE_URL
+const connectionString = process.env.OPERATOR_NATIVE_TEST_DATABASE_URL ?? process.env.ENG03_A_TEST_DATABASE_URL
 const binaries = harnessBinaries(process.env)
 
 function nativeCallCompleted(event: NativeHarnessEvent, name: string) {

@@ -35,9 +35,8 @@ it('checks every retained snapshot in bounded batches without deleting protected
   const candidates = Array.from({ length: 123 }, (_, index) => ({ snapshot_id: `snapshot-${index}`,
     requested_by: 'operator', command_id: `capture-${index}` }))
   const checked: string[][] = []
-  const query = async (_text: string, values?: unknown[]) => {
-    // The candidate scan is the only statement bound to the storage scope alone.
-    if (values?.length === 1 && values[0] === 'storage-scope') return { rows: candidates }
+  const query = async (text: string, values?: unknown[]) => {
+    if (text.includes('from source_approvals')) return { rows: candidates }
     if (Array.isArray(values?.[0])) {
       checked.push(values[0] as string[])
       // The database reports these snapshots as protected by active consumers.

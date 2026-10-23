@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { MainClock } from '../devices/workerClock.js'
 import { PostgresSourceReservations } from './reservations.js'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import type { SourceReservationReclamation } from '@foreman-code/contracts/source-operations'
 import { releaseMaterializationClaim } from './materialization.js'
 import { mkdtemp, mkdir, rm, readFile, rename, symlink, writeFile } from 'node:fs/promises'
@@ -129,7 +129,7 @@ it.each([-90_000, 5_000, 90_000])(
         .mockResolvedValueOnce({ rows: [{ bytes: '0', verification_bytes: '0', pending_bytes: '0',
           retained_bytes: '0', verification_retained_bytes: '0', preparing: '0',
           materializations: '0', verification_materializations: '0' }], rowCount: 1 })
-      const sql = { query } as unknown as SqlQuery
+      const sql = { query } as unknown as GraphSqlClient
       const reservation = new PostgresSourceReservations()
       const request = { scopeId: randomUUID(), ownerKind: 'capture' as const,
         ownerId: randomUUID(), reservedBytes: 4096 }
@@ -137,7 +137,7 @@ it.each([-90_000, 5_000, 90_000])(
         .resolves.toMatchObject({ ...request, storageCapacity: response.capacity })
       expect(response.capacity.observedAt).toBe(new Date(mainTime + elapsed).toISOString())
       vi.setSystemTime(mainClock.now() + 10_001)
-      await expect(reservation.reserve({ query: vi.fn().mockResolvedValue(empty) } as unknown as SqlQuery,
+      await expect(reservation.reserve({ query: vi.fn().mockResolvedValue(empty) } as unknown as GraphSqlClient,
         { ...request, ownerId: randomUUID() }, { capacity: response.capacity }))
         .rejects.toMatchObject({ code: 'SOURCE_CAPACITY_UNAVAILABLE' })
     } finally {

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { RepeatGraphStateCurrentSchema } from '@foreman-code/contracts/current'
+import { RepeatGraphStateV3Schema } from '@foreman-code/contracts/wave25'
 import { repeatEffectFactsFromState } from '../src/modules/run-graph/repeatProjectionProof.js'
 import { ProjectionDatabase, projectionScope, projectionDigest } from './projection-fixture.js'
 
 function acceptedWorkState() {
   const identity = { workflowNodeId: 'work-node', executionId: 'work-execution', agentId: 'work-agent',
     agentConfigurationVersionId: 'work-configuration', attempt: 1, occurrence: null }
-  return RepeatGraphStateCurrentSchema.parse({ run: new ProjectionDatabase().runState(),
+  return RepeatGraphStateV3Schema.parse({ run: new ProjectionDatabase().runState(),
     nodes: [], inputBindings: [], interactions: [], reviews: [], occurrences: [], bindings: [],
     resolutions: [], decisions: [],
     executions: [{ identity, inputDigest: projectionDigest, workActivationId: 'work-activation',

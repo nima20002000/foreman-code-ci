@@ -1,19 +1,21 @@
 import { AgentMutationResultSchema, StagedAgentSchema, type GraphValidationResultSchema, type AgentCreateInputSchema, type AgentUpdateInput } from '@foreman-code/contracts/management'
 import { SupportedHarnessConfigurationSchema, type Agent } from '@foreman-code/contracts'
 import {
-  GraphEditReadResultCurrentSchema, GraphEditReadInputCurrentSchema, GraphEditStageInputCurrentSchema, GraphEditAdvanceInputCurrentSchema, GraphEditDiscardInputCurrentSchema,
-  type GraphEditReadInputCurrent, type GraphEditStageInputCurrent, type GraphEditAdvanceInputCurrent, type GraphEditDiscardInputCurrent, type GraphEditReadResultCurrent,
-  GraphDraftCurrentSchema, WorkflowDefinitionCurrentSchema, CurrentManagedWorkflowSchema, CurrentWorkflowReadResultSchema,
+  GraphEditReadResultV3Schema, GraphEditReadInputV3Schema, GraphEditStageInputV3Schema, GraphEditAdvanceInputV3Schema, GraphEditDiscardInputV3Schema,
+  type GraphEditReadInputV3, type GraphEditStageInputV3, type GraphEditAdvanceInputV3, type GraphEditDiscardInputV3, type GraphEditReadResultV3,
+  GraphDraftV3Schema, WorkflowDefinitionV3Schema, CurrentManagedWorkflowSchema, CurrentWorkflowReadResultSchema,
   CurrentWorkflowSaveResultSchema, CurrentWorkflowValidationSchema, CURRENT_WORKFLOW_ROUTES,
-  GraphDraftOperationCurrentSchema, CurrentRunPageSchema, sameAuthoredWorkflow, sameExecutableWorkflow,
+  GraphDraftOperationV3Schema, CurrentRunPageSchema, sameAuthoredWorkflow, sameExecutableWorkflow,
   preserveWorkflowGeometry, preserveWorkflowPresentation,
-  type GraphDraftOperationCurrent, type WorkflowDefinitionCurrent,
-} from '@foreman-code/contracts/current'
+  type GraphDraftOperationV3, type WorkflowDefinitionV3,
+} from '@foreman-code/contracts/wave25'
 import { apiClient, ApiError, type ApiClient, type RequestOptions } from '../../../shared/api/client'
 import type { z } from 'zod'
-import { type DraftRequest, type NextDraftContext, coalesceAgentEdits } from '../../board-core'
+import type { DraftRequest } from './state'
+import type { NextDraftContext } from './model'
+import { coalesceAgentEdits } from './agentEdits'
 
-export type CurrentDraft = z.infer<typeof GraphDraftCurrentSchema>
+export type CurrentDraft = z.infer<typeof GraphDraftV3Schema>
 export type AuthoringContext = NextDraftContext
 const part = encodeURIComponent
 const workflowPath = (workspaceId: string, workflowId: string) =>
@@ -27,7 +29,7 @@ function assertScope(draft: CurrentDraft, workspaceId: string, workflowId: strin
     || draft.graph.id !== workflowId || (draftId !== undefined && draft.id !== draftId)) throw new ApiError({ code: 'INVALID_RESPONSE', message: 'The draft response has a different workspace, workflow or draft identity.' })
 }
 
-function assertIntentScope(value: GraphEditReadResultCurrent, input: { workspaceId: string; workflowId: string; intentId?: string }) {
+function assertIntentScope(value: GraphEditReadResultV3, input: { workspaceId: string; workflowId: string; intentId?: string }) {
   const intent = value.intent
   if (intent && (intent.workspaceId !== input.workspaceId || intent.workflowId !== input.workflowId
     || (input.intentId !== undefined && intent.id !== input.intentId))) {
@@ -59,7 +61,7 @@ export function createNextDraftApi(client: ApiClient = apiClient) {
         description: saved.version.definition.description }, saved.version.definition))) {
       throw new ApiError({ code: 'INVALID_RESPONSE', message: 'The current workflow differs from its saved execution definition.' })
     }
-    const draft = GraphDraftCurrentSchema.parse({
+    const draft = GraphDraftV3Schema.parse({
       id: draftIdFor(workflowId), workspaceId, workflowId, revision: workflow.revision, publishedRevision: workflow.revision,
       baseWorkflowVersionId: workflow.currentVersionId ?? null,
       graph: saved ? preserveWorkflowPresentation({ ...saved.version.definition, name: workflow.workflow.name,
@@ -81,7 +83,7 @@ export function createNextDraftApi(client: ApiClient = apiClient) {
     assertScope(draft, workspaceId, workflowId, draftId)
     return draft
   }
-  const expectedPins = async (workspaceId: string, graph: WorkflowDefinitionCurrent, stagedAgents: z.infer<typeof StagedAgentSchema>[] = [], displayedAgents?: NextDraftContext['agents']) => {
+  const expectedPins = async (workspaceId: string, graph: WorkflowDefinitionV3, stagedAgents: z.infer<typeof StagedAgentSchema>[] = [], displayedAgents?: NextDraftContext['agents']) => {
     const agents = await client.listManagedAgents(workspaceId)
     const configurations: Record<string, string> = {}
     for (const node of graph.nodes) {
@@ -100,8 +102,8 @@ export function createNextDraftApi(client: ApiClient = apiClient) {
     open, get,
     /** Install a fresh comparison base only after the caller durably retained the original form. */
     acceptContext(context: AuthoringContext) {
-      const draft = GraphDraftCurrentSchema.parse(context.draft)
-      const savedDraft = GraphDraftCurrentSchema.parse(context.savedDraft ?? context.draft)
+      const draft = GraphDraftV3Schema.parse(context.draft)
+      const savedDraft = GraphDraftV3Schema.parse(context.savedDraft ?? context.draft)
       assertScope(savedDraft, draft.workspaceId, draft.workflowId, draft.id)
       opened.set(key(draft.workspaceId, draft.workflowId), { draft, savedDraft, savedRevision: savedDraft.publishedRevision ?? savedDraft.revision })
     },
@@ -119,7 +121,7 @@ export function createNextDraftApi(client: ApiClient = apiClient) {
       return { draft: current.draft, expectedAgentConfigurationVersionIds: saved.version.agentConfigurationVersionIds }
     },
     /** Agent configuration references for a complete-definition command. */
-    pins: (workspaceId: string, graph: WorkflowDefinitionCurrent, stagedAgents?: z.infer<typeof StagedAgentSchema>[], displayedAgents?: NextDraftContext['agents']) =>
+    pins: (workspaceId: string, graph: WorkflowDefinitionV3, stagedAgents?: z.infer<typeof StagedAgentSchema>[], displayedAgents?: NextDraftContext['agents']) =>
       expectedPins(workspaceId, graph, stagedAgents, displayedAgents),
     /** Saves one draft-only Agent and its configuration through the shared Agent service, without the workflow graph. */
     async createAgent(workspaceId: string, agent: Agent) {
@@ -134,26 +136,26 @@ export function createNextDraftApi(client: ApiClient = apiClient) {
       } satisfies Omit<z.input<typeof AgentCreateInputSchema>, 'workspaceId'> })
       return { agent: result.value.agent, metadataRevision: result.value.metadataRevision }
     },
-    async editRead(raw: GraphEditReadInputCurrent, options?: RequestOptions) {
-      const input = GraphEditReadInputCurrentSchema.parse(raw)
+    async editRead(raw: GraphEditReadInputV3, options?: RequestOptions) {
+      const input = GraphEditReadInputV3Schema.parse(raw)
       const query = new URLSearchParams({ ...(input.draftId ? { draftId: input.draftId } : {}), ...(input.intentId ? { intentId: input.intentId } : {}) })
       return assertIntentScope(await client.request(`${route(CURRENT_WORKFLOW_ROUTES.edits, input.workspaceId, input.workflowId)}?${query}`,
-        GraphEditReadResultCurrentSchema, options), input)
+        GraphEditReadResultV3Schema, options), input)
     },
-    async editStage(raw: GraphEditStageInputCurrent) {
-      const input = GraphEditStageInputCurrentSchema.parse(raw)
+    async editStage(raw: GraphEditStageInputV3) {
+      const input = GraphEditStageInputV3Schema.parse(raw)
       return assertIntentScope(await client.request(route(CURRENT_WORKFLOW_ROUTES.edits, input.workspaceId, input.workflowId),
-        GraphEditReadResultCurrentSchema, { method: 'POST', body: input }), input)
+        GraphEditReadResultV3Schema, { method: 'POST', body: input }), input)
     },
-    async editAdvance(raw: GraphEditAdvanceInputCurrent) {
-      const input = GraphEditAdvanceInputCurrentSchema.parse(raw)
+    async editAdvance(raw: GraphEditAdvanceInputV3) {
+      const input = GraphEditAdvanceInputV3Schema.parse(raw)
       return assertIntentScope(await client.request(route(CURRENT_WORKFLOW_ROUTES.edits, input.workspaceId, input.workflowId),
-        GraphEditReadResultCurrentSchema, { method: 'POST', body: input }), input)
+        GraphEditReadResultV3Schema, { method: 'POST', body: input }), input)
     },
-    async editDiscard(raw: GraphEditDiscardInputCurrent) {
-      const input = GraphEditDiscardInputCurrentSchema.parse(raw)
+    async editDiscard(raw: GraphEditDiscardInputV3) {
+      const input = GraphEditDiscardInputV3Schema.parse(raw)
       return assertIntentScope(await client.request(route(CURRENT_WORKFLOW_ROUTES.edits, input.workspaceId, input.workflowId),
-        GraphEditReadResultCurrentSchema, { method: 'POST', body: input }), input)
+        GraphEditReadResultV3Schema, { method: 'POST', body: input }), input)
     },
     async context(workspaceId: string, workflowId: string, options?: RequestOptions, reload = false, freshDraftId?: string): Promise<AuthoringContext> {
       for (let attempt = 0; attempt < 3; ++attempt) {
@@ -185,7 +187,7 @@ export function createNextDraftApi(client: ApiClient = apiClient) {
       throw new ApiError({ code: 'GRAPH_CHANGING', message: 'The saved workflow changed while loading. Retry after the current edit.' }, 409)
     },
     /** `target` is the complete local graph once this is the final batch of a plan. */
-    async write(request: DraftRequest, target?: WorkflowDefinitionCurrent) {
+    async write(request: DraftRequest, target?: WorkflowDefinitionV3) {
       const entry = opened.get(key(request.workspaceId, request.workflowId))
       if (!entry || entry.draft.id !== request.draftId || entry.draft.revision !== request.expectedRevision) {
         throw new ApiError({ code: 'REVISION_CONFLICT', message: 'The board draft changed. Reload before continuing.' }, 409)
@@ -193,7 +195,7 @@ export function createNextDraftApi(client: ApiClient = apiClient) {
       const base = entry.draft
       if (request.kind === 'apply') {
         const agents = await applyAgents(request.workspaceId, request.operations ?? [], request.commandId)
-        const draft = GraphDraftCurrentSchema.parse({ ...base, revision: base.revision + 1, graph: target ?? base.graph,
+        const draft = GraphDraftV3Schema.parse({ ...base, revision: base.revision + 1, graph: target ?? base.graph,
           updatedAt: new Date().toISOString() })
         opened.set(key(request.workspaceId, request.workflowId), { ...entry, draft })
         return { draft, agents }
@@ -211,7 +213,7 @@ export function createNextDraftApi(client: ApiClient = apiClient) {
       }
       // Published drafts carry the saved workflow revision, the pin later
       // edit intents and Start use. Local apply counts restart from it.
-      const draft = GraphDraftCurrentSchema.parse({ ...base, revision: saved.revision, publishedRevision: saved.revision, baseWorkflowVersionId: saved.currentVersionId,
+      const draft = GraphDraftV3Schema.parse({ ...base, revision: saved.revision, publishedRevision: saved.revision, baseWorkflowVersionId: saved.currentVersionId,
         graph: saved.presentation ?? saved.version.definition, updatedAt: new Date().toISOString() })
       opened.set(key(request.workspaceId, request.workflowId), { draft, savedDraft: draft, savedRevision: saved.revision })
       return { draft, agents: pins.agents, version: saved.version }
@@ -254,8 +256,8 @@ export type NextDraftApi = Omit<ReturnType<typeof createNextDraftApi>, 'acceptCo
 
 /** Structural form errors are local. Executability, authorization and all native policy remain server-authoritative. */
 export function assertDraftSubmission(graph: NextDraftContext['draft']['graph'], operations: unknown[]) {
-  WorkflowDefinitionCurrentSchema.parse(graph)
-  for (const operation of operations) GraphDraftOperationCurrentSchema.parse(operation)
+  WorkflowDefinitionV3Schema.parse(graph)
+  for (const operation of operations) GraphDraftOperationV3Schema.parse(operation)
 }
 
 function createDraftAgentWriter(client: ApiClient) {
@@ -263,7 +265,7 @@ function createDraftAgentWriter(client: ApiClient) {
     path: string; method: 'POST' | 'PATCH';
     body: Omit<z.input<typeof AgentCreateInputSchema>, 'workspaceId'> | Omit<AgentUpdateInput, 'workspaceId' | 'agentId'>;
   }>()
-  const applyAgents = async (workspaceId: string, operations: readonly GraphDraftOperationCurrent[], commandId: string) => {
+  const applyAgents = async (workspaceId: string, operations: readonly GraphDraftOperationV3[], commandId: string) => {
     const created = new Set<string>()
     const edits = coalesceAgentEdits(operations)
     const agentsPath = `/api/management/workspaces/${part(workspaceId)}/agents`

@@ -9,7 +9,7 @@ import { ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js
 import { RunGraphError } from '../src/modules/run-graph/errors.js'
 import { executeRepeatRuntime, type RepeatRuntimeLifecycle } from '../src/modules/runs/repeatRuntime.js'
 import { renewOwnedLeases } from '../src/modules/leases/ownerLeases.js'
-import { graphScenario, graphHarness } from './helpers/graphScenarioHarness.js'
+import { a1Scenario, graphHarness } from './helpers/graphScenarioHarness.js'
 import { nativeLanes } from './helpers/memorySessionCoordination.js'
 
 afterEach(() => {
@@ -80,7 +80,7 @@ it('keeps the credential heartbeat alive through a wrapped database timeout', as
 
 it.each(['preflight', 'graph admission'] as const)(
   'retries %s database timeouts without requesting native cancellation', async phase => {
-    const scenario = graphScenario('sequential', `database-timeout-${phase.replace(' ', '-')}`)
+    const scenario = a1Scenario('sequential', `database-timeout-${phase.replace(' ', '-')}`)
     const h = graphHarness(scenario)
     const lifecycle: RepeatRuntimeLifecycle = {
       preflight: vi.fn(async () => {}), markRunning: async () => {},
@@ -102,7 +102,7 @@ it.each(['preflight', 'graph admission'] as const)(
 )
 
 it('still settles an explicit Stop while preflight bookkeeping is unavailable', async () => {
-  const h = graphHarness(graphScenario('single', 'database-timeout-stop'))
+  const h = graphHarness(a1Scenario('single', 'database-timeout-stop'))
   const stopped = new DomainError('GRAPH_STOP_CONFLICT', 'Stop requested', 409)
   const lifecycle: RepeatRuntimeLifecycle = {
     preflight: async () => {

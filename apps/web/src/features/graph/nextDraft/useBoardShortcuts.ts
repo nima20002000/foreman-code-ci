@@ -1,21 +1,23 @@
 import { useEffect, useRef } from 'react'
 import { isHierarchyReportingRoute, type Agent } from '@foreman-code/contracts'
-import type { WorkflowDefinitionCurrent, WorkflowRelationship } from '@foreman-code/contracts/current'
+import type { WorkflowDefinitionV3, WorkflowRelationship } from '@foreman-code/contracts/wave25'
 import { useGraphDraftStore } from '../store'
-import { changeDraftAgents, editorAgents, type NextDraftEdit, type useWorkflowBoard } from '../../board-core'
+import { changeDraftAgents, editorAgents } from './agentEdits'
+import type { NextDraftEdit } from './state'
 import type { DraftEditorCore } from './useDraftEditorCore'
-import { hierarchyNodes, removeHierarchyNode, stageHierarchyAgent } from '../../workflow-hierarchy'
+import type { useWorkflowBoard } from '../../workflow-board/context'
+import { hierarchyNodes, removeHierarchyNode, stageHierarchyAgent } from '../../workflow-hierarchy/authoring'
 import { currentBoardView, pinBoardLayout, placePastedNodes, type BoardView } from './placement'
 import { modalOpen } from '../../../shared/ui/modalOpen'
 
-type AgentNode = Exclude<WorkflowDefinitionCurrent['nodes'][number], { kind: 'job' }>
+type AgentNode = Exclude<WorkflowDefinitionV3['nodes'][number], { kind: 'job' }>
 type Copied = { nodes: AgentNode[]; agents: Agent[]; parents: Record<string, string>; edges: WorkflowRelationship[]; pastes: number }
 /** In-app clipboard: a copy survives switching workflows in this tab. */
 let copied: Copied | undefined
 
 const TYPING = 'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="dialog"], dialog, .workflow-floating-panel'
 
-function selectedIds(core: DraftEditorCore, graph: WorkflowDefinitionCurrent) {
+function selectedIds(core: DraftEditorCore, graph: WorkflowDefinitionV3) {
   return [...core.presentation.getState().selectedNodeIds].filter(id => graph.nodes.some(node => node.id === id))
 }
 

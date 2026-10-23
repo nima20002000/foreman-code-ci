@@ -6,7 +6,7 @@ import { it } from 'vitest'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { NativeHarnessSessionManager } from '../src/modules/harnesses/port.js'
 import type { NativeDeliveryOutcome, NativeResponseDeliveryEvidence } from '../src/modules/interactions/delivery.js'
-import { Wave25InteractionRepository } from '../src/modules/interactions/current/repository.js'
+import { Wave25InteractionRepository } from '../src/modules/interactions/wave25/repository.js'
 import { SingleWriterSessionManager } from '../src/modules/interactions/sessionWriter.js'
 import { nativeLanes } from './helpers/memorySessionCoordination.js'
 
@@ -35,11 +35,12 @@ const response = { interactionId: 'interaction-1', optionId: 'opaque-option-1', 
 /** Models transaction rollback, not PostgreSQL locking; concurrency is covered by the integration suite. */
 class DecisionStore {
   record: DurableInteraction | undefined = interaction()
+  receipts = new Map<string, { interaction_id: string; option_id: string }>()
   queries: string[] = []
   updates = 0
   released = 0
   failUpdate = false
-  private snapshot: { record: DurableInteraction | undefined } | undefined
+  private snapshot: { record: DurableInteraction | undefined; receipts: Map<string, { interaction_id: string; option_id: string }> } | undefined
 
   readonly pool = {
     connect: async () => ({ query: this.query.bind(this), release: () => { this.released += 1 } }),
@@ -49,23 +50,32 @@ class DecisionStore {
   async query(sql: string, values: unknown[] = []) {
     this.queries.push(sql)
     const result = (rows: unknown[] = [], rowCount = rows.length) => ({ rows, rowCount })
-    if (sql === 'begin') { this.snapshot = structuredClone({ record: this.record }); return result() }
+    if (sql === 'begin') { this.snapshot = structuredClone({ record: this.record, receipts: this.receipts }); return result() }
     if (sql === 'rollback') {
       assert.ok(this.snapshot)
-      this.record = this.snapshot.record
+      this.record = this.snapshot.record; this.receipts = this.snapshot.receipts
       return result()
     }
     if (sql === 'commit') return result()
-    // Statements are told apart by their bound values: the interaction id alone reads the locked row, and the decision
-    // (five values) and the delivery transition (nine values) both write the new record fourth.
-    if (values.length === 1) return result(this.record ? [{ record: this.record, delivery_fence: '0', delivery_owner: null, delivery_token: null, lease_active: false }] : [])
-    if (values.length === 5 || values.length === 9) {
+    if (sql.startsWith('select record')) return result(this.record ? [{ record: this.record, delivery_fence: '0', delivery_owner: null, delivery_token: null, lease_active: false }] : [])
+    if (sql.startsWith('insert into interaction_command_receipts')) {
+      const key = `${values[0]}:${values[1]}`
+      if (this.receipts.has(key)) return result([], 0)
+      this.receipts.set(key, { interaction_id: String(values[2]), option_id: String(values[3]) })
+      return result([], 1)
+    }
+    if (sql.startsWith('select interaction_id,option_id')) {
+      const receipt = this.receipts.get(`${values[0]}:${values[1]}`)
+      return result(receipt ? [receipt] : [])
+    }
+    if (sql.startsWith('update interaction_command_receipts')) return result([], 1)
+    if (sql.startsWith('update durable_interactions set status=')) {
       if (this.failUpdate) throw new Error('database write failed')
       this.record = JSON.parse(String(values[3])) as DurableInteraction
       this.updates += 1
       return result([], 1)
     }
-    throw new Error(`Unexpected statement binding ${values.length} values`)
+    throw new Error(`Unexpected SQL: ${sql}`)
   }
 }
 
@@ -100,11 +110,10 @@ it('does not reopen a delivered, failed, or canceled native response', async () 
 it('stores native event envelopes and their activity references atomically, with exact replay only', async () => {
   const events = new Map<string, unknown>()
   let activityCount = 0
-  const db = { query: async (_sql: string, values: unknown[]) => {
-    // The append binds the event JSON, its execution, connection and sequence, and the producer rejection marker.
-    assert.equal(values.length, 6)
+  const db = { query: async (sql: string, values: unknown[]) => {
+    assert.match(sql, /append_harness_native_event\(\$1::jsonb\)/)
+    assert.match(sql, /rejected_source/)
     const record = JSON.parse(String(values[0])) as HarnessNativeEvent
-    assert.equal(values[1], record.executionId)
     const identity = `${record.executionId}:${record.connectionId ?? 'legacy'}:${record.sequence}`
     const existing = events.get(identity)
     if (existing) {

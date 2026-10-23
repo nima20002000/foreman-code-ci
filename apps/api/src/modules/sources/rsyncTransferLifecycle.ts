@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util'
-import { withTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
+import { withTransaction } from '../../infrastructure/transaction.js'
 import { join } from 'node:path'
 import type pg from 'pg'
 import { TransferIntentSchema, TransferContextSchema, type TransferIntent, type TransferContext } from '@foreman-code/contracts/byte-transfer'
@@ -8,8 +8,9 @@ import { ApprovedSourceSchema, SourceRootRecordSchema, SourceMaterializationReco
   type SourceMaterializationRecord } from '@foreman-code/contracts/source-admission'
 import { SourceOperationAttemptSchema, SourcePreparationIdentitySchema } from '@foreman-code/contracts/source-operations'
 import { ApprovedRootAllowlistSchema, type ApprovedRootAllowlist } from '@foreman-code/contracts/workspace-root-policies'
-import { transferContextForBinding, type AcceptedTransferAuthority } from '../byte-transfer/index.js'
-import type { TransferOperation } from '../byte-transfer/index.js'
+import { transferContextForBinding, type AcceptedTransferAuthority } from '../byte-transfer/carrier.js'
+import type { TransferOperation } from '../byte-transfer/service.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import { DomainError } from '../errors.js'
 import { sourceBindingHash } from './bindingHash.js'
 import { PrivateSourceMaterializer } from './materialization.js'
@@ -17,7 +18,7 @@ import { verifyApprovedRootAllowlist } from './rootAttestation.js'
 
 export interface SourceCommittedTransfer { intent: TransferIntent; record: SourceMaterializationRecord }
 function conflict(message: string): never { throw new DomainError('SOURCE_TRANSFER_CONFLICT', message, 409) }
-async function allocation(sql: SqlQuery, id: string) {
+async function allocation(sql: GraphSqlClient, id: string) {
   TransferIntentSchema.shape.transferId.parse(id)
   const rows = (await sql.query<{ result: unknown }>(`select result from management_command_receipts
     where operation='source.package.admit' and result->'intent'->>'transferId'=$1`, [id])).rows

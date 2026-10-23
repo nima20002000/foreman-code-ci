@@ -1,14 +1,13 @@
 import { releaseUnstartedJobComputer } from './computerSelection.js'
 import { readRunJobCleanup } from './runCleanup.js'
 import { requireJobPreparationDeadline } from './preparationDeadline.js'
-import { AcceptedWorkflowRunCurrentSchema, canonicalGraphJson, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
+import { AcceptedWorkflowRunV3Schema, canonicalGraphJson, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import { JobWorkflowNodeSchema } from '@foreman-code/contracts/job-workflow'
 import type { JobArtifact } from '@foreman-code/contracts/jobs'
 import type { PreparedJobSpecRecord, JobExecutionRecord } from '@foreman-code/contracts/job-verification'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { requireAuthorization } from '../access/policy.js'
-import { beforeGraphCommit } from '../run-graph/connection.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { beforeGraphCommit, type GraphTransactionSql } from '../run-graph/connection.js'
 import type { RunOwnership } from '../runs/ownership.js'
 import { DomainError } from '../errors.js'
 import type { WorkflowJobLockedPort, WorkflowJobDriver } from './workflowRuntimePorts.js'
@@ -18,16 +17,16 @@ import type { PostgresJobDispatch } from './dispatch.js'
 import { RemoteJobOperationReceiptRecordSchema } from '@foreman-code/contracts/remote-job-execution'
 
 export interface WorkflowJobOutputs {
-  listCanonicalOutputs(sql:SqlTransaction,execution:JobExecutionRecord):Promise<JobArtifact[]>
-  verifyRequiredOutputs(sql:SqlTransaction,execution:JobExecutionRecord):Promise<void>
+  listCanonicalOutputs(sql:GraphTransactionSql,execution:JobExecutionRecord):Promise<JobArtifact[]>
+  verifyRequiredOutputs(sql:GraphTransactionSql,execution:JobExecutionRecord):Promise<void>
 }
 export function createWorkflowJobComposition(input:{jobs:JobService;dispatch:PostgresJobDispatch;outputs:WorkflowJobOutputs}) {
-  const forOwner=(owner:RunOwnership,version:WorkflowVersionCurrent)=>{
-    const authorize=async(sql:SqlTransaction,nodeId:string)=>{
+  const forOwner=(owner:RunOwnership,version:WorkflowVersionV3)=>{
+    const authorize=async(sql:GraphTransactionSql,nodeId:string)=>{
       owner.assertOwned();await owner.readOneShotFence(sql)
       const row=(await sql.query<{record:unknown;stopped:boolean;cleanup:boolean}>(`select record,stop_requested_at is not null as stopped,exists(select 1 from run_cleanup_intents c where c.run_id=r.id and c.pending) cleanup from runs r where id=$1 for update`,[owner.runId])).rows[0]
       if(!row)throw new DomainError('RUN_NOT_FOUND','The current Run is missing.',404)
-      const run=AcceptedWorkflowRunCurrentSchema.parse(row.record)
+      const run=AcceptedWorkflowRunV3Schema.parse(row.record)
       if(run.workflowVersionId!==version.id||run.workspaceId!==version.workspaceId||run.workflowId!==version.workflowId||row.stopped||row.cleanup||['completed','interrupted'].includes(run.executionState))throw new DomainError('GRAPH_STOP_CONFLICT','The exact Run no longer admits job work.',409)
       const node=JobWorkflowNodeSchema.parse(version.definition.nodes.find(node=>node.id===nodeId))
       const principal=await readLiveManagementPrincipal(sql,run.authorizationPrincipalId)

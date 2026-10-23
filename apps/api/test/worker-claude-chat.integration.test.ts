@@ -4,7 +4,7 @@ import { expect, it, vi } from 'vitest'
 import { AgentConfigurationVersionSchema, SessionControlStateSchema, SessionPreferencesSchema,
   type AgentConfigurationVersion } from '@foreman-code/contracts'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { buildApp } from '../src/app.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
@@ -15,13 +15,12 @@ import { workerConversationFixture } from '../src/modules/conversations/workerFi
 import { workerClaudeReplacementFixture } from '../src/modules/conversations/workerClaudeReplacement.test-support.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import { readSystemPromptSetting } from '../src/modules/settings/foundation.js'
-import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
 import { graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 import { deferred } from './helpers/deferred.js'
 
 it('preserves remote Claude cold recovery, ownership and non-delivery through authenticated Operator MCP', async () => {
-  const db = await migratedDatabase()
+  const db = await agent3Database()
   const recorded = workerConversationFixture('agent', 'claude')
   const fixture = makeCurrentWorkflowFixture(randomUUID(), 'sequential')
   fixture.configurations = fixture.configurations.map(value => AgentConfigurationVersionSchema.parse({ ...value,
@@ -30,7 +29,7 @@ it('preserves remote Claude cold recovery, ownership and non-delivery through au
   let chat: AgentChatService | undefined
   let app: ReturnType<typeof buildApp> | undefined
   try {
-    const seeded = await seedWorkflowFixture(db.pool, db.directory, fixture, { run: false })
+    const seeded = await seedAgent3(db.pool, db.directory, fixture, { run: false })
     const node = seeded.version.definition.nodes[0]!
     const access = new PostgresAccessService(db.pool)
     const writer = await access.issue({ name: 'remote Claude writer', audience: 'operator',

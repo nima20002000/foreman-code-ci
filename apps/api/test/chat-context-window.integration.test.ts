@@ -3,7 +3,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_HARNESS_DEFAULTS, SessionControlStateSchema } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
@@ -14,7 +14,7 @@ import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js
 import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 import { claudeConfiguration, registerOperatorChatFixture, type OperatorChatFixture } from './helpers/operatorChatFixture.js'
-import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 let fixture: OperatorChatFixture
@@ -36,7 +36,7 @@ describe.skipIf(!postgresEnabled)('chat context windows before native session cr
     chat = new OperatorChatService(repository, operators, managers, runtimeDirectory, authority)
     const workflow = makeCurrentWorkflowFixture(randomUUID(), 'single')
     workflow.configurations[0]!.harness = configuration
-    const seeded = await seedWorkflowFixture(pool, runtimeDirectory, workflow, { run: false })
+    const seeded = await seedAgent3(pool, runtimeDirectory, workflow, { run: false })
     const node = seeded.version.definition.nodes[0]!
     const context = { workflowId: seeded.scope.workflowId, workflowNodeId: node.id, agentId: node.agentId }
     const workspaceId = seeded.scope.workspaceId

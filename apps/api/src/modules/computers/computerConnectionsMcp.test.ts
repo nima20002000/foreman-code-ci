@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import pg from 'pg'
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
+import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import type { ComputerAccounts } from '@foreman-code/contracts/computer-accounts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { expect, it, vi } from 'vitest'
@@ -37,7 +39,7 @@ const accounts: ComputerAccounts = { observedAt: new Date().toISOString(), accou
   { tool: 'github', installed: false, signedIn: null, account: null, details: [] },
 ] }
 
-it('reads sign-in and Foreman MCP state per computer through authenticated HTTP, and hides MCP state without harnesses:read', async () => {
+it('reads sign-in and Foreman MCP state per computer through authenticated MCP, and hides MCP state without harnesses:read', async () => {
   const grant = (...actions: ManagementPrincipal['grants'][number]['actions']) =>
     ({ id: randomUUID(), name: 'Reader', audience: 'operator', revokedAt: null, expiresAt: '2099-01-01T00:00:00Z',
       grants: [{ actions, scope: {} }] }) as ManagementPrincipal
@@ -60,32 +62,38 @@ it('reads sign-in and Foreman MCP state per computer through authenticated HTTP,
   const connections = computerConnectionsReader({ read: async () => accounts }, { list })
   const recordDenied = vi.fn()
   const commands = { recordDenied } as unknown as PostgresCommandCoordinator
-  const mainId = randomUUID()
-  const computerMaintenance = new FleetMaintenanceService(pool, mainId, () => undefined, commands,
+  const computerMaintenance = new FleetMaintenanceService(pool, randomUUID(), () => undefined, commands,
     new ComputerMaintenance(fakeComputer().ports), { connections } as FleetSources)
   const app = buildApp({ logger: false,
     readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
     operator: { access, services: { commands, computerMaintenance } as unknown as OperatorServices },
   })
-  const read = (token: string, query = '') => app.inject({ method: 'GET', url: `/api/management/computers/maintenance${query}`,
-    headers: { authorization: `Bearer ${token}` } })
-  const readMain = async (token: string) => {
-    const result = await read(token, '?refresh=true')
-    expect(result.statusCode).toBe(200)
-    return (result.json() as { computers: { connections?: Connections }[] }).computers[0]!.connections
+  const address = await app.listen({ host: '127.0.0.1', port: 0 })
+  const clients: Client[] = []
+  const connect = async (token: string) => {
+    const client = new Client({ name: 'computer-connections-test', version: '1' })
+    clients.push(client)
+    await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), { authProvider: { token: async () => token } }))
+    return client
+  }
+  const readMain = async (client: Client) => {
+    const result = await client.callTool({ name: 'computers_maintenance_status', arguments: { refresh: true } })
+    expect(result.isError).not.toBe(true)
+    return (decodeMcpToolResult(result) as { computers: { connections?: Connections }[] }).computers[0]!.connections
   }
   try {
-    expect(await readMain('full')).toEqual({ accounts, mcp: { codex: 'installed', claude: 'missing' } })
+    expect(await readMain(await connect('full'))).toEqual({ accounts, mcp: { codex: 'installed', claude: 'missing' } })
     const listCallsForFull = list.mock.calls.length
     expect(listCallsForFull).toBeGreaterThan(0)
-    expect(await readMain('limited')).toEqual({ accounts, mcp: { codex: null, claude: null } })
+    expect(await readMain(await connect('limited'))).toEqual({ accounts, mcp: { codex: null, claude: null } })
     // A caller without harnesses:read never triggers an MCP read.
     expect(list).toHaveBeenCalledTimes(listCallsForFull)
 
-    const rejection = await read('denied')
-    expect(rejection.statusCode).toBe(403)
-    expect(recordDenied).toHaveBeenCalledWith(denied.id, 'http', 'computers_maintenance_status', mainId)
+    const rejection = await (await connect('denied')).callTool({ name: 'computers_maintenance_status', arguments: {} })
+    expect(rejection.isError).toBe(true)
+    expect(recordDenied).toHaveBeenCalledWith(denied.id, 'mcp', 'computers_maintenance_status', 'mcp:computers_maintenance_status')
   } finally {
+    await Promise.all(clients.map(client => client.close()))
     await app.close()
     await pool.end()
     vi.restoreAllMocks()

@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { candidateFor } from './helpers/workflowDatabase.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database, candidateFor } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { currentRepositoryFixture } from './helpers/currentRepository.js'
 import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
@@ -11,7 +10,7 @@ import { routedApprovalFixture } from './helpers/routedApprovalFixture.js'
 afterEach(() => vi.restoreAllMocks())
 describe.skipIf(!postgresEnabled)('PostgreSQL scheduling and approval recovery', () => {
   it('atomically schedules one current occurrence and event, rolls back failed publication, and retries exactly once', async () => {
-    const db = await migratedDatabase()
+    const db = await agent3Database()
     try {
       const f = await currentRepositoryFixture(db)
       const owner = (await f.repository.acquireOwnership(f.f.run.id, () => undefined))!

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { AcceptedWorkflowRunCurrentSchema, RunStartCurrentResultSchema } from '@foreman-code/contracts/current'
+import { AcceptedWorkflowRunV3Schema, RunStartV3ResultSchema } from '@foreman-code/contracts/wave25'
 import { SourceMaterializationFileSchema } from '@foreman-code/contracts/source-materialization'
 import { RunPlacementGetResultSchema } from '@foreman-code/contracts/placement-readback'
 import { decodeMcpToolResult, OperatorRunGetResultSchema } from '@foreman-code/contracts/operator-mcp'
@@ -36,7 +36,7 @@ describe.runIf(postgresEnabled)('Run isolation and authenticated MCP readback', 
         const response = await f.client.callTool({ name: 'run_start',
           arguments: { ...f.input, commandId: randomUUID() } })
         expect(response.isError, JSON.stringify(response)).not.toBe(true)
-        return RunStartCurrentResultSchema.parse(decodeMcpToolResult(response)).run.id
+        return RunStartV3ResultSchema.parse(decodeMcpToolResult(response)).run.id
       }))
       const directories: string[] = []
       const references = []
@@ -107,7 +107,7 @@ describe.runIf(postgresEnabled)('Run isolation and authenticated MCP readback', 
       const git = (...args: string[]) => execFileSync('git', args, { cwd: root, env: environment, encoding: 'utf8' }).trim()
       runtimeRoot = root
       service = new RunWorktrees(f.db.pool, join(root, 'managed-worktrees'), ports)
-      const run = AcceptedWorkflowRunCurrentSchema.parse(f.f.run)
+      const run = AcceptedWorkflowRunV3Schema.parse(f.f.run)
       // Ordinary directories still use the accepted workspace location.
       expect(await service.prepare(run)).toBeUndefined()
       git('init', '-b', 'main')
@@ -121,7 +121,7 @@ describe.runIf(postgresEnabled)('Run isolation and authenticated MCP readback', 
       secondFixture.run.id = `run-${randomUUID()}`
       secondFixture.scope.runId = secondFixture.run.id
       await insertProviderRun(f.db.pool, secondFixture)
-      const secondRun = AcceptedWorkflowRunCurrentSchema.parse(secondFixture.run)
+      const secondRun = AcceptedWorkflowRunV3Schema.parse(secondFixture.run)
       const [first, second] = await Promise.all([service.prepare(run), service.prepare(secondRun)])
       expect(first).toMatchObject({ baseCommit, state: 'active' })
       expect(second?.workingDirectory).not.toBe(first?.workingDirectory)

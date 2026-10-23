@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import {
   CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveResultSchema, CurrentWorkflowReadResultSchema,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import { graphRpcValue, graphHeaders } from './graph-composition-fixture.js'
 import { postgresEnabled } from './helpers/database.js'
 import { useWorkflowManagementFixture } from './workflowManagement.helpers.js'

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { canonicalGraphJson } from './current/json.js'
+import { canonicalGraphJson } from './wave25/json.js'
 import { WorkflowArtifactTransferInputSchema, type WorkflowArtifactTransferInput } from './workflowArtifactTransfer.js'
 
 /** Node-only single-artifact manifest identity. Command, execution, root and context

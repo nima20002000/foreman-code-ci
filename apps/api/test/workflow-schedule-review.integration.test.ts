@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import type { RunStartCurrentInput } from '@foreman-code/contracts/current'
+import type { RunStartV3Input } from '@foreman-code/contracts/wave25'
 import { DomainError } from '../src/modules/errors.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
-import { minuteSchedule, onceSchedule } from './helpers/scheduleClockCases.js'
-import { scheduleDispatchFixture, type ScheduleDatabase, type ScheduleDispatchFixture } from './helpers/scheduleFixture.js'
+import { sch11Minute, sch11Once } from './helpers/scheduleClockCases.js'
+import { sch11Fixture, type Sch11Database, type Sch11Fixture } from './helpers/scheduleFixture.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
 async function reached<T>(signal: Promise<T>, work: Promise<void>): Promise<T> {
@@ -14,11 +14,11 @@ async function reached<T>(signal: Promise<T>, work: Promise<void>): Promise<T> {
 }
 
 describe.skipIf(!postgresEnabled)('SCH-01/02 occurrence identity and final eligibility regressions', () => {
-  let database: ScheduleDatabase
-  let f: ScheduleDispatchFixture
-  beforeAll(async () => { database = await migratedDatabase() }, 60_000)
+  let database: Sch11Database
+  let f: Sch11Fixture
+  beforeAll(async () => { database = await agent3Database() }, 60_000)
   afterAll(async () => { await database?.close() })
-  beforeEach(async () => { f = await scheduleDispatchFixture(database, '2030-01-07T09:59:00.000Z') }, 60_000)
+  beforeEach(async () => { f = await sch11Fixture(database, '2030-01-07T09:59:00.000Z') }, 60_000)
 
   async function saveNewVersion() {
     const row = (await database.pool.query<{ revision: string }>(
@@ -35,12 +35,12 @@ describe.skipIf(!postgresEnabled)('SCH-01/02 occurrence identity and final eligi
   }
 
   it.each([false, true])('SCH-01: a delayed failure cannot reject the next occurrence (peer advanced cursor: %s)', async (peerAdvances) => {
-    const saved = await f.save(minuteSchedule)
+    const saved = await f.save(sch11Minute)
     expect(saved.nextOccurrenceAt).toBe('2030-01-07T10:00:00.000Z')
     f.time.now = saved.nextOccurrenceAt!
     const failed = rejectableDeferred(), releaseFailure = rejectableDeferred()
     const peerPrepared = rejectableDeferred(), releasePeer = rejectableDeferred()
-    const starts: RunStartCurrentInput[] = []
+    const starts: RunStartV3Input[] = []
     let peer: Promise<void> | undefined
     const work = f.dispatcher(async (principal, input, guard) => {
       starts.push(input)
@@ -116,8 +116,8 @@ describe.skipIf(!postgresEnabled)('SCH-01/02 occurrence identity and final eligi
   }, 60_000)
 
   it.each([
-    { name: 'Once exceeds grace by 1 ms', schedule: onceSchedule, before: 300_000, after: 300_001, reason: 'outside_grace' },
-    { name: 'minute interval reaches its next due instant', schedule: minuteSchedule, before: 59_999, after: 60_000, reason: 'superseded' },
+    { name: 'Once exceeds grace by 1 ms', schedule: sch11Once, before: 300_000, after: 300_001, reason: 'outside_grace' },
+    { name: 'minute interval reaches its next due instant', schedule: sch11Minute, before: 59_999, after: 60_000, reason: 'superseded' },
   ])('SCH-02: final overlap read cannot admit after $name', async ({ schedule, before, after, reason }) => {
     const saved = await f.save(schedule)
     const dueAt = saved.nextOccurrenceAt!

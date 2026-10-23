@@ -3,7 +3,7 @@ import type pg from 'pg'
 import { MainIdentityProofRequestSchema, MainSignedIdentityProofSchema, MainEnrollmentProofRequestSchema, MainSignedEnrollmentProofSchema, type MainIdentityProofRequest, type MainSignedIdentityProof, type MainEnrollmentProofRequest, type MainSignedEnrollmentProof } from '@foreman-code/contracts/device-identity'
 import { mainIdentityProofMessage, mainEnrollmentProofMessage, publicKeyFingerprint } from '@foreman-code/contracts/device-identity-node'
 import { DeviceAccessError } from './access.js'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 
 export const mainDeviceIdentityMigration = { version: 282102, sql: 'create table device_main_identity (main_id uuid primary key, record jsonb not null);' } as const
 
@@ -14,7 +14,7 @@ export interface MainDeviceIdentity {
   publicKeyFingerprint: string
 }
 /** This Main's installation UUID, when its installation row exists. */
-export async function readMainInstallationId(sql: SqlQuery): Promise<string | undefined> {
+export async function readMainInstallationId(sql: GraphSqlClient): Promise<string | undefined> {
   return (await sql.query<{ id: string }>('select id from application_installation where singleton=true')).rows[0]?.id
 }
 

@@ -2,8 +2,8 @@ import type pg from 'pg'
 import { randomUUID } from 'node:crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HarnessExecution } from '@foreman-code/contracts'
-import type { AcceptedWorkflowRunCurrent } from '@foreman-code/contracts/current'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import type { AcceptedWorkflowRunV3 } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-execution'
 import { ExclusiveGraphConnection } from '../../run-graph/connection.js'
 import { readDispatchIntent } from '../../placement/persistence.js'
@@ -31,7 +31,7 @@ beforeEach(() => vi.resetAllMocks())
 function fixture() {
   const f = makeCurrentWorkflowFixture('artifact-acceptance', 'single'), node = f.version.definition.nodes[0]!
   node.artifactOutputs = { version: 1, outputKeys: ['z', 'a'] }
-  const run = { ...f.run, authorizationPrincipalId: 'owner' } as AcceptedWorkflowRunCurrent
+  const run = { ...f.run, authorizationPrincipalId: 'owner' } as AcceptedWorkflowRunV3
   const mainId = randomUUID(), deviceId = randomUUID(), workerInstallationId = randomUUID(), digest = 'a'.repeat(64)
   const execution: HarnessExecution = { id: randomUUID(), runId: run.id, workflowNodeId: node.id, agentId: node.agentId,
     agentConfigurationVersionId: f.version.agentConfigurationVersionIds[node.agentId]!, attempt: 1, state: 'completed',

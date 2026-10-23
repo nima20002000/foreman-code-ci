@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture, WorkflowVersionCurrentSchema, WorkRequestSchema } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture, WorkflowVersionV3Schema, WorkRequestSchema } from '@foreman-code/contracts/wave25'
 import { ExecutionLimiter } from '../src/modules/runs/limiter.js'
 import { workHandoffNodeAction } from '../src/modules/runs/workHandoffNode.js'
 import { DomainError } from '../src/modules/errors.js'
@@ -8,7 +8,7 @@ import { DomainError } from '../src/modules/errors.js'
 describe('NIM-2691 workflow activation routing', () => {
   it('fans a finished entry result to both saved connections once', async () => {
     const fixture = makeCurrentWorkflowFixture('work-node-fork', 'parallel')
-    const version = WorkflowVersionCurrentSchema.parse({ ...fixture.version, definition: {
+    const version = WorkflowVersionV3Schema.parse({ ...fixture.version, definition: {
       ...fixture.version.definition, handoffs: { contractVersion: 1 },
       executionPolicy: { maxParallelism: 2, maxNodeExecutions: 20 },
     } })
@@ -49,7 +49,7 @@ describe('NIM-2691 workflow activation routing', () => {
 
   it('waits for the node\'s running interval check before admitting its activation', async () => {
     const fixture = makeCurrentWorkflowFixture('work-node-check')
-    const version = WorkflowVersionCurrentSchema.parse({ ...fixture.version, definition: {
+    const version = WorkflowVersionV3Schema.parse({ ...fixture.version, definition: {
       ...fixture.version.definition, handoffs: { contractVersion: 1 },
       executionPolicy: { maxParallelism: 1, maxNodeExecutions: 3 },
     } })
@@ -82,7 +82,7 @@ describe('NIM-2691 workflow activation routing', () => {
 
   it('keeps a technical retry in one activation before admitting its first business request', async () => {
     const fixture = makeCurrentWorkflowFixture('work-node-retry')
-    const version = WorkflowVersionCurrentSchema.parse({ ...fixture.version, definition: {
+    const version = WorkflowVersionV3Schema.parse({ ...fixture.version, definition: {
       ...fixture.version.definition, handoffs: { contractVersion: 1 },
       executionPolicy: { maxParallelism: 1, maxNodeExecutions: 3 },
     } })
@@ -139,7 +139,7 @@ describe('NIM-2691 workflow activation routing', () => {
     'finishes a choice activation cleanly after $cause (restart=$restart)', async ({ cause, restart }) => {
       const fixture = makeCurrentWorkflowFixture(`choice-finish-${cause}`)
       const edge = fixture.version.definition.edges[0]!
-      const version = WorkflowVersionCurrentSchema.parse({ ...fixture.version, definition: {
+      const version = WorkflowVersionV3Schema.parse({ ...fixture.version, definition: {
         ...fixture.version.definition, handoffs: { contractVersion: 1 },
         nodes: fixture.version.definition.nodes.map((node, index) => index ? node : { ...node,
           choice: { outcomes: [{ outcome: 'review', target: { kind: 'edge', relationshipId: edge.id } }] },
@@ -181,7 +181,7 @@ describe('NIM-2691 workflow activation routing', () => {
 
   it('preserves findings as unresolved when a requester finishes without choosing a route', async () => {
     const fixture = makeCurrentWorkflowFixture('work-node-needs-direction')
-    const version = WorkflowVersionCurrentSchema.parse({ ...fixture.version, definition: {
+    const version = WorkflowVersionV3Schema.parse({ ...fixture.version, definition: {
       ...fixture.version.definition, handoffs: { contractVersion: 1 },
       nodes: fixture.version.definition.nodes.map((node, index) => index === 0 ? { ...node,
         choice: { outcomes: [{ outcome: 'review', target: { kind: 'edge' as const,

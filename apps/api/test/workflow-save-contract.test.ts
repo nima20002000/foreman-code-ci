@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CurrentWorkflowSaveInputSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { CurrentWorkflowSaveInputSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 
 describe('executable workflow save contract', () => {
   it('keeps repeat absent for ordinary saves and rejects empty repeat plans and retired execution tags', () => {

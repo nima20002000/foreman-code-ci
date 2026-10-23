@@ -1,4 +1,4 @@
-export interface RecoverySettlementProgress {
+export interface Eng06SettlementProgress {
   state: string
   cleanupPending: boolean
   activeStarts?: number
@@ -10,7 +10,7 @@ export interface RecoverySettlementProgress {
  * no-progress bound. Neither repeated reconcile calls nor fresh copies of the
  * same rows reset that stall deadline.
  * These are test wait limits, not native timeout, retry or repeat policies. */
-export async function waitForRecoverySettlement(probe: () => Promise<RecoverySettlementProgress>,
+export async function waitForEng06Settlement(probe: () => Promise<Eng06SettlementProgress>,
   options: { pollIntervalMs?: number } = {}): Promise<void> {
   const started = performance.now()
   let changed = started, previous = ''

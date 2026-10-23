@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import { AgentConfigurationVersionSchema, HarnessExecutionSchema } from '@foreman-code/contracts'
-import { AcceptedWorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
-import type { WorkspaceLocationService } from '../workspaces/index.js'
+import { AcceptedWorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
+import type { WorkspaceLocationService } from '../workspaces/location.js'
 import { continuationValidator } from '../runs/continuation.js'
 import { deliveryTransactionClient } from '../interactions/connection.js'
 import { DomainError } from '../errors.js'
@@ -29,7 +29,7 @@ export function placedContinuationValidator(pool: pg.Pool, locations: WorkspaceL
        join agent_configuration_versions c on c.id=he.record->>'agentConfigurationVersionId' where he.id=$1`, [executionId])
     const row = rows.rows[0]
     if (!row || rows.rows.length !== 1) throw new DomainError('WORKER_EXECUTION_NOT_FOUND', 'Exact accepted execution is unavailable.', 409)
-    const execution = HarnessExecutionSchema.parse(row.execution), run = AcceptedWorkflowRunCurrentSchema.parse(row.run)
+    const execution = HarnessExecutionSchema.parse(row.execution), run = AcceptedWorkflowRunV3Schema.parse(row.run)
     const configuration = AgentConfigurationVersionSchema.parse(row.configuration)
     const payload = binding.placement.payload
     if (row.stopped || row.cleanup_pending || ['completed', 'interrupted'].includes(run.executionState)

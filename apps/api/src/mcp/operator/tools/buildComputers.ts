@@ -1,11 +1,14 @@
 import { z } from 'zod'
 import { ComputerActivityListSchema, ComputerRenameInputSchema, ComputerRenameResultSchema } from '@foreman-code/contracts/computer-activity'
+import { ComputerMaintenanceOperatorListSchema, ComputerMaintenanceOperatorListInputSchema, ComputerMaintenanceStartInputSchema,
+  ComputerMaintenanceStartResultSchema } from '@foreman-code/contracts/computer-maintenance'
 import { ComputerAccountsListInputSchema, ComputerAccountsListSchema, ComputerSyncReadInputSchema,
   ComputerSyncUpdateInputSchema, ComputerSyncStatusSchema, ComputerGitHubInputSchema,
   ComputerGitHubLogoutInputSchema, ComputerGitHubStatusInputSchema,
   GitHubLoginStateSchema } from '@foreman-code/contracts/computer-accounts'
 import { BuildComputerReadSchema, BuildComputerUpdateSchema, BuildComputerStatusSchema,
   BuildComputerBatchUpdateSchema, BuildComputerBatchResultSchema } from '@foreman-code/contracts/build-computers'
+import { maintenanceReadResult } from '../../../modules/computers/maintenanceSummary.js'
 import { defineOperatorTool } from '../definition.js'
 
 const writeAnnotations = { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true }
@@ -42,6 +45,33 @@ export const buildComputerTools = [
     run: (context, input) => input.target
         ? context.services.computerAccounts!.readTarget(context.principal, 'mcp', input)
         : context.services.computerAccounts!.list(context.principal, 'mcp', input.refresh === true, input.cursor),
+  }),
+  defineOperatorTool({
+    name: 'computers_maintenance_status',
+    requires: [['settings:read', 'global']],
+    enabled: s => !!s.computerMaintenance,
+    description: 'Read maintenance status for Main and every paired computer: harness versions, pending OS updates, restart need, sudo, disk, Worker version and readiness, background service health, sign-in and MCP connection facts, and recent tasks.',
+    detail: 'Returns the newest 5 tasks per computer by default, newest first. Optional taskLimit is an integer from 1 to 50. Running and queued tasks are always included even beyond the limit; tasksOmitted counts excluded retained tasks per computer. Default detail is compact, with summaries capped at 300 characters and no outputTail. Use detail: "full" for outputTail with the same history limit; optionally supply taskId with full detail to select one retained task independently of the limit. Paired Workers also report current and target application versions, update state and the last update error, including rollback. workerPublication reports the matching Main release\'s GitHub publication state and failure reason, even for offline computers. Pending publication past its deadline reads as failed with WORKER_PUBLICATION_DEADLINE_EXCEEDED. status.services lists each background loop of that computer (CI dispatch and observation, state-deadline sweeper, run reconciliation, enrollment, schedules, telemetry collector, Worker publication unit, fleet sync) with lastStartedAt, lastSuccessAt, lastError, nextDueAt, inFlightSince and status ok, idle, failing or stalled; stalled means in flight past its deadline or past its next due time. Running tasks older than 60 minutes fail with MAINTENANCE_TASK_DEADLINE_EXCEEDED. workerReadiness reports WORKER_VERSION_SKEW, WORKER_BUNDLE_UNPUBLISHED or WORKER_UPDATING, with expected/running bundle identities, updatePhase and publicationError. New work requires the published bundle for that Worker target. connections gives the same sign-in and MCP facts the Computers page shows as chips: connections.accounts lists Codex, Claude and GitHub CLI with installed and signedIn (null when unreadable or the computer did not answer), and connections.mcp.codex / connections.mcp.claude give the Foreman Code MCP state on that harness (installed, missing, disabled, mismatch, inherited or legacy; null when the caller lacks harnesses:read or the configuration is unreadable). Supply target to read one current installation independently. Successful settled status is cached for 20 seconds unless refresh is true; pending probes are shared. Failed observations report null status with observation.status unavailable, lastError, failedAt, lastSuccess and consecutiveFailures. Failed observations are retried on the next read.',
+    inputSchema: ComputerMaintenanceOperatorListInputSchema, outputSchema: ComputerMaintenanceOperatorListSchema,
+    annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
+    run: async (context, input) => {
+    const result = input.target
+      ? await context.services.computerMaintenance!.readTarget(context.principal, 'mcp', {
+        target: input.target, refresh: input.refresh,
+      })
+      : await context.services.computerMaintenance!.list(context.principal, 'mcp', input.refresh === true)
+    return maintenanceReadResult(result, input)
+  },
+  }),
+  defineOperatorTool({
+    name: 'computers_maintenance_start',
+    requires: [['settings:update', 'global']],
+    enabled: s => !!s.computerMaintenance,
+    description: 'Start a background maintenance task (update-harnesses, update-system, update-worker, restart, sync-mcp or sync-plugins) on the target computers. Read its outcome with computers_maintenance_status.',
+    detail: 'With targets omitted, update-worker and sync tasks select paired computers; other tasks select Main and every paired computer: update-harnesses (install or update Codex/Claude to the latest version), update-system (sudo apt-get update and a non-interactive upgrade with new dependencies, respecting phased rollout and explicit holds; re-reads pending updates), update-worker (download only from GitHub with backoff after Main verifies publication of every release asset; unpublished targets and unavailable GitHub assets fail visibly with WORKER_RELEASE_ASSET_UNAVAILABLE; verify checksums, drain active work, install the matching Main version, then restart through the Worker supervisor; enabled build computers must pass a tiny integration CI smoke within 160 seconds after readiness; failed releases roll back and report the error; Main uses production:install), restart (sudo reboot; targets are required), sync-mcp (add Main\'s user-level Codex and Claude MCP servers that other computers lack; secret values are not copied, those servers need a login on each computer), or sync-plugins (install Main\'s Codex and Claude plugins, reconcile fleet-managed versions with native readback, add Main\'s Git marketplaces first and match enabled state for fleet-managed Claude plugins). MCP stdio commands must be executable, and filesystem and interpreter script operands must resolve on the destination. An unavailable server does not block independent entries. Versioned plugins are verified in staging; Codex activates only the selected managed plugin from that staged marketplace after backup. Failed activation restores the cache by native-filesystem rename. Sync preserves pre-existing computer-owned entries and removes only fleet-managed entries absent from an available Main catalog. Unsafe or unsupported MCP definitions and unreadable catalogs are skipped and reported; existing Worker entries for skipped definitions are preserved. Intentional credential skips do not fail a task. Automatic sync failures retry after 5 minutes with exponential backoff capped at one hour; a manual start with a new commandId retries immediately. Disabled servers, native tool allow/deny lists and stdio environment-name references cannot be copied by this sync path. Equivalent requests share only the latest queued task; different requests of the same kind queue. Task status survives application restarts; unfinished tasks report interruption. Check every returned computer error; Main shutdown refuses new maintenance tasks and drains accepted Main work before releasing runtime ownership. unavailable targets are not updated. Harness updates verify the selected runtime meets the published version observed at start; a newer stable release installed during the update also succeeds. Main and Workers select the installed Codex update and retain qualification checks. Reuse commandId with the original input to recover the saved targets, source catalogs and receiver tasks, including after Main stops before recording its result. Use a new commandId with update-worker to trigger an update check or retry a failed update. Older Workers without worker-update-v1 require an initial updater-enabled Worker installation on that computer. Receivers require maintenance protocol 2. Restart stays running until the reboot command returns; success reports command acceptance, not confirmed reconnection. A missing harness leaves nonempty MCP sync pending for a later retry.',
+    inputSchema: ComputerMaintenanceStartInputSchema, outputSchema: ComputerMaintenanceStartResultSchema,
+    annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: true, openWorldHint: true },
+    run: (context, input) => context.services.computerMaintenance!.start(context.principal, 'mcp', input),
   }),
   defineOperatorTool({
     name: 'computer_github_login_start',

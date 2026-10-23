@@ -10,7 +10,7 @@ import {
   type ManagementAction,
 } from '@foreman-code/contracts/management'
 import { decodeMcpToolResult, OperatorToolSchemaResultSchema } from '@foreman-code/contracts/operator-mcp'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { expect, it } from 'vitest'
 
 import { buildApp } from '../src/app.js'
@@ -354,9 +354,9 @@ it('reports from a scoped Agent and lets Operator discover, read and triage pers
     expect(capabilities).toMatchObject({ tools: expect.arrayContaining(['bug_report', 'bug_reports_list',
       'bug_report_get', 'bug_report_update']) })
     const schema = OperatorToolSchemaResultSchema.parse(value(await writer.client.callTool({
-      name: 'tool_schema', arguments: { name: 'bug_report_update', includeOutputSchema: true },
+      name: 'operator_tool_schema_get', arguments: { name: 'bug_report_update', includeOutputSchema: true },
     })))
-    expect(schema.permissionRequirements?.actions).toEqual(['bug_reports:update'])
+    expect(schema.permissionRequirements.actions).toEqual(['bug_reports:update'])
     expect(schema.inputSchema).toMatchObject({ properties: {
       commandId: expect.any(Object), expectedRevision: expect.any(Object),
       status: { anyOf: [{ enum: ['open', 'triaged'] }, { enum: ['fixed', 'wont-fix'] }] },

@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Dialog } from '../../shared/ui/nocturne'
 import { BrowserSessionSchema } from '@foreman-code/contracts/browser-sessions'
-import {
-  BrowserTransfers, validateBrowserRead, browserAccessDenied, browserErrorMessage, type BrowserUiPort,
-  type BrowserFilesPort,
-} from '../agent-browser'
+import { BrowserTransfers } from '../agent-browser/BrowserTransfers'
+import { validateBrowserRead } from '../agent-browser/queries'
+import { browserAccessDenied, browserErrorMessage } from '../agent-browser/errors'
+import type { BrowserUiPort } from '../agent-browser/types'
+import type { BrowserFilesPort } from '../agent-browser/transferTypes'
 
 /** Retained downloads use session history reads only; opening this dialog never starts capture. */
 export function BrowserProfileDownloads({ authBoundary, profileId, computerId, profileName, port, files, onClose }: {

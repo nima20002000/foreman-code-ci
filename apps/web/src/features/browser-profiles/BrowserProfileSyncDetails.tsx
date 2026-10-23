@@ -1,5 +1,5 @@
 import { Button } from '../../shared/ui/nocturne'
-import { browserAccessDenied, browserErrorMessage } from '../agent-browser'
+import { browserAccessDenied, browserErrorMessage } from '../agent-browser/errors'
 import { useBrowserProfileSync } from './queries'
 import type { BrowserProfilesPort } from './types'
 

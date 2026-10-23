@@ -2,13 +2,14 @@ import { expect, it, vi } from 'vitest'
 import { HttpResponse } from 'msw'
 import { server } from '../../mocks/server'
 import { BrowserProfileReplicaSchema, BrowserProfileSyncJobSchema } from '@foreman-code/contracts/browser-profiles'
-import { createBrowserProfilesClient, type BrowserProfileCodecs, type BrowserProfileCatalog } from '../browser-profiles'
+import { createBrowserProfilesClient, type BrowserProfileCodecs } from '../browser-profiles/client'
 import { browserMswHandlers } from './testing'
 import { createBrowserHttp } from './http'
 import { browserRequestUncertain } from './errors'
 import { ApiError } from '../../shared/api/client'
 import { beginSessionChange, finishSessionChange } from '../../shared/api/sessionBoundary'
 import { deferred } from './testFixtures'
+import type { BrowserProfileCatalog } from '../browser-profiles/types'
 
 
 it('saves policy through the canonical profile route without sync and preserves command identity through a lost sync response', async () => {

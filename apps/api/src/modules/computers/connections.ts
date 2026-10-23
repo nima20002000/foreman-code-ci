@@ -3,7 +3,7 @@ import type { ComputerConnections } from '@foreman-code/contracts/computer-maint
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import type { HarnessMcpList, ManagementPrincipal } from '@foreman-code/contracts/management'
 import { isAuthorized } from '../access/policy.js'
-import { logIgnoredError } from '../diagnostics/index.js'
+import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import { fingerprint, managedStatus } from '../harnesses/nativeMcpCommon.js'
 
 type Harness = 'codex' | 'claude'

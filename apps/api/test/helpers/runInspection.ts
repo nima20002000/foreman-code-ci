@@ -5,7 +5,7 @@ import {
   CURRENT_WORKFLOW_TOOLS, RUN_INSPECTION_TOOLS, CurrentWorkflowSaveResultSchema,
   RunExecutionsPageSchema, RunVersionDetailSchema,
   type RunExecutionSummary, type RunInspectionToolName,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { currentOperatorIntegration } from './currentOperatorIntegration.js'
 import { waitForSuccessfulRunCleanup } from './runSettlement.testSupport.js'

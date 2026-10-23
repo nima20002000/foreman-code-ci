@@ -14,28 +14,28 @@ import {
   workflowSaveIssues, CURRENT_WORKFLOW_CAPABILITIES, DEFAULT_AGENT_ACTIVE_TIMEOUT_MS,
   CurrentWorkflowSaveInputSchema, CurrentWorkflowValidateInputSchema,
   CurrentWorkflowSavedSchema, CurrentWorkflowReadInputSchema, CurrentWorkflowReadResultSchema,
-  CurrentWorkflowValidationSchema, WorkflowDefinitionCurrentSchema, WorkflowVersionCurrentSchema,
-  ExecutableWorkflowCurrentSchema, canonicalGraphJson, sameAuthoredWorkflow, sameExecutableWorkflow,
+  CurrentWorkflowValidationSchema, WorkflowDefinitionV3Schema, WorkflowVersionV3Schema,
+  ExecutableWorkflowV3Schema, canonicalGraphJson, sameAuthoredWorkflow, sameExecutableWorkflow,
   sameWorkflowValue,
   CurrentEditSaveInputSchema, CurrentEditMutationInputSchema, CurrentEditReadInputSchema, preserveWorkflowGeometry,
-  type CurrentWorkflowValidateInput, type CurrentEditSaveInput, type WorkflowDefinitionCurrent,
-} from '@foreman-code/contracts/current'
+  type CurrentWorkflowValidateInput, type CurrentEditSaveInput, type WorkflowDefinitionV3,
+} from '@foreman-code/contracts/wave25'
 import { requireAuthorization } from '../access/policy.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { commandInputHash, type PostgresCommandCoordinator } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
 import type { RunManagementService } from '../runs/management.js'
 import type { CurrentRuntimeAvailability } from '../runs/currentProduction.js'
-import { createCurrentEditIntentService } from '../graph-drafts/index.js'
-import { prepareCurrentStagedAgents, persistCurrentStagedAgents } from '../graph-drafts/index.js'
-import { assertMeaningfulSaveAdmitted } from '../graph-drafts/index.js'
-import { assertNativeWorkflowConfiguration } from '../harnesses/index.js'
-import { lockActiveWorkspace } from '../workspaces/index.js'
-import { lockAgentConfigurations } from '../workspaces/index.js'
+import { createCurrentEditIntentService } from '../graph-drafts/currentEditIntent.js'
+import { prepareCurrentStagedAgents, persistCurrentStagedAgents } from '../graph-drafts/currentStagedAgents.js'
+import { assertMeaningfulSaveAdmitted } from '../graph-drafts/saveAdmission.js'
+import { assertNativeWorkflowConfiguration } from '../harnesses/nativeWorkflowConfiguration.js'
+import { lockActiveWorkspace } from '../workspaces/admission.js'
+import { lockAgentConfigurations } from '../workspaces/agentConfiguration.js'
 import { resolveAssignedSkills } from '../skills/catalog.js'
 import { configurationWithNodeSkills } from '../skills/nodeSkills.js'
 import { composeInstructionText, instructionsTooLarge } from '../skills/instructions.js'
-import type { ProviderAccountConfigurationService } from '../harnesses/index.js'
+import type { ProviderAccountConfigurationService } from '../harnesses/providerAccountConfiguration.js'
 import {
   IMMUTABLE_WORKFLOW_VERSION_COLUMNS, readImmutableWorkflowVersion, readImmutableAgentConfiguration,
   type ImmutableWorkflowVersionRow, type ImmutableAgentConfigurationRow,
@@ -59,7 +59,7 @@ function parseAuthoringInput<T>(schema: z.ZodType<T>, raw: unknown): T {
   )
 }
 
-function manualPositionsForSave(graph: WorkflowDefinitionCurrent, previous: WorkflowDefinitionCurrent, source?: Source) {
+function manualPositionsForSave(graph: WorkflowDefinitionV3, previous: WorkflowDefinitionV3, source?: Source) {
   if (source !== 'mcp') return graph
   const previousNodes = new Map(previous.nodes.map((node) => [node.id, node]))
   return { ...graph, nodes: graph.nodes.map((node) => {
@@ -95,7 +95,7 @@ function completeSaveInput(
 }
 const fail = (code: string, message: string): never => { throw new DomainError(code, message, 409) }
 const digest = (value: string) => `sha256:${sha256Hex(value)}`
-function authorize(principal: ManagementPrincipal, input: Scope & { graph?: WorkflowDefinitionCurrent }, write: boolean) {
+function authorize(principal: ManagementPrincipal, input: Scope & { graph?: WorkflowDefinitionV3 }, write: boolean) {
   requireCurrentWorkflowAccess(principal, write ? 'save' : 'validate', input)
   authorizeWorkflowWorktreeContent(principal, input)
 }
@@ -103,7 +103,7 @@ async function versionAt(sql: Pick<pg.PoolClient, 'query'>, scope: Scope, id: st
   const row = (await sql.query<ImmutableWorkflowVersionRow>(`select ${IMMUTABLE_WORKFLOW_VERSION_COLUMNS}
     from workflow_versions where id=$1 and workspace_id=$2 and workflow_id=$3`, [id, scope.workspaceId, scope.workflowId])).rows[0]
   if (!row) return fail('WORKFLOW_VERSION_NOT_FOUND', 'The exact immutable workflow version is unavailable.')
-  const version = WorkflowVersionCurrentSchema.parse(readImmutableWorkflowVersion(row, { ...scope, id }))
+  const version = WorkflowVersionV3Schema.parse(readImmutableWorkflowVersion(row, { ...scope, id }))
   const rows = (await sql.query<ImmutableAgentConfigurationRow>(
     'select id,workspace_id,agent_id,version,record from agent_configuration_versions where id=any($1::text[]) order by id',
     [Object.values(version.agentConfigurationVersionIds)])).rows
@@ -112,7 +112,7 @@ async function versionAt(sql: Pick<pg.PoolClient, 'query'>, scope: Scope, id: st
     if (!configurationId) return fail('WORKFLOW_VERSION_PIN_MISMATCH', 'A configuration is outside the saved version.')
     return readImmutableAgentConfiguration(row, { id: configurationId, workspaceId: scope.workspaceId, agentId: row.agent_id })
   })
-  ExecutableWorkflowCurrentSchema.parse({ version, configurations })
+  ExecutableWorkflowV3Schema.parse({ version, configurations })
   return { version, configurations }
 }
 
@@ -275,7 +275,7 @@ export class CurrentWorkflowAuthoring {
             'select record from workflows where workspace_id=$1 and id=$2 for update',
             [input.workspaceId, input.workflowId])).rows[0]
           if (!row) return fail('WORKFLOW_UNAVAILABLE', 'The active workflow was not found in this scope.')
-          input = completeSaveInput(request, WorkflowDefinitionCurrentSchema.parse(row.record))
+          input = completeSaveInput(request, WorkflowDefinitionV3Schema.parse(row.record))
         }
       },
       perform: (client) => this.publish(client, principal, source, input, request, intentId),
@@ -343,7 +343,7 @@ export class CurrentWorkflowAuthoring {
     if (!row || row.archived_at) return fail('WORKFLOW_UNAVAILABLE', 'The active workflow was not found in this scope.')
     if (Number(row.revision) !== input.expectedRevision) return fail('REVISION_CONFLICT', 'The displayed workflow revision changed.')
     if (row.current_version_id !== input.expectedWorkflowVersionId) return fail('WORKFLOW_BASE_CONFLICT', 'The immutable workflow head changed.')
-    const current = WorkflowDefinitionCurrentSchema.parse(row.record)
+    const current = WorkflowDefinitionV3Schema.parse(row.record)
     if (current.id !== input.workflowId || current.workspaceId !== input.workspaceId
       || input.graph.id !== input.workflowId || input.graph.workspaceId !== input.workspaceId
       || input.graph.version !== current.version || input.graph.createdAt !== current.createdAt) {
@@ -370,7 +370,7 @@ export class CurrentWorkflowAuthoring {
       await validateWorkflowWorktrees({ sql: client, principal, definition: input.graph, previous: current,
         services: this.options.worktrees })
       return { presentationOnly, version: base, content: '',
-        definition: manualPositionsForSave(WorkflowDefinitionCurrentSchema.parse({
+        definition: manualPositionsForSave(WorkflowDefinitionV3Schema.parse({
           ...(intentId ? preserveWorkflowGeometry(input.graph, current) : input.graph),
           updatedAt: new Date().toISOString() }), current, source) }
     }
@@ -412,13 +412,13 @@ export class CurrentWorkflowAuthoring {
       [input.workflowId])).rows[0]?.next)
     if (!Number.isSafeInteger(number) || number < 1 || base && number <= base.version) return fail('WORKFLOW_BASE_CONFLICT', 'The next immutable version is invalid.')
     const now = new Date().toISOString()
-    const parsedVersion = WorkflowVersionCurrentSchema.safeParse({ id: `workflow-version-${randomUUID()}`, workspaceId: input.workspaceId,
+    const parsedVersion = WorkflowVersionV3Schema.safeParse({ id: `workflow-version-${randomUUID()}`, workspaceId: input.workspaceId,
       workflowId: input.workflowId, version: number, executionSemanticsVersion: 3, entryNodeId: input.graph.entryNodeId,
       definition: { ...preserveWorkflowGeometry(graph, current), version: number, updatedAt: now }, approval: graph.approval,
       agentConfigurationVersionIds: configurationPins, contentHash: `sha256:${'0'.repeat(64)}`, createdAt: now })
     if (!parsedVersion.success) throw new DomainError('GRAPH_INVALID', 'Fix the workflow settings below.', 409, { issues: workflowSaveIssues(parsedVersion.error.issues) })
     const version = parsedVersion.data
-    const executable = ExecutableWorkflowCurrentSchema.safeParse({ version, configurations })
+    const executable = ExecutableWorkflowV3Schema.safeParse({ version, configurations })
     if (!executable.success) throw new DomainError('GRAPH_INVALID', 'Fix the workflow settings below.', 409, { issues: workflowSaveIssues(executable.error.issues) })
     for (const node of version.definition.nodes) {
       if (node.kind === 'job') continue

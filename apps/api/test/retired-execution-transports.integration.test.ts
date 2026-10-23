@@ -4,7 +4,7 @@ import {
   CURRENT_WORKFLOW_TOOLS,
   RETIRED_EXECUTION_TOOLS,
   RUN_INSPECTION_TOOLS,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import { buildApp } from '../src/app.js'
 import { PostgresWorkspaceRepository } from '../src/modules/workspaces/postgres.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'

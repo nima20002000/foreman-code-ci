@@ -5,7 +5,7 @@ import { sameDeviceProvisioningTarget, type DeviceProvisioningTarget } from '@fo
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { requireAuthorization } from '../access/policy.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
-import type { PostgresCommandCoordinator } from '../commands/index.js'
+import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
 import { DeviceApplicationError } from '../devices/deviceApplicationError.js'
 import type { DeviceEndpoint } from '../devices/deviceEndpoint.js'

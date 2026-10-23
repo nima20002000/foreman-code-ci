@@ -1,6 +1,6 @@
 import { AgentIdentitySchema, AgentSubjectSchema, canonicalJson, CoordinatorConsultationBindingSchema,
   HarnessExecutionSchema, type CoordinatorConsultationBinding } from '@foreman-code/contracts'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import { DomainError } from '../errors.js'
 
 /** Aliases b/he/r are the existing worker binding, source execution and Run.
@@ -21,7 +21,7 @@ export const CONSULTATION_BINDING_ELIGIBLE = `b.purpose='consultation' and r.sto
       and g.parent_execution_id=he.id and g.parent_activation_id=m.waiting_activation_id
       and g.state in ('waiting','ready') and he.record->>'state'='completed')`
 
-export async function readCoordinatorCredentialAuthority(sql: SqlQuery, raw: CoordinatorConsultationBinding,
+export async function readCoordinatorCredentialAuthority(sql: GraphSqlClient, raw: CoordinatorConsultationBinding,
   lock = false) {
   const binding = CoordinatorConsultationBindingSchema.parse(raw)
   if (lock) await sql.query('select id from runs where id=$1 for no key update', [binding.runId])
@@ -61,7 +61,7 @@ export async function readCoordinatorCredentialAuthority(sql: SqlQuery, raw: Coo
 
 /** Shared A/B/C feature services derive their public subject from this binding;
  * they never trust a caller-supplied Run, node, consultation or native address. */
-export async function readConsultationCredentialSubject(sql: SqlQuery, principalId: string) {
+export async function readConsultationCredentialSubject(sql: GraphSqlClient, principalId: string) {
   const row = (await sql.query<{ consultation_binding: unknown; execution_id: string; agent_id: string }>(
     `select b.consultation_binding,b.execution_id,b.agent_id from worker_credential_bindings b
     join management_principals p on p.id=b.principal_id join harness_executions he on he.id=b.execution_id

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, expect, it, vi } from 'vitest'
 import { postgresEnabled } from './helpers/database.js'
-import { CANONICAL_RUN_GRAPH_MCP_TOOLS } from '@foreman-code/contracts/current'
+import { CANONICAL_RUN_GRAPH_MCP_TOOLS } from '@foreman-code/contracts/wave25'
 import { hasWorkflowExecutionCapacityLocked } from '../src/modules/runs/workflowExecutionBudget.js'
 import { graphRpcValue } from './graph-composition-fixture.js'
 import { snapshot, success, timeout, useWorkflowJobBudgetFixture } from './helpers/workflowJobBudgetFixture.js'

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CurrentWorkflowRelationshipSchema } from "./current/workflowShape.js";
+import { CurrentWorkflowRelationshipSchema } from "./wave25/workflowShape.js";
 import {
   RunBoardNodeSnapshotSchema, RunBoardSnapshotGetInputSchema, RunBoardSnapshotGetResultSchema, RunBoardSnapshotSchema,
   RunDropdownListInputSchema, RunDropdownPageSchema, RunDropdownSummarySchema, RunDropdownStatusSchema,

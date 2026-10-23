@@ -18,10 +18,10 @@ import {
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { commandInputHash, type PostgresCommandCoordinator } from '../commands/postgres.js'
-import { requireAuthorization, type AuthorizedResource } from '../access/index.js'
+import { requireAuthorization, type AuthorizedResource } from '../access/policy.js'
 import { DomainError } from '../errors.js'
 import { liveBugReportPrincipal, readGrantFilter, reportingContext, type ReportContext } from './authorization.js'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import {
   listBugReports, readBugReport, recordBugReport, saveBugReport, type BugReportOutcome,
 } from './repository.js'
@@ -302,7 +302,7 @@ export class BugReportService {
   }
 }
 
-async function authorizeClose(sql: SqlQuery, principal: ManagementPrincipal, input: BugReportCloseInput) {
+async function authorizeClose(sql: GraphSqlClient, principal: ManagementPrincipal, input: BugReportCloseInput) {
   if (principal.audience !== 'operator') throw new DomainError('ACCESS_DENIED', 'Agents can only submit bug reports.', 403)
   const target = input.duplicateOfId === undefined ? undefined : await readBugReport(sql, input.duplicateOfId)
   if (target) requireAuthorization(principal, 'bug_reports:read', reportScope(target))
@@ -316,7 +316,7 @@ async function authorizeClose(sql: SqlQuery, principal: ManagementPrincipal, inp
   }
 }
 
-async function requireAcyclicDuplicate(sql: SqlQuery, input: BugReportCloseInput) {
+async function requireAcyclicDuplicate(sql: GraphSqlClient, input: BugReportCloseInput) {
   if (!input.duplicateOfId) return
   const seen = new Set(input.reports.map(report => report.reportId))
   let targetId: string | undefined = input.duplicateOfId

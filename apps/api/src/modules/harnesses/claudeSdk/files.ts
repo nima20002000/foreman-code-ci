@@ -1,7 +1,7 @@
 import type { AgentFileToolService } from '../../files/tools/service.js'
 import type { FileToolContext, FileToolOperation } from '../../files/tools/types.js'
 import { FILE_SESSION_LEASE_MS, FILE_SESSION_RENEWAL_WINDOW_MS, isMutation } from '../../files/tools/context.js'
-import { leaseFailureCause, renewOwnedLeases } from '../../leases/index.js'
+import { leaseFailureCause, renewOwnedLeases } from '../../leases/ownerLeases.js'
 import { HarnessExecutionError } from '../errors.js'
 import type { ClaudeCallbackIdentity } from './interactions.js'
 

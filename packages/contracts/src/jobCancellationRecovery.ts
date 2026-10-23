@@ -4,7 +4,7 @@ import { JobExecutionRecordSchema } from './jobVerification.js'
 import { DeviceRegistrationSchema } from './deviceIdentity.js'
 import { SourceMaterializationRecordSchema, SourceRootRecordSchema } from './sourceAdmission.js'
 import { RemoteJobDispatchIntentSchema, RemoteJobOperationReceiptRecordSchema } from './remoteJobExecution.js'
-import { canonicalGraphJson } from './current/index.js'
+import { canonicalGraphJson } from './wave25/index.js'
 
 export const JOB_CANCELLATION_GRANT_TTL_MS = 300_000
 const BackingJobCancellationFilesystemSchema = z.object({

@@ -4,10 +4,11 @@ import { basename, dirname, join } from 'node:path';
 import { createHash, createPublicKey, randomUUID } from 'node:crypto';
 import { WorkerPairingConfigurationSchema } from '../../../packages/contracts/src/deviceIdentity.ts';
 import { publicKeyFingerprint } from '../../../packages/contracts/src/deviceIdentityNode.ts';
-import { InstalledJobRuntimeCaptureInputRecordSchema, InstalledJobRuntimeConfigurationRecordSchema, InstalledJobRuntimeRefreshInputSchema, captureInstalledRuntimeConfigurationRecord } from '@foreman-code/api/worker/jobs';
-import { RemoteOperationJournal } from '@foreman-code/api/worker/runs';
-import { NativeProcessRegistry } from '@foreman-code/api/worker/harnesses';
-import { openPrivateRoot, anchored } from '@foreman-code/api/worker/sources';
+import { InstalledJobRuntimeCaptureInputRecordSchema, InstalledJobRuntimeConfigurationRecordSchema,
+  InstalledJobRuntimeRefreshInputSchema, captureInstalledRuntimeConfigurationRecord } from '../../../apps/api/src/modules/jobs/installedRuntimeHost.ts';
+import { RemoteOperationJournal } from '../../../apps/api/src/modules/runs/remote/operationJournal.ts';
+import { NativeProcessRegistry } from '../../../apps/api/src/modules/harnesses/recovery/processRegistry.ts';
+import { openPrivateRoot, anchored } from '../../../apps/api/src/modules/sources/privateFilesystem.ts';
 import { hostFacts, WorkerError } from './diagnostics.mjs';
 import { acquireWorkerLock } from './runtime.mjs';
 import { loadApprovedRoots } from './approvedRoots.mjs';

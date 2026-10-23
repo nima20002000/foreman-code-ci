@@ -9,7 +9,6 @@ import { createSyncthingAvailability } from './syncthingAvailability.js'
 import { SyncthingConflictScanner } from './syncthingConflictScan.js'
 import { DomainError } from '../errors.js'
 import { sha256Hex } from '../../shared/hash.js'
-import { hostEnvironment } from '../../shared/process.js'
 
 export interface SyncthingPorts {
   prepare(signal?: AbortSignal, assertCurrent?: () => void): Promise<SyncIdentity>
@@ -23,7 +22,7 @@ const API = 'http://127.0.0.1:8385'
 const RELEASES = 'https://github.com/syncthing/syncthing/releases/download'
 const failure = (message: string) => new DomainError('SYNC_UNAVAILABLE', message, 502)
 
-export function systemSyncthingPorts(environment: NodeJS.ProcessEnv = hostEnvironment()): SyncthingPorts {
+export function systemSyncthingPorts(environment: NodeJS.ProcessEnv = process.env): SyncthingPorts {
   const home = environment.HOME ?? homedir()
   const state = join(home, '.local', 'state', 'foreman-code', 'syncthing')
   const rootPath = join(home, '.local', 'share', 'foreman-code', 'shared-files')

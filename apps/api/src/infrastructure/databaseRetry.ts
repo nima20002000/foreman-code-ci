@@ -15,7 +15,7 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { setTimeout as delay } from 'node:timers/promises'
-import { componentLogger } from './logger.js'
+import { componentLogger } from '../modules/diagnostics/logger.js'
 
 import { isDatabasePoolTimeout, isDatabaseTimeout, isTransientDatabaseOrSocketError } from '@foreman-code/contracts/failure'
 export { isDatabasePoolTimeout, isDatabaseTimeout }

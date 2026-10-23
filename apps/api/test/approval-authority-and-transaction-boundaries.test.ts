@@ -7,7 +7,7 @@ import { withTransaction } from '../src/infrastructure/transaction.js'
 import { PostgresInteractionCoordinationRepository } from '../src/modules/interactions/coordination.js'
 import { PostgresInteractionRepository } from '../src/modules/interactions/postgres.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
-import { ExecutableWorkflowCurrentSchema, SavedRunVersionSnapshotSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { ExecutableWorkflowV3Schema, SavedRunVersionSnapshotSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 
 import { DeterministicNativeSessionManager } from '../src/testing/deterministicNativeSession.js'
 
@@ -27,7 +27,7 @@ describe('PR8 current executable approval acceptance', () => {
     if (scenario === 'wrong workflow') version.approval.designatedOrchestratorAgentId = 'elsewhere'
     if (scenario === 'wrong role') configurations[0]!.productRole = 'coder'
     if (scenario === 'missing reviewer edge') version.definition.edges = version.definition.edges.filter((edge) => edge.kind !== 'approval')
-    expect(ExecutableWorkflowCurrentSchema.safeParse({ version, configurations }).success).toBe(false)
+    expect(ExecutableWorkflowV3Schema.safeParse({ version, configurations }).success).toBe(false)
   })
 
   it('allows a self-reviewed Codex Coder in an Orchestrator-routed workflow', () => {
@@ -35,7 +35,7 @@ describe('PR8 current executable approval acceptance', () => {
     const selfReviewed = structuredClone(DEFAULT_HARNESS_DEFAULTS.codex)
     selfReviewed.advanced!.approvalsReviewer = 'auto_review'
     fixture.configurations[1]!.harness = selfReviewed
-    expect(ExecutableWorkflowCurrentSchema.safeParse({ version: fixture.version, configurations: fixture.configurations }).success).toBe(true)
+    expect(ExecutableWorkflowV3Schema.safeParse({ version: fixture.version, configurations: fixture.configurations }).success).toBe(true)
   })
 
   it('rejects absent and mismatched Run authority instead of inferring it from the workflow', () => {

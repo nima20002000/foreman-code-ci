@@ -19,7 +19,7 @@ import type { ExecutionCredentialProvider } from '../src/modules/harnesses/mcpDe
 import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart, NativeTurnInput } from '../src/modules/harnesses/port.js'
 import type { PostgresApprovalBudgetRepository } from '../src/modules/interactions/budget.js'
 import { ApprovalExecutionCoordinator } from '../src/modules/interactions/execution.js'
-import type { Wave25InteractionRepository as PostgresInteractionRepository } from '../src/modules/interactions/current/repository.js'
+import type { Wave25InteractionRepository as PostgresInteractionRepository } from '../src/modules/interactions/wave25/repository.js'
 import { createWorkflowNativeCaptureChannel } from '../src/modules/interactions/workflowNativeCapture.js'
 import type { RepeatNativeObservationStore } from '../src/modules/interactions/repeatObservation.js'
 import type { UnboundWorkflowClosure, WorkflowClosureStore } from '../src/modules/interactions/workflowClosure.js'
@@ -28,7 +28,7 @@ import { nativeApprovalContext } from '../src/modules/interactions/nativeApprova
 import { ExecutionScopedNativeSessionManagerResolver } from '../src/modules/interactions/runtimePorts.js'
 import type { RunOwnership } from '../src/modules/runs/ownership.js'
 import type { PostgresRunRepository } from '../src/modules/runs/postgres.js'
-import { makeCurrentWorkflowFixture, WorkActivationInputSchema, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture, WorkActivationInputSchema, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
 import { referencesCreatedByExecution, workflowDeliverableContract, workflowDeliverableFailure } from '../src/modules/runs/workflowDeliverable.js'
 import { normalizeRepeatTerminal } from '../src/modules/runs/repeatNode.js'
 import { currentInitialPrompt } from '../src/modules/runs/currentRouting.js'
@@ -409,7 +409,7 @@ it('captures complete native history only when needed for a pending request or t
 /** ciRuns stands in for ci_runs rows this execution initiated, by run ID. */
 function workResultFixture(results: ExecutionResult[], outputSchema?: Record<string, unknown>, ciRuns = new Set<string>(), options: { remote?: boolean } = {}) {
   const pinned = makeCurrentWorkflowFixture('result-repair')
-  const version = WorkflowVersionCurrentSchema.parse({ ...pinned.version,
+  const version = WorkflowVersionV3Schema.parse({ ...pinned.version,
     definition: { ...pinned.version.definition, handoffs: { contractVersion: 1 },
       nodes: pinned.version.definition.nodes.map((item, index) => index === 0 && outputSchema ? { ...item, outputSchema } : item) } })
   const node = version.definition.nodes[0]!

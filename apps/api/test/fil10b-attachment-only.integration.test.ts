@@ -14,7 +14,7 @@ import { NativeHarnessEventSchema, type NativeSessionReference } from '@foreman-
 import { AgentChatStateSchema, type AgentChatQuery, type SendAgentChatMessageRequest } from '@foreman-code/contracts/agent-chat'
 import { FileWithRevisionSchema, MAX_FILE_BYTES, type FileWithRevision } from '@foreman-code/contracts/files'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 
 import { buildApp } from '../src/app.js'
 import { fileStorageMigration } from '../src/infrastructure/fileStorageMigration.js'
@@ -38,8 +38,7 @@ import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js
 import { registerAgentChatRoutes } from '../src/routes/agentChat.js'
 import { registerFileRoutes } from '../src/routes/files.js'
 import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
-import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
@@ -89,7 +88,7 @@ async function waitFor(check: () => Promise<boolean>) {
 }
 
 describe.skipIf(!postgresEnabled)('FIL-10b attachment-only admission and legacy replay', { timeout: 60_000 }, () => {
-  let database: Awaited<ReturnType<typeof migratedDatabase>>, root: string, app: FastifyInstance
+  let database: Awaited<ReturnType<typeof agent3Database>>, root: string, app: FastifyInstance
   let access: PostgresAccessService, owner: Awaited<ReturnType<PostgresAccessService['issue']>>
   let reader: Awaited<ReturnType<PostgresAccessService['issue']>>
   let operator: OperatorChatService, agent: AgentChatService
@@ -130,7 +129,7 @@ describe.skipIf(!postgresEnabled)('FIL-10b attachment-only admission and legacy 
   }
 
   beforeAll(async () => {
-    database = await migratedDatabase()
+    database = await agent3Database()
     const present = await database.pool.query('select 1 from application_migrations where version=$1', [fileStorageMigration.version])
     if (!present.rowCount) {
       const client = await database.pool.connect()
@@ -140,7 +139,7 @@ describe.skipIf(!postgresEnabled)('FIL-10b attachment-only admission and legacy 
       } catch (error) { await rollbackTransaction(client); throw error } finally { client.release() }
     }
     root = await mkdtemp(join(homedir(), '.fil10b-test-'))
-    fixture = await seedWorkflowFixture(database.pool, root, makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential'), { run: false })
+    fixture = await seedAgent3(database.pool, root, makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential'), { run: false })
     access = new PostgresAccessService(database.pool)
     owner = await access.issue({ name: 'FIL-10b owner', audience: 'operator', expiresAt: new Date(Date.now() + 600_000),
       grants: [{ actions: [...ManagementActionSchema.options], scope: {} }] })

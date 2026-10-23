@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { inspect } from 'node:util'
 import { ChatControlReceiptSchema, ChatDeliveryReceiptSchema } from '@foreman-code/contracts'
-import { WorkActivationInputSchema } from '@foreman-code/contracts/current'
+import { WorkActivationInputSchema } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { hierarchyRuntimeFixture, coordinationOutput } from './helpers/hierarchyRuntimeFixture.js'
 import { ControlledWorkflowProvider } from './helpers/controlledWorkflowProvider.js'

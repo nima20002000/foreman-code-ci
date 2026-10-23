@@ -4,9 +4,9 @@ import { homedir, tmpdir } from 'node:os'
 import { testResourcesIdentity } from '@foreman-code/contracts/runtime-identity-node'
 import { resolveProductEnvironment } from '@foreman-code/contracts/product-environment'
 import type { ApiConfig } from '../config.js'
-import { defaultFileStorageRoot, workspaceStorageRoot } from './storageRoots.js'
+import { defaultFileStorageRoot } from '../modules/files/storage.js'
+import { workspaceStorageRoot } from '../modules/workspaces/storage.js'
 import { logFilePath } from './logger.js'
-import { hostEnvironment } from '../shared/process.js'
 
 function assertTestRoot(resource: { directory: string; token: string }): void {
   if (!resource.directory || !/^[0-9a-f-]{36}$/.test(resource.token)) throw new Error('Test root ownership is required')
@@ -44,7 +44,7 @@ function assertTestPath(root: string, path: string): void {
 }
 
 export function readTestResourcesIdentity(config: ApiConfig): string | undefined {
-  const environment = resolveProductEnvironment(hostEnvironment())
+  const environment = resolveProductEnvironment(process.env)
   if (!environment.FOREMAN_CODE_TEST_ROOT && !environment.FOREMAN_CODE_TEST_OWNER) return undefined
   const resource = { directory: environment.FOREMAN_CODE_TEST_ROOT!, token: environment.FOREMAN_CODE_TEST_OWNER! }
   assertTestRoot(resource)

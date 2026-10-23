@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { runInspectionKey, type RepeatGraphScopeCurrent, type RunExecutionDetail, type RunExecutionSummary, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
-import { WorkflowBoardProvider } from '../../board-core'
+import { runInspectionKey, type RepeatGraphScopeV3, type RunExecutionDetail, type RunExecutionSummary, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import { WorkflowBoardProvider } from '../context'
 import { ExecutionInspector } from './ExecutionInspector'
 
 // Component scenario: the Run-inspection reads are stubbed at the query-hook boundary with a failed
@@ -18,9 +18,9 @@ vi.mock('./queries', async (original) => {
   }
 })
 
-const scope = { workspaceId: 'workspace-a', workflowId: 'workflow-a', runId: 'run-a', workflowVersionId: 'workflow-version-a' } as RepeatGraphScopeCurrent
+const scope = { workspaceId: 'workspace-a', workflowId: 'workflow-a', runId: 'run-a', workflowVersionId: 'workflow-version-a' } as RepeatGraphScopeV3
 const version = { id: scope.workflowVersionId, agentConfigurationVersionIds: { 'agent-1': 'configuration-1' },
-  definition: { nodes: [{ id: 'review', name: 'Review', agentId: 'agent-1' }], edges: [] } } as unknown as WorkflowVersionCurrent
+  definition: { nodes: [{ id: 'review', name: 'Review', agentId: 'agent-1' }], edges: [] } } as unknown as WorkflowVersionV3
 const summary = { workflowNodeId: 'review', agentId: 'agent-1', agentConfigurationVersionId: 'configuration-1', executionId: 'exec-a',
   attempt: 1, state: 'completed', createdAt: '2026-10-01T00:00:00.000Z', acceptedResultAvailable: false } as unknown as RunExecutionSummary
 

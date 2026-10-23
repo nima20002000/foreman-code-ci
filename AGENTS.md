@@ -132,11 +132,6 @@ Editing an exempt file requires fixing its violations. `node scripts/lint-baseli
   or below 30 s; slow work belongs in integration tests.
 - `scripts/check-import-cycles.mjs` (API lint): no runtime import cycles in
   `apps/api/src`; move shared code into a module both sides import.
-- `scripts/check-api-module-boundaries.mjs` (API lint): a module under
-  `apps/api/src/modules/` imports another module only through its `index.ts`,
-  and two modules never import each other. Violations that predate the check
-  are in `scripts/api-module-boundaries-pending.mjs`; that list only shrinks
-  (`--prune` removes fixed lines).
 - `scripts/check-test-names.mjs` (API lint): name test files after behavior,
   not tickets, waves, lanes, rounds or agents (`eng04-`, `pr17-`, `w08-`).
 

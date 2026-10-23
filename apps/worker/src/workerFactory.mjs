@@ -1,14 +1,17 @@
-import { RemoteOperationJournal, createWorkerExecutionDomains } from '@foreman-code/api/worker/runs';
+import { RemoteOperationJournal } from '../../../apps/api/src/modules/runs/remote/operationJournal.ts';
 import { lstat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { createInstalledBrowserComposition } from '@foreman-code/api/worker/collaboration';
+import { createInstalledBrowserComposition } from '../../../apps/api/src/modules/collaboration/workerBrowser.ts';
 import { createWorkerBrowserRuntime } from './browserRuntime.mjs';
 import { createWorkerBrowserDeviceExtension } from './browserDeviceExtension.mjs';
-import { createInstalledWorkerDomains, createWorkerConnection } from '@foreman-code/api/worker/devices';
-import { codexQualificationSuite, qualificationRevisionWithIdentity, registerWorkerMcpInstallation } from '@foreman-code/api/worker/harnesses';
+import { createInstalledWorkerDomains } from '../../../apps/api/src/modules/devices/installedWorkerDomains.ts';
+import { codexQualificationSuite } from '../../../apps/api/src/modules/harnesses/qualification/suites/codex.ts';
+import { qualificationRevisionWithIdentity } from '../../../apps/api/src/modules/harnesses/qualification/identity.ts';
 import { loadApprovedRoots } from './approvedRoots.mjs';
+import { createWorkerExecutionDomains } from '../../../apps/api/src/modules/runs/remote/workerComposition.ts';
 import { mkdir, readFile, realpath } from 'node:fs/promises';
 import { loadOrCreateWorkerIdentity, loadWorkerPairing } from '../../../packages/contracts/src/deviceIdentityNode.ts';
+import { createWorkerConnection } from '../../../apps/api/src/modules/devices/workerConnection.ts';
 import { hostFacts, requirePrivateDirectory, WorkerError } from './diagnostics.mjs';
 import { validateManifest, requireReleaseState } from './installation.mjs';
 import { startWorker, acquireWorkerLock } from './runtime.mjs';
@@ -17,21 +20,22 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { workerUpdateExtension } from './update.mjs';
 import { createInstalledWorkerUpdater } from './installedUpdater.mjs';
-import { loadWorkerRsyncEntrypoint } from '@foreman-code/api/worker/byte-transfer';
+import { loadWorkerRsyncEntrypoint } from '../../../apps/api/src/modules/byte-transfer/installedEntrypoints.ts';
 import { ensurePairedManagedSetup } from './managedSetup.mjs';
 import { refreshWorkflowSelection } from './workflowSelection.mjs';
+import { registerWorkerMcpInstallation } from '../../../apps/api/src/modules/harnesses/workerMcpInstallation.ts';
 
 import { readUpdateRecord } from './updateSupervisor.mjs';
 import { WORKER_UPDATE_NAMESPACE } from '../../../packages/contracts/src/workerUpdate.ts';
 import { runWorkerStartupSmoke, workerCiStartupStatus, runCiInstallSmoke } from './ciInstallSmoke.mjs';
 // The Worker's CI context: the host services the API adapter implements, without Main's server ports.
-import { ciPlatform } from '@foreman-code/api/worker/ci';
+import { ciPlatform } from '../../../apps/api/src/modules/ci/platform.ts';
 import { createCiContext } from '@foreman-code/ci/environment';
 import { HostCiRunner } from '@foreman-code/ci/runner';
 import { isDeepStrictEqual } from 'node:util';
 import { WorkerArtifactReplySchema, WorkerArtifactManifestSchema } from '../../../packages/contracts/src/workerUpdate.ts';
 import { workerArtifactContentSha256 } from '../../../packages/contracts/src/workerArtifactContentNode.mjs';
-import { workerBundleReadiness, requireWorkerBundleReady } from '@foreman-code/api/worker/computers';
+import { workerBundleReadiness, requireWorkerBundleReady } from '../../../apps/api/src/modules/computers/workerBundleReadiness.ts';
 
 const ciContext = createCiContext(ciPlatform);
 
@@ -45,8 +49,8 @@ export { inspectManagedInstallation } from './managedInstallation.mjs';
 export { createWorkerConnection };
 export { approvedRootExtensions, createWorkerExecutionDomains };
 // Arbitrary paths use explicit local approval; managed storage is qualified during pairing.
-export { qualifyApprovedRootAllowlist } from '@foreman-code/api/worker/sources';
-export { captureInstalledRuntimeConfiguration, captureInstalledRuntimeConfigurationRecord } from '@foreman-code/api/worker/jobs';
+export { qualifyApprovedRootAllowlist } from '../../../apps/api/src/modules/sources/rootAttestation.ts';
+export { captureInstalledRuntimeConfiguration, captureInstalledRuntimeConfigurationRecord } from '../../../apps/api/src/modules/jobs/installedRuntimeHost.ts';
 
 export async function prepareWorkerState(stateDirectory) {
   const facts = await hostFacts(process.env.HOME ?? '', [stateDirectory]);

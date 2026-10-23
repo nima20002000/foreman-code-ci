@@ -9,7 +9,7 @@ import { HarnessExecutionSchema, MessageSchema, type Message, type NativeSession
 import { AgentChatTurnSchema, type AgentChatContext, type AgentChatTurn } from '@foreman-code/contracts/agent-chat'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { RunBoardSnapshotSchema } from '@foreman-code/contracts/run-snapshots'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { AgentChatService } from '../src/modules/conversations/agentChat.js'
 import { agentChatCorrelation, agentChatKey, type AgentConversationRow, type PostgresAgentChatRepository } from '../src/modules/conversations/agentChatRepository.js'
 import { PostgresOperatorConversationRepository } from '../src/modules/conversations/operatorChatRepository.js'
@@ -17,11 +17,11 @@ import { runChatStorageKey } from '../src/modules/conversations/selectedRunChat.
 import type { NativeSteerInput } from '../src/modules/harnesses/port.js'
 import type { PostgresRunRepository } from '../src/modules/runs/postgres.js'
 import { qualifiedAgentChatSteer } from '../src/modules/conversations/chatSteerQualification.js'
-import { ScriptedChatNative } from './helpers/agentChatF5.js'
+import { AgentChatF5Native } from './helpers/agentChatF5.js'
 import { immutableVersionRow, isRunVersionRead, isSavedVersionRead } from './helpers/chatWorkflowVersion.js'
 import { deferred } from './helpers/deferred.js'
 
-class SteeringNative extends ScriptedChatNative {
+class SteeringNative extends AgentChatF5Native {
   readonly steerTurn = vi.fn(async (_session: NativeSessionReference, input: NativeSteerInput) => ({ nativeTurnId: input.expectedTurnId }))
 }
 
@@ -80,8 +80,7 @@ it('keeps new, in-steer replay and ordinary replay responses on the explicitly s
     if (sql.includes('origin_execution_id=$6')) return { rows: rows.filter((row) => row.workspace_id === values[0]
       && row.workflow_id === values[1] && row.origin_run_id === values[2] && row.workflow_node_id === values[3]
       && row.agent_id === values[4] && row.origin_execution_id === values[5]) }
-    // The source transcript read binds the execution, Run, node and Agent.
-    if (values.length === 4 && executions.some(item => item.id === values[0])) {
+    if (sql.includes('from harness_native_events')) {
       const execution = executions.find(item => item.id === values[0] && item.runId === values[1]
         && item.workflowNodeId === values[2] && item.agentId === values[3])
       return { rows: execution ? [{ item_key: 'source-reply', role: 'assistant',

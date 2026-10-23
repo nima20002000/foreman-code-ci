@@ -1,7 +1,7 @@
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { SavedRunDetailsSchema } from '@foreman-code/contracts/current'
+import { SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
 import type { ManagementAction, ManagementScope } from '@foreman-code/contracts/management'
 import { buildApp } from '../src/app.js'
 import { RunManagementService } from '../src/modules/runs/management.js'

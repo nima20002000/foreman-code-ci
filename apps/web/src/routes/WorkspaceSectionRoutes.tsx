@@ -3,18 +3,23 @@ import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 
 import '../shared/ui/resourceDirectory.css'
 
-import { ComputerSummaryCards } from '../features/computers'
+import { ComputerSummaryCards } from '../features/computers/ComputerSummaryCards'
 import { AgentsDirectory } from '../features/agents'
 import { ProjectFilesSection } from '../features/project-files'
 import { WorkflowDefaultsSettings, WorkspaceExecutionLocationSettings } from '../features/settings'
 import { useApprovalInboxStore } from '../features/approvals'
 import { WorkflowDirectory } from '../features/workflows'
-import { WorkspaceDetailPage, WorkspaceDirectory, useNavigationUiStore, type GlobalNavigationSection } from '../features/workspaces'
+import { WorkspaceDetailPage } from '../features/workspaces/WorkspaceDetailPage'
 import { Badge, Card, EmptyState, Icon, PageHeader, type IconName } from '../shared/ui/nocturne'
 import { WorkspaceShell, type WorkspaceSection } from '../shared/ui/WorkspaceShell'
 import { useCollaborationUISlots } from '../shared/ui/collaborationSlots'
 import { useManagedWorkspaceQuery } from '../shared/api/query'
-import { MemoryBoardSurface } from '../features/workflow-board'
+import { MemoryBoardSurface } from '../features/workflow-board/MemoryBoardSurface'
+import {
+  WorkspaceDirectory,
+  useNavigationUiStore,
+  type GlobalNavigationSection,
+} from '../features/workspaces'
 
 export function WorkspacesRouteEntry() {
   const activeWorkspaceId = useNavigationUiStore((state) => state.activeWorkspaceId)

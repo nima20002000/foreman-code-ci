@@ -4,10 +4,10 @@ import { expect, it, vi } from 'vitest'
 
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 
 it('persists failed command audits after rollback without borrowing another pool connection', async () => {
-  const db = await migratedDatabase()
+  const db = await agent3Database()
   const pool = new pg.Pool({ ...db.pool.options, max: 1, connectionTimeoutMillis: 1_000 })
   try {
     const caller = await new PostgresAccessService(db.pool).issue({

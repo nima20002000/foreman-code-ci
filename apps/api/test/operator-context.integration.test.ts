@@ -6,19 +6,19 @@ import {
 import {
   AgentMutationResultSchema, ManagedAgentDetailSchema, ManagedWorkspacePageSchema, ManagedWorkspaceSchema,
 } from '@foreman-code/contracts/management'
-import { SavedManagedWorkflowPageSchema, SavedManagedWorkflowSchema } from '@foreman-code/contracts/current'
+import { SavedManagedWorkflowPageSchema, SavedManagedWorkflowSchema } from '@foreman-code/contracts/wave25'
 import { describe, expect, it, vi } from 'vitest'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { selectedMainMcpForward } from '../src/modules/placement/workerMcpRelay.js'
 
 describe.skipIf(!postgresEnabled)('Operator context over authenticated MCP', () => {
   it('uses separate migrated databases for concurrent runtime fixtures', async () => {
-    const first = await migratedDatabase()
-    let second: Awaited<ReturnType<typeof migratedDatabase>> | undefined
+    const first = await agent3Database()
+    let second: Awaited<ReturnType<typeof agent3Database>> | undefined
     try {
-      second = await migratedDatabase()
+      second = await agent3Database()
       const readDatabase = async (fixture: typeof first) =>
         (await fixture.pool.query<{ name: string }>('select current_database() as name')).rows[0]!.name
       expect(await readDatabase(first)).not.toBe(await readDatabase(second))
@@ -80,12 +80,12 @@ describe.skipIf(!postgresEnabled)('Operator context over authenticated MCP', () 
     } finally { await f.close() }
   }, 60000)
 
-  it('looks up available schemas without prior discovery, rejects unavailable targets and shows requirements only with capabilities:read', async () => {
+  it('looks up available schemas without prior discovery, rejects denied targets and audits denied callers', async () => {
     const f = await currentOperatorIntegration()
     try {
       const update = vi.spyOn(f.services.workspaces, 'update')
       const lookup = async (name: string, includeOutputSchema = false) => {
-        const result = await f.client.callTool({ name: 'tool_schema', arguments: { name, includeOutputSchema } })
+        const result = await f.client.callTool({ name: 'operator_tool_schema_get', arguments: { name, includeOutputSchema } })
         expect(result.isError).not.toBe(true)
         expect(result.structuredContent).toBeUndefined()
         return OperatorToolSchemaResultSchema.parse(decodeMcpToolResult(result))
@@ -93,14 +93,14 @@ describe.skipIf(!postgresEnabled)('Operator context over authenticated MCP', () 
       const input = await lookup('workspace_update')
       expect(input).not.toHaveProperty('outputSchema')
       expect(input.inputSchema.required).toEqual(['workspaceId', 'expectedRevision'])
-      expect(input.permissionRequirements?.actions).toContain('workspaces:update')
+      expect(input.permissionRequirements.actions).toContain('workspaces:update')
       expect((await lookup('workspace_update', true)).outputSchema).toBeDefined()
       expect(update).not.toHaveBeenCalled()
       update.mockRestore()
       expect((await f.client.listTools()).tools.every((tool) => tool.outputSchema === undefined)).toBe(true)
 
       for (const name of ['device_main_identity_get', 'unknown_tool']) {
-        const unavailable = await f.client.callTool({ name: 'tool_schema', arguments: { name } })
+        const unavailable = await f.client.callTool({ name: 'operator_tool_schema_get', arguments: { name } })
         expect(unavailable.isError).toBe(true)
         expect(decodeMcpToolResult(unavailable)).toMatchObject({ error: { code: 'ACCESS_DENIED' } })
         expect(decodeMcpToolResult(unavailable)).not.toHaveProperty('inputSchema')
@@ -110,7 +110,7 @@ describe.skipIf(!postgresEnabled)('Operator context over authenticated MCP', () 
       const issued = await f.access.issue({ name: 'Schema reader', audience: 'operator',
         expiresAt: new Date(Date.now() + 600000), grants: [{ actions: ['capabilities:read'], scope: {} }] })
       const reader = await f.connect(issued.token)
-      const denied = await reader.callTool({ name: 'tool_schema', arguments: { name: 'workspace_update' } })
+      const denied = await reader.callTool({ name: 'operator_tool_schema_get', arguments: { name: 'workspace_update' } })
       expect(denied.isError).toBe(true)
       expect(decodeMcpToolResult(denied)).toMatchObject({ error: { code: 'ACCESS_DENIED' } })
       expect(denied).not.toHaveProperty('structuredContent')
@@ -119,16 +119,16 @@ describe.skipIf(!postgresEnabled)('Operator context over authenticated MCP', () 
       const noGrant = await f.access.issue({ name: 'No capability grant', audience: 'operator',
         expiresAt: new Date(Date.now() + 600000), grants: [{ actions: ['workspaces:read'], scope: {} }] })
       const restricted = await f.connect(noGrant.token)
-      const withoutRequirements = OperatorToolSchemaResultSchema.parse(decodeMcpToolResult(
-        await restricted.callTool({ name: 'tool_schema', arguments: { name: 'workspace_get' } })))
-      expect(withoutRequirements).not.toHaveProperty('permissionRequirements')
-      // Only a lookup of a tool the caller cannot use is denied and audited.
-      const audit = await f.db.pool.query('select sequence from management_audit where principal_id=$1', [issued.principal.id])
-      expect(audit.rowCount).toBeGreaterThan(0)
+      expect((await restricted.callTool({ name: 'operator_tool_schema_get', arguments: { name: 'workspace_get' } })).isError)
+        .toBe(true)
+      for (const principalId of [issued.principal.id, noGrant.principal.id]) {
+        const audit = await f.db.pool.query('select sequence from management_audit where principal_id=$1', [principalId])
+        expect(audit.rowCount).toBeGreaterThan(0)
+      }
       const compact = OperatorCompactCapabilitiesSchema.parse(decodeMcpToolResult(
         await reader.callTool({ name: 'operator_get_capabilities', arguments: {} }),
       ))
-      expect(compact.tools).toContain('operator_get_capabilities')
+      expect(compact.tools).toContain('operator_tool_schema_get')
       expect(compact.tools).not.toContain('workspace_update')
       expect(compact.grants).toEqual(issued.principal.grants)
       expect(compact.runtimeLimits).toEqual(expect.arrayContaining([

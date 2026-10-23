@@ -1,4 +1,4 @@
-import { logIgnoredError, settleObserved } from '../diagnostics/index.js'
+import { logIgnoredError, settleObserved } from '../diagnostics/ignoredError.js'
 import { errorMessage } from '@foreman-code/contracts/server-kit'
 import { assertClaudeFullAccess } from './nativeWorkflowConfiguration.js'
 import { isDeepStrictEqual } from 'node:util'
@@ -11,8 +11,8 @@ import { CODEX_INTERACTION_SUPPORT, HarnessDefaultsSchema, HarnessQualificationS
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 
 import { requireAuthorization } from '../access/policy.js'
-import { PostgresCommandCoordinator } from '../commands/index.js'
-import type { PostgresSettingsRepository } from '../settings/index.js'
+import { PostgresCommandCoordinator } from '../commands/postgres.js'
+import type { PostgresSettingsRepository } from '../settings/postgres.js'
 import type { HarnessConfigurationQualifier } from './port.js'
 import { DomainError } from '../errors.js'
 import { ClaudeSetupOptionsSchema } from '@foreman-code/contracts/claude'

@@ -16,7 +16,6 @@ import type { ClaudeSdkClient, ClaudeSdkSession } from './port.js'
 import { ClaudeFullAccessConfigurationSchema } from '@foreman-code/contracts/claude'
 import { CLAUDE_PROFILE_CHECK_REVISION } from './profileRevision.js'
 import { sha256Hex } from '../../../shared/hash.js'
-import { hostEnvironment } from '../../../shared/process.js'
 
 const digest = (value: unknown) => sha256Hex(JSON.stringify(value))
 const exists = async (path: string) => readFile(path).then(() => true, () => false)
@@ -42,7 +41,7 @@ export async function qualifyClaudeNativeProfile(input: {
   const ambient = join(directory, 'ambient-hook.txt')
   const quotedAmbient = `'${ambient.replaceAll("'", "'\\''")}'`
   await writeFile(join(cwd, '.claude', 'settings.json'), JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: `printf ambient > ${quotedAmbient}` }] }] } }), { mode: 0o600 })
-  const compiled = claudeCandidateConfiguration(configuration, cwd, hostEnvironment(), input.apiKey)
+  const compiled = claudeCandidateConfiguration(configuration, cwd, process.env, input.apiKey)
   const evidence: Record<string, unknown> = { checkId: input.checkId, pin: input.pin, configurationFingerprint: input.value.configurationFingerprint,
     cwd, model: compiled.model, effort: compiled.effort, sandbox: compiled.sandbox, sessions: [], hooks: [], receipts: [] }
   const passed = new Set<typeof CLAUDE_QUALIFICATION_CHECKS[number]>()

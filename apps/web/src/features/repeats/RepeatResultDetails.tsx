@@ -1,5 +1,5 @@
 import { useInfiniteQuery } from '@tanstack/react-query'
-import { sameWorkflowValue, type RepeatGraphCurrentState } from '@foreman-code/contracts/current'
+import { sameWorkflowValue, type RepeatGraphCurrentV3 } from '@foreman-code/contracts/wave25'
 import { Alert, Button } from '../../shared/ui/nocturne'
 import { sessionGeneration } from '../../shared/api/sessionBoundary'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
@@ -10,7 +10,7 @@ const renderJson = (value: unknown) => typeof value === 'string' ? value : JSON.
 
 /** Explicit private result access AFTER a qualified canonical read. It never
  * supplies Run status. Every result must match that cut's exact decision/digest. */
-export function RepeatResultDetails({ snapshot }: { snapshot: RepeatGraphCurrentState }) {
+export function RepeatResultDetails({ snapshot }: { snapshot: RepeatGraphCurrentV3 }) {
   const { scope } = snapshot
   const query = useInfiniteQuery({
     queryKey: ['workbench', 'repeat-accepted-results', sessionGeneration(), scope,

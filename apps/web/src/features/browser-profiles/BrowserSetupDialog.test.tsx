@@ -5,7 +5,7 @@ import { expect, it, vi } from 'vitest'
 import { BrowserSetupDialog } from './BrowserSetupDialog'
 import type { BrowserProfilesPort } from './types'
 import { browserFilesFake, browserPortFake, browserRead, frame } from '../agent-browser/testFixtures'
-import type { BrowserSessionRead } from '../agent-browser'
+import type { BrowserSessionRead } from '../agent-browser/types'
 
 function setupRead(tabIds: string[], selectedTabId: string): BrowserSessionRead {
   const base = browserRead('setup-session')

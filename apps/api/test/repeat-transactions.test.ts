@@ -6,7 +6,7 @@ import {
   RepeatWorkflowVersionV1Schema, makeCurrentWorkflowFixture, parseRepeatExitResultV1,
   validateRepeatDecisionV1, validateRepeatSuccessorV1, canonicalGraphJson,
   type RepeatOccurrenceV1,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import { ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 import { DomainError } from '../src/modules/errors.js'
 import { SourceError } from '../src/modules/sources/manifest.js'

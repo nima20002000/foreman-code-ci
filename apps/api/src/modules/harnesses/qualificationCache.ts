@@ -1,4 +1,4 @@
-import { logger } from '../diagnostics/index.js'
+import { logger } from '../diagnostics/logger.js'
 
 interface Entry<T> {
   expiresAt: number

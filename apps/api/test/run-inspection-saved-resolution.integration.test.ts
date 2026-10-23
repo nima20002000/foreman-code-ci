@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import * as terminalResolution from '../src/modules/runs/repeatNode.js'
 import {
   RUN_INSPECTION_TOOLS, RunExecutionDetailSchema, makeCurrentWorkflowFixture,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { postgresEnabled } from './helpers/database.js'
 import {

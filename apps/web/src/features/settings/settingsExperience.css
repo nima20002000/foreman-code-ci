@@ -83,7 +83,7 @@
 .settings-single-column--compact > .n-field { width: 100%; max-width: 360px; }
 .settings-choice-footer .operator-mcp-status { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--n-muted); }
 .settings-choice-footer small { color: var(--n-muted); }
-.settings-choice-footer .operator-mcp-error { flex-basis: 100%; color: var(--n-danger); overflow-wrap: anywhere; }
+.settings-choice-footer .operator-mcp-error { flex-basis: 100%; color: var(--n-danger, var(--n-text)); overflow-wrap: anywhere; }
 .settings-choice-links { display: inline-flex; gap: .25rem; }
 /* Harness cards: one control row (Operator default, Operator MCP, links), then the accounts block full width. */
 .harness-card-controls { display: flex; flex: 1 1 100%; flex-wrap: wrap; align-items: center; gap: .5rem 1.25rem; min-height: 2.25rem; }

@@ -1,7 +1,7 @@
 import type { z } from 'zod'
 import type { BrowserLoginEvidenceSchema, BrowserProfileSchema, BrowserProfileReplicaSchema,
   BrowserProfileSyncJobSchema } from '@foreman-code/contracts/browser-profiles'
-import type { BrowserSession } from '../agent-browser'
+import type { BrowserSession } from '../agent-browser/types'
 
 export type BrowserProfile = z.infer<typeof BrowserProfileSchema>
 export type BrowserProfileReplica = z.infer<typeof BrowserProfileReplicaSchema>

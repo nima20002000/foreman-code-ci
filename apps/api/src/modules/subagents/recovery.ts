@@ -1,4 +1,4 @@
-import { logIgnoredError } from '../diagnostics/index.js'
+import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import { DomainError } from '../errors.js'
 import { HarnessNativeEventSchema, NativeSessionReferenceSchema } from '@foreman-code/contracts'
 import { appendNativeEvent } from '../runs/nativeEvents.js'

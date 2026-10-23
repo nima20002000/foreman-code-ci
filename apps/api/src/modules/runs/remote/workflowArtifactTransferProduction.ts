@@ -1,6 +1,6 @@
 import { TransferIntentSchema } from '@foreman-code/contracts/byte-transfer'
 import type { DeviceExtensionRegistration } from '../../devices/deviceApplicationChannel.js'
-import { BYTE_TRANSFER_NAMESPACE } from '../../byte-transfer/index.js'
+import { BYTE_TRANSFER_NAMESPACE } from '../../byte-transfer/carrier.js'
 import { BYTE_TRANSFER_POLICY } from '@foreman-code/contracts/byte-transfer'
 import { DomainError } from '../../errors.js'
 import type { createWorkflowArtifactReceiver } from './workflowArtifactReceiver.js'

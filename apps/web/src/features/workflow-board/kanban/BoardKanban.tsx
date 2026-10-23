@@ -4,12 +4,14 @@ import { type MemoryBoardScope, type MemoryCard as Card, type WorkflowKanbanFram
 import { Button, Icon } from '../../../shared/ui/nocturne'
 import '../dock/boardDock.css'
 import { useManagedWorkflowQuery } from '../../../shared/api/query'
-import {
-  MemoryCard, createMemoryBoardClient, mergedMemoryItems, useMemoryBoard, useMemoryCards, errorMessage,
-  statusLabels, type MemoryBoardView, type MemoryChange, type MemoryNodeOption,
-} from '../../memory-boards'
+import { MemoryCard } from '../../memory-boards/MemoryCard'
+import { createMemoryBoardClient } from '../../memory-boards/client'
+import { mergedMemoryItems, useMemoryBoard, useMemoryCards } from '../../memory-boards/queries'
+import { errorMessage, statusLabels } from '../../memory-boards/presentation'
+import type { MemoryBoardView, MemoryChange, MemoryNodeOption } from '../../memory-boards/ports'
 import { PulseFlight, type EdgePulse } from '../../graph/SignalEdgeShape'
-import { useFloatingCurve, useBoardSelection } from '../../board-core'
+import { useFloatingCurve } from '../../graph/signalEdge'
+import { useBoardSelection } from '../context'
 import { kanbanScope, reportKanbanActivity, useKanbanActivity, type KanbanCardActivity } from './kanbanActivity'
 import { KanbanCardDialog } from './KanbanCardDialog'
 import './boardKanban.css'

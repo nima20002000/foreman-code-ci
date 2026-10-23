@@ -5,7 +5,7 @@ import { controlDigest, workflowTargetRunId } from './workflowControlRecords.js'
 import { readWorkflowChatIdentity } from './workflowChatIdentity.js'
 import { withWorkflowChatRead } from './workflowChatRead.js'
 import type { WorkflowChatOwnerPort, WorkflowChatTarget } from './workflowControlTypes.js'
-import { readWorkflowNativeChat } from '../interactions/index.js'
+import { readWorkflowNativeChat } from '../interactions/workflowChatNativeRead.js'
 
 export async function readWorkflowChatChanges(pool: pg.Pool, owner: WorkflowChatOwnerPort,
   principal: Principal, target: WorkflowChatTarget, afterRevision?: string) {

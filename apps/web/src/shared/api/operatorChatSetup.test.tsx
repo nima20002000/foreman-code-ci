@@ -4,7 +4,7 @@ import { afterEach, expect, it } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { server } from '../../mocks/server'
 import { configuredOperatorSetup, unconfiguredOperatorSetup } from '../../features/operator-chat/operatorSetupTestFixture'
-import { OperatorSetupNotice } from '../../features/operator-chat'
+import { OperatorSetupNotice } from '../../features/operator-chat/OperatorSetupNotice'
 import { useOperatorChatSetup } from './operatorChatSetup'
 import { beginSessionChange, finishSessionChange } from './sessionBoundary'
 

@@ -1,12 +1,12 @@
 import {
   canonicalGraphJson, GraphDigestSchema, GraphSequenceSchema, REPEAT_GRAPH_LIMITS,
   repeatGraphStateFacts, repeatGraphResolutionKey,
-  type RepeatGraphFactCurrent, type RepeatGraphScopeCurrent, type RepeatGraphStateCurrent, type RepeatGraphBatchCurrent,
+  type RepeatGraphFactV3, type RepeatGraphScopeV3, type RepeatGraphStateV3, type RepeatGraphBatchV3,
   sameCanonicalGraphScope,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import type { RepeatEffect } from '../runs/repeatPostgres.js'
 import { repeatId, repeatSlotId } from '../runs/repeatResolution.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import type { GraphTransactionSql } from './connection.js'
 import { graphSourceDigest, readRepeatRunSourceLocked, repeatGraphBatchReceipt } from './publication.js'
 import { canonicalRepeatEffect, canonicalRepeatEffectReceipt } from './repeatPublication.js'
 import { boundedRepeatRows } from './repeatProjectionRows.js'
@@ -15,7 +15,7 @@ import { RunGraphError } from './errors.js'
 
 const fail = (): never => { throw new RunGraphError('GRAPH_INVARIANT_VIOLATION') }
 const equal = (a: unknown, b: unknown) => canonicalGraphJson(a) === canonicalGraphJson(b)
-function factKey(fact: RepeatGraphFactCurrent): string {
+function factKey(fact: RepeatGraphFactV3): string {
   switch (fact.type) {
     case 'repeat.run.state': return fact.type
     case 'repeat.occurrence': return `${fact.type}/${fact.occurrence.identity.occurrenceId}`
@@ -31,8 +31,8 @@ function factKey(fact: RepeatGraphFactCurrent): string {
  * lifecycle here is queued, fixed by the input.bind writer's exact contract.
  * Its immutable input/previous-attempt/identity/bindings must match the receipt.
  */
-export function repeatEffectFactsFromState(scope: RepeatGraphScopeCurrent, state: RepeatGraphStateCurrent,
-  effect: RepeatEffect): RepeatGraphFactCurrent[] {
+export function repeatEffectFactsFromState(scope: RepeatGraphScopeV3, state: RepeatGraphStateV3,
+  effect: RepeatEffect): RepeatGraphFactV3[] {
   switch (effect.kind) {
     case 'occurrence.create': {
       const occurrence = state.occurrences.find((item) => item.identity.occurrenceId === effect.entityId)
@@ -51,7 +51,7 @@ export function repeatEffectFactsFromState(scope: RepeatGraphScopeCurrent, state
       delete queued.continuedFromExecutionId
       const bindings = state.bindings.filter((item) => item.recipient.executionId === effect.entityId).sort((a, b) => a.ordinal - b.ordinal)
       return [{ type: 'repeat.execution', execution: { ...queued, state: 'queued', resultOutcome: null } },
-        ...bindings.map((binding): RepeatGraphFactCurrent => ({ type: 'repeat.input.bound', binding }))]
+        ...bindings.map((binding): RepeatGraphFactV3 => ({ type: 'repeat.input.bound', binding }))]
     }
     case 'node.inactive': {
       const resolutions = state.resolutions.filter((item) => !item.value.execution && repeatSlotId(scope.runId, item.ref) === effect.entityId)
@@ -100,7 +100,7 @@ interface ProofRow {
 /** One bounded SQL query per proof page, not a query for every execution. No
  * JOIN to retained batches: expiration and reset must not destroy source proof.
  */
-async function readProofs(sql: SqlTransaction, scope: RepeatGraphScopeCurrent, head: string,
+async function readProofs(sql: GraphTransactionSql, scope: RepeatGraphScopeV3, head: string,
   proofs: readonly SourceProof[]): Promise<ProofRow[]> {
   const result: ProofRow[] = []
   for (let offset = 0; offset < proofs.length; offset += 256) {
@@ -131,8 +131,8 @@ function validProof(row: ProofRow | undefined, proof: SourceProof, head: string)
  * head. Missing canonical publication is an error, never an unjournaled snapshot
  * silently labelled current, including at head 0 or after an oversize reset.
  */
-export async function assertRepeatGraphCommittedState(sql: SqlTransaction, scope: RepeatGraphScopeCurrent,
-  head: string, state: RepeatGraphStateCurrent): Promise<void> {
+export async function assertRepeatGraphCommittedState(sql: GraphTransactionSql, scope: RepeatGraphScopeV3,
+  head: string, state: RepeatGraphStateV3): Promise<void> {
   GraphSequenceSchema.parse(head)
   const raw = boundedRepeatRows((await sql.query<{ effect_kind: RepeatEffect['kind']; entity_id: string; payload_digest: string }>(
     `select effect_kind,entity_id,payload_digest from run_repeat_effects where run_id=$1 order by effect_kind,entity_id limit $2`,
@@ -165,7 +165,7 @@ export async function assertRepeatGraphCommittedState(sql: SqlTransaction, scope
   const launches = new Map(launchRows.map((row) => [row.entity_id, row.effect_digest]))
   const current: SourceProof[] = [], candidates: { native: number; launch: number | null }[] = []
   for (const execution of live) {
-    const facts: RepeatGraphFactCurrent[] = [{ type: 'repeat.execution', execution }]
+    const facts: RepeatGraphFactV3[] = [{ type: 'repeat.execution', execution }]
     const native = current.push({ source_kind: 'execution', source_revision: '1', source_id: null, source_digest: null,
       semantic_digest: graphSourceDigest(facts), effect_kind: null, entity_id: null, effect_digest: null }) - 1
     let launch: number | null = null
@@ -213,8 +213,8 @@ export async function assertRepeatGraphCommittedState(sql: SqlTransaction, scope
  * ordered semantic body and prove its source/effect first position is THIS batch.
  * A rewritten/reordered payload, replayed duplicate or orphan delta fails closed.
  */
-export async function assertRepeatGraphBatchesCommitted(sql: SqlTransaction, scope: RepeatGraphScopeCurrent,
-  head: string, batches: readonly RepeatGraphBatchCurrent[]): Promise<void> {
+export async function assertRepeatGraphBatchesCommitted(sql: GraphTransactionSql, scope: RepeatGraphScopeV3,
+  head: string, batches: readonly RepeatGraphBatchV3[]): Promise<void> {
   const proofs: SourceProof[] = [], sequences: string[] = [], seen = new Set<string>()
   for (const batch of batches) {
     if (!sameCanonicalGraphScope(batch.scope, scope)) return fail()
@@ -223,7 +223,7 @@ export async function assertRepeatGraphBatchesCommitted(sql: SqlTransaction, sco
       source_id: envelope.evidence.sourceId, source_digest: envelope.sourceDigest, semantic_digest: envelope.semanticDigest,
       effect_kind: null, entity_id: null, effect_digest: null })
     sequences.push(batch.sequence)
-    const groups = new Map<string, RepeatGraphBatchCurrent['events']>()
+    const groups = new Map<string, RepeatGraphBatchV3['events']>()
     for (const event of batch.events) {
       const key = canonicalGraphJson(event.evidence)
       const group = groups.get(key) ?? []

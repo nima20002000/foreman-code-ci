@@ -5,7 +5,7 @@ import { newAgentMemoryBoardAccess } from './collaborationTools.js';
 import { collaborationContractFixtures as fixture } from './collaborationFixtures.js';
 import { DEFAULT_AGENT_DEFAULTS, agentTemplateForRole } from './index.js';
 import { AgentCreateInputSchema, AgentDefaultsUpdateInputSchema, GraphDraftOperationSchema } from './management/index.js';
-import { PublicGraphTopologySchema } from './current/graphPrimitives.js';
+import { PublicGraphTopologySchema } from './wave25/graphPrimitives.js';
 
 describe('hierarchy identity and routing contracts', () => {
   const hierarchy = { version: 1, masterNodeId: 'master', parents: [

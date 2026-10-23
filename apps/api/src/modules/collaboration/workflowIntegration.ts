@@ -1,5 +1,5 @@
 import { BoardDigestSchema, type CoordinatorConsultationBinding, type HarnessExecution } from '@foreman-code/contracts'
-import type { AcceptedWorkflowRunCurrent, WorkflowVersionCurrent } from '@foreman-code/contracts/current'
+import type { AcceptedWorkflowRunV3, WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import type { RunOwnership } from '../runs/ownership.js'
 import type { CollaborationPorts } from './ports.js'
 import { createWorkflowCollaborationHooks } from './workflowHooks.js'
@@ -25,13 +25,13 @@ export class WorkflowCollaborationIntegration {
     this.browser = new WorkflowBrowserOwnership(ports.browser)
     this.consultationBrowser = new ConsultationBrowserOwnership(ports.browser)
   }
-  async prepare(owner: RunOwnership, run: AcceptedWorkflowRunCurrent, version: WorkflowVersionCurrent,
+  async prepare(owner: RunOwnership, run: AcceptedWorkflowRunV3, version: WorkflowVersionV3,
     execution: HarnessExecution): Promise<void> {
     await this.memory.prepare(owner, run, version, execution)
     owner.assertOwned()
     await this.browser.prepare(owner, run, version, execution, () => this.computerId(owner, execution))
   }
-  async readPrompt(owner: RunOwnership, execution: HarnessExecution, version: WorkflowVersionCurrent): Promise<string | undefined> {
+  async readPrompt(owner: RunOwnership, execution: HarnessExecution, version: WorkflowVersionV3): Promise<string | undefined> {
     const memory = await this.memory.readPrompt(owner, execution)
     const browser = await this.browser.readPrompt(owner, execution, version)
     return [memory, browser].filter(Boolean).join('\n\n') || undefined
@@ -57,7 +57,7 @@ export class WorkflowCollaborationIntegration {
     ].join('\n')
   }
   release(owner: RunOwnership, execution: HarnessExecution, reason: 'terminal' | 'stop',
-    version: WorkflowVersionCurrent): Promise<void> {
+    version: WorkflowVersionV3): Promise<void> {
     return this.browser.release(owner, execution, reason, version)
   }
   async prepareConsultation(owner: RunOwnership, execution: HarnessExecution,

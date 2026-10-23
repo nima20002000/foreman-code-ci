@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { expect } from 'vitest'
 import { NativeSessionReferenceSchema } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './currentOperatorIntegration.js'
 import { readCurrentExecutions } from './workflowDatabase.js'
 import { assertSettled, versionCount, type SaveFixture } from './saveAdmission.testSupport.js'

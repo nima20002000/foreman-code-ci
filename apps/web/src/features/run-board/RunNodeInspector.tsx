@@ -1,17 +1,21 @@
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
 import type { RunBoardNodeSnapshot } from '@foreman-code/contracts/run-snapshots'
-import type { RepeatGraphScopeCurrent, RunExecutionSummary } from '@foreman-code/contracts/current'
+import type { RepeatGraphScopeV3, RunExecutionSummary } from '@foreman-code/contracts/wave25'
 import { agentProductRoleLabel, type WorkflowHierarchyReadResult } from '@foreman-code/contracts'
 import { useHarnessSessionEpoch } from '../../shared/api/harnessSettings'
 import { sessionIsSwitching } from '../../shared/api/sessionBoundary'
 import { ApiError } from '../../shared/api/client'
 import { useBlockingReadError } from '../../shared/api/readFailure'
 import { Button, Icon, IconButton } from '../../shared/ui/nocturne'
-import { type SelectedRunState, isRunAccessError, runReadErrorLabel } from '../runs-selector'
-import { PinnedProviderAccount } from '../provider-accounts'
-import { SelectedNodePlacement } from '../node-placement'
-import { readRunExecution, readRunExecutions, ExecutionBranch, JsonValue, refreshFirstInspectionPage } from '../workflow-board'
-import { JobRunResult } from '../jobs'
+import type { SelectedRunState } from '../runs-selector/useSelectedRun'
+import { isRunAccessError, runReadErrorLabel } from '../runs-selector/query'
+import { PinnedProviderAccount } from '../provider-accounts/PinnedProviderAccount'
+import { SelectedNodePlacement } from '../node-placement/SelectedNodePlacement'
+import { readRunExecution, readRunExecutions } from '../workflow-board/runDetailsClient'
+import { ExecutionBranch } from '../workflow-board/inspect/ExecutionBranch'
+import { JsonValue } from '../workflow-board/inspect/JsonValue'
+import { refreshFirstInspectionPage } from '../workflow-board/inspect/queries'
+import { JobRunResult } from '../jobs/JobRunResult'
 import type { AvailableRunBoardSnapshot } from './model'
 import { readForRunVisit, runNodeInspectionKey, useRunNodeRead } from './inspectionQuery'
 import { AgentExecutionResults } from './AgentExecutionResults'
@@ -42,7 +46,7 @@ export function RunNodeInspector({ selection, snapshot, nodeId, executionId, onI
     && agent.agentId === node.agentId && agent.configurationVersionId === node.agentConfigurationVersionId) : undefined
   const parentId = saved?.hierarchy?.parents.find(member => member.workflowNodeId === nodeId)?.parentNodeId
   const parent = parentId ? snapshot.nodes.find(item => item.id === parentId) : undefined
-  const scope: RepeatGraphScopeCurrent = { workspaceId: snapshot.workspaceId, workflowId: snapshot.workflowId,
+  const scope: RepeatGraphScopeV3 = { workspaceId: snapshot.workspaceId, workflowId: snapshot.workflowId,
     runId: snapshot.runId, workflowVersionId: snapshot.workflowVersionId, executionSemanticsVersion: 3 }
   const queryKey = [...runNodeInspectionKey(selection), nodeId, 'executions']
   const pages = useInfiniteQuery({
@@ -107,7 +111,7 @@ function stateLabel(state: string) {
 }
 
 function NodeExecutionResult({ selection, scope, node, executionId }: {
-  selection: SelectedRunState; scope: RepeatGraphScopeCurrent; node: RunBoardNodeSnapshot; executionId: string
+  selection: SelectedRunState; scope: RepeatGraphScopeV3; node: RunBoardNodeSnapshot; executionId: string
 }) {
   const query = useRunNodeRead(selection, [node.id, executionId], signal => readRunExecution(scope, executionId, { signal }))
   const blocked = useBlockingReadError(query)

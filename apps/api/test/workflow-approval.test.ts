@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_CODEX_ADVANCED_CONFIGURATION, NATIVE_INTERACTION_FIXTURES,
   type HarnessConfiguration } from '@foreman-code/contracts'
-import { ExecutableWorkflowCurrentSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { ExecutableWorkflowV3Schema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { validateReviewerBootstrap } from '../src/modules/workflows/reviewerBootstrap.js'
 import { assertOrchestratorInteractionAuthority } from '../src/modules/interactions/authorization.js'
 
@@ -20,7 +20,7 @@ function fixture() {
 // These are the shared executable validator and bootstrap used by current Save,
 // not an adapter from the deleted approval module or a runtime qualification.
 function validate(f: ReturnType<typeof fixture>) {
-  const { version, configurations } = ExecutableWorkflowCurrentSchema.parse({ version: f.version, configurations: f.configurations })
+  const { version, configurations } = ExecutableWorkflowV3Schema.parse({ version: f.version, configurations: f.configurations })
   validateReviewerBootstrap(version.definition, version.approval, configurations[0]!.harness, version.entryNodeId)
 }
 
@@ -72,7 +72,7 @@ describe('current workflow approval authority', () => {
   it('rejects incomplete Orchestrator selection at immutable executable validation', () => {
     const f = fixture()
     const approval = { handler: 'orchestrator' }
-    expect(ExecutableWorkflowCurrentSchema.safeParse({ configurations: f.configurations, version: { ...f.version, approval,
+    expect(ExecutableWorkflowV3Schema.safeParse({ configurations: f.configurations, version: { ...f.version, approval,
       definition: { ...f.version.definition, approval } } }).success).toBe(false)
   })
 
@@ -96,7 +96,7 @@ describe('current workflow approval authority', () => {
 
   it('rejects display-role spoofing and wrong-workflow or Worker designation', () => {
     const f = fixture()
-    expect(ExecutableWorkflowCurrentSchema.safeParse({ version: f.version,
+    expect(ExecutableWorkflowV3Schema.safeParse({ version: f.version,
       configurations: [{ ...f.configurations[0]!, productRole: 'coder', role: 'orchestrator' }, f.configurations[1]!] }).success).toBe(false)
     for (const designatedOrchestratorAgentId of [f.configurations[1]!.agentId, 'agent-other']) {
       const invalid = structuredClone(f)

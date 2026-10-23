@@ -7,18 +7,17 @@ function fixture(initialSource: ActivityMutationFence['source'] = { connectionId
   let record: OperatorActivityChange = { id: 'tool', requestId: 'request', kind: 'tool', title: 'Tool', status: 'running', output: 'transport' }
   let source = initialSource
   let revision = 0
-  // The statements bind different numbers of values: transaction control none, the owner fence four, the prior activity
-  // three, the activity upsert five (record at index 3) and the revision bump only the conversation id.
-  const client = { query: async (_text: string, values: unknown[] = []) => {
-    if (values.length === 0) return { rows: [], rowCount: 0 }
-    if (values.length === 4) return { rows: [{ id: 'conversation', harness: 'codex' }], rowCount: 1 }
-    if (values.length === 3) return { rows: [{ record, source_provenance: source }], rowCount: 1 }
-    if (values.length === 5) {
+  const client = { query: async (text: string, values: unknown[] = []) => {
+    const sql = text.replace(/\s+/g, ' ').trim()
+    if (sql.startsWith('select id,harness')) return { rows: [{ id: 'conversation', harness: 'codex' }], rowCount: 1 }
+    if (sql.startsWith('select record,source_provenance')) return { rows: [{ record, source_provenance: source }], rowCount: 1 }
+    if (sql.startsWith('insert into operator_conversation_activity')) {
       record = JSON.parse(values[3] as string); source = JSON.parse(values[4] as string); revision++
       return { rows: [{ record, sequence: '1', revision: String(revision) }], rowCount: 1 }
     }
-    if (values.length === 1) return { rows: [{ revision: String(revision) }], rowCount: 1 }
-    throw new Error(`Unexpected statement binding ${values.length} values`)
+    if (sql.startsWith('update operator_conversations')) return { rows: [{ revision: String(revision) }], rowCount: 1 }
+    if (sql === 'begin' || sql === 'commit' || sql === 'rollback') return { rows: [], rowCount: 0 }
+    throw new Error(`Unexpected SQL: ${sql}`)
   }, release() {} }
   const pool = { connect: async () => client } as unknown as pg.Pool
   const repository = new PostgresOperatorActivityRepository(pool)

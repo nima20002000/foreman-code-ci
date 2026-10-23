@@ -9,26 +9,26 @@ import { createCheckpointStore, type CheckpointStore } from '../src/infrastructu
 import { ScheduleOperatorCapabilitiesSchema } from '../src/mcp/operator/tools/workflowSchedules.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { buildProductionApp } from '../src/production.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
-import { onceSchedule } from './helpers/scheduleClockCases.js'
-import { scheduleDomainState, scheduleDispatchFixture, type ScheduleDatabase, type ScheduleDispatchFixture } from './helpers/scheduleFixture.js'
+import { sch11Once } from './helpers/scheduleClockCases.js'
+import { sch11DomainState, sch11Fixture, type Sch11Database, type Sch11Fixture } from './helpers/scheduleFixture.js'
 
 // Discovery must use the actual production Run service and schedule lifecycle,
 // not a boolean capability stub or a SQL fixture posing as a native binding.
 // Do not initialize native ownership or launch providers: the genuine production
 // composition must report timed admission as configured but currently paused.
 describe.skipIf(!postgresEnabled)('SCH-03 authenticated schedule capability composition', () => {
-  let database: ScheduleDatabase
-  let f: ScheduleDispatchFixture
+  let database: Sch11Database
+  let f: Sch11Fixture
   let app: ReturnType<typeof buildApp> | undefined
   let checkpoints: CheckpointStore | undefined
   let clients: Client[] = []
-  beforeAll(async () => { database = await migratedDatabase() }, 60_000)
+  beforeAll(async () => { database = await agent3Database() }, 60_000)
   afterAll(async () => { await database?.close() })
   beforeEach(async () => {
     clients = []; app = undefined; checkpoints = undefined
-    f = await scheduleDispatchFixture(database)
+    f = await sch11Fixture(database)
   }, 60_000)
   afterEach(async () => {
     await Promise.allSettled(clients.map((client) => client.close()))
@@ -36,7 +36,7 @@ describe.skipIf(!postgresEnabled)('SCH-03 authenticated schedule capability comp
   }, 30_000)
 
   it.each(['production', 'persistence-only'] as const)('SCH-03: %s discovery matches its composition and preserves grants/readback', async (composition) => {
-    const saved = await f.save({ ...onceSchedule, localDate: '2099-01-01' })
+    const saved = await f.save({ ...sch11Once, localDate: '2099-01-01' })
     if (composition === 'production') {
       const config: ApiConfig = {
         host: '127.0.0.1', port: 3000, readinessTimeoutMs: 2_000,
@@ -49,7 +49,7 @@ describe.skipIf(!postgresEnabled)('SCH-03 authenticated schedule capability comp
            },
       }
       checkpoints = createCheckpointStore(config.database.connectionString, config.checkpoints.schema, config.database)
-      // migratedDatabase already ran the registered migrations on its guarded,
+      // agent3Database already ran the registered migrations on its guarded,
       // isolated schema. Its pool remains owned by the shared fixture.
       app = buildProductionApp({ config, database: {
         pool: database.pool, ping: async () => { await database.pool.query('select 1') },
@@ -69,7 +69,7 @@ describe.skipIf(!postgresEnabled)('SCH-03 authenticated schedule capability comp
       return client
     }
     const owner = await connect(f.writer.token), reader = await connect(f.reader.token)
-    const before = await scheduleDomainState(f)
+    const before = await sch11DomainState(f)
     for (const [client, principal] of [[owner, f.writer.principal], [reader, f.reader.principal]] as const) {
       const result = await client.callTool({ name: 'operator_get_capabilities', arguments: { ...f.scope, detail: 'full' } })
       expect(result.isError, JSON.stringify(result)).not.toBe(true)
@@ -103,7 +103,7 @@ describe.skipIf(!postgresEnabled)('SCH-03 authenticated schedule capability comp
     const denied = await reader.callTool({ name: 'workflow_schedule_disable', arguments: f.command() })
     expect(denied.isError).toBe(true)
     expect(JSON.stringify(denied.content)).toContain('ACCESS_DENIED')
-    expect(await scheduleDomainState(f)).toEqual(before)
+    expect(await sch11DomainState(f)).toEqual(before)
     expect(await f.countRuns()).toBe(0)
   }, 60_000)
 })

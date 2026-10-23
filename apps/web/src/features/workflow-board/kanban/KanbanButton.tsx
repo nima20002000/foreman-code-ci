@@ -1,5 +1,5 @@
 import { Icon, IconButton } from '../../../shared/ui/nocturne'
-import { errorMessage } from '../../memory-boards'
+import { errorMessage } from '../../memory-boards/presentation'
 import { useKanbanDocked } from '../dock/boardObjects'
 import { useKanbanLayout } from './kanbanLayout'
 import './boardKanban.css'

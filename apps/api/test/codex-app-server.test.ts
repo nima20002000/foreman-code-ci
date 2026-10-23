@@ -3,7 +3,7 @@ import { appLauncherConnection } from '../src/modules/harnesses/appMcpLauncher.j
 import { nativeConnection } from '../src/modules/harnesses/nativeMcpCommon.js'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { canonicalGraphJson } from '@foreman-code/contracts/current'
+import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import { describe, it, vi } from 'vitest'
 import type { WorkflowNativeSessionStart, AgentChatNativeSessionStart } from '../src/modules/harnesses/port.js'
 import type { ThreadItem, Turn } from '../src/modules/harnesses/codexMethodTypes.js'

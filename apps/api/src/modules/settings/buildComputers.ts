@@ -1,5 +1,5 @@
 import { errorMessage } from '@foreman-code/contracts/server-kit'
-import { logIgnoredError } from '../diagnostics/index.js'
+import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import type pg from 'pg'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import {
@@ -11,7 +11,7 @@ import {
 import { sameDeviceProvisioningTarget, DeviceProvisioningTargetSchema, type DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import type { ManagementPrincipal, ManagementAction } from '@foreman-code/contracts/management'
 import type { DeviceRegistration } from '@foreman-code/contracts/device-identity'
-import type { PostgresCommandCoordinator } from '../commands/index.js'
+import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { requireAuthorization } from '../access/policy.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { assertDeviceHostInstallation } from '../devices/hostAuthorization.js'

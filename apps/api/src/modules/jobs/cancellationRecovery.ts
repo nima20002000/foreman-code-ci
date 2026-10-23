@@ -1,5 +1,5 @@
 import { JobRuntimeMeasurementRecordSchema } from '@foreman-code/contracts/job-verification-runtime'
-import { withTransaction, type SqlTransaction } from '../../infrastructure/transaction.js'
+import { withTransaction } from '../../infrastructure/transaction.js'
 import { createPublicKey, randomUUID, sign, verify } from 'node:crypto'
 import { isDeepStrictEqual as same } from 'node:util'
 import type pg from 'pg'
@@ -15,14 +15,14 @@ import { RemoteJobDispatchIntentSchema } from '@foreman-code/contracts/remote-jo
 import type { JobExecutionRecord } from '@foreman-code/contracts/job-verification'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { requireAuthorization } from '../access/policy.js'
-import { beforeGraphCommit } from '../run-graph/connection.js'
+import { beforeGraphCommit, type GraphTransactionSql } from '../run-graph/connection.js'
 import { PostgresCommandCoordinator, commandInputHash } from '../commands/postgres.js'
 import { readAcceptedJobCleanupSource } from '../runs/remote/jobAcceptedSource.js'
 import { PostgresSourceReservations, type SourceReservation } from '../sources/reservations.js'
 import { DomainError } from '../errors.js'
 import { JobRepository, type JobSql } from './repository.js'
 import type { PostgresJobDispatch } from './dispatch.js'
-import type { MainDeviceIdentity } from '../devices/index.js'
+import type { MainDeviceIdentity } from '../devices/mainIdentity.js'
 import { sha256Hex } from '../../shared/hash.js'
 
 const PROPOSE = 'job.cancellation-recovery.propose'
@@ -224,7 +224,7 @@ export class PostgresJobCancellationRecovery {
       authorize: async sql => { await this.authorize(sql, principal, workspaceId) },
       prepare: async () => {
         await this.dispatch.importCancellationClosure(workspaceId, executionId, input.closure.closure.receipt,
-          async (sql: SqlTransaction, execution) => {
+          async (sql: GraphTransactionSql, execution) => {
             await sql.query('select pg_advisory_xact_lock(hashtext($1))', [`job-cleanup:${input.recoveryId}`])
             const prior = (await sql.query<{ principal_id: string; command_id: string; input_hash: string; result: unknown }>(
               'select principal_id,command_id,input_hash,result from management_command_receipts where operation=$1 and target_key=$2 for share',

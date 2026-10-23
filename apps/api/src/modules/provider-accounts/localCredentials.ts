@@ -7,7 +7,6 @@ import {
 } from '@foreman-code/contracts/provider-accounts'
 import { DomainError } from '../errors.js'
 import { privateDirectory } from '../harnesses/recovery/storage.js'
-import { credentialFileName } from './accountStatus.js'
 
 async function secureDirectory(directory: string): Promise<void> {
   try {
@@ -127,7 +126,7 @@ export class LocalProviderCredentials {
     await this.assertAvailable(account.id)
     const { homePath, userHome } = this.paths(account.id)
     const files = [join(userHome, 'api-key'), join(userHome, '.claude.json')]
-    files.push(join(homePath, credentialFileName(account.provider)))
+    files.push(join(homePath, account.provider === 'codex' ? 'auth.json' : '.credentials.json'))
     const backup = new Map<string, Buffer | null>()
     for (const path of files) backup.set(path, await privateFile(path))
     return backup

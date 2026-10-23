@@ -6,7 +6,7 @@ import { server } from '../../mocks/server'
 import { createCurrentBoardMock } from '../../shared/mocks/currentBoard'
 import { currentWorkflowFixture } from '../../shared/mocks/currentWorkflow'
 import { installBrowserLocks } from '../../test/browserLocks'
-import { boardDraftContextKey } from '../board-core'
+import { boardDraftContextKey } from '../workflow-board/keys'
 import { PersistedWorkflowBoundary } from './PersistedWorkflowBoundary'
 import { useGraphDraftStore } from './store'
 

@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto'
 import { vi } from 'vitest'
 import { AgentConfigurationVersionSchema, DEFAULT_CODEX_ADVANCED_CONFIGURATION,
   DEFAULT_HARNESS_DEFAULTS, type ResolvedSkill, type CodexHarnessConfiguration } from '@foreman-code/contracts'
-import { ExecutableWorkflowCurrentSchema, makeCurrentWorkflowFixture, WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
+import { ExecutableWorkflowV3Schema, makeCurrentWorkflowFixture, WorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
 import { ApprovalPostgresSaver } from '../../src/infrastructure/approvalCheckpointSaver.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
@@ -21,8 +21,8 @@ import { PostgresApprovalBudgetRepository } from '../../src/modules/interactions
 import { ApprovalExecutionCoordinator } from '../../src/modules/interactions/execution.js'
 import { InteractionService } from '../../src/modules/interactions/service.js'
 import { ExecutionScopedNativeSessionManagerResolver } from '../../src/modules/interactions/runtimePorts.js'
-import { Wave25InteractionRepository } from '../../src/modules/interactions/current/repository.js'
-import { Wave25WorkerCredentialService } from '../../src/modules/interactions/current/credentials.js'
+import { Wave25InteractionRepository } from '../../src/modules/interactions/wave25/repository.js'
+import { Wave25WorkerCredentialService } from '../../src/modules/interactions/wave25/credentials.js'
 import { registerApprovalCheckpointResume } from '../../src/modules/runs/approvalCheckpointRegistration.js'
 import { continuationValidator } from '../../src/modules/runs/continuation.js'
 import { LangGraphWorkflowEngine } from '../../src/modules/runs/engine.js'
@@ -30,8 +30,7 @@ import { PostgresRunRepository } from '../../src/modules/runs/postgres.js'
 import { PostgresWorkflowRepository } from '../../src/modules/workflows/postgres.js'
 import { WorkspaceLocationService } from '../../src/modules/workspaces/location.js'
 import { CodexApprovalProvider, type ApprovalProviderOptions } from './codexApprovalProvider.js'
-import { seedWorkflowFixture } from './workflowDatabase.js'
-import { migratedDatabase } from './migratedDatabase.js'
+import { agent3Database, seedAgent3 } from './workflowDatabase.js'
 import type { RepeatRepositoryServices } from '../../src/modules/runs/repeatRepositoryHost.js'
 
 /** Real SQL, workflow engine, Codex adapter, credentials and approval services with replayed provider IO. */
@@ -41,11 +40,11 @@ export async function codexApprovalRuntime(handler: 'user' | 'orchestrator' = 'u
     reviewerRole?: 'orchestrator' | 'master'
     approvalPolicy?: 'never'
     skills?: ResolvedSkill[]
-    database?: Awaited<ReturnType<typeof migratedDatabase>>
+    database?: Awaited<ReturnType<typeof agent3Database>>
     sandbox?: CodexHarnessConfiguration['sandbox']
     preparePlacementExecution?: RepeatRepositoryServices['preparePlacementExecution']
   } = {}) {
-  const db = options.database ?? await migratedDatabase()
+  const db = options.database ?? await agent3Database()
   let engine: LangGraphWorkflowEngine | undefined
   const engines: LangGraphWorkflowEngine[] = []
   const adapters: CodexAppServerSessionManager[] = []
@@ -78,16 +77,16 @@ export async function codexApprovalRuntime(handler: 'user' | 'orchestrator' = 'u
       if (node.id !== entry.id) f.version.definition.edges.push({ id: `approval-${node.id}`,
         kind: 'approval', source: entry.id, target: node.id })
     }
-    f.version = agentWorkflowVersion(ExecutableWorkflowCurrentSchema.parse({ version: f.version, configurations: f.configurations }).version)
-    f.run = WorkflowRunCurrentSchema.parse({ ...f.run, approval, agentConfigurationVersionIds: f.version.agentConfigurationVersionIds })
-    await seedWorkflowFixture(db.pool, db.directory, f, { run: false, ...(options.skills ? { skills: options.skills } : {}) })
+    f.version = agentWorkflowVersion(ExecutableWorkflowV3Schema.parse({ version: f.version, configurations: f.configurations }).version)
+    f.run = WorkflowRunV3Schema.parse({ ...f.run, approval, agentConfigurationVersionIds: f.version.agentConfigurationVersionIds })
+    await seedAgent3(db.pool, db.directory, f, { run: false, ...(options.skills ? { skills: options.skills } : {}) })
     const access = new PostgresAccessService(db.pool)
     const authority = await access.issue({ name: 'Approval Run authority', audience: 'operator',
       expiresAt: new Date(Date.now() + 600000), grants: [
         { actions: ['runs:start', 'runs:stop'], scope: { workspaceIds: [f.scope.workspaceId], workflowIds: [f.scope.workflowId] } },
         { actions: ['workspace_locations:read'], scope: { workspaceIds: [f.scope.workspaceId] } },
       ] })
-    f.run = WorkflowRunCurrentSchema.parse({ ...f.run, authorizationPrincipalId: authority.principal.id })
+    f.run = WorkflowRunV3Schema.parse({ ...f.run, authorizationPrincipalId: authority.principal.id })
     await insertProviderRun(db.pool, f)
     const user = await access.issue({ name: 'Approval user', audience: 'user', expiresAt: new Date(Date.now() + 600000),
       grants: [{ actions: ['interactions:read', 'interactions:respond'], scope: {

@@ -8,29 +8,26 @@ import { HostHarnessOverrideSchema, type HostHarnessOverride } from '@foreman-co
 import { type AcceptedNodePlacement, type DispatchIntent, type SavedNodePlacement } from '@foreman-code/contracts/node-placement'
 import type { CanonicalMachineReference } from '@foreman-code/contracts/device-identity'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { type RunStartCurrentInput, sameWorkflowValue, workflowUsesAgentPlacements } from '@foreman-code/contracts/current'
-import { readImmutableWorkflowVersion, IMMUTABLE_WORKFLOW_VERSION_COLUMNS, type ImmutableWorkflowVersionRow } from '../workflows/index.js'
+import { type RunStartV3Input, sameWorkflowValue, workflowUsesAgentPlacements } from '@foreman-code/contracts/wave25'
+import { readImmutableWorkflowVersion, IMMUTABLE_WORKFLOW_VERSION_COLUMNS, type ImmutableWorkflowVersionRow } from '../workflows/immutableRead.js'
 import type { SourceAdmissionPort } from '../sources/admissionPorts.js'
 import type { WorkspaceRootPolicyPort } from '../sources/rootPolicyPorts.js'
-import type { RegistryHarnessSelection } from '../harnesses/index.js'
-import type { ProductionHarnessRegistry } from '../harnesses/index.js'
+import type { RegistryHarnessSelection } from '../harnesses/installationRegistry.js'
+import type { ProductionHarnessRegistry } from '../harnesses/productionRegistry.js'
 import type { RunOwnership } from '../runs/ownership.js'
 import type { RepeatNodeRef } from '../runs/repeatResolution.js'
-import {
-  beforeGraphCommit,
-  withExclusiveGraphConnection
-} from '../run-graph/index.js'
-import type { SqlQuery, SqlTransaction } from '../../infrastructure/transaction.js'
+import { beforeGraphCommit, type GraphSqlClient, type GraphTransactionSql,
+  withExclusiveGraphConnection } from '../run-graph/connection.js'
 import { requiredLocationAccess } from '../workspaces/location.js'
-import { WorkerExecutionPolicy } from '../settings/index.js'
-import { readLiveManagementPrincipal } from '../access/index.js'
-import { assertDeviceHostInstallation } from '../devices/index.js'
+import { WorkerExecutionPolicy } from '../settings/workerExecution.js'
+import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
+import { assertDeviceHostInstallation } from '../devices/hostAuthorization.js'
 import { DomainError } from '../errors.js'
-import { admitWhenChecked } from '../harnesses/index.js'
+import { admitWhenChecked } from '../harnesses/instanceSettings/profileCheckWait.js'
 import { readPlacementHarnessFacts } from './harnessFacts.js'
 import { freezePlacement, deriveDispatch, directoryIdentityHash, placementDigest } from './binding.js'
 import type { ProviderAccountResolver } from '../provider-accounts/service.js'
-import { legacyProviderAccountBinding } from '../provider-accounts/index.js'
+import { legacyProviderAccountBinding } from '../provider-accounts/acceptedBindings.js'
 import { readAcceptedPlacement, insertDispatchIntent } from './persistence.js'
 import type { RunPlacementAdmissionPort, PreparedRunPlacementAdmission } from './startPort.js'
 import { readLocalMainRoot, readPlacementRootBinding, resolveBoundRootPlacement, resolveLocalMainPlacement,
@@ -39,7 +36,7 @@ import { prepareRunRoots, type SelectedRunRoot } from './runRoots.js'
 import { bindGeneratedWorktreeRun, generatedWorktreePrefix } from '../sources/worktreeRequest.js'
 import type { SourceRootRecord } from '@foreman-code/contracts/source-admission'
 import type { WorktreeComputerSelection } from '@foreman-code/contracts/worktree-settings'
-import { assertWorktreeComputers } from '../workflows/index.js'
+import { assertWorktreeComputers } from '../workflows/worktreeComputers.js'
 import { startPlacementFence } from './startFence.js'
 
 function refreshSourcePlacement(
@@ -69,7 +66,7 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
       hosts: readonly CanonicalMachineReference[], signal?: AbortSignal,
     ) => Promise<void>, private readonly accounts?: ProviderAccountResolver,
     private readonly assertBundleReady?: (host: CanonicalMachineReference) => Promise<void>) {}
-  async prepare(input: RunStartCurrentInput, principal: ManagementPrincipal,
+  async prepare(input: RunStartV3Input, principal: ManagementPrincipal,
     signal?: AbortSignal, options: {
       source: 'http' | 'mcp'; sourcePreparationStarted?: () => void
     } = { source: 'mcp' }): Promise<PreparedRunPlacementAdmission | undefined> {
@@ -111,14 +108,14 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
       if (!sameWorkflowValue(version.agentConfigurationVersionIds, input.expectedAgentConfigurationVersionIds)) this.conflict()
       const nodes = version.definition.nodes.filter(node => node.kind !== 'job')
       if (!workflowUsesAgentPlacements(version.definition) && !initial.repository) return undefined
-      const assertRepository = async (sql: SqlQuery) => {
+      const assertRepository = async (sql: GraphSqlClient) => {
         const row = (await sql.query<{ record: unknown }>(
           'select record from workspaces where id=$1 for share', [input.workspaceId])).rows[0]
         const repository = row && WorkspaceSchema.parse(row.record).repository
         if (!sameWorkflowValue(repository, initial.repository)) this.conflict()
       }
       await assertRepository(sql)
-      const resolveMain = async (sql: SqlTransaction, principal: ManagementPrincipal,
+      const resolveMain = async (sql: GraphTransactionSql, principal: ManagementPrincipal,
         configuration: AgentConfigurationVersion, nodeId: string) => {
         const context = { sql, principal, configuration, nodeId, mainId: this.mainId, workspaceId: input.workspaceId,
           roots: this.roots, installations: this.registry.installations, qualificationSuites: this.qualificationSuites,
@@ -129,7 +126,7 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
         }
         return refreshSourcePlacement(await resolveLocalMainPlacement(context), roots)
       }
-      const resolveInherited = async (sql: SqlTransaction, principal: ManagementPrincipal,
+      const resolveInherited = async (sql: GraphTransactionSql, principal: ManagementPrincipal,
         configuration: AgentConfigurationVersion, nodeId: string) => {
         if (!version.definition.defaultWorktree) return resolveMain(sql, principal, configuration, nodeId)
         const root = await resolveWorkflowRootBinding({ sql, principal, workspaceId: input.workspaceId,
@@ -246,7 +243,7 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
         }) }
     })), signal ?? new AbortController().signal, undefined, options.sourcePreparationStarted)
   }
-  private async readSelectedRoots(input: RunStartCurrentInput, principal: ManagementPrincipal,
+  private async readSelectedRoots(input: RunStartV3Input, principal: ManagementPrincipal,
     options: { includeImplicitMain?: boolean } = {}) {
     return withExclusiveGraphConnection(this.pool, async connection => {
       const version = await this.readVersion(connection, input)
@@ -286,17 +283,17 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
       return { version, root, repository, selected, inheritedRoot }
     })
   }
-  private async readVersion(sql: SqlQuery, input: RunStartCurrentInput) {
+  private async readVersion(sql: GraphSqlClient, input: RunStartV3Input) {
     const row = (await sql.query<ImmutableWorkflowVersionRow>(`select ${IMMUTABLE_WORKFLOW_VERSION_COLUMNS}
       from workflow_versions where id=$1 and workspace_id=$2 and workflow_id=$3`,
     [input.workflowVersionId, input.workspaceId, input.workflowId])).rows[0]
     if (!row) throw new DomainError('WORKFLOW_VERSION_NOT_FOUND', 'Exact saved workflow version is required.', 404)
     return readImmutableWorkflowVersion(row)
   }
-  harnessFacts(sql: SqlTransaction, pin: AcceptedNodePlacement, options?: { purpose: 'resident' }) {
+  harnessFacts(sql: GraphTransactionSql, pin: AcceptedNodePlacement, options?: { purpose: 'resident' }) {
     return readPlacementHarnessFacts(sql, pin, this.registry.installations, this.qualificationSuites, options)
   }
-  async assertPinsCurrent(sql: SqlQuery, pin: AcceptedNodePlacement,
+  async assertPinsCurrent(sql: GraphSqlClient, pin: AcceptedNodePlacement,
     principal: ManagementPrincipal, workspaceId: string, options?: { purpose: 'resident' }): Promise<void> {
     await this.assertSourceCurrent(sql, pin, principal, workspaceId)
     if (pin.payload.kind !== 'agent') this.conflict()
@@ -306,7 +303,7 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
     }
     await readPlacementHarnessFacts(sql, pin, this.registry.installations, this.qualificationSuites, options)
   }
-  private async assertSourceCurrent(sql: SqlQuery, pin: AcceptedNodePlacement,
+  private async assertSourceCurrent(sql: GraphSqlClient, pin: AcceptedNodePlacement,
     principal: ManagementPrincipal, workspaceId: string): Promise<void> {
     if (!('kind' in pin.source) || pin.source.kind !== 'pending') this.conflict()
     const source = pin.source as Extract<AcceptedNodePlacement['source'], { kind: 'pending' }>
@@ -320,7 +317,7 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
     if (!sameWorkflowValue(registration === null ? null : { workerInstallationId: registration.workerInstallationId,
       keyRevision: registration.keyRevision, authorizationRevision: registration.authorizationRevision }, pin.registration)) this.conflict()
   }
-  private async readInstance(sql: SqlQuery, instanceId: string) {
+  private async readInstance(sql: GraphSqlClient, instanceId: string) {
     // Match settings append's lock so a new revision cannot cross the commit fence.
     await sql.query('select pg_advisory_xact_lock_shared(hashtext($1))', [`harness-instance:${instanceId}`])
     const row = (await sql.query<{ record: unknown }>(`select record from harness_instance_settings
@@ -331,7 +328,7 @@ export class AgentPlacementProducer implements RunPlacementAdmissionPort {
   }
   /** Concrete same-owner admission callback after canonical execution/slot INSERT.
    * No worktree/native resource is allocated for an unselected occurrence. */
-  async admitExecution(sql: SqlTransaction, owner: RunOwnership, execution: HarnessExecution,
+  async admitExecution(sql: GraphTransactionSql, owner: RunOwnership, execution: HarnessExecution,
     ref: RepeatNodeRef, inputDigest: string, principalId: string): Promise<DispatchIntent | undefined> {
     const pin = await readAcceptedPlacement(sql, execution.runId, execution.workflowNodeId)
     if (!pin) return undefined

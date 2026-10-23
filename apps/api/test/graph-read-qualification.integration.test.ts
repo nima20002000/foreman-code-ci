@@ -3,11 +3,11 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import {
   CANONICAL_RUN_GRAPH_MCP_TOOLS, CANONICAL_RUN_GRAPH_ROUTES,
   CanonicalRunGraphReadCapabilitiesSchema, CURRENT_WORKFLOW_ROUTES,
-  RepeatGraphPageCurrentSchema, RepeatGraphSnapshotCurrentSchema, reduceRepeatGraphPageCurrent,
+  RepeatGraphPageV3Schema, RepeatGraphSnapshotV3Schema, reduceRepeatGraphPageV3,
   type CanonicalRunGraphScope,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import { withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
-import { currentDatabase, postgresEnabled } from './helpers/database.js'
+import { currentDatabase as agent3Database, postgresEnabled } from './helpers/database.js'
 import {
   graphFixture, graphHeaders, graphRpc, graphRpcValue, changeRunState, ownedGraph,
   privateCanary, type GraphFixture, type GraphTestDatabase, graphCatalogNames } from './graph-composition-fixture.js'
@@ -29,7 +29,7 @@ function url(scope: CanonicalRunGraphScope, kind: Kind, after?: string) {
 describe.skipIf(!postgresEnabled)('ENG04-B primary canonical read qualification', () => {
   let db: GraphTestDatabase
   const fixtures: GraphFixture[] = []
-  beforeAll(async () => { db = await currentDatabase() }, 60000)
+  beforeAll(async () => { db = await agent3Database() }, 60000)
   afterEach(async () => { await Promise.all(fixtures.splice(0).map((t) => t.app.close())) })
   afterAll(async () => { await db?.close() })
   async function fixture(qualifiedReads = true) {
@@ -129,12 +129,12 @@ describe.skipIf(!postgresEnabled)('ENG04-B primary canonical read qualification'
 
   it('returns complete persisted batches, equal reset/retention readback and no synthetic replacement head', async () => {
     const t = await fixture()
-    const initial = RepeatGraphSnapshotCurrentSchema.parse(await equalRead(t, 'snapshot'))
+    const initial = RepeatGraphSnapshotV3Schema.parse(await equalRead(t, 'snapshot'))
     await changeRunState(db, t, 'running')
     await changeRunState(db, t, 'waiting')
-    const page = RepeatGraphPageCurrentSchema.parse(await equalRead(t, 'events', t.writer.token, initial.asOfSequence))
-    const latest = RepeatGraphSnapshotCurrentSchema.parse(await equalRead(t, 'snapshot'))
-    expect(reduceRepeatGraphPageCurrent(initial, page)).toEqual(latest)
+    const page = RepeatGraphPageV3Schema.parse(await equalRead(t, 'events', t.writer.token, initial.asOfSequence))
+    const latest = RepeatGraphSnapshotV3Schema.parse(await equalRead(t, 'snapshot'))
+    expect(reduceRepeatGraphPageV3(initial, page)).toEqual(latest)
     const sources = async () => (await db.pool.query('select * from run_graph_sources where run_id=$1 order by source_kind,source_id,source_revision', [t.run.id])).rows
     const permanent = await sources()
     const heads = await db.pool.query('select count(*)::text as n from run_graph_heads where run_id=$1', [t.run.id])
@@ -159,7 +159,7 @@ describe.skipIf(!postgresEnabled)('ENG04-B primary canonical read qualification'
 
   it('rejects an unjournaled domain cut on current, snapshot, empty delta and reset instead of trusting a head', async () => {
     const t = await fixture()
-    const initial = RepeatGraphSnapshotCurrentSchema.parse(await equalRead(t, 'snapshot'))
+    const initial = RepeatGraphSnapshotV3Schema.parse(await equalRead(t, 'snapshot'))
     // Adversarial missing-publication regression, not an alternate producer.
     // No receipt is forged and no trigger or security boundary is disabled.
     await db.pool.query(`update runs set execution_state='waiting',record=jsonb_set(record,'{executionState}','"waiting"'::jsonb) where id=$1`, [t.run.id])

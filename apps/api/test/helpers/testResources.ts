@@ -36,7 +36,7 @@ export async function assertOwnedExecutionDestinations(pool: pg.Pool, selection:
 }): Promise<void> {
   const { AgentConfigurationVersionSchema, ExecutionLocationSchema, HarnessExecutionSchema }
     = await import('@foreman-code/contracts')
-  const { AcceptedWorkflowRunCurrentSchema } = await import('@foreman-code/contracts/current')
+  const { AcceptedWorkflowRunV3Schema } = await import('@foreman-code/contracts/wave25')
   const workspace = await pool.query<{ execution_location: unknown }>(
     'select execution_location from workspaces where id=$1', [selection.workspaceId])
   const location = ExecutionLocationSchema.parse(workspace.rows[0]?.execution_location)
@@ -45,7 +45,7 @@ export async function assertOwnedExecutionDestinations(pool: pg.Pool, selection:
   if (selection.runId) {
     const result = await pool.query<{ record: unknown }>(
       'select record from runs where id=$1 and workspace_id=$2', [selection.runId, selection.workspaceId])
-    const run = AcceptedWorkflowRunCurrentSchema.parse(result.rows[0]?.record)
+    const run = AcceptedWorkflowRunV3Schema.parse(result.rows[0]?.record)
     ownedTestPath(run.executionLocation.rootPath)
     configurationIds = Object.values(run.agentConfigurationVersionIds)
     const executions = await pool.query<{ record: unknown }>(

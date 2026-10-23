@@ -32,13 +32,13 @@ import { registerGraphqlMcp } from '../src/mcp/unified/transport.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { FILE_REFERENCE_TOOL_NAMES } from '../src/mcp/operator/tools/fileReferences.js'
 import { FileReferenceReadResultSchema } from '@foreman-code/contracts/files'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
 /** Real credentials, PostgreSQL, disk storage and authenticated /mcp. No harness or paid model. */
 describe.skipIf(!postgresEnabled)('FIL-36 permanent reference HTTP + Operator MCP integration', () => {
-  let database: Awaited<ReturnType<typeof migratedDatabase>>, app: FastifyInstance, root: string, mcpUrl: string
+  let database: Awaited<ReturnType<typeof agent3Database>>, app: FastifyInstance, root: string, mcpUrl: string
   let access: PostgresAccessService, commands: PostgresCommandCoordinator, repository: PostgresFileRepository
   let references: FileReferenceService, owner: Awaited<ReturnType<PostgresAccessService['issue']>>
   let reader: Awaited<ReturnType<PostgresAccessService['issue']>>, foreign: Awaited<ReturnType<PostgresAccessService['issue']>>
@@ -53,7 +53,7 @@ describe.skipIf(!postgresEnabled)('FIL-36 permanent reference HTTP + Operator MC
   const headers = (token = owner.token) => ({ authorization: `Bearer ${token}`, host: 'localhost' })
 
   beforeAll(async () => {
-    database = await migratedDatabase()
+    database = await agent3Database()
     for (const migration of [fileStorageMigration, fileReferenceMigration]) {
       if ((await database.pool.query('select 1 from application_migrations where version=$1', [migration.version])).rowCount) continue
       await withTransaction(database.pool, async client => {

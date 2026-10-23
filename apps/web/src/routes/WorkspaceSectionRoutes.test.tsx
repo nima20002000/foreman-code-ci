@@ -7,8 +7,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 import { WorkspaceRootSelectionSchema, type WorkspaceRootSelection } from '@foreman-code/contracts/workspace-root-policies'
 import { FileRetentionSaveInputSchema, type FileRetentionPreference } from '@foreman-code/contracts/files'
-import { clearRevisionedFormPersistence } from '../features/settings'
-import { clearRetentionCommandMemory } from '../features/retention-settings'
+import { clearRevisionedFormPersistence } from '../features/settings/revisionedForm'
+import { clearRetentionCommandMemory } from '../features/retention-settings/retentionCommand'
 
 import { routeTree } from '../app/router'
 import { server } from '../mocks/server'

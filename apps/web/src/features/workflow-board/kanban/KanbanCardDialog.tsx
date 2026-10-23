@@ -1,10 +1,9 @@
 import type { ReactNode } from 'react'
 import type { AgentNodeRef } from '@foreman-code/contracts'
 import { Button, Dialog } from '../../../shared/ui/nocturne'
-import {
-  useMemoryCardDetail, useMemoryHistory, type MemoryBoardClient, type MemoryCardDetail, type MemoryChange,
-  type MemoryNodeOption, errorMessage, nodeLabel, statusLabels, visibleTime,
-} from '../../memory-boards'
+import { useMemoryCardDetail, useMemoryHistory } from '../../memory-boards/queries'
+import type { MemoryBoardClient, MemoryCardDetail, MemoryChange, MemoryNodeOption } from '../../memory-boards/ports'
+import { errorMessage, nodeLabel, statusLabels, visibleTime } from '../../memory-boards/presentation'
 
 /** One Kanban card in its own window: what its Agent is doing or found, and every update, newest first. */
 export function KanbanCardDialog({ client, boardId, cardId, nodes, onClose, onEdit }: {

@@ -3,7 +3,7 @@ import { RunActions } from './actions'
 import { useEffect, useRef } from 'react'
 import { useInfiniteQuery, useMutation, useQueryClient, type InfiniteData, type QueryClient } from '@tanstack/react-query'
 import type { WorkflowRunSummary } from '@foreman-code/contracts'
-import { sameCanonicalGraphScope } from '@foreman-code/contracts/current'
+import { sameCanonicalGraphScope } from '@foreman-code/contracts/wave25'
 import { Button, EmptyState, Icon, IconButton, LoadingState, StatusBadge } from '../../shared/ui/nocturne'
 import { Activities } from './Activities'
 import { isActiveRun, runLabel, runTone, shortRunId, when } from './runFacts'
@@ -11,9 +11,10 @@ import { assertSession, sessionGeneration } from '../../shared/api/sessionBounda
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
 import { CurrentRunDetails } from './RunDetails'
 import { readBoardRun, readBoardRuns, scopeForBoardRun } from './client'
-import { useBoardSelection, boardRunListKey } from '../board-core'
+import { useBoardSelection } from './context'
 import { boardScope, useBoardUndo } from './boardUndo'
 
+import { boardRunListKey } from './keys'
 import { refreshFirstInspectionPage } from './inspect/queries'
 
 async function refreshBoardRuns(client: QueryClient, workspaceId: string, workflowId: string) {

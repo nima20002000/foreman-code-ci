@@ -6,7 +6,7 @@ import { http, HttpResponse, type RequestHandler } from 'msw'
 import { settingsExperienceHandlers, resetSettingsExperienceFixtures, getMockWorkspaceCreationDefaults } from './settingsExperienceHandlers'
 import { resetSkillFixtures, skillsHandlers } from './skillsHandlers'
 import { ApiErrorResponseSchema, SessionControlStateSchema, unavailableSessionControls } from '@foreman-code/contracts'
-import { CURRENT_WORKFLOW_CAPABILITIES, type WorkflowDefinitionCurrent as WorkflowDefinition, type WorkflowRunCurrent as WorkflowRun } from '@foreman-code/contracts/current'
+import { CURRENT_WORKFLOW_CAPABILITIES, type WorkflowDefinitionV3 as WorkflowDefinition, type WorkflowRunV3 as WorkflowRun } from '@foreman-code/contracts/wave25'
 import {
   AgentDefaultsUpdateInputSchema,
   GeneralSettingsUpdateInputSchema,

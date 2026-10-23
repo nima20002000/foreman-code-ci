@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { SyncComputerRequestSchema, SyncComputerStateSchema, SyncIdentitySchema,
   type SyncComputerRequest, type SyncComputerState, type SyncIdentity } from '@foreman-code/contracts/computer-accounts'
-import { logIgnoredError } from '../diagnostics/index.js'
+import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import { systemSyncthingPorts, type SyncthingPorts } from './syncthingSystem.js'
 import { sha256Hex } from '../../shared/hash.js'
 

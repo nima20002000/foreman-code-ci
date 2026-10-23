@@ -7,7 +7,7 @@ import { OperatorRunListInputSchema, OperatorRunGetInputSchema, OperatorRunGetRe
 import { compactRunDetails } from '../runSummary.js'
 import { ManualRunStartInputSchema, ManualRunStartResultSchema, RunStartResolutionResultSchema, SavedRunPageSchema,
   RunActivitiesInputSchema, RunActivitiesPageSchema, RunHandoffsReadInputSchema,
-  RunHandoffsReadSchema } from '@foreman-code/contracts/current'
+  RunHandoffsReadSchema } from '@foreman-code/contracts/wave25'
 import { defineOperatorTool } from '../definition.js'
 
 export const runTools = [

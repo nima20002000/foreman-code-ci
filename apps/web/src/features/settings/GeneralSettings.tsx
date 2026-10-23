@@ -1,6 +1,6 @@
 import { useComputerActivity, computerKey } from '../../shared/api/computerActivity'
 import { Button, SettingsSection, Skeleton } from '../../shared/ui/nocturne'
-import { ComputerSyncPanel } from '../computers'
+import { ComputerSyncPanel } from '../computers/ComputerSync'
 import { ChatRetentionSettings } from '../retention-settings'
 import './settingsExperience.css'
 import './generalSettings.css'

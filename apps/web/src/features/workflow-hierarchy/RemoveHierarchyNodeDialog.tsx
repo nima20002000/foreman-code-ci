@@ -1,8 +1,10 @@
 import { Button, Dialog, Select } from '../../shared/ui/nocturne'
 import { useUnsavedChanges } from '../../shared/ui/unsavedChanges'
 import { useGraphDraftStore } from '../graph/store'
-import { nodeTitle, type NextDraftEdit, useBoardSelection } from '../board-core'
+import { nodeTitle } from '../graph/nextDraft/model'
+import type { NextDraftEdit } from '../graph/nextDraft/state'
 import { pinBoardLayout } from '../graph/nextDraft/placement'
+import { useBoardSelection } from '../workflow-board/context'
 import { hierarchyNodes, removeHierarchyNode } from './authoring'
 
 export function RemoveHierarchyNodeDialog({ draftKey, edit, pending, report }: {

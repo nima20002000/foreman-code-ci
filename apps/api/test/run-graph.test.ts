@@ -1,7 +1,6 @@
 import type pg from 'pg'
 import { describe, expect, it, vi } from 'vitest'
-import { ExclusiveGraphConnection, beforeGraphCommit } from '../src/modules/run-graph/connection.js'
-import type { SqlTransaction } from '../src/infrastructure/transaction.js'
+import { ExclusiveGraphConnection, beforeGraphCommit, type GraphTransactionSql } from '../src/modules/run-graph/connection.js'
 import { RunGraphError } from '../src/modules/run-graph/errors.js'
 import { deferred } from './helpers/deferred.js'
 
@@ -38,7 +37,7 @@ describe('exclusive graph transaction port (unit, not PostgreSQL proof)', () => 
   })
   it('never lends a transaction port after callback completion', async () => {
     const connection = new ExclusiveGraphConnection(client(), () => undefined)
-    let escaped!: SqlTransaction
+    let escaped!: GraphTransactionSql
     try {
       await connection.transaction(async (sql) => { escaped = sql })
       await expect(escaped.query('select 1')).rejects.toThrow('GRAPH_TRANSACTION_CLOSED')
@@ -82,7 +81,7 @@ describe('exclusive graph transaction port (unit, not PostgreSQL proof)', () => 
       if (text === 'commit') throw failure
       return { rows: [], rowCount: 0 }
     }), () => undefined)
-    const work = vi.fn(async (sql: SqlTransaction) => {
+    const work = vi.fn(async (sql: GraphTransactionSql) => {
       await sql.query('select domain_mutation')
       beforeGraphCommit(sql, async () => { await sql.query('select publication') })
     })

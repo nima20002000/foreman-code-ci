@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import {
   RUN_INSPECTION_TOOLS, RunExecutionsListInputSchema, RunExecutionDetailSchema, RunExecutionsPageSchema, RunExecutionBindingsPageSchema, RunVersionDetailSchema, makeCurrentWorkflowFixture,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { postgresEnabled } from './helpers/database.js'
 import {

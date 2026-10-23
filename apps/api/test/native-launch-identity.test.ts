@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import type { SqlTransaction } from '../src/infrastructure/transaction.js'
+import type { GraphTransactionSql } from '../src/modules/run-graph/connection.js'
 import { repeatLaunchClaim, repeatPossibleSubmissionLocked, requireRepeatNativeHooks } from '../src/modules/runs/repeatNativeRepository.js'
 import { repeatRuntimeDirectory } from '../src/modules/runs/repeatRepositoryHost.js'
 import { repeatDigest } from '../src/modules/runs/repeatResolution.js'
@@ -78,7 +78,7 @@ describe('ENG04 NATIVE-1 immutable launch and possible-submission identities', (
         'harness_native_events', 'run_native_correlations', 'worker_credential_bindings',
         'approval_execution_state', 'durable_interactions', 'review_jobs']) expect(text).toContain(table)
       return { rows: [{ possible_submission: true }], rowCount: 1 }
-    } } as unknown as SqlTransaction
+    } } as unknown as GraphTransactionSql
     expect(await repeatPossibleSubmissionLocked(sql, queued)).toBe(true)
     expect(reads).toBe(1)
     for (const mutation of [{ startedAt: nativeAt }, { runtimeDirectory: '/already/allocated' },
@@ -93,10 +93,10 @@ describe('ENG04 NATIVE-1 immutable launch and possible-submission identities', (
       agentConfigurationVersionId: f.execution.agentConfigurationVersionId,
       attempt: 1, state: 'queued', input: {}, createdAt: nativeAt })
     for (const rows of [[], [{ possible_submission: null }], [{ possible_submission: 'false' }]]) {
-      const sql = { query: async () => ({ rows }) } as unknown as SqlTransaction
+      const sql = { query: async () => ({ rows }) } as unknown as GraphTransactionSql
       await expect(repeatPossibleSubmissionLocked(sql, queued)).rejects.toMatchObject({ code: 'REPEAT_SUBMISSION_EVIDENCE_MISSING' })
     }
-    const sql = { query: async () => ({ rows: [{ possible_submission: false }] }) } as unknown as SqlTransaction
+    const sql = { query: async () => ({ rows: [{ possible_submission: false }] }) } as unknown as GraphTransactionSql
     expect(await repeatPossibleSubmissionLocked(sql, queued)).toBe(false)
   })
 })

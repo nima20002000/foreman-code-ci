@@ -1,9 +1,8 @@
 import {
   PublicGraphProjectionSchema, PublicGraphDeltaSchema, canonicalGraphJson,
   GraphSequenceSchema, type PublicGraphProjection, type PublicGraphDelta, type RunGraphScope,
-} from '@foreman-code/contracts/current'
-import { assertGraphTransaction } from './connection.js'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+} from '@foreman-code/contracts/wave25'
+import { assertGraphTransaction, type GraphTransactionSql } from './connection.js'
 import type { PublicProjectionReader } from './publicProjectionReader.js'
 import { graphSourceDigest } from './graphDigest.js'
 import { RunGraphError } from './errors.js'
@@ -44,7 +43,7 @@ export function publicProjectionDelta(previous: PublicGraphProjection | undefine
     retiredReviewIds: retired(previous?.reviews ?? [], current.reviews, (item) => item.reviewJobId),
   })
 }
-async function stored(sql: SqlTransaction, scope: RunGraphScope) {
+async function stored(sql: GraphTransactionSql, scope: RunGraphScope) {
   const row = (await sql.query<{ record: unknown; source_digest: string; semantic_digest: string; sequence: string;
     proof_sequence: string | null; proof_source_digest: string | null; proof_semantic_digest: string | null }>(`
     select p.record,p.source_digest,p.semantic_digest,p.sequence::text,
@@ -63,7 +62,7 @@ async function stored(sql: SqlTransaction, scope: RunGraphScope) {
 
 /** Called BEFORE any producer mutation, under the same Run/head lock. A later
  * writer cannot "heal" an unjournaled/corrupt public domain cut by adopting it. */
-export async function assertPublicProjectionCommittedLocked(sql: SqlTransaction, scope: RunGraphScope,
+export async function assertPublicProjectionCommittedLocked(sql: GraphTransactionSql, scope: RunGraphScope,
   head: string, readPublicProjection: PublicProjectionReader, actual?: PublicGraphProjection): Promise<void> {
   assertGraphTransaction(sql)
   const prior = await stored(sql, scope)
@@ -73,7 +72,7 @@ export async function assertPublicProjectionCommittedLocked(sql: SqlTransaction,
 
 /** Called once by G1, after all SQL producers and before the batch is finalized.
  * Compare canonical values, not elapsed time or presence/absence of a process. */
-export async function capturePublicProjectionLocked(sql: SqlTransaction,
+export async function capturePublicProjectionLocked(sql: GraphTransactionSql,
   scope: RunGraphScope, readPublicProjection: PublicProjectionReader): Promise<PublicProjectionReceipt | undefined> {
   assertGraphTransaction(sql)
   const head = (await sql.query<{ sequence: string }>(
@@ -94,7 +93,7 @@ export async function capturePublicProjectionLocked(sql: SqlTransaction,
     [scope.runId, evidence.sourceRevision, canonicalGraphJson(projection), sourceDigest, semanticDigest, evidence.sourceId])
   return { projection, evidence, sourceDigest, semanticDigest, fact }
 }
-export async function assertPublicProjectionUnchangedLocked(sql: SqlTransaction, scope: RunGraphScope,
+export async function assertPublicProjectionUnchangedLocked(sql: GraphTransactionSql, scope: RunGraphScope,
   receipt: PublicProjectionReceipt, readPublicProjection: PublicProjectionReader): Promise<void> {
   const current = await readPublicProjection(sql, scope)
   if (!same(receipt.projection, current)) return fail()

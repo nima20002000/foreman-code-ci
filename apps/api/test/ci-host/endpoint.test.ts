@@ -185,9 +185,8 @@ it('spends a start retry only after a live status reports the assigned run absen
       repository: 'owner/repo', commit: 'a'.repeat(40), suite: 'lint' },
     initiator: { principalId: 'worker', executionId: 'execution' },
   })
-  const query = async (_sql: string, parameters: unknown[] = []) => {
-    // The compare-and-set ticket update binds the record at index 3; ticket claims and locks bind fewer values.
-    if (parameters.length > 3) run = CiRunRecordSchema.parse(JSON.parse(parameters[3] as string))
+  const query = async (sql: string, parameters?: unknown[]) => {
+    if (sql.startsWith('update ci_runs')) run = CiRunRecordSchema.parse(JSON.parse(parameters![3] as string))
     return { rows: [], rowCount: 1 }
   }
   const pool = { query, connect: async () => ({ query, release: () => {} }) } as unknown as pg.Pool
@@ -304,11 +303,10 @@ function remoteExecutionFixture(enabled?: boolean) {
   const target = { hostRef: { kind: 'device' as const, mainId, deviceId: registration.deviceId },
     applicationInstallationId: registration.workerInstallationId, keyRevision: 1, authorizationRevision: 1 }
   const row = { host_key: 'fixture:worker', target, build_enabled: true, build_priority: 50, build_allowance_percent: 75 }
-  // The paired-device check binds the Main and device ids. Every other read binds at most a key or id and is answered by one
-  // row that serves as the computer preference list, the Main installation id and the default.
-  const pool = { query: async (_sql: string, values: unknown[] = []) => {
-    if (values.length === 2) return { rows: [{ record: registration }] }
-    return { rows: [{ ...row, id: mainId }] }
+  const pool = { query: async (sql: string) => {
+    if (sql.includes('from application_installation')) return { rows: [{ id: mainId }] }
+    if (sql.includes('from device_registrations')) return { rows: [{ record: registration }] }
+    return { rows: [row] }
   } } as unknown as pg.Pool
   const policy = new WorkerExecutionPolicy({ enabled: enabled ?? true, managedBy: 'startup' })
   const status = { operation: 'status' as const, ready: true, reasons: [], cpuCount: 8,

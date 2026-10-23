@@ -1,10 +1,10 @@
 import type pg from 'pg'
-import type { SqlQuery } from '../../../infrastructure/transaction.js'
+import type { GraphSqlClient } from '../../run-graph/connection.js'
 import { type CompatibilityHarness } from '@foreman-code/contracts'
 import { HarnessQualificationSchema, type HarnessQualification } from '@foreman-code/contracts/harness-qualification'
 import { HostHarnessProfileEvidenceSchema, type HostHarnessOverride } from '@foreman-code/contracts/harness-registry'
 
-export async function readHostHarnessMeasurements(sql: SqlQuery, harness: CompatibilityHarness,
+export async function readHostHarnessMeasurements(sql: GraphSqlClient, harness: CompatibilityHarness,
   binarySha256: string, suiteRevision: string): Promise<{ qualification: HarnessQualification; evidence: unknown }[]> {
   const result = await sql.query(`select qualification,evidence from host_harness_measurements
     where harness=$1 and binary_sha256=$2 and suite_revision=$3 for share`, [harness, binarySha256, suiteRevision])

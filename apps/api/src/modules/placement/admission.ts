@@ -1,6 +1,6 @@
 import { DeviceRegistrationSchema, type DeviceRegistration } from '@foreman-code/contracts/device-identity'
 import { AcceptedDestinationSchema, SavedNodePlacementSchema, type AcceptedNodePlacement, type SavedNodePlacement } from '@foreman-code/contracts/node-placement'
-import { sameWorkflowValue } from '@foreman-code/contracts/current'
+import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { posix } from 'node:path'
 import { DomainError } from '../errors.js'
 import { freezePlacement } from './binding.js'

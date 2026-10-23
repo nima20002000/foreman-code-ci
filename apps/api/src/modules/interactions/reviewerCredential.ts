@@ -1,7 +1,7 @@
 import { ManagementPrincipalSchema } from '@foreman-code/contracts/management'
 import { workerScopesForAction } from '../access/appPolicy.js'
 import { DomainError } from '../errors.js'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 
 interface ReviewerCredentialScope {
   agentId: string
@@ -10,7 +10,7 @@ interface ReviewerCredentialScope {
   runId: string
 }
 
-export async function requireReviewerCredential(sql: SqlQuery, principalId: string,
+export async function requireReviewerCredential(sql: GraphSqlClient, principalId: string,
   scope: ReviewerCredentialScope): Promise<void> {
   const row = (await sql.query<{
     id: string; name: string; audience: string; agent_id: string | null; grants: unknown

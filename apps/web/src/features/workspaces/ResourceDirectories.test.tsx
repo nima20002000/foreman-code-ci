@@ -7,7 +7,7 @@ import type { ManagedWorkspace } from '@foreman-code/contracts/management'
 import { server } from '../../mocks/server'
 import { renderWithRouter } from '../../test/renderWithRouter'
 import { WorkspaceDirectory } from './WorkspaceDirectory'
-import { WorkflowDirectory } from '../workflows'
+import { WorkflowDirectory } from '../workflows/WorkflowDirectory'
 
 function workspace(locationValidation: ManagedWorkspace['locationValidation']): ManagedWorkspace {
   return {

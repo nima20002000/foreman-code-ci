@@ -4,7 +4,7 @@ import { Textarea } from '../../shared/ui/nocturne/Fields'
 import { ApiError } from '../../shared/api/client'
 import type { useMemorySave } from './commandRecovery'
 import { editCardDraft, editNoteDraft, type MemoryDraft } from './drafts'
-import { sameWorkflowValue } from '@foreman-code/contracts/current'
+import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
 import { bindingLabel, errorMessage } from './presentation'
 
 interface Props {

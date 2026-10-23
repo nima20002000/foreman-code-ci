@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { server } from '../mocks/server'
 import { browserSessionClient, returnBrowserControl } from './browserRecovery'
-import type { BrowserSession } from '../features/agent-browser'
+import type { BrowserSession } from '../features/agent-browser/types'
 
 it('joins shell navigation and panel cleanup into one acknowledged control return', async () => {
   const session: BrowserSession = { id: 'browser', profileId: 'profile', setupForProfileId: 'profile', computerId: 'computer',

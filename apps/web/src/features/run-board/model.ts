@@ -1,7 +1,9 @@
 import type { Edge, Node, ReactFlowProps } from '@xyflow/react'
 import type { RunBoardSnapshot, RunBoardNodeSnapshot, RunBoardEdgeSnapshot } from '@foreman-code/contracts/run-snapshots'
-import type { WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
-import { roleNodeSize, workflowToGraph, layoutHierarchy, agentNodeFacts, edgeBend, relationshipLines } from '../board-core'
+import type { WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import { roleNodeSize, workflowToGraph } from '../graph/mapper'
+import { layoutHierarchy } from '../graph/hierarchyLayout'
+import { agentNodeFacts, edgeBend, relationshipLines } from '../graph/signalEdge'
 import type { IconName } from '../../shared/ui/nocturne'
 import { agentProductRoleLabel, isHierarchyReportingRoute, type ActivitySnapshotV1, type Agent, type CiActivity, type WorkRef,
   type WorkflowHierarchyReadResult } from '@foreman-code/contracts'
@@ -72,7 +74,7 @@ export function projectRunBoard(snapshot: AvailableRunBoardSnapshot, activity?: 
 
 /** The Run's saved version, the mounted draft and the Board's Agents: with them a Run is drawn exactly where the
  * draft Board draws it. The draft wins for every node it has, so moving an agent on either view moves it on both. */
-export type RunBoardLayout = { definition?: WorkflowDefinitionCurrent; draft?: WorkflowDefinitionCurrent; agents?: readonly Agent[] }
+export type RunBoardLayout = { definition?: WorkflowDefinitionV3; draft?: WorkflowDefinitionV3; agents?: readonly Agent[] }
 
 /** Same places and sizes as the draft Board: its mapper keeps manual places and saved sizes and lays out the rest.
  * A node the saved version lacks (or a Run read without it) falls back to the hierarchy layout at role size. */
@@ -82,7 +84,7 @@ function runBoardGeometry(snapshot: AvailableRunBoardSnapshot, saved: WorkflowHi
     [agent.agentId, { id: agent.agentId, name: agent.displayName, productRole: agent.productRole }]))
   for (const agent of layout?.agents ?? []) if (!known.has(agent.id)) known.set(agent.id, agent)
   const definition = layout?.definition
-  const draw = (workflow?: WorkflowDefinitionCurrent) => workflow ? workflowToGraph({ workflow, agents: [...known.values()] }).nodes
+  const draw = (workflow?: WorkflowDefinitionV3) => workflow ? workflowToGraph({ workflow, agents: [...known.values()] }).nodes
     .map(node => [node.id, { position: node.position, width: node.width!, height: node.height! }] as const) : []
   const drawn = new Map([...draw(definition), ...draw(layout?.draft)])
   const masterNodeId = definition?.hierarchy?.masterNodeId ?? saved?.hierarchy?.masterNodeId

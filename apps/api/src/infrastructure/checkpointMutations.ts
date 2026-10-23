@@ -1,17 +1,18 @@
 import type pg from 'pg'
-import { LangGraphPostgresSaver, WRITES_IDX_MAP, type SerializerProtocol } from './langgraph.js'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { WRITES_IDX_MAP, type SerializerProtocol } from '@langchain/langgraph-checkpoint'
+import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres'
+import { DomainError } from '../modules/errors.js'
 import { retryDatabaseTimeout } from './databaseRetry.js'
 import { withTransaction } from './transaction.js'
 
 /** The generation row serializes checkpoint commits with successor ownership. */
-export class CheckpointMutationSaver extends LangGraphPostgresSaver {
+export class CheckpointMutationSaver extends PostgresSaver {
   constructor(private readonly mutationPool: pg.Pool, serde?: SerializerProtocol,
     private readonly mutationOptions: { schema: string } = { schema: 'public' }) {
     super(mutationPool, serde, mutationOptions)
   }
 
-  private async checkOwner(client: pg.PoolClient, config: Parameters<LangGraphPostgresSaver['put']>[0]): Promise<void> {
+  private async checkOwner(client: pg.PoolClient, config: Parameters<PostgresSaver['put']>[0]): Promise<void> {
     const { thread_id: runId, checkpoint_owner_generation: generation } = config.configurable ?? {}
     const owner = (await client.query<{ generation: string }>(`
       select generation::text from run_checkpoint_owners where run_id=$1 for update`, [runId])).rows[0]
@@ -27,16 +28,16 @@ export class CheckpointMutationSaver extends LangGraphPostgresSaver {
     if (!active.rowCount) throw new DomainError('RUN_OWNERSHIP_LOST', 'The checkpoint owner disconnected.', 409)
   }
 
-  override async put(...args: Parameters<LangGraphPostgresSaver['put']>): ReturnType<LangGraphPostgresSaver['put']> {
+  override async put(...args: Parameters<PostgresSaver['put']>): ReturnType<PostgresSaver['put']> {
     const [config, checkpoint, metadata, versions] = args
     if (!config.configurable?.checkpoint_owner_generation) {
       return retryDatabaseTimeout(() => super.put(...args), { signal: config.signal })
     }
     const { thread_id: threadId, checkpoint_ns: namespace = '', checkpoint_id: parent } = config.configurable
     const [blobs, serializedMetadata] = await Promise.all([
-      this.dumpBlobs(threadId, namespace, checkpoint.channel_values, versions), this.dumpMetadata(metadata),
+      this._dumpBlobs(threadId, namespace, checkpoint.channel_values, versions), this._dumpMetadata(metadata),
     ])
-    const serializedCheckpoint = this.dumpCheckpoint(checkpoint)
+    const serializedCheckpoint = this._dumpCheckpoint(checkpoint)
     await retryDatabaseTimeout(() => withTransaction(this.mutationPool, async client => {
       await this.checkOwner(client, config)
       for (const blob of blobs) {
@@ -54,13 +55,13 @@ export class CheckpointMutationSaver extends LangGraphPostgresSaver {
       checkpoint_owner_generation: config.configurable.checkpoint_owner_generation } }
   }
 
-  override async putWrites(...args: Parameters<LangGraphPostgresSaver['putWrites']>): Promise<void> {
+  override async putWrites(...args: Parameters<PostgresSaver['putWrites']>): Promise<void> {
     const [config, writes, taskId] = args
     if (!config.configurable?.checkpoint_owner_generation) {
       return retryDatabaseTimeout(() => super.putWrites(...args), { signal: config.signal })
     }
     const { thread_id: threadId, checkpoint_ns: namespace = '', checkpoint_id: checkpointId } = config.configurable
-    const dumped = await this.dumpWrites(threadId, namespace, checkpointId, taskId, writes)
+    const dumped = await this._dumpWrites(threadId, namespace, checkpointId, taskId, writes)
     const upsert = writes.every(([channel]) => channel in WRITES_IDX_MAP)
     const conflict = upsert ? 'do update set channel=excluded.channel,type=excluded.type,blob=excluded.blob' : 'do nothing'
     await retryDatabaseTimeout(() => withTransaction(this.mutationPool, async client => {

@@ -1,4 +1,4 @@
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { DeviceRegistrationSchema, type CanonicalMachineReference, type DeviceRegistration } from '@foreman-code/contracts/device-identity'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
@@ -8,7 +8,7 @@ import { authorizationReadSnapshot } from '../access/authorizationReadSnapshot.j
 
 /** Identity only: the caller checks its domain grants first and retains this command transaction's locks.
  * Returns current key/auth revisions for the caller's pin checks; null denotes the original main. */
-export async function assertDeviceHostInstallation(client: SqlQuery,
+export async function assertDeviceHostInstallation(client: GraphSqlClient,
   host: CanonicalMachineReference, applicationInstallationId: string): Promise<DeviceRegistration | null> {
   const snapshot = await authorizationReadSnapshot(client)
   const mainId = snapshot ? snapshot.main_id : (await client.query<{ id: string }>(
@@ -31,7 +31,7 @@ export async function assertDeviceHostInstallation(client: SqlQuery,
 }
 
 /** Use the command's transaction so revocation cannot race a host-scoped settings mutation. */
-export async function authorizeDeviceHost(client: SqlQuery, principal: ManagementPrincipal,
+export async function authorizeDeviceHost(client: GraphSqlClient, principal: ManagementPrincipal,
   action: 'harnesses:read' | 'harnesses:update', host: CanonicalMachineReference, applicationInstallationId: string): Promise<void> {
   requireAuthorization(await readLiveManagementPrincipal(client, principal.id), action)
   await assertDeviceHostInstallation(client, host, applicationInstallationId)

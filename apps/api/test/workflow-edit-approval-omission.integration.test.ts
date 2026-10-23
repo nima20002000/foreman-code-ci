@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import {
   CURRENT_WORKFLOW_TOOLS, CurrentEditReadResultSchema, CurrentRunDetailsSchema, CurrentWorkflowReadResultSchema,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import { setupWorkflowCreateIntegration } from './helpers/operatorWorkflowCreate.js'
 import { postgresEnabled } from './helpers/database.js'
 

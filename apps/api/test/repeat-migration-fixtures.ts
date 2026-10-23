@@ -2,7 +2,7 @@ import { createFixtureDatabase, dropFixtureDatabase } from './helpers/testResour
 import { createHash, randomBytes } from 'node:crypto'
 import assert from 'node:assert/strict'
 import pg from 'pg'
-import { canonicalGraphJson, type GraphExecutionIdentity, type RepeatOccurrenceV1 } from '@foreman-code/contracts/current'
+import { canonicalGraphJson, type GraphExecutionIdentity, type RepeatOccurrenceV1 } from '@foreman-code/contracts/wave25'
 import { migrations } from '../src/infrastructure/migrations.js'
 import { repeatOccurrenceMigration } from '../src/infrastructure/repeatOccurrenceMigration.js'
 

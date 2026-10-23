@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { projectRunChatTranscript } from './runChatTranscript.js'
 
 const fixture = makeCurrentWorkflowFixture('execution-transcript', 'single')

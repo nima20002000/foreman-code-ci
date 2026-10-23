@@ -1,17 +1,18 @@
-import { AgentFormSchema, nextDraftKey, type NextDraftEdit, type ConflictRecovery } from '../../board-core'
+import { AgentFormSchema } from './agentForm'
 import { LocalWorkflowFormSchema } from './localGraph'
 import { z } from 'zod'
 import { AgentSchema } from '@foreman-code/contracts'
 import { ManagedAgentSchema } from '@foreman-code/contracts/management'
-import { GraphDraftCurrentSchema, GraphEditStageInputCurrentSchema, WorkflowDefinitionCurrentSchema, sameAuthoredWorkflow, sameWorkflowValue,
-  type GraphEditIntentCurrent, type GraphEditStageInputCurrent } from '@foreman-code/contracts/current'
+import { GraphDraftV3Schema, GraphEditStageInputV3Schema, WorkflowDefinitionV3Schema, sameAuthoredWorkflow, sameWorkflowValue,
+  type GraphEditIntentV3, type GraphEditStageInputV3 } from '@foreman-code/contracts/wave25'
 import { ApiError } from '../../../shared/api/client'
 import { chatStoragePrefix, identityEpoch, protectedKey } from '../../../shared/api/protectedChatStorage'
 import { assertSession, sessionGeneration, sessionIsSwitching, SessionChangedError } from '../../../shared/api/sessionBoundary'
+import { nextDraftKey, type NextDraftEdit, type ConflictRecovery } from './state'
 
 const prefix = 'graph-edit-intent:'
 const SnapshotSchema = z.object({
-  context: z.object({ draft: GraphDraftCurrentSchema, savedDraft: GraphDraftCurrentSchema.optional(), agents: z.array(ManagedAgentSchema) }).strict(),
+  context: z.object({ draft: GraphDraftV3Schema, savedDraft: GraphDraftV3Schema.optional(), agents: z.array(ManagedAgentSchema) }).strict(),
   graph: LocalWorkflowFormSchema, agentEdits: z.record(z.string(), AgentSchema).optional(),
   agentForms: z.record(z.string(), AgentFormSchema).optional(),
   workflowForms: z.object({
@@ -24,7 +25,7 @@ const SnapshotSchema = z.object({
     stageCommandId: z.string().min(1), stageInputHash: z.string().min(1) }).strict().optional(),
   acknowledgedStageCommands: z.array(z.string()).optional(), submittedStageCommands: z.array(z.string()).optional(),
 }).strict()
-const OutboxSchema = z.object({ request: GraphEditStageInputCurrentSchema, target: WorkflowDefinitionCurrentSchema,
+const OutboxSchema = z.object({ request: GraphEditStageInputV3Schema, target: WorkflowDefinitionV3Schema,
   agentTarget: z.record(z.string(), AgentSchema).optional() }).strict()
 const SubmissionSchema = OutboxSchema.extend({ terminal: z.literal(true).optional() })
 const ConflictRecoverySchema = z.object({ id: z.string().min(1), originalInstanceId: z.string().min(1),
@@ -338,7 +339,7 @@ function collectTerminalSubmissions(scope: string, incomingCommandId?: string) {
   }
 }
 /** Call only after authenticated terminal readback has been reconciled with the local form. */
-export function acknowledgeEditSubmission(scope: string, intent: GraphEditIntentCurrent) {
+export function acknowledgeEditSubmission(scope: string, intent: GraphEditIntentV3) {
   if (!['saved', 'discarded'].includes(intent.state)) return
   const name = submissionKey(scope, intent.stageCommandId)
   const record = read(name, SubmissionSchema)
@@ -379,7 +380,7 @@ function markSubmittedSnapshots(scope: string, value: EditIntentOutbox): void {
     }
   }
 }
-export function matchesEditIntent(value: EditIntentOutbox, intent: GraphEditIntentCurrent): boolean {
+export function matchesEditIntent(value: EditIntentOutbox, intent: GraphEditIntentV3): boolean {
   const request = value.request
   return request.workspaceId === intent.workspaceId && request.workflowId === intent.workflowId
     && value.target.workspaceId === intent.workspaceId && value.target.id === intent.workflowId
@@ -388,7 +389,7 @@ export function matchesEditIntent(value: EditIntentOutbox, intent: GraphEditInte
 }
 /** Call only with authenticated, scope-checked readback. Local evidence supplies
  * the submitted form, never the terminal state, result, or authority. */
-export function readEditSubmission(scope: string, intent: GraphEditIntentCurrent): EditIntentOutbox | undefined {
+export function readEditSubmission(scope: string, intent: GraphEditIntentV3): EditIntentOutbox | undefined {
   assertScope(scope, intent.workspaceId, intent.workflowId)
   const record = read(submissionKey(scope, intent.stageCommandId), SubmissionSchema)
   const value = record ? submissionPayload(record) : undefined
@@ -437,7 +438,7 @@ export function isDefinitiveStageRejection(error: unknown): boolean {
 }
 /** Call only for the exact editStage failure, under the same session/scope lock.
  * Releasing a rejected reservation never discards or rewrites the local form. */
-export function rejectEditOutbox(scope: string, request: GraphEditStageInputCurrent, error: unknown): boolean {
+export function rejectEditOutbox(scope: string, request: GraphEditStageInputV3, error: unknown): boolean {
   if (!isDefinitiveStageRejection(error)) return false
   const existing = readEditOutbox(scope)
   if (!existing) return false
@@ -446,7 +447,7 @@ export function rejectEditOutbox(scope: string, request: GraphEditStageInputCurr
   removeSubmission(scope, request.commandId, retainedSnapshots(scope))
   return true
 }
-export function sameStageRequest(left: GraphEditStageInputCurrent, right: GraphEditStageInputCurrent) {
+export function sameStageRequest(left: GraphEditStageInputV3, right: GraphEditStageInputV3) {
   return sameWorkflowValue({ ...left, commandId: null }, { ...right, commandId: null })
 }
 export async function withEditIntentLock<T>(scope: string, work: () => Promise<T>): Promise<T> {

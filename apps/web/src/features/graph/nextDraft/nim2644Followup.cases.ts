@@ -3,14 +3,16 @@ import { journalRequest, journalIntent, savedJournal } from './nim2644Journal.fi
 import assert from 'node:assert/strict'
 import { createStore } from 'zustand/vanilla'
 import type { Agent } from '@foreman-code/contracts'
-import { sameExecutableWorkflow, type GraphEditIntentCurrent } from '@foreman-code/contracts/current'
+import { sameExecutableWorkflow, type GraphEditIntentV3 } from '@foreman-code/contracts/wave25'
 import { ApiError } from '../../../shared/api/client'
 import { protectedKey, rotateProtectedSession } from '../../../shared/api/protectedChatStorage'
 import { acknowledgeEditIntentSnapshot } from './useGraphEditIntent'
 import { acknowledgeEditOutbox, clearEditIntentStorage, editSnapshotAcknowledged, isDefinitiveStageRejection,
   matchesEditIntent, readEditOutbox, readEditSnapshot, readEditSubmission, rejectEditOutbox, reserveEditOutbox,
   storeEditSnapshot, type EditIntentOutbox } from './editIntentStorage'
-import { newNextDraft, nextDraftDirty, nextDraftKey, type NextDraftEdit, removeNode, editorAgents } from '../../board-core'
+import { newNextDraft, nextDraftDirty, nextDraftKey, type NextDraftEdit } from './state'
+import { removeNode } from './model'
+import { editorAgents } from './agentEdits'
 import { repairFixture } from './nim2644State.cases'
 
 // Two independent Zustand form stores and tab snapshot IDs, sharing only the
@@ -30,7 +32,7 @@ function tab(id: string, initial: NextDraftEdit) {
   const change = (update: (edit: NextDraftEdit) => NextDraftEdit) => {
     store.setState(({ edit }) => ({ edit: update(edit) })); persist()
   }
-  const readback = (intent: GraphEditIntentCurrent) => run(() => {
+  const readback = (intent: GraphEditIntentV3) => run(() => {
     store.setState(({ edit }) => ({ edit: acknowledgeEditIntentSnapshot(key, edit, intent) }))
     const outbox = readEditOutbox(key)
     if (outbox && matchesEditIntent(outbox, intent)) acknowledgeEditOutbox(key, intent.stageCommandId)
@@ -46,7 +48,7 @@ function submission(edit: NextDraftEdit, commandId = 'stage-original'): EditInte
   return { request: journalRequest(edit, commandId), target: edit.graph,
     ...(edit.agentEdits ? { agentTarget: edit.agentEdits } : {}) }
 }
-function terminal(edit: NextDraftEdit, outbox: EditIntentOutbox, state: 'saved' | 'discarded'): GraphEditIntentCurrent {
+function terminal(edit: NextDraftEdit, outbox: EditIntentOutbox, state: 'saved' | 'discarded'): GraphEditIntentV3 {
   const intent = journalIntent(outbox.request, edit.context)
   return state === 'saved' ? savedJournal(intent) : { ...intent, state }
 }

@@ -5,7 +5,7 @@ import {
   type WorkflowKanbanLayoutRead,
 } from '@foreman-code/contracts'
 import { requireAuthorization } from '../access/policy.js'
-import type { PostgresCommandCoordinator } from '../commands/index.js'
+import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
 
 /** Position, size and visibility of a workflow's Kanban object on its Board. Last write wins, like

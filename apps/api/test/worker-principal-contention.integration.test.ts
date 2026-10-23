@@ -1,6 +1,6 @@
 import { beforeEach, expect, it } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
+import { Wave25WorkerCredentialService } from '../src/modules/interactions/wave25/credentials.js'
 import { lockActiveWorkerPrincipal } from '../src/modules/access/workerLifecycle.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { workerCredentialBudgetFixture } from './helpers/workerCredentialBudgetFixture.js'

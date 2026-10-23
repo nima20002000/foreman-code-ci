@@ -1,4 +1,4 @@
-import { MemoryBoardAccessField } from '../memory-boards'
+import { MemoryBoardAccessField } from '../memory-boards/MemoryBoardAccessField'
 import { InfoHint } from '../../shared/ui/InfoHint'
 import {
   COLLABORATION_AGENT_TOOLS, GRAPHQL_AGENT_TOOLS, GraphqlAgentToolSchema, graphqlRoleTools, effectiveGraphqlTools, memoryBoardTools,
@@ -6,7 +6,7 @@ import {
 } from '@foreman-code/contracts'
 
 import { Checkbox, SegmentedControl } from '../../shared/ui/nocturne'
-import { useBoardAuthoring } from '../board-core'
+import { useBoardAuthoring } from '../workflow-board/context'
 import { useCollaborationUISlots } from '../../shared/ui/collaborationSlots'
 
 type NodeChoice = 'default' | 'on' | 'off'

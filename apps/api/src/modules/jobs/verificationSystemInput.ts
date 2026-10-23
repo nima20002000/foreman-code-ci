@@ -1,4 +1,4 @@
-import { captureVerificationInventory } from '../../shared/verificationRunner.js'
+import { captureVerificationInventory } from '../../../../../scripts/verification-runner.mjs'
 import { isDeepStrictEqual } from 'node:util'
 import { JobVerificationOfflineSeedReceiptSchema, JobVerificationRepositoryContextSchema, JobVerificationQualificationCandidateSchema }
   from '@foreman-code/contracts/job-verification-runtime'

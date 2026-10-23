@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { MAX_FILE_BYTES } from './files.js'
-import { canonicalGraphJson } from './current/json.js'
+import { canonicalGraphJson } from './wave25/json.js'
 import { WorkflowArtifactTransferInputSchema } from './workflowArtifactTransfer.js'
 import { workflowArtifactTransferManifestDigest } from './workflowArtifactTransferNode.js'
 

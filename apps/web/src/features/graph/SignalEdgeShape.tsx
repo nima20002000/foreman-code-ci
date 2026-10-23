@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from 'react'
 import { BaseEdge } from '@xyflow/react'
-import type { EdgeSignal, FloatingCurve } from '../board-core'
+import type { EdgeSignal, FloatingCurve } from './signalEdge'
 
 /** One fact in flight. `startsAt` is a performance.now() time; it may be in the past or future.
  * `word` replaces the signal's usual word for facts that are not handoffs, such as a CI request. */

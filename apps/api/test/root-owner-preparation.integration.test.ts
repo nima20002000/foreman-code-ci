@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ManagementActionSchema, RunEventsPageSchema } from '@foreman-code/contracts/management'
 import { decodeMcpToolResult, OperatorRunGetResultSchema } from '@foreman-code/contracts/operator-mcp'
 import { SourceRootBindResultSchema, SourceRootRecordSchema } from '@foreman-code/contracts/source-admission'
-import { CurrentWorkflowSaveResultSchema, RunActivitiesPageSchema, RunStartCurrentResultSchema } from '@foreman-code/contracts/current'
+import { CurrentWorkflowSaveResultSchema, RunActivitiesPageSchema, RunStartV3ResultSchema } from '@foreman-code/contracts/wave25'
 import { RunPlacementGetResultSchema } from '@foreman-code/contracts/placement-readback'
 import { DomainError } from '../src/modules/errors.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
@@ -20,7 +20,7 @@ async function start(f: Fixture) {
     ...f.input, commandId: randomUUID(),
   } })
   expect(response.isError, JSON.stringify(response)).not.toBe(true)
-  return RunStartCurrentResultSchema.parse(decodeMcpToolResult(response)).run.id
+  return RunStartV3ResultSchema.parse(decodeMcpToolResult(response)).run.id
 }
 
 async function read(f: Fixture, runId: string) {

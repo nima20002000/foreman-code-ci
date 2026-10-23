@@ -1,16 +1,13 @@
 import { resolveProductEnvironment } from '@foreman-code/contracts/product-environment'
-import { homedir } from 'node:os'
-import { isAbsolute, join } from 'node:path'
+import { isAbsolute } from 'node:path'
 import { resolveLocalBrowserOrigin } from '@foreman-code/contracts/browser-origin'
 import { z } from 'zod'
-import { DEFAULT_AGENT_ACTIVE_TIMEOUT_MS } from '@foreman-code/contracts/current'
+import { DEFAULT_AGENT_ACTIVE_TIMEOUT_MS } from '@foreman-code/contracts/wave25'
 import { DEFAULT_STUCK_EXECUTION_IDLE_MS } from '@foreman-code/contracts'
 import type { RemoteExecutionEnvironmentVariable, WorkerExecutionSettings } from '@foreman-code/contracts/management'
 import { RemoteExecutionEnvironmentVariableSchema } from '@foreman-code/contracts/management'
 import { defaultFileStorageRoot } from './modules/files/storage.js'
 import { harnessBinaries } from './modules/harnesses/binaries.js'
-
-export const DEFAULT_HARNESS_WORKSPACE_ROOT = '/tmp/graphql-harness-runs'
 
 const databaseSchemaName = z
   .string()
@@ -33,7 +30,7 @@ const EnvironmentSchema = z.object({
   BROWSER_RUNTIME_ROOT: z.string().refine(isAbsolute).optional(),
   FILE_STORAGE_ROOT: z.string().trim().min(1).refine(isAbsolute, 'File storage requires an absolute directory').optional(),
   WORKSPACE_STORAGE_ROOT: z.string().trim().min(1).refine(isAbsolute, 'Workspace storage requires an absolute directory').optional(),
-  HARNESS_WORKSPACE_ROOT: z.string().trim().min(1).default(DEFAULT_HARNESS_WORKSPACE_ROOT),
+  HARNESS_WORKSPACE_ROOT: z.string().trim().min(1).default('/tmp/graphql-harness-runs'),
   HARNESS_TIMEOUT_MS: z.coerce.number().int().positive().default(DEFAULT_AGENT_ACTIVE_TIMEOUT_MS),
   FOREMAN_CODE_STUCK_EXECUTION_IDLE_MS: z.coerce.number().int().positive()
     .default(DEFAULT_STUCK_EXECUTION_IDLE_MS),
@@ -113,40 +110,4 @@ export function loadConfig(environment: NodeJS.ProcessEnv): ApiConfig {
       ...harnessBinaries(environment),
     },
   }
-}
-
-/**
- * Host settings read when asked, not at import: a test or a restarted child sees the current environment.
- * Modules that config.ts itself imports (the logger, harness binaries) read through hostEnvironment() instead.
- */
-
-/** Codex's home directory: CODEX_HOME, else ~/.codex. */
-export function codexHomeDirectory(): string {
-  return process.env.CODEX_HOME ?? join(homedir(), '.codex')
-}
-
-/** FOREMAN_EXECUTION_RETRY_BACKOFF_MS: comma-separated retry delays that replace the defaults; undefined when unset. */
-export function executionRetryBackoffOverrideMs(): number[] | undefined {
-  return process.env.FOREMAN_EXECUTION_RETRY_BACKOFF_MS?.split(',').map(Number)
-    .filter((value) => Number.isFinite(value) && value >= 0)
-}
-
-/** The user's HOME as the environment states it; undefined when unset. */
-export function configuredHome(): string | undefined {
-  return process.env.HOME
-}
-
-/** The executable search path the API was started with; undefined when unset. */
-export function configuredSearchPath(): string | undefined {
-  return process.env.PATH
-}
-
-/** TMPDIR as the environment states it; undefined when unset. */
-export function configuredTemporaryDirectory(): string | undefined {
-  return process.env.TMPDIR
-}
-
-/** True when this process was started inside a graphical desktop session (X11 or Wayland). */
-export function hasGraphicalSession(): boolean {
-  return Boolean(process.env.DISPLAY || process.env.WAYLAND_DISPLAY)
 }

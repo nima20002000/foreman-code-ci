@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
 import { lstat, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
@@ -14,9 +14,8 @@ import { MAX_VERIFICATION_CONFIGURATION_BYTES, readProtectedRuntimeConfiguration
 import { closeCiRuntimeCommand, runCiRuntimeCommand } from './ciRuntimeCommands.js'
 import { pruneCiImages } from './ciRuntimeImages.js'
 import { ciPreparationBuildArgs, ciPreparationLimits, ciPreparationResourceArgs } from './ciPreparationLimits.js'
-import { sha256Hex } from '@foreman-code/contracts/server-kit'
 
-const hash = (bytes: Uint8Array | string) => sha256Hex(bytes)
+const hash = (bytes: Uint8Array | string) => createHash('sha256').update(bytes).digest('hex')
 const COMMIT = /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u
 
 const quotaConfiguration = z.object({

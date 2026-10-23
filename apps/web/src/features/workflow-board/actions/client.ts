@@ -6,21 +6,21 @@ import { LocalHumanAccessSchema, InteractionListInputSchema, ManagedWorkspaceSch
 import {
   CURRENT_WORKFLOW_ROUTES, CurrentManagedWorkflowSchema, RunRecordDetailSchema, CurrentRunVersionSnapshotSchema,
   CurrentWorkflowCapabilitiesSchema, RunExecutionDetailSchema, RunExecutionsPageSchema,
-  RunStartCurrentInputSchema, RunVersionDetailSchema, sameExecutableWorkflow, sameWorkflowValue,
-  type RepeatGraphScopeCurrent, type RunExecutionSummary,
-} from '@foreman-code/contracts/current'
+  RunStartV3InputSchema, RunVersionDetailSchema, sameExecutableWorkflow, sameWorkflowValue,
+  type RepeatGraphScopeV3, type RunExecutionSummary,
+} from '@foreman-code/contracts/wave25'
 import { apiClient, ApiError, type ApiClient, type RequestOptions } from '../../../shared/api/client'
 import { canUseBoardAction } from '../permissions'
 import { scopeForBoardRun } from '../client'
 import type { BoardStartInput } from '../startClient'
 
-export type RunActionSelection = Pick<RepeatGraphScopeCurrent, 'workspaceId' | 'workflowId' | 'runId'>
+export type RunActionSelection = Pick<RepeatGraphScopeV3, 'workspaceId' | 'workflowId' | 'runId'>
 const part = encodeURIComponent
 const invalid = (message: string) => new ApiError({ code: 'INVALID_RESPONSE', message })
 const conflict = (message: string) => new ApiError({ code: 'RUN_ACTION_CONFLICT', message }, 409)
 const path = (scope: RunActionSelection) => `/api/management/workspaces/${part(scope.workspaceId)}/runs/${part(scope.runId)}`
 
-export function assertActionScope(actual: RepeatGraphScopeCurrent, selected: RunActionSelection & Partial<RepeatGraphScopeCurrent>): void {
+export function assertActionScope(actual: RepeatGraphScopeV3, selected: RunActionSelection & Partial<RepeatGraphScopeV3>): void {
   if (actual.workspaceId !== selected.workspaceId || actual.workflowId !== selected.workflowId
     || actual.runId !== selected.runId || actual.executionSemanticsVersion !== 3
     || selected.workflowVersionId !== undefined && actual.workflowVersionId !== selected.workflowVersionId) {
@@ -46,7 +46,7 @@ export function createRunActionsClient(client: ApiClient = apiClient) {
     }
     return access
   }
-  const executions = async (scope: RunActionSelection & Partial<RepeatGraphScopeCurrent>, cursor: string | null, limit = 10, options?: RequestOptions) => {
+  const executions = async (scope: RunActionSelection & Partial<RepeatGraphScopeV3>, cursor: string | null, limit = 10, options?: RequestOptions) => {
     const query = new URLSearchParams({ limit: String(limit) })
     if (cursor !== null) query.set('cursor', cursor)
     const page = await client.request(`${path(scope)}/executions?${query}`, RunExecutionsPageSchema, options)
@@ -55,9 +55,9 @@ export function createRunActionsClient(client: ApiClient = apiClient) {
       || cursor !== null && page.pageInfo.nextCursor === cursor) throw invalid('Execution paging did not respect its bound or cursor.')
     return page
   }
-  const status = async (scope: RunActionSelection & Partial<RepeatGraphScopeCurrent>, options?: RequestOptions) =>
+  const status = async (scope: RunActionSelection & Partial<RepeatGraphScopeV3>, options?: RequestOptions) =>
     (await executions(scope, null, 1, options)).run
-  const execution = async (scope: RepeatGraphScopeCurrent, executionId: string, options?: RequestOptions, summary?: RunExecutionSummary) => {
+  const execution = async (scope: RepeatGraphScopeV3, executionId: string, options?: RequestOptions, summary?: RunExecutionSummary) => {
     const value = await client.request(`${path(scope)}/executions/${part(executionId)}`, RunExecutionDetailSchema, options)
     assertActionScope(value.run, scope)
     const row = value.execution
@@ -68,14 +68,14 @@ export function createRunActionsClient(client: ApiClient = apiClient) {
     }
     return value
   }
-  const version = async (scope: RepeatGraphScopeCurrent, options?: RequestOptions) => {
+  const version = async (scope: RepeatGraphScopeV3, options?: RequestOptions) => {
     const value = await client.request(`${path(scope)}/version`, RunVersionDetailSchema, options)
     assertActionScope(value.scope, scope)
     if (value.version.id !== scope.workflowVersionId || value.version.workspaceId !== scope.workspaceId
       || value.version.workflowId !== scope.workflowId) throw invalid('The saved definition does not match this Run’s immutable pin.')
     return value
   }
-  const approvals = async (scope: RepeatGraphScopeCurrent, cursor: string | null, options?: RequestOptions) => {
+  const approvals = async (scope: RepeatGraphScopeV3, cursor: string | null, options?: RequestOptions) => {
     const input = InteractionListInputSchema.parse({ workspaceId: scope.workspaceId, workflowId: scope.workflowId,
       runId: scope.runId, handler: 'user', limit: 10, ...(cursor === null ? {} : { cursor }) })
     const query = new URLSearchParams(Object.entries(input).map(([key, value]) => [key, String(value)]))
@@ -87,7 +87,7 @@ export function createRunActionsClient(client: ApiClient = apiClient) {
       || cursor !== null && page.nextCursor === cursor) throw invalid('Approval paging did not respect its bound or cursor.')
     return page
   }
-  const approval = async (scope: RepeatGraphScopeCurrent, id: string, options?: RequestOptions) => {
+  const approval = async (scope: RepeatGraphScopeV3, id: string, options?: RequestOptions) => {
     const value = await client.getUserInteraction(id, options)
     assertInteractionScope(value.interaction, scope)
     if (value.interaction.id !== id) throw invalid('Approval detail returned a different interaction.')
@@ -97,7 +97,7 @@ export function createRunActionsClient(client: ApiClient = apiClient) {
     if (detail.execution.kind==='job'||detail.execution.agentId !== value.interaction.requestingAgentId) throw invalid('Approval requester does not match the pinned execution.')
     return { ...value, execution: detail.execution }
   }
-  const respond = async (scope: RepeatGraphScopeCurrent, expected: DurableInteraction,
+  const respond = async (scope: RepeatGraphScopeV3, expected: DurableInteraction,
     input: Parameters<ApiClient['respondToUserInteraction']>[0], options?: RequestOptions) => {
     const request = RespondToInteractionRequestSchema.parse(input)
     assertInteractionScope(expected, scope)
@@ -119,12 +119,12 @@ export function createRunActionsClient(client: ApiClient = apiClient) {
     }
     return result
   }
-  const record = async (scope: RepeatGraphScopeCurrent, options?: RequestOptions) => {
+  const record = async (scope: RepeatGraphScopeV3, options?: RequestOptions) => {
     const detail = await client.request(`${path(scope)}/record`, RunRecordDetailSchema, options)
     assertActionScope(scopeForBoardRun(detail.run), scope)
     return detail
   }
-  const runResult = async (scope: RepeatGraphScopeCurrent, options?: RequestOptions) => {
+  const runResult = async (scope: RepeatGraphScopeV3, options?: RequestOptions) => {
     // Explicit Run-only disclosure, never aggregate execution/activity history.
     const detail = await record(scope, options)
     return { scope: scopeForBoardRun(detail.run), result: detail.run.result,
@@ -137,7 +137,7 @@ export const runActionsClient = createRunActionsClient()
 /** Explicit user preflight, not a polling pipeline. Read the exact old Run input
  * from the bounded Run-only route, independently of execution-history size.
  * No local draft is read, saved, discarded, retagged or supplied as a Start pin. */
-export async function prepareNewFullRun(scope: RepeatGraphScopeCurrent, commandId: string, options?: RequestOptions) {
+export async function prepareNewFullRun(scope: RepeatGraphScopeV3, commandId: string, options?: RequestOptions) {
   const workflowPath = `/api/management/workspaces/${part(scope.workspaceId)}/workflows/${part(scope.workflowId)}`
   const [detail, pinned, workflow, workspace, capabilities] = await Promise.all([
     runActionsClient.record(scope, options),
@@ -165,7 +165,7 @@ export async function prepareNewFullRun(scope: RepeatGraphScopeCurrent, commandI
     name: pinned.version.definition.name, description: pinned.version.definition.description })) {
     throw conflict('The saved executable definition changed. No replacement definition will be started.')
   }
-  const request: BoardStartInput = RunStartCurrentInputSchema.parse({ workspaceId: scope.workspaceId, workflowId: scope.workflowId,
+  const request: BoardStartInput = RunStartV3InputSchema.parse({ workspaceId: scope.workspaceId, workflowId: scope.workflowId,
     workflowVersionId: scope.workflowVersionId, executionSemanticsVersion: 3, commandId,
     expectedWorkflowRevision: workflow.revision, expectedAgentConfigurationVersionIds: pinned.version.agentConfigurationVersionIds,
     expectedLocationRevision: workspace.locationRevision, input: detail.run.input })

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentConfigurationVersionSchema, ChatDeliveryReceiptSchema, EngineChatReadbackSchema,
   type HarnessExecutionRequest } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture, WorkActivationInputSchema } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture, WorkActivationInputSchema } from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { ControlledWorkflowProvider } from './helpers/controlledWorkflowProvider.js'
 import { workflowChatCall, workflowChatTarget } from './helpers/workflowChatRequests.js'

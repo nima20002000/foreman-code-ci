@@ -1,5 +1,5 @@
 import type { AcceptedNodePlacement } from '@foreman-code/contracts/node-placement'
-import type { SqlQuery } from '../../infrastructure/transaction.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 import { DomainError } from '../errors.js'
 
 interface PrincipalRow {
@@ -37,10 +37,10 @@ interface AuthorizationReadSnapshot extends AuthorizationRows {
 }
 
 interface ReadScope { load(): Promise<AuthorizationReadSnapshot>; pending?: Promise<AuthorizationReadSnapshot> }
-const scopes = new WeakMap<SqlQuery, ReadScope>()
+const scopes = new WeakMap<GraphSqlClient, ReadScope>()
 
 /** Materialize live rows only for this admission check. The commit check opens a separate scope. */
-export async function withAuthorizationReadSnapshot<T>(sql: SqlQuery, runId: string,
+export async function withAuthorizationReadSnapshot<T>(sql: GraphSqlClient, runId: string,
   placement: AcceptedNodePlacement, work: () => Promise<T>): Promise<T> {
   const previous = scopes.get(sql)
   scopes.set(sql, { load: () => readAuthorizationRows(sql, runId, placement) })
@@ -51,7 +51,7 @@ export async function withAuthorizationReadSnapshot<T>(sql: SqlQuery, runId: str
   }
 }
 
-export function authorizationReadSnapshot(sql: SqlQuery): Promise<AuthorizationReadSnapshot> | undefined {
+export function authorizationReadSnapshot(sql: GraphSqlClient): Promise<AuthorizationReadSnapshot> | undefined {
   const scope = scopes.get(sql)
   if (!scope) return undefined
   scope.pending ??= scope.load()
@@ -67,7 +67,7 @@ export function snapshotPrincipal(snapshot: AuthorizationReadSnapshot, id: strin
   }
 }
 
-async function readAuthorizationRows(sql: SqlQuery, runId: string,
+async function readAuthorizationRows(sql: GraphSqlClient, runId: string,
   placement: AcceptedNodePlacement): Promise<AuthorizationReadSnapshot> {
   const host = placement.hostRef
   const source = 'kind' in placement.source && placement.source.kind === 'pending' ? placement.source : undefined

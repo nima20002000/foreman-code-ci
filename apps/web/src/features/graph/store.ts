@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { createNextDraftSlice, type NextDraftSlice } from '../board-core'
+import { createNextDraftSlice, type NextDraftSlice } from './nextDraft/state'
 import { clearEditIntentStorage } from './nextDraft/editIntentStorage'
 import { clearBoardStartStorage } from '../workflow-board/startOutbox'
 import { clearBoardStopStorage } from '../workflow-board/stopOutbox'

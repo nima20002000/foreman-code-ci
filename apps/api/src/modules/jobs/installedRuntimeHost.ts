@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
-import { canonicalGraphJson } from '@foreman-code/contracts/current'
+import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import {
   JOB_RUNTIME_WORKSPACE_LAYOUT,
   CurrentJobRuntimeFingerprintSchema,
@@ -94,7 +94,7 @@ async function installedIdentity(sql: JobSql, configuration: { target: Installed
   const main = (await sql.query<{ id: string }>('select id from application_installation where singleton=true for share')).rows[0]
   if (!main || main.id !== selected.mainInstallationId || selected.hostRef.mainId !== main.id) unavailable('installation_changed')
   // Same canonical active identity facts as assertDeviceHostInstallation,
-  // read through the existing SqlQuery facade rather than raw PG overloads.
+  // read through the existing GraphSqlClient facade rather than raw PG overloads.
   let pinned: InstalledJobRuntimeConfiguration['target']['registration'] = null
   if (selected.hostRef.kind === 'device') {
     const device = (await sql.query<{ record: unknown }>('select record from device_registrations where id=$1 and main_id=$2 for share', [selected.hostRef.deviceId, main.id])).rows[0]

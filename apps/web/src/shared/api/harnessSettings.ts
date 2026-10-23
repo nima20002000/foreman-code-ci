@@ -17,7 +17,6 @@ import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-re
 import type { HarnessConfiguration } from '@foreman-code/contracts'
 import { apiClient } from './client'
 import { reservePluginOperation, restorePluginOperation, pluginOperationFailed, pluginOperationSucceeded, terminalPluginResult, type PluginOperation } from './codexPluginOperation'
-import { readManagedOperation, readPluginOperation, updatePluginOperation, useManagedOperation, usePluginOperation, writeManagedOperation } from './harnessOperationStore'
 import { sessionGeneration, sessionSignal, sessionIsSwitching, SessionChangedError } from './sessionBoundary'
 import { managedMcpFailed, managedMcpSucceeded, reserveManagedMcpOperation, terminalMcpPlan, type ManagedMcpOperation } from './managedMcpOperation'
 import { WorkspaceFolderDeleteInputSchema, WorkspaceFolderDeleteResultSchema, type WorkspaceFolderDeleteInput } from '@foreman-code/contracts/management'
@@ -84,17 +83,21 @@ export function useCodexPlugin(pluginId: string | undefined) {
 export function useChangeCodexPlugin() {
   const client = useQueryClient()
   const epoch = useHarnessSessionEpoch()
+  const key = [...harnessSettingsKeys.root, epoch, 'plugin-operation'] as const
   const operationsKey = [...harnessSettingsKeys.root, epoch, 'plugin-operations'] as const
-  const saved = usePluginOperation(client, epoch)
+  type State = { operation: PluginOperation | null; settled: string[] }
+  const saved = useQuery<State>({ queryKey: key, queryFn: () => ({ operation: null, settled: [] }),
+    enabled: false, initialData: { operation: null, settled: [] }, staleTime: Infinity, gcTime: Infinity })
   const operations = useQuery({ queryKey: operationsKey, enabled: !sessionIsSwitching(),
     refetchOnWindowFocus: false,
     queryFn: ({ signal }) => apiClient.request('/api/management/harnesses/codex/plugins/operations', CodexPluginOperationsResultSchema, { signal }) })
   const currentSession = () => epoch === sessionGeneration() && !sessionIsSwitching()
-  const state = () => readPluginOperation(client, epoch)
+  const state = () => client.getQueryData<State>(key) ?? { operation: null, settled: [] }
   const identity = (value: { commandId: string; requestedBy?: string }) => `${value.requestedBy ?? ''}:${value.commandId}`
   const update = (id: string, transform: (current: PluginOperation) => PluginOperation | null, terminal = false) => {
     if (!currentSession()) return
-    updatePluginOperation(client, epoch, (value) => {
+    client.setQueryData<State>(key, (previous) => {
+      const value = previous ?? { operation: null, settled: [] }
       if (value.operation?.commandId !== id) return value
       const operation = transform(value.operation)
       return { operation, settled: terminal ? [...value.settled, identity(value.operation), id] : value.settled }
@@ -103,7 +106,8 @@ export function useChangeCodexPlugin() {
   useEffect(() => {
     if (epoch !== sessionGeneration() || sessionIsSwitching() || !operations.isSuccess) return
     const records = operations.data.items
-    updatePluginOperation(client, epoch, (value) => {
+    client.setQueryData<State>([...harnessSettingsKeys.root, epoch, 'plugin-operation'], (previous) => {
+      const value = previous ?? { operation: null, settled: [] }
       // Merge server ownership into a locally retained command, never replace its payload.
       if (value.operation) {
         const matching = records.find((item) => item.commandId === value.operation?.commandId)
@@ -148,7 +152,7 @@ export function useChangeCodexPlugin() {
     if (!currentSession() || state().operation || !operations.isSuccess || operations.isFetching) return
     if (operations.data.items.some((item) => !state().settled.includes(item.commandId))) return
     const input = CodexPluginChangeInputSchema.parse({ ...draft, commandId: crypto.randomUUID() })
-    updatePluginOperation(client, epoch, (value) => ({ ...value, operation: reservePluginOperation(input) }))
+    client.setQueryData<State>(key, { ...state(), operation: reservePluginOperation(input) })
     mutation.mutate(input)
   }
   const retry = () => {
@@ -165,8 +169,8 @@ export function useChangeCodexPlugin() {
     reconciliation.mutate({ commandId: current.commandId, ...(current.requestedBy ? { requestedBy: current.requestedBy } : {}),
       acceptObservedState, ...(acceptObservedState && revision ? { expectedRevision: revision } : {}) })
   }
-  return { ...mutation, operation: saved.operation, operations, start, retry, reconcile,
-    reconciliation, busy: saved.operation?.phase === 'sending' || reconciliation.isPending }
+  return { ...mutation, operation: saved.data.operation, operations, start, retry, reconcile,
+    reconciliation, busy: saved.data.operation?.phase === 'sending' || reconciliation.isPending }
 }
 
 export function useNativeHarnessOptions(harness: Harness, enabled = true, hostRef?: DeviceProvisioningTarget['hostRef']) {
@@ -285,31 +289,35 @@ export function useDecideNativeMcpChange() {
     onSettled: (plan, _error, input) => refreshMcpReadback(client, epoch, plan?.harness ?? cachedPlanHarness(client, input.planId)),
   })
 }
+const managedOperationKey = (harness: Harness, epoch: number) => [...harnessSettingsKeys.root, epoch, harness, 'managed-operation'] as const
 type ManagedStart = HarnessMcpManagedInput extends infer Input ? Input extends { commandId: string; harness: Harness }
   ? Omit<Input, 'commandId' | 'harness'> : never : never
 function settleManagedOperation(client: QueryClient, epoch: number, plan: HarnessMcpPlan) {
   if (!terminalMcpPlan(plan) || epoch !== sessionGeneration() || sessionIsSwitching()) return
-  if (readManagedOperation(client, epoch, plan.harness)?.plan?.id === plan.id) writeManagedOperation(client, epoch, plan.harness, null)
+  const key = managedOperationKey(plan.harness, epoch)
+  const current = client.getQueryData<ManagedMcpOperation | null>(key)
+  if (current?.plan?.id === plan.id) client.setQueryData(key, null)
 }
 
-/** Access-session lifetime (kept in a local store), not the mounted harness panel's lifetime. */
+/** Query-client/session lifetime, not the mounted harness panel's lifetime. */
 export function useApplyManagedMcpChange(harness: Harness, observedPlans?: HarnessMcpPlan[]) {
   const client = useQueryClient()
   const epoch = useHarnessSessionEpoch()
-  const stored = useManagedOperation(client, epoch, harness)
+  const key = managedOperationKey(harness, epoch)
+  const stored = useQuery<ManagedMcpOperation | null>({ queryKey: key, queryFn: () => null,
+    enabled: false, initialData: null, staleTime: Infinity, gcTime: Infinity })
   useEffect(() => {
     for (const plan of observedPlans ?? []) settleManagedOperation(client, epoch, plan)
   }, [client, epoch, observedPlans])
   const currentSession = () => epoch === sessionGeneration() && !sessionIsSwitching()
   const update = (input: HarnessMcpManagedInput, transform: (value: ManagedMcpOperation) => ManagedMcpOperation | null) => {
     if (!currentSession()) return
-    const current = readManagedOperation(client, epoch, harness)
-    if (current?.input.commandId === input.commandId) writeManagedOperation(client, epoch, harness, transform(current))
+    client.setQueryData<ManagedMcpOperation | null>(key, (current) => current?.input.commandId === input.commandId ? transform(current) : current ?? null)
   }
   const mutation = useMutation({ retry: false,
     mutationFn: (input: HarnessMcpManagedInput) => {
       if (!currentSession()) throw new SessionChangedError()
-      const saved = readManagedOperation(client, epoch, harness)
+      const saved = client.getQueryData<ManagedMcpOperation | null>(key)
       if (!saved || JSON.stringify(saved.input) !== JSON.stringify(input)) throw new Error('The original MCP operation is no longer reserved.')
       return apiClient.request('/api/management/harnesses/mcp/managed', HarnessMcpPlanSchema,
         { method: 'POST', body: HarnessMcpManagedInputSchema.parse(input) })
@@ -321,18 +329,18 @@ export function useApplyManagedMcpChange(harness: Harness, observedPlans?: Harne
   })
   const start = (value: ManagedStart) => {
     if (!currentSession()) return
-    if (readManagedOperation(client, epoch, harness)) return // Never replace an unresolved operation.
+    if (client.getQueryData<ManagedMcpOperation | null>(key)) return // Never replace an unresolved operation.
     const input = HarnessMcpManagedInputSchema.parse({ ...value, harness, commandId: crypto.randomUUID() })
-    writeManagedOperation(client, epoch, harness, reserveManagedMcpOperation(input))
+    client.setQueryData(key, reserveManagedMcpOperation(input))
     mutation.mutate(input)
   }
   const retry = () => {
-    const current = readManagedOperation(client, epoch, harness)
+    const current = client.getQueryData<ManagedMcpOperation | null>(key)
     if (!currentSession() || !current || current.phase === 'sending' || current.phase === 'review') return
-    writeManagedOperation(client, epoch, harness, { ...current, phase: 'sending' })
+    client.setQueryData(key, { ...current, phase: 'sending' })
     mutation.mutate(current.input) // The original revision, payload and ID survive every panel remount.
   }
-  return { ...mutation, operation: stored, start, retry }
+  return { ...mutation, operation: stored.data, start, retry }
 }
 
 export function useReconcileNativeMcpChange() {

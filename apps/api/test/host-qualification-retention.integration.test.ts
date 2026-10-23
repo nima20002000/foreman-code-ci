@@ -12,10 +12,10 @@ import type { HarnessQualification } from '@foreman-code/contracts/harness-quali
 import { HarnessQualificationRepository, readHostHarnessMeasurements } from '../src/modules/harnesses/qualification/repository.js'
 import { hostHarnessMeasurementsMigration } from '../src/infrastructure/hostHarnessMeasurementsMigration.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database } from './helpers/workflowDatabase.js'
 
 it('keeps Main and pinned Run measurements when a Worker or a later Main check qualifies the same binary', async () => {
-  const db = await migratedDatabase()
+  const db = await agent3Database()
   try {
     const repository = new HarnessQualificationRepository(db.pool)
     const principal = await new PostgresAccessService(db.pool).issue({ name: 'Host qualification test',
@@ -92,7 +92,7 @@ it('keeps Main and pinned Run measurements when a Worker or a later Main check q
 }, 30_000)
 
 it('reads an existing measured qualification after the host measurement migration', async () => {
-  const db = await migratedDatabase()
+  const db = await agent3Database()
   try {
     const repository = new HarnessQualificationRepository(db.pool)
     const qualification: HarnessQualification = { harness: 'codex', version: '0.154.0', binarySha256: 'b'.repeat(64),

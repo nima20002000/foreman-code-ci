@@ -1,8 +1,8 @@
-import { type CurrentRunDetails as GetRunResponse } from '@foreman-code/contracts/current'
+import { type CurrentRunDetails as GetRunResponse } from '@foreman-code/contracts/wave25'
 import { describe, expect, it } from 'vitest'
 import { keepLatestRunResponse, shareRunResponseOrSelection } from './runLiveCache'
 import { makeSyntheticRun } from '../../features/graph/fixtures/scaleData'
-import { selectGraphNodeActivity } from '../../features/graph'
+import { selectGraphNodeActivity } from '../../features/graph/runtimeIndex'
 
 function terminal(sequence: string, outcome: GetRunResponse['run']['outcome'] = 'canceled') {
   const response = makeSyntheticRun(1, sequence)

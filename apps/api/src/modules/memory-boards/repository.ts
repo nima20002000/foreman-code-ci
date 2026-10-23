@@ -5,7 +5,7 @@ import {
   type AgentNodeRef, type MemoryBoardScope, type MemoryCard, type MemoryNote,
   type MemoryCardWorkBinding, type MemoryCardWorkClaim,
 } from '@foreman-code/contracts'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import type { GraphTransactionSql } from '../run-graph/connection.js'
 import type { Actor, BoardChange, BoardRow, Counts, MutationReceipt, CommandRead } from './types.js'
 import { missing, nodeKey, normalizeTitle, scopeKey, workKey } from './identity.js'
 import { saveDigestTargets } from './digestCards.js'
@@ -15,68 +15,68 @@ function boardRow(row: StoredBoard): BoardRow {
   return { board: MemoryBoardSchema.parse({ id: row.id, scope: row.scope, revision: Number(row.revision) }),
     sequence: Number(row.sequence), counts: row.counts, nextNoteRank: Number(row.next_note_rank) }
 }
-export async function loadBoard(tx: SqlTransaction, id: string): Promise<BoardRow> {
+export async function loadBoard(tx: GraphTransactionSql, id: string): Promise<BoardRow> {
   const result = await tx.query<StoredBoard>('select * from memory_boards where id=$1 for update', [id])
   return boardRow(result.rows[0] ?? missing('Memory board'))
 }
-export async function readBoard(tx: SqlTransaction, id: string): Promise<BoardRow> {
+export async function readBoard(tx: GraphTransactionSql, id: string): Promise<BoardRow> {
   const result = await tx.query<StoredBoard>('select * from memory_boards where id=$1', [id])
   return boardRow(result.rows[0] ?? missing('Memory board'))
 }
-export async function ensureBoard(tx: SqlTransaction, scope: MemoryBoardScope): Promise<BoardRow> {
+export async function ensureBoard(tx: GraphTransactionSql, scope: MemoryBoardScope): Promise<BoardRow> {
   await tx.query('insert into memory_boards(id,scope_key,scope) values($1,$2,$3) on conflict(scope_key) do nothing',
     [randomUUID(), scopeKey(scope), scope])
   const result = await tx.query<StoredBoard>('select * from memory_boards where scope_key=$1 for update', [scopeKey(scope)])
   return boardRow(result.rows[0] ?? missing('Memory board'))
 }
-export async function peekBoardScope(tx: SqlTransaction, id: string): Promise<MemoryBoardScope> {
+export async function peekBoardScope(tx: GraphTransactionSql, id: string): Promise<MemoryBoardScope> {
   const result = await tx.query<{ scope: MemoryBoardScope }>('select scope from memory_boards where id=$1', [id])
   return result.rows[0]?.scope ?? missing('Memory board')
 }
-export async function findScopeBoard(tx: SqlTransaction, scope: MemoryBoardScope): Promise<BoardRow | undefined> {
+export async function findScopeBoard(tx: GraphTransactionSql, scope: MemoryBoardScope): Promise<BoardRow | undefined> {
   const result = await tx.query<StoredBoard>('select * from memory_boards where scope_key=$1', [scopeKey(scope)])
   return result.rows[0] ? boardRow(result.rows[0]) : undefined
 }
-export async function cardById(tx: SqlTransaction, boardId: string, id: string): Promise<MemoryCard> {
+export async function cardById(tx: GraphTransactionSql, boardId: string, id: string): Promise<MemoryCard> {
   const result = await tx.query<{ record: unknown }>('select record from memory_cards where board_id=$1 and id=$2', [boardId,id])
   return MemoryCardSchema.parse(result.rows[0]?.record ?? missing('Task'))
 }
 /** Assignment is the persistent identity, including completed cards without digest targets. */
-export async function agentCard(tx: SqlTransaction, boardId: string, node: AgentNodeRef): Promise<MemoryCard | undefined> {
+export async function agentCard(tx: GraphTransactionSql, boardId: string, node: AgentNodeRef): Promise<MemoryCard | undefined> {
   const result = await tx.query<{ record: unknown }>(`select record from memory_cards
     where board_id=$1 and record->'assignee'=$2::jsonb order by record->>'createdAt',id limit 1`,
   [boardId, { workspaceId: node.workspaceId, workflowId: node.workflowId,
     workflowNodeId: node.workflowNodeId, agentId: node.agentId }])
   return result.rows[0] ? MemoryCardSchema.parse(result.rows[0].record) : undefined
 }
-export async function cardByTitle(tx: SqlTransaction, boardId: string, title: string): Promise<MemoryCard | undefined> {
+export async function cardByTitle(tx: GraphTransactionSql, boardId: string, title: string): Promise<MemoryCard | undefined> {
   const result = await tx.query<{ record: unknown }>('select record from memory_cards where board_id=$1 and normalized_title=$2',
     [boardId,normalizeTitle(title)])
   return result.rows[0] ? MemoryCardSchema.parse(result.rows[0].record) : undefined
 }
-export async function cardBlockerSource(tx: SqlTransaction, id: string): Promise<'manual' | 'engine' | null> {
+export async function cardBlockerSource(tx: GraphTransactionSql, id: string): Promise<'manual' | 'engine' | null> {
   const result = await tx.query<{blocker_source:'manual'|'engine'|null}>('select blocker_source from memory_cards where id=$1',[id])
   return result.rows[0]?.blocker_source ?? null
 }
-export async function noteById(tx: SqlTransaction, boardId: string, id: string): Promise<MemoryNote> {
+export async function noteById(tx: GraphTransactionSql, boardId: string, id: string): Promise<MemoryNote> {
   const result = await tx.query<{ record: unknown }>('select record from memory_notes where board_id=$1 and id=$2', [boardId,id])
   return MemoryNoteSchema.parse(result.rows[0]?.record ?? missing('Note'))
 }
-export async function bindingsFor(tx: SqlTransaction, cardId: string): Promise<MemoryCardWorkBinding[]> {
+export async function bindingsFor(tx: GraphTransactionSql, cardId: string): Promise<MemoryCardWorkBinding[]> {
   const result = await tx.query<{ record: unknown }>('select record from memory_card_bindings where card_id=$1 order by id', [cardId])
   return result.rows.map(row => MemoryCardWorkBindingSchema.parse(row.record))
 }
-export async function claimsFor(tx: SqlTransaction, cardId: string): Promise<MemoryCardWorkClaim[]> {
+export async function claimsFor(tx: GraphTransactionSql, cardId: string): Promise<MemoryCardWorkClaim[]> {
   const result = await tx.query<{ record: unknown }>('select record from memory_card_claims where card_id=$1 order by id', [cardId])
   return result.rows.map(row => MemoryCardWorkClaimSchema.parse(row.record))
 }
-export async function saveBinding(tx: SqlTransaction, boardId: string, binding: MemoryCardWorkBinding): Promise<void> {
+export async function saveBinding(tx: GraphTransactionSql, boardId: string, binding: MemoryCardWorkBinding): Promise<void> {
   const record = MemoryCardWorkBindingSchema.parse(binding)
   await tx.query(`insert into memory_card_bindings(id,board_id,card_id,work_key,node_key,record) values($1,$2,$3,$4,$5,$6)
     on conflict(id) do update set work_key=excluded.work_key,node_key=excluded.node_key,record=excluded.record`,
   [record.id,boardId,record.cardId,workKey(record.work),nodeKey(record.node),record])
 }
-export async function saveClaim(tx: SqlTransaction, boardId: string, claim: MemoryCardWorkClaim): Promise<void> {
+export async function saveClaim(tx: GraphTransactionSql, boardId: string, claim: MemoryCardWorkClaim): Promise<void> {
   const record = MemoryCardWorkClaimSchema.parse(claim)
   await tx.query(`insert into memory_card_claims(id,board_id,card_id,node_key,state,record) values($1,$2,$3,$4,$5,$6)
     on conflict(id) do update set state=excluded.state,record=excluded.record`,
@@ -87,7 +87,7 @@ export interface ChangeSource {
   provenance?: BoardChange['provenance']; changes?: BoardChange['changes']
   preserveBlocker?: boolean
 }
-async function publishChange(tx: SqlTransaction, row: BoardRow,
+async function publishChange(tx: GraphTransactionSql, row: BoardRow,
   entity: 'card' | 'note', entityId: string, entityRevision: number, source: ChangeSource): Promise<void> {
   row.board = { ...row.board, revision: row.board.revision + 1 }
   row.sequence += 1
@@ -110,7 +110,7 @@ function countCard(counts: Counts, card: MemoryCard | undefined, delta: number):
   counts[card.status] += delta
   if (card.status === 'done' && card.completionKind) counts[card.completionKind] += delta
 }
-export async function saveCard(tx: SqlTransaction, row: BoardRow, before: MemoryCard | undefined,
+export async function saveCard(tx: GraphTransactionSql, row: BoardRow, before: MemoryCard | undefined,
   next: MemoryCard, source: ChangeSource): Promise<MemoryCard> {
   const card = MemoryCardSchema.parse({ ...next, revision: before ? before.revision + 1 : 1, updatedAt: source.now })
   const blockerSource = card.status !== 'blocked' ? null : source.preserveBlocker && before
@@ -128,7 +128,7 @@ export async function saveCard(tx: SqlTransaction, row: BoardRow, before: Memory
   await publishChange(tx,row,'card',card.id,card.revision,{ ...source, changes })
   return card
 }
-export async function saveNote(tx: SqlTransaction, row: BoardRow, before: MemoryNote | undefined,
+export async function saveNote(tx: GraphTransactionSql, row: BoardRow, before: MemoryNote | undefined,
   next: MemoryNote, source: ChangeSource): Promise<MemoryNote> {
   const note = MemoryNoteSchema.parse({ ...next, revision: before ? before.revision + 1 : 1, updatedAt: source.now })
   await tx.query(`insert into memory_notes(id,board_id,archived,rank,record) values($1,$2,$3,$4,$5)
@@ -144,17 +144,17 @@ export async function saveNote(tx: SqlTransaction, row: BoardRow, before: Memory
   await publishChange(tx,row,'note',note.id,note.revision,{ ...source, changes })
   return note
 }
-export async function lockIdentity(tx: SqlTransaction, key: string): Promise<void> {
+export async function lockIdentity(tx: GraphTransactionSql, key: string): Promise<void> {
   await tx.query('select pg_advisory_xact_lock(hashtextextended($1,0))', [`memory:${key}`])
 }
 export type StoredCommand = { input_hash: string; board_id: string; receipt: MutationReceipt | null;
   rejection: Extract<CommandRead, { state: 'rejected' }>['error'] | null }
-export async function commandReceipt(tx: SqlTransaction, principalId: string, commandId: string): Promise<StoredCommand | undefined> {
+export async function commandReceipt(tx: GraphTransactionSql, principalId: string, commandId: string): Promise<StoredCommand | undefined> {
   const result = await tx.query<StoredCommand>(
     'select input_hash,board_id,receipt,rejection from memory_board_commands where principal_id=$1 and command_id=$2', [principalId,commandId])
   return result.rows[0]
 }
-export async function saveReceipt(tx: SqlTransaction, principalId: string, boardId: string,
+export async function saveReceipt(tx: GraphTransactionSql, principalId: string, boardId: string,
   hash: string, receipt: MutationReceipt): Promise<void> {
   await tx.query('insert into memory_board_commands(principal_id,command_id,board_id,input_hash,receipt) values($1,$2,$3,$4,$5)',
     [principalId,receipt.commandId,boardId,hash,receipt])

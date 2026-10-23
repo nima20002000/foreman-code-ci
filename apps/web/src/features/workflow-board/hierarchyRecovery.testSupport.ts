@@ -2,10 +2,12 @@ import { isInaccessible, queryAllByAttribute, queryByAttribute, waitFor, within 
 import userEvent from '@testing-library/user-event'
 import { expect } from 'vitest'
 import { HttpResponse } from 'msw'
-import { GraphEditAdvanceInputCurrentSchema, GraphEditStageInputCurrentSchema,
-  type GraphEditIntentCurrent, type GraphEditStageInputCurrent } from '@foreman-code/contracts/current'
-import { useGraphDraftStore, readConflictRecoveries, graphEditIntentKey } from '../graph'
+import { GraphEditAdvanceInputV3Schema, GraphEditStageInputV3Schema,
+  type GraphEditIntentV3, type GraphEditStageInputV3 } from '@foreman-code/contracts/wave25'
+import { useGraphDraftStore } from '../graph/store'
 import { fixture as authoringFixture } from '../graph/nextDraft/core.cases'
+import { readConflictRecoveries } from '../graph/nextDraft/editIntentStorage'
+import { graphEditIntentKey } from '../graph/nextDraft/useGraphEditIntent'
 import { journalIntent, savedJournal } from '../graph/nextDraft/nim2644Journal.fixture'
 import { measureBoardWire, mountMeasuredBoard } from './eng05D.testSupport'
 import { meaningfulSaveFixture } from './meaningfulSave.testSupport'
@@ -48,7 +50,7 @@ export async function recoveryFixture(source = authoringFixture()) {
   const f = await meaningfulSaveFixture(false, source)
   let saved = structuredClone(f.definition())
   const baseManaged = f.mock.managed(f.workflowId)
-  const intents = new Map<string, GraphEditIntentCurrent>(), requests: GraphEditStageInputCurrent[] = []
+  const intents = new Map<string, GraphEditIntentV3>(), requests: GraphEditStageInputV3[] = []
   const controls = { failLatestRead: false, loseStageReply: false }
   const read = (draftId: string) => ({ intent: intents.get(draftId) ?? null, current: [], canStop: true, affectedSetChanged: false })
   const reply = async (request: Request) => {
@@ -62,7 +64,7 @@ export async function recoveryFixture(source = authoringFixture()) {
     if (request.method === 'GET') return HttpResponse.json(read(url.searchParams.get('draftId') ?? ''))
     const raw: unknown = await request.json()
     if ((raw as { action?: string }).action === 'stage_edits') {
-      const input = GraphEditStageInputCurrentSchema.parse(raw); requests.push(structuredClone(input))
+      const input = GraphEditStageInputV3Schema.parse(raw); requests.push(structuredClone(input))
       const prior = intents.get(input.draftId)
       if (prior?.stageCommandId === input.commandId) return HttpResponse.json(read(input.draftId))
       if (input.expectedRevision !== saved.revision || input.expectedWorkflowVersionId !== saved.currentVersionId) {
@@ -74,7 +76,7 @@ export async function recoveryFixture(source = authoringFixture()) {
       if (controls.loseStageReply) { controls.loseStageReply = false; return HttpResponse.error() }
       return HttpResponse.json(read(input.draftId))
     }
-    const input = GraphEditAdvanceInputCurrentSchema.parse(raw), intent = intents.get(input.draftId)!
+    const input = GraphEditAdvanceInputV3Schema.parse(raw), intent = intents.get(input.draftId)!
     expect(input.intentId).toBe(intent.id); expect(input.commandId).toBe(intent.advanceCommandId)
     if (intent.state !== 'saved') {
       const completed = savedJournal(intent, saved.version.version + 1)

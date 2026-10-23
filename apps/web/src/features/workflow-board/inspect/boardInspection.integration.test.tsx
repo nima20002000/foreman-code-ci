@@ -8,14 +8,14 @@ import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import {
-  boardSearchForInspection, boardSearchForRun, runInspectionKey, RepeatGraphCurrentStateSchema,
-  type RepeatGraphScopeCurrent, type WorkspaceBoardInspection,
-} from '@foreman-code/contracts/current'
+  boardSearchForInspection, boardSearchForRun, runInspectionKey, RepeatGraphCurrentV3Schema,
+  type RepeatGraphScopeV3, type WorkspaceBoardInspection,
+} from '@foreman-code/contracts/wave25'
 import { routeTree } from '../../../app/router'
 import { server } from '../../../mocks/server'
 import { bindMockInstallation } from '../../../shared/mocks/handlers'
-import { useGraphDraftStore } from '../../graph'
-import { nextDraftKey } from '../../board-core'
+import { useGraphDraftStore } from '../../graph/store'
+import { nextDraftKey } from '../../graph/nextDraft/state'
 import { inspectionBoardFixture } from './inspectionFixtures'
 import { useInspectionPresentation } from './presentation'
 import { queryKeys } from '../../../shared/api/query'
@@ -33,8 +33,8 @@ const clients: QueryClient[] = []
 let number = 0, fixture: Fixture
 const unhandled: string[] = []
 const recordUnhandled = ({ request }: { request: Request }) => unhandled.push(`${request.method} ${request.url}`)
-const basePath = (scope: RepeatGraphScopeCurrent) => `/api/management/workspaces/${scope.workspaceId}/runs/${scope.runId}`
-function href(scope: RepeatGraphScopeCurrent, inspection: WorkspaceBoardInspection = {}) {
+const basePath = (scope: RepeatGraphScopeV3) => `/api/management/workspaces/${scope.workspaceId}/runs/${scope.runId}`
+function href(scope: RepeatGraphScopeV3, inspection: WorkspaceBoardInspection = {}) {
   const search = boardSearchForInspection({}, scope.workflowId, scope, inspection)
   const params = new URLSearchParams(Object.entries(search).filter(([, value]) => value !== undefined)
     .map(([key, value]) => [key, String(value)]))
@@ -106,10 +106,10 @@ async function openDetails() {
   if (!close) await userEvent.setup().click(await screen.findByRole('button', { name: 'Activities' }))
   await screen.findByRole('region', { name: 'Exact execution inputs and results' })
 }
-const activityRoute = (scope: RepeatGraphScopeCurrent) =>
+const activityRoute = (scope: RepeatGraphScopeV3) =>
   `/api/management/workspaces/${scope.workspaceId}/workflows/${scope.workflowId}/runs/${scope.runId}/snapshot`
 /** The saved Board's snapshot plus the Run's live Activity, which is where a node learns about its CI. */
-function snapshotWithCi(scope: RepeatGraphScopeCurrent, owner: { id: string; agentId: string }, ci: () => Record<string, unknown> | undefined,
+function snapshotWithCi(scope: RepeatGraphScopeV3, owner: { id: string; agentId: string }, ci: () => Record<string, unknown> | undefined,
   executionId = 'ci-owner') {
   return http.get(activityRoute(scope), async ({ request }) => {
     const base = await (await fixture.mock.dispatch(request))!.json() as Record<string, unknown>
@@ -609,7 +609,7 @@ describe('Live Run status on the Board', () => {
       resultOutcome: state === 'completed' ? 'succeeded' : null })
     const base = fixture.mock.currents.get(run.id)!
     const cut = (sequence: string, executionState: 'running' | 'waiting', executions: unknown[]) => fixture.mock.currents.set(run.id,
-      RepeatGraphCurrentStateSchema.parse({ ...base, asOfSequence: sequence, state: { ...base.state, executions,
+      RepeatGraphCurrentV3Schema.parse({ ...base, asOfSequence: sequence, state: { ...base.state, executions,
         run: { ...base.state.run, executionState, outcome: 'pending', pendingInteractionCount: executionState === 'waiting' ? 1 : 0 } } }))
     cut('1', 'running', [execution(first, 'running'), execution(added, 'queued')])
     const ticket = '00000000-0000-4000-8000-000000000011'

@@ -8,8 +8,8 @@ import { RunManagementService } from '../src/modules/runs/management.js'
 import { randomUUID } from 'node:crypto'
 import { Buffer } from 'node:buffer'
 import {
-  RUN_INSPECTION_TOOLS, RUN_INSPECTION_LIMITS, RUN_GRAPH_LIMITS, RunRecordDetailSchema, RunExecutionsPageSchema, WorkflowRunCurrentSchema, makeCurrentWorkflowFixture,
-} from '@foreman-code/contracts/current'
+  RUN_INSPECTION_TOOLS, RUN_INSPECTION_LIMITS, RUN_GRAPH_LIMITS, RunRecordDetailSchema, RunExecutionsPageSchema, WorkflowRunV3Schema, makeCurrentWorkflowFixture,
+} from '@foreman-code/contracts/wave25'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { postgresEnabled } from './helpers/database.js'
 import { measureIntegrationPhase } from './helpers/integrationPhase.js'
@@ -90,7 +90,7 @@ describe.skipIf(!postgresEnabled)('PostgreSQL authenticated Run inspection: larg
         `select r.record,r.stop_requested_at is not null as stopped,
          exists(select 1 from run_cleanup_intents c where c.run_id=r.id and c.pending) as pending
          from runs r where r.id=$1`, [args.runId])).rows[0]!
-      const expected = WorkflowRunCurrentSchema.parse(persisted.record)
+      const expected = WorkflowRunV3Schema.parse(persisted.record)
       delete expected.authorizationPrincipalId
       const full = RunRecordDetailSchema.parse(await parity(f, f.client, f.writer.token, name, args))
       expect(full).toEqual({ run: expected, stopRequested: persisted.stopped, cleanupPending: persisted.pending })

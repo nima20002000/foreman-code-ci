@@ -5,7 +5,7 @@ import type { MainIdentityProofRequest } from '@foreman-code/contracts/device-id
 import { randomBytes, randomUUID } from 'node:crypto'
 import { DEVICE_PROTOCOL_VERSION, type DeviceConnectionView, type DeviceHello, type DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import { DeviceConnectionError, nextFrame, readFrame, sendFrame, withDeviceDeadline, type DeviceSocket } from './deviceWire.js'
-import { componentLogger } from '../diagnostics/index.js'
+import { componentLogger } from '../diagnostics/logger.js'
 import { deviceRequestTimeoutMs } from './deviceRequestRetry.js'
 
 const healthyConnectionMs = 60_000

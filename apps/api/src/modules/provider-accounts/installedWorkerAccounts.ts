@@ -7,7 +7,7 @@ import { ProviderAccountSchema, ProviderAccountIdSchema,
 import { HarnessConfigurationSchema } from '@foreman-code/contracts'
 import { HarnessOptionsResultSchema, type HarnessOptions } from '@foreman-code/contracts/management'
 import type { DeviceApplicationResult } from '@foreman-code/contracts/device-application'
-import type { InstalledWorkflowConfigurationLocation } from '../runs/index.js'
+import type { InstalledWorkflowConfigurationLocation } from '../runs/remote/installedWorkflowConfiguration.js'
 import { NativeProcessRegistry } from '../harnesses/recovery/processRegistry.js'
 import { privateDirectory, readRecord, writeRecord } from '../harnesses/recovery/storage.js'
 import { inspectInstalledCodex } from '../harnesses/installedCodexInspection.js'
@@ -27,7 +27,6 @@ import { NativeAccountJournal } from './nativeJournal.js'
 import { createProductionAccountSelection, AccountIsolationQualificationsSchema,
   type AccountIsolationQualification } from './productionSelection.js'
 import { assertWorkerProviderAccountBinding, workerProviderAccountResolver, type WorkerAccountOperationPorts } from './workerOperations.js'
-import { hostEnvironment } from '../../shared/process.js'
 
 /** Opens only installer-qualified account support; account roots and native history remain on this Worker. */
 export function createInstalledWorkerAccounts(input: {
@@ -75,7 +74,7 @@ export function createInstalledWorkerAccounts(input: {
     assertWorkerProviderAccountBinding({ kind: 'slot', accountId: randomUUID(), provider: record.provider,
       target: record.target, profileRef: 'installation-check', bindingRevision: 1, subject: null }, binding)
     const inspection = await (record.provider === 'codex' ? inspectInstalledCodex : inspectInstalledClaude)({
-      binding, configuration: input.configuration, environment: hostEnvironment(), cwd: input.stateDirectory,
+      binding, configuration: input.configuration, environment: process.env, cwd: input.stateDirectory,
       signal: AbortSignal.timeout(15_000),
     })
     if (!isDeepStrictEqual(binding, input.current()) || !inspection.currentTarget

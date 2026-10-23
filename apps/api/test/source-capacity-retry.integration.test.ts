@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
-import { makeCurrentWorkflowFixture, SavedRunDetailsSchema } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture, SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { PostgresSourceReservations, type SourceReservation } from '../src/modules/sources/reservations.js'

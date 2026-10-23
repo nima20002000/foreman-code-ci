@@ -15,7 +15,7 @@ import { DomainError } from '../errors.js'
 import { MainWorkerFiles, type PrepareWorkerFiles } from './mainWorkerFiles.js'
 import { sameConversationForAppAccess } from './conversationAppAccess.js'
 import { definedProperties } from '../definedProperties.js'
-import { componentLogger } from '../diagnostics/index.js'
+import { componentLogger } from '../diagnostics/logger.js'
 import { prepareWorkerChatFrame } from './nativeChatInput.js'
 import { assertWorkerChatRequestSize } from './chatInputSize.js'
 

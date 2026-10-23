@@ -1,11 +1,11 @@
 import { nativeNode, nativeDefinition } from '../../shared/mocks/nativeFixtureTypes'
 import { AgentConfigurationVersionSchema, AgentSchema, type ExecutionResult } from '@foreman-code/contracts'
 import {
-  ExecutableWorkflowCurrentSchema, WorkflowVersionCurrentSchema, makeCurrentWorkflowFixture,
-  WorkflowRunCurrentSchema, CurrentRunDetailsSchema, RepeatGraphCurrentStateSchema,
-  RunExecutionDetailSchema, RunExecutionBindingSchema, repeatGraphTopologyCurrent,
+  ExecutableWorkflowV3Schema, WorkflowVersionV3Schema, makeCurrentWorkflowFixture,
+  WorkflowRunV3Schema, CurrentRunDetailsSchema, RepeatGraphCurrentV3Schema,
+  RunExecutionDetailSchema, RunExecutionBindingSchema, repeatGraphTopologyV3,
   type RunExecutionDetail, type RepeatOccurrenceV1,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import { createCurrentBoardMock } from '../../shared/mocks/currentBoard'
 import { inspectionScopeForRun, type RunInspectionFixture } from '../../shared/mocks/runInspection'
 import { digestCurrentValue } from './runDetailsClient'
@@ -50,7 +50,7 @@ export function scenarioFixture(id: ScenarioId, suffix: string) {
     { outcome: 'issues', target: { kind: 'branch_end' } },
     { outcome: 'pass', target: { kind: 'branch_end' } },
   ] }
-  const parsedVersion = WorkflowVersionCurrentSchema.parse({ ...source.version,
+  const parsedVersion = WorkflowVersionV3Schema.parse({ ...source.version,
     agentConfigurationVersionIds: Object.fromEntries(source.configurations.map((configuration) => [configuration.agentId, configuration.id])),
     definition: { ...source.version.definition, name: id, nodes, edges,
       executionPolicy: { maxParallelism: id === 'S3-02' || id === 'S3-03' ? 2 : 1,
@@ -60,7 +60,7 @@ export function scenarioFixture(id: ScenarioId, suffix: string) {
   source.run.agentConfigurationVersionIds = { ...source.version.agentConfigurationVersionIds }
   source.identities = nodes.map((node, index) => ({ workflowNodeId: node.id, executionId: `exec-${suffix}-${index}`,
     agentId: nativeNode(node).agentId, agentConfigurationVersionId: source.version.agentConfigurationVersionIds[nativeNode(node).agentId]!, attempt: 1 }))
-  ExecutableWorkflowCurrentSchema.parse({ version: source.version, configurations: source.configurations })
+  ExecutableWorkflowV3Schema.parse({ version: source.version, configurations: source.configurations })
   const occurrences = repeat ? id === 'S3-05-early' ? 2 : 3 : 1
   const executedIndexes = Array.from({ length: count }, (_, index) => index).filter((index) => id !== 'S3-03' || index !== 4)
   const predecessors = pairs.filter(([from, to]) => executedIndexes.includes(from!) && executedIndexes.includes(to!))
@@ -95,7 +95,7 @@ export async function eng07BoardFixture(id: ScenarioId, suffix: string) {
   mock.workflows.set(version.workflowId, version.definition)
   const draft = mock.drafts.get(version.workflowId)!
   mock.drafts.set(version.workflowId, { ...draft, graph: version.definition, baseWorkflowVersionId: version.id })
-  const run = WorkflowRunCurrentSchema.parse({ ...source.run, agentConfigurationVersionIds: version.agentConfigurationVersionIds,
+  const run = WorkflowRunV3Schema.parse({ ...source.run, agentConfigurationVersionIds: version.agentConfigurationVersionIds,
     input: scenario.runInput, executionState: 'completed', outcome: 'succeeded', startedAt: source.createdAt, finishedAt: source.createdAt,
     result: scenario.result(scenario.executedIndexes.at(-1)!, scenario.occurrences) })
   const record = CurrentRunDetailsSchema.parse({ run, executions: [], activity: [], cleanupPending: false })
@@ -151,8 +151,8 @@ export async function eng07BoardFixture(id: ScenarioId, suffix: string) {
   mock.runs.set(run.id, record); mock.inspection.set(run.id, rows)
   // A compact current cut need not carry full execution history. The real Board
   // must obtain exact rows through its bounded private inspection HTTP clients.
-  mock.currents.set(run.id, RepeatGraphCurrentStateSchema.parse({ kind: 'current', protocolVersion: 1, scope,
-    topology: repeatGraphTopologyCurrent(version), asOfSequence: '0', retentionFloor: '0', historyCoverage: 'from_admission',
+  mock.currents.set(run.id, RepeatGraphCurrentV3Schema.parse({ kind: 'current', protocolVersion: 1, scope,
+    topology: repeatGraphTopologyV3(version), asOfSequence: '0', retentionFloor: '0', historyCoverage: 'from_admission',
     state: { run: { executionState: 'completed', outcome: 'succeeded', cleanupPending: false, stopRequested: false,
       pendingInteractionCount: 0, unsettledReviewCount: 0 }, nodes: [], inputBindings: [], interactions: [], reviews: [],
       occurrences: [], executions: [], resolutions: [], results: [], bindings: [], decisions: [] } }))

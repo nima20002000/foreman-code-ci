@@ -4,7 +4,7 @@ import {
   ExecutionResultSchema, NativeHarnessEventSchema,
   type ExecutionResult, type HarnessExecutionRequest, type NativeHarnessEvent, type NativeSessionReference,
 } from '@foreman-code/contracts'
-import { RunAcceptedInputValueSchema, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
+import { RunAcceptedInputValueSchema, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import type { NativeHarnessSessionManager, NativeHistory } from '../../src/modules/harnesses/port.js'
 import { HarnessExecutionError } from '../../src/modules/harnesses/errors.js'
 
@@ -66,7 +66,7 @@ export class RecoveryProvider {
     signal.throwIfAborted()
     return sessions.every((session) => this.closed.has(session.reference.nativeSessionId))
   }
-  constructor(private readonly version: WorkflowVersionCurrent, private readonly plan: (input: Submission) => Fault) {}
+  constructor(private readonly version: WorkflowVersionV3, private readonly plan: (input: Submission) => Fault) {}
 
   private openGate!: () => void
   private readonly gate = new Promise<void>((resolve) => { this.openGate = resolve })

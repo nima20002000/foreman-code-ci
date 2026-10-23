@@ -11,13 +11,12 @@ it.each([true, false])('reads host settings once for several profiles when enrol
   const f = buildComputerFixture('11111111-1111-4111-8111-111111111111', 'workspace')
   const candidate = { ...f.candidate, ready: false, reasons: ['runtime_setup_required'] }
   const candidates = [candidate, candidate, candidate]
-  // The preference read binds one array of host keys; the enrollment read binds the workspace id and an array of host keys.
-  const query = vi.fn(async (_text: string, values: unknown[] = []) => {
-    if (values.length === 1 && Array.isArray(values[0])) return { rowCount: 1, rows: [{
+  const query = vi.fn(async (text: string) => {
+    if (text.includes('from build_computer_preferences')) return { rowCount: 1, rows: [{
       host_key: buildComputerKey(f.target), target: f.target, revision: '1', build_enabled: true,
       build_priority: 50, build_allowance_percent: 100,
     }] }
-    if (values.length === 2 && Array.isArray(values[1])) return { rowCount: 1, rows: [{
+    if (text.includes('from ci_enrollment_computers')) return { rowCount: 1, rows: [{
       host_key: buildComputerKey(f.target), enabled,
     }] }
     return { rowCount: 0, rows: [] }

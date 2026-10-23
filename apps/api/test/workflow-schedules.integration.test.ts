@@ -8,7 +8,7 @@ import {
   ScheduleGetResultSchema, ScheduleSaveResultSchema, ScheduleOccurrenceSchema, scheduleOccurrenceId,
   type ScheduleConfiguration, type ScheduleGetInput, type ScheduleOccurrence,
 } from '@foreman-code/contracts/schedules'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import type { ManagementGrant } from '@foreman-code/contracts/management'
 import { buildApp } from '../src/app.js'
 import { workflowScheduleMigration } from '../src/infrastructure/workflowScheduleMigration.js'
@@ -20,8 +20,7 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
 import { WorkflowScheduleService } from '../src/modules/schedules/service.js'
 import { ScheduleClearResultSchema, ScheduleOccurrencePageSchema } from '../src/modules/schedules/transportSchemas.js'
-import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 const settings = { timezone: 'UTC', enabled: true, policy: 'latest_saved' as const }
@@ -31,7 +30,7 @@ const once: ScheduleConfiguration = { ...settings, mode: 'once', localDate: '203
 
 /** No native providers, scheduler or paid calls. Real schema, receipts, SQL locks, HTTP and MCP. */
 describe.skipIf(!postgresEnabled)('SCH-03 PostgreSQL persistence and authenticated HTTP/MCP parity', () => {
-  let database: Awaited<ReturnType<typeof migratedDatabase>>
+  let database: Awaited<ReturnType<typeof agent3Database>>
   let access: PostgresAccessService
   let commands: PostgresCommandCoordinator
   let workflows: WorkflowManagementService
@@ -44,7 +43,7 @@ describe.skipIf(!postgresEnabled)('SCH-03 PostgreSQL persistence and authenticat
   let now: string
 
   beforeAll(async () => {
-    database = await migratedDatabase()
+    database = await agent3Database()
     // The production registry is deliberately owned by the integrator. Run this migration
     // explicitly before registration, and avoid applying it twice after registration.
     await transaction(async (client) => {
@@ -288,7 +287,7 @@ describe.skipIf(!postgresEnabled)('SCH-03 PostgreSQL persistence and authenticat
 
   it('pages all four outcomes and checks accepted Run/version lineage', async () => {
     // Existing synthetic fixture writer creates stored Run facts only; no provider is launched.
-    const fixture = await seedWorkflowFixture(database.pool, database.directory, makeCurrentWorkflowFixture(randomUUID(), 'single'))
+    const fixture = await seedAgent3(database.pool, database.directory, makeCurrentWorkflowFixture(randomUUID(), 'single'))
     const owner = await issue(fixture.scope.workspaceId, ['workflows:read', 'workflows:update'])
     const target = { workspaceId: fixture.scope.workspaceId, workflowId: fixture.scope.workflowId }
     await service.save(owner.principal, 'http', { ...target, schedule: interval, commandId: randomUUID(), expectedRevision: 0 })

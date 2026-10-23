@@ -21,9 +21,11 @@ function fixture() {
   const input = { workspaceId: f.request.workspaceId, commandId: randomUUID() }
   const location = { ...f.location, locationRevision: 1 }
   const client = {
-    // Every workspace read binds only the workspace id, so one row answers them all: the record, the location
-    // revision and the unarchived state; each reader takes only its own columns.
-    query: vi.fn(async () => ({ rows: [{ record: { id: input.workspaceId, name: 'Project' }, location_revision: '1', archived_at: null }] })),
+    query: vi.fn(async (sql: string) => {
+      if (sql.startsWith('select record from workspaces')) return { rows: [{ record: { id: input.workspaceId, name: 'Project' } }] }
+      if (sql.startsWith('select location_revision')) return { rows: [{ location_revision: '1' }] }
+      return { rows: [{ archived_at: null }] }
+    }),
     release: vi.fn(),
   }
   const receipts = new Map<string, { hash: string; value: unknown }>()

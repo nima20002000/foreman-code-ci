@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { COORDINATION_RESULT_PROTOCOL, parseCoordinationResult } from '@foreman-code/contracts'
-import { ExecutableWorkflowCurrentSchema, parseRepeatExitResultV1 } from '@foreman-code/contracts/current'
+import { ExecutableWorkflowV3Schema, parseRepeatExitResultV1 } from '@foreman-code/contracts/wave25'
 import { scenarioFixture, scenarioIds } from './helpers/scenarioFixtures.js'
 
 describe('workflow scenario fixture integrity (no PostgreSQL required)', () => {
   it.each(scenarioIds)('%s pins every node/configuration and uses the one V3 contract', (id) => {
     const f = scenarioFixture(id, `fixture-${id}`)
-    expect(ExecutableWorkflowCurrentSchema.parse({ version: f.source.version, configurations: f.source.configurations }).version)
+    expect(ExecutableWorkflowV3Schema.parse({ version: f.source.version, configurations: f.source.configurations }).version)
       .toEqual(f.source.version)
     expect(f.source.run.agentConfigurationVersionIds).toEqual(f.source.version.agentConfigurationVersionIds)
     expect(f.source.identities.map((item) => item.workflowNodeId)).toEqual(f.nodes.map((node) => node.id))

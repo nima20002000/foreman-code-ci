@@ -6,7 +6,7 @@ import type { HostHarnessInstallationDto } from '@foreman-code/contracts/harness
 import { harnessNames } from './settingsPresentation'
 import { useHostHarnessRegistryQuery } from '../../shared/api/computerSettings'
 import { useRuntimeIdentityQuery } from '../../shared/api/runtimeIdentity'
-import { useNavigationUiStore } from '../workspaces'
+import { useNavigationUiStore } from '../workspaces/navigationUiStore'
 import { SidebarHoverCardHeader } from '../../shared/ui/SidebarHoverCardHeader'
 import { useSidebarHoverCard } from '../../shared/ui/useSidebarHoverCard'
 import './harnessStatusMenu.css'

@@ -10,7 +10,7 @@ import {
 import { DomainError } from '../errors.js'
 import type { AllocationSession, AllocationState, FileAllocation, FileReferenceRepository,
   FileMutationContext, NewStoredFile, StoredFile, FileQuery } from './repository.js'
-import { ignoreError } from '../diagnostics/index.js'
+import { ignoreError } from '../diagnostics/ignoredError.js'
 import { sha256Hex } from '../../shared/hash.js'
 
 type Query = FileQuery

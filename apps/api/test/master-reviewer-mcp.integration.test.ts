@@ -1,6 +1,6 @@
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { ExecutableWorkflowCurrentSchema } from '@foreman-code/contracts/current'
+import { ExecutableWorkflowV3Schema } from '@foreman-code/contracts/wave25'
 import { expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
@@ -22,7 +22,7 @@ it.skipIf(!postgresEnabled)('preserves the Master identity and designated review
   })
   const clients: Client[] = []
   try {
-    expect(ExecutableWorkflowCurrentSchema.parse({ version: f.version, configurations: f.f.configurations }).version)
+    expect(ExecutableWorkflowV3Schema.parse({ version: f.version, configurations: f.f.configurations }).version)
       .toEqual(f.version)
     expect(f.version.definition.hierarchy?.masterNodeId).toBe(f.version.entryNodeId)
     expect(f.run).not.toHaveProperty('resultProtocol')

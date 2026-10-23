@@ -78,12 +78,12 @@ function fixture() {
   })
   const query = vi.fn(async (text: string, values?: unknown[]) => {
     let rows: unknown[] = []
-    // The live authority read and the root-owner read both bind only the principal id, so one row answers both.
-    if (values?.length === 1 && values[0] === principal.id) {
+    if (text.includes('select id,name,audience,grants')) {
       rows = [{
         ...principal, expires_at: new Date(principal.expiresAt), revoked_at: null, delegated_from: null,
       }]
-    } else if (text.includes('source_snapshots')) rows = [{ record: source }]
+    } else if (text.includes('with recursive owners')) rows = [{ id: principal.id }]
+    else if (text.includes('source_snapshots')) rows = [{ record: source }]
     else if (text.includes('source_root_catalog')) {
       rows = roots.filter(root => !values?.[1] || root.attestationId === values[1]).map(record => ({ record }))
     } else if (text.includes('application_installation')) rows = [{ id: spec.target.mainId }]

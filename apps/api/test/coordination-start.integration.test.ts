@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it, vi } from 'vitest'
 import { DEFAULT_CODEX_ADVANCED_CONFIGURATION, memoryBoardTools, type HarnessExecutionRequest } from '@foreman-code/contracts'
-import { CurrentWorkflowSaveResultSchema, RunStartCurrentResultSchema, SavedManagedWorkflowCommandResultSchema,
-  makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { CurrentWorkflowSaveResultSchema, RunStartV3ResultSchema, SavedManagedWorkflowCommandResultSchema,
+  makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { isWorkflowStart } from '../src/modules/harnesses/sessionStart.js'
 import { LOCAL_RUNNER_ID } from '../src/modules/workspaces/location.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
@@ -57,7 +57,7 @@ it.runIf(postgresEnabled)('pins the coordination protocol through production MCP
       scope: { kind: 'workflow', workspaceId, workflowId: saved.workflowId },
     })
     boardId = (board.board as { id: string }).id
-    const started = RunStartCurrentResultSchema.parse(await memoryCall(runtime.client, 'run_start', { workspaceId,
+    const started = RunStartV3ResultSchema.parse(await memoryCall(runtime.client, 'run_start', { workspaceId,
       workflowId: saved.workflowId, workflowVersionId: saved.version.id, executionSemanticsVersion: 3,
       expectedWorkflowRevision: saved.revision, expectedAgentConfigurationVersionIds: saved.version.agentConfigurationVersionIds,
       expectedLocationRevision: 2, input: {},

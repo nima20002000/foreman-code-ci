@@ -13,7 +13,7 @@ This directory is the canonical shared UI toolkit for the web application. Featu
 
 ## Design system
 
-The source of truth is the graphql design system in Claude Design: https://claude.ai/artifact/RE7u9oLHtJVKxy7SdmuV91. `tokens.css` is generated from its `project/tokens.json`, and `foundation.css` / `advanced.css` follow its `project/components/bundle.css`. Both dark (default) and light themes are defined there; components never branch on theme.
+The source of truth is the graphql design system in Claude Design: https://claude.ai/artifact/RE7u9oLHtJVKxy7SdmuV91. `tokens.css` is generated from its `project/tokens.json`, and `foundation.css` / `advanced.css` follow its `project/components/bundle.css`. Both dark (default) and light themes are defined there; components never branch on theme. The legacy `--color-*` variables in `styles.css` are aliases of these tokens.
 
 ## Provenance
 

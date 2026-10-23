@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useLocation, useNavigate } from '@tanstack/react-router'
-import { boardSidePanelFromSearch, readRunInspectionKey, runInspectionKey, type BoardSidePanel, type RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
+import { boardSidePanelFromSearch, readRunInspectionKey, runInspectionKey, type BoardSidePanel, type RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
 import type { WorkflowExecutionChatTarget } from '@foreman-code/contracts'
-import { type RunsSelectorSearchSchema, useSelectedRun } from '../runs-selector'
+import type { RunsSelectorSearchSchema } from '../runs-selector/search'
+import { useSelectedRun } from '../runs-selector/useSelectedRun'
 
 /** Navigation belongs to the URL. Drafts and scroll stay in their existing local owners. */
-export function useWorkflowSidePanel(workspaceId: string, workflowId: string, run?: RepeatGraphScopeCurrent,
+export function useWorkflowSidePanel(workspaceId: string, workflowId: string, run?: RepeatGraphScopeV3,
   beforeBrowserHide?: () => void) {
   const location = useLocation(), navigate = useNavigate()
   const { generation, isCurrent, active, invalid, identity } = useSelectedRun({ workspaceId, workflowId })

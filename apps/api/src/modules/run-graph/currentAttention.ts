@@ -1,6 +1,6 @@
 import type { DurableInteraction, ReviewJob } from '@foreman-code/contracts'
-import { GraphAttentionSchema, type GraphActivity, type GraphAttention, type RunGraphScope } from '@foreman-code/contracts/current'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { GraphAttentionSchema, type GraphActivity, type GraphAttention, type RunGraphScope } from '@foreman-code/contracts/wave25'
+import type { GraphTransactionSql } from './connection.js'
 import { RunGraphError } from './errors.js'
 import { PUBLIC_PENDING_INTERACTION_SQL, PUBLIC_UNSETTLED_REVIEW_SQL } from './publicObligations.js'
 import { publicInteractionPending, publicReviewCleanupPending, publicReviewUnsettled } from './publicLifecycle.js'
@@ -47,7 +47,7 @@ const empty = (): PublicAttentionCount => ({ pendingInteractionCount: 0, unsettl
  * approval publication and native projection. Reviews belong to their host once,
  * not to both host and requester. The optional overlay excludes the stored row
  * before counting the proposed mutation; no domain write occurs in this helper. */
-export async function readPublicAttentionCounts(sql: SqlTransaction, runId: string,
+export async function readPublicAttentionCounts(sql: GraphTransactionSql, runId: string,
   nodeIds?: readonly string[], overlay: PublicAttentionOverlay = {},
   prefetched?: PublicAttentionRow[]): Promise<Map<string, PublicAttentionCount>> {
   if (nodeIds && nodeIds.length > 1000) throw new RunGraphError('GRAPH_SNAPSHOT_TOO_LARGE')
@@ -115,7 +115,7 @@ export function publicNodeAttention(workflowNodeId: string, activity: GraphActiv
     telemetry: activity.status === 'stale' ? 'stale' : activity.status === 'unknown' ? 'unknown' : 'current' })
 }
 /** Existing native callers retain this read interface. */
-export async function readCurrentNodeAttention(sql: SqlTransaction, scope: RunGraphScope,
+export async function readCurrentNodeAttention(sql: GraphTransactionSql, scope: RunGraphScope,
   activities: ReadonlyMap<string, GraphActivity>): Promise<Map<string, GraphAttention>> {
   const counts = await readPublicAttentionCounts(sql, scope.runId, [...activities.keys()])
   return new Map([...activities].map(([id, activity]) => [id, publicNodeAttention(id, activity, counts.get(id)!)]))

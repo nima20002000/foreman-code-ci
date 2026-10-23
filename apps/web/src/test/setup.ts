@@ -5,8 +5,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, vi } from 'vitest'
 
 import { server } from '../mocks/server'
 import { bindMockInstallation, resetTestFixtures } from '../shared/mocks/handlers'
-import { useNavigationUiStore } from '../features/workspaces'
-import { useBoardViewportStore } from '../features/graph'
+import { useNavigationUiStore } from '../features/workspaces/navigationUiStore'
+import { useBoardViewportStore } from '../features/graph/boardViewport'
 import { protectedKey } from '../shared/api/protectedChatStorage'
 
 if (typeof HTMLDialogElement !== 'undefined' && !HTMLDialogElement.prototype.showModal) {

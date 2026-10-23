@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { sameWorkflowValue, type GraphEditIntentCurrent, type RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
+import { sameWorkflowValue, type GraphEditIntentV3, type RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
 import { useGraphDraftStore } from '../../graph/store'
 import { ApiError } from '../../../shared/api/client'
-import { nextDraftKey } from '../../board-core'
+import { nextDraftKey } from '../../graph/nextDraft/state'
 import { readEditOutbox } from '../../graph/nextDraft/editIntentStorage'
 import { activeEditIntent, editIntentCommandKey, graphEditIntentKey } from '../../graph/nextDraft/useGraphEditIntent'
 import { boardStartClient, type BoardStartInput } from '../startClient'
@@ -15,8 +15,8 @@ import { useActionLifetime, useDisclosure } from './state'
 import { newFullRunReason, type ActionRun } from './policy'
 
 export function StartControls({ scope, run, permitted, available, refresh, viewRun }: {
-  scope: RepeatGraphScopeCurrent; run: ActionRun; permitted: boolean; available: boolean;
-  refresh(): void; viewRun?(scope: RepeatGraphScopeCurrent): void
+  scope: RepeatGraphScopeV3; run: ActionRun; permitted: boolean; available: boolean;
+  refresh(): void; viewRun?(scope: RepeatGraphScopeV3): void
 }) {
   const key = nextDraftKey(scope.workspaceId, scope.workflowId), outbox = useBoardStartOutbox(key)
   const life = useActionLifetime(), [confirming, setConfirming] = useDisclosure()
@@ -27,7 +27,7 @@ export function StartControls({ scope, run, permitted, available, refresh, viewR
     if (edit?.busy || edit?.pending || edit?.remoteEditIntent || readEditOutbox(key)) return true
     if (cache.isMutating({ mutationKey: editIntentCommandKey(key) }) > 0) return true
     const draftId = edit?.context.draft.id
-    const intent = draftId ? cache.getQueryData<{ intent?: GraphEditIntentCurrent | null }>(graphEditIntentKey(scope.workspaceId, scope.workflowId, draftId))?.intent : undefined
+    const intent = draftId ? cache.getQueryData<{ intent?: GraphEditIntentV3 | null }>(graphEditIntentKey(scope.workspaceId, scope.workflowId, draftId))?.intent : undefined
     return activeEditIntent(intent)
   }
   const editPending = useGraphDraftStore((state) => hasPendingEdit(state.nextDrafts[key]))

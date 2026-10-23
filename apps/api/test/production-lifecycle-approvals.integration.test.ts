@@ -4,7 +4,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { AgentDefaultsUpdateResultSchema, ManagedAgentDefaultsSchema } from '@foreman-code/contracts/management'
 import { readProductEnvironment } from '@foreman-code/contracts/product-environment'
-import { Wave25WorkerCredentialService as WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
+import { Wave25WorkerCredentialService as WorkerCredentialService } from '../src/modules/interactions/wave25/credentials.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 import { access, address, database, mcp, native, production, registerProductionLifecycleFixture, runs, start } from './helpers/productionLifecycleFixture.js'

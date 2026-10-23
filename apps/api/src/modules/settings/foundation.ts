@@ -26,15 +26,16 @@ import { CircleCreditAllowanceSchema, DEFAULT_CIRCLE_CREDIT_ALLOWANCE,
 import { RemoteExecutionSettingsSchema, DEFAULT_REMOTE_EXECUTION_SETTINGS,
   type RemoteExecutionSettings } from '@foreman-code/contracts/management'
 
-import { withTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
+import { withTransaction } from '../../infrastructure/transaction.js'
 
 import { DomainError } from '../errors.js'
+import type { GraphSqlClient } from '../run-graph/connection.js'
 
 const KEYS = { agents: 'agent-defaults-v1', workflows: 'workflow-defaults-v1', workspaces: 'workspace-defaults-v1' } as const
 
 export interface VersionedSetting<T> { value: T; versionId: string | null; revision: number }
 
-async function readSetting<T>(sql: SqlQuery, key: string, schema: { parse(value: unknown): T },
+async function readSetting<T>(sql: GraphSqlClient, key: string, schema: { parse(value: unknown): T },
   fallback: T): Promise<VersionedSetting<T>> {
   const result = await sql.query<{ record: unknown; revision: string; current_version_id: string | null }>(
     'select record, revision, current_version_id from application_settings where key = $1', [key],
@@ -44,12 +45,12 @@ async function readSetting<T>(sql: SqlQuery, key: string, schema: { parse(value:
   return { value: schema.parse(row.record), revision: Number(row.revision), versionId: row.current_version_id }
 }
 
-export function readSystemPromptSetting(sql: SqlQuery): Promise<PromptSettingSnapshot> {
+export function readSystemPromptSetting(sql: GraphSqlClient): Promise<PromptSettingSnapshot> {
   return readSetting(sql, 'system-prompt', PromptTextSchema, DEFAULT_PROMPT_TEXT)
 }
 
 /** The same saved templates apply to direct and staged creation in their save transaction. */
-export function readAgentDefaultsSetting(sql: SqlQuery): Promise<VersionedSetting<AgentDefaults>> {
+export function readAgentDefaultsSetting(sql: GraphSqlClient): Promise<VersionedSetting<AgentDefaults>> {
   return readSetting(sql, KEYS.agents, AgentDefaultsSchema, DEFAULT_AGENT_DEFAULTS).then((snapshot) => ({
     ...snapshot,
     value: {
@@ -65,7 +66,7 @@ export function readAgentDefaultsSetting(sql: SqlQuery): Promise<VersionedSettin
 export class PostgresFoundationSettingsRepository {
   constructor(private readonly pool: pg.Pool, private readonly projectRoot?: string) {}
 
-  getSystemPrompt(client?: SqlQuery): Promise<VersionedSetting<PromptText>> {
+  getSystemPrompt(client?: GraphSqlClient): Promise<VersionedSetting<PromptText>> {
     return readSystemPromptSetting(client ?? this.pool)
   }
 
@@ -73,7 +74,7 @@ export class PostgresFoundationSettingsRepository {
     return this.write('system-prompt', PromptTextSchema.parse(value), expectedRevision, client)
   }
 
-  getOperatorInitialPrompt(client?: SqlQuery): Promise<VersionedSetting<PromptText>> {
+  getOperatorInitialPrompt(client?: GraphSqlClient): Promise<VersionedSetting<PromptText>> {
     return this.read('operator-initial-prompt', PromptTextSchema, DEFAULT_PROMPT_TEXT, client)
   }
 
@@ -170,7 +171,7 @@ export class PostgresFoundationSettingsRepository {
     return this.updateWorkflowDefaults(value, expectedRevision, client)
   }
 
-  private async read<T>(key: string, schema: { parse(value: unknown): T }, fallback: T, client?: SqlQuery): Promise<VersionedSetting<T>> {
+  private async read<T>(key: string, schema: { parse(value: unknown): T }, fallback: T, client?: GraphSqlClient): Promise<VersionedSetting<T>> {
     return readSetting(client ?? this.pool, key, schema, fallback)
   }
 

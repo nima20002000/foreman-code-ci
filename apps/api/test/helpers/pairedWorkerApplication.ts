@@ -116,7 +116,7 @@ async function workerEnvironment(home: string) {
     XDG_DATA_HOME: join(home, '.local/share'), XDG_CACHE_HOME: join(home, '.cache'),
     XDG_STATE_HOME: join(home, '.local/state'),
     FOREMAN_CODE_APP_MCP_DIRECTORY: join(home, '.local/share/graphql/mcp') }
-  for (const name of ['DATABASE_URL', 'TEST_DATABASE_URL', ...APP_MCP_TOKEN_NAMES]) {
+  for (const name of ['DATABASE_URL', 'TEST_DATABASE_URL', 'ENG03_A_TEST_DATABASE_URL', ...APP_MCP_TOKEN_NAMES]) {
     delete environment[name]
   }
   const codex = process.env.CODEX_HOME ?? join(original, '.codex')
@@ -206,7 +206,7 @@ export async function pairedWorkerApplication(options: { harnesses?: readonly Ag
   const harnesses = AgentHarnessSchema.array().min(1).max(2)
     .parse(options.harnesses ?? ['codex', 'claude'])
   assert.equal(new Set(harnesses).size, harnesses.length)
-  const databaseUrl = process.env.TEST_DATABASE_URL
+  const databaseUrl = process.env.ENG03_A_TEST_DATABASE_URL
   assert.ok(databaseUrl, 'Run through the disposable native acceptance database driver.')
   const url = new URL(databaseUrl)
   assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) && url.pathname.endsWith('_test'))

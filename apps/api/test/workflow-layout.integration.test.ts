@@ -6,13 +6,13 @@ import {
   CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveInputSchema, CurrentWorkflowSaveResultSchema,
   SavedManagedWorkflowCommandResultSchema, SavedManagedWorkflowSchema, makeCurrentWorkflowFixture,
   type CurrentFixtureForm,
-} from '@foreman-code/contracts/current'
+} from '@foreman-code/contracts/wave25'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { WorkflowManagementService } from '../src/modules/workflows/management.js'
-import { currentDatabase, postgresEnabled } from './helpers/database.js'
+import { currentDatabase as agent3Database, postgresEnabled } from './helpers/database.js'
 import { graphRpc, graphRpcValue, graphHeaders } from './graph-composition-fixture.js'
 import { insertCurrentRunFixture as insertFixtureRepeatRun } from './helpers/currentRunFixture.js'
 
@@ -20,9 +20,9 @@ import { insertCurrentRunFixture as insertFixtureRepeatRun } from './helpers/cur
  * stateless Operator MCP. No native engine is composed; the active Run is an
  * explicit canonical SQL fixture, not native admission or closure proof. */
 describe.skipIf(!postgresEnabled)('current layout HTTP/MCP', () => {
-  let db: Awaited<ReturnType<typeof currentDatabase>>
+  let db: Awaited<ReturnType<typeof agent3Database>>
   const apps: ReturnType<typeof buildApp>[] = []
-  beforeAll(async () => { db = await currentDatabase() }, 60000)
+  beforeAll(async () => { db = await agent3Database() }, 60000)
   afterEach(async () => { await Promise.all(apps.splice(0).map((app) => app.close())) })
   afterAll(async () => { await db?.close() })
   async function fixture(form: CurrentFixtureForm = 'sequential') {

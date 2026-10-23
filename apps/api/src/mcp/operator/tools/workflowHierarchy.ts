@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { WORKFLOW_HIERARCHY_TOOLS, WorkflowHierarchyReadInputSchema, WorkflowHierarchyReadResultSchema,
   WorkflowHierarchyUpdateInputSchema, WorkflowReportsReadInputSchema, WorkflowReportsPageSchema } from '@foreman-code/contracts'
-import { WorkflowHierarchyUpdateResultSchema } from '@foreman-code/contracts/current'
+import { WorkflowHierarchyUpdateResultSchema } from '@foreman-code/contracts/wave25'
 import { currentWorkflowAvailable } from '../../../modules/workflows/currentWorkflowPolicy.js'
 import type { ManagementPrincipal, ManagementScope } from '@foreman-code/contracts/management'
 import { DomainError } from '../../../modules/errors.js'

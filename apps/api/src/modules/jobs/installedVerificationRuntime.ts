@@ -4,7 +4,7 @@ import { InstalledVerificationRuntimeConfigurationSchema, InstalledVerificationR
   type InstalledRuntimeObservedHost } from '@foreman-code/contracts/installed-runtime-node'
 import { readVerificationQuotaPool } from './quotaOwnership.js'
 import { isDeepStrictEqual } from 'node:util'
-import { canonicalGraphJson } from '@foreman-code/contracts/current'
+import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
 import { verifySourceManifest } from '../sources/manifest.js'
 import { openPrivateRoot } from '../sources/privateFilesystem.js'
 import { verifyMaterializedSourceTree } from '../sources/materialization.js'

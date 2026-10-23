@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
 import type pg from 'pg'
 import { HarnessExecutionSchema, type HarnessExecution } from '@foreman-code/contracts'
-import { canonicalGraphJson } from '@foreman-code/contracts/current'
-import { ExclusiveGraphConnection } from '../../src/modules/run-graph/connection.js'
-import type { SqlTransaction } from '../../src/infrastructure/transaction.js'
+import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { ExclusiveGraphConnection, type GraphTransactionSql } from '../../src/modules/run-graph/connection.js'
 import { graphSourceDigest } from '../../src/modules/run-graph/publication.js'
 import { canonicalRepeatEffectReceipt } from '../../src/modules/run-graph/repeatPublication.js'
 import type { RepeatCanonicalReceipt } from '../../src/modules/run-graph/repeatReceipts.js'
@@ -135,6 +134,6 @@ export function currentExecutionReadUnit(f: CurrentUnitSnapshot = currentUnitSna
     const current = await readAcceptedRepeatRunLocked(sql, f.run.id)
     return readRepeatAcceptedResultLocked(sql, current, candidate.id)
   }, true)
-  const transaction = <T>(work: (sql: SqlTransaction) => Promise<T>) => connection.transaction(work, true)
+  const transaction = <T>(work: (sql: GraphTransactionSql) => Promise<T>) => connection.transaction(work, true)
   return { f, ref, bound, state, candidate, calls, connection, read, transaction, snapshot, seedAccepted }
 }

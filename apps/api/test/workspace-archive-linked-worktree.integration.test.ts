@@ -6,7 +6,7 @@ import { promisify } from 'node:util'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { ManagementActionSchema, ManagedWorkspaceCommandResultSchema } from '@foreman-code/contracts/management'
-import { makeCurrentWorkflowFixture, WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture, WorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
 import { expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
@@ -17,7 +17,7 @@ import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { WorkspaceManagementService } from '../src/modules/workspaces/management.js'
 import { currentDatabase } from './helpers/database.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
-import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { seedAgent3 } from './helpers/workflowDatabase.js'
 
 const execute = promisify(execFile)
 async function git(path: string, ...args: string[]) {
@@ -87,12 +87,12 @@ it.each([
     }
     const cwd = join(linked, 'nested')
     await mkdir(cwd)
-    const fixture = await seedWorkflowFixture(db.pool, cwd, makeCurrentWorkflowFixture(randomUUID(), 'single'),
+    const fixture = await seedAgent3(db.pool, cwd, makeCurrentWorkflowFixture(randomUUID(), 'single'),
       { run: state !== 'idle workspace' })
-    const completed = WorkflowRunCurrentSchema.parse({ ...fixture.run, executionState: 'completed',
+    const completed = WorkflowRunV3Schema.parse({ ...fixture.run, executionState: 'completed',
       outcome: 'canceled', result: { outcome: 'canceled' }, finishedAt: new Date().toISOString() })
     const run = state === 'running'
-      ? WorkflowRunCurrentSchema.parse({ ...fixture.run, executionState: 'running' }) : completed
+      ? WorkflowRunV3Schema.parse({ ...fixture.run, executionState: 'running' }) : completed
     await db.pool.query('update runs set execution_state=$2,record=$3::jsonb where id=$1',
       [run.id, run.executionState, JSON.stringify(run)])
     if (state === 'pending cleanup') {

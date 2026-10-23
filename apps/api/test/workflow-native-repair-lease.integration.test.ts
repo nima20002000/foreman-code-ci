@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import type { NativeHarnessEvent } from '@foreman-code/contracts'
 import type { NativeHistory } from '../src/modules/harnesses/port.js'
 import * as repair from '../src/modules/runs/workResultRepair.js'

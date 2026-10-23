@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
 import { postgresEnabled } from './helpers/database.js'
-import { reduceRepeatGraphPageCurrent } from '@foreman-code/contracts/current'
+import { reduceRepeatGraphPageV3 } from '@foreman-code/contracts/wave25'
 import { readRepeatGraphPage, readRepeatGraphSnapshot } from '../src/modules/run-graph/repeatReader.js'
 
 /** Actual engine, SQL owners, coordinator, capture and approval services.
@@ -25,7 +25,7 @@ describe.skipIf(!postgresEnabled)('Current production engine provider wiring', (
       const after = await readRepeatGraphSnapshot(t.db.pool, request, async () => undefined)
       const page = await readRepeatGraphPage(t.db.pool, { ...request, afterSequence: before.asOfSequence }, async () => undefined)
       if (page.kind !== 'page') throw new Error('Unexpected Stop graph reset')
-      expect(reduceRepeatGraphPageCurrent(before, page)).toEqual(after)
+      expect(reduceRepeatGraphPageV3(before, page)).toEqual(after)
       expect(after.state.interactions).toEqual([])
     } finally { await t.close() }
   }, 60000)

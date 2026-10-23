@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { WorkActivationIdentitySchema, WorkActivationInputSchema, WorkReturnSchema } from '@foreman-code/contracts/current'
+import { WorkActivationIdentitySchema, WorkActivationInputSchema, WorkReturnSchema } from '@foreman-code/contracts/wave25'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { workReturnGroupMigration } from '../src/infrastructure/workReturnGroupMigration.js'
 import { repeatId } from '../src/modules/runs/repeatResolution.js'

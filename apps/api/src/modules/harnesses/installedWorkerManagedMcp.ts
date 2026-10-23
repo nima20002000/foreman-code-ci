@@ -13,7 +13,6 @@ import { installedHarnessSelection, readInstalledWorkflowConfiguration,
   type InstalledWorkflowConfigurationLocation } from '../runs/remote/installedWorkflowConfiguration.js'
 import type { NativeProcessRegistry } from './recovery/processRegistry.js'
 import { fingerprint, type NativeMcpAdapter, type NativeMcpSnapshot } from './nativeMcpCommon.js'
-import { hostEnvironment } from '../../shared/process.js'
 
 async function fileRevision(file: string) {
   try {
@@ -34,7 +33,7 @@ export function createInstalledWorkerManagedMcp(input: {
   launcherSource?: URL | undefined
   account?: ResolvedProviderAccount
 }) {
-  const environment = input.account ? managedProviderEnvironment(hostEnvironment(), input.account, 'codex') : hostEnvironment()
+  const environment = input.account ? managedProviderEnvironment(process.env, input.account, 'codex') : process.env
   const home = environment.HOME ?? homedir()
   const codexFile = join(environment.CODEX_HOME ?? join(home, '.codex'), 'config.toml')
   const claudeFile = join(environment.CLAUDE_CONFIG_DIR ?? home, '.claude.json')

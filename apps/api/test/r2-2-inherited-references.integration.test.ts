@@ -6,7 +6,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import Fastify from 'fastify'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
 import { AgentFileListResultSchema, AgentFileReadResultSchema,
   type PermanentFileScope, type MessageAttachmentRef } from '@foreman-code/contracts/files'
@@ -17,8 +17,7 @@ import type { CodexFileCallResult, CodexFileHostLease } from '../src/modules/har
 import type { NativeHarnessSessionManager } from '../src/modules/harnesses/port.js'
 import { calls, emit, finish, fixtureQualification, input, until } from './fixtures/codex-test-helpers.js'
 import { fileRuntimeFixture } from './fixtures/codex-file-runtime-helpers.js'
-import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
+import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 // Codex uses a protocol fixture and a fail-closed materialization spy.
@@ -47,7 +46,7 @@ const pin = (value: { file: { fileId: string }; revision: { revisionId: string }
 })
 
 async function fixture({ readOnly }: { readOnly: boolean }) {
-  const database = await migratedDatabase()
+  const database = await agent3Database()
   const root = await mkdtemp(join(homedir(), '.r2-inherited-'))
   const f = await fileRuntimeFixture()
   const app = Fastify({ logger: false })
@@ -93,8 +92,8 @@ async function fixture({ readOnly }: { readOnly: boolean }) {
     if (value.harness !== 'codex') throw new Error('Expected Codex fixture')
     configuration.harness = { ...value, sandbox: readOnly ? 'read-only' : 'workspace-write' }
   }
-  const seeded = await seedWorkflowFixture(database.pool, project, seed, { run: false })
-  const foreign = await seedWorkflowFixture(database.pool, project,
+  const seeded = await seedAgent3(database.pool, project, seed, { run: false })
+  const foreign = await seedAgent3(database.pool, project,
     makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential'), { run: false })
   const access = new PostgresAccessService(database.pool)
   // The initiating human can manage references. The native child must NOT

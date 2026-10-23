@@ -8,9 +8,9 @@ import type { CompatibilityHarness } from '@foreman-code/contracts'
 import type { HarnessQualification } from '@foreman-code/contracts/harness-qualification'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { requireAuthorization } from '../../access/policy.js'
-import type { PostgresCommandCoordinator } from '../../commands/index.js'
+import type { PostgresCommandCoordinator } from '../../commands/postgres.js'
 import { DomainError } from '../../errors.js'
-import type { PostgresSettingsRepository } from '../../settings/index.js'
+import type { PostgresSettingsRepository } from '../../settings/postgres.js'
 import { QUALIFICATION_TARGET_PROFILE } from './profiles.js'
 import { CompatibilityCheckError } from '../compatibility/errors.js'
 import { nativeCompatibilityProbe, type CompatibilityProbe } from '../compatibility/probe.js'
@@ -18,8 +18,7 @@ import { qualificationError } from '../qualificationErrors.js'
 import type { HarnessQualificationRepository } from './repository.js'
 import type { HarnessQualificationRegistry } from './registry.js'
 import type { QualificationSuite } from './types.js'
-import { ignoreError } from '../../diagnostics/index.js'
-import { hostEnvironment } from '../../../shared/process.js'
+import { ignoreError } from '../../diagnostics/ignoredError.js'
 
 class QualificationCleanupError extends AggregateError {}
 
@@ -197,7 +196,7 @@ export class HarnessQualificationService {
 
   private async inspectVersion(harness: CompatibilityHarness, binary: string): Promise<string> {
     const probe = this.probeFactory?.(harness, binary, 30_000)
-      ?? nativeCompatibilityProbe({ codex: binary }, process.cwd(), hostEnvironment(), 30_000)
+      ?? nativeCompatibilityProbe({ codex: binary }, process.cwd(), process.env, 30_000)
     this.probes.add(probe)
     // The probe bounds the CLI command; installation checks and closure have separate ownership.
     try { return (await probe.inspect(harness, this.cancellation.signal)).version }
@@ -356,7 +355,7 @@ async function checkStaticCompatibility(harness: CompatibilityHarness, binary: s
   probeFactory?: (harness: CompatibilityHarness, binary: string, timeoutMs: number) => CompatibilityProbe): Promise<string> {
   const timeout = attempt === 1 ? 30_000 : 60_000
   const probe = probeFactory?.(harness, binary, timeout)
-    ?? nativeCompatibilityProbe({ codex: binary }, process.cwd(), hostEnvironment(), timeout)
+    ?? nativeCompatibilityProbe({ codex: binary }, process.cwd(), process.env, timeout)
   probes.add(probe)
   try {
     const installation = await probe.inspect(harness, signal)

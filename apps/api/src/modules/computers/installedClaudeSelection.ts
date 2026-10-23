@@ -6,7 +6,7 @@ import { systemMaintenancePorts } from './maintenance.js'
 import { discoverInstalledClaudeSdk, installedClaudeSdkEntrypoint } from '../harnesses/claudeSdk/currentPin.js'
 import {
   readInstalledWorkflowConfiguration, type InstalledWorkflowConfigurationLocation,
-} from '../runs/index.js'
+} from '../runs/remote/installedWorkflowConfiguration.js'
 
 /** Follows the native installer's launcher after an update; profile qualification still checks the selected payload. */
 export async function selectInstalledClaude(location: InstalledWorkflowConfigurationLocation | null,

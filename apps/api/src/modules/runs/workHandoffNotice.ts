@@ -1,16 +1,16 @@
 import {
   WorkNoticeSchema, WorkAlternativeSchema, canonicalGraphJson, workLimitNoticeText,
-  type WorkActivationInput, type WorkAlternative, type WorkNotice, type WorkflowVersionCurrent,
-} from '@foreman-code/contracts/current'
-import type { SqlTransaction } from '../../infrastructure/transaction.js'
+  type WorkActivationInput, type WorkAlternative, type WorkNotice, type WorkflowVersionV3,
+} from '@foreman-code/contracts/wave25'
+import type { GraphTransactionSql } from '../run-graph/connection.js'
 import { repeatConflict, repeatId, sameRepeatValue, type RepeatScope } from './repeatResolution.js'
 
 interface NoticeContext {
-  sql: SqlTransaction; scope: RepeatScope; version: WorkflowVersionCurrent; now: string
+  sql: GraphTransactionSql; scope: RepeatScope; version: WorkflowVersionV3; now: string
 }
 type NoticeCause = WorkNotice['cause']
 
-function destination(version: WorkflowVersionCurrent, nodeId: string) {
+function destination(version: WorkflowVersionV3, nodeId: string) {
   const node = version.definition.nodes.find((item) => item.id === nodeId)
   if (!node) return repeatConflict('WORK_NOTICE_DESTINATION_MISSING')
   if (node.kind === 'job') return repeatConflict('WORK_POLICY_PIN_CONFLICT')
