@@ -78,7 +78,7 @@ export function makeManager(
   overrides: Omit<Partial<Extract<CodexSessionDependencies, { mode: 'native' }>>, 'mode'> = {},
 ): Manager {
   const value = new CodexAppServerSessionManager(f.binary, undefined, undefined, undefined, 'scoped', undefined, {
-    mode: 'native', ...overrides,
+    mode: 'native', qualify: fixtureQualification, assertUnchanged: async () => undefined, ...overrides,
   })
   managers.push(value)
   return value

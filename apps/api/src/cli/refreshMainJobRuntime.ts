@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url'
 import { z } from 'zod'
 import { captureInstalledRuntimeConfigurationRecord, InstalledJobRuntimeConfigurationRecordSchema }
   from '../modules/jobs/installedRuntimeHost.js'
-import { InstalledVerificationRuntimeCaptureInputSchema } from '@foreman-code/contracts-node/installed-runtime-node'
+import { InstalledVerificationRuntimeCaptureInputSchema } from '@foreman-code/contracts/installed-runtime-node'
 import { ignoreError } from '../modules/diagnostics/ignoredError.js'
 import { sha256Hex } from '../shared/hash.js'
 

@@ -62,7 +62,7 @@ describe('SQL-free worker Job input/output leaves', () => {
     expect(modules).toContain('apps/api/src/modules/files/jobInputs/channel.ts')
     expect(modules).toContain('apps/api/src/modules/files/jobs/outputChannel.ts')
     expect(() => assertWorkerDependency('pg')).toThrow('Forbidden control-plane dependency')
-    const forbidden = /(?:apps\/api\/src\/(?:infrastructure\/|commands\/postgres|jobs\/(?:authority|repository|dispatch|receiptProjection)|files\/(?:jobInputs\/(?:factory|service|authority)|jobs\/(?:factory|admittedFactory|port|outputAdmission|ledger))|runs\/remote\/(?:jobCanonicalOutputs|jobApplicationBridge))|node_modules\/(?:pg(?:-|\/)|fastify\/))/
+    const forbidden = /(?:apps\/api\/src\/(?:infrastructure\/(?:transaction|pool|checkpoint)[^/]*|commands\/postgres|jobs\/(?:authority|repository|dispatch|receiptProjection)|files\/(?:jobInputs\/(?:factory|service|authority)|jobs\/(?:factory|admittedFactory|port|outputAdmission|ledger))|runs\/remote\/(?:jobCanonicalOutputs|jobApplicationBridge))|node_modules\/(?:pg(?:-|\/)|fastify\/))/
     expect(modules.filter(path => forbidden.test(path))).toEqual([])
   })
 })

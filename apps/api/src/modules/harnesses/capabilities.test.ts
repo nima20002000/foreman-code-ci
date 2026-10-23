@@ -23,6 +23,6 @@ describe('harness capability descriptors', () => {
 
   it('offers compaction in a chat that has no native session yet', () => {
     expect(pendingSessionControls(DEFAULT_HARNESS_DEFAULTS.codex).compact.supported).toBe(true)
-    expect(pendingSessionControls(DEFAULT_HARNESS_DEFAULTS.claude).compact.supported).toBe(true)
+    expect(pendingSessionControls({ harness: 'claude', model: 'claude-sonnet-4-6', sandbox: 'read-only' }).compact.supported).toBe(true)
   })
 })

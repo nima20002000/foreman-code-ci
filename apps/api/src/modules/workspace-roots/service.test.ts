@@ -44,7 +44,7 @@ function fixture() {
     if (values.length === 5 && values[0] === selection.workspaceId) {
       location = JSON.parse(String(values[1])); revision = String(values[3]); return { rows: [], rowCount: 1 }
     }
-    if (values.length === 6) receipt = { input_hash: values[4], target_key: values[3], result: JSON.parse(String(values[5])) }
+    if (values.length === 6 && String(values[4]).startsWith('sha256:')) receipt = { input_hash: values[4], target_key: values[3], result: JSON.parse(String(values[5])) }
     return { rows: [], rowCount: 1 }
   })
   const client = { query, release: vi.fn() }

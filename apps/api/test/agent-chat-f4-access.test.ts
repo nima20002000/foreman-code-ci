@@ -53,7 +53,10 @@ function fixture(runId?: string) {
     return { rows: live && values[0] === live.id ? [{ id: live.id, name: live.name, audience: live.audience, grants: live.grants,
       expires_at: new Date(live.expiresAt), revoked_at: live.revokedAt ? new Date(live.revokedAt) : null, delegated_from: null }] : [] }
   })
-  const repository = { get: vi.fn(async () => row), byKey: vi.fn(async () => row),
+  const repository = { workflowIsActive: async () => true,
+    activeAgentConfigurationId: async () => 'config',
+    agentConfigurationPointer: async () => ({ current_configuration_version_id: 'config', archived_at: null }),
+    get: vi.fn(async () => row), byKey: vi.fn(async () => row),
     state: vi.fn(async () => ({ row, turns: base.turns, messages: base.messages, hasEarlierMessages: false,
       activityPage: { activities: [], nextCursor: null, itemRevisions: {}, itemProvenance: {} }, unfinishedActivities: [],
       activeStartedAt: null, latestRequestId: base.turns.at(-1)?.requestId ?? null,

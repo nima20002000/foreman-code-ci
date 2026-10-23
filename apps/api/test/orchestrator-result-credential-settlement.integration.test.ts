@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { COORDINATION_RESULT_PROTOCOL } from '@foreman-code/contracts'
 import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
-import { CurrentWorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
+import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
 import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
 import { postgresEnabled } from './helpers/database.js'
 
@@ -14,7 +14,7 @@ describe.skipIf(!postgresEnabled)('designated Orchestrator credential across mar
     const orchestrator = fixture.configurations[0]!.agentId
     // nativeCommitted can run before the fixture is returned, so it reads the fixture through this reference.
     const runtime: { f?: Awaited<ReturnType<typeof checkpointRuntimeFixture>> } = {}
-    let sweep: CurrentWorkerCredentialService | undefined
+    let sweep: Wave25WorkerCredentialService | undefined
     const observed: { before: boolean; after: boolean }[] = []
     // Runs after each committed native publication, i.e. between the marked
     // terminal's COMMIT and the settlement that retains its original process.
@@ -28,7 +28,7 @@ describe.skipIf(!postgresEnabled)('designated Orchestrator credential across mar
         where b.run_id=$1 and b.agent_id=$2 and b.purpose='workflow'`, [fixture.run.id, orchestrator])).rows[0]?.live
       const before = await live()
       if (before === undefined) return
-      sweep ??= new CurrentWorkerCredentialService(f.db.pool, new PostgresAccessService(f.db.pool))
+      sweep ??= new Wave25WorkerCredentialService(f.db.pool, new PostgresAccessService(f.db.pool))
       await sweep.reconcileTerminalCredentials()
       observed.push({ before, after: (await live())! })
     }

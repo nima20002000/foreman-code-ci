@@ -56,7 +56,7 @@ async function main() {
     console.log(JSON.stringify(await publish(stateDirectory, args[4])));
     return;
   }
-  const { loadOrCreateWorkerIdentity, loadWorkerPairing } = await import('../../../packages/contracts-node/src/deviceIdentityNode.ts');
+  const { loadOrCreateWorkerIdentity, loadWorkerPairing } = await import('../../../packages/contracts/src/deviceIdentityNode.ts');
   const { prepareWorkerState, startConfiguredWorker, initializeInstalledNativeRuntime } = await import('./workerFactory.mjs');
   const enrollment = command === 'pair' ? await import('./enrollment.mjs') : null;
   pairingErrorMessage = enrollment?.pairingErrorMessage;
@@ -121,7 +121,7 @@ async function main() {
     console.log(JSON.stringify(result));
     return;
   }
-  if(command==='identity-request'){await requirePrivateDirectory(stateDirectory);const identity=await loadOrCreateWorkerIdentity(stateDirectory);const {workerIdentityRequestCode}=await import('../../../packages/contracts-node/src/deviceSetupNode.ts');process.stdout.write(workerIdentityRequestCode(identity)+'\n');return;}
+  if(command==='identity-request'){await requirePrivateDirectory(stateDirectory);const identity=await loadOrCreateWorkerIdentity(stateDirectory);const {workerIdentityRequestCode}=await import('../../../packages/contracts/src/deviceSetupNode.ts');process.stdout.write(workerIdentityRequestCode(identity)+'\n');return;}
   if (command === 'identity') {
     await requirePrivateDirectory(stateDirectory);
     const identity = await loadOrCreateWorkerIdentity(stateDirectory);
