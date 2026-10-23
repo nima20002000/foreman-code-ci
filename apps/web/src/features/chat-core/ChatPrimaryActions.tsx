@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Button, Icon, IconButton } from '../../shared/ui/nocturne'
+import { Button, Icon, IconButton } from '../../shared/ui/nocturne/index'
 
 export function ChatPrimaryActions({ children, onStop, stopLabel = 'Stop chat', stopReason,
   describedBy, appearance = 'button' }: {

@@ -1,5 +1,5 @@
 import type { ChatDeliveryIntent } from '@foreman-code/contracts'
-import { deliveryAction, type DeliveryPresentation } from './deliveryAction'
+import { deliveryAction, type DeliveryPresentation } from '../../chat-core'
 import { ArrowUp, Square, X } from 'lucide-react'
 import { IconButton, Select, Tooltip } from '../../../shared/ui/nocturne'
 

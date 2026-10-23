@@ -234,7 +234,7 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
 - [ ] #42 Config: ~90 direct `process.env` reads outside `config.ts`.
 
 ### PR 6: Module boundaries (not started, except CI and web groundwork)
-- [~] #29 No module boundaries.
+- [~] #29 No module boundaries. Web follow-up: shared chat core extracted; pending imports reduced from 98 to 51 (CI pending).
   - The CI↔API boundary is enforced (#69).
   - Web (6a): cross-feature imports go through the feature's index (759 imports rewritten; 13 features gained an
     index). The shared graph/Board leaves live in the neutral `features/board-core` (geometry, collaborationFields,
@@ -242,13 +242,13 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
     `scripts/check-web-feature-boundaries.mjs` (web lint) fails on any new import of another feature's internals; test
     files and test support modules (fixtures, testSupport, mocks) may import each other. The runtime import graph still
     has only the 2 earlier cycles (one moved with `agentEdits`/`model` into `board-core`).
-  - Web, still open: 97 imports in `scripts/web-feature-boundary-pending.mjs` (a list that may only shrink). About 49 sit on
-    real feature cycles: `graph/store` and the draft hooks ↔ `workflow-board` start/stop outboxes, `AgentControls` ↔
-    `AgentSettingsForm`, `agents/agentSettings`, `schedules/queries`. about 48 are `operator-chat` ↔ `conversations` chat
-    pieces that tests reach through a mocked `conversations` or `operator-chat` index; move the shared chat pieces
-    (`ChatNotice`, `chatTimeline`, `chatAttachmentAttempt`, `sessionControls`, …) into a neutral feature, then re-point
-    the mocks. `routes/WorkspaceRouteEntry` → `WorkflowBoard` and `shared/ui/WorkspaceShell` → `HarnessStatusMenu` are
-    layering inversions to fix on their own.
+  - Web follow-up: moved shared chat presentation, draft/scroll state, attachment helpers, session controls,
+    activity/message reconciliation and committed-message buffering into the neutral `features/chat-core`.
+    Consumers use its public index; existing behavior tests stay in place and exercise the same implementations.
+    The pending list actually contained 98 imports (the earlier 97 count was stale); 47 were removed, leaving 51.
+  - Web, still open: 51 imports in `scripts/web-feature-boundary-pending.mjs` (a list that may only shrink), including
+    graph/draft hooks ↔ Board start/stop outboxes, Agent/settings/schedule dependencies, shared delivery hooks and
+    Operator composer settings/approval UI. The route/WorkspaceShell layering inversions remain separate work.
   - Open: 75 bidirectional API module pairs.
 - [ ] #32 Layering inversions: infrastructure→modules (24 imports), MCP builds services that HTTP uses, `collaboration`
   duplicates `workflow-chat`.
@@ -398,8 +398,7 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
 - [x] #19 Run state machine: `runs/runState.ts`, with every `execution_state` write going through
   `writeRunStateLocked`.
 - [ ] #20 SQL mixed into orchestration.
-- [x] #21 Monster functions: existing splits retained; `qualifyVerificationRuntime` now also names command,
-  report, ordinary-suite and interruption steps, preserving effect order (branch `fix/a21-qualify`; CI pending).
+- [~] #21 Monster functions: `dispatchReview` split. Open: `openLocked`, `workHandoffAdmission`.
 - [~] #22 Proof/verification/receipt sprawl.
   - Done (7b, written without compiling or running tests): `shared/deepFreeze.ts` (`deepFreeze`, `frozenJsonCopy`, with a
     test) replaces six private copies in `interactions/{workflow,review}NativeCapture.ts`,
