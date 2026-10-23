@@ -4,7 +4,7 @@ import { EngineChatMessageSchema, type EngineChatMessage } from '@foreman-code/c
 import { identityEpoch } from '../../../shared/api/protectedChatStorage'
 import { AgentChatMessage } from '../agentChat/AgentChatMessage'
 import { messageBelongsToExecution, type ExecutionChatSource, type ExecutionChatTarget } from './executionChatSource'
-import { nativeMessageAtLeastAsNew } from './nativeMessageWindow'
+import { nativeMessageAtLeastAsNew } from '../../chat-core'
 
 /** Full bodies are explicit, exact reads and never inflate or replace the bounded streaming window. */
 export function ExecutionNativeMessage({ message, target, source, name, onBrowse, onDenied }: {

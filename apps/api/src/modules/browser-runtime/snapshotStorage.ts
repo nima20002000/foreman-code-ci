@@ -1,6 +1,6 @@
-import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto'
-import { mkdir, open, readFile, rename, rm, lstat, readdir } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
+import { mkdir, readFile, rm, lstat, readdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { BrowserProfileSnapshotManifestSchema } from '@foreman-code/contracts/browser-profiles'
 import { DomainError } from '../errors.js'
@@ -8,6 +8,7 @@ import { browserInputHash, browserOrigin, sameBrowserSnapshot } from '../browser
 import type { BrowserProfileSnapshotManifest, BrowserSnapshotTransfer, BrowserSnapshotIdentity } from '../browser-profiles/types.js'
 import { assertBrowserGenerationStopped, syncBrowserProfileTree } from './profileCheckpoint.js'
 import { sha256Hex } from '../../shared/hash.js'
+import { writeDurableFile } from '../../shared/durableFile.js'
 
 /** This is private portable storage, not an API/domain schema. Secret values never leave encrypted byte paths. */
 export interface BrowserPortableState {
@@ -47,12 +48,8 @@ async function privateDirectory(path: string): Promise<void> {
     || process.getuid && info.uid !== process.getuid()) throw new DomainError('BROWSER_STORAGE_INVALID', 'Browser storage must be private and owned by this host.', 503)
 }
 
-async function writePrivate(path: string, bytes: Uint8Array): Promise<void> {
-  const temporary = `${path}.${randomUUID()}.tmp`, handle = await open(temporary, 'wx', 0o600)
-  try { await handle.writeFile(bytes); await handle.sync() } finally { await handle.close() }
-  await rename(temporary, path)
-  const directory = await open(dirname(path), 'r')
-  try { await directory.sync() } finally { await directory.close() }
+function writePrivate(path: string, bytes: Uint8Array): Promise<void> {
+  return writeDurableFile(path, bytes, { createParent: false })
 }
 
 async function readRecord<T>(path: string): Promise<T | undefined> {

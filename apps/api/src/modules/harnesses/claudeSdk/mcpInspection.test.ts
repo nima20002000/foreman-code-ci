@@ -19,8 +19,8 @@ describe('actual SDK MCP control evidence', () => {
       expect(() => assertClaudeCredentialEndpoint(changed, endpoint)).toThrow('accepted Foreman Code HTTP endpoint')
     }
   })
-  it.each(['graphql', 'foreman-code'])('recognizes %s with the frozen token reference and binds HTTP receipts to the observed name', (serverName) => {
-    for (const token of ['GRAPHQL_MCP_TOKEN']) {
+  it.each(['graphql', 'foreman-code'])('recognizes %s with both supported token references and binds HTTP receipts to the observed name', (serverName) => {
+    for (const token of ['GRAPHQL_MCP_TOKEN', 'FOREMAN_CODE_MCP_TOKEN']) {
       const stdio = decodeClaudeMcpControl([{ name: serverName, status: 'connected', config: {
         type: 'stdio', env: { [token]: 'private-token' },
       } }], 'generation', now)

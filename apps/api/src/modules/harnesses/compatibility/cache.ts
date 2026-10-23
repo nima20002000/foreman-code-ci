@@ -1,12 +1,12 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import { lstat, mkdir, open, rename, rm } from 'node:fs/promises'
+import { lstat, mkdir, open } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { HarnessCompatibilityReasonSchema, type CompatibilityHarness } from '@foreman-code/contracts'
 import { hostEnvironment } from '../../../shared/process.js'
+import { writeDurableFile } from '../../../shared/durableFile.js'
 
 export const CompatibilityCacheEntrySchema = z.object({
   format: z.literal(2), key: z.string().regex(/^[a-f0-9]{64}$/),
@@ -24,7 +24,7 @@ export interface CompatibilityCache {
 }
 export function compatibilityCacheDirectory(environment: NodeJS.ProcessEnv = hostEnvironment()): string {
   const configured = environment.XDG_CACHE_HOME
-  return join(configured && isAbsolute(configured) ? configured : join(homedir(), '.cache'), INSTALLATION_NAMES.paths.storageDirectory, 'harness-compatibility-v2')
+  return join(configured && isAbsolute(configured) ? configured : join(homedir(), '.cache'), 'graphql', 'harness-compatibility-v2')
 }
 
 /** One bounded, atomically replaced record per provider. No DB or network dependency. */
@@ -60,14 +60,9 @@ export class FileCompatibilityCache implements CompatibilityCache {
     await mkdir(this.directory, { recursive: true, mode: 0o700 })
     const info = await lstat(this.directory)
     if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('Unsafe cache directory.')
-    const temporary = join(this.directory, `.${entry.harness}-${randomUUID()}.tmp`)
-    let handle: Awaited<ReturnType<typeof open>> | undefined
-    try {
-      handle = await open(temporary, 'wx', 0o600)
-      await handle.writeFile(JSON.stringify(entry) + '\n')
-      await handle.sync()
-      await handle.close(); handle = undefined
-      await rename(temporary, join(this.directory, `${entry.harness}.json`))
-    } finally { await handle?.close(); await rm(temporary, { force: true }) }
+    await writeDurableFile(join(this.directory, `${entry.harness}.json`), JSON.stringify(entry) + '\n', {
+      createParent: false, syncDirectory: false,
+      temporaryPath: join(this.directory, `.${entry.harness}-${randomUUID()}.tmp`),
+    })
   }
 }

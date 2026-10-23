@@ -3,9 +3,9 @@ import type pg from 'pg'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { localHumanPrincipal } from '../../access/localHuman.js'
-import { Wave25InteractionRepository } from '../../interactions/current/repository.js'
+import { CurrentInteractionRepository } from '../../interactions/current/repository.js'
 import { OperatorInteractionService } from '../../interactions/operator.js'
-import { registerForemanMcp } from '../../../mcp/unified/transport.js'
+import { registerGraphqlMcp } from '../../../mcp/unified/transport.js'
 import type { OperatorServices } from '../../../mcp/operator/types.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -162,7 +162,7 @@ it('reports a live remote approval as answerable through human and authenticated
   const reader = { ...localHumanPrincipal, id: 'reader', grants: [{ actions: ['interactions:read' as const], scope: {} }] }
   const access = { authenticate: async (token: string) => token === 'reader' ? reader : localHumanPrincipal } as unknown as PostgresAccessService
   const pool = { query: async () => ({ rows: [{ record: interaction }] }) } as unknown as pg.Pool
-  const repository = new Wave25InteractionRepository(pool)
+  const repository = new CurrentInteractionRepository(pool)
   type ServiceArgs = ConstructorParameters<typeof InteractionService>
   const interactions = new InteractionService(repository, {} as ServiceArgs[1], {} as ServiceArgs[2],
     async () => undefined, undefined, async record => {
@@ -177,7 +177,7 @@ it('reports a live remote approval as answerable through human and authenticated
     })
   registerOperatorHttpSecurity(app, access)
   registerUserInteractions(app, interactions)
-  registerForemanMcp(app, { access, operator: { interactions: new OperatorInteractionService(interactions),
+  registerGraphqlMcp(app, { access, operator: { interactions: new OperatorInteractionService(interactions),
     commands: { recordDenied: async () => undefined } } as unknown as OperatorServices })
   const clients: Client[] = []
   const address = await app.listen({ host: '127.0.0.1', port: 0 })
