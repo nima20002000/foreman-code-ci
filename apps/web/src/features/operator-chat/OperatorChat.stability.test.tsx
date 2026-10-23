@@ -296,7 +296,7 @@ it.each(['idle', 'error'] as const)('removes responding dots immediately on %s a
   expect(screen.queryByRole('status', { name: 'Operator is typing' })).not.toBeInTheDocument()
   states.a = { ...running, revision: 3, activeRequestId: 'next-turn' }
   await act(async () => { await client.invalidateQueries({ queryKey: ['operator-chat', 'conversation', 'a'] }) })
-  expect(screen.getByRole('status', { name: 'Operator is typing' })).toBeVisible()
+  expect(await screen.findByRole('status', { name: 'Operator is typing' })).toBeVisible()
   act(() => listeners.event({ id: 2, conversationId: 'a', type: 'state',
     data: { requestId: 'accepted-turn', turnState } }))
   expect(screen.getByRole('status', { name: 'Operator is typing' })).toBeVisible()
