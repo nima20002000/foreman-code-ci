@@ -10,8 +10,10 @@ import { ciTestResults } from './ci-test-results.mjs'
 // Matches the integration runner's per-file silence limit: cold cloud machines run single tests for over a minute.
 export const CI_IDLE_TIMEOUT_MS = 180_000
 /** Without a known expected duration there is no part deadline; the idle limit still catches hangs. */
+// The part deadline only catches hangs the idle timeout misses; slow but progressing parts run up to the 7-minute
+// red line (a part estimated at 115 s was killed at 345 s while its last file was still progressing).
 export function ciPartDeadlineMs(expectedDurationMs) {
-  return expectedDurationMs > 0 ? Math.max(3 * expectedDurationMs, 120_000) : Number.POSITIVE_INFINITY
+  return expectedDurationMs > 0 ? Math.max(3 * expectedDurationMs, 420_000) : Number.POSITIVE_INFINITY
 }
 
 /** Runs outside the test process so blocked test workers cannot block either deadline. */

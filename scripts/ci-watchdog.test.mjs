@@ -212,11 +212,12 @@ test('a single quiet test may run three minutes before the idle watchdog stops i
   assert.equal(CI_IDLE_TIMEOUT_MS, 180_000)
 })
 
-test('CI deadlines use three known expected durations with a two minute minimum', async () => {
+test('CI deadlines use three known expected durations with a seven minute minimum', async () => {
   const { ciPartDeadlineMs } = await import('./ci-watchdog.mjs')
   // An unknown expected duration must not turn into a two-minute deadline for a whole suite part.
   assert.equal(ciPartDeadlineMs(0), Number.POSITIVE_INFINITY)
-  assert.equal(ciPartDeadlineMs(30_000), 120_000)
+  assert.equal(ciPartDeadlineMs(30_000), 420_000)
+  assert.equal(ciPartDeadlineMs(115_000), 420_000)
   assert.equal(ciPartDeadlineMs(210_000), 630_000)
 })
 
