@@ -11,7 +11,7 @@ import { identityAlive, processIdentity, type LinuxProcessIdentity }
   from '../src/modules/harnesses/recovery/linuxIdentity.js'
 import { readProtectedRuntimeConfiguration } from '../src/modules/jobs/installedRuntimeHost.js'
 import { InstalledVerificationRuntimeConfigurationSchema, MAX_VERIFICATION_CONFIGURATION_BYTES }
-  from '@foreman-code/contracts-node/installed-runtime-node'
+  from '@foreman-code/contracts/installed-runtime-node'
 import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'
 import { physicalFaultEnvironment } from './helpers/physicalFaultEnvironment.js'
 import { mainCiContext } from '../src/modules/ci/context.js'

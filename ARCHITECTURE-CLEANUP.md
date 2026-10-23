@@ -283,17 +283,36 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   - `collaboration` and `workflow-chat` are not duplicates in a mechanical way: `collaboration/workflowChat*` is the
     Run-owned execution chat (HTTP, Group chat and MCP admission), `workflow-chat` is the Group chat channel. Not
     merged; the audit finding needs a design look.
-- [~] #33 Node runtime split implemented on `fix/a33-contracts`; verification blocked by Foreman CI request failures (`DATABASE_BUSY`, then `SOURCE_GITHUB_PUSH_REQUIRED`; no ticket IDs returned).
-  - Moved `serverKit`, `installedRuntimeNode`, `localClientNode`, `deviceIdentityNode`, `deviceSetupNode` and
-    `deviceTlsNode`, with their existing tests, into `packages/contracts-node` (`@foreman-code/contracts-node`).
-    Contracts schemas and CI tooling stay in contracts; consumers use the new package or Worker source paths.
-  - Wired build order, verification portions, affected selection, caches, Worker snapshots/aliases and immutable
-    release packaging. No runtime logic, HTTP/MCP responses, persisted data or deployed names changed.
-  - Added native ESM entry-point coverage and extended release tests for the extracted package, affected selection,
-    coverage source mapping and Worker source traversal. Full typecheck/lint and explicit affected unit/integration
-    requests failed before returning ticket IDs; Main could not read the source repository from GitHub. No local
-    checks were run. Base lint ticket `746e5518-3198-475a-904a-29ade0491871`
-    and typecheck ticket `7f6f62b6-4769-4f25-8a6e-344b78b6396a` failed during dependency-install setup.
+- [~] #33 Contracts carries runtime code. #69 and #71 added `server-kit` and `installed-runtime-node` there on purpose.
+  Split the Node-only code into its own package.
+  - 6d stopped before moving code: the new package is a third built workspace package, and it cannot be added safely
+    without running the build and CI. Nothing is moved on this branch.
+  - What moves: `serverKit`, `installedRuntimeNode`, `localClientNode`, `deviceIdentityNode` and `deviceSetupNode`
+    (it imports `deviceIdentityNode`) with their tests, into `packages/contracts-node` (`@foreman-code/contracts-node`,
+    built to `dist`, exports like contracts). 85 files import `server-kit`, 22 `installed-runtime-node`, 30
+    `device-identity-node`, 4 `local-client-node`; 12 worker and script files import the sources by relative path.
+    `deviceSetupNode` also imports `deviceTlsNode`, which would move too. The contracts modules they import
+    (`job-runtime`, `job-verification-runtime`, `source-admission`, `source-materialization`, `device-identity`,
+    `device-setup`, `product`, the index) all have subpath exports already. The CI tooling stays in contracts (owner
+    decision).
+  - Wiring found that has to change with it, none of which was done:
+    - Build: every `--filter @foreman-code/contracts build` site (root `package.json` x5, `ci-suite.sh`,
+      `apps/ci/src/runner.ts`, `dev.mjs`, `acceptance/local.mjs`, `test-integration.mjs`, `test-native-acceptance.mjs`,
+      `.github/workflows/ci-cache.yml`) and the pinned call sequences in `ci-suite.test.mjs`, `ci-affected.test.mjs`,
+      `local-production.test.mjs` and `apps/api/test/ci-host/*`. An alternative that keeps them untouched is building
+      contracts-node from the contracts `build` script, but `heavy-job.mjs --build contracts` hashes only
+      `packages/contracts`, so it would need to hash both directories.
+    - Required portions: `verification-runner.mjs` `expectedPortions` makes every `apps/*` or `packages/*` package with
+      a `typecheck`, `lint` or `build` script a required portion, and unit tests need a `vitest` portion; the root
+      scripts must then produce them. The moved tests could instead run in the API unit suite.
+    - Release packaging: `local-production-runtime.mjs` special-cases the contracts and CI packages (copy, immutable
+      snapshot, `apiDependencyKey` inputs, stale-output pruning) and `local-production.test.mjs` pins it.
+    - Worker artifact: `workerPackages` and the alias lists in `worker-snapshot-policy.mjs` and
+      `build-worker-artifact.mjs`, `ciWorkspacePackages` in `ciImportGraph.mjs`, and the project lists in
+      `ci-affected*.mjs`, `ci-typecheck-cache.mjs`, `test-files.mjs`, `lint-baseline.mjs` and
+      `test-fixture-cache.mjs`; `pnpm install` for `pnpm-lock.yaml`.
+  - Suggested order: do it in one PR with a person running `pnpm typecheck`, `lint`, `test` and the local-production
+    tests, starting with the build and portion wiring, then the importer rename (a codemod on the four subpaths).
 
 ### PR 7: Database (#70)
 - [-] #24 Migrations: registry overrides removed, version-order guard for new migrations (#70). Squash and down

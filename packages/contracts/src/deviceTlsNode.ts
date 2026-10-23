@@ -1,5 +1,5 @@
 import { createHash,X509Certificate } from 'node:crypto'
-import { DeviceTlsTrustSchema,type DeviceTlsTrust } from '@foreman-code/contracts/device-identity'
+import { DeviceTlsTrustSchema,type DeviceTlsTrust } from './deviceIdentity.js'
 /** One approved public CA, scoped to this selected device endpoint only. */
 export function deviceTlsOptions(value?:DeviceTlsTrust):{rejectUnauthorized:true;ca?:string} {
   if(!value)return {rejectUnauthorized:true}
