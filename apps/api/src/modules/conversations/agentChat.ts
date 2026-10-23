@@ -2407,7 +2407,11 @@ export class AgentChatService {
     for (const row of await this.repository.open()) {
       if (this.closing) return
       if (row.harness === 'opencode') continue
-      await this.repair(row.id)
+      try { await this.repair(row.id) } catch (error) {
+        componentLogger('harness').warn({ err: error, conversationId: row.id }, 'Agent chat startup recovery will retry this conversation')
+        this.events.publish(row.id, 'error', { message: errorMessage(error, 'Native reconciliation failed.') })
+        this.scheduleReconcile(row.id)
+      }
     }
   }
 
