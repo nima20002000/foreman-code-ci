@@ -165,6 +165,8 @@ export const CiHostRequestSchema = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('read'), runId: CiHostRunIdSchema, afterOffset: z.number().int().nonnegative(),
     maxBytes: z.number().int().nonnegative().max(CI_LOG_MAX_BYTES), durations: z.boolean().optional(), testResults: z.boolean().optional(),
     integrationCoverage: z.boolean().optional(),
+    // Cloud status observation releases its permit before Main asks for result collection.
+    observeOnly: z.boolean().optional(),
     // Main sets `reassign` while another computer has a free slot; a cloud executor cancels a provider-queued workflow only then.
     reassign: z.boolean().optional() }).strict(),
   z.object({ operation: z.literal('cancel'), runId: CiHostRunIdSchema }).strict(),
