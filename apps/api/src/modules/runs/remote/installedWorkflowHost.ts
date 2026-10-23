@@ -56,7 +56,7 @@ import type { SourceOperationWorkerService, SourceOperationWorkerContext } from 
 import type { SourceInstalledNativeOwner } from '../../sources/executionHosts.js'
 import { RemoteOperationJournal } from './operationJournal.js'
 import { RemoteExecutionHost } from './executionHost.js'
-import { createRemoteExecutionHandler } from './executionRouter.js'
+import { createRemoteExecutionHandler, executionExtension } from './executionRouter.js'
 import { RemoteJobExecutionRpcRequestRecordSchema } from '@foreman-code/contracts/remote-job-execution'
 import { RemoteExecutionRpcRequestSchema, type RemoteExecutionRpcRequest } from '@foreman-code/contracts/remote-execution-rpc'
 import type { DeviceExtensionRegistration, DeviceExtensionContext } from '../../devices/deviceApplicationChannel.js'
@@ -1216,10 +1216,11 @@ class InstalledWorkflowHostRuntime {
   }
 
   private createExtensions(): DeviceExtensionRegistration[] {
-    return [{namespace:'execution-v1',version:1,role:'duplex',maxJsonBytes:DEVICE_APPLICATION_JSON_BYTES,maxBinaryBytes:0,
-    handle: async (payload,context) => {
-      if(context.bytes!==undefined)unavailable('workflow_binary_payload_refused')
-      if(RemoteJobExecutionRpcRequestRecordSchema.safeParse(payload).success)throw new DomainError('JOB_RUNTIME_UNAVAILABLE','The installed workflow host has no Job runtime.',409)
+    return [executionExtension({
+    admit: (_payload, context) => { if (context.bytes !== undefined) unavailable('workflow_binary_payload_refused') },
+    routes: [{ matches: payload => RemoteJobExecutionRpcRequestRecordSchema.safeParse(payload).success,
+      handle: async () => { throw new DomainError('JOB_RUNTIME_UNAVAILABLE', 'The installed workflow host has no Job runtime.', 409) } }],
+    dispatch: async (payload,context) => {
       const frame=RemoteExecutionRpcRequestSchema.parse(payload)
       const task=(async()=>{
         this.currentIncoming(context.binding)
@@ -1411,7 +1412,7 @@ class InstalledWorkflowHostRuntime {
       })
       this.active.add(task);void task.then(()=>this.active.delete(task),()=>this.active.delete(task))
       return task
-    }},
+    }}),
     { ...EXECUTION_AUTHORITY_EXTENSION, role: 'client' },
     { ...WORKER_MCP_EXTENSION, role: 'client' },
   ]

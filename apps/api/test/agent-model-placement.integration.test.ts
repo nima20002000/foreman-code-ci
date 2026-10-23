@@ -29,6 +29,7 @@ import { currentOperatorIntegration } from './helpers/currentOperatorIntegration
 import { mixedComputerPlacement } from './helpers/mixedComputerPlacement.js'
 import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
+import { readToolDetail } from '../src/mcp/shared/toolDetail.js'
 
 it('reconciles a changed Agent profile through authenticated MCP and admits the persisted placements', async () => {
   const base = await currentOperatorIntegration({ agentManagement: true,
@@ -158,11 +159,10 @@ it('reconciles a changed Agent profile through authenticated MCP and admits the 
     expect(HostHarnessOverrideListSchema.parse(await call('harness_instances_list', {
       hostRef: target.hostRef, applicationInstallationId: mainId,
     })).overrides.find(profile => profile.instanceId === old.instanceId)).toEqual(listedProfile)
-    const tools = (await operatorCatalog(owner))
-    expect.soft(tools.find(tool => tool.name === 'agent_update')?.description)
-      .toMatch(/harness_instances_list.*harness_instance_save.*returned selection/)
-    expect.soft(tools.find(tool => tool.name === 'agent_update')?.description)
-      .toMatch(/stale.*harness_instances_list.*reuse the listed selection/)
+    const agentUpdate = (await operatorCatalog(owner)).find(tool => tool.name === 'agent_update')
+    const agentUpdateGuidance = `${agentUpdate?.description} ${agentUpdate && readToolDetail(agentUpdate)}`
+    expect.soft(agentUpdateGuidance).toMatch(/harness_instances_list.*harness_instance_save.*returned selection/)
+    expect.soft(agentUpdateGuidance).toMatch(/stale.*harness_instances_list.*reuse the listed selection/)
     const selected = await saveProfile('changed-model')
     const updateInput = { workspaceId, agentId, commandId: randomUUID(), expectedRevision: created.metadataRevision,
       expectedConfigurationVersionId: created.agent.configurationVersionId,

@@ -30,6 +30,7 @@ import type { WorkflowRestartApprovals } from './workflowRepositoryServices.js'
 import { readRunAcceptedPlacements } from '../placement/persistence.js'
 import { ignoreError } from '../diagnostics/ignoredError.js'
 import { executionFailureClass } from './executionRetryPolicy.js'
+import { isOpenRunState, isRunInProgress } from './runState.js'
 
 /** One engine, Run owner, checkpoint thread and repository for all current V3
  * graphs. Optional bounded blocks are compiled into this same LangGraph; an
@@ -180,7 +181,7 @@ export class LangGraphWorkflowEngine {
         await this.cleanupOwned(owner)
         return
       }
-      if (!['queued', 'running', 'waiting'].includes(snapshot.run.executionState)) throw new DomainError(
+      if (!isOpenRunState(snapshot.run.executionState)) throw new DomainError(
         'RUN_NOT_RESUMABLE', 'This Run requires Stop settlement or a separately authorized new Run.', 409)
       if (snapshot.run.executionState === 'waiting' && snapshot.version.definition.handoffs
         && await hasWorkDirectionWait(owner)) {
@@ -304,7 +305,7 @@ export class LangGraphWorkflowEngine {
       if (!runtimeEntered || !repeatSettlementPending(error)) throw error
       const current = await this.runs.getRepeatSnapshot(runId, owner)
       if (current.stopRequested || current.cleanupPending
-        || !['running', 'waiting'].includes(current.run.executionState)) throw error
+        || !isRunInProgress(current.run.executionState)) throw error
       // The exact task/error and native lifetime remain durable/resident. A
       // consumed approval is not callback failure merely because cleanup or a
       // sibling reviewer still needs to finish; reconcile() retries this thread.

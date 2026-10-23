@@ -62,7 +62,7 @@ export function withWorkflowExecutionChatTools(legacy: readonly OperatorToolDefi
       // These four existing definitions use Zod, just as the shared wire schemas do.
       inputSchema: objectEnvelope(tool.inputSchema as z.ZodType, schema.input),
       outputSchema: tool.outputSchema ? objectEnvelope(tool.outputSchema as z.ZodType, schema.output) : schema.output,
-      description: `${tool.description}\nFor Run-owned work, pass the shared exact target directly at the top level. `
+      detail: `${tool.detail ? `${tool.detail} ` : ''}For Run-owned work, pass the shared exact target directly at the top level. `
         + 'agent_chat_read also accepts resolve:{workspaceId,workflowId,workflowNodeId,runId?,workflowVersionId?,executionId?,waitingActivationId?,agentId?}; '
         + 'with agentId (a saved Agent) a node that is not in a saved workflow version yet resolves to its draft chat (outside_run without workflowVersionId); '
         + 'pass {target,messageId} to read the complete native message when a page reports truncation. '
@@ -99,8 +99,7 @@ export function withWorkflowExecutionChatTools(legacy: readonly OperatorToolDefi
     requires: [['agent_chat:cancel','resource'],['agent_chat:read','resource']],
     enabled: services => !!services.executionChat,
     description: 'Cancel every still-queued delivery for the supplied exact workflow execution or coordinator target. '
-      + 'Pass selection:{kind:"all"}; this never interrupts an active turn, creates work, or redirects input. '
-      + 'Reuse commandId with identical target and input after a lost response. Requires scoped agent_chat:cancel and agent_chat:read.',
+      + 'Pass selection:{kind:"all"}; this never interrupts an active turn, creates work, or redirects input.',
     inputSchema: CancelAll, outputSchema: ChatControlReceiptSchema,
     annotations: { readOnlyHint:false, destructiveHint:false, idempotentHint:true, openWorldHint:false },
     run: (context,input) => context.services.executionChat!.cancel(context.principal,input),

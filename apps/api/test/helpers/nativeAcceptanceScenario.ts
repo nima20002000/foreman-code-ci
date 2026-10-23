@@ -460,9 +460,9 @@ export async function runEng03NativeScenario(scenario: Scenario, first: Harness,
         renew: (id, credential) => workerCredentials.renewForExecution(id, credential),
       }
       const budgets = new PostgresApprovalBudgetRepository(livePool)
-      const approvals = new ApprovalExecutionCoordinator(runs, interactions, budgets,
-        managers, 180_000, credentials, validateContinuation, new PostgresWorkflowClosureStore(livePool),
-        new PostgresRepeatReviewerBindings(livePool), workflowCapture.capture, reviewCapture.capture)
+      const approvals = new ApprovalExecutionCoordinator({ runs, interactions, budgets,
+        managers, activeTimeoutMs: 180_000, credentials, validateContinuation, workflowClosures: new PostgresWorkflowClosureStore(livePool),
+        repeatReviewerBindings: new PostgresRepeatReviewerBindings(livePool), nativeCaptures: workflowCapture.capture, reviewNativeCaptures: reviewCapture.capture })
       const observeExact = approvals.observeExact.bind(approvals)
       approvals.observeExact = async (input) => {
         const began = performance.now()

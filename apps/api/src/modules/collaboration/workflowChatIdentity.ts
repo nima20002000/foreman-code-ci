@@ -8,6 +8,7 @@ import { IMMUTABLE_WORKFLOW_VERSION_COLUMNS, readImmutableWorkflowVersion,
   type ImmutableWorkflowVersionRow } from '../workflows/immutableRead.js'
 import { workflowTargetRunId } from './workflowControlRecords.js'
 import type { WorkflowChatTarget } from './workflowControlTypes.js'
+import { isOpenRunState } from '../runs/runState.js'
 
 export interface WorkflowChatRunRow {
   id: string; workspace_id: string; workflow_id: string; workflow_version_id: string
@@ -95,7 +96,7 @@ export async function readWorkflowChatIdentity(sql: GraphSqlClient, target: Work
     const state = run.execution_state === 'completed' ? 'idle' : run.stopped || pending || disposition.stopping ? 'settling'
       : disposition.continuation_state || disposition.direction_source ? 'idle' : workflowChatState(execution, row.accepted)
     const nextTurn = state === 'idle' && row.accepted && !disposition.continuation_state && !disposition.direction_source
-      && ['queued', 'running', 'waiting'].includes(run.execution_state)
+      && isOpenRunState(run.execution_state)
     return { run, version, agent, execution, reference, state, ...(nextTurn ? { nextTurn } : {}) }
   }
   const group = (await sql.query<{ state: string }>(`select state from run_hierarchy_groups where run_id=$1

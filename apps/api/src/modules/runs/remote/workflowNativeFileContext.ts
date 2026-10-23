@@ -25,6 +25,7 @@ import { codexChatFileTools } from '../../harnesses/codexFiles/declarations.js'
 import type { PostgresArtifactPublicationAuthority } from './nativeArtifactAuthority.js'
 import { DomainError } from '../../errors.js'
 import { sha256Hex } from '../../../shared/hash.js'
+import { IN_PROGRESS_RUN_STATES_SQL, isRunInProgress } from '../runState.js'
 
 export const WORKFLOW_NATIVE_FILE_CONTEXT_OPERATION = 'remote.native-artifact.context'
 export const WORKFLOW_NATIVE_FILE_CONVERSATION_PREFIX = 'workflow-native-files:v1:'
@@ -108,7 +109,7 @@ export class WorkflowNativeFileContextAdmission {
         if (!same(fence, await capture.owner.readOneShotFence(sql))) return denied('run_owner_changed')
         await this.ports.assertPhysical(sql, capture.owner, capture)
         const running = await sql.query(`select 1 from runs r join harness_executions e on e.run_id=r.id
-          where r.id=$1 and e.id=$2 and r.stop_requested_at is null and r.execution_state in ('running','waiting')
+          where r.id=$1 and e.id=$2 and r.stop_requested_at is null and r.execution_state in (${IN_PROGRESS_RUN_STATES_SQL})
           and r.record->>'authorizationPrincipalId'=$3 and e.record->>'state' in ('running','waiting')
           and e.record->>'nativeSessionId'=$4 and e.record->>'workingDirectory'=$5 and e.record->>'runtimeDirectory'=$6 for share of r,e`,
         [intent.runId, intent.executionId, admission.context.ownerPrincipalId, admission.context.nativeSessionId,
@@ -227,7 +228,7 @@ export class WorkflowNativeFileContextAdmission {
           from harness_executions e join runs r on r.id=e.run_id
           join agent_configuration_versions c on c.id=e.record->>'agentConfigurationVersionId' and c.agent_id=e.agent_id
           where e.id=$1 and r.id=$2 for share of e,r,c`, [capture.execution.id, proof.scope.runId])).rows[0]
-      if (!row || row.stopped || !['running', 'waiting'].includes(row.execution_state) || row.workspace_id !== proof.scope.workspaceId
+      if (!row || row.stopped || !isRunInProgress(row.execution_state) || row.workspace_id !== proof.scope.workspaceId
         || row.workflow_id !== proof.scope.workflowId || row.workflow_version_id !== proof.scope.workflowVersionId) return denied('run_not_running')
       const execution = HarnessExecutionSchema.parse(row.execution), configuration = AgentConfigurationVersionSchema.parse(row.configuration)
       if (!['running', 'waiting'].includes(execution.state) || !execution.workingDirectory || !execution.runtimeDirectory
@@ -267,7 +268,7 @@ export class WorkflowNativeFileContextAdmission {
         execution.runId, execution.id, capture.session.harness, capture.session.providerVersion, capture.session.nativeSessionId, JSON.stringify(conversationRecord)])
       const verifyContext = async () => {
         const running = await sql.query(`select 1 from runs r join harness_executions e on e.run_id=r.id
-          where r.id=$1 and e.id=$2 and r.stop_requested_at is null and r.execution_state in ('running','waiting')
+          where r.id=$1 and e.id=$2 and r.stop_requested_at is null and r.execution_state in (${IN_PROGRESS_RUN_STATES_SQL})
           and r.record->>'authorizationPrincipalId'=$3 and e.record->>'state' in ('running','waiting')
           and e.record->>'nativeSessionId'=$4 and e.record->>'workingDirectory'=$5 and e.record->>'runtimeDirectory'=$6 for share of r,e`,
         [execution.runId, execution.id, principal.id, capture.session.nativeSessionId, execution.workingDirectory, execution.runtimeDirectory])

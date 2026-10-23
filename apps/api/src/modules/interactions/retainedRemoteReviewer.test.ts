@@ -191,7 +191,7 @@ async function recoveryFixture(options: { handoff?: boolean } = {}) {
     })
     proxies.push(manager)
     type Args = ConstructorParameters<typeof ApprovalExecutionCoordinator>
-    return new ApprovalExecutionCoordinator({ ...idleWorkflowControls, getExecution: async () => f.execution,
+    return new ApprovalExecutionCoordinator({ runs: { ...idleWorkflowControls, getExecution: async () => f.execution,
       getExecutionConfiguration: configurationById,
       getRepeatVersion: async () => f.base.version,
       repeat: async () => ({ ...idleWorkflowRepeat, readWorkExecutionContext: async () => ({ parentRequest: null }) }),
@@ -200,11 +200,10 @@ async function recoveryFixture(options: { handoff?: boolean } = {}) {
       async *executionPages() { yield [f.execution] },
       requestCleanup,
       acquireOwnership,
-    } as unknown as Args[0], { coordination } as Args[1], {} as Args[2],
-    { resolve: () => ({ manager, processState: 'resident', markResident: resident }) }, 60_000,
-    credentials as unknown as Args[5], undefined, closures as unknown as Args[7],
-    undefined, undefined, undefined, undefined, undefined,
-    async context => ({ ...context, acceptedPlacement: f.placement }))
+    } as unknown as Args[0]['runs'], interactions: { coordination } as Args[0]['interactions'], budgets: {} as Args[0]['budgets'],
+    managers: { resolve: () => ({ manager, processState: 'resident', markResident: resident }) }, activeTimeoutMs: 60_000,
+    credentials: credentials as unknown as Args[0]['credentials'], workflowClosures: closures as unknown as Args[0]['workflowClosures'],
+    prepareManagerContext: async context => ({ ...context, acceptedPlacement: f.placement }) })
   }
   const attach = (main: ApprovalExecutionCoordinator, job?: ReviewJob) => main.attachOwnedSession({
     executionId: f.execution.id, agentId: f.execution.agentId, harness: 'codex',
