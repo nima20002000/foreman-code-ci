@@ -492,13 +492,7 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   names other than the database URL, ticket-named web support files (`eng05D`/`eng07B`), and the schema fixture
   `currentDatabase` next to the database fixture `migratedDatabase`.
 - [~] #51 SQL-text tests: the lint rule now catches them regardless of variable name. The remaining violations are
-  listed in `pendingSqlTextTests.mjs` (130 files, a list that may only shrink). Part 1 owns the original first
-  45 entries (`computers/sync.test.ts` through `agent-chat-f2-recovery.test.ts`). Five replacements are implemented
-  on `fix/a51-sql1`: sync repository membership, Claude publication receipts (extending the existing integration
-  suite), failed-capture cleanup/locks, Git worktree identity, and node-skill authoring. Foreman verification is
-  pending; baseline ticket `0b58461b-c665-4c38-a7c5-0311fab228b0` already reports a cached-store install setup
-  failure. The other 40 entries and earlier bound-value/call-order fakes in this range remain open.
-  11b (#79) cleared 20 files with two
+  listed in `pendingSqlTextTests.mjs` (209 files, a list that may only shrink). 11b (#79) cleared 20 files with two
   shared seams, `livePrincipal` (the live principal read) and `commandReceiptLedger` (conversation control receipts),
   which recognise statements by their bound values instead of SQL text, plus bound-value checks in a few fakes. The rest
   route several tables on SQL text; they need real-Postgres integration tests or a fake at a port.

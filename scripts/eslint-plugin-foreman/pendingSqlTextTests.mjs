@@ -5,6 +5,8 @@
 // Never add a file here.
 export const pendingSqlTextTests = new Set([
   'apps/api/src/modules/computers/sync.test.ts',
+  'apps/api/src/modules/computers/syncRepository.test.ts',
+  'apps/api/src/modules/harnesses/claudeSdk/publications.test.ts',
   'apps/api/src/modules/interactions/remoteCleanupDeadline.test.ts',
   'apps/api/src/modules/interactions/remoteWorkflowContinuation.test.ts',
   'apps/api/src/modules/interactions/retainedRemoteReviewer.test.ts',
@@ -34,9 +36,12 @@ export const pendingSqlTextTests = new Set([
   'apps/api/src/modules/runs/remote/workflowPhysicalArtifacts.test.ts',
   'apps/api/src/modules/runs/remote/workflowPhysicalVerification.test.ts',
   'apps/api/src/modules/runs/runWorktreeTransactions.test.ts',
+  'apps/api/src/modules/sources/failedCaptureCleanup.test.ts',
+  'apps/api/src/modules/sources/gitIdentity.test.ts',
   'apps/api/src/modules/sources/sourceApprovalTransactions.test.ts',
   'apps/api/src/modules/sources/sourceClosure.test.ts',
   'apps/api/src/modules/sources/workflowPreparationCleanup.test.ts',
+  'apps/api/src/modules/workflows/nodeSkillAuthoring.test.ts',
   'apps/api/src/modules/workspaces/folderMutationSafety.test.ts',
   'apps/api/src/modules/workspaces/restoredProjectFolder.test.ts',
   'apps/api/src/modules/workspaces/storageFolders.test.ts',

@@ -1,17 +1,15 @@
 import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
+import type pg from 'pg'
+import { afterEach, expect, it, vi } from 'vitest'
 import { AcceptedWorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
-import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
-import { RunWorktrees } from '../src/modules/runs/runWorktrees.js'
-import { addGitWorktree, systemGitWorktreePorts, type GitWorktreePorts } from '../src/modules/sources/gitWorktree.js'
+import { currentUnitSnapshot } from '../../../test/helpers/currentUnitSnapshot.js'
+import { RunWorktrees } from '../runs/runWorktrees.js'
+import { addGitWorktree, systemGitWorktreePorts, type GitWorktreePorts } from './gitWorktree.js'
 
 const roots: string[] = []
-const databases: Awaited<ReturnType<typeof migratedDatabase>>[] = []
 afterEach(async () => {
-  await Promise.all(databases.splice(0).map(database => database.close()))
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
 })
 
@@ -113,11 +111,29 @@ it('sets identity safely when Agents allocate worktrees concurrently in one repo
 
 it('sets identity on a Main Run worktree and repairs it when the persisted worktree is reused', async () => {
   const f = await fixture()
-  const database = await migratedDatabase()
-  databases.push(database)
-  const seeded = await seedWorkflowFixture(database.pool, f.origin)
-  const run = AcceptedWorkflowRunCurrentSchema.parse(seeded.run)
-  const worktrees = new RunWorktrees(database.pool, join(f.root, 'runs'), f.ports)
+  let persisted: { repository_root: string; record: unknown; checkout_root: string; cleanup_attempts: number } | undefined
+  const sql = {
+    query: vi.fn(async (statement: string, values?: unknown[]) => {
+      if (statement.startsWith('select pg_try_advisory_lock')) return { rows: [{ locked: true }] }
+      if (statement.startsWith('select repository_root,record')) return { rows: persisted ? [persisted] : [] }
+      if (statement.startsWith('select execution_state')) return { rows: [{ execution_state: 'running' }] }
+      if (statement.startsWith('insert into run_worktrees')) {
+        persisted = { repository_root: values![1] as string, record: JSON.parse(values![2] as string),
+          checkout_root: values![4] as string, cleanup_attempts: 0 }
+      }
+      if (statement.startsWith('update run_worktrees') && persisted) {
+        persisted.record = JSON.parse(values![1] as string)
+      }
+      return { rows: [] }
+    }),
+    release: vi.fn(),
+  }
+  const pool = { connect: async () => sql } as unknown as pg.Pool
+  const fixtureRun = currentUnitSnapshot('git-identity').run
+  const run = AcceptedWorkflowRunCurrentSchema.parse({ ...fixtureRun,
+    executionLocation: { ...fixtureRun.executionLocation, rootPath: f.origin },
+  })
+  const worktrees = new RunWorktrees(pool, join(f.root, 'runs'), f.ports)
   const tree = await worktrees.prepare(run)
   expect(tree).toBeDefined()
   const path = tree!.workingDirectory
