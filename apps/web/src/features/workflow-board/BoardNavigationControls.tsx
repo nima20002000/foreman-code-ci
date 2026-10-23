@@ -7,6 +7,7 @@ import { nextDraftApi } from '../graph/nextDraft/transport'
 import { boardDraftContextKey } from './keys'
 import { useWorkflowBoard } from './context'
 import { useBrowserSidebar } from './useBrowserSidebar'
+import { KanbanButton } from './kanban/KanbanButton'
 
 export function BoardNavigationControls({ workspaceId, workflowId, selection, runsLabel }: {
   workspaceId: string; workflowId: string; selection: ReturnType<typeof useSelectedRun>; runsLabel?: string
@@ -24,5 +25,7 @@ export function BoardNavigationControls({ workspaceId, workflowId, selection, ru
     <WorkflowFilesButton workspaceId={workspaceId} workflowId={workflowId} readOnly={Boolean(board?.run) || selection.identity.runId !== null} />
     <IconButton label="Browsers" title="Agent browsers" size="sm" variant="ghost" aria-pressed={browsers.isOpen} onClick={browsers.toggle}>
       <Icon name="globe" size={16} /></IconButton>
+    {/* The draft editor has its own Kanban toggle; a shown Run (which the Board follows while live) needs one too. */}
+    {board?.run || selection.identity.runId !== null ? <KanbanButton workspaceId={workspaceId} workflowId={workflowId} /> : null}
   </Toolbar>
 }
