@@ -59,8 +59,6 @@ export type CloudStatus = ({ done: false } | {
   /** Empty observations allow recovery, but the accepted pipeline still needs to be followed. */
   terminationUnconfirmed?: true
 }) & { steps?: CloudStep[]; output?: { key: string; text: string }
-  /** All result uploads have ended; cache saves may still hold the job open. */
-  artifactsReady?: true
   /** CircleCI has started compute; creating a pipeline or queueing a job is insufficient. */
   executionStarted?: true
   /** The provider holds the workflow in its queue: no job has started. */
@@ -250,14 +248,6 @@ const GITHUB_QUEUED = new Set(['queued', 'waiting', 'requested', 'pending'])
 
 interface GitHubJob { id: number; status: string; steps?: { number: number; name: string; status: string; conclusion: string | null }[] }
 
-function uploadsFinished(steps: { name: string; ended: boolean; passed: boolean }[]) {
-  const suite = steps.findIndex(step => step.name === 'Suite')
-  if (suite < 0 || !steps[suite]!.ended) return false
-  const uploads = steps.slice(suite + 1).filter(step => step.name === 'Uploading artifacts'
-    || /^Run actions\/upload-artifact@/.test(step.name))
-  return uploads.length > 0 && uploads.every(step => step.ended) && uploads.some(step => step.passed)
-}
-
 /** Standard public-repository runners: 4 vCPUs and 16 GB; a free account runs 20 jobs at once. */
 /** A timed out probe is a failed check, not proof that the login is gone. */
 function loginProbe(result: { code: number; timedOut?: boolean }, command: string) {
@@ -389,11 +379,7 @@ export class GitHubActionsProvider implements CloudProvider {
     }))
     // Only a finished-looking run costs an unconditional read of its conclusion.
     if (jobs.some(job => job.status !== 'completed')) {
-      const ready = jobs.length > 0 && jobs.every(job => uploadsFinished((job.steps ?? []).map(step => ({
-        name: step.name, ended: step.status === 'completed', passed: step.conclusion === 'success',
-      }))))
-      return { done: false, steps, ...(ready ? { artifactsReady: true as const } : {}),
-        ...(jobs.every(job => GITHUB_QUEUED.has(job.status)) ? { queued: true } : {}) }
+      return { done: false, steps, ...(jobs.every(job => GITHUB_QUEUED.has(job.status)) ? { queued: true } : {}) }
     }
     const view = JSON.parse(await this.gh(['run', 'view', run.providerRunId!, '-R', run.mirror, '--json',
       'status,conclusion,updatedAt'])) as { status: string; conclusion: string; updatedAt: string }
@@ -662,10 +648,6 @@ export class CircleCiProvider implements CloudProvider {
         || !workflow.jobs?.length && workflow.phase !== 'ended' && view.phase !== 'ended')
       || jobs.some(job => job.detail.phase !== 'ended') || !workflows.length)
     if (pending) {
-      const ready = jobs.length > 0 && jobs.every(job => uploadsFinished(raw.filter(step => step.jobId === job.id)
-        .map(step => ({ name: step.name, ended: step.phase === 'ended', passed: step.outcome === 'succeeded' }))))
-      // Result uploads are immutable. Avoid downloading the running cache-save log once they can be collected.
-      if (ready) return { done: false, ...progress, artifactsReady: true }
       // CircleCI serves the whole running step log; status polling stays frequent while output reads are bounded.
       const current = raw.findLast(step => step.phase !== 'ended')
       if (!current || (run.live?.bytes ?? 0) >= CLOUD_LOG_LIMIT) return { done: false, ...progress }
@@ -744,20 +726,13 @@ export class CircleCiProvider implements CloudProvider {
     const resultPaths = new Set(['durations/durations.json', 'durations/test-results.json',
       'durations/integration-coverage.json', 'durations/selection.json',
       'durations/watchdog-message.json', 'durations/suite.log'])
-    const pending = (JSON.parse(listed) as { path: string; url: string }[])
+    for (const artifact of (JSON.parse(listed) as { path: string; url: string }[])
       .filter(value => resultPaths.has(value.path) || run.suite === 'integration'
-        && /^integration-logs\/[^/]+\/summary\.json$/.test(value.path))
-    // A small worker pool bounds signed-URL downloads without adding provider API calls. All workers drain before
-    // a failure is returned, so a collection retry cannot remove files another worker is still writing.
-    const downloads = await Promise.allSettled(Array.from({ length: Math.min(4, pending.length) }, async () => {
-      for (let artifact = pending.shift(); artifact; artifact = pending.shift()) {
-        if (await this.rest.download(artifact.url, join(directory, basename(artifact.path)))) continue
-        await command(this.ports, this.label, 'curl',
-          ['-fsSL', '--max-time', '60', '-o', join(directory, basename(artifact.path)), artifact.url], 70_000)
-      }
-    }))
-    const failed = downloads.find(result => result.status === 'rejected')
-    if (failed?.status === 'rejected') throw failed.reason
+        && /^integration-logs\/[^/]+\/summary\.json$/.test(value.path))) {
+      if (await this.rest.download(artifact.url, join(directory, basename(artifact.path)))) continue
+      await command(this.ports, this.label, 'curl',
+        ['-fsSL', '--max-time', '60', '-o', join(directory, basename(artifact.path)), artifact.url], 70_000)
+    }
     const artifacts = await readArtifacts(directory)
     if (run.suite === 'integration') {
       const summary = await findFile(directory, 'summary.json')

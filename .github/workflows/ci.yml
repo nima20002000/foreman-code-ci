@@ -99,14 +99,14 @@ jobs:
           echo "clis=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
       # Harness CLIs installed by the suite's start step; restored before it so a hit skips the install.
       - if: contains(fromJSON('["unit","unit-api","integration"]'), inputs.suite)
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: .logs/ci-clis
           key: clis-v1-${{ runner.os }}-${{ runner.arch }}-node22.23.2-${{ steps.cache-inputs.outputs.clis }}
       - run: scripts/ci-suite.sh start
       # Installed packages and the pnpm store have separate archives.
       - id: packages
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: |
             node_modules
@@ -119,13 +119,13 @@ jobs:
           key: packages-v2-${{ runner.os }}-${{ steps.cache-inputs.outputs.packages }}
       # Native payload validation needs publication metadata even on installed-package hits.
       - id: metadata
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: .logs/pnpm-metadata
           key: pnpm-metadata-v2-${{ runner.os }}-${{ steps.cache-inputs.outputs.packages }}
       # Restore native store content alongside package hits so validation and repair can stay offline.
       - id: store
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: node_modules/.pnpm-store
           key: pnpm-store-v2-${{ runner.os }}-${{ steps.cache-inputs.outputs.packages }}
@@ -137,26 +137,28 @@ jobs:
       # cannot leave stale compiled modules. Keeping build info in dist also invalidates it on a local cleanup.
       - name: Contracts build cache
         if: inputs.suite != 'install'
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: packages/contracts/dist
           key: contracts-build-${{ runner.os }}-${{ steps.cache-inputs.outputs.contracts }}
       - name: API build cache
+        id: api-build
         if: inputs.suite == 'build' || inputs.suite == 'build-api'
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: apps/api/dist
           key: api-build-${{ runner.os }}-node22.23.2-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('apps/api/src/**', '!apps/api/src/**/*.test.ts', '!apps/api/src/**/__tests__/**', 'apps/api/tsconfig*.json', 'apps/api/package.json', 'packages/contracts/src/**', '!packages/contracts/src/**/*.test.ts', '!packages/contracts/src/**/*.spec.ts', 'packages/contracts/tsconfig*.json', 'packages/contracts/package.json', 'scripts/copy-api-runtime.mjs') }}
       # Both suites check the same no-emit web projects; share semantic results instead of checking them twice.
       - name: Web TypeScript cache
+        id: web-typecheck
         if: (startsWith(inputs.suite, 'typecheck') || startsWith(inputs.suite, 'build')) && inputs.suite != 'typecheck-api' && inputs.suite != 'build-api'
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: apps/web/node_modules/.cache/tsc
           key: web-typecheck-${{ runner.os }}-node22.23.2-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('apps/web/src/**', 'apps/web/*.ts', 'apps/web/tsconfig*.json', 'apps/web/package.json', 'packages/contracts/src/**', 'packages/contracts/tsconfig*.json') }}
           restore-keys: web-typecheck-${{ runner.os }}-node22.23.2-${{ hashFiles('pnpm-lock.yaml') }}-
-      # Publish each run's updated incremental state even when a mutable mirror ref is reused. Compiler and
-      # ESLint entries validate file content. Runs start from main so every run shares main's cache scope.
+      # Compiler and ESLint entries validate file content. Dependency caches come from the main-branch warmer;
+      # snapshot jobs only restore them, so package archives are never uploaded on the result path.
       - id: suite-cache
         if: inputs.suite != 'install'
         uses: actions/cache/restore@v4
@@ -177,24 +179,6 @@ jobs:
           TEST_RESULTS_OUTPUT: ${{ runner.temp }}/test-results.json
           CI_SELECTION_OUTPUT: ${{ runner.temp }}/selection.json
           CI_WATCHDOG_MESSAGE_FILE: ${{ runner.temp }}/watchdog-message.json
-      - name: Save suite caches
-        if: always() && steps.suite-cache.conclusion == 'success' && steps.suite-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            node_modules/.vitest-cache
-            apps/*/node_modules/.cache
-            packages/*/node_modules/.cache
-            !apps/web/node_modules/.cache/tsc
-          key: ${{ steps.suite-cache.outputs.cache-primary-key }}
-      # Each failing integration file's full test log, for diagnosis without rerunning it.
-      - if: failure() && inputs.suite == 'integration'
-        uses: actions/upload-artifact@v4
-        with:
-          name: integration-logs
-          path: .logs/test-integration/
-          retention-days: 2
-          if-no-files-found: ignore
       # Measured durations and structured test results, which Main reads back with the ticket.
       - if: always()
         uses: actions/upload-artifact@v4
@@ -210,3 +194,33 @@ jobs:
             ${{ runner.temp }}/suite.log
           retention-days: 1
           if-no-files-found: ignore
+      # Each failing integration file's full test log, for diagnosis without rerunning it.
+      - if: failure() && inputs.suite == 'integration'
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-logs
+          path: .logs/test-integration/
+          retention-days: 2
+          if-no-files-found: ignore
+      - name: Save suite caches
+        if: always() && steps.suite-cache.conclusion == 'success' && steps.suite-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            node_modules/.vitest-cache
+            apps/*/node_modules/.cache
+            packages/*/node_modules/.cache
+            !apps/web/node_modules/.cache/tsc
+          key: ${{ steps.suite-cache.outputs.cache-primary-key }}
+      - name: Save API build cache
+        if: success() && steps.api-build.outputs.cache-hit != 'true' && steps.api-build.conclusion == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: apps/api/dist
+          key: ${{ steps.api-build.outputs.cache-primary-key }}
+      - name: Save Web TypeScript cache
+        if: success() && steps.web-typecheck.outputs.cache-hit != 'true' && steps.web-typecheck.conclusion == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: apps/web/node_modules/.cache/tsc
+          key: ${{ steps.web-typecheck.outputs.cache-primary-key }}
