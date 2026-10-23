@@ -187,8 +187,9 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   (2,824 occurrences; no name collided, so none was skipped). `RepeatGraphCurrentV3` became
   `RepeatGraphCurrentCurrent`, which the owner should review. Left alone: `Wave25*` identifiers, `wave25_*` SQL,
   migration file names, `wave25*` test file names, string literals, JSON keys, prose, docs and history.
-- [ ] #35 Unfinished graphql → foreman-code rename (646 files; compose/DB names, rsync path, env compat layer).
-  Deployed names need a migration plan.
+- [~] #35 Code rename redone on `fix/a35-graphql`; MCP symbols and source modules use Foreman names.
+  Frozen installation and saved names are centralized in contracts `installationNames.mjs`; no environment alias layer.
+  Deployed cutover remains owner-only. Foreman CI verification is in progress.
 - [~] #36 Retired `opencode` harness (156 refs), `LegacyChatDeliveryBridge`, 24 semantics-version guards.
   - Done: one `isReadOnlyHarnessConfiguration` (contracts) replaces 8 copies of the "retired or read-only" check, and one
     `retiredHarnessError()` (`harnesses/retiredHarness.ts`) replaces 20 `HARNESS_RETIRED` throws. The unused

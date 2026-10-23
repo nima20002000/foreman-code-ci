@@ -59,9 +59,9 @@ describe('qualified native account commands', () => {
   it('preserves Claude HOME and XDG context while selecting only its profile and stripping ambient credentials', () => {
     expect(providerAccountEnvironment('claude', '/slots/profile', '/slots/context', {
       HOME: '/human-context', XDG_CONFIG_HOME: '/human-config', ANTHROPIC_API_KEY: 'ambient-secret',
-      CLAUDE_CODE_OAUTH_TOKEN: 'ambient-secret', FOREMAN_CODE_MCP_TOKEN: 'application-grant', PATH: '/bin',
+      CLAUDE_CODE_OAUTH_TOKEN: 'ambient-secret', GRAPHQL_MCP_TOKEN: 'application-grant', PATH: '/bin',
     })).toEqual({ HOME: '/human-context', XDG_CONFIG_HOME: '/human-config', CLAUDE_CONFIG_DIR: '/slots/profile',
-      FOREMAN_CODE_MCP_TOKEN: 'application-grant', PATH: '/bin' })
+      GRAPHQL_MCP_TOKEN: 'application-grant', PATH: '/bin' })
   })
   it('exports qualified subject/email evidence without raw provider output', async () => {
     const f = fixture('claude', JSON.stringify({ loggedIn: true, authMethod: 'subscription',

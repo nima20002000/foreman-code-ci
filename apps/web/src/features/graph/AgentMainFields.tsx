@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import {
-  AgentEffortSchema, ClaudeEffortSchema, changeCodexSandbox, effectiveGraphqlTools, memoryBoardTools, GraphqlAgentToolSchema,
-  type GraphqlAgentTool, type GraphqlToolOverride, type HarnessConfiguration, type WorkflowAgentProductRole,
+  AgentEffortSchema, ClaudeEffortSchema, changeCodexSandbox, effectiveForemanTools, memoryBoardTools, ForemanAgentToolSchema,
+  type ForemanAgentTool, type ForemanToolOverride, type HarnessConfiguration, type WorkflowAgentProductRole,
 } from '@foreman-code/contracts'
 import { Combobox, Select, Switch } from '../../shared/ui/nocturne'
 import { useProviderHarnessModels } from '../provider-accounts'
@@ -77,13 +77,13 @@ const memoryLabels = { none: 'Off', read: 'Read', write: 'Read and write', custo
 
 /** Memory board access for this node, stored as the node's change to the Agent's default tools. */
 export function AgentMemoryRow({ role, defaults, override, readOnly, onChange }: {
-  role: WorkflowAgentProductRole; defaults: readonly GraphqlAgentTool[] | undefined; override: GraphqlToolOverride | undefined
-  readOnly: boolean; onChange(defaults: GraphqlAgentTool[] | undefined, override: GraphqlToolOverride | undefined): void
+  role: WorkflowAgentProductRole; defaults: readonly ForemanAgentTool[] | undefined; override: ForemanToolOverride | undefined
+  readOnly: boolean; onChange(defaults: ForemanAgentTool[] | undefined, override: ForemanToolOverride | undefined): void
 }) {
-  const memoryTools: GraphqlAgentTool[] = memoryBoardTools('write')
-  const agentDefault = effectiveGraphqlTools(role, defaults, undefined, false, memoryTools)
+  const memoryTools: ForemanAgentTool[] = memoryBoardTools('write')
+  const agentDefault = effectiveForemanTools(role, defaults, undefined, false, memoryTools)
   const changed = Boolean(override?.add.some(tool => memoryTools.includes(tool)) || override?.remove.some(tool => memoryTools.includes(tool)))
-  const effective = changed ? effectiveGraphqlTools(role, defaults, override, false, memoryTools) : agentDefault
+  const effective = changed ? effectiveForemanTools(role, defaults, override, false, memoryTools) : agentDefault
   const access = memoryAccess(effective)
   return <NodeRow label="Memory" note={readOnly && access !== 'none' && access !== 'read' ? 'Read-only agents can only read memory.' : undefined}>
     <Select label="Memory" className="agent-node-inline" value={changed ? access : 'inherit'}
@@ -98,8 +98,8 @@ export function AgentMemoryRow({ role, defaults, override, readOnly, onChange }:
         const add = (override?.add ?? []).filter(tool => !memoryTools.includes(tool))
         const remove = (override?.remove ?? []).filter(tool => !memoryTools.includes(tool))
         for (const tool of memoryTools) {
-          if (next.includes(tool) && !agentDefault.includes(tool)) add.push(GraphqlAgentToolSchema.parse(tool))
-          if (!next.includes(tool) && agentDefault.includes(tool)) remove.push(GraphqlAgentToolSchema.parse(tool))
+          if (next.includes(tool) && !agentDefault.includes(tool)) add.push(ForemanAgentToolSchema.parse(tool))
+          if (!next.includes(tool) && agentDefault.includes(tool)) remove.push(ForemanAgentToolSchema.parse(tool))
         }
         onChange(defaults ? [...defaults] : undefined, add.length || remove.length ? { add, remove } : undefined)
       }} />

@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { InfoHint } from '../../shared/ui/InfoHint'
 import { UnsavedChangesContext, useUnsavedChanges } from '../../shared/ui/unsavedChanges'
 import { useContext, useEffect, useRef, useState } from 'react'
@@ -15,10 +16,10 @@ import { useProtectedAccessError } from '../../shared/api/useProtectedAccessErro
 type Harness = 'codex'
 type Presets = HarnessMcpList['presets']
 /** Retired per-role app entries; installing the graphql preset removes them. */
-const LEGACY_APP_SERVERS = ['graphql-app', 'graphql-operator']
+const LEGACY_APP_SERVERS = [INSTALLATION_NAMES.mcp.app, INSTALLATION_NAMES.mcp.operator]
 function needsAttention(name: string, presets: Presets): boolean {
-  return (APP_MCP_SERVER_NAMES.some((server) => server === name) && ['mismatch', 'legacy'].includes(presets?.graphql ?? ''))
-    || (LEGACY_APP_SERVERS.includes(name) && presets?.graphql !== undefined)
+  return (APP_MCP_SERVER_NAMES.some((server) => server === name) && ['mismatch', 'legacy'].includes(presets?.[INSTALLATION_NAMES.mcp.server] ?? ''))
+    || (LEGACY_APP_SERVERS.includes(name) && presets?.[INSTALLATION_NAMES.mcp.server] !== undefined)
     || (name === 'linear' && presets?.linear === 'mismatch')
 }
 const words = { add: 'Add', remove: 'Remove', enable: 'Update' }
@@ -162,7 +163,7 @@ function useNativeMcpManager({ harness, accessUnavailable = false }: NativeMcpMa
   }
   const presets = serverData?.presets
   const details = serverData?.servers.find((server) => server.name === detailsName)
-  const detailsPreset: HarnessMcpManagedPreset | undefined = details && APP_MCP_SERVER_NAMES.some((name) => name === details.name) && ['installed', 'disabled'].includes(presets?.graphql ?? '') ? 'graphql'
+  const detailsPreset: HarnessMcpManagedPreset | undefined = details && APP_MCP_SERVER_NAMES.some((name) => name === details.name) && ['installed', 'disabled'].includes(presets?.[INSTALLATION_NAMES.mcp.server] ?? '') ? INSTALLATION_NAMES.mcp.server
     : details?.name === 'linear' && ['installed', 'disabled'].includes(presets?.linear ?? '') ? 'linear' : undefined
   const detailsRemovable = Boolean(details && (detailsPreset || details.editable))
   const outstanding = allPlans.filter((plan) => ['submitting', 'uncertain'].includes(plan.status)
@@ -236,7 +237,7 @@ function NativeMcpManager({ harness, accessUnavailable = false }: NativeMcpManag
           : !detailsRemovable ? <p className="harness-muted">{details.protected ? 'Managed by Foreman Code.' : 'Change it in the config file it comes from.'}</p> : null}
         {details.name === 'linear' && detailsPreset === 'linear' ? <p className="harness-muted">Sign in with <code>codex mcp login linear</code>.</p> : null}
         <div className="harness-step-actions">
-          {details.name === 'graphql' && detailsPreset === 'graphql' ? <Button disabled={detailsBusy} onClick={() => manage('graphql', { installed: true })}>Rename to Foreman Code MCP</Button> : null}
+          {details.name === INSTALLATION_NAMES.mcp.server && detailsPreset === INSTALLATION_NAMES.mcp.server ? <Button disabled={detailsBusy} onClick={() => manage(INSTALLATION_NAMES.mcp.server, { installed: true })}>Rename to Foreman Code MCP</Button> : null}
           {detailsPreset || details.editable ? <Button disabled={detailsBusy} onClick={() => {
             if (detailsPreset) manage(detailsPreset, { enabled: !details.enabled })
             else { setDetailsName(undefined); requestChange({ kind: 'enable', name: details.name, enabled: !details.enabled }) }
@@ -264,16 +265,16 @@ function NativeMcpManager({ harness, accessUnavailable = false }: NativeMcpManag
     </Alert> : managed.isError ? <Alert live tone="danger" title="Change failed">{managed.error.message}</Alert> : null}
     {managed.data?.status === 'applied' || feedback ? <p role="status" className="harness-success">{feedback ?? 'Saved.'}</p> : null}
     {presets ? <div className="harness-preset-actions" aria-label="Suggested MCP servers">
-      {(['graphql', 'linear'] as const).map((preset) => {
+      {([INSTALLATION_NAMES.mcp.server, 'linear'] as const).map((preset) => {
         const presetStatus = presets[preset]
         if (presetStatus === 'installed' || presetStatus === 'disabled') return null
-        const label = preset === 'graphql' ? 'Foreman Code MCP' : 'Linear MCP'
+        const label = preset === INSTALLATION_NAMES.mcp.server ? 'Foreman Code MCP' : 'Linear MCP'
         const actionable = presetStatus === 'missing' || presetStatus === 'legacy'
           || (presetStatus === 'mismatch' && (preset !== 'linear' || !serverData?.servers.find((server) => server.name === 'linear')?.protected))
-        const description = presetStatus === 'missing' ? preset === 'graphql' ? 'App tools for Operator and workflow agents.' : 'Read-only Linear access.'
+        const description = presetStatus === 'missing' ? preset === INSTALLATION_NAMES.mcp.server ? 'App tools for Operator and workflow agents.' : 'Read-only Linear access.'
           : presetStatus === 'legacy' ? 'Replaces the two older app connections.'
             : presetStatus === 'inherited' ? 'Set in another config file.'
-              : preset === 'graphql' ? 'Needs repair. Its tool settings are kept.' : 'Not the read-only setup.'
+              : preset === INSTALLATION_NAMES.mcp.server ? 'Needs repair. Its tool settings are kept.' : 'Not the read-only setup.'
         return <div key={preset} className="harness-preset-row"><div><strong>{label}</strong><small>{description}</small></div>
           {actionable ? <Button size="sm" disabled={managedBusy || servers.isFetching || servers.isError} loading={managed.isPending && managed.variables?.preset === preset}
             onClick={() => manage(preset, { installed: true })}>{presetStatus === 'legacy' ? 'Upgrade' : presetStatus === 'mismatch' ? preset === 'linear' ? 'Make read-only' : 'Repair' : 'Add'}</Button>

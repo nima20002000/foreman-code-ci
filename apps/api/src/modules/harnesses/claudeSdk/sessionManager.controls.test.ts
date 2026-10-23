@@ -9,9 +9,9 @@ describe('Claude native session manager admission', () => {
   it('rebinds only the managed credential on a retired live session and rejects busy or changed scope', async () => {
     const http = { type: 'http', url: 'http://127.0.0.1:3000/mcp/app' }
     const f = fixture(undefined, { appMcpAccess: 'management', sdkOptions: { mcpServers: { graphql: http } } })
-    const admitted = { ...start, environment: { agentId: 'operator', variables: { FOREMAN_CODE_MCP_TOKEN: 'first-token' } } }
+    const admitted = { ...start, environment: { agentId: 'operator', variables: { GRAPHQL_MCP_TOKEN: 'first-token' } } }
     const updated = { ...admitted, correlationId: 'second',
-      environment: { agentId: 'operator', variables: { FOREMAN_CODE_MCP_TOKEN: 'second-token' } } }
+      environment: { agentId: 'operator', variables: { GRAPHQL_MCP_TOKEN: 'second-token' } } }
     const servers = { graphql: { ...http, headers: { Authorization: 'Bearer second-token' } } }
     try {
       const session = await f.manager.attachSession({ harness: 'claude', providerVersion: '2.1.284', nativeSessionId: 'native-session' }, admitted)
@@ -285,7 +285,7 @@ describe('Claude native session manager admission', () => {
     const f = fixture(undefined, { sdkOptions: { mcpServers: base }, appMcpAccess: 'management' })
     const tokenFree = { ...start, environment: { agentId: 'operator', variables: {} } }
     const credentialed = { ...start, environment: { agentId: 'operator',
-      variables: { FOREMAN_CODE_MCP_TOKEN: 'scoped-credential' } } }
+      variables: { GRAPHQL_MCP_TOKEN: 'scoped-credential' } } }
     const servers = { ...base, graphql: { ...http, headers: { Authorization: 'Bearer scoped-credential' } } }
     try {
       await f.manager.prepareInspection(tokenFree)
@@ -317,7 +317,7 @@ describe('Claude native session manager admission', () => {
       expect(inspection.httpCredentialAcknowledgement).toBeUndefined()
       expect(f.offers).not.toHaveBeenCalled()
       const credentialed = { ...start, environment: { agentId: 'operator', variables: {
-        FOREMAN_CODE_MCP_TOKEN: 'scoped-token',
+        GRAPHQL_MCP_TOKEN: 'scoped-token',
       } } }
       await f.manager.refreshInspectionCredentials(credentialed, {
         graphql: { ...servers.graphql, headers: { Authorization: 'Bearer scoped-token' } },
@@ -333,9 +333,9 @@ describe('Claude native session manager admission', () => {
 
   it.each([
     ['GRAPHQL_MCP_TOKEN', 'GRAPHQL_MCP_TOKEN'],
-    ['GRAPHQL_MCP_TOKEN', 'FOREMAN_CODE_MCP_TOKEN'],
-    ['FOREMAN_CODE_MCP_TOKEN', 'GRAPHQL_MCP_TOKEN'],
-    ['FOREMAN_CODE_MCP_TOKEN', 'FOREMAN_CODE_MCP_TOKEN'],
+    ['GRAPHQL_MCP_TOKEN', 'GRAPHQL_MCP_TOKEN'],
+    ['GRAPHQL_MCP_TOKEN', 'GRAPHQL_MCP_TOKEN'],
+    ['GRAPHQL_MCP_TOKEN', 'GRAPHQL_MCP_TOKEN'],
   ])('delivers scoped %s credentials and starts with %s on the same inspected query', async (refreshName, startName) => {
     const baseServers = { graphql: { type: 'http', url: 'http://127.0.0.1:3000/mcp/app' } }
     const f = fixture(undefined, { sdkOptions: { mcpServers: baseServers }, appMcpAccess: 'management', credentialEnvironmentVariables: ['GRAPHQL_MCP_TOKEN'] })

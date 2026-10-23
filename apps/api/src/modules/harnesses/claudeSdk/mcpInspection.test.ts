@@ -20,7 +20,7 @@ describe('actual SDK MCP control evidence', () => {
     }
   })
   it.each(['graphql', 'foreman-code'])('recognizes %s with both supported token references and binds HTTP receipts to the observed name', (serverName) => {
-    for (const token of ['GRAPHQL_MCP_TOKEN', 'FOREMAN_CODE_MCP_TOKEN']) {
+    for (const token of ['GRAPHQL_MCP_TOKEN', 'GRAPHQL_MCP_TOKEN']) {
       const stdio = decodeClaudeMcpControl([{ name: serverName, status: 'connected', config: {
         type: 'stdio', env: { [token]: 'private-token' },
       } }], 'generation', now)

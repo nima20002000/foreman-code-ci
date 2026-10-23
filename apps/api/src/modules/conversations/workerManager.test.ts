@@ -51,12 +51,12 @@ it.each(['codex', 'claude'] as const)('rebinds the next %s credential through th
     } } })
   const start: NativeSessionStart = { kind: 'operator', configuration: f.configuration,
     workingDirectory: binding.workingDirectory, correlationId: 'first',
-    environment: { agentId: f.configuration.operatorId, variables: { FOREMAN_CODE_MCP_TOKEN: 'first-token' } } }
+    environment: { agentId: f.configuration.operatorId, variables: { GRAPHQL_MCP_TOKEN: 'first-token' } } }
   try {
     await manager.attachSession(f.session, start)
     const before = requests.length
     await manager.rebindApplicationAccess(f.session, { ...start, correlationId: 'second',
-      environment: { agentId: f.configuration.operatorId, variables: { FOREMAN_CODE_MCP_TOKEN: 'second-token' } } })
+      environment: { agentId: f.configuration.operatorId, variables: { GRAPHQL_MCP_TOKEN: 'second-token' } } })
     expect(requests.slice(before)).toHaveLength(1)
     expect(requests.at(-1)).toMatchObject({
       method: harness === 'codex' ? 'conversation.open' : 'conversation.refresh-mcp',

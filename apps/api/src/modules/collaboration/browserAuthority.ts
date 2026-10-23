@@ -1,6 +1,7 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { browserOwnerIsActive, readConversationBrowserOwner } from './browserLiveOwner.js'
 import type pg from 'pg'
-import { isReadOnlyHarnessConfiguration, AgentConfigurationVersionSchema, AgentSubjectSchema, canonicalJson, effectiveGraphqlTools,
+import { isReadOnlyHarnessConfiguration, AgentConfigurationVersionSchema, AgentSubjectSchema, canonicalJson, effectiveForemanTools,
   type AgentSubject, type AgentConfigurationVersion, type NodeBrowserSettings } from '@foreman-code/contracts'
 import { WorkerConversationBindingSchema } from '@foreman-code/contracts/remote-execution-rpc'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -137,8 +138,8 @@ export class BrowserAuthority implements BrowserSubjectAuthority, BrowserSession
       const worker = row.worker_conversation_binding ? WorkerConversationBindingSchema.parse(row.worker_conversation_binding) : undefined
       const host = worker?.profile.target.hostRef ?? source?.hostRef ?? configuration.harnessProfileSelection?.target.hostRef
       if (host) computerId = host.kind === 'main' ? host.mainId : host.deviceId
-      tools = effectiveGraphqlTools(subject.agent.productRole, configuration.graphqlTools,
-        chatToolOverride(context.node.graphqlTools, context.node.browser), false, browserAgentTools)
+      tools = effectiveForemanTools(subject.agent.productRole, configuration[INSTALLATION_NAMES.fields.agentTools],
+        chatToolOverride(context.node[INSTALLATION_NAMES.fields.agentTools], context.node.browser), false, browserAgentTools)
     } else {
       const consultation = subject.kind === 'coordinator_consultation'
         ? await readCoordinatorCredentialAuthority(this.pool, subject.binding) : undefined
@@ -163,7 +164,7 @@ export class BrowserAuthority implements BrowserSubjectAuthority, BrowserSession
         && ['queued', 'starting', 'running', 'waiting'].includes(identity.execution!.state)
       const placement = await readExecutionPlacement(this.pool, execution.executionId)
       if (placement) computerId = placement.hostRef.kind === 'main' ? placement.hostRef.mainId : placement.hostRef.deviceId
-      tools = effectiveGraphqlTools(subject.agent.productRole, configuration.graphqlTools, node.graphqlTools,
+      tools = effectiveForemanTools(subject.agent.productRole, configuration[INSTALLATION_NAMES.fields.agentTools], node[INSTALLATION_NAMES.fields.agentTools],
         Boolean(node.interval), browserAgentTools)
     }
     return { subject, configuration, browser: browser ?? { enabled: false }, computerId, workflowVersionId, active, tools,
