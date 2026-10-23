@@ -61,20 +61,26 @@ export class BrowserBroker implements BrowserLifecyclePort {
       const owner = [...this.sessions.values()].find(value => value.record.session.profileId === profileId
         && value.record.session.browserGeneration === generation
         && value.record.leases.some(lease => lease.targetId === openerTargetId))
-      const atLimit = owner?.record.session.subject && owner.record.control.state === 'agent'
-        && owner.record.leases.length >= (owner.record.maxTabs ?? DEFAULT_AGENT_BROWSER_TABS)
-      if (!owner || owner.record.closing || owner.record.session.state === 'closed' || atLimit) {
+      if (!owner) {
         await options.driver.closeTab(profileId, generation, tab.targetId)
         return
       }
-      const opener = owner.record.leases.find(value => value.targetId === openerTargetId)!
-      const lease = BrowserTabLeaseSchema.parse({ id: this.id(), sessionId: owner.record.session.id,
-        tabId: this.id(), browserGeneration: generation, openerTabId: opener.lease.tabId, title: tab.title, url: tab.url })
-      owner.record.leases.push({ lease, targetId: tab.targetId })
-      await this.persist(owner).catch(error => {
-        owner.gate.fence(); owner.record.control.state = 'paused'
-        owner.record.control.reason = 'Browser ownership could not be saved. Reconnect before continuing.'
-        throw error
+      await this.controlOperation(`tab-create:${owner.record.session.id}`, async () => {
+        const opener = owner.record.leases.find(value => value.targetId === openerTargetId)
+        const atLimit = owner.record.session.subject && owner.record.control.state === 'agent'
+          && owner.record.leases.length >= (owner.record.maxTabs ?? DEFAULT_AGENT_BROWSER_TABS)
+        if (!opener || owner.record.closing || owner.record.session.state === 'closed' || atLimit) {
+          await options.driver.closeTab(profileId, generation, tab.targetId)
+          return
+        }
+        const lease = BrowserTabLeaseSchema.parse({ id: this.id(), sessionId: owner.record.session.id,
+          tabId: this.id(), browserGeneration: generation, openerTabId: opener.lease.tabId, title: tab.title, url: tab.url })
+        owner.record.leases.push({ lease, targetId: tab.targetId })
+        await this.persist(owner).catch(error => {
+          owner.gate.fence(); owner.record.control.state = 'paused'
+          owner.record.control.reason = 'Browser ownership could not be saved. Reconnect before continuing.'
+          throw error
+        })
       })
     })
   }
