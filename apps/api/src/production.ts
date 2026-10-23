@@ -193,7 +193,7 @@ import { MainCodexSelection } from './modules/computers/installedCodexSelection.
 import { workspaceStorageRoot } from './modules/workspaces/storage.js'
 import { HarnessDirectoryBrowser } from './modules/harnesses/directoryBrowser.js'
 import { CodexMcpConnections } from './modules/harnesses/codexMcpConnections.js'
-import type { CheckpointStore } from './composition/checkpoints.js'
+import type { CheckpointStore } from './infrastructure/checkpoints.js'
 import type { createDatabase } from './infrastructure/database.js'
 import { OperatorRuntimeOwner } from './infrastructure/operatorRuntimeOwner.js'
 import { RuntimeShutdown } from './infrastructure/runtimeShutdown.js'

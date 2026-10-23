@@ -268,24 +268,11 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   - Not converted automatically: imports of names that are re-exported from another file, and default or namespace
     imports. Add them to the index by hand.
   - Open: web cross-feature imports (425, 392 into internals). There is a codemod for the web part (see the handoff).
-- [~] #32 Layering inversions: saver infrastructure imports removed; owner decision pending (Foreman CI blocked by inherited lockfile setup failure).
+- [~] #32 Layering inversions (6b, not typechecked or linted).
   - Infrastructure→modules: 24 imports became 2 non-test imports (the logging core, ten migration files, storage
-    roots and `DomainError` moved or were replaced). Follow-up: `ApprovalPostgresSaver` now belongs to
-    `modules/runs`; its transaction assertion uses the public `run-graph` entry and its SQL type remains in
-    infrastructure. The checkpoint-store factory moved to `composition/checkpoints.ts`; all consumers, mocks and
-    local acceptance entrypoints use the new paths. SQL, transaction checks and saved/deployed names are unchanged.
-    The earlier two-import count was stale: the saver had one runtime module import and no remaining module type
-    import. Separate migration-registry imports into CI/runs remain outside this saver cleanup. Two infrastructure
-    tests also still import `ExclusiveGraphConnection`.
-  - Verification: cleanup commit `431eb159d3d260c3a8b7af78a21c3e974668827a`, Foreman tickets:
-    affected unit (13 files) `c3460e6e-8d5e-44ea-a426-d386e47c746d`, affected integration (9 files)
-    `da1e10a6-6f2e-46cf-84d5-449b24f8f080`, full typecheck `ed7b5e06-4588-491f-b5cb-fc445f9eda10`,
-    full lint `5796f310-f845-4b32-a1b1-78d1f1b27bcc`. Unit/typecheck/lint failed before execution during
-    installation; integration's first attempt failed there too. The logs report `ERR_PNPM_OUTDATED_LOCKFILE`:
-    worker requires `@foreman-code/api@workspace:*`, absent from the lockfile. Base typecheck ticket
-    `7f6f62b6-4769-4f25-8a6e-344b78b6396a` at `1d6b544d7a` has the identical setup failure; both affected
-    dependency files are unchanged here. No local tests, typecheck, lint or builds ran; no passing result or
-    touched-file diagnostics are available. Re-run CI after the integration agent repairs the base lockfile.
+    roots and `DomainError` moved or were replaced). Left: `infrastructure/approvalCheckpointSaver.ts` imports
+    `assertGraphTransaction` and a type from `run-graph/connection.ts`; moving the saver would touch about a dozen
+    test helpers, so it is open. Two infrastructure tests also import `ExclusiveGraphConnection`.
   - `modules/diagnostics/{logger,logComponent,runtimeTiming,ignoredError,operationalFailures,rotatingLogDestination,appErrors}.ts`
     are now one-line re-exports of the files in `infrastructure/`, so import paths and test mocks keep working.
     A test that mocks `diagnostics/logger.js` no longer intercepts infrastructure's own logger calls; mock
@@ -295,19 +282,7 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
     construction in `mcp/`. `OperatorServices` (the shared service bag type) still lives in `mcp/operator/types.ts`.
   - `collaboration` and `workflow-chat` are not duplicates in a mechanical way: `collaboration/workflowChat*` is the
     Run-owned execution chat (HTTP, Group chat and MCP admission), `workflow-chat` is the Group chat channel. Not
-    merged; the owner must choose the boundary.
-  - Owner options (no design change implemented):
-    1. Keep separate modules: `collaboration` owns exact Run-target admission, owner transactions and native
-       dispatch; `workflow-chat` owns Group posts, prepared deliveries and reply projection. Move their shared
-       delivery ports/types into a neutral boundary and inject the Run adapter during composition to remove the
-       mutual imports. This preserves the two distinct durable lifecycles.
-    2. Consolidate the execution-chat files under `workflow-chat` with explicit execution/channel subareas, leaving
-       browser and memory-board collaboration separate. This groups chat code together, but requires a larger
-       import/mocking migration and careful preservation of owner transactions versus Group pending delivery.
-    Recommendation: option 1. `WorkflowChatService.post` retains a Group post before its pending drain dispatches,
-    whereas `WorkflowExecutionChatService.deliver` admits a command under the existing Run owner and reconciles
-    native submission. They share delivery contracts, not one transaction/lifecycle. Resolve the mutual dependency
-    through composition rather than merging these services. Await the owner's choice before implementing either.
+    merged; the audit finding needs a design look.
 - [~] #33 Contracts carries runtime code. #69 and #71 added `server-kit` and `installed-runtime-node` there on purpose.
   Split the Node-only code into its own package.
   - 6d stopped before moving code: the new package is a third built workspace package, and it cannot be added safely
@@ -342,19 +317,18 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
 ### PR 7: Database (#70)
 - [-] #24 Migrations: registry overrides removed, version-order guard for new migrations (#70). Squash and down
   migrations won't be done (owner decision).
-- [~] #25 PL/pgSQL: `docs/architecture/database-functions.md` maps the current definitions and the duplicated
-  rules (7c, written without running the generator, compiler or tests).
-  - The generator now lists a code only when a current function raises it (`raise exception 'CODE'`). That drops
-    `CONTROL_CONTINUATION_CLOSED`, `INTERACTION_CANCELED` and `WORK_EXECUTION_FAILED`, which SQL only uses as a
-    default value in a record, so they duplicate no rule. 25 rules remain. The doc was edited by hand to match; run
-    the generator once to confirm it produces the same file.
-  - Decision recorded in the doc: the SQL function is the canonical home of each of the 25 rules, because a trigger
-    holds for every writer. The TypeScript checks are typed pre-checks (stable 409 code, no aborted transaction) and
-    must not grow beyond the SQL rule. No mapping from database errors to `DomainError` was found, so a raw
-    trigger failure would probably surface as a 500.
-  - Not done: removing the TypeScript pre-checks. That needs one mapping from raised code to `DomainError` and the
-    database tests, because several callers (`repeatRuntime.ts`, `schedules/postgresDispatcher.ts`) classify by those
-    codes and continue after catching them. No migration was added, since the SQL did not change.
+- [~] #25 PL/pgSQL: implemented; CI verification blocked. One SQL rule → `DomainError` mapper at the owning `withTransaction` boundary
+  maps the 25 inventoried codes only with their exact SQLSTATE/message, retaining the original cause and safe 409
+  messages. Unknown failures and existing domain errors retain their identity; retries and rollback/recovery stay
+  ahead of mapping. Removed the write path's redundant repeat decision/successor validators; deferred SQL checks
+  remain canonical. Kept parsing/computation, read-side checks and recoverable in-transaction pre-checks, which the
+  substring-based inventory had also counted. No migration or saved/deployed name changed.
+  - Verification: tests committed before the mapper (`3ed374e4cf`, corrected fixture/ownership coverage
+    `79c6e6b346`); Foreman rejected both pre-fix unit/integration submissions with `INTERNAL_ERROR` and final focused
+    submissions with `DATABASE_BUSY`, so neither red/green regression evidence nor clean changed-file checks is
+    established. Baseline full typecheck ticket `39a0f485-5450-471c-ba45-1463a51fb0b2` and lint ticket
+    `686d250c-16dd-4c0a-bccf-042cb1bb7bfd` were issued; final full typecheck/lint admission is pending.
+    No tests, compiler, lint or builds ran locally. Rerun affected tests and full typecheck/lint when CI recovers.
 - [~] #26 Transactions: one `withTransaction`, and the delivery ALS is now private. 7d (written without running the
   typecheck, lint or tests):
   - `ExclusiveGraphConnection.transaction` now calls `withTransaction` for BEGIN, COMMIT and rollback. The helper

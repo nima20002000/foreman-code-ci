@@ -19,7 +19,7 @@ import { deferred } from './helpers/deferred.js'
 import { ActivityProductionReplay } from './helpers/activityProductionReplay.js'
 import { input } from './fixtures/codex-test-helpers.js'
 import { CodexAppServerSessionManager } from '../src/modules/harnesses/codexAppServer.js'
-import { ApprovalPostgresSaver } from '../src/modules/runs/approvalCheckpointSaver.js'
+import { ApprovalPostgresSaver } from '../src/infrastructure/approvalCheckpointSaver.js'
 import { ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 
 function fixture(): DurableInteraction {
