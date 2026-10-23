@@ -6,7 +6,8 @@ import { CI_SERVER_NODE_ID } from '../inspect/ciServer'
 type Spot = { x: number; y: number }
 /** Where this viewer keeps a Board's CI server and which objects sit minimized in the dock. Per viewer, like a
  * window layout: closing only minimizes, so nothing here ever removes data. */
-type BoardObjects = { ci?: Spot; ciClosed?: boolean; kanbanClosed?: boolean }
+type Size = { width: number; height: number }
+type BoardObjects = { ci?: Spot; ciSize?: Size; ciClosed?: boolean; kanbanClosed?: boolean }
 const STORAGE_KEY = 'foreman.board-objects'
 
 function saved(): Record<string, BoardObjects> {
@@ -31,19 +32,33 @@ export function useCiPlacement(workflow: { workspaceId: string; workflowId: stri
   const objects = useBoardObjects((state) => state.boards[key])
   const change = useBoardObjects((state) => state.change)
   const [dragging, setDragging] = useState<Spot>()
+  const [sizing, setSizing] = useState<Size>()
   const actions = useMemo(() => ({
     close: () => change(key, { ciClosed: true }),
     restore: () => change(key, { ciClosed: false }),
-    /** Live drag of the server; every other change belongs to the canvas. */
+    /** Live drag and resize of the server; every other change belongs to the canvas. A finished resize is kept,
+     * with the position it moved to when resized from a left or top edge. */
     applyChanges: (changes: readonly NodeChange[]) => {
-      for (const item of changes) if (item.type === 'position' && item.id === CI_SERVER_NODE_ID && item.position) setDragging(item.position)
+      let spot: Spot | undefined
+      for (const item of changes) {
+        if (!('id' in item) || item.id !== CI_SERVER_NODE_ID) continue
+        if (item.type === 'position' && item.position) { spot = item.position; setDragging(item.position) }
+        if (item.type === 'dimensions' && item.dimensions) {
+          const size = { width: Math.round(item.dimensions.width), height: Math.round(item.dimensions.height) }
+          if (item.resizing) setSizing(size)
+          else if (item.resizing === false) {
+            change(key, { ciSize: size, ...(spot ? { ci: { x: Math.round(spot.x), y: Math.round(spot.y) } } : {}) })
+            setSizing(undefined)
+          }
+        }
+      }
     },
     moved: (position: Spot) => {
       change(key, { ci: { x: Math.round(position.x), y: Math.round(position.y) } })
       setDragging(undefined)
     },
   }), [change, key])
-  return { position: dragging ?? objects?.ci, closed: objects?.ciClosed === true, ...actions }
+  return { position: dragging ?? objects?.ci, size: sizing ?? objects?.ciSize, closed: objects?.ciClosed === true, ...actions }
 }
 
 /** The Kanban's minimized state on one Board; whether it is on the Board at all is the saved Kanban layout. */

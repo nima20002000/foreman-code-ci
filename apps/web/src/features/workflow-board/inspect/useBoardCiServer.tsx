@@ -19,9 +19,9 @@ export function useBoardCiServer({ nodes, names, workflow, scope, jobs, truncate
     ...ciServerSummary([]), state: 'unavailable' as const, label: error ? 'CI unavailable' : 'Loading CI',
   }, [scope, jobs, error])
   const place = useCiPlacement(workflow)
-  const { position, closed, close } = place
-  const node = useMemo(() => closed ? undefined : ciServerFlowNode(nodes, summary, () => setOpen(true), { position, close }),
-    [nodes, summary, position, closed, close])
+  const { position, size, closed, close } = place
+  const node = useMemo(() => closed ? undefined : ciServerFlowNode(nodes, summary, () => setOpen(true), { position, size, close }),
+    [nodes, summary, position, size, closed, close])
   const moved = place.moved, autoSpot = !position && node ? node.position : undefined
   useEffect(() => { if (keepPlace && autoSpot) moved(autoSpot) }, [keepPlace, autoSpot, moved])
   const dialog = <CiServerDialog open={open} onOpenChange={setOpen} scope={scope} workflow={workflow} jobs={jobs ?? []} names={names}

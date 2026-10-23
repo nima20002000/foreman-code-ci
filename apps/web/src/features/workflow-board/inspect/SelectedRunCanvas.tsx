@@ -281,10 +281,10 @@ export function SelectedRunCanvas({ scope, panels: suppliedPanels, layout, geome
     cis, waits, checks, checking, executionQueue, live])
   const { canvasNodes, presentedNodes, onNodesChange, beginResize, resize, finishResize } =
     useRunCanvasGeometry({ nodes, layout, version, geometry })
-  const ciPlace = useCiPlacement(scope), { position: ciPosition, closed: ciClosed, close: closeCi } = ciPlace
+  const ciPlace = useCiPlacement(scope), { position: ciPosition, size: ciSize, closed: ciClosed, close: closeCi } = ciPlace
   const ciServerNode = useMemo(() => canvasNodes.length && !ciClosed ? ciServerFlowNode(canvasNodes, ciSummary,
-    () => useInspectionPresentation.getState().setOpen(ciDialogKey, true), { position: ciPosition, close: closeCi }) : undefined,
-  [ciSummary, canvasNodes, ciDialogKey, ciPosition, ciClosed, closeCi])
+    () => useInspectionPresentation.getState().setOpen(ciDialogKey, true), { position: ciPosition, size: ciSize, close: closeCi }) : undefined,
+  [ciSummary, canvasNodes, ciDialogKey, ciPosition, ciSize, ciClosed, closeCi])
   const proximity = useAgentProximity()
   const flowNodes = useMemo(() => ciServerNode ? [...canvasNodes, ciServerNode] : canvasNodes, [canvasNodes, ciServerNode])
   const edges = usePinnedRunEdges(lines, board.inspection.runRelationshipId, version, handoffs)

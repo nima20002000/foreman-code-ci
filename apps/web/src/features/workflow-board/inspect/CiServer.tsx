@@ -3,7 +3,7 @@ import { memo, useEffect, useLayoutEffect, useRef, useState, type PointerEvent a
 import './inspection.css'
 import '../dock/boardDock.css'
 import { useQuery } from '@tanstack/react-query'
-import { Handle, Position, type Edge, type EdgeProps, type Node, type NodeProps } from '@xyflow/react'
+import { Handle, NodeResizer, Position, type Edge, type EdgeProps, type Node, type NodeProps } from '@xyflow/react'
 import type { CiRunJob, CiTestStatus } from '@foreman-code/contracts'
 import type { RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
 import { Alert, Badge, Button, EmptyState, Icon, IconButton, Spinner, Tabs, type Tone } from '../../../shared/ui/nocturne'
@@ -19,7 +19,7 @@ import { isApiAccessError } from '../../../shared/api/accessError'
 
 const SHORT_PLACEMENTS = { host: 'Host CI', github: 'GitHub', circleci: 'CircleCI' } as const
 
-export type CiServerFlowNode = Node<{ summary: CiServerSummary; open(): void; rim: 'box'; close?(): void }, 'ciServer'>
+export type CiServerFlowNode = Node<{ summary: CiServerSummary; open(): void; rim: 'box'; close?(): void; resizable?: boolean }, 'ciServer'>
 /** A presentation-only component of the Board, never a workflow node: no edges, no saved geometry, no execution.
  * Drawn as a server tower (drive bays, status LEDs, vents) so it never reads as an Agent. */
 export const CiServerNode = memo(function CiServerNode({ data }: NodeProps<CiServerFlowNode>) {
@@ -29,6 +29,7 @@ export const CiServerNode = memo(function CiServerNode({ data }: NodeProps<CiSer
   const where = summary.placements.length ? summary.placements.map((placement) => SHORT_PLACEMENTS[placement]).join(' · ')
     : 'Host CI · GitHub · CircleCI'
   return <div className="ci-server-node" data-state={summary.state}>
+    {data.resizable ? <NodeResizer minWidth={150} minHeight={170} handleClassName="board-kanban-resize" lineClassName="ci-server-resize-line" /> : null}
     <button type="button" className="ci-server-chassis" onPointerDown={(event) => { pressed.current = { x: event.clientX, y: event.clientY } }}
       onClick={(event) => { const from = pressed.current
         if (!from || Math.hypot(event.clientX - from.x, event.clientY - from.y) < 4) data.open() }}

@@ -224,11 +224,17 @@ describe('WorkspaceRouteEntry integration', () => {
     expect(node).toHaveAttribute('aria-pressed', 'false')
     await user.hover(node)
     const actions = within(screen.getByLabelText('Editable workflow graph')).getByRole('group', { name: `${title} actions` })
+    const tick = setInterval(() => console.error('TICK'), 1000)
+    console.error('BEFORE CLICK')
     await user.click(within(actions).getByRole('button', { name: `Open ${title} settings` }))
+    console.error('AFTER CLICK')
     const rail = await screen.findByRole('complementary', { name: 'Workflow side panel' })
+    console.error('RAIL FOUND')
     expect(rail).toBeVisible()
     expect(within(rail).getByRole('textbox', { name: 'Name' })).toHaveValue(agent.name)
+    console.error('NAME OK')
     expect(await within(rail).findByText('Computers can’t be checked right now. Try again shortly.', {}, { timeout: 8000 })).toBeVisible()
+    clearInterval(tick)
   }, 15_000)
 
   it('opens the accepted new workflow while workspace details still serve the old list', async () => {

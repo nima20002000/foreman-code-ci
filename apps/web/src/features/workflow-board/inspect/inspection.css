@@ -157,3 +157,5 @@
 @media (max-width: 480px) {
   .board-job-list .board-job-row { grid-template-columns: minmax(0, 1fr) 16px 42px minmax(0, 65px) 65px; gap: 4px; }
 }
+.ci-server-node .board-kanban-resize { width: 10px; height: 10px; border-radius: 3px; }
+.ci-server-node .ci-server-resize-line { border-color: transparent; }

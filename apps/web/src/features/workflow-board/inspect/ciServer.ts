@@ -48,14 +48,16 @@ export const CI_SERVER_NODE_ID = '@presentation/ci-server'
  * It is not part of the saved graph. Every Board shows it automatically, an empty one at the origin; it can be
  * opened, moved and closed into the dock, never selected or added by hand. */
 export function ciServerFlowNode(nodes: readonly { position: { x: number; y: number }; width?: number | undefined; height?: number | undefined }[],
-  summary: CiServerSummary, open: () => void, place?: { position?: { x: number; y: number } | undefined; close(): void }): CiServerFlowNode {
+  summary: CiServerSummary, open: () => void, place?: { position?: { x: number; y: number } | undefined
+    size?: { width: number; height: number } | undefined; close(): void }): CiServerFlowNode {
+  const size = place?.size ?? CI_SERVER_SIZE
   const left = nodes.length ? Math.min(...nodes.map((node) => node.position.x)) : 0
   const right = nodes.length ? Math.max(...nodes.map((node) => node.position.x + (node.width ?? 212))) : 0
   const bottom = nodes.length ? Math.max(...nodes.map((node) => node.position.y + (node.height ?? 212))) + 160 : 0
-  return { id: CI_SERVER_NODE_ID, type: 'ciServer', position: place?.position ?? { x: (left + right) / 2 - CI_SERVER_SIZE.width / 2, y: bottom },
+  return { id: CI_SERVER_NODE_ID, type: 'ciServer', position: place?.position ?? { x: (left + right) / 2 - size.width / 2, y: bottom },
     // Not selectable, yet its button must still take clicks.
-    ...CI_SERVER_SIZE, style: { ...CI_SERVER_SIZE, pointerEvents: 'all' }, draggable: !!place, selectable: false, connectable: false,
-    deletable: false, data: { summary, rim: 'box', open, ...(place ? { close: place.close } : {}) } }
+    ...size, style: { ...size, pointerEvents: 'all' }, draggable: !!place, selectable: false, connectable: false,
+    deletable: false, data: { summary, rim: 'box', open, ...(place ? { close: place.close, resizable: true } : {}) } }
 }
 
 export const CI_PLACEMENT_LABELS: Record<CiPlacement, string> = { host: 'Host CI', github: 'GitHub Actions', circleci: 'CircleCI' }
