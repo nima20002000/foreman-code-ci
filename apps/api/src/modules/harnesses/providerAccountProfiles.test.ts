@@ -38,3 +38,23 @@ it('retains an explicitly selected Worker Claude profile and its live grant vali
     hostRef: { ...target.hostRef, mainId: randomUUID() } } } }))
     .rejects.toMatchObject({ code: 'PROVIDER_ACCOUNT_TARGET_CONFLICT' })
 })
+
+it('checks the local Claude profile again when a new Agent finds none qualified', async () => {
+  const configuration = ClaudeHarnessConfigurationSchema.parse({ harness: 'claude', model: 'saved-model',
+    authMode: 'subscription', configDirectory: '/fixture/local-profile', permissionMode: 'default',
+    sandbox: 'danger-full-access', tools: ['Write'], permissionRules: [], instructions: '', mcpServers: {} })
+  const mainId = randomUUID()
+  const rechecked: HarnessProfileSelection = { instanceId: randomUUID(), instanceRevision: '6',
+    target: { hostRef: { kind: 'main', mainId }, applicationInstallationId: mainId,
+      harnessInstallationId: 'installed-native', installationFingerprint: 'installed-fingerprint' } }
+  const accounts = new ProviderAccountConfigurationService({ resolve: async () => undefined })
+  const prepareOperatorConfiguration = vi.fn(async () => rechecked as HarnessProfileSelection | undefined)
+  accounts.bindProfiles({ validateSelection: vi.fn(async () => {}),
+    selectionForConfiguration: vi.fn(async () => undefined), prepareOperatorConfiguration })
+  const input = { configuration, principal: { id: randomUUID(), name: 'Board', audience: 'operator' as const,
+    expiresAt: '2099-01-01T00:00:00.000Z', revokedAt: null, grants: [] }, source: 'http' as const,
+    commandId: randomUUID(), client: {} as pg.PoolClient }
+  expect(await accounts.profile(input)).toEqual(rechecked)
+  prepareOperatorConfiguration.mockRejectedValueOnce(new DomainError('CLAUDE_DEFAULT_SETUP_UNQUALIFIED', 'Still failing.', 409))
+  expect(await accounts.profile(input)).toBeUndefined()
+})

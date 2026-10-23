@@ -50,7 +50,16 @@ export class ProviderAccountConfigurationService {
     if (!input.configuration.accountId) {
       // A local Claude configuration reuses an exact qualified saved profile when it has none.
       if (input.selection || !this.profiles) return input.selection
-      return this.profiles.selectionForConfiguration(input.principal, input.configuration, input.client)
+      const reused = await this.profiles.selectionForConfiguration(input.principal, input.configuration, input.client)
+      if (reused) return reused
+      // A profile left unqualified by one failed check is checked again here, so new Agents never start without one.
+      try {
+        return await this.profiles.prepareOperatorConfiguration(input.principal, input.source, input.configuration, input.commandId)
+      } catch (error) {
+        // ignore: a check that fails or is not allowed for this person leaves the Agent as before, without a profile.
+        if (!(error instanceof DomainError)) throw error
+        return undefined
+      }
     }
     if (!this.profiles) throw new DomainError('HARNESS_PROFILE_SELECTION_UNAVAILABLE',
       'Managed Claude accounts require local harness profile setup.', 503)
