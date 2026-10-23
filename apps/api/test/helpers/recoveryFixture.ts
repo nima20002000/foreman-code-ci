@@ -11,7 +11,7 @@ import {
 } from '@foreman-code/contracts/current'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { buildApp } from '../../src/app.js'
-import { ApprovalPostgresSaver } from '../../src/modules/runs/approvalCheckpointSaver.js'
+import { ApprovalPostgresSaver } from '../../src/infrastructure/approvalCheckpointSaver.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
 import { APP_MCP_TOKEN_ENVIRONMENT_VARIABLE } from '../../src/modules/access/workerCredentials.js'

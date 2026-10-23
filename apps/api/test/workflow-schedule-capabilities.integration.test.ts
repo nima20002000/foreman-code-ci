@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { ScheduleGetResultSchema } from '@foreman-code/contracts/schedules'
 import { buildApp } from '../src/app.js'
 import type { ApiConfig } from '../src/config.js'
-import { createCheckpointStore, type CheckpointStore } from '../src/composition/checkpoints.js'
+import { createCheckpointStore, type CheckpointStore } from '../src/infrastructure/checkpoints.js'
 import { ScheduleOperatorCapabilitiesSchema } from '../src/mcp/operator/tools/workflowSchedules.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { buildProductionApp } from '../src/production.js'
