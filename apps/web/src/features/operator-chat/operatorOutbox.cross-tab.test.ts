@@ -206,7 +206,9 @@ describe('F12: cross-tab durable Operator reservations', () => {
   it('fails before submission when the durable write fails and does not discard an unreadable pending request', async () => {
     const first = await tab()
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Quota exceeded') })
-    await expect(first.reserveOperatorMessage('conversation-one', 'No durable ID.', '/')).rejects.toThrow('Quota exceeded')
+    await expect(first.reserveOperatorMessage('conversation-one', 'No durable ID.', '/')).rejects.toThrow(
+      'Durable message storage is unavailable. Sending is disabled to avoid repeating a command after a lost response.',
+    )
     expect(window.localStorage.getItem(key())).toBeNull()
     vi.restoreAllMocks()
     window.localStorage.setItem(key(), '{unreadable')

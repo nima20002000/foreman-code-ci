@@ -115,7 +115,7 @@ function restartOwnershipFixture(options: {
     revokeForExecution: vi.fn(async () => {}),
     ...(options.renew ? { renew: options.renew } : {}),
   }
-  const coordinator = new ApprovalExecutionCoordinator({
+  const coordinator = new ApprovalExecutionCoordinator({ runs: {
     acquireOwnership,
     getRepeatSnapshot: async (_runId: string, owner: RunOwnership) => {
       owner.assertOwned()
@@ -141,11 +141,10 @@ function restartOwnershipFixture(options: {
     get: async () => ({ id: 'run', workspaceId: 'workspace', executionState: 'waiting', outcome: 'pending',
       workflowVersionId: saved.version.id,
       approval: { handler: 'orchestrator', designatedOrchestratorAgentId: configuration.agentId } }),
-  } as unknown as Args[0], { coordination } as unknown as Args[1], {} as Args[2], managers, 60_000,
-  credentials as unknown as Args[5], undefined, { recordDetached: detached } as unknown as Args[7],
-  undefined, undefined, undefined, undefined, undefined, async context => ({
+  } as unknown as Args[0]['runs'], interactions: { coordination } as unknown as Args[0]['interactions'], budgets: {} as Args[0]['budgets'], managers, activeTimeoutMs: 60_000,
+  credentials: credentials as unknown as Args[0]['credentials'], workflowClosures: { recordDetached: detached } as unknown as Args[0]['workflowClosures'], prepareManagerContext: async context => ({
     ...context, acceptedPlacement: { hostRef: { kind: 'device' } } as NonNullable<typeof context.acceptedPlacement>,
-  }))
+  }) })
   return {
     coordinator, managers, executions, owners, acquireOwnership, closeOwners, detached, disposal, credentials,
     locked: () => locked,

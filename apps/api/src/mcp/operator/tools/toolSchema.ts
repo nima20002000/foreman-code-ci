@@ -2,6 +2,7 @@ import { OperatorToolSchemaInputSchema, OperatorToolSchemaResultSchema } from '@
 import { DomainError } from '../../../modules/errors.js'
 import { defineOperatorTool } from '../definition.js'
 import { operatorCapabilities } from './context.js'
+import { readToolDetail } from '../../shared/toolDetail.js'
 
 export const toolSchemaTools = [defineOperatorTool({
   name: 'operator_tool_schema_get',
@@ -25,7 +26,7 @@ export const toolSchemaTools = [defineOperatorTool({
       ...(tool.annotations ? { annotations: tool.annotations } : {}),
       permissionRequirements: {
         ...(requirement ? { actions: requirement.actions } : {}),
-        detail: [tool.description, requirement?.detail].filter(Boolean).join(' '),
+        detail: [tool.description, readToolDetail(tool), requirement?.detail].filter(Boolean).join(' '),
       },
     }
   },

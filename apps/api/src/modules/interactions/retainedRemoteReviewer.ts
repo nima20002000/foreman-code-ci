@@ -8,6 +8,7 @@ import { readExecutionPlacement, readExecutionPlacements } from '../placement/pe
 import { remoteReviewerPolicy, assertRemoteReviewerReceipt } from '../placement/remoteReviewerAuthority.js'
 import { requireReviewerCredential } from './reviewerCredential.js'
 import { DomainError } from '../errors.js'
+import { isRunInProgress } from '../runs/runState.js'
 
 /** Resource ownership only: expiry does not prove that the native process released its source. */
 export async function hasRetainedRemoteReviewerSource(sql: GraphSqlClient, execution: HarnessExecution): Promise<boolean> {
@@ -65,7 +66,7 @@ async function readRemoteReviewerWithPlacement(sql: GraphSqlClient, execution: H
   const receipt = RemoteOperationReceiptSchema.parse(row.receipt)
   const policy = await remoteReviewerPolicy(sql, receipt.intent)
   if (!receipt.retainedReviewer || receipt.terminal || receipt.stopFence || !policy) return undefined
-  const active = ['running', 'waiting'].includes(policy.run.executionState) && policy.run.outcome === 'pending'
+  const active = isRunInProgress(policy.run.executionState) && policy.run.outcome === 'pending'
   if (!active) {
     if (purpose !== 'live' || policy.run.executionState !== 'completed' || policy.run.outcome !== 'succeeded') {
       return undefined

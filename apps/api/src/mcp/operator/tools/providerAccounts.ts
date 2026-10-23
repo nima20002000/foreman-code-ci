@@ -139,9 +139,8 @@ export const providerAccountTools = [
     requires: readRequires,
     enabled: s => !!s.providerAccounts,
     discoverable: canRead,
-    description: 'Read this computer’s named Codex/ChatGPT and Claude accounts, provider defaults, sign-in '
-      + 'status and snapshot revision. Credentials and local paths are never returned. Requires target-specific provider_accounts:read. '
-      + 'API-key provisioning is local-human-only through Settings; MCP never receives API keys.',
+    description: 'Read a computer\'s named Codex/ChatGPT and Claude accounts, provider defaults, sign-in status and snapshot revision. Never returns credentials, paths or API keys.',
+    detail: 'API-key provisioning is local-human-only through Settings. Requires target-specific provider_accounts:read.',
     inputSchema: z.object({}).strict(), outputSchema: ProviderAccountsSnapshotSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (context) => context.services.providerAccounts!.list(context.principal),
@@ -151,10 +150,8 @@ export const providerAccountTools = [
     requires: manageRequires,
     enabled: s => !!s.providerAccounts,
     discoverable: canManage,
-    description: 'Create a named slot on the selected Main or qualified Worker; credentials remain with that native owner. Codex uses subscription '
-      + 'sign-in; Claude supports subscription or api-key. The first account becomes its provider’s default. '
-      + 'Use the snapshot expectedRevision and retry the same commandId/input after an uncertain response. '
-      + 'Requires target-specific provider_accounts:read and provider_accounts:manage. API keys are provisioned only by a local human in Settings.',
+    description: 'Create a named provider account slot on Main or a qualified Worker (Codex subscription; Claude subscription or api-key), given the snapshot expectedRevision. Credentials stay with that computer; the first account becomes the provider default.',
+    detail: 'API keys are provisioned only by a local human in Settings. Requires target-specific provider_accounts:read and provider_accounts:manage.',
     inputSchema: ProviderAccountCreateInputSchema, outputSchema: ProviderAccountUpdateResultSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (context, input) => context.services.providerAccounts!.create(context.principal, 'mcp', input),
@@ -187,8 +184,8 @@ export const providerAccountTools = [
     requires: manageRequires,
     enabled: s => !!s.providerAccounts,
     discoverable: canManage,
-    description: 'Prepare the original provider sign-in operation, valid for one hour, on the owning computer. A human completes browser authorization there. Rediscover the same operation with provider_account_auth_list after an unknown response.' + ' Requires target-specific provider_accounts:read and provider_accounts:manage. expectedRevision is the '
-      + 'accounts snapshot revision; retry the same commandId and input. Credentials stay on the owning computer.',
+    description: 'Prepare a provider sign-in, valid for one hour, that a human completes in a browser on the owning computer; rediscover it with provider_account_auth_list after an unknown response.',
+    detail: 'expectedRevision is the accounts snapshot revision. Credentials stay on the owning computer. Requires target-specific provider_accounts:read and provider_accounts:manage.',
     inputSchema: ProviderAccountToolCommandSchema, outputSchema: ProviderAccountUpdateResultSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true,
       openWorldHint: true },
@@ -199,8 +196,8 @@ export const providerAccountTools = [
     requires: manageRequires,
     enabled: s => !!s.providerAccounts,
     discoverable: canManage,
-    description: 'Prepare sign-out for this managed account. Saved uses and unproved principal ownership prevent credential replacement; native history is retained.' + ' Requires target-specific provider_accounts:read and provider_accounts:manage. expectedRevision is the '
-      + 'accounts snapshot revision; retry the same commandId and input. Credentials stay on the owning computer.',
+    description: 'Prepare sign-out for a managed account; saved uses and unproved principal ownership prevent credential replacement, and native history is kept.',
+    detail: 'expectedRevision is the accounts snapshot revision. Credentials stay on the owning computer. Requires target-specific provider_accounts:read and provider_accounts:manage.',
     inputSchema: ProviderAccountToolCommandSchema, outputSchema: ProviderAccountUpdateResultSchema,
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true,
       openWorldHint: false },

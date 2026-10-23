@@ -72,11 +72,11 @@ function composeRuntime(base: Base, provider: RecoveryProvider, errors: unknown[
       entry: { name: input.serverName, transport: 'streamable-http', endpoint: providerAppEndpoint,
         enabled: true, credentialEnvironmentVariable: APP_MCP_TOKEN_ENVIRONMENT_VARIABLE, status: 'connected' } } },
   }), pool)
-  const native = new ApprovalExecutionCoordinator(runs, repository, budgets, managers, 600000,
-    launchCredentials, continuationValidator(pool, locations),
-    new PostgresWorkflowClosureStore(pool), new PostgresRepeatReviewerBindings(pool),
-    workflowCapture.capture, reviewCapture.capture,
-    (executionId, signal) => provider.recoverProcesses(executionId, signal))
+  const native = new ApprovalExecutionCoordinator({ runs, interactions: repository, budgets, managers, activeTimeoutMs: 600000,
+    credentials: launchCredentials, validateContinuation: continuationValidator(pool, locations),
+    workflowClosures: new PostgresWorkflowClosureStore(pool), repeatReviewerBindings: new PostgresRepeatReviewerBindings(pool),
+    nativeCaptures: workflowCapture.capture, reviewNativeCaptures: reviewCapture.capture,
+    recoverNativeProcesses: (executionId, signal) => provider.recoverProcesses(executionId, signal) })
   // A fresh object reads the same durable checkpoint tables. Do not preserve
   // process-local saver state or reset an existing Run's checkpoint.
   const checkpointer = new ApprovalPostgresSaver(pool, undefined, { schema })

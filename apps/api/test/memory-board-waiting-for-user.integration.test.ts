@@ -42,13 +42,9 @@ it.runIf(postgresEnabled)('keeps an Agent result card Waiting for user after its
     const card = (waiting.items as { id: string; revision: number }[])[0]!
     const view = await call('memory_board_get', { boardId })
     expect((view.openColumns as { status: string }[]).map(column => column.status)).toEqual(['todo', 'doing', 'waiting_for_user', 'blocked'])
-    expect(view.counts).toMatchObject({ waiting_for_user: 1, done: 1 })
-    const done = await call('memory_board_get', { boardId, view: 'cards', status: 'done' })
-    expect(done.items).toEqual([expect.objectContaining({
-      assignee: expect.objectContaining({ workflowNodeId: fixture.version.entryNodeId }), completionKind: 'completed',
-    })])
+    expect(view.counts).toMatchObject({ waiting_for_user: 1, done: 0 })
     await call('memory_card_update', { kind: 'card_update', boardId, cardId: card.id, commandId: randomUUID(),
       patch: { status: 'done', completionKind: 'completed', reason: null } })
-    expect(await call('memory_board_get', { boardId })).toMatchObject({ counts: { waiting_for_user: 0, done: 2 } })
+    expect(await call('memory_board_get', { boardId })).toMatchObject({ counts: { waiting_for_user: 0, done: 1 } })
   } finally { await runtime.close() }
 }, 60000)

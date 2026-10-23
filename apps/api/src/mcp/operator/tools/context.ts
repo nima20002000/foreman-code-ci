@@ -108,7 +108,8 @@ export const OPERATOR_RUNTIME_LIMITS = [
 export const capabilityTools = [defineOperatorTool({
   name: 'operator_get_capabilities',
   requires: [['capabilities:read', 'caller']],
-  description: 'Read operational failures since startup and inspect your grants, compatible tool permissions, optional resource scope, and explicit runtime limits. Supply a complete workspace/workflow/run hierarchy for resource checks. Defaults to compact; detail:full returns all requirements and runtime instructions. This is not a grant or a promise that a specific object exists.',
+  description: 'Read your grants, the actions each available tool requires (optionally for a workspace/workflow/run hierarchy), operational failures since startup and runtime limits. detail: "full" adds every requirement and runtime instruction.',
+  detail: 'This is not a grant or a promise that a specific object exists.',
   inputSchema: OperatorCapabilityInputSchema,
   outputSchema: ScheduleOperatorCapabilitiesSchema.or(OperatorCompactCapabilitiesSchema),
   annotations: {readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:false},

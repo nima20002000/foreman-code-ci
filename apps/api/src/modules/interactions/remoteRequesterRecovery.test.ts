@@ -124,30 +124,30 @@ async function recoverRequester(detached: boolean, state: 'waiting' | 'running' 
   })
   const beginWait = vi.fn(async () => {})
   let resident = false
-  const coordinator = new ApprovalExecutionCoordinator({
+  const coordinator = new ApprovalExecutionCoordinator({ runs: {
     ...idleWorkflowControls,
     getExecution: async () => execution, getExecutionConfiguration: async () => configuration,
     getRepeatVersion: async () => base.version, get: async () => base.run,
     getRepeatSnapshot: async () => ({ run: base.run, stopRequested: false, cleanupPending: false }),
     async *executionPages() { yield [execution] }, acquireOwnership, requestCleanup,
     updateExecution: async (next: typeof execution) => { execution = next },
-  } as unknown as Args[0], {
+  } as unknown as Args[0]['runs'], interactions: {
     coordination, getForExecution: async () => undefined, getNativeRequest: async () => interaction,
     assertOrchestratorConnection: async () => ({ orchestratorNodeId: base.version.definition.nodes[0]!.id }),
-  } as unknown as Args[1], {
+  } as unknown as Args[0]['interactions'], budgets: {
     ensure: async () => {}, resume: async () => {}, remaining: async () => 60_000,
     assertActive: async () => {}, beginWait,
-  } as unknown as Args[2], {
+  } as unknown as Args[0]['budgets'], managers: {
     resolve: () => ({ manager, get processState() { return resident ? 'resident' : 'needs_start' },
       markResident() { resident = true } }),
-  } as unknown as Args[3], 60_000, {
+  } as unknown as Args[0]['managers'], activeTimeoutMs: 60_000, credentials: {
     restore,
-  } as unknown as Args[5], undefined, {
+  } as unknown as Args[0]['credentials'], workflowClosures: {
     begin,
     recordDetached: async () => {},
-  } as unknown as Args[7], undefined, captures.capture, undefined, undefined, undefined,
-  async context => ({ ...context, acceptedPlacement: { hostRef: { kind: 'device' } } as
-    NonNullable<typeof context.acceptedPlacement> }))
+  } as unknown as Args[0]['workflowClosures'], nativeCaptures: captures.capture,
+  prepareManagerContext: async context => ({ ...context, acceptedPlacement: { hostRef: { kind: 'device' } } as
+    NonNullable<typeof context.acceptedPlacement> }) })
   const stopSharing = coordinator.shareRunOwner(owner)
   try {
     if (!options.observeWithoutCleanup) {

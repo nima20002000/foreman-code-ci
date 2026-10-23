@@ -9,6 +9,7 @@ import {
 import { DomainError } from '../../../modules/errors.js'
 import { fileRetentionGrantsAllow } from '../../../modules/files/retention.js'
 import { toolFailure, toolResult } from '../../shared/results.js'
+import { toolDetail } from '../../shared/toolDetail.js'
 import type { OperatorRequestContext } from '../types.js'
 
 // Backend registration names only. The frozen management OperatorToolName enum does not include FIL-40.
@@ -26,19 +27,22 @@ async function invoke(work: () => Promise<unknown>) {
 export function registerFileRetentionTools(server: McpServer, context: OperatorRequestContext): void {
   const service = context.services.fileRetention
   if (!service) return
-  const ownerRule = 'Uses only your own non-delegated human-owner credential; never accepts another owner ID. Worker and delegated Operator/Run credentials cannot manage this setting. '
+  const ownerRule = 'Uses only your own non-delegated human-owner credential; never accepts another owner ID. Worker and delegated Operator/Run credentials cannot manage this setting. Requires unscoped settings grants. '
   if (fileRetentionToolAvailable(context, 'file_retention_get')) server.registerTool('file_retention_get', {
-    description: ownerRule + 'Requires unscoped settings:read. Read your persisted temporary-chat retention preference and revision; unset means 7 days, revision 0. Permanent references never expire.',
+    description: 'Read your temporary chat file retention preference and revision; unset means 7 days, revision 0. Permanent references never expire.',
+    ...toolDetail(ownerRule.trim()),
     inputSchema: FileRetentionGetInputSchema, outputSchema: FileRetentionGetResultSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, async (input) => invoke(() => service.get(context.principal, 'mcp', input)))
   if (fileRetentionToolAvailable(context, 'file_retention_preview')) server.registerTool('file_retention_preview', {
-    description: ownerRule + 'Requires unscoped settings:read. Count still-live temporary files that the proposed integer duration (3600–31536000 seconds) would expire now, from original creation time. This as-of preview neither reserves nor changes anything.',
+    description: 'Count the still-live temporary files a proposed retention (3600–31536000 integer seconds) would expire now, from their creation time. Changes nothing.',
+    ...toolDetail(ownerRule.trim()),
     inputSchema: FileRetentionPreviewInputSchema, outputSchema: FileRetentionPreviewResultSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, async (input) => invoke(() => service.preview(context.principal, 'mcp', input)))
   if (fileRetentionToolAvailable(context, 'file_retention_save')) server.registerTool('file_retention_save', {
-    description: ownerRule + 'Requires unscoped settings:read AND settings:update. Save 3600–31536000 integer seconds with commandId. Omit expectedRevision for last write wins; supply it to reject a stale revision. Omitted/false applyToExisting affects future files only; true recomputes still-live temporary files from original createdAt and may expire them immediately. Never resurrects overdue/expired/removed files or touches references. Returns persisted preference and affected counts; retry the identical commandId after a lost reply and use file_retention_get for current readback.',
+    description: 'Save your temporary chat file retention (3600–31536000 integer seconds) for future files, or with applyToExisting true also for still-live files, which may expire them immediately. Returns the saved preference and affected counts.',
+    ...toolDetail(ownerRule + 'Never resurrects overdue/expired/removed files or touches references. Read back with file_retention_get.'),
     inputSchema: FileRetentionSaveInputSchema, outputSchema: FileRetentionSaveResultSchema,
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
   }, async (input) => invoke(() => service.save(context.principal, 'mcp', input)))

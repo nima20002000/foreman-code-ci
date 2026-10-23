@@ -3,7 +3,7 @@ import { ActivitySnapshotV1Schema } from '../activity.js'
 import { CiActivitySchema } from '../ciHost.js'
 import { z } from 'zod'
 import { GraphIdSchema, GraphSequenceSchema, RunGraphScopeSchema } from './graphPrimitives.js'
-import { TimestampSchema } from '../schemaPrimitives.js'
+import { RunExecutionStateSchema, TimestampSchema } from '../schemaPrimitives.js'
 
 export const RUN_ACTIVITIES_RETAINED = 1000
 export const RUN_ACTIVITIES_PAGE_BYTES = 128 * 1024
@@ -143,7 +143,7 @@ const RunHandoffTransferSchema = z.object({
 }).strict()
 export const RunHandoffsReadSchema = z.object({
   scope: RunGraphScopeSchema, policy: z.enum(['work', 'not_configured']),
-  runState: z.enum(['queued', 'running', 'waiting', 'interrupted', 'completed']),
+  runState: RunExecutionStateSchema,
   connections: z.array(RunHandoffConnectionStateSchema).max(8000),
   routes: z.array(RunHandoffRouteSchema).max(8000),
   notices: z.array(RunHandoffNoticeStateSchema).max(1000),
