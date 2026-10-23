@@ -3,7 +3,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { componentLogger } from './logger.js'
 import { ExclusiveGraphConnection, beforeGraphCommit } from '../modules/run-graph/connection.js'
 import { beginTransaction, commitTransaction, withTransaction } from './transaction.js'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 
 vi.mock('./logger.js', () => {
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }

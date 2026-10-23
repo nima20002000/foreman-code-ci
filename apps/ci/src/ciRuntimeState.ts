@@ -3,7 +3,7 @@ import { rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { CiRuntimeWorkerStateSchema, type CiRuntimeWorkerState } from '@foreman-code/contracts'
 import { pathExists } from './pathExists.js'
-import { readProtectedRuntimeConfiguration } from '@foreman-code/contracts-node/installed-runtime-node'
+import { readProtectedRuntimeConfiguration } from '@foreman-code/contracts/installed-runtime-node'
 
 export async function readCiRuntimeState(stateDirectory: string): Promise<CiRuntimeWorkerState | null> {
   const path = join(stateDirectory, 'ci-preparation-state.json')

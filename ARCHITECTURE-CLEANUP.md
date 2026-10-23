@@ -178,20 +178,22 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   migration file names, `wave25*` test file names, string literals, JSON keys, prose, docs and history.
 - [ ] #35 Unfinished graphql → foreman-code rename (646 files; compose/DB names, rsync path, env compat layer).
   Deployed names need a migration plan.
-- [~] #36 Retired `opencode` harness (156 refs), `LegacyChatDeliveryBridge`, 24 semantics-version guards.
+- [~] #36 Retired `opencode` harness: active/recorded configuration split reconciled on `fix/re-a16-provider`; verification blocked by the shared CI build (see #16).
   - Done: one `isReadOnlyHarnessConfiguration` (contracts) replaces 8 copies of the "retired or read-only" check, and one
     `retiredHarnessError()` (`harnesses/retiredHarness.ts`) replaces 20 `HARNESS_RETIRED` throws. The unused
     semantics-2 `workflows/triggerAuthority.ts` is deleted. The bridge is renamed `ChatDeliveryBridge` (see
     corrections).
-  - Kept on purpose: the read schemas and enum values for stored OpenCode rows (`HarnessConfigurationSchema`,
+  - Kept on purpose: the read schemas and enum values for stored OpenCode rows (`RecordedHarnessConfigurationSchema`,
     `RecordedOperatorChatSettingsSchema`, `RecordedHarnessQualificationSchema`, subagent and session-control
     providers, the `check (harness in (...))` constraints), the `HARNESS_RETIRED` 409 for saved OpenCode history, and
     the retired-defaults reads in `settings/postgres.ts`. Write inputs already reject OpenCode
     (`SupportedHarnessConfigurationSchema`, `AgentHarnessSchema`).
-  - Open: the same two helpers are not applied in `production.ts`, `interactions/execution.ts` and
-    `conversations/agentChat|operatorChat|workerProduction.ts` (other streams were editing them), nor in the web
-    (`features/**`, ~90 refs, all retired-history display). Narrowing `HarnessConfiguration` to Codex and Claude, with a
-    separate recorded union for reads, would remove the remaining `=== 'opencode'` branches; it needs a typecheck run.
+  - a16: `HarnessConfiguration`/its schema now contain only Codex and Claude. `RecordedHarnessConfiguration`
+    and its schema preserve all saved/readback rows, including OpenCode. Executable UI controls take the active union;
+    retired display stays at readback boundaries. Shared typed admission keeps the same `HARNESS_RETIRED` 409 in
+    production, interaction execution and Operator/Worker chats. No stored values, migrations or permission rules change.
+  - Verification pending: the base Foreman typecheck ticket `278e7eed-8f33-4668-b832-9b15ece46b70` failed during
+    install (`ERR_PNPM_OUTDATED_LOCKFILE`: worker's new API workspace dependency), before checking source.
   - The 24 semantics-version guards are all `!== 3` fences over historical rows; they stay. The `oneShot*` owner
     fences are not semantics 1/2 (keep, per ENG-07 R04).
 - [x] #37 Ticket-named docs: 34 top-level files (ENG, FEAT, FIL, NIM, SCH, CHAT) and `docs/reviews/` moved under
@@ -297,26 +299,36 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
     whereas `WorkflowExecutionChatService.deliver` admits a command under the existing Run owner and reconciles
     native submission. They share delivery contracts, not one transaction/lifecycle. Resolve the mutual dependency
     through composition rather than merging these services. Await the owner's choice before implementing either.
-- [~] #33 Node runtime split merged onto `fix/re-a33-contracts`; renewed Foreman CI verification pending.
-  - Moved `serverKit`, `installedRuntimeNode`, `localClientNode`, `deviceIdentityNode`, `deviceSetupNode` and
-    `deviceTlsNode`, with their existing tests, into `packages/contracts-node` (`@foreman-code/contracts-node`).
-    Contracts schemas and CI tooling stay in contracts; consumers use the new package or Worker source paths.
-  - Wired build order/watchers, verification portions, affected selection and coverage, caches, Worker
-    snapshots/aliases and immutable release packaging. Runtime logic, HTTP/MCP responses, persisted data,
-    migration SQL and deployed names stay unchanged.
-  - Foreman CI evidence on `b73d9bd820`: scoped typecheck `e8b29266-982f-49c6-85a1-a504703117f6` and changed-file
-    lint `7c9b6963-2904-4e63-895e-d88e1f826867` passed. Unit `3f1b9d7f-cbd4-4c5e-a5ef-5c9afd828487` passed all
-    29 Node runtime and 101 contracts import tests; 278/279 script checks passed. The remaining verification
-    inventory assertion has been updated to require the new Node test runner, preserving its exact inventory check.
-    CI service tests passed 88/88 in `5e2865aa-41fe-443b-b496-8b97d5f732cc`.
-  - Integration `27addee1-6377-4733-ba13-f28a614e2e39` passed release dependency isolation and job-output admission;
-    four other selected files hit the unchanged MCP parse error. Full typecheck `a4161934-ea6a-4737-807c-9597fc6e3194`
-    and lint `5e8708d1-ae70-47a8-86df-c82d985e73e7` retain base MCP syntax errors, API boundary violations and the
-    untouched `chatPromptRules.test.ts` unused variable. Worker consumer tests also hit missing API worker output;
-    the setup-service receipt expectation still fails. These remain with the integration workstream.
-  - No local tests, typecheck, lint or builds ran. Earlier CI requests failed with database/GitHub-access errors;
-    the later tickets above ran normally. The pinned pnpm lockfile regeneration also picked up the base's missing
-    Worker API and CI protocol workspace entries (base lint/typecheck tickets failed at dependency installation).
+- [~] #33 Contracts carries runtime code. #69 and #71 added `server-kit` and `installed-runtime-node` there on purpose.
+  Split the Node-only code into its own package.
+  - 6d stopped before moving code: the new package is a third built workspace package, and it cannot be added safely
+    without running the build and CI. Nothing is moved on this branch.
+  - What moves: `serverKit`, `installedRuntimeNode`, `localClientNode`, `deviceIdentityNode` and `deviceSetupNode`
+    (it imports `deviceIdentityNode`) with their tests, into `packages/contracts-node` (`@foreman-code/contracts-node`,
+    built to `dist`, exports like contracts). 85 files import `server-kit`, 22 `installed-runtime-node`, 30
+    `device-identity-node`, 4 `local-client-node`; 12 worker and script files import the sources by relative path.
+    `deviceSetupNode` also imports `deviceTlsNode`, which would move too. The contracts modules they import
+    (`job-runtime`, `job-verification-runtime`, `source-admission`, `source-materialization`, `device-identity`,
+    `device-setup`, `product`, the index) all have subpath exports already. The CI tooling stays in contracts (owner
+    decision).
+  - Wiring found that has to change with it, none of which was done:
+    - Build: every `--filter @foreman-code/contracts build` site (root `package.json` x5, `ci-suite.sh`,
+      `apps/ci/src/runner.ts`, `dev.mjs`, `acceptance/local.mjs`, `test-integration.mjs`, `test-native-acceptance.mjs`,
+      `.github/workflows/ci-cache.yml`) and the pinned call sequences in `ci-suite.test.mjs`, `ci-affected.test.mjs`,
+      `local-production.test.mjs` and `apps/api/test/ci-host/*`. An alternative that keeps them untouched is building
+      contracts-node from the contracts `build` script, but `heavy-job.mjs --build contracts` hashes only
+      `packages/contracts`, so it would need to hash both directories.
+    - Required portions: `verification-runner.mjs` `expectedPortions` makes every `apps/*` or `packages/*` package with
+      a `typecheck`, `lint` or `build` script a required portion, and unit tests need a `vitest` portion; the root
+      scripts must then produce them. The moved tests could instead run in the API unit suite.
+    - Release packaging: `local-production-runtime.mjs` special-cases the contracts and CI packages (copy, immutable
+      snapshot, `apiDependencyKey` inputs, stale-output pruning) and `local-production.test.mjs` pins it.
+    - Worker artifact: `workerPackages` and the alias lists in `worker-snapshot-policy.mjs` and
+      `build-worker-artifact.mjs`, `ciWorkspacePackages` in `ciImportGraph.mjs`, and the project lists in
+      `ci-affected*.mjs`, `ci-typecheck-cache.mjs`, `test-files.mjs`, `lint-baseline.mjs` and
+      `test-fixture-cache.mjs`; `pnpm install` for `pnpm-lock.yaml`.
+  - Suggested order: do it in one PR with a person running `pnpm typecheck`, `lint`, `test` and the local-production
+    tests, starting with the build and portion wiring, then the importer rename (a codemod on the four subpaths).
 
 ### PR 7: Database (#70)
 - [-] #24 Migrations: registry overrides removed, version-order guard for new migrations (#70). Squash and down
@@ -383,7 +395,7 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   Prompt rules are shared (`refineChatPrompt` in contracts): text-or-attachment and no attachments on steer apply to the
   Agent, Operator and canonical send schemas, and the size check to Agent and Operator; only Operator receipt recovery
   skips the size check.
-- [ ] #16 Leaky harness port (capability descriptors not started).
+- [~] #16 Leaky harness port: capability cleanup reconciled on `fix/re-a16-provider`; shared CI build blocks verification (see detailed status below).
 - [~] #17 Durable-write consolidation complete (`fix/a17-durable`); JSON journal storage migration remains deferred.
   - Done (7a, written without compiling or running tests): `shared/durableFile.ts` (`writeDurableFile`,
     `readBoundedText`, `readBoundedTextIfPresent`, with its own test) is the only atomic write and bounded read.
@@ -441,10 +453,19 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   history-match helpers for observe. The engines keep their own settle (Agent `repository.finish`, Operator terminal
   journal and runtime closure), failure classification and recovery, because those turn models genuinely differ. The
   web consolidation is described in #15 above.
-- [~] #16 Leaky harness port: `harnesses/capabilities.ts` holds the steer/compact descriptors, adapters declare
-  `harnessCapabilities` on the port, and the steer qualification (conversations, session writer, Worker host, workflow
-  chat receipts) asks `supportsExpectedTurnSteer` instead of comparing `'codex'`. Open: other provider-name branches
-  outside `harnesses/` (plugin/MCP maintenance, activity normalisation, Claude-only file and journal paths).
+- [~] #16 Leaky harness port: a16 extends the port descriptors to native input identity, file delivery,
+  application MCP credential lifetime and automatic compaction. Conversation/Worker orchestration asks those
+  capabilities; native text/activity normalization lives under `harnesses/`. Plugin/MCP maintenance consumes
+  harness-owned CLI/storage descriptors. Provider-specific configuration discrimination, native adapter selection,
+  wire identities and retired-history display remain explicit. Manager allocation stays in
+  `conversations/managerResolvers.ts` after the composition cleanup; the capability/admission changes are reapplied there.
+  - Reconciliation verification: contracts build passes, but full typecheck
+    `74b75eb1-fdb2-4e2b-a760-6a3924fc599e` and full lint `d29f4b83-1c9a-48c7-bd24-5c449672f0b1`
+    stop at the unchanged `apps/ci/src/http.ts:27` (`TS2322`) while building CI, before API/web checks.
+    Exact-base typecheck: `b4acab65-1d05-4011-98e5-3e2300478d53` (`31cd9f4038`).
+    Explicitly scoped unit `8d20bdbf-edf5-4ba3-baf8-fd6ca75b3d2d` (29 files) and integration
+    `561a5a32-da75-4392-b275-40c2ef272d89` (11 files) requested; no local verification commands run.
+    Source verification remains incomplete until the shared CI build is fixed.
 - [ ] #17 `operationJournal` hand-rolled JSON DB; 2–3 sources of truth for run/CI state.
 - [~] #18 LangGraph patched in `dist` and subclassed via internals. `infrastructure/langgraph.ts` is now the one
   module that touches LangGraph: it re-exports the graph primitives and checkpoint types, records the pinned contract

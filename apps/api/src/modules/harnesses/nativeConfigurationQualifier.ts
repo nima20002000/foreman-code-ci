@@ -1,4 +1,4 @@
-import type { HarnessConfiguration, HarnessQualification } from '@foreman-code/contracts'
+import type { RecordedHarnessConfiguration, HarnessQualification } from '@foreman-code/contracts'
 import type { HarnessConfigurationQualifier } from './port.js'
 import { NativeHarnessFactories } from './runtimeFactory.js'
 import { requireClaudeProductionCredentialDelivery } from './claudeSdk/productionCredentials.js'
@@ -13,7 +13,7 @@ export class NativeHarnessConfigurationQualifier implements HarnessConfiguration
     this.factories = factories ?? new NativeHarnessFactories({ codexBinary })
   }
 
-  async qualify(configuration: HarnessConfiguration, workingDirectory: string, signal?: AbortSignal): Promise<HarnessQualification> {
+  async qualify(configuration: RecordedHarnessConfiguration, workingDirectory: string, signal?: AbortSignal): Promise<HarnessQualification> {
     await requireClaudeProductionCredentialDelivery(configuration, this.accounts)
     if (configuration.harness === 'claude' && this.claude) return this.claude.qualify(configuration, workingDirectory, signal ?? AbortSignal.timeout(60_000))
     return this.factories.qualifyConfiguration(configuration, workingDirectory, signal)

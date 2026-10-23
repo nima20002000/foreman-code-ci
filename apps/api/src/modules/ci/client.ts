@@ -1,7 +1,7 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import Fastify from 'fastify'
 import { z } from 'zod'
-import { DomainError } from '@foreman-code/contracts-node/server-kit'
+import { DomainError } from '@foreman-code/contracts/server-kit'
 import { HttpCiClient, type CiServiceClient } from '@foreman-code/ci/client'
 import { registerCiServiceRoutes } from '@foreman-code/ci/http'
 import { logger } from '../../infrastructure/logger.js'

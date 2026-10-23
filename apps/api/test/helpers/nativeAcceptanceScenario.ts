@@ -14,7 +14,7 @@ import { basename, join } from 'node:path'
 import pg from 'pg'
 import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint'
 import {
-  AgentConfigurationVersionSchema, DurableInteractionSchema, HarnessConfigurationSchema, HarnessExecutionSchema,
+  AgentConfigurationVersionSchema, DurableInteractionSchema, RecordedHarnessConfigurationSchema, HarnessExecutionSchema,
   type AgentConfigurationVersion, type ExecutionResult, type HarnessConfiguration, type HarnessExecution, type HarnessNativeEvent, type NativeSessionReference,
 } from '@foreman-code/contracts'
 import {
@@ -261,7 +261,7 @@ export async function runNativeAcceptanceScenario(scenario: Scenario, first: Har
       return AgentConfigurationVersionSchema.parse({
         id: `cfg-${suffix}-${index}`, workspaceId: fixture.scope.workspaceId, agentId: `agent-${suffix}-${index}`,
         productRole: 'coder', version: 1, prompt: { system: configuredPrompts[index] }, assignedSkills: [],
-        harness: HarnessConfigurationSchema.parse(override ?? fallback),
+        harness: RecordedHarnessConfigurationSchema.parse(override ?? fallback),
         contentHash: `sha256:${'0'.repeat(64)}`, createdAt: new Date().toISOString(),
       })
     })

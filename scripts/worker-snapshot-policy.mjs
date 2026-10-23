@@ -16,7 +16,6 @@ export const workerSnapshotFiles = [
   'scripts/worker-snapshot-policy.mjs',
   'scripts/graphql-mcp.mjs',
   'packages/contracts/package.json',
-  'packages/contracts-node/package.json',
   'packages/contracts/src/productEnvironment.mjs',
   'packages/contracts/src/verificationEnvironment.mjs',
   'packages/contracts/src/integrationScheduling.mjs',
@@ -36,7 +35,7 @@ export function assertWorkerSnapshotSource(path) {
   const testSource = /\.(?:test|spec)\.[cm]?[jt]s$/.test(path)
   const secretSource = /(?:^|\/)\.env(?:\.|$)|\.(?:pem|key)$|(?:^|\/)(?:credentials|secrets)\.json$/.test(path)
   const allowedSource = path.startsWith('apps/api/src/') || path.startsWith('apps/ci/src/') || path.startsWith('apps/worker/src/')
-    || path.startsWith('apps/worker/artifacts/') || path.startsWith('packages/contracts/src/') || path.startsWith('packages/contracts-node/src/')
+    || path.startsWith('apps/worker/artifacts/') || path.startsWith('packages/contracts/src/')
     || verificationScripts.includes(path) || workerSnapshotFiles.includes(path)
   if (forbiddenApiModule || invalidPath || testSource || secretSource || !allowedSource) {
     throw new Error(`Forbidden snapshot source: ${path}`)
@@ -44,7 +43,7 @@ export function assertWorkerSnapshotSource(path) {
 }
 
 /** Workspace packages the Worker bundles from source: package directory by short name. */
-export const workerPackages = Object.freeze({ contracts: 'packages/contracts', 'contracts-node': 'packages/contracts-node', ci: 'apps/ci', api: 'apps/api' })
+export const workerPackages = Object.freeze({ contracts: 'packages/contracts', ci: 'apps/ci', api: 'apps/api' })
 
 /** Bundler aliases from each package's exported dist module to its TypeScript source.
  * @param {Partial<Record<keyof typeof workerPackages, Record<string, unknown>>>} manifests `exports` by package. */

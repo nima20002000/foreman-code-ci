@@ -4,8 +4,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Socket } from 'node:net'
 import { basename } from 'node:path'
 import { promisify } from 'node:util'
-import { LOCAL_CLIENT_UNAVAILABLE, type ApiErrorResponse } from '@foreman-code/contracts'
-import { APP_MCP_TOKEN_NAMES } from '@foreman-code/contracts/product'
+import { LOCAL_CLIENT_UNAVAILABLE, type ApiErrorResponse } from './index.js'
+import { APP_MCP_TOKEN_NAMES } from './product.js'
 
 const inspectSockets = promisify(execFile)
 const loopbackAddresses = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
