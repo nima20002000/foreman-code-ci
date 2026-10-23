@@ -51,9 +51,7 @@ export class WorkspaceManagementService {
   async list(principal: ManagementPrincipal, input: { cursor?: string | undefined; limit: number; includeArchived: boolean }) {
     if (!hasAction(principal, 'workspaces:read')) requireAuthorization(principal, 'workspaces:read')
     const relevant = principal.grants.filter((grant) => grant.actions.includes('workspaces:read')
-      // A grant naming anything but workspaces never authorizes a workspace-level read; counting it would
-      // fetch rows the per-row check drops, and the page lookahead would then hide the next page.
-      && Object.entries(grant.scope).every(([key, ids]) => key === 'workspaceIds' || ids === undefined))
+      && grant.scope.workflowIds === undefined && grant.scope.runIds === undefined)
     const allowedWorkspaceIds = relevant.some((grant) => grant.scope.workspaceIds === undefined)
       ? undefined
       : [...new Set(relevant.flatMap((grant) => grant.scope.workspaceIds ?? []))]

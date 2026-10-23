@@ -13,9 +13,7 @@ export function GroupChatPanel({ workspaceId, workflowId, runId, onSelect }: {
   const location = useLocation()
   const navigate = useNavigate()
   const participants = useQuery({ queryKey: ['workflow-chat-participants', identityEpoch(), workspaceId, workflowId, runId],
-    queryFn: ({ signal }) => readGroupParticipants(workspaceId, workflowId, runId, { signal }),
-    // A Run pins its saved Agents; the workflow's current Agents change with every save, so reread when the panel reopens.
-    staleTime: runId ? Infinity : 0 })
+    queryFn: ({ signal }) => readGroupParticipants(workspaceId, workflowId, runId, { signal }), staleTime: Infinity })
   const resolveTargets = useMemo(() => groupTargetResolver(runId), [runId])
   return <WorkflowChatPanel workspaceId={workspaceId} workflowId={workflowId} visible
     participants={participants.data ?? []} participantsLoading={participants.isPending}

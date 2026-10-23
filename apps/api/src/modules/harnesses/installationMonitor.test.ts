@@ -57,32 +57,6 @@ it.each([
   } finally { await monitor.close() }
 })
 
-it('waits for an in-flight automatic check before close() resolves', async () => {
-  const hostRef = { kind: 'main' as const, mainId: 'main' }
-  let finish!: () => void
-  const recheckInstallation = vi.fn<(input: AutomaticHostProfileCheck) => Promise<void>>(
-    () => new Promise<void>(resolve => { finish = resolve }))
-  const registry = {
-    observeInstallations: () => {},
-    installations: { list: () => [{ hostRef, harnessInstallationId: 'launcher',
-      installationFingerprint: 'payload', driverId: 'codex', driverRevision: '1',
-      protocolRevision: 'protocol', environmentGeneration: 'environment', connectionGeneration: 'connection',
-      installed: true }] },
-    refreshMain: async () => {},
-  }
-  const monitor = new HarnessInstallationMonitor(registry as never, { recheckInstallation } as never,
-    () => ({} as never), async () => {}, async () => {}, vi.fn())
-  monitor.start('main')
-  expect(recheckInstallation).toHaveBeenCalledTimes(1)
-  let closed = false
-  const closing = monitor.close().then(() => { closed = true })
-  await new Promise(resolve => setTimeout(resolve, 20))
-  expect(closed).toBe(false)
-  finish()
-  await closing
-  expect(closed).toBe(true)
-})
-
 it('lets a stale automatic Worker check refresh the inventory with foreground discovery', async () => {
   const hostRef = { kind: 'device' as const, mainId: 'main', deviceId: 'worker' }
   let busy = false

@@ -26,8 +26,7 @@ export function useOperatorChatShellEffects({ enabled, open, closing, setClosing
     if (enabled && open) closeRef.current?.focus()
   }, [closeRef, enabled, open])
   useEffect(() => {
-    if (!closing) return
-    if (open) { setClosing(false); return }
+    if (!closing || open) return
     const timer = window.setTimeout(() => {
       setClosing(false)
       window.requestAnimationFrame(() => launcherRef.current?.focus())

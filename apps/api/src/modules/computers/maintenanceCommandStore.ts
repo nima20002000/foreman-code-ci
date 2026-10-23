@@ -4,7 +4,6 @@ import type { MaintenancePorts } from './maintenancePorts.js'
 
 export class MaintenanceCommandStore {
   private writes: Promise<void> = Promise.resolve()
-  private latestWrite: Promise<void> = this.writes
   constructor(private readonly directory: string,
     private readonly ports: Pick<MaintenancePorts, 'readText' | 'writePrivateText'>) {}
 
@@ -17,12 +16,9 @@ export class MaintenanceCommandStore {
   async save(commandId: string, requestHash: string, task: MaintenanceTask): Promise<void> {
     const record = MaintenanceCommandRecordSchema.parse({ requestHash, task })
     const text = `${JSON.stringify(record)}\n`
-    const write = this.writes.then(() => this.ports.writePrivateText(join(this.directory, `${commandId}.json`), text))
-    this.latestWrite = write
-    // The failure belongs to this caller; later saves and reads must not inherit it.
-    this.writes = write.catch(() => { /* ignore: the caller receives the rejection through write; later operations need a usable queue. */ })
-    await write
+    this.writes = this.writes.then(() => this.ports.writePrivateText(join(this.directory, `${commandId}.json`), text))
+    await this.writes
   }
 
-  flushed(): Promise<void> { return this.latestWrite }
+  flushed(): Promise<void> { return this.writes }
 }

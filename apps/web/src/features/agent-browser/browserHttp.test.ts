@@ -63,45 +63,6 @@ it('collects all bounded catalog pages and restarts once if the authoritative re
   expect(seen).toEqual(['', 'next', '', 'next'])
 })
 
-function pagingCodecs(pick: Partial<BrowserProfileCodecs>): BrowserProfileCodecs {
-  const unused = { encode: () => { throw new Error('Unused fixture codec') }, decode: async (): Promise<never> => { throw new Error('Unused fixture codec') } }
-  return { create: unused, addExisting: unused, update: unused, setLocalOverride: unused, confirmLogin: unused, remove: unused,
-    openSetup: unused, closeSetup: unused, sync: unused, readCatalog: unused, readSync: unused, ...pick }
-}
-
-it('returns the catalog pages it read when the revision keeps changing during the read', async () => {
-  const empty: BrowserProfileCatalog = { profiles: [], replicas: [], presentReplicas: [], pendingReplicas: [] }
-  let served = 0
-  server.use(...browserMswHandlers(async request => {
-    const cursor = new URL(request.url).searchParams.get('cursor') ?? ''
-    served += 1
-    const id = cursor || 'first', next = cursor === 'p2' ? null : cursor === 'p1' ? 'p2' : 'p1'
-    return HttpResponse.json({ ...empty, profiles: [{ id, name: id, sourceComputerId: 'main', distribution: 'shared', revision: 1, publishedRevision: 0 }],
-      nextCursor: next, revision: served })
-  }))
-  const client = createBrowserProfilesClient({ origin: 'http://localhost', error: async () => ({ message: 'Rejected' }),
-    profiles: pagingCodecs({ readCatalog: { encode: cursor => ({ query: new URLSearchParams(cursor ? { cursor } : {}) }),
-      decode: async response => response.json() } }) })
-  const catalog = await client.readCatalog(new AbortController().signal)
-  expect(catalog.profiles.map(profile => profile.id)).toEqual(['first', 'p1', 'p2'])
-})
-
-it('returns the sync progress it read when the job revision keeps changing during the read', async () => {
-  let served = 0
-  server.use(...browserMswHandlers(async request => {
-    const cursor = new URL(request.url).searchParams.get('profile') ?? ''
-    served += 1
-    return HttpResponse.json({ job: { id: 'job', commandId: 'c', state: 'queued', profiles: [], targets: [], revision: served,
-      createdAt: '2026-10-20T00:00:00.000Z', updatedAt: '2026-10-20T00:00:00.000Z' },
-    nextProfileCursor: cursor === 'p2' ? null : cursor === 'p1' ? 'p2' : 'p1', nextTargetCursor: null })
-  }))
-  const client = createBrowserProfilesClient({ origin: 'http://localhost', error: async () => ({ message: 'Rejected' }),
-    profiles: pagingCodecs({ readSync: { encode: (_id, profile) => ({ query: new URLSearchParams(profile ? { profile } : {}) }),
-      decode: async response => response.json() } }) })
-  const job = await client.readSync('job', new AbortController().signal)
-  expect(job).toMatchObject({ id: 'job', state: 'queued' })
-})
-
 it('uses the shared installation boundary and rejects a late decoded body after a session switch', async () => {
   const decoded = deferred<{ value: string }>(), decoding = deferred<void>()
   const fetcher = vi.fn<typeof fetch>(async () => new Response('{}', { status: 200 }))

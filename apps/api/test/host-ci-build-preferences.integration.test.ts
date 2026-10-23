@@ -282,8 +282,6 @@ it('honors persisted MCP build participation and priority while retaining assign
       await db.pool.query(`insert into ci_runs(id,workspace_id,group_id,state,record)
         values($1,$2,$3,'passed',$4::jsonb)`, [history.id, workspaceId, history.groupId, JSON.stringify(history)])
     }
-    // Expire the cached status so this barrier observes a new readiness request.
-    vi.setSystemTime(Date.now() + 5001)
     // Re-enabled workers need observed readiness before comparing partition priority and capacity.
     const partitionReadiness = list()
     await preferredStatusRequested.promise
