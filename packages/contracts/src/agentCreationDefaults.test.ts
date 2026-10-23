@@ -5,7 +5,7 @@ import { memoryBoardTools } from './collaborationTools.js'
 
 describe('new Agent memory defaults and preserved saved choices', () => {
   it.each(['master', 'orchestrator', 'coder'] as const)('copies the %s memory default only on explicit creation', role => {
-    const access = role === 'coder' ? 'read' : 'write'
+    const access = 'write'
     expect(newAgentGraphqlTools(role)).toEqual([...graphqlRoleTools(role), ...memoryBoardTools(access)])
     expect(effectiveGraphqlTools(role, undefined, undefined, false, memoryBoardTools('write')))
       .not.toEqual(expect.arrayContaining(memoryBoardTools('read')))
@@ -13,6 +13,17 @@ describe('new Agent memory defaults and preserved saved choices', () => {
     expect(effectiveGraphqlTools(role, newAgentGraphqlTools(role), undefined, false, memoryBoardTools('write')))
       .toEqual(expect.arrayContaining(memoryBoardTools(access)))
     expect(effectiveGraphqlTools(role, [], undefined, false, memoryBoardTools('write'))).toEqual(['bug_report'])
+  })
+
+  it.each(['master', 'orchestrator', 'coder'] as const)('gives a %s with memory on read and write unless its workflow node narrows it', role => {
+    const savedRead = [...graphqlRoleTools(role), ...memoryBoardTools('read')]
+    const implemented = memoryBoardTools('write')
+    expect(effectiveGraphqlTools(role, savedRead, undefined, false, implemented))
+      .toEqual(expect.arrayContaining(memoryBoardTools('write')))
+    const narrowed = { add: [], remove: memoryBoardTools('write').filter(tool => !memoryBoardTools('read').includes(tool)) }
+    const read = effectiveGraphqlTools(role, savedRead, narrowed, false, implemented)
+    expect(read).toEqual(expect.arrayContaining(memoryBoardTools('read')))
+    expect(read).not.toContain('memory_card_create')
   })
 
   it('preserves old defaults byte-for-byte and uses explicit Master templates before the old Orchestrator fallback', () => {
