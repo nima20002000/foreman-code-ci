@@ -36,7 +36,7 @@ export async function ensureAgentCard(tx: GraphTransactionSql, authority: Memory
   const bindings = before ? await bindingsFor(tx, before.id) : []
   // A fresh execution reopens this Agent's work record; old failures remain in its history.
   for (const binding of bindings) if (!same(binding.work, input.work) && !binding.resolution
-    && ['failed', 'canceled'].includes(binding.state)) {
+    && ['failed', 'canceled', 'blocked'].includes(binding.state)) {
     await saveBinding(tx, row.board.id, { ...binding, revision: binding.revision + 1,
       resolution: { kind: 'reopened', commandId: `agent-card:${execution.executionId}:launch`, reason: 'Working again', resolvedAt: now } })
   }

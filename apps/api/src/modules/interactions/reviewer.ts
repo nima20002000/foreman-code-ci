@@ -517,7 +517,7 @@ class ReviewTurn {
   /** Persists a business failure with its cleanup duties, then settles native and credential cleanup. */
   private async failReview(failure: NonNullable<ReviewJob['error']>, pending?: PendingNativeInteraction,
     pendingRequests: readonly PendingNativeInteraction[] = pending ? [pending] : []): Promise<ReviewJob> {
-    const { nativeRuntime, safe, recovering, leaseMs } = this.review
+    const { coordination, nativeRuntime, safe, recovering, leaseMs } = this.review
     await this.maintenance?.stop()
     const evidence = this.tracker.snapshot()
     const identity = pendingRequests.length ? ` Native requests: ${JSON.stringify(pendingRequests.map((request) => ({

@@ -48,12 +48,8 @@ it.runIf(postgresEnabled).each([false, true])('applies result board effects only
     expect(details?.run.outcome).toBe('succeeded')
     expect(details?.executions[0]?.result).toEqual({ outcome: 'succeeded', output: original! })
     const done = await read({ boardId, view: 'cards', status: 'done' })
-    expect(done.items).toHaveLength(pinned ? 2 : 1)
-    expect(done.items).toEqual(expect.arrayContaining([
-      expect.objectContaining({ assignee: expect.objectContaining({ workflowNodeId: fixture.version.entryNodeId }),
-        status: 'done', completionKind: 'completed' }),
-      ...(pinned ? [expect.objectContaining({ title: 'Result task', status: 'done', completionKind: 'completed' })] : []),
-    ]))
+    if (pinned) expect(done.items).toEqual([expect.objectContaining({ title: 'Result task', status: 'done', completionKind: 'completed' })])
+    else expect(done.items).toEqual([])
     await runtime.engine.start(runId)
     expect(await read({ boardId, view: 'cards', status: 'done' })).toEqual(done)
   } finally { await runtime.close() }
