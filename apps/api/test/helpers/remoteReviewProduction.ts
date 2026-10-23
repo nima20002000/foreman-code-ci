@@ -18,7 +18,7 @@ import { ClaudeHarnessConfigurationSchema } from '@foreman-code/contracts/claude
 import { ComputerSyncStatusSchema } from '@foreman-code/contracts/computer-accounts'
 import { DevicePairingGrantResultSchema, DevicePairingResultSchema, MainDeviceIdentityPublicSchema,
   WorkerPairingConfigurationSchema } from '@foreman-code/contracts/device-identity'
-import { loadOrCreateWorkerIdentity, persistWorkerPairing, pairingProof } from '@foreman-code/contracts/device-identity-node'
+import { loadOrCreateWorkerIdentity, persistWorkerPairing, pairingProof } from '@foreman-code/contracts-node/device-identity-node'
 import { HarnessRegistryReadbackSchema, HostHarnessOverrideSaveResultSchema,
   HostHarnessInstanceCheckResultSchema } from '@foreman-code/contracts/harness-registry'
 import { SourceApproveResultSchema, SourceRootBindResultSchema } from '@foreman-code/contracts/source-admission'

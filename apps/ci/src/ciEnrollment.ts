@@ -1,4 +1,4 @@
-import { errorMessage } from '@foreman-code/contracts/server-kit'
+import { errorMessage } from '@foreman-code/contracts-node/server-kit'
 import type pg from 'pg'
 import { CiEnrollmentReadSchema, CiEnrollmentUpdateSchema, type CiEnrollmentComputer,
   type CiEnrollmentState, type CiEnrollmentTemplate, type CiInstalledStorage } from '@foreman-code/contracts'
@@ -7,7 +7,7 @@ import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-re
 import type { JobRuntimeProfileRecord } from '@foreman-code/contracts/job-verification-runtime'
 import type { JobRuntimeProfiles, JobSql, MainCiContext, PostgresCommandCoordinator } from './environment.js'
 import { buildComputerKey } from './buildComputers.js'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '@foreman-code/contracts-node/server-kit'
 import { CI_PREPARATION_ACTIONS } from './authority.js'
 import type { CiRuntimeProvisioner } from './ciRuntimeProvisioner.js'
 import { CiEnrollmentRepository, type CiEnrollmentRecord } from './ciEnrollmentRepository.js'

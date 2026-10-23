@@ -18,7 +18,7 @@ const { openPrivateRoot } = await tsImport('@foreman-code/api/worker/sources', i
 const { qualifyApprovedRootAllowlist } = await tsImport('@foreman-code/api/worker/sources', import.meta.url);
 const { encodeWorkerEnrollmentCode } = await tsImport('../../../packages/contracts/src/deviceSetup.ts', import.meta.url);
 const { loadOrCreateWorkerIdentity, persistWorkerPairing, loadWorkerPairing, publicKeyFingerprint,
-  mainEnrollmentProofMessage } = await tsImport('../../../packages/contracts/src/deviceIdentityNode.ts', import.meta.url);
+  mainEnrollmentProofMessage } = await tsImport('../../../packages/contracts-node/src/deviceIdentityNode.ts', import.meta.url);
 
 async function fixture(t, { aliasedHome = false } = {}) {
   t.after(mockHostMounts(t.mock, persistentHostMounts));

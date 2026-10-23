@@ -2,7 +2,7 @@ import pg from 'pg'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { describe, expect, it, vi } from 'vitest'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '@foreman-code/contracts-node/server-kit'
 
 const principal: ManagementPrincipal = {
   id: 'operator', name: 'Operator', audience: 'operator', grants: [],

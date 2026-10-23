@@ -1,6 +1,7 @@
 import type pg from 'pg'
 import { BugReportSchema } from '@foreman-code/contracts/management'
 import { withTransaction } from '../../infrastructure/transaction.js'
+import { EXECUTION_CI_SUMMARY_SQL } from '../ci/index.js'
 import { recordBugReport } from './repository.js'
 
 interface StuckExecution {
@@ -20,14 +21,7 @@ export async function detectStuckExecutions(pool: pg.Pool, idleMs: number, now: 
       select e.id,e.run_id,r.workspace_id,r.workflow_id,ci.ticket_count,activity.last_activity_at
       from harness_executions e join runs r on r.id=e.run_id
       cross join lateral (
-        select count(*) as ticket_count,bool_and(c.state in ('passed','failed','canceled','lost')) as all_terminal,
-          max(greatest((c.record->>'queuedAt')::timestamptz,(c.record->>'finishedAt')::timestamptz)) as last_activity_at
-        -- Find the execution's tickets by index; a workspace's other tickets are never read.
-        from ci_runs c where c.id in (
-          select i.id from ci_runs i where i.workspace_id=r.workspace_id and i.record#>>'{initiator,executionId}'=e.id
-          union
-          select g.id from ci_group_requesters q join ci_runs g on g.workspace_id=q.workspace_id and g.group_id=q.group_id
-            where q.workspace_id=r.workspace_id and q.execution_id=e.id)
+        ${EXECUTION_CI_SUMMARY_SQL}
       ) ci
       cross join lateral (
         select greatest(e.created_at,(e.record->>'startedAt')::timestamptz,

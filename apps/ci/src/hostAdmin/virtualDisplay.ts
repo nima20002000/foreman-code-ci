@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '@foreman-code/contracts-node/server-kit'
 import type { HostBrowserPorts } from './browser.js'
 
 interface DisplayRecord { pid: number; birthId: string | null; display: string }

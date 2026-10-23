@@ -68,8 +68,8 @@ export async function loadOrCreateWorkerIdentity(directory: string): Promise<Wor
 }
 
 /** Re-enrollment retains the pinned Main and device identity with a newer authorization. */
-export async function persistWorkerPairing(directory: string, configuration: import('./deviceIdentity.js').WorkerPairingConfiguration): Promise<void> {
-  const { WorkerPairingConfigurationSchema } = await import('./deviceIdentity.js')
+export async function persistWorkerPairing(directory: string, configuration: import('@foreman-code/contracts/device-identity').WorkerPairingConfiguration): Promise<void> {
+  const { WorkerPairingConfigurationSchema } = await import('@foreman-code/contracts/device-identity')
   const parsed = WorkerPairingConfigurationSchema.parse(configuration)
   const identity = await loadOrCreateWorkerIdentity(directory)
   if (parsed.workerInstallationId !== identity.workerInstallationId || parsed.keyRevision !== identity.keyRevision) throw new Error('Pairing does not match local identity.')
@@ -97,8 +97,8 @@ export async function persistWorkerPairing(directory: string, configuration: imp
     await syncPath(directory)
   } finally { if (!replaced) await unlink(temporary) }
 }
-export async function loadWorkerPairing(directory: string): Promise<import('./deviceIdentity.js').WorkerPairingConfiguration> {
-  const { WorkerPairingConfigurationSchema } = await import('./deviceIdentity.js')
+export async function loadWorkerPairing(directory: string): Promise<import('@foreman-code/contracts/device-identity').WorkerPairingConfiguration> {
+  const { WorkerPairingConfigurationSchema } = await import('@foreman-code/contracts/device-identity')
   await requirePrivateFile(join(directory, 'pairing.json'))
   const parsed = WorkerPairingConfigurationSchema.parse(JSON.parse(await readFile(join(directory, 'pairing.json'), 'utf8')))
   const identity = await loadOrCreateWorkerIdentity(directory)
@@ -108,7 +108,7 @@ export async function loadWorkerPairing(directory: string): Promise<import('./de
 
 /** Endpoint edits retain the selected authority and credential; the carrier must still authenticate the pinned main. */
 export async function updateWorkerEndpoint(directory: string, endpoint: string): Promise<void> {
-  const { WorkerPairingConfigurationSchema } = await import('./deviceIdentity.js')
+  const { WorkerPairingConfigurationSchema } = await import('@foreman-code/contracts/device-identity')
   const configuration = WorkerPairingConfigurationSchema.parse({ ...await loadWorkerPairing(directory), endpoint })
   const temporary = join(directory, `.pairing-${randomUUID()}`)
   await writeFile(temporary, JSON.stringify(configuration), { mode: 0o600, flag: 'wx' })
@@ -126,16 +126,16 @@ export async function updateWorkerEndpoint(directory: string, endpoint: string):
   }
 }
 
-export function mainIdentityProofMessage(request: import('./deviceIdentity.js').MainIdentityProofRequest, mainApplicationVersion: string): string {
+export function mainIdentityProofMessage(request: import('@foreman-code/contracts/device-identity').MainIdentityProofRequest, mainApplicationVersion: string): string {
   return JSON.stringify([request.audience, request.mainId, request.nonce, request.workerInstallationId,
     request.deviceId ?? null, request.bootId ?? null, request.connectionGeneration ?? null,
     request.keyRevision ?? null, request.authorizationRevision ?? null, request.connectionEpoch ?? null, request.mainConnectionEpoch ?? null,
     request.protocolVersion, request.workerApplicationVersion, mainApplicationVersion, request.negotiationHash ?? null])
 }
 /** Fresh caller nonce and all claimed identity/version fields must match before accepting authority. */
-export async function verifyMainIdentityProof(proof: unknown, expected: import('./deviceIdentity.js').MainIdentityProofRequest,
+export async function verifyMainIdentityProof(proof: unknown, expected: import('@foreman-code/contracts/device-identity').MainIdentityProofRequest,
   expectedFingerprint: string): Promise<boolean> {
-  const { MainIdentityProofRequestSchema, MainSignedIdentityProofSchema } = await import('./deviceIdentity.js')
+  const { MainIdentityProofRequestSchema, MainSignedIdentityProofSchema } = await import('@foreman-code/contracts/device-identity')
   const { verify } = await import('node:crypto')
   try {
     const parsed = MainSignedIdentityProofSchema.parse(proof), request = MainIdentityProofRequestSchema.parse(expected)
@@ -146,13 +146,13 @@ export async function verifyMainIdentityProof(proof: unknown, expected: import('
   } catch { return false }
 }
 
-export function mainEnrollmentProofMessage(request: import('./deviceIdentity.js').MainEnrollmentProofRequest, mainApplicationVersion: string): string {
+export function mainEnrollmentProofMessage(request: import('@foreman-code/contracts/device-identity').MainEnrollmentProofRequest, mainApplicationVersion: string): string {
   return JSON.stringify([request.audience, request.mainId, request.nonce, request.workerInstallationId,
     request.protocolVersion, request.workerApplicationVersion, mainApplicationVersion])
 }
-export async function verifyMainEnrollmentProof(proof: unknown, expected: import('./deviceIdentity.js').MainEnrollmentProofRequest,
+export async function verifyMainEnrollmentProof(proof: unknown, expected: import('@foreman-code/contracts/device-identity').MainEnrollmentProofRequest,
   expectedFingerprint: string): Promise<boolean> {
-  const { MainEnrollmentProofRequestSchema, MainSignedEnrollmentProofSchema } = await import('./deviceIdentity.js')
+  const { MainEnrollmentProofRequestSchema, MainSignedEnrollmentProofSchema } = await import('@foreman-code/contracts/device-identity')
   const { verify } = await import('node:crypto')
   try {
     const parsed = MainSignedEnrollmentProofSchema.parse(proof), request = MainEnrollmentProofRequestSchema.parse(expected)
@@ -163,7 +163,7 @@ export async function verifyMainEnrollmentProof(proof: unknown, expected: import
   } catch { return false }
 }
 
-export function pairingProof(input: Omit<import('./deviceIdentity.js').DevicePairingRequest, 'signature'>): string {
+export function pairingProof(input: Omit<import('@foreman-code/contracts/device-identity').DevicePairingRequest, 'signature'>): string {
   return JSON.stringify(['graphql-worker-pair-v1', input.mainId, input.workerInstallationId, publicKeyFingerprint(input.publicKey),
     input.requestId, createHash('sha256').update(input.grant).digest('hex')])
 }

@@ -1,7 +1,7 @@
 import type { ChildProcess, SpawnOptions } from 'node:child_process'
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '@foreman-code/contracts-node/server-kit'
 import { BrowserVirtualDisplay } from './virtualDisplay.js'
 
 export interface HostBrowserRuntimeDirectory {

@@ -1,5 +1,5 @@
 import { readFile, stat } from 'node:fs/promises'
-export { writeDurableFile } from '@foreman-code/contracts/server-kit'
+export { writeDurableFile } from '@foreman-code/contracts-node/server-kit'
 
 export interface BoundedRead { maxBytes: number; message: string }
 

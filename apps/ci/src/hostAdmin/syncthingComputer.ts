@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { SyncComputerRequestSchema, SyncComputerStateSchema, SyncIdentitySchema,
   type SyncComputerRequest, type SyncComputerState, type SyncIdentity } from '@foreman-code/contracts/computer-accounts'
 import type { SyncthingPorts } from './syncthingSystem.js'
-import { sha256Hex } from '@foreman-code/contracts/server-kit'
+import { sha256Hex } from '@foreman-code/contracts-node/server-kit'
 
 export function sharedFolderId(workspaceId: string): string {
   return `workspace-${sha256Hex(workspaceId)}`
