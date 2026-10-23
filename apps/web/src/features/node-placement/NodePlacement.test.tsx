@@ -103,7 +103,7 @@ it('withdraws private facts on selection change, missing legacy data and access 
   view.rerender(<NodePlacementFacts runId="run-b" nodeId="node-a" readback={{ evidence: 'accepted', placement, observations: [] }} />)
   expect(screen.queryByText('Laptop at acceptance')).not.toBeInTheDocument()
   view.rerender(<NodePlacementFacts runId="run-a" nodeId="node-a" readback={{ evidence: 'legacy_missing', originalMainInstallationId: null }} />)
-  expect(screen.getByText(/Current computer settings are not substituted/)).toBeInTheDocument()
+  expect(screen.getByText('Computer: not recorded.')).toBeInTheDocument()
   view.rerender(<NodePlacementFacts runId="run-a" nodeId="node-a" />)
   expect(screen.queryByText('/synthetic/accepted')).not.toBeInTheDocument()
 })
