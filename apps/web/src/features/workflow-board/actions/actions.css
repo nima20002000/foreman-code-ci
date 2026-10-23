@@ -14,8 +14,8 @@
 .run-actions :focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
 .run-action-confirmation, .run-action-notice, .run-action-option { border-inline-start: 2px solid currentColor; padding-inline-start: 0.75rem; margin-block: 0.75rem; }
 
-/* While a Run runs, the Board toolbar has one plain Stop button. */
-.selected-run-controls { position: relative; display: flex; align-items: center; gap: var(--space-2); }
+/* Reserve the same toolbar slot for Stop and Run. */
+.selected-run-controls { position: relative; display: flex; align-items: center; justify-content: flex-end; min-width: 72px; gap: var(--space-2); }
 .selected-run-stop-error { color: var(--danger); font: var(--type-caption); }
 .selected-run-stop-status { color: var(--text-muted); font: var(--type-caption); }
 

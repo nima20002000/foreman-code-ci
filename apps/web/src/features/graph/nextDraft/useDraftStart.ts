@@ -22,7 +22,7 @@ export function useDraftStartState({ draftKey, edit, board }: {
   board: ReturnType<typeof useWorkflowBoard>
 }) {
   const graph = edit.graph, context = edit.context
-  const preflight = useBoardStartPreflight(context.draft, { enabled: board?.authoringActive !== false })
+  const preflight = useBoardStartPreflight(context.draft, { enabled: board?.authoringActive !== false || !!board?.runActionHost })
   const access = useLocalHumanAccessQuery()
   const principal = !access.isError ? access.data?.principal : undefined
   const canStart = !!principal && Date.parse(principal.expiresAt) > Date.now()

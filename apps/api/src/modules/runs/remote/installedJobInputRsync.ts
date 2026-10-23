@@ -17,7 +17,7 @@ import { recipient, inputHash, snapshotDigest, manifestBytes, verificationContex
 import { JOB_INPUT_NAMESPACE } from '../../files/jobInputs/protocol.js'
 import { byteRange } from '../../files/tools/transfers.js'
 import { ResumableByteTransferService } from '../../byte-transfer/index.js'
-import { transferContextForBinding, type AcceptedTransferAuthority } from '../../byte-transfer/index.js'
+import { transferContextForBinding } from '../../byte-transfer/index.js'
 import { privateDirectory } from '../../harnesses/recovery/storage.js'
 import { anchored, openPrivateRoot } from '../../sources/index.js'
 import { requireJobGitMounts, verifyJobGitMounts } from '../../jobs/privateGitMounts.js'
@@ -182,27 +182,7 @@ export function createInstalledJobInputRsync(input: {
     if (matches.length !== 1) throw new Error('Unique original Job input admission unavailable')
     return matches[0]!
   }
-  const accepted: AcceptedTransferAuthority = {
-    async intent(id, binding) {
-      if (!isDeepStrictEqual(input.channel.currentBinding(), binding)) throw new Error('Original Job input binding changed')
-      const record = await find(id), execution = await executionFor(record)
-      validateAdmission(execution, record.admission)
-      const intent = record.admission.transfers.find(item => item.intent.transferId === id)!.intent
-      const reply = await input.channel.request(JOB_INPUT_NAMESPACE, { method: 'authorize', executionId: execution.id, transferId: id })
-      const response = reply.payload as { authorized?: boolean; transferId?: string; bindingId?: string }
-      if (reply.bytes !== undefined || !isDeepStrictEqual(input.channel.currentBinding(), binding) || response.authorized !== true
-        || response.transferId !== id || response.bindingId !== record.admission.manifest.bindingId) throw new Error('Original Job input authority unavailable')
-      return intent
-    },
-    async authorize(intent, actualContext) {
-      const binding = input.channel.currentBinding()
-      if (!isDeepStrictEqual(context(), actualContext) || !isDeepStrictEqual(await accepted.intent(intent.transferId, binding), intent))
-        throw new Error('Original Job input transfer authority changed')
-    },
-  }
   return {
-    accepted,
-    async ownsId(id: string) { return (await records()).some(record => record.admission.transfers.some(item => item.intent.transferId === id)) },
     async owns(intent: TransferIntent) { return (await records()).some(record => record.admission.transfers.some(item => item.intent.transferId === intent.transferId)) },
     async acknowledged(raw: TransferIntent, actualContext: TransferContext) {
       const intent = TransferIntentSchema.parse(raw), record = await find(intent.transferId), execution = await executionFor(record)
