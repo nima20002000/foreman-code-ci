@@ -7,7 +7,7 @@ import { DomainError } from '../errors.js'
 import type { InteractionResponder } from './responder.js'
 import type { PostgresApprovalBudgetRepository } from './budget.js'
 import type { InteractionNativeRuntime } from './runtimePorts.js'
-import { CurrentInteractionRepository } from './current/repository.js'
+import { Wave25InteractionRepository } from './current/repository.js'
 import type { InteractionResponseOptions } from './cancellation.js'
 import type { WorkDirectionActions } from './workDirection.js'
 import { bindApprovalCheckpointEngine, type ApprovalCheckpointConsumers } from '../runs/approvalCheckpointRegistration.js'
@@ -39,7 +39,7 @@ export class InteractionService {
       ...(this.atomicApprovalResume ? { atomicResume: this.atomicApprovalResume } : {}),
       ...(this.prepareRequester ? { prepareRequester: this.prepareRequester } : {}) }
   }
-  constructor(private readonly interactions: CurrentInteractionRepository,
+  constructor(private readonly interactions: Wave25InteractionRepository,
     _budgets: PostgresApprovalBudgetRepository, private readonly nativeRuntime: InteractionNativeRuntime,
     _resumeGraph: (interaction: DurableInteraction) => Promise<void>, private readonly responseJournal?: NativeResponseJournal,
     private readonly activityEvidence?: (interaction: DurableInteraction) => Promise<InteractionActivityEvidence>,
@@ -47,7 +47,7 @@ export class InteractionService {
     workDirections?: WorkDirectionActions,
     /** Resumes approvals from the engine's checkpoint; absent for services bound later by registerApprovalCheckpointResume. */
     approvalCheckpoint?: ApprovalCheckpointConsumers) {
-    if (!(interactions instanceof CurrentInteractionRepository)) throw new DomainError(
+    if (!(interactions instanceof Wave25InteractionRepository)) throw new DomainError(
       'APPROVAL_REPOSITORY_REQUIRED', 'The current original-source approval repository is required.', 503)
     if (workDirections) interactions.directions.useActions(workDirections)
     if (approvalCheckpoint) {

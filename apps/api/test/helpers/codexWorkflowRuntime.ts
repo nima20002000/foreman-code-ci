@@ -19,8 +19,8 @@ import { PostgresApprovalBudgetRepository } from '../../src/modules/interactions
 import { ApprovalExecutionCoordinator } from '../../src/modules/interactions/execution.js'
 import { InteractionService } from '../../src/modules/interactions/service.js'
 import { ExecutionScopedNativeSessionManagerResolver } from '../../src/modules/interactions/runtimePorts.js'
-import { CurrentInteractionRepository } from '../../src/modules/interactions/current/repository.js'
-import { CurrentWorkerCredentialService } from '../../src/modules/interactions/current/credentials.js'
+import { Wave25InteractionRepository } from '../../src/modules/interactions/current/repository.js'
+import { Wave25WorkerCredentialService } from '../../src/modules/interactions/current/credentials.js'
 import { registerApprovalCheckpointResume } from '../../src/modules/runs/approvalCheckpointRegistration.js'
 import { continuationValidator } from '../../src/modules/runs/continuation.js'
 import { LangGraphWorkflowEngine } from '../../src/modules/runs/engine.js'
@@ -79,8 +79,8 @@ export async function codexWorkflowRuntime(kind: 'questions' | 'form') {
     const reviewCapture = createReviewNativeCaptureChannel()
     const runs = new PostgresRunRepository(db.pool, workflows, locations,
       { runtimeRoot: db.directory, ...createWorkflowRepositoryServices(workflowCapture.verify) })
-    const repository = new CurrentInteractionRepository(db.pool, new ReviewNativeProofServices(reviewCapture.verify)), budgets = new PostgresApprovalBudgetRepository(db.pool)
-    const credentials = new CurrentWorkerCredentialService(db.pool, access)
+    const repository = new Wave25InteractionRepository(db.pool, new ReviewNativeProofServices(reviewCapture.verify)), budgets = new PostgresApprovalBudgetRepository(db.pool)
+    const credentials = new Wave25WorkerCredentialService(db.pool, access)
     const launchCredentials = providerLaunchCredentials(runs, locations, managers, credentials,
       manager => {
         if (!(manager instanceof CodexAppServerSessionManager)) throw new Error('Expected the Codex workflow manager')
