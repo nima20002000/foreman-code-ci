@@ -6,7 +6,6 @@ import { afterAll, afterEach, beforeAll, beforeEach, vi } from 'vitest'
 import { server } from '../mocks/server'
 import { bindMockInstallation, resetTestFixtures } from '../shared/mocks/handlers'
 import { useNavigationUiStore } from '../features/workspaces/navigationUiStore'
-import { useBoardViewportStore } from '../features/graph/boardViewport'
 import { protectedKey } from '../shared/api/protectedChatStorage'
 
 if (typeof HTMLDialogElement !== 'undefined' && !HTMLDialogElement.prototype.showModal) {
@@ -39,7 +38,6 @@ afterEach(() => {
     if (key?.startsWith(pendingPrefix)) localStorage.removeItem(key)
   }
   useNavigationUiStore.getState().reset()
-  useBoardViewportStore.setState({ views: {} })
   vi.restoreAllMocks()
 })
 

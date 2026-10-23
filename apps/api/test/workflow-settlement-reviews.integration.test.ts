@@ -71,7 +71,7 @@ describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('workflow settlement revie
     }, 'parallel')
   }, timeout)
 
-  it.each([false, true])('persists a direction wait for accepted review findings (restart after acceptance: %s)', async (restart) => {
+  it.each([false, true])('fails the Run with the reviewer\'s findings when it accepts with findings (restart after acceptance: %s)', async (restart) => {
     await withFixture(handoffs(2), async (f) => {
       const { request } = await sourceAndRequest(f)
       const reviewer = await acceptedActivation(f, request.destinationActivationId, { outcome: 'succeeded', output: {
@@ -80,22 +80,13 @@ describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('workflow settlement revie
       } })
       if (restart) await f.restart()
       const execute = runtime(f, async (execution) => { assert.equal(execution.state, 'completed') })
-      await execute()
-      expect(await f.readRun()).toMatchObject({ executionState: 'waiting', outcome: 'pending' })
-      expect(await f.store.completeWorkRun()).toBe('needs_direction')
-      await f.restart()
-      await execute()
-      expect(await f.store.completeWorkRun()).toBe('needs_direction')
-      expect(await f.readRun()).toMatchObject({ executionState: 'waiting', outcome: 'pending' })
-      const returned = await f.store.returnWork(reviewer.id)
-      expect(returned).toMatchObject({ replayed: true, value: { requestId: request.requestId, outcome: 'accepted',
-        remainingFindings: [{ id: 'open-finding' }] } })
-      expect((await f.db.pool.query('select 1 from run_work_returns where run_id=$1', [f.run.id])).rowCount).toBe(1)
-      expect((await f.db.pool.query('select 1 from run_work_direction_waits where run_id=$1', [f.run.id])).rowCount).toBe(1)
-      expect((await f.db.pool.query("select 1 from run_activity where run_id=$1 and kind='work_direction_wait'",
-        [f.run.id])).rowCount).toBe(1)
+      await expect(execute()).rejects.toMatchObject({ code: 'WORK_SELECTED_EXECUTION_FAILED' })
+      expect(await f.readRun()).toMatchObject({ executionState: 'completed', outcome: 'failed', result: { outcome: 'failed',
+        error: { code: 'WORK_FINISHED_WITH_FINDINGS', message: expect.stringContaining('finished with unresolved findings: {"id":"open-finding"}') } } })
+      expect((await f.db.pool.query<{ source_execution_id: string }>('select source_execution_id from run_work_returns where run_id=$1',
+        [f.run.id])).rows).toEqual([{ source_execution_id: reviewer.id }])
+      expect((await f.db.pool.query('select 1 from run_work_direction_waits where run_id=$1', [f.run.id])).rowCount).toBe(0)
       expect((await f.db.pool.query('select 1 from harness_executions where run_id=$1', [f.run.id])).rowCount).toBe(2)
-      expect(f.failureSettlements).toBe(0)
     })
   }, timeout)
 

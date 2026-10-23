@@ -47,6 +47,7 @@ describe('Chat delivery controls', () => {
     expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled()
     fireEvent.mouseEnter(screen.getByRole('button', { name: 'Send message' }).parentElement!)
     expect(screen.getByRole('tooltip')).toHaveTextContent('This agent can\'t take a new message here.')
+    expect(screen.getByRole('tooltip')).not.toHaveTextContent('Follow up in Agent chat')
     fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
     expect(submit).not.toHaveBeenCalled()
   })

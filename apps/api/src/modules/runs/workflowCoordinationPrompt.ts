@@ -30,6 +30,7 @@ export function workflowCoordinationPrompt(context: CoordinationResultContext): 
     ] : [
       'To finish use {"kind":"finish"}; on a choice node an optional declared outcome selects a final downstream branch.',
       'Without saved choices, finish with empty findings passes work to every saved downstream Agent. A return does not.',
+      'Non-empty remainingFindings with nobody to hand them to fail the Run with them as the reason; a Master waits for owner direction instead.',
     ]),
   ] : choice ? [`routing has exactly outcome, one of ${JSON.stringify(outcomes)}. The backend resolves the saved target.`] : []
   const where = handoff || repeatExit ? 'data.latestDeliverable' : 'data'

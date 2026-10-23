@@ -16,7 +16,6 @@ import { intervalLabel } from './intervalLabel'
 import { agentNodeFacts, edgeBend, relationshipLines, useFloatingCurve } from '../signalEdge'
 import { SignalEdgeShape } from '../SignalEdgeShape'
 import { RESPONSIVE_FIT_OPTIONS, RESPONSIVE_MIN_ZOOM, useResponsiveGraphViewport } from '../useResponsiveGraphViewport'
-import { boardViewportKey } from '../boardViewport'
 import type { GraphNode, AgentGraphNode, JobGraphNode } from '../types'
 import { nodeTitle, putRelationship, removeRelationship, setWorkConnectionLimit } from './model'
 import { pinGraphLayout } from './placement'
@@ -152,8 +151,7 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
   open, setOpen = () => undefined, panels = () => ({ chat: null, settings: null, info: null }), children }, ref) {
   const board = useWorkflowBoard()
   const selectedRun = board?.run
-  const responsive = useResponsiveGraphViewport<GraphNode | CiServerFlowNode | KanbanFlowNode, DraftEdge | KanbanActivityFlowEdge>({
-    enabled: !selectedRun, viewportKey: boardViewportKey(graph.workspaceId, graph.id) })
+  const responsive = useResponsiveGraphViewport<GraphNode | CiServerFlowNode | KanbanFlowNode, DraftEdge | KanbanActivityFlowEdge>({ enabled: !selectedRun })
   const [project] = useState(() => createGraphTopologyProjector())
   const topology = useMemo(() => project(graph, agents), [project, graph, agents])
   const [adapter] = useState(() => createGraphGeometryAdapter(topology.nodes))
@@ -322,9 +320,8 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
           if (node.id === CI_SERVER_NODE_ID) ci.place.moved(node.position)
         }}
         connectionMode={ConnectionMode.Loose} connectionRadius={120} deleteKeyCode={null}
-        fitView={responsive.fitOnMount} defaultViewport={responsive.defaultViewport} fitViewOptions={fitViewOptions} proOptions={proOptions}
-        minZoom={RESPONSIVE_MIN_ZOOM} maxZoom={1.6} onInit={responsive.onInit}
-        onMove={responsive.onMove} onMoveEnd={responsive.onMoveEnd}
+        fitView fitViewOptions={fitViewOptions} proOptions={proOptions} minZoom={RESPONSIVE_MIN_ZOOM} maxZoom={1.6} onInit={responsive.onInit}
+        onMove={responsive.onMove}
         isValidConnection={(connection) => connection.source !== connection.target}
         onConnectStart={() => setConnecting(true)} onConnectEnd={() => setConnecting(false)}
         onClickConnectStart={() => setConnecting(true)} onClickConnectEnd={() => setConnecting(false)}
