@@ -38,6 +38,14 @@ describe('work result repair instructions', () => {
     expect(() => parseWorkHandoffResult(result)).toThrow()
   })
 
+  it('hands back the JSON of an answer that ended in a ```json block, to be returned bare', () => {
+    const text = `I checked 4 pages:\n\n1. **Paris** - "a city"\n\n\`\`\`json\n${JSON.stringify(valid, null, 2)}\n\`\`\`\n`
+    const prompt = workResultRepairPrompt({ outcome: 'succeeded', output: { text } }, contract)
+    expect(prompt).toContain(`Return only this JSON object, unchanged, with no Markdown fences or other text:\n${JSON.stringify(valid)}`)
+    expect(workResultRepairPrompt({ outcome: 'succeeded', output: { text: '```json\n{"data":\n```' } }, contract))
+      .not.toContain('Return only this JSON object')
+  })
+
   it('accepts supported carriers and leaves native failure and cancellation alone', () => {
     for (const output of [valid, JSON.stringify(valid), { text: JSON.stringify(valid) }]) {
       expect(workResultRepairPrompt({ outcome: 'succeeded', output }, contract)).toBeUndefined()

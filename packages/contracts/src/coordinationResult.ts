@@ -65,21 +65,12 @@ function readCoordinationCarrier(output: unknown, artifact: boolean): unknown {
   const text = carrier ? (output as { text: string }).text : output;
   if (typeof text === 'string') {
     if (new TextEncoder().encode(text).byteLength > 64 * 1024) throw new Error('COORDINATION_RESULT_TOO_LARGE');
-    const parsed = answerJson(text);
+    const parsed: unknown = JSON.parse(text);
     canonicalGraphJson(parsed, 64 * 1024);
     return parsed;
   }
   canonicalGraphJson(text, 64 * 1024);
   return text;
-}
-
-/** Agents often explain their work and end with the result in a ```json block; that block is the result. */
-function answerJson(text: string): unknown {
-  try { return JSON.parse(text); } catch (error) {
-    const trimmed = text.trimEnd(), open = trimmed.lastIndexOf('```json');
-    if (open < 0 || !trimmed.endsWith('```') || trimmed.length - 3 <= open + 7) throw error;
-    return JSON.parse(trimmed.slice(open + 7, -3));
-  }
 }
 
 /** The text of an Agent answer that is not a JSON object, or undefined when it must be read as an envelope. */

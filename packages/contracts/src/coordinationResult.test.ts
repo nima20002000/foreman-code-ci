@@ -47,13 +47,6 @@ describe('saved-node coordination result parsing', () => {
     expect(() => parseCoordinationResult(nativeText({ ...envelope, actor: 'caller-chosen' }), context())).toThrow();
   });
 
-  it('reads an answer that ends with a fenced JSON block after prose as that block', () => {
-    const fenced = (body: string) => ({ text: `I checked 4 pages:\n\n1. **Paris** - "a city" | https://x\n\n\`\`\`json\n${body}\n\`\`\`\n` });
-    expect(parseCoordinationResult(fenced(JSON.stringify(envelope, null, 2)), context({ outputSchema }))).toEqual(envelope);
-    expect(() => parseCoordinationResult(fenced('{"data":'), context({ outputSchema }))).toThrow();
-    expect(() => parseCoordinationResult({ text: `\`\`\`json\n${JSON.stringify(envelope)}\n\`\`\`\nMore prose after it.` }, context({ outputSchema }))).toThrow();
-  });
-
   it('selects declared choice outcomes and only checks ordinary choice data when a schema exists', () => {
     for (const data of [null, '  ']) expect(parseCoordinationResult({ ...envelope, data,
       routing: { outcome: 'done' } }, context({ choice })).data).toEqual(data);
