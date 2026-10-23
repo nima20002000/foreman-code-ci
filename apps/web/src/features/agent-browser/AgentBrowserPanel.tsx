@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button, Icon, IconButton, TextField } from '../../shared/ui/nocturne'
 import { BrowserController } from './controller'
@@ -49,6 +49,7 @@ function SelectedBrowser(props: AgentBrowserPanelProps & { keepControlOnTabChang
   const sessions = useBrowserSessions(props.port, selection)
   const [viewerId] = useState(() => crypto.randomUUID())
   const [connectionVisit, setConnectionVisit] = useState(0)
+  const reconnectAttempts = useRef(0)
   const visitKey = `${props.selection.authBoundary}:${props.selection.visitKey}:${props.selection.sessionId}`
   const activeVisit = useRef<string | null>(visitKey)
   activeVisit.current = visitKey
@@ -108,7 +109,7 @@ function SelectedBrowser(props: AgentBrowserPanelProps & { keepControlOnTabChang
                 {...props} initial={data} tab={tab} viewerId={viewerId} onDenied={deny}
                 onRead={result => queryClient.setQueryData(browserSessionKey(props.selection), validateBrowserRead(result, props.selection))}
                 onRefresh={() => { void read.refetch() }}
-                onReconnect={recover} />
+                onReconnect={recover} reconnectAttempts={reconnectAttempts} />
                 : <p>{props.selection.tabId ? 'The selected tab is no longer available. Choose a tab from this session.' : 'No browser tab is available yet.'}</p>}
     {!rejected && data && !tab ? <div className="agent-browser-actions">{data.tabs.map(item =>
       <Button key={item.tabId} onClick={() => props.onSelectTab(item.tabId)}>{item.title || 'Untitled tab'}</Button>)}</div> : null}
@@ -139,6 +140,7 @@ export interface BrowserSessionPanelProps {
   onDenied(): void; onRead(read: BrowserSessionRead): void; onReconnect(): void; keepControlOnTabChange(): boolean
   onSelectTab(tabId: string): void; onCleanupError(message: string): void
   onRefresh(): void
+  reconnectAttempts: RefObject<number>
 }
 
 type ViewerMutation = {
@@ -222,15 +224,17 @@ export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
   const lost = snapshot.stale && snapshot.notice === 'paused' && snapshot.error !== null
   const reconnect = useRef(props.onReconnect)
   reconnect.current = props.onReconnect
+  const reconnectAttempts = props.reconnectAttempts
+  useEffect(() => { if (!snapshot.stale) reconnectAttempts.current = 0 }, [snapshot.stale, reconnectAttempts])
   useEffect(() => {
     if (!lost) return
-    let attempts = 0
     const timer = window.setInterval(() => {
-      if (++attempts > 40) { window.clearInterval(timer); return }
+      if (reconnectAttempts.current >= 40) { window.clearInterval(timer); return }
+      reconnectAttempts.current += 1
       retiringForTab.current = true; reconnect.current()
     }, 3_000)
     return () => window.clearInterval(timer)
-  }, [lost])
+  }, [lost, reconnectAttempts])
   const busy = pending || snapshot.stale
   return <div ref={surface} className="agent-browser-content">
     {/* Chrome-like tab strip: choosing a tab takes control; nothing else sits above the page. */}
