@@ -41,7 +41,6 @@ export function createWorkerBrowserRuntime(options) {
     loadModule = importHost, runtimeRoot = join(root, 'browser-runtime') } = options;
   let host = null, nativeModule = null, installed = null;
   let offlineLifecycle = null;
-  let profileCheckpoint = null;
   let phase = 'unavailable', admissionStopped = false, closed = false, lastFailure = null;
   let tail = Promise.resolve();
   const profileStateRoot = join(stateDirectory, 'browser', 'profile-data');
@@ -138,7 +137,6 @@ export function createWorkerBrowserRuntime(options) {
       await host.close();
       host = null;
     }
-    profileCheckpoint = null;
     phase = 'stopped';
   }
 
@@ -153,7 +151,6 @@ export function createWorkerBrowserRuntime(options) {
       if (!host || closed) throw unavailable('No active browser runtime can resume admission.');
       await assertHostOwnership();
       host.resumeAdmission(); admissionStopped = false; phase = 'ready';
-      profileCheckpoint = null;
       return status();
     }),
     drain: input => serialize(async () => {
@@ -171,10 +168,7 @@ export function createWorkerBrowserRuntime(options) {
       }
       const wasStopped = admissionStopped;
       stopAdmission();
-      try {
-        profileCheckpoint ??= await host.drainForRuntimeUpdate();
-        return profileCheckpoint;
-      }
+      try { return await host.drainForRuntimeUpdate(); }
       catch (error) {
         if (!wasStopped) { host.resumeAdmission(); admissionStopped = false; phase = 'ready'; }
         throw error;
