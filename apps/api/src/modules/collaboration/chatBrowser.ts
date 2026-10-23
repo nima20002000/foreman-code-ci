@@ -23,7 +23,7 @@ export class ChatBrowserSessions {
 
   constructor(private readonly options: {
     pool: pg.Pool; authority: BrowserAuthority; lifecycle: BrowserLifecyclePort
-    /** Local and retained paired-host sessions, including ones opened before this API process started. */
+    /** Sessions on Main and its paired Workers, including ones opened before this API process started. */
     sessions(): Promise<readonly BrowserSession[]>
     /** Current control facts of a local session; undefined when this computer does not hold it. */
     localControl?(sessionId: string): { browserGeneration: number; epoch: number } | undefined
@@ -123,9 +123,9 @@ export class ChatBrowserSessions {
   private async close(conversationId: string): Promise<void> {
     const chat = this.chats.get(conversationId)
     if (!chat) return
-    this.chats.delete(conversationId)
-    await this.options.lifecycle.release({ sessionId: chat.sessionId, subject: chat.subject,
+    const result = await this.options.lifecycle.release({ sessionId: chat.sessionId, subject: chat.subject,
       commandId: `chat-browser-close:${chat.sessionId}`, reason: 'conversation_closed' })
+    if (result.state !== 'pending' && this.chats.get(conversationId) === chat) this.chats.delete(conversationId)
   }
 
   /** Close idle and archived chats' browsers, including ones an earlier API process left open. */
@@ -140,7 +140,8 @@ export class ChatBrowserSessions {
           ended = true
         }
       }
-      if (ended) await this.close(conversationId)
+      if (ended) await this.close(conversationId).catch(error => componentLogger('lifecycle').warn({ err: error,
+        operation: 'close idle chat browser', conversationId }, 'chat browser did not close'))
     }
   }
 
