@@ -490,6 +490,20 @@ it('keeps unavailable cloud capacity out of free slots', async () => {
 })
 
 
+it('says which cloud CI accounts are unavailable and why', async () => {
+  const f = computersFixture(inRouter().element)
+  const suspended = 'CircleCI did not accept the usage export read: Your account has been suspended. Please contact support for more information.'
+  f.activity.cloud.push(
+    { provider: 'circleci', name: 'CircleCI primary', account: 'primary', ready: true, slots: 30, running: 1, credits: null },
+    { provider: 'circleci', name: 'CircleCI overflow-a', account: 'overflow-a', ready: false, slots: 30, running: 0, credits: null, creditsUnavailable: suspended },
+    { provider: 'circleci', name: 'CircleCI overflow-b', account: 'overflow-b', ready: false, slots: 30, running: 0, credits: null, creditsUnavailable: suspended },
+  )
+  await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
+  const group = await openGroup('Cloud CI')
+  expect(within(group).getByText('90 slots · 1 busy · 29 free · 60 unavailable')).toBeInTheDocument()
+  expect(within(group).getByText('Unavailable: overflow-a, overflow-b (CircleCI suspended this account)')).toBeInTheDocument()
+})
+
 it('closes both groups on Escape when focus switches before the previous group finishes closing', async () => {
   const f = computersFixture(inRouter().element)
   f.activity.cloud.push({ provider: 'github', name: 'GitHub Actions', ready: true, slots: 16, running: 0 })

@@ -47,7 +47,7 @@ it('checks the local Claude profile again when a new Agent finds none qualified'
   const rechecked: HarnessProfileSelection = { instanceId: randomUUID(), instanceRevision: '6',
     target: { hostRef: { kind: 'main', mainId }, applicationInstallationId: mainId,
       harnessInstallationId: 'installed-native', installationFingerprint: 'installed-fingerprint' } }
-  const accounts = new ProviderAccountConfigurationService({ resolve: async () => undefined })
+  const accounts = new ProviderAccountConfigurationService({ resolve: async () => null })
   const prepareOperatorConfiguration = vi.fn(async () => rechecked as HarnessProfileSelection | undefined)
   accounts.bindProfiles({ validateSelection: vi.fn(async () => {}),
     selectionForConfiguration: vi.fn(async () => undefined), prepareOperatorConfiguration })
