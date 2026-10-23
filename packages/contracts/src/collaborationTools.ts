@@ -1,5 +1,4 @@
-import { INSTALLATION_NAMES } from './installationNames.mjs'
-import type { ForemanAgentTool, ForemanToolOverride } from './foremanMcpTools.js';
+import type { GraphqlAgentTool, GraphqlToolOverride } from './graphqlMcpTools.js';
 /** Contract names reserve the feature seam. They are never evidence of a live handler. */
 const roles = ['master', 'orchestrator', 'coder'] as const;
 
@@ -47,11 +46,11 @@ export const BROWSER_AGENT_TOOL_NAMES = Object.keys(COLLABORATION_AGENT_TOOLS)
 /** Browser opts this workflow node into its tools; explicit node exclusions still win. */
 export function withBrowserToolDefaults<T extends {
   browser?: { enabled: boolean } | undefined;
-  [INSTALLATION_NAMES.fields.agentTools]?: ForemanToolOverride | undefined;
+  graphqlTools?: GraphqlToolOverride | undefined;
 }>(node: T) {
   if (!node.browser?.enabled) return node;
-  const remove = node[INSTALLATION_NAMES.fields.agentTools]?.remove ?? [];
-  const add: ForemanAgentTool[] = [...new Set([...(node[INSTALLATION_NAMES.fields.agentTools]?.add ?? []), ...BROWSER_AGENT_TOOL_NAMES])]
+  const remove = node.graphqlTools?.remove ?? [];
+  const add: GraphqlAgentTool[] = [...new Set([...(node.graphqlTools?.add ?? []), ...BROWSER_AGENT_TOOL_NAMES])]
     .filter(tool => !remove.includes(tool));
-  return { ...node, [INSTALLATION_NAMES.fields.agentTools]: { add, remove: [...remove] } };
+  return { ...node, graphqlTools: { add, remove: [...remove] } };
 }

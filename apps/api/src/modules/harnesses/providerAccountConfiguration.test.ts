@@ -71,10 +71,10 @@ describe('provider account execution selection', () => {
     await pin.prepare()
     const environment = pin.environment({ CODEX_HOME: '/ambient', OPENAI_API_KEY: 'ambient-key',
       OPENAI_BASE_URL: 'https://ambient.invalid', CLAUDE_CODE_OAUTH_TOKEN: 'ambient-token',
-      PATH: '/bin', GRAPHQL_MCP_TOKEN: 'scoped-token' })
+      PATH: '/bin', FOREMAN_CODE_MCP_TOKEN: 'scoped-token' })
     expect(calls).toBe(1)
     expect(environment).toMatchObject({ CODEX_HOME: '/accounts/first/home', HOME: '/accounts/first',
-      PATH: '/bin', GRAPHQL_MCP_TOKEN: 'scoped-token' })
+      PATH: '/bin', FOREMAN_CODE_MCP_TOKEN: 'scoped-token' })
     expect(environment.OPENAI_API_KEY).toBeUndefined()
     expect(environment.OPENAI_BASE_URL).toBeUndefined()
     expect(environment.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()

@@ -15,7 +15,7 @@ it.each(['close', 'owner abort'] as const)('cancels an active HTTP relay on %s',
   const release = deferred<void>()
   const token = 'request-cancellation-token'
   const endpoint = await createWorkerMcpEndpoint({ launcher: join(root, 'launcher.mjs'), signal: owner.signal,
-    relay: { environment: { agentId: 'agent', variables: { GRAPHQL_MCP_TOKEN: token } },
+    relay: { environment: { agentId: 'agent', variables: { FOREMAN_CODE_MCP_TOKEN: token } },
       expiresAt: new Date(Date.now() + 600_000).toISOString(),
       request: async (_body, _protocol, signal) => {
         if (!signal) throw new Error('Missing relay request signal')
@@ -57,7 +57,7 @@ it.each(['close', 'owner abort'] as const)('cancels an active refresh on %s befo
   const release = deferred<string>()
   const expiresAt = new Date(Date.now() + 600_000).toISOString()
   const endpoint = await createWorkerMcpEndpoint({ launcher: join(root, 'launcher.mjs'), signal: owner.signal,
-    relay: { environment: { agentId: 'agent', variables: { GRAPHQL_MCP_TOKEN: 'refresh-cancellation-token' } },
+    relay: { environment: { agentId: 'agent', variables: { FOREMAN_CODE_MCP_TOKEN: 'refresh-cancellation-token' } },
       expiresAt, request: async () => ({ statusCode: 200, contentType: 'application/json', body: '{}' }),
       refresh: async signal => {
         if (!signal) throw new Error('Missing relay refresh signal')

@@ -105,7 +105,7 @@ function guardianFixture(childAvailable = true, observationWriteFails = false,
     } })
   process.emit('message', { operation: 'start', directory: '/private', binary: 'actual-cli', args: ['private-argument'],
     cwd: '/workspace', environment: { SECRET: 'private-secret',
-      ...(options.reconnectableStdio ? { GRAPHQL_MCP_TOKEN: 'fixture-token' } : {}) },
+      ...(options.reconnectableStdio ? { FOREMAN_CODE_MCP_TOKEN: 'fixture-token' } : {}) },
     restartDetachable: options.restartDetachable === true, reconnectableStdio: options.reconnectableStdio === true })
   const control = (message: unknown) => {
     const state = { destroyed: false, replies: [] as string[] }
@@ -242,7 +242,7 @@ describe('guardian actual child observation receipts', () => {
     const request = { id: 7, method: 'item/tool/requestUserInput', params: { threadId: 'same-thread' } }
     f.native.stdout.write(JSON.stringify(request) + '\n')
     const environment = f.control({ ...command, operation: 'environment' })
-    expect(JSON.parse(environment.replies[0]!)).toMatchObject({ variables: { GRAPHQL_MCP_TOKEN: 'fixture-token' } })
+    expect(JSON.parse(environment.replies[0]!)).toMatchObject({ variables: { FOREMAN_CODE_MCP_TOKEN: 'fixture-token' } })
     const attached = f.control({ ...command, operation: 'attach', connectionId: 'second' })
     expect(attached.destroyed).toBe(false)
     expect(JSON.parse(attached.replies[0]!)).toMatchObject({ accepted: true,

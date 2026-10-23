@@ -223,7 +223,7 @@ it.each([
           const token = readProductEnvironment(environment.variables, 'MCP_TOKEN')!
           const variables = { ...environment.variables }
           if (serverName === 'foreman-code') {
-            variables.GRAPHQL_MCP_TOKEN = token
+            variables.FOREMAN_CODE_MCP_TOKEN = token
             delete variables.GRAPHQL_MCP_TOKEN
           }
           const scoped = { ...start, configuration, environment: { ...environment, variables } }

@@ -52,7 +52,7 @@ it.each([
       + "require('node:fs').appendFileSync(process.env.CI_CALLS_FILE, JSON.stringify(process.argv.slice(2)) + '\\n')\n"
       + "require('node:fs').appendFileSync(process.env.CI_RESOURCES_FILE, JSON.stringify({"
       + "cpu: process.env.FOREMAN_CODE_CI_CPU_COUNT, ceiling: process.env.FOREMAN_CODE_CI_INTEGRATION_SHARDS,"
-      + "shards: process.env.GRAPHQL_INTEGRATION_SHARDS, alias: process.env.GRAPHQL_INTEGRATION_SHARDS"
+      + "shards: process.env.GRAPHQL_INTEGRATION_SHARDS, alias: process.env.FOREMAN_CODE_INTEGRATION_SHARDS"
       + "}) + '\\n')\n")
     await chmod(join(bin, 'corepack'), 0o755)
     for (const cli of ['codex', 'claude']) {

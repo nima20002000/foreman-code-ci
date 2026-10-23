@@ -1,6 +1,5 @@
-import { installManagedLauncher } from '../../harnesses/appMcpLauncher.js'
 import { createHash } from 'node:crypto'
-import { readFile, writeFile } from 'node:fs/promises'
+import { copyFile, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
 import { expect, it, vi } from 'vitest'
@@ -25,7 +24,7 @@ it('keeps stdio calls available while Main renews a lease on a Worker two minute
   await withPrivateFixtureDirectories(async () => {
     const root = await privateFixtureDirectory('worker-launcher-clock-')
     const launcher = join(root, 'launcher.mjs')
-    await installManagedLauncher(new URL('../../../../../../scripts/foreman-mcp.mjs', import.meta.url), launcher)
+    await copyFile(new URL('../../../../../../scripts/graphql-mcp.mjs', import.meta.url), launcher)
     const clock = new MainClock()
     const workerTime = Date.now()
     clock.observe(workerTime - 120_000)
@@ -39,12 +38,12 @@ it('keeps stdio calls available while Main renews a lease on a Worker two minute
     })
     const endpoint = await createWorkerMcpEndpoint({ launcher, now: () => clock.now(),
       signal: new AbortController().signal, relay: {
-        environment: { agentId: 'agent', variables: { GRAPHQL_MCP_TOKEN: token } },
+        environment: { agentId: 'agent', variables: { FOREMAN_CODE_MCP_TOKEN: token } },
         expiresAt: new Date(workerTime).toISOString(), request,
         refresh: async () => { entered.resolve(); return renewed.promise },
       } })
     const transport = new StdioClientTransport({ command: process.execPath, args: [launcher],
-      env: { GRAPHQL_MCP_TOKEN: token }, stderr: 'pipe' })
+      env: { FOREMAN_CODE_MCP_TOKEN: token }, stderr: 'pipe' })
     try {
       await entered.promise
       await transport.start()
@@ -72,12 +71,12 @@ it.each(['expired', 'other boot', 'invalid deadline'] as const)(
     await withPrivateFixtureDirectories(async () => {
       const root = await privateFixtureDirectory('worker-launcher-deadline-')
       const launcher = join(root, 'launcher.mjs')
-      await installManagedLauncher(new URL('../../../../../../scripts/foreman-mcp.mjs', import.meta.url), launcher)
+      await copyFile(new URL('../../../../../../scripts/graphql-mcp.mjs', import.meta.url), launcher)
       const token = 'launcher-deadline-token'
       const request = vi.fn(async (body: unknown) => ({ statusCode: 200, contentType: 'application/json' as const,
         body: JSON.stringify({ jsonrpc: '2.0', id: (body as { id: number }).id, result: {} }) }))
       const endpoint = await createWorkerMcpEndpoint({ launcher, signal: new AbortController().signal,
-        relay: { environment: { agentId: 'agent', variables: { GRAPHQL_MCP_TOKEN: token } },
+        relay: { environment: { agentId: 'agent', variables: { FOREMAN_CODE_MCP_TOKEN: token } },
           expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(), request } })
       const path = join(root, 'routes', `${createHash('sha256').update(token).digest('hex')}.json`)
       const route = JSON.parse(await readFile(path, 'utf8'))
@@ -88,7 +87,7 @@ it.each(['expired', 'other boot', 'invalid deadline'] as const)(
       if (defect === 'invalid deadline') route.monotonicExpiry.nanoseconds = 'invalid'
       await writeFile(path, JSON.stringify(route))
       const transport = new StdioClientTransport({ command: process.execPath, args: [launcher],
-        env: { GRAPHQL_MCP_TOKEN: token }, stderr: 'pipe' })
+        env: { FOREMAN_CODE_MCP_TOKEN: token }, stderr: 'pipe' })
       try {
         await transport.start()
         expect(await callLauncher(transport, 1)).toMatchObject({ id: 1,

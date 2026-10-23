@@ -231,7 +231,7 @@ async function cachedWorkerRelease(directory: string) {
       [targetBytes, process.platform, process.arch, process.version], async temporary => {
         await execute(process.execPath, [builder, targetFile, join(temporary, 'release')], {
           maxBuffer: 4 * 1024 * 1024,
-          env: { ...process.env, GRAPHQL_WORKER_BUILD_COMMIT: commit },
+          env: { ...process.env, FOREMAN_CODE_WORKER_BUILD_COMMIT: commit },
         })
       })
     return join(cached, 'release')

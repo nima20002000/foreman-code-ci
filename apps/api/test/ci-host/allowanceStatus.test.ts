@@ -7,7 +7,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { CiComputersOutputSchema } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { registerForemanMcp } from '../../src/mcp/unified/transport.js'
+import { registerGraphqlMcp } from '../../src/mcp/unified/transport.js'
 import type { OperatorServices } from '../../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
@@ -79,7 +79,7 @@ it('reads saved allowance and allowed CPUs through authenticated ci_computers_li
   vi.spyOn(access, 'authenticate').mockImplementation(async token =>
     token === 'reader' ? caller : { ...caller, id: 'fixture-denied', grants: [] })
   const app = Fastify()
-  registerForemanMcp(app, { access, operator: { ci,
+  registerGraphqlMcp(app, { access, operator: { ci,
     commands: { recordDenied: async () => undefined } } as unknown as OperatorServices })
   const call = async (token: string) => {
     const response = await app.inject({ method: 'POST', url: '/mcp',
