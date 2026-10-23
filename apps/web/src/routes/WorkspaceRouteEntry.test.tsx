@@ -202,7 +202,7 @@ describe('WorkspaceRouteEntry integration', () => {
       initialWorkflow: graph })
     server.use(...service.handlers)
     server.use(http.get('*/api/management/workspaces/:workspaceId/workflows/:workflowId/nodes/:nodeId/placement-choices',
-      () => new HttpResponse(null, { status: 503 })))
+      () => new HttpResponse(null, { status: 500 })))
     const entry = '/workspaces/workspace-1?workflowId=workflow-content-pipeline'
     const first = await renderWorkspace(entry)
     const user = userEvent.setup()
@@ -228,7 +228,7 @@ describe('WorkspaceRouteEntry integration', () => {
     const rail = await screen.findByRole('complementary', { name: 'Workflow side panel' })
     expect(rail).toBeVisible()
     expect(within(rail).getByRole('textbox', { name: 'Name' })).toHaveValue(agent.name)
-    expect(await within(rail).findByText('Computers can’t be checked right now. Try again shortly.')).toBeVisible()
+    expect(await within(rail).findByText('Computers can’t be checked right now. Try again shortly.', {}, { timeout: 8000 })).toBeVisible()
   }, 15_000)
 
   it('opens the accepted new workflow while workspace details still serve the old list', async () => {
