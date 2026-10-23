@@ -195,7 +195,7 @@ export class WorkerUpdater {
       && await workerPointerMatches(plan.pointer, this.options.releaseDirectory);
     this.options.assertStateOwnership();
     if (unchanged && (!plan.browserRuntime?.changed || plan.browserRuntime.state === 'rolled-back')) {
-      await this.options.resume();
+      this.options.resume();
       this.handoff = undefined;
       return;
     }
@@ -443,14 +443,7 @@ export class WorkerUpdater {
           throw new WorkerError('worker_update_recovery_required', undefined, { cause: recoveryError });
         }
       }
-      if (drained) {
-        try { await resume(); }
-        catch (recoveryError) {
-          await this.save({ state: 'failed', lastError: `worker_update_recovery_required: ${workerUpdateErrorMessage(recoveryError)}` },
-            { failureCode: 'worker_update_recovery_required' });
-          throw new WorkerError('worker_update_recovery_required', undefined, { cause: recoveryError });
-        }
-      }
+      if (drained) resume();
       await this.save({ state: 'failed', lastError }, { failureCode });
       if (targetFields.targetVersion) log('Worker update failed', { phase, ...targetFields, error: lastError });
       throw new WorkerError(failureCode, lastError, { cause: error });
