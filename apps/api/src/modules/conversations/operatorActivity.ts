@@ -1,8 +1,8 @@
 import { asRecord } from '../../shared/records.js'
-import { claudeConversationActivity } from './claudeSdk/conversationActivity.js'
+import { claudeConversationActivity } from '../harnesses/claudeSdk/conversationActivity.js'
 import { codexUnsupportedInteractionMessage,
   type RecordedAgentHarness, type NativeHarnessEvent, type OperatorActivity } from '@foreman-code/contracts'
-import type { NativeHistory } from './port.js'
+import type { NativeHistory } from '../harnesses/port.js'
 
 export type OperatorActivityChange = Omit<OperatorActivity, 'sequence' | 'revision'>
 const string = (value: unknown) => typeof value === 'string' ? value : ''

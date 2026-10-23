@@ -89,30 +89,3 @@ export async function ciTicketIdsRequestedByExecution(db: CiIdQuery, ids: readon
   [ids === null ? null : [...ids], workspaceId, executionId])
   return new Set(result.rows.map(row => row.id))
 }
-
-/** CI evidence for a Run activity, embedded in the same snapshot. Uses the activity (`a`), Run (`r`) and
- * execution (`e`) aliases of the product query; no CI table names escape this package. */
-export const RUN_ACTIVITY_CI_JOIN_SQL = `left join ci_runs cq on a.kind='ci_state_changed'
-  and cq.id=case when a.kind='ci_state_changed'
-    and a.payload->>'ticketId' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-    then (a.payload->>'ticketId')::uuid end
-  and cq.id::text=a.payload->>'ticketId'
-  and cq.workspace_id=r.workspace_id and (cq.record#>>'{initiator,executionId}'=e.id
-    or exists(select 1 from ci_group_requesters q where q.workspace_id=cq.workspace_id
-      and q.group_id=cq.group_id and q.execution_id=e.id))
-  and cq.record->>'id'=cq.id::text and cq.record->>'workspaceId'=r.workspace_id
-  and cq.group_id::text=a.payload#>>'{ci,groupId}' and cq.id::text=a.payload#>>'{ci,id}'
-  and cq.record->>'suite'=a.payload#>>'{ci,suite}'
-  and coalesce(cq.record->'part','null'::jsonb) is not distinct from a.payload#>'{ci,part}'
-  and e.record->>'agentConfigurationVersionId'=r.record->'agentConfigurationVersionIds'->>e.agent_id`
-
-/** Ticket count, terminality and latest timestamp for execution `e` in Run `r`. Embedded as a lateral
- * read so the stuck-execution detector keeps its single snapshot and row-lock selection. */
-export const EXECUTION_CI_SUMMARY_SQL = `select count(*) as ticket_count,bool_and(c.state in ('passed','failed','canceled','lost')) as all_terminal,
-          max(greatest((c.record->>'queuedAt')::timestamptz,(c.record->>'finishedAt')::timestamptz)) as last_activity_at
-        -- Find the execution's tickets by index; a workspace's other tickets are never read.
-        from ci_runs c where c.id in (
-          select i.id from ci_runs i where i.workspace_id=r.workspace_id and i.record#>>'{initiator,executionId}'=e.id
-          union
-          select g.id from ci_group_requesters q join ci_runs g on g.workspace_id=q.workspace_id and g.group_id=q.group_id
-            where q.workspace_id=r.workspace_id and q.execution_id=e.id)`

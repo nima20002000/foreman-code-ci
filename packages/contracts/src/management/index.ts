@@ -29,7 +29,7 @@ import {
   AgentDefaultsSchema,
   CodexHarnessConfigurationSchema,
   HarnessQualificationSchema,
-  RecordedHarnessConfigurationSchema,
+  HarnessConfigurationSchema,
   SupportedHarnessConfigurationSchema,
   ExecutionLocationSchema,
   RunActivitySchema,
@@ -445,7 +445,7 @@ export const HarnessConfigurationCheckInputSchema = z.object({
   configuration: SupportedHarnessConfigurationSchema,
 }).strict();
 export const HarnessConfigurationCheckResultSchema = z.object({
-  configuration: RecordedHarnessConfigurationSchema,
+  configuration: HarnessConfigurationSchema,
   qualification: HarnessQualificationSchema,
   checkedAt: TimestampSchema,
 }).strict();
