@@ -13,6 +13,7 @@ import { changeDraftAgent, editorAgents } from '../graph/nextDraft/agentEdits'
 import type { NextDraftEdit } from '../graph/nextDraft/state'
 import { useWorktreeChoices } from '../../shared/api/worktreeChoices'
 import { worktreeLabel } from './worktreePresentation'
+import { roleEvidence } from '../graph/nextDraft/model'
 import { hierarchyNodes, reparentHierarchyWorker } from '../workflow-hierarchy/authoring'
 import { WorkerParentField } from '../workflow-hierarchy/WorkerParentField'
 
@@ -40,6 +41,12 @@ function installAgent(draftKey: string, instanceId: string, agent: Agent, nodeId
     let nextGraph: NextDraftEdit['graph'] = { ...graph,
       nodes: node ? graph.nodes.map((item) => item.id === id ? nextNode : item) : [...graph.nodes, nextNode],
       entryNodeId: !graph.nodes.length ? id : graph.entryNodeId,
+    }
+    // The starting agent defaults to the highest role on the Board, whatever order Agents were added in.
+    if (!node && graph.entryNodeId) {
+      const rank = (agentId: string) => ({ master: 0, orchestrator: 1, coder: 2 } as Record<string, number>)[roleEvidence(current.context, agentId, current.agentEdits).role ?? ''] ?? 3
+      const entry = graph.nodes.find(item => item.id === graph.entryNodeId)
+      if (entry && entry.kind !== 'job' && rank(agent.id) < rank(entry.agentId)) nextGraph = { ...nextGraph, entryNodeId: id }
     }
     if (parent !== undefined) {
       if (!hierarchyNodes(current).some(item => item.role === 'orchestrator' && item.node.id === parent)) {

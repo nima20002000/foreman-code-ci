@@ -25,6 +25,7 @@ function defaultProfileId(profiles: BrowserProfileCatalog['profiles']): string |
 /** A controlled draft field. Applying/saving belongs to the existing Board form. */
 export function BrowserSettingsFields({ value, onChange, catalog, computer, disabled, loading, onManageProfiles }: BrowserSettingsFieldsProps) {
   const enabled = value?.enabled ?? false
+  const maxTabs = value?.maxTabs
   const selected = catalog?.profiles.find(profile => profile.id === value?.profileId)
   const replica = catalog?.replicas.find(item => item.profileId === value?.profileId && item.computerId === computer?.id)
   const profiles = [...(catalog?.profiles ?? [])].sort((left, right) => {
@@ -34,8 +35,8 @@ export function BrowserSettingsFields({ value, onChange, catalog, computer, disa
   const fallback = defaultProfileId(profiles)
   // A browser that is on always has a profile: pick the default once the profiles are known.
   useEffect(() => {
-    if (enabled && !value?.profileId && fallback && !disabled) onChange({ ...value, enabled: true, profileId: fallback })
-  }, [enabled, value?.profileId, fallback, disabled, onChange])
+    if (enabled && !value?.profileId && fallback && !disabled) onChange({ enabled: true, profileId: fallback, ...(maxTabs ? { maxTabs } : {}) })
+  }, [enabled, value?.profileId, maxTabs, fallback, disabled, onChange])
   const options = [...(value?.profileId ? [] : [{ value: '', label: loading ? 'Loading…' : 'No profile' }]),
     ...profiles.map(profile => ({ value: profile.id, label: profile.name }))]
   if (value?.profileId && !selected) options.push({ value: value.profileId, label: 'Removed profile' })

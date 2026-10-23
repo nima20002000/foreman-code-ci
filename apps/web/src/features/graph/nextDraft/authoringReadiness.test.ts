@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_CODEX_ADVANCED_CONFIGURATION, type CodexHarnessConfiguration } from '@foreman-code/contracts'
 import { fixture } from './core.cases'
-import { authoringHints } from './model'
+import { authoringHints, startFromConnectionSource } from './model'
 
 const codex: CodexHarnessConfiguration = { harness: 'codex', model: 'gpt-5.6-luna', reasoningEffort: 'medium',
   sandbox: 'read-only', serviceTier: 'standard' }
@@ -37,5 +37,15 @@ describe('Board readiness reports known Save requirements', () => {
       advanced: { ...DEFAULT_CODEX_ADVANCED_CONFIGURATION, approvalPolicy: 'on-request' as const, approvalsReviewer: 'auto_review' as const } } }
     expect(withoutMaster(authoringHints(graph, context, { [agent.id]: compatible }))).toEqual([])
     expect(withoutMaster(authoringHints({ ...graph, approval: { handler: 'user' } }, context))).toEqual([])
+  })
+})
+
+describe('Connecting two agents', () => {
+  it('starts the workflow from the agent the line leaves', () => {
+    const context = fixture(['coder', 'coder'])
+    const [first, second] = context.draft.graph.nodes
+    const graph = { ...context.draft.graph, entryNodeId: first!.id, edges: [
+      { id: 'edge-1', kind: 'execution' as const, source: second!.id, target: first!.id }] }
+    expect(startFromConnectionSource(graph).entryNodeId).toBe(second!.id)
   })
 })

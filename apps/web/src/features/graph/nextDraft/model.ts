@@ -212,6 +212,17 @@ export function putRelationship(graph: WorkflowDefinitionV3, relationship: Workf
   return { ...graph, edges: previous ? graph.edges.map((edge) => edge.id === relationship.id ? relationship : edge) : [...graph.edges, relationship] }
 }
 
+/** A line into the starting agent makes its source the start, so connecting two agents just works.
+ * Only a source that nothing feeds can start the work; otherwise the graph is left for the save checks. */
+export function startFromConnectionSource(graph: WorkflowDefinitionV3): WorkflowDefinitionV3 {
+  if (graph.hierarchy && graph.handoffs) return graph
+  const into = (id: string) => graph.edges.filter((edge) => edge.kind === 'execution' && edge.target === id)
+  const feeders = graph.entryNodeId === null ? [] : into(graph.entryNodeId)
+  const source = feeders[0]?.source
+  if (!source || new Set(feeders.map((edge) => edge.source)).size !== 1 || into(source).length) return graph
+  return { ...graph, entryNodeId: source }
+}
+
 export function setWorkConnectionLimit(graph: WorkflowDefinitionV3, relationshipId: string, limit?: number): WorkflowDefinitionV3 {
   const edge = graph.edges.find((item) => item.id === relationshipId)
   if (!graph.handoffs || !edge || edge.kind !== 'execution') throw new Error('Choose a work connection in a handoff workflow.')
