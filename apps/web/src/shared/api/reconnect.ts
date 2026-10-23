@@ -73,7 +73,9 @@ export function useApiReconnect(): boolean {
     queryKey: ['workbench', 'api-reachability', sessionGeneration()],
     enabled: (recovering || !online) && !sessionIsSwitching(),
     // Every tick is a fresh request: a retry would pause in a hidden tab and every later tick would only wait on it.
-    networkMode: 'always', retry: false, staleTime: 0, gcTime: 0,
+    // A failed read re-enables the probe; a probe younger than one tick is not repeated then, or probe → reread →
+    // failure → probe loops as fast as the requests answer.
+    networkMode: 'always', retry: false, staleTime: reconnectIntervalMs, gcTime: 0,
     refetchInterval: reconnectIntervalMs, refetchIntervalInBackground: true,
     refetchOnReconnect: false, meta: { refetchOnApiReconnect: false },
     queryFn: async ({ signal }) => {
