@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '../packages/contracts/src/installationNames.mjs'
 import { execFile, spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { access, chmod, copyFile, cp, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, symlink } from 'node:fs/promises'
@@ -25,10 +26,10 @@ import {
 
 const source = fileURLToPath(new URL('../', import.meta.url))
 const home = homedir()
-const app = join(home, '.local/lib/graphql-production')
-const state = join(home, '.local/state/graphql-production')
-const data = join(home, '.local/share/graphql-production')
-const config = join(home, '.config/graphql-production')
+const app = join(home, INSTALLATION_NAMES.paths.productionApp)
+const state = join(home, INSTALLATION_NAMES.paths.productionState)
+const data = join(home, INSTALLATION_NAMES.paths.productionData)
+const config = join(home, INSTALLATION_NAMES.paths.productionConfig)
 const envFile = join(config, 'production.env')
 const deploymentFile = join(config, 'deployment.json')
 const startupFile = join(config, 'installation.json')
@@ -36,8 +37,8 @@ const current = join(app, 'current')
 const origin = 'http://127.0.0.1:3041'
 const capture = promisify(execFile)
 const units = {
-  database: 'graphql-production-db.service',
-  api: 'graphql-operator-api.service',
+  database: INSTALLATION_NAMES.services.database,
+  api: INSTALLATION_NAMES.services.api,
 }
 
 function run(command, args, options = {}) {
@@ -66,7 +67,7 @@ async function configureEnvironment(buildSource) {
     }
   } else {
     const { stdout } = await capture('/usr/bin/docker', ['volume', 'ls', '--format', '{{.Name}}'])
-    if (stdout.split('\n').includes('graphql-production-postgres')) {
+    if (stdout.split('\n').includes(INSTALLATION_NAMES.compose.productionVolume)) {
       throw new Error('Production storage already exists. Restore production.env before updating; its password must stay stable.')
     }
     password = randomBytes(32).toString('hex')
@@ -88,14 +89,14 @@ async function stageRelease({ source: buildSource, commit }, runBuild, previousR
       { dependencies: { root: join(app, 'api-dependencies'), source: buildSource } })
     await cp(join(buildSource, 'apps/web/dist'), join(release, 'apps/web/dist'), { recursive: true })
     await mkdir(join(release, 'scripts'), { recursive: true })
-    for (const name of ['local-production.mjs', 'local-production-runtime.mjs', 'graphql-mcp.mjs',
+    for (const name of ['local-production.mjs', 'local-production-runtime.mjs', 'foreman-mcp.mjs',
       'worker-release-artifacts.mjs', 'worker-artifact-files.mjs', 'install-ci-smoke.mjs']) {
       await copyFile(join(buildSource, 'scripts', name), join(release, 'scripts', name))
     }
     await copyVerificationRuntime(buildSource, release)
     const contractsSource = join(release, 'packages/contracts/src')
     await mkdir(contractsSource, { recursive: true })
-    for (const name of ['productEnvironment.mjs', 'productionMaintenance.mjs']) {
+    for (const name of ['productEnvironment.mjs', 'installationNames.mjs', 'productionMaintenance.mjs']) {
       await copyFile(join(buildSource, 'packages/contracts/src', name), join(contractsSource, name))
     }
     await mkdir(join(release, 'apps/worker/src'), { recursive: true })
@@ -138,10 +139,10 @@ StartLimitIntervalSec=0
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-EnvironmentFile=@HOME@/.config/graphql-production/production.env
+EnvironmentFile=@HOME@/${INSTALLATION_NAMES.paths.productionConfig}/production.env
 ExecStartPre=/usr/bin/timeout 60 /bin/sh -c 'until /usr/bin/docker info >/dev/null 2>&1; do /usr/bin/sleep 2; done'
-ExecStart=/usr/bin/docker compose --project-name graphql-local-production --file @APP@/compose.production.yaml up --detach --wait --wait-timeout 90 postgres
-ExecStop=/usr/bin/docker compose --project-name graphql-local-production --file @APP@/compose.production.yaml stop --timeout 30 postgres
+ExecStart=/usr/bin/docker compose --project-name ${INSTALLATION_NAMES.compose.production} --file @APP@/compose.production.yaml up --detach --wait --wait-timeout 90 postgres
+ExecStop=/usr/bin/docker compose --project-name ${INSTALLATION_NAMES.compose.production} --file @APP@/compose.production.yaml stop --timeout 30 postgres
 Restart=on-failure
 RestartSec=5
 TimeoutStartSec=160
@@ -158,7 +159,7 @@ WantedBy=default.target
 async function installDesktop(firstInstall, buildSource) {
   const paths = productionIntegrationPaths(home, process.env)
   const icon = paths.icon
-  const launcher = join(app, 'graphql')
+  const launcher = join(app, INSTALLATION_NAMES.mcp.server)
   await publish(launcher, `#!/bin/sh
 exec '${current}/node' '${current}/scripts/local-production.mjs' launch
 `, 0o700)
@@ -170,7 +171,7 @@ Name=Foreman Code
 Comment=Local agent workspace
 Exec=${launcher}
 Icon=${icon}
-StartupWMClass=graphql-production
+StartupWMClass=${INSTALLATION_NAMES.desktopClass}
 Terminal=true
 Categories=Development;
 `, autostart: `[Desktop Entry]
@@ -277,7 +278,7 @@ async function finishInstallation({ release, previousRelease, firstInstall, envi
   let cutoverBegan = false
   try {
     await copyFile(join(snapshot.source, 'compose.production.yaml'), join(app, 'compose.production.yaml'))
-    await run('/usr/bin/docker', ['volume', 'create', '--label', 'io.graphql.environment=production', 'graphql-production-postgres'])
+    await run('/usr/bin/docker', ['volume', 'create', '--label', INSTALLATION_NAMES.compose.productionLabel, INSTALLATION_NAMES.compose.productionVolume])
     await installServices()
     await installDesktop(firstInstall, snapshot.source)
     await run('/usr/bin/systemctl', ['--user', 'daemon-reload'])
@@ -313,7 +314,7 @@ async function finishInstallation({ release, previousRelease, firstInstall, envi
 }
 
 async function handoffDashboard() {
-  await launchBrowser('/usr/bin/google-chrome', [`--app=${origin}/workspaces`, '--class=graphql-production'], {
+  await launchBrowser('/usr/bin/google-chrome', [`--app=${origin}/workspaces`, `--class=${INSTALLATION_NAMES.desktopClass}`], {
     environment: desktopLaunchEnvironment(process.env),
   })
   console.log('Dashboard handed to Chrome.')

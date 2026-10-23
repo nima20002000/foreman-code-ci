@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { create } from 'zustand'
 
 export const DEFAULT_NAVIGATION_WIDTH = 264
@@ -5,8 +6,8 @@ export const COLLAPSED_NAVIGATION_WIDTH = 60
 export const MIN_NAVIGATION_WIDTH = 192
 export const MAX_NAVIGATION_WIDTH = 360
 
-const COLLAPSED_STORAGE_KEY = 'graphql-navigation-collapsed'
-const WIDTH_STORAGE_KEY = 'graphql-navigation-width'
+const COLLAPSED_STORAGE_KEY = INSTALLATION_NAMES.browserStorage.navigationCollapsed
+const WIDTH_STORAGE_KEY = INSTALLATION_NAMES.browserStorage.navigationWidth
 
 type ExpandableWorkspaceSection = 'agents' | 'workflows'
 type NavigationMotion = 'instant' | 'manual'

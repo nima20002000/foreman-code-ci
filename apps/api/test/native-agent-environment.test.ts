@@ -74,52 +74,51 @@ it('starts native children with their binary directory first and removes pnpm bi
 })
 
 it('strips both ambient credential namespaces and only aliases an admitted native token', () => {
-  const clean = inheritedAgentEnvironment({ GRAPHQL_MCP_TOKEN: 'ambient-old', FOREMAN_CODE_MCP_TOKEN: 'ambient-new',
-    GRAPHQL_PRODUCTION_DB_PASSWORD: 'database-old', FOREMAN_CODE_PRODUCTION_DB_PASSWORD: 'database-new',
+  const clean = inheritedAgentEnvironment({ GRAPHQL_MCP_TOKEN: 'ambient-old',
+    GRAPHQL_PRODUCTION_DB_PASSWORD: 'database-old',
     FOREMAN_CODE_OPERATOR_SECRET: 'operator-secret', FOREMAN_CODE_APP_SECRET: 'app-secret', PATH: '/usr/bin' })
   expect(clean).toEqual({ PATH: '/usr/bin', NO_COLOR: '1' })
-  const runtime = { FOREMAN_CODE_APP_MCP_DIRECTORY: '/runtime/mcp' }
+  const runtime = { GRAPHQL_APP_MCP_DIRECTORY: '/runtime/mcp' }
   expect(appMcpTokenEnvironment({ GRAPHQL_MCP_TOKEN: 'admitted' }, runtime)).toEqual({
-    GRAPHQL_MCP_TOKEN: 'admitted', FOREMAN_CODE_MCP_TOKEN: 'admitted', FOREMAN_CODE_APP_MCP_DIRECTORY: '/runtime/mcp',
+    GRAPHQL_MCP_TOKEN: 'admitted', GRAPHQL_APP_MCP_DIRECTORY: '/runtime/mcp',
   })
-  expect(() => appMcpTokenEnvironment({ GRAPHQL_MCP_TOKEN: 'old', FOREMAN_CODE_MCP_TOKEN: 'new' }, runtime)).toThrow('conflicts')
+  expect(() => appMcpTokenEnvironment({ GRAPHQL_MCP_TOKEN: 'old', }, runtime)).toThrow('conflicts')
 })
 
-it.each(['GRAPHQL_APP_MCP_DIRECTORY', 'FOREMAN_CODE_APP_MCP_DIRECTORY'])(
+it.each(['GRAPHQL_APP_MCP_DIRECTORY', 'GRAPHQL_APP_MCP_DIRECTORY'])(
   'withholds the bridge configured by %s from Codex until MCP admission', directoryName => {
     vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', undefined)
-    vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', undefined)
+    vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', undefined)
     vi.stubEnv(directoryName, '/runtime/mcp')
     vi.stubEnv('GRAPHQL_MCP_TOKEN', 'ambient-token')
-    vi.stubEnv('FOREMAN_CODE_MCP_TOKEN', 'ambient-token')
+    vi.stubEnv('GRAPHQL_MCP_TOKEN', 'ambient-token')
     const clean = safeEnvironment()
-    expect(clean.FOREMAN_CODE_APP_MCP_DIRECTORY).toBeUndefined()
     expect(clean.GRAPHQL_APP_MCP_DIRECTORY).toBeUndefined()
-    expect(clean.FOREMAN_CODE_MCP_TOKEN).toBeUndefined()
+    expect(clean.GRAPHQL_APP_MCP_DIRECTORY).toBeUndefined()
+    expect(clean.GRAPHQL_MCP_TOKEN).toBeUndefined()
     expect(clean.GRAPHQL_MCP_TOKEN).toBeUndefined()
     const admitted = safeEnvironment({ agentId: 'agent', variables: { GRAPHQL_MCP_TOKEN: 'admitted-token' } })
-    expect(admitted.FOREMAN_CODE_APP_MCP_DIRECTORY).toBe('/runtime/mcp')
+    expect(admitted.GRAPHQL_APP_MCP_DIRECTORY).toBe('/runtime/mcp')
     expect(admitted.GRAPHQL_APP_MCP_DIRECTORY).toBeUndefined()
-    expect(admitted.FOREMAN_CODE_MCP_TOKEN).toBe('admitted-token')
+    expect(admitted.GRAPHQL_MCP_TOKEN).toBe('admitted-token')
     expect(admitted.GRAPHQL_MCP_TOKEN).toBe('admitted-token')
   },
 )
 
-for (const directoryName of ['GRAPHQL_APP_MCP_DIRECTORY', 'FOREMAN_CODE_APP_MCP_DIRECTORY']) {
+for (const directoryName of ['GRAPHQL_APP_MCP_DIRECTORY', 'GRAPHQL_APP_MCP_DIRECTORY']) {
   it.each([false, true])(`delivers the ${directoryName} bridge to a native child only with admitted MCP access (%s)`, async admitted => {
-    const source = { [directoryName]: '/runtime/mcp', GRAPHQL_MCP_TOKEN: 'ambient-token',
-      FOREMAN_CODE_MCP_TOKEN: 'ambient-token', FOREMAN_CODE_APP_SECRET: 'ambient-secret' }
+    const source = { [directoryName]: '/runtime/mcp', GRAPHQL_MCP_TOKEN: 'ambient-token', FOREMAN_CODE_APP_SECRET: 'ambient-secret' }
     vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', undefined)
-    vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', undefined)
+    vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', undefined)
     for (const [key, value] of Object.entries(source)) vi.stubEnv(key, value)
     const environmentOrScope = admitted ? {
       expectedAgentId: 'agent',
       beforeSpawn: async () => ({ agentId: 'agent', variables: { GRAPHQL_MCP_TOKEN: 'admitted-token' } }),
     } : source
     const result = await runCommand(process.execPath, ['-e', `console.log(JSON.stringify({
-      directory: process.env.FOREMAN_CODE_APP_MCP_DIRECTORY,
+      directory: process.env.GRAPHQL_APP_MCP_DIRECTORY,
       legacyDirectory: process.env.GRAPHQL_APP_MCP_DIRECTORY,
-      token: process.env.FOREMAN_CODE_MCP_TOKEN,
+      token: process.env.GRAPHQL_MCP_TOKEN,
       legacyToken: process.env.GRAPHQL_MCP_TOKEN,
       secret: process.env.FOREMAN_CODE_APP_SECRET,
     }))`], process.cwd(), AbortSignal.timeout(5_000), environmentOrScope)
@@ -130,9 +129,9 @@ for (const directoryName of ['GRAPHQL_APP_MCP_DIRECTORY', 'FOREMAN_CODE_APP_MCP_
   })
 }
 
-it.each(['GRAPHQL_MCP_TOKEN', 'FOREMAN_CODE_MCP_TOKEN'])('delivers the scoped %s token to installed native entries using either name', async name => {
+it.each(['GRAPHQL_MCP_TOKEN', 'GRAPHQL_MCP_TOKEN'])('delivers the scoped %s token to installed native entries using either name', async name => {
   const result = await runCommand(process.execPath,
-    ['-e', 'console.log(JSON.stringify({old:process.env.GRAPHQL_MCP_TOKEN,new:process.env.FOREMAN_CODE_MCP_TOKEN}))'],
+    ['-e', 'console.log(JSON.stringify({old:process.env.GRAPHQL_MCP_TOKEN,new:process.env.GRAPHQL_MCP_TOKEN}))'],
     process.cwd(), AbortSignal.timeout(5_000), {
       expectedAgentId: 'scoped-agent', beforeSpawn: async () => ({ agentId: 'scoped-agent', variables: { [name]: 'admitted-token' } }),
     })

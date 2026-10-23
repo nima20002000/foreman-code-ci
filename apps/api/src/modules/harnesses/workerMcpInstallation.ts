@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { lstat, readFile, realpath } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -19,21 +20,21 @@ export async function registerWorkerMcpInstallation(input: {
   home: string; stateDirectory: string; releaseDirectory: string
 }): Promise<void> {
   const { home, stateDirectory, releaseDirectory } = input
-  const root = join(home, '.local/lib/graphql-worker')
-  const launcher = join(home, '.local/share/graphql/mcp/launcher.mjs')
+  const root = join(home, INSTALLATION_NAMES.paths.workerApp)
+  const launcher = join(home, INSTALLATION_NAMES.paths.mcpLauncher)
   const installed = await installedFile(launcher)
   if (!installed) return
-  const sourcePath = join(releaseDirectory, 'artifacts/graphql-mcp.mjs')
+  const sourcePath = join(releaseDirectory, INSTALLATION_NAMES.artifacts.mcpLauncher)
   const source = await readFile(sourcePath)
   // A custom launcher must not acquire managed ownership from its location alone.
   if (!installed.equals(source)) {
-    const previous = await installedFile(join(root, 'previous/artifacts/graphql-mcp.mjs'))
+    const previous = await installedFile(join(root, INSTALLATION_NAMES.artifacts.previousMcpLauncher))
     if (!previous || !installed.equals(previous)) return
     await installManagedLauncher(pathToFileURL(sourcePath), launcher)
   }
   const executables = [{ path: process.execPath, realpath: await realpath(process.execPath) }]
-  const services = [join(root, 'graphql-worker.service'), join(root, 'graphql-worker.service.previous'),
-    join(home, '.config/systemd/user/graphql-worker.service')]
+  const services = [join(root, INSTALLATION_NAMES.services.worker), join(root, INSTALLATION_NAMES.services.previousWorker),
+    join(home, INSTALLATION_NAMES.paths.workerUnit)]
   for (const path of services) {
     const service = await installedFile(path)
     if (!service) continue

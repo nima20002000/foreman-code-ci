@@ -1,7 +1,8 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { useSyncExternalStore } from 'react'
 import type { Theme } from '@foreman-code/contracts/management'
 
-export const THEME_STORAGE_KEY = 'graphql-theme'
+export const THEME_STORAGE_KEY = INSTALLATION_NAMES.browserStorage.theme
 
 export type { Theme } from '@foreman-code/contracts/management'
 

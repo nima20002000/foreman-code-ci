@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '../packages/contracts/src/installationNames.mjs'
 import { readProductEnvironment } from '../packages/contracts/src/productEnvironment.mjs'
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
@@ -51,14 +52,11 @@ export default async function setup() {
     child.stdin.end()
     throw new Error('Heavy-job holder did not publish its owned slot')
   }
-  const previous = Object.fromEntries(['FOREMAN_CODE_HEAVY_JOB_COMMON', 'FOREMAN_CODE_HEAVY_JOB_TOKEN', 'FOREMAN_CODE_HEAVY_BASE_TMPDIR', 'GRAPHQL_HEAVY_JOB_COMMON', 'GRAPHQL_HEAVY_JOB_TOKEN', 'GRAPHQL_HEAVY_BASE_TMPDIR', 'TMPDIR', 'TMP', 'TEMP'].map((key) => [key, process.env[key]]))
+  const previous = Object.fromEntries([INSTALLATION_NAMES.environment.HEAVY_JOB_COMMON, INSTALLATION_NAMES.environment.HEAVY_JOB_TOKEN, INSTALLATION_NAMES.environment.HEAVY_BASE_TMPDIR, INSTALLATION_NAMES.environment.HEAVY_JOB_COMMON, INSTALLATION_NAMES.environment.HEAVY_JOB_TOKEN, INSTALLATION_NAMES.environment.HEAVY_BASE_TMPDIR, 'TMPDIR', 'TMP', 'TEMP'].map((key) => [key, process.env[key]]))
   Object.assign(process.env, {
-    FOREMAN_CODE_HEAVY_JOB_COMMON: common,
-    FOREMAN_CODE_HEAVY_JOB_TOKEN: admitted.token,
-    FOREMAN_CODE_HEAVY_BASE_TMPDIR: dirname(dirname(admitted.tempPath)),
-    GRAPHQL_HEAVY_JOB_COMMON: common,
-    GRAPHQL_HEAVY_JOB_TOKEN: admitted.token,
-    GRAPHQL_HEAVY_BASE_TMPDIR: dirname(dirname(admitted.tempPath)),
+    [INSTALLATION_NAMES.environment.HEAVY_JOB_COMMON]: common,
+    [INSTALLATION_NAMES.environment.HEAVY_JOB_TOKEN]: admitted.token,
+    [INSTALLATION_NAMES.environment.HEAVY_BASE_TMPDIR]: dirname(dirname(admitted.tempPath)),
     TMPDIR: admitted.tempPath,
     TMP: admitted.tempPath,
     TEMP: admitted.tempPath,

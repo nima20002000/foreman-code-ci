@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '../packages/contracts/src/installationNames.mjs'
 import { execFileSync, spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, lstatSync, readFileSync, readdirSync, statfsSync } from 'node:fs'
@@ -473,14 +474,14 @@ export async function verifyRepository(context, { root = process.cwd(), signal }
       verifyEffectivePackagePolicy(root, environment)
       if (context.requiredPortions.some(portion => portion.key === 'root:worker-artifact')) {
         const tool = context.unitCodex
-        if (tool?.executable !== '/opt/graphql-ci/tools/codex'
+        if (tool?.executable !== INSTALLATION_NAMES.paths.ciCodex
           || createHash('sha256').update(readFileSync(tool.executable)).digest('hex') !== tool.binarySha256) {
           throw new Error('The qualified Codex schema binary is unavailable or changed')
         }
         const artifact = join(context.mutableDirectory, 'worker-artifact')
-        environment.FOREMAN_CODE_WORKER_BUILD_COMMIT = context.privateGit.generatedCommit
-        environment.FOREMAN_CODE_WORKER_ARTIFACT_DIRECTORY = artifact
-        environment.FOREMAN_CODE_WORKER_CODEX_BINARY = tool.executable
+        environment[INSTALLATION_NAMES.environment.WORKER_BUILD_COMMIT] = context.privateGit.generatedCommit
+        environment[INSTALLATION_NAMES.environment.WORKER_ARTIFACT_DIRECTORY] = artifact
+        environment[INSTALLATION_NAMES.environment.WORKER_CODEX_BINARY] = tool.executable
         const startedAt = new Date().toISOString()
         result = await execute(['node', 'scripts/build-worker-artifact.mjs',
           'apps/worker/artifacts/test-hosts/ubuntu-24.04-x64-target.json', artifact], 'worker-artifact')

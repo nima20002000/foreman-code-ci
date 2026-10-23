@@ -10,7 +10,7 @@ import { safeEnvironment } from './codexAppServer.js'
 
 it.each([
   ['graphql', 'GRAPHQL_MCP_TOKEN'],
-  ['foreman-code', 'FOREMAN_CODE_MCP_TOKEN'],
+  ['foreman-code', 'GRAPHQL_MCP_TOKEN'],
 ] as const)('preflights the configured %s launcher and injects its scoped token', async (name, tokenName) => {
   const f = await deviceManagedMcpFixture()
   const signal = AbortSignal.timeout(5000)
@@ -29,10 +29,10 @@ it.each([
     })
     await worker.ensureReady(['codex'])
     expect((await preflight.preflight(input)).detection).toMatchObject({
-      serverName: 'foreman-code', credentialEnvironmentVariable: 'FOREMAN_CODE_MCP_TOKEN',
+      serverName: 'foreman-code', credentialEnvironmentVariable: 'GRAPHQL_MCP_TOKEN',
     })
     const environment = safeEnvironment({ agentId: 'agent', variables: { GRAPHQL_MCP_TOKEN: 'scoped-fixture-token' } })
-    expect(environment.FOREMAN_CODE_MCP_TOKEN).toBe('scoped-fixture-token')
+    expect(environment.GRAPHQL_MCP_TOKEN).toBe('scoped-fixture-token')
     expect(environment.GRAPHQL_MCP_TOKEN).toBe('scoped-fixture-token')
   } finally { await rm(f.directory, { recursive: true, force: true }) }
 })
@@ -50,7 +50,7 @@ it.each([true, false])('migrates an enabled=%s product launcher while preserving
     await worker.ensureReady(['codex'])
     const native = await f.adapters.codex.read(signal)
     expect(native.user.graphql).toBeUndefined()
-    expect(native.user['foreman-code']).toMatchObject({ enabled, env_vars: ['FOREMAN_CODE_MCP_TOKEN'],
+    expect(native.user['foreman-code']).toMatchObject({ enabled, env_vars: ['GRAPHQL_MCP_TOKEN'],
       disabled_tools: ['interaction_respond'] })
     expect(native.user.example).toEqual({ url: 'https://example.test/mcp' })
     expect((await worker.detect('codex', signal)).state).toBe(enabled ? 'status_unavailable' : 'disabled')
@@ -67,7 +67,7 @@ it('migrates a legacy token reference under the canonical server name', async ()
   try {
     await worker.ensureReady(['codex'])
     expect((await f.adapters.codex.read(AbortSignal.timeout(5000))).user['foreman-code'])
-      .toMatchObject({ env_vars: ['FOREMAN_CODE_MCP_TOKEN'] })
+      .toMatchObject({ env_vars: ['GRAPHQL_MCP_TOKEN'] })
     expect(f.writes()).toBe(1)
   } finally { await rm(f.directory, { recursive: true, force: true }) }
 })
@@ -188,7 +188,7 @@ it('unblocks the public Agent preflight when readiness installs a missing native
     await expect(preflight.preflight(input)).rejects.toMatchObject({ code: 'APP_MCP_PREFLIGHT_FAILED' })
     await worker.ensureReady(['codex'])
     expect(await preflight.preflight(input)).toMatchObject({ detection: {
-      state: 'status_unavailable', endpointMatches: true, credentialEnvironmentVariable: 'FOREMAN_CODE_MCP_TOKEN',
+      state: 'status_unavailable', endpointMatches: true, credentialEnvironmentVariable: 'GRAPHQL_MCP_TOKEN',
     } })
   } finally { await rm(f.directory, { recursive: true, force: true }) }
 })

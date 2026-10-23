@@ -57,8 +57,8 @@ async function endpoint(t, handle) {
 }
 
 function operatorEnvironment(t, url) {
-  environment(t, { FOREMAN_CODE_MAIN_URL: url, FOREMAN_CODE_OPERATOR_TOKEN: 'operator-fixture',
-    FOREMAN_CODE_MCP_TOKEN: undefined, GRAPHQL_MCP_TOKEN: undefined })
+  environment(t, { FOREMAN_CODE_MAIN_URL: url, GRAPHQL_OPERATOR_TOKEN: 'operator-fixture',
+    GRAPHQL_MCP_TOKEN: undefined, })
 }
 
 const toolResult = value => ({ content: [{ type: 'text', text: JSON.stringify(value) }] })
@@ -145,7 +145,7 @@ test('discovers a repository workspace on a later page', async t => {
   assert.deepEqual(lists, [{}, { cursor: 'later-page' }])
 })
 
-for (const tokenName of ['FOREMAN_CODE_MCP_TOKEN', 'GRAPHQL_MCP_TOKEN']) {
+for (const tokenName of ['GRAPHQL_MCP_TOKEN', 'GRAPHQL_MCP_TOKEN']) {
   test(`uses the admitted scoped bridge with ${tokenName} instead of Operator credentials`, async t => {
     const root = directory(t)
     copyFileSync(new URL('./graphql-mcp.mjs', import.meta.url), join(root, 'launcher.mjs'))
@@ -158,9 +158,9 @@ for (const tokenName of ['FOREMAN_CODE_MCP_TOKEN', 'GRAPHQL_MCP_TOKEN']) {
     writeFileSync(join(root, 'routes', `${createHash('sha256').update(token).digest('hex')}.json`),
       JSON.stringify({ endpoint: `${server.url}/mcp`, pid: process.pid,
         expiresAt: new Date(Date.now() + 60_000).toISOString(), toolTimeoutMs: 300_000 }))
-    environment(t, { FOREMAN_CODE_APP_MCP_DIRECTORY: root, GRAPHQL_APP_MCP_DIRECTORY: undefined,
-      FOREMAN_CODE_MCP_TOKEN: undefined, GRAPHQL_MCP_TOKEN: undefined, [tokenName]: token,
-      FOREMAN_CODE_OPERATOR_TOKEN: 'unrelated-operator', FOREMAN_CODE_MAIN_URL: 'http://127.0.0.1:9' })
+    environment(t, { GRAPHQL_APP_MCP_DIRECTORY: root,
+      GRAPHQL_MCP_TOKEN: undefined, [tokenName]: token,
+      GRAPHQL_OPERATOR_TOKEN: 'unrelated-operator', FOREMAN_CODE_MAIN_URL: 'http://127.0.0.1:9' })
     const call = await mcpClient()
     assert.deepEqual(await call('ci_get', { ticketId: 'scoped-ticket' }),
       { run: { id: 'scoped-ticket', state: 'passed' } })
@@ -183,8 +183,8 @@ test('finds the delivered scoped bridge when an account changes HOME', async t =
     JSON.stringify({ endpoint: `${server.url}/mcp`, pid: process.pid,
       expiresAt: new Date(Date.now() + 60_000).toISOString(), toolTimeoutMs: 300_000 }))
   // Admitted Agents receive the bridge location with their credential; the account's HOME does not locate it.
-  environment(t, { HOME: join(root, 'account'), FOREMAN_CODE_MCP_TOKEN: token, GRAPHQL_MCP_TOKEN: undefined,
-    FOREMAN_CODE_APP_MCP_DIRECTORY: installed, GRAPHQL_APP_MCP_DIRECTORY: undefined,
+  environment(t, { HOME: join(root, 'account'), GRAPHQL_MCP_TOKEN: token,
+    GRAPHQL_APP_MCP_DIRECTORY: installed,
     FOREMAN_CODE_MAIN_URL: 'http://127.0.0.1:9' })
   const call = await mcpClient()
   assert.deepEqual(await call('ci_get', { ticketId: 'account-ticket' }),

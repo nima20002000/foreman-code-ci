@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import userEvent from '@testing-library/user-event'
-import { GRAPHQL_AGENT_TOOLS, DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
-import type { GraphqlAgentTool, GraphqlToolOverride } from '@foreman-code/contracts'
+import { FOREMAN_AGENT_TOOLS, DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
+import type { ForemanAgentTool, ForemanToolOverride } from '@foreman-code/contracts'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -11,7 +11,7 @@ import { AgentSettingsForm } from './AgentSettingsForm'
 
 afterEach(cleanup)
 
-function open(role: 'orchestrator' | 'coder', extra: { graphqlTools?: GraphqlAgentTool[] } = {}, nodeGraphqlTools?: GraphqlToolOverride) {
+function open(role: 'orchestrator' | 'coder', extra: { graphqlTools?: ForemanAgentTool[] } = {}, nodeGraphqlTools?: ForemanToolOverride) {
   // Existing Agents with omitted choices keep the legacy role defaults.
   const agent = { ...defaultAgentForHarness('codex', 'agent', 'Agent', DEFAULT_HARNESS_DEFAULTS.codex, role), graphqlTools: undefined, ...extra }
   const onSave = vi.fn()
@@ -86,7 +86,7 @@ describe('Foreman Code MCP tools in Agent settings', () => {
 
 it('shows tool explanations on demand with plain names and no raw tool IDs', async () => {
   const { tools } = open('coder')
-  const explanation = GRAPHQL_AGENT_TOOLS.bug_report.description
+  const explanation = FOREMAN_AGENT_TOOLS.bug_report.description
   expect(within(tools).queryByText(explanation)).not.toBeInTheDocument()
   await userEvent.hover(within(tools).getByRole('button', { name: 'About Report a bug' }))
   expect(screen.getByRole('tooltip')).toHaveTextContent(explanation)

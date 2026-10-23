@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
@@ -14,7 +15,7 @@ import { offlineBrowserRuntimeLifecycle, rollbackBrowserRuntime, readInstalledBr
   pruneBrowserRuntimeVersions } from './browserRuntimeInstall.mjs';
 
 const execute = promisify(execFile);
-const services = ['graphql-worker.service', 'foreman-ci-worker.service'];
+const services = [INSTALLATION_NAMES.services.worker, 'foreman-ci-worker.service'];
 const supervisorUnitPattern = /^foreman-worker-update-[a-f0-9-]{36}$/;
 const environment = () => ({ PATH: '/usr/bin:/bin', HOME: process.env.HOME,
   XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR, DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS });
@@ -93,11 +94,11 @@ export async function locateWorkerLaunch({ stateDirectory, releaseDirectory, hom
   }
   return { service, pointer: { kind: 'symlink', path: join(root, 'current') },
     previousDirectory: directory, root, stateDirectory,
-    unitPath: join(home, '.config', 'systemd', 'user', 'graphql-worker.service') };
+    unitPath: join(home, '.config', 'systemd', 'user', INSTALLATION_NAMES.services.worker) };
 }
 
 export async function migrateWorkerService(plan, { run = execute } = {}) {
-  if (plan.service !== 'graphql-worker.service') return;
+  if (plan.service !== INSTALLATION_NAMES.services.worker) return;
   const info = await lstat(plan.unitPath);
   if (!info.isFile() || info.uid !== process.getuid() || (info.mode & 0o022)) {
     throw new WorkerError('worker_update_service_invalid');

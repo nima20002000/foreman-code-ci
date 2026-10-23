@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { randomUUID } from 'node:crypto'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
@@ -100,7 +101,7 @@ export class DurableEditIntentService<S extends EditStageScope, I extends Durabl
   }
   private async withLease<T>(principalId: string, intentId: string, work: () => Promise<T>): Promise<T> {
     const key = `graph-edit-intent:${JSON.stringify([principalId, intentId])}`
-    return withDedicatedClient(this.pool.options, 'graphql-edit-intent', async (client) => {
+    return withDedicatedClient(this.pool.options, INSTALLATION_NAMES.protocol.editIntent, async (client) => {
       await client.query('select pg_advisory_lock(hashtext($1))', [key])
       try {
         return await work()

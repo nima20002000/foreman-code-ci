@@ -10,10 +10,10 @@ import {
   RespondToInteractionRequestSchema,
   RespondToInteractionResponseSchema,
   HarnessExecutionSchema,
-  GraphqlToolDefaultsSchema,
-  GraphqlToolOverrideSchema,
-  effectiveGraphqlTools,
-  type GraphqlAgentTool,
+  ForemanToolDefaultsSchema,
+  ForemanToolOverrideSchema,
+  effectiveForemanTools,
+  type ForemanAgentTool,
   type AgentSubject,
   type WorkflowAgentProductRole,
 } from '@foreman-code/contracts'
@@ -61,7 +61,7 @@ export function decodeInteractionCursor(cursor: string | undefined): string | un
   }
 }
 
-export interface WorkerToolAccess { role: WorkflowAgentProductRole; tools: GraphqlAgentTool[]; subject?: AgentSubject }
+export interface WorkerToolAccess { role: WorkflowAgentProductRole; tools: ForemanAgentTool[]; subject?: AgentSubject }
 
 export interface AppInteractionService {
   context(principal: ManagementPrincipal): Promise<unknown>
@@ -174,14 +174,14 @@ export class PostgresAppInteractionService implements AppInteractionService {
       throw new DomainError('MCP_TOOL_DISCOVERY_FAILED', 'The pinned Agent role is unavailable.', 503)
     }
     const role = row.role
-    const defaults = row.defaults == null ? undefined : GraphqlToolDefaultsSchema.parse(row.defaults)
-    const override = row.override == null ? undefined : GraphqlToolOverrideSchema.parse(row.override)
+    const defaults = row.defaults == null ? undefined : ForemanToolDefaultsSchema.parse(row.defaults)
+    const override = row.override == null ? undefined : ForemanToolOverrideSchema.parse(row.override)
     const subject = row.purpose === 'consultation'
       ? await readConsultationCredentialSubject(this.pool, principal.id) : undefined
     const implemented = [...memoryBoardTools('write'), 'workflow_chat_read', 'workflow_chat_post', ...(row.browser?.enabled ? browserAgentTools : [])] as const
     const harness = HarnessConfigurationSchema.parse(row.harness)
     const readOnly = isReadOnlyHarnessConfiguration(harness)
-    const tools = effectiveGraphqlTools(role, defaults, override, row.interval != null, implemented).filter(tool => {
+    const tools = effectiveForemanTools(role, defaults, override, row.interval != null, implemented).filter(tool => {
       if (tool.startsWith('browser_') && readOnly && !COLLABORATION_AGENT_TOOLS[tool as keyof typeof COLLABORATION_AGENT_TOOLS].readOnly) return false
       if (subject && tool === 'interaction_respond') return false
       const operation = WorkerNativeOutputOperationSchema.options.find(operation =>

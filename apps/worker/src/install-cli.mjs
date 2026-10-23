@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { readFile } from 'node:fs/promises';
 import { isAbsolute, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,8 +30,8 @@ async function main() {
     options[args[i]] = args[i + 1];
   }
   const home = process.env.HOME ?? '';
-  const root = command === 'setup' ? join(home, '.local/lib/graphql-worker') : options['--root'];
-  const state = command === 'setup' ? join(home, '.local/state/graphql-worker') : options['--state'];
+  const root = command === 'setup' ? join(home, INSTALLATION_NAMES.paths.workerApp) : options['--root'];
+  const state = command === 'setup' ? join(home, INSTALLATION_NAMES.paths.workerState) : options['--state'];
   if (!root || !state || !isAbsolute(root) || !isAbsolute(state) || root === state || state.startsWith(`${root}/`) || root.startsWith(`${state}/`)) throw new WorkerError('separate_private_roots_required');
   if (command === 'service') {
     const template = await readFile(new URL('../artifacts/graphql-worker.service.in', import.meta.url), 'utf8');
