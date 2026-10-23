@@ -14,7 +14,6 @@ import { ClaudeBoundedQueue } from '../src/modules/harnesses/claudeSdk/queue.js'
 import { ChatManager, registerOperatorChatFixture, type OperatorChatFixture, waitFor } from './helpers/operatorChatFixture.js'
 import { postgresEnabled } from './helpers/database.js'
 
-const connectionString = process.env.TEST_DATABASE_URL
 const nativeFailure = { outcome: 'failed' as const, error: { code: 'CLAUDE_NATIVE_RESULT_ERROR',
   message: 'Recorded native failure.', retryable: false } }
 
