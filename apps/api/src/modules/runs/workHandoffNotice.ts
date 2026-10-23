@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import {
   WorkNoticeSchema, WorkAlternativeSchema, canonicalGraphJson, workLimitNoticeText,
   type WorkActivationInput, type WorkAlternative, type WorkNotice, type WorkflowVersionCurrent,
@@ -133,7 +134,7 @@ function workNoticePrompt(notice: WorkNotice): string {
     nodeId: item.destinationNodeId, outcomes: item.outcomes,
     used: item.used, maximum: item.maxWorkHandoffsPerRun }))
   return [
-    'BEGIN GRAPHQL WORKFLOW SYSTEM NOTICE',
+    INSTALLATION_NAMES.protocol.workflowNoticeStart,
     notice.message,
     `Exhausted connection: ${notice.relationshipId}; destination node: ${notice.destinationNodeId}.`,
     `Original requester activation: ${notice.requesterActivationId}.`,
@@ -144,7 +145,7 @@ function workNoticePrompt(notice: WorkNotice): string {
       ? 'Use a listed saved route by selecting its named outcome, or finish with remaining findings.'
       : 'Routes with empty outcomes are automatic: a clean finish follows saved outgoing connections. To stop with unresolved work, finish with remaining findings and no outcome.',
     'The engine rechecks current access and capacity before a new work submission.',
-    'END GRAPHQL WORKFLOW SYSTEM NOTICE',
+    INSTALLATION_NAMES.protocol.workflowNoticeEnd,
   ].join('\n')
 }
 

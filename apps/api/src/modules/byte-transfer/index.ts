@@ -3,7 +3,7 @@ export { ResumableByteTransferService, TransferExpiredError } from './service.js
 export type { MainRsyncEntrypoint } from './installedEntrypoints.js'
 export type { InstalledMainRsyncProviders } from './productionComposition.js'
 export { transferContextForBinding } from './carrier.js'
-export { BYTE_TRANSFER_NAMESPACE, createChannelTransferClient, createEndpointTransferClient } from './carrier.js'
+export { BYTE_TRANSFER_NAMESPACE, createChannelTransferClient } from './carrier.js'
 export type { InstalledRsyncProviders } from './productionComposition.js'
 export { RsyncWriterOwnership } from './rsyncWriterOwnership.js'
 export { ResumableByteTransferSender } from './sender.js'

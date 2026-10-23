@@ -1,5 +1,6 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { randomUUID } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { mkdir, open, readFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
@@ -9,7 +10,7 @@ import { MANAGED_MCP_NAMESPACE, ManagedMcpFailureSchema, ManagedMcpRequestSchema
   from '@foreman-code/contracts/managed-mcp-channel'
 import { HarnessMcpPlanSchema, type HarnessMcpManagedInput, type HarnessMcpPlan, type HarnessMcpReconcileInput }
   from '@foreman-code/contracts/management'
-import { writeDurableFile } from '../../shared/durableFile.js'
+import { syncNativeConfigDirectory } from './nativeConfigFiles.js'
 import { appMcpNeedsMigration, assertManagedChange, expectedMcpUserFingerprint, fingerprint, managedChange, managedEnableChange,
   managedStatus, mcpUserFingerprint, publicMcpList, record, type NativeMcpAdapter } from './nativeMcpCommon.js'
 import { APP_MCP_SERVER_NAME, appLauncherTokenName } from './appMcpLauncher.js'
@@ -45,17 +46,23 @@ export class WorkerManagedMcp {
   }
   private async save(key: string, record: z.infer<typeof RecordSchema>) {
     const file = this.path(key)
-    await writeDurableFile(file, JSON.stringify(record), { temporaryPath: `${file}.${randomUUID()}` })
+    await mkdir(join(this.options.directory, 'managed-mcp'), { recursive: true, mode: 0o700 })
+    const temporary = `${file}.${randomUUID()}`
+    const handle = await open(temporary, 'wx', 0o600)
+    try { await handle.writeFile(JSON.stringify(record)); await handle.sync() }
+    finally { await handle.close() }
+    await rename(temporary, file)
+    await syncNativeConfigDirectory(file)
   }
   async list(harness: Harness, signal: AbortSignal) {
     const snapshot = await this.options.adapters[harness].read(signal)
-    return { ...publicMcpList(snapshot), presets: { graphql: managedStatus(snapshot, 'graphql'),
+    return { ...publicMcpList(snapshot), presets: { [INSTALLATION_NAMES.mcp.server]: managedStatus(snapshot, INSTALLATION_NAMES.mcp.server),
       linear: managedStatus(snapshot, 'linear') as Exclude<ReturnType<typeof managedStatus>, 'legacy'> } }
   }
   async detect(harness: Harness, signal: AbortSignal): Promise<McpDetection> {
     if (this.options.inspect) return McpDetectionSchema.parse(await this.options.inspect(harness, signal))
     const snapshot = await this.options.adapters[harness].read(signal)
-    const status = managedStatus(snapshot, 'graphql')
+    const status = managedStatus(snapshot, INSTALLATION_NAMES.mcp.server)
     const name = APP_MCP_SERVER_NAMES.find(server => Object.hasOwn(snapshot.user, server)
       || Object.hasOwn(snapshot.effective, server)) ?? APP_MCP_SERVER_NAME
     const entry = record(snapshot.effective[name] ?? snapshot.user[name])
@@ -72,7 +79,7 @@ export class WorkerManagedMcp {
   }
   private async applyOnce(input: HarnessMcpManagedInput, requestedBy: string, signal: AbortSignal,
     assertCurrent: () => void): Promise<HarnessMcpPlan> {
-    if (input.preset !== 'graphql') throw new DomainError('MCP_PRESET_UNAVAILABLE', 'Paired devices manage Foreman Code MCP only.', 409)
+    if (input.preset !== INSTALLATION_NAMES.mcp.server) throw new DomainError('MCP_PRESET_UNAVAILABLE', 'Paired devices manage Foreman Code MCP only.', 409)
     const key = `${requestedBy}:${input.harness}:${input.commandId}`
     const hash = fingerprint(input)
     const previous = await this.read(key)
@@ -160,14 +167,14 @@ export class WorkerManagedMcp {
       try {
         await this.options.prepare?.(harness)
         const snapshot = await this.options.adapters[harness].read(signal)
-        const status = managedStatus(snapshot, 'graphql')
+        const status = managedStatus(snapshot, INSTALLATION_NAMES.mcp.server)
         const migrate = appMcpNeedsMigration(snapshot)
         if ((status === 'installed' || status === 'disabled') && !migrate) continue
         if (status !== 'missing' && status !== 'legacy' && !migrate) {
           throw new DomainError('APP_MCP_SETUP_FAILED',
             'Foreman Code MCP has custom or inherited configuration. Inspect its native connection settings.', 409)
         }
-        const result = await this.applyOnce({ harness, preset: 'graphql', installed: true,
+        const result = await this.applyOnce({ harness, preset: INSTALLATION_NAMES.mcp.server, installed: true,
           commandId: `ready-${randomUUID()}`, expectedRevision: snapshot.revision },
         'paired-device', signal, () => signal.throwIfAborted())
         if (result.status !== 'applied') throw new DomainError('APP_MCP_SETUP_FAILED', result.error ?? 'Managed MCP setup failed.', 409)

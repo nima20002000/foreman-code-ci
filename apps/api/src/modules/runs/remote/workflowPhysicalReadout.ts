@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { sourceWorkingTreeComponents, sourceWorkingTreePath } from '../../sources/index.js'
 import { isDeepStrictEqual } from 'node:util'
 import { constants } from 'node:fs'
@@ -143,7 +144,7 @@ export async function assertOriginalPhysicalDirectories(input:{source:RemoteWork
         if(await realpath(runtimeLeaf.canonicalRuntimeDirectory)!==runtimeLeaf.canonicalRuntimeDirectory
           ||commandInputHash(await identity(directory)).slice('sha256:'.length)!==runtimeLeaf.directoryIdentityHash)return unavailable()
         check()
-        const marker=await open(anchored(directory,'.graphql-workflow-runtime.json'),constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK)
+        const marker=await open(anchored(directory,INSTALLATION_NAMES.paths.workflowRuntime),constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK)
         try {
           check()
           const stat=await marker.stat()

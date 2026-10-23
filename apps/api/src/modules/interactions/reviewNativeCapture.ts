@@ -1,6 +1,5 @@
 import type { HarnessExecution, NativeHarnessEvent, NativeSessionReference, PendingNativeInteraction, ReviewJob } from '@foreman-code/contracts'
 import { frozenJsonCopy } from '../../shared/deepFreeze.js'
-import type { NativeCaptureLane } from '../../shared/nativeCapture.js'
 import { REMOTE_NATIVE_SOURCE_LIMIT } from '@foreman-code/contracts/remote-workflow-physical'
 import type { NativeHistory } from '../harnesses/port.js'
 import { DomainError } from '../errors.js'
@@ -35,7 +34,7 @@ export interface CapturedReviewNativeSource {
   job: ReviewJob
   lifetimeGeneration: number
   closureGeneration: string
-  lane: NativeCaptureLane
+  lane: { id: string; token: string; connectionGeneration: number; providerId: string | null }
   source: ReviewOriginalNativeSource
   observedAt: string
   assertCurrent(): void

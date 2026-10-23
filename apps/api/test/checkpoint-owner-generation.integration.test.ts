@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { emptyCheckpoint } from '@langchain/langgraph-checkpoint'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { ApprovalPostgresSaver } from '../src/modules/runs/approvalCheckpointSaver.js'
+import { ApprovalPostgresSaver } from '../src/infrastructure/approvalCheckpointSaver.js'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
 import { graphFixture } from './graph-composition-fixture.js'
 import { currentDatabase, postgresEnabled } from './helpers/database.js'

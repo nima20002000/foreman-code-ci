@@ -215,7 +215,7 @@ describe('Agent chat scoped Foreman MCP', () => {
   it('delivers the chat credential as the Foreman MCP header before a Run follow-up fork takes input', async () => {
     const f = fixture('agent-chat'), opened = queries(f)
     try {
-      const start = { ...f.start, environment: { agentId: 'agent', variables: { FOREMAN_CODE_MCP_TOKEN: 'second-turn-token', GRAPHQL_MCP_TOKEN: 'second-turn-token' } } }
+      const start = { ...f.start, environment: { agentId: 'agent', variables: { GRAPHQL_MCP_TOKEN: 'second-turn-token', } } }
       const forked = await f.manager.forkSession!(savedSession, start)
       expect(forked.nativeSessionId).toBe('recorded-fork')
       const resumed = opened.at(-1)!

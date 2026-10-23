@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -75,7 +76,7 @@ export async function workerDeliveryFixture() {
       start: async options => {
         if (options.applicationAccess) credentials.push(options.applicationAccess.token)
         return workerConversationSessionStart(binding, configuration, options.applicationAccess
-          ? { agentId: configuration.operatorId, variables: { FOREMAN_CODE_MCP_TOKEN: options.applicationAccess.token } } : undefined, options)
+          ? { agentId: configuration.operatorId, variables: { [INSTALLATION_NAMES.environment.MCP_TOKEN]: options.applicationAccess.token } } : undefined, options)
       },
       refreshApplicationAccess: async token => { credentials.push(token) },
     }),
@@ -93,7 +94,7 @@ export async function workerDeliveryFixture() {
   }
   const start = (correlationId: string, token = 'token-one'): NativeSessionStart => ({ kind: 'operator', configuration,
     correlationId, workingDirectory: binding.workingDirectory,
-    environment: { agentId: configuration.operatorId, variables: { FOREMAN_CODE_MCP_TOKEN: token } } })
+    environment: { agentId: configuration.operatorId, variables: { [INSTALLATION_NAMES.environment.MCP_TOKEN]: token } } })
   return { ...f, binding, configuration, journal, bridge, host, ports, inputs, frames, credentials, manager, start,
     creates: () => creates, maximumInputs: () => maximumInputs,
     control: (next: { hold?: boolean; denyAfterBind?: boolean; dropSessionCallback?: boolean; openSessionSettingsRejected?: boolean }) => {

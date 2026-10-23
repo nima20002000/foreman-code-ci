@@ -1,4 +1,4 @@
-import { verificationRuntimeFiles } from '../packages/verification-runner/runtime-files.mjs'
+import { INSTALLATION_NAMES } from '../packages/contracts/src/installationNames.mjs'
 import { createHash, randomBytes } from 'node:crypto'
 import { execFile, spawn } from 'node:child_process'
 import { chmod, copyFile, cp, lstat, mkdir, mkdtemp, open, readFile, readdir, readlink, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises'
@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { createConnection } from 'node:net'
-import { readProductEnvironment, resolveProductEnvironment } from '../packages/contracts/src/productEnvironment.mjs'
+import { readProductEnvironment } from '../packages/contracts/src/productEnvironment.mjs'
 import { productionMaintenanceKey } from '../packages/contracts/src/productionMaintenance.mjs'
 import { stageBundledBrowserRuntime, activateBrowserRuntime, rollbackBrowserRuntime, offlineBrowserRuntimeLifecycle,
   readBrowserRuntimeActivation, readInstalledBrowserRuntime, pruneBrowserRuntimeVersions,
@@ -287,9 +287,9 @@ export function productionIntegrationPaths(home, environment) {
   }
   return {
     units: join(config, 'systemd/user'),
-    desktop: join(data, 'applications/graphql-production.desktop'),
-    autostart: join(config, 'autostart/graphql-production.desktop'),
-    icon: join(data, 'icons/hicolor/scalable/apps/graphql-production.svg'),
+    desktop: join(data, INSTALLATION_NAMES.paths.productionDesktop),
+    autostart: join(config, INSTALLATION_NAMES.paths.productionAutostart),
+    icon: join(data, INSTALLATION_NAMES.paths.productionIcon),
   }
 }
 
@@ -315,8 +315,8 @@ StartLimitIntervalSec=0
 Type=exec
 Delegate=yes
 WorkingDirectory=@APP@/current/apps/api
-EnvironmentFile=@HOME@/.config/graphql-production/production.env
-Environment=FOREMAN_CODE_API_ENV_FILE=@HOME@/.config/graphql-production/production.env
+EnvironmentFile=@HOME@/${INSTALLATION_NAMES.paths.productionConfig}/production.env
+Environment=${INSTALLATION_NAMES.environment.API_ENV_FILE}=@HOME@/${INSTALLATION_NAMES.paths.productionConfig}/production.env
 # Keep SCRAM crypto responsive alongside overlapping eight-entry filesystem batches.
 Environment=UV_THREADPOOL_SIZE=32
 Environment=DATABASE_POOL_MAX=40
@@ -414,26 +414,26 @@ export function hasNativeTurnStarted(harness, execution, event) {
 }
 
 export function localProductionEnvironment(desktopHome, password) {
-  const current = join(desktopHome, '.local/lib/graphql-production/current')
-  const state = join(desktopHome, '.local/state/graphql-production')
-  const data = join(desktopHome, '.local/share/graphql-production')
+  const current = join(desktopHome, INSTALLATION_NAMES.paths.productionCurrent)
+  const state = join(desktopHome, INSTALLATION_NAMES.paths.productionState)
+  const data = join(desktopHome, INSTALLATION_NAMES.paths.productionData)
   return {
     NODE_ENV: 'production',
-    FOREMAN_CODE_LOCAL_PRODUCTION: '1',
+    [INSTALLATION_NAMES.environment.LOCAL_PRODUCTION]: '1',
     HOST: '127.0.0.1',
     PORT: '3041',
-    DATABASE_URL: `postgresql://graphql_production:${password}@127.0.0.1:55440/graphql_production`,
+    DATABASE_URL: `postgresql://${INSTALLATION_NAMES.database.production}:${password}@127.0.0.1:55440/${INSTALLATION_NAMES.database.production}`,
     // Existing database units invoke Compose directly with this spelling.
-    GRAPHQL_PRODUCTION_DB_PASSWORD: password,
-    FOREMAN_CODE_BROWSER_ORIGIN: 'http://127.0.0.1:3041',
-    FOREMAN_CODE_WEB_DIST: join(current, 'apps/web/dist'),
+    [INSTALLATION_NAMES.environment.PRODUCTION_DB_PASSWORD]: password,
+    [INSTALLATION_NAMES.environment.BROWSER_ORIGIN]: 'http://127.0.0.1:3041',
+    [INSTALLATION_NAMES.environment.WEB_DIST]: join(current, 'apps/web/dist'),
     WORKSPACE_STORAGE_ROOT: join(data, 'workspaces'),
     FILE_STORAGE_ROOT: join(data, 'files'),
     HARNESS_WORKSPACE_ROOT: join(state, 'runs'),
     BROWSER_STATE_DIRECTORY: state,
-    BROWSER_RUNTIME_ROOT: join(desktopHome, '.local/lib/graphql-production/browser-runtime'),
+    BROWSER_RUNTIME_ROOT: join(desktopHome, INSTALLATION_NAMES.paths.productionBrowserRuntime),
     // Native entries use one reviewed launcher; each credential selects its own app.
-    FOREMAN_CODE_APP_MCP_DIRECTORY: join(desktopHome, '.local/share/graphql/mcp'),
+    [INSTALLATION_NAMES.environment.APP_MCP_DIRECTORY]: join(desktopHome, INSTALLATION_NAMES.paths.mcpDirectory),
     LOG_DIR: join(state, 'logs'),
     XDG_CACHE_HOME: join(state, 'cache'),
     LANGGRAPH_CHECKPOINT_SCHEMA: 'langgraph',
@@ -727,24 +727,22 @@ export async function readEnvironment(path) {
 }
 
 export async function preserveOperatorConfiguration(path, previous, owned, validate) {
-  const canonicalName = key => key.replace(/^GRAPHQL_/, 'FOREMAN_CODE_')
-  const keepSetting = ([key]) => canonicalName(key) !== 'FOREMAN_CODE_DEV_BROWSER_ACCESS'
-  const managed = new Set(Object.keys(owned).map(canonicalName))
+  const keepSetting = ([key]) => canonicalName(key) !== INSTALLATION_NAMES.environment.DEV_BROWSER_ACCESS
+  const managed = new Set(Object.keys(owned))
   const previousSettings = Object.fromEntries(Object.entries(previous ?? {}).filter(keepSetting))
-  resolveProductEnvironment(previousSettings)
   let configuration
   try {
     configuration = JSON.parse(await readFile(path, 'utf8'))
   } catch (error) {
     if (error.code !== 'ENOENT') throw error
-    configuration = Object.fromEntries(Object.entries(previousSettings).filter(([key]) => !managed.has(canonicalName(key))))
+    configuration = Object.fromEntries(Object.entries(previousSettings).filter(([key]) => !managed.has(key)))
   }
   if (!configuration || typeof configuration !== 'object' || Array.isArray(configuration)) {
     throw new Error('Operator configuration must be an object of environment settings.')
   }
   configuration = Object.fromEntries(Object.entries(configuration).filter(keepSetting))
   for (const [key, value] of Object.entries(configuration)) {
-    if (managed.has(canonicalName(key))) {
+    if (managed.has(key)) {
       throw new Error(`${key} is managed by the installer; remove it from operator.json.`)
     }
     if (!/^[A-Z][A-Z0-9_]*$/.test(key) || typeof value !== 'string' || value.includes('\0')) {
@@ -752,7 +750,6 @@ export async function preserveOperatorConfiguration(path, previous, owned, valid
     }
   }
   const environment = { ...configuration, ...owned }
-  resolveProductEnvironment(environment)
   await validate(environment)
   await publish(path, JSON.stringify(configuration, null, 2) + '\n')
   return environment
@@ -927,7 +924,7 @@ async function pollProductionReady({ origin, expected, timeoutMs = 90_000, signa
       }
       const response = await fetch(`${origin}/health/ready`, { signal: AbortSignal.any([signal, AbortSignal.timeout(2000)]) })
       const health = await response.json()
-      if (response.ok && health.service === 'graphql-api' && health.checks?.database === 'ok'
+      if (response.ok && health.service === INSTALLATION_NAMES.protocol.apiService && health.checks?.database === 'ok'
         && health.checks?.checkpoints === 'ok') {
         const web = await fetch(`${origin}/workspaces`, { signal: AbortSignal.any([signal, AbortSignal.timeout(2000)]) })
         if (web.ok && (await web.text()).includes('/assets/') && await identityMatches()) return
@@ -942,8 +939,13 @@ async function pollProductionReady({ origin, expected, timeoutMs = 90_000, signa
 }
 
 export async function copyVerificationRuntime(source, release) {
-
-  for (const path of verificationRuntimeFiles) {
+  const paths = ['scripts/ci-watchdog.mjs', 'scripts/ci-progress-reporter.mjs',
+    'scripts/ci-test-results.mjs', 'scripts/dense-resources.mjs',
+    'scripts/verification-runner.mjs', 'scripts/verification-reports.mjs',
+    'scripts/integration-process.mjs', 'scripts/integration-capabilities.mjs',
+    'apps/worker/src/diagnostics.mjs', 'packages/contracts/src/verificationEnvironment.mjs',
+    'packages/contracts/src/integrationScheduling.mjs', 'packages/ci-protocol/src/testResults.mjs']
+  for (const path of paths) {
     const destination = join(release, path)
     await mkdir(dirname(destination), { recursive: true })
     await copyFile(join(source, path), destination)

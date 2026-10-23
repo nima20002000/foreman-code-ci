@@ -1,4 +1,4 @@
-import { verificationRuntimeFiles, verificationArtifactPath } from '../../../../packages/verification-runner/runtime-files.mjs';
+import { INSTALLATION_NAMES, standaloneInstallationSource } from '@foreman-code/contracts/installation-names'
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile, open } from 'node:fs/promises';
@@ -22,13 +22,15 @@ async function installedRuntimeFiles(offlineSeed) {
   const controlNames = ['Containerfile', 'corepack'];
   if (offlineSeed) controlNames.push('seed-policy.mjs', 'verification-policy.mjs', 'verification-observation.mjs');
   const entries = controlNames.map(name => ({ root: controls, name, destination: name }));
-  for (const path of verificationRuntimeFiles) {
-    const installedPath = bundled ? verificationArtifactPath(path) : path;
-    entries.push({ root: join(scripts, '..', dirname(installedPath)), name: basename(installedPath),
-      destination: verificationArtifactPath(path) });
+  for (const name of ['verification-runner.mjs', 'verify-repository.mjs', 'verification-reports.mjs', 'integration-process.mjs', 'integration-capabilities.mjs']) {
+    entries.push({ root: scripts, name, destination: `verification/${name}` });
+  }
+  for (const path of ['apps/worker/src/diagnostics.mjs', 'packages/contracts/src/verificationEnvironment.mjs',
+    'packages/contracts/src/integrationScheduling.mjs']) {
+    entries.push({ root: join(scripts, '..', dirname(path)), name: basename(path), destination: path });
   }
   return Promise.all(entries.map(async entry => ({ ...entry,
-    bytes: await readSeedFile(entry.root, entry.name, 1024 * 1024) })));
+    bytes: Buffer.from(standaloneInstallationSource((await readSeedFile(entry.root, entry.name, 1024 * 1024)).toString('utf8'))) })));
 }
 
 async function committedDependencies(repository, commit) {
@@ -135,7 +137,7 @@ export async function buildCiRuntimeContext({ repository, commit = 'HEAD', outpu
       releaseAge: { minimumMinutes: 2880, strict: true, rejectMissingTime: true, packages: seed.packages.length } };
   }
   if (unitCodex) receipt.unitCodex = { version: unitCodex.tool.version, binarySha256: unitCodex.tool.binarySha256,
-    executable: '/opt/graphql-ci/tools/codex', review: unitCodex.tool.review };
+    executable: INSTALLATION_NAMES.paths.ciCodex, review: unitCodex.tool.review };
   await writeFile(join(output, 'context-receipt.json'), `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
   return receipt;
 }
