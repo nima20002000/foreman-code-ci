@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { SendOperatorMessageRequestSchema, type SendOperatorMessageRequest, type OperatorChatSettings } from '@foreman-code/contracts'
 import type { MessageAttachmentRef } from '@foreman-code/contracts/files'
 import { sameAttachmentRefs } from '../conversations/chatAttachmentAttempt'
@@ -6,7 +5,7 @@ import { readStoredCommand, withCommandLock, writeStoredCommand } from '../../sh
 import { protectedKey } from '../../shared/api/protectedChatStorage'
 import { assertSession, sessionGeneration, sessionIsSwitching, sessionSignal, SessionChangedError } from '../../shared/api/sessionBoundary'
 
-const outboxLock = INSTALLATION_NAMES.browserStorage.operatorOutbox
+const outboxLock = 'graphql.operator-outbox.v1'
 const storageError = 'Durable message storage is unavailable. Sending is disabled to avoid repeating a command after a lost response.'
 
 type AttemptLedger = { uncertain: boolean; rejected: number; inFlight: string[] }

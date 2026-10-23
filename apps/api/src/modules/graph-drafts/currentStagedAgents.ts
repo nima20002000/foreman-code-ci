@@ -1,6 +1,5 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import type pg from 'pg'
-import { AgentSchema, AgentConfigurationVersionSchema, agentTemplateForRole, newAgentForemanTools, projectHarnessEffort } from '@foreman-code/contracts'
+import { AgentSchema, AgentConfigurationVersionSchema, agentTemplateForRole, newAgentGraphqlTools, projectHarnessEffort } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { type CurrentEditSaveInput, sameWorkflowValue } from '@foreman-code/contracts/current'
 import { requireAuthorization } from '../access/index.js'
@@ -20,11 +19,11 @@ export function authorizeStagedAgents(principal: ManagementPrincipal, input: Pic
 /** Resolve creation-only templates once before a private intent is retained.
  * The normalized payload then survives retries and later template changes. */
 export async function resolveNewStagedAgentDefaults(client: pg.PoolClient, input: CurrentEditSaveInput): Promise<CurrentEditSaveInput> {
-  if (!input.stagedAgents?.some(item => item.baseRevision === null && item.agent.productRole && item.agent[INSTALLATION_NAMES.fields.agentTools] === undefined)) return input
+  if (!input.stagedAgents?.some(item => item.baseRevision === null && item.agent.productRole && item.agent.graphqlTools === undefined)) return input
   const defaults = await readAgentDefaultsSetting(client)
-  return { ...input, stagedAgents: input.stagedAgents.map(item => item.baseRevision === null && item.agent.productRole && item.agent[INSTALLATION_NAMES.fields.agentTools] === undefined
-    ? { ...item, agent: { ...item.agent, [INSTALLATION_NAMES.fields.agentTools]: agentTemplateForRole(defaults.value, item.agent.productRole)[INSTALLATION_NAMES.fields.agentTools]
-      ?? newAgentForemanTools(item.agent.productRole) } } : item) }
+  return { ...input, stagedAgents: input.stagedAgents.map(item => item.baseRevision === null && item.agent.productRole && item.agent.graphqlTools === undefined
+    ? { ...item, agent: { ...item.agent, graphqlTools: agentTemplateForRole(defaults.value, item.agent.productRole).graphqlTools
+      ?? newAgentGraphqlTools(item.agent.productRole) } } : item) }
 }
 /** Read-only planning. Reserved IDs derive from the immutable save command;
  * no Agent/configuration row is inserted until publication admission succeeds. */
@@ -78,7 +77,7 @@ export async function prepareCurrentStagedAgents(client: pg.PoolClient, principa
     const agent = AgentSchema.parse({ ...old, id: item.agent.id, name: item.agent.name, description: item.agent.description,
       role: item.agent.role, productRole: configuration.productRole, harness: harness.harness, harnessConfiguration: harness,
       model: harness.model, effort: projectHarnessEffort(harness), fastMode: harness.harness === 'codex' ? harness.serviceTier === 'priority' : undefined,
-      prompt: configuration.prompt, assignedSkills: configuration.assignedSkills, [INSTALLATION_NAMES.fields.agentTools]: configuration[INSTALLATION_NAMES.fields.agentTools], configurationVersionId: id,
+      prompt: configuration.prompt, assignedSkills: configuration.assignedSkills, graphqlTools: configuration.graphqlTools, configurationVersionId: id,
       nativeTools: configuration.nativeTools,
       harnessProfileSelection: configuration.harnessProfileSelection,
       createdAt: old?.createdAt ?? now, updatedAt: now })

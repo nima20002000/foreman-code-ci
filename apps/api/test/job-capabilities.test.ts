@@ -6,7 +6,7 @@ import { ScheduleOperatorCapabilitiesSchema } from '../src/mcp/operator/tools/wo
 import { JOB_TOOLS, unavailableJobToolCall } from '../src/mcp/operator/tools/jobs.js'
 import { JOB_RUNTIME_TOOLS, unavailableJobRuntimeToolCall } from '../src/mcp/operator/tools/jobRuntimeProfiles.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { createForemanMcpServer, roleDeniedToolCall } from '../src/mcp/unified/server.js'
+import { createGraphqlMcpServer, roleDeniedToolCall } from '../src/mcp/unified/server.js'
 import { operatorCatalogNames } from './support/operatorCatalog.js'
 
 const actions:ManagementAction[]=['job_definitions:read','job_definitions:write','jobs:start','jobs:read','jobs:cancel','job_logs:read','job_artifacts:read','sources:read','source_roots:read',
@@ -39,7 +39,7 @@ async function fixture(actor=principal(),mounted=true,profiles=true,options: { e
     } : {}),
   } as unknown as OperatorServices
   const context={principal:actor,services}
-  const server=await createForemanMcpServer({role:'operator',principal:actor,operator:services})
+  const server=await createGraphqlMcpServer({role:'operator',principal:actor,operator:services})
   const [clientTransport,serverTransport]=InMemoryTransport.createLinkedPair()
   await server.connect(serverTransport)
   const client=new Client({name:'job-capability-tests',version:'1'})
@@ -206,7 +206,7 @@ describe('Job capability summary matches mounted Operator tools',()=>{
   })
   it.each(['coder','orchestrator'] as const)('keeps %s workflow Agents outside Job-start authority',async role=>{
     const f=await fixture(),worker={...principal(),audience:'worker' as const,agentId:'agent-fixture'}
-    const server=await createForemanMcpServer({role,principal:worker,operator:f.context.services})
+    const server=await createGraphqlMcpServer({role,principal:worker,operator:f.context.services})
     const [clientTransport,serverTransport]=InMemoryTransport.createLinkedPair()
     await server.connect(serverTransport)
     const client=new Client({name:`job-discovery-${role}`,version:'1'})

@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { createRequire } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -83,7 +82,7 @@ async function main() {
   const db = createDatabase(config.database)
   close = () => db.close()
   ownedTestDatabaseUrl()
-  await assertTestDatabase(db.pool, { directory: state, token: process.env[INSTALLATION_NAMES.environment.TEST_OWNER],
+  await assertTestDatabase(db.pool, { directory: state, token: process.env.FOREMAN_CODE_TEST_OWNER,
     name: process.env.ENG07_DATABASE, databaseUrl: process.env.TEST_DATABASE_URL })
   const identity = (await db.pool.query('select current_database() as database, current_schema() as schema')).rows[0]
   if (identity.database !== process.env.ENG07_DATABASE || identity.schema !== 'eng07') {

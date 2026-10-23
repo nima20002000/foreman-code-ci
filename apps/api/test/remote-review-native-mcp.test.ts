@@ -17,7 +17,7 @@ it('exposes user MCP ownership and persists managed changes through the native f
   await mkdir(home, { recursive: true })
   await writeFile(join(home, 'config.toml'), '')
   vi.stubEnv('CODEX_HOME', home)
-  vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', join(directory, 'mcp'))
+  vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', join(directory, 'mcp'))
   try {
     const provider = await createRemoteReviewProvider(join(directory, 'provider'), launcher)
     const adapter = new CodexMcpConnections(provider.binary, directory, undefined, async () => {})

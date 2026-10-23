@@ -55,7 +55,7 @@ function fixture(commandDelay = 15_000) {
       await phase(name, commandDelay, signal)
       if (name === 'graphql') return { exitCode: 1, stdout: '', stderr: "Error: No MCP server named 'graphql' found." }
       return { exitCode: 0, stderr: '', stdout: JSON.stringify({ name, enabled: true,
-        transport: { type: 'streamable_http', url: endpoint, bearer_token_env_var: 'GRAPHQL_MCP_TOKEN' } }) }
+        transport: { type: 'streamable_http', url: endpoint, bearer_token_env_var: 'FOREMAN_CODE_MCP_TOKEN' } }) }
     },
     assertUnchanged: forbidden, qualifyModel: forbidden, transport: forbidden, withDiagnostics: forbidden,
     id: () => 'recorded', now: () => new Date(), schedule: setTimeout, cancelTimer: clearTimeout,
