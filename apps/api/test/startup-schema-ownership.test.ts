@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { loadConfig } from '../src/config.js'
 import { createDatabase } from '../src/infrastructure/database.js'
-import { createCheckpointStore } from '../src/infrastructure/checkpoints.js'
+import { createCheckpointStore } from '../src/composition/checkpoints.js'
 import { OperatorRuntimeOwner } from '../src/infrastructure/operatorRuntimeOwner.js'
 import { OperatorChatService } from '../src/modules/conversations/operatorChat.js'
 import { AutomaticReviewService } from '../src/modules/interactions/automaticReview.js'

@@ -1,5 +1,6 @@
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import type { RemoteNativeIdentity } from '@foreman-code/contracts/remote-execution'
+import type { NativeCaptureLane } from '../../../shared/nativeCapture.js'
 import { isDeepStrictEqual } from 'node:util'
 import { REMOTE_NATIVE_SOURCE_LIMIT } from '@foreman-code/contracts/remote-workflow-physical'
 import { HarnessExecutionSchema, NativeSessionReferenceSchema, type HarnessExecution, type NativeSessionReference } from '@foreman-code/contracts'
@@ -45,7 +46,7 @@ export interface RemoteWorkflowMainLifetime {
   session: NativeSessionReference
   lifetimeGeneration: number
   closureGeneration: string
-  lane: { id: string; token: string; connectionGeneration: number; providerId: string | null } | null
+  lane: NativeCaptureLane | null
   review?: { jobId: string; correlationId: string }
   assertCurrent(): void
 }

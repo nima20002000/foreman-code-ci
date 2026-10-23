@@ -1,6 +1,7 @@
 import type { HarnessExecution, HarnessNativeEvent, NativeSessionReference } from '@foreman-code/contracts'
 import { canonicalGraphJson } from '@foreman-code/contracts/current'
 import { frozenJsonCopy } from '../../shared/deepFreeze.js'
+import type { NativeCaptureLane } from '../../shared/nativeCapture.js'
 import { REMOTE_NATIVE_SOURCE_LIMIT } from '@foreman-code/contracts/remote-workflow-physical'
 import type { NativeHistory } from '../harnesses/port.js'
 import { DomainError } from '../errors.js'
@@ -42,9 +43,7 @@ export interface WorkflowNativeCapture {
   readonly kind: 'live' | 'recovery'
   readonly lifetimeGeneration: number
   readonly closureGeneration: string | null
-  readonly lane: null | {
-    id: string; token: string; connectionGeneration: number; providerId: string | null
-  }
+  readonly lane: NativeCaptureLane | null
   assertCurrent(): void
 }
 export interface WorkflowNativeCapturePort {

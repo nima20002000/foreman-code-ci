@@ -12,7 +12,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import Fastify, {type FastifyInstance} from 'fastify'
 import { beforeAll, afterAll, describe, it, expect } from 'vitest'
 import { deviceIdentityMigration } from '../src/infrastructure/deviceIdentityMigration.js'
-import { pairingProof, publicKeyFingerprint } from '@foreman-code/contracts/device-identity-node'
+import { pairingProof, publicKeyFingerprint } from '@foreman-code/contracts-node/device-identity-node'
 import { PostgresDeviceAccessService } from '../src/modules/devices/access.js'
 import { DeviceEndpoint } from '../src/modules/devices/deviceEndpoint.js'
 import { signMainIdentityProof } from '../src/modules/devices/mainIdentity.js'

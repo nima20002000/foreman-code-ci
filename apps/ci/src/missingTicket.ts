@@ -1,6 +1,6 @@
 import type pg from 'pg'
 import { CiRunRecordSchema } from '@foreman-code/contracts'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '@foreman-code/contracts-node/server-kit'
 import { ciGroupState } from './parts.js'
 import type { CiRequester } from './requestSharing.js'
 

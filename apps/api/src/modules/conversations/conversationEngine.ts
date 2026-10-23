@@ -1,5 +1,5 @@
 import type { ExecutionResult, DeliveryTarget, EngineChatReadback } from '@foreman-code/contracts'
-import { errorMessage } from '@foreman-code/contracts/server-kit'
+import { errorMessage } from '@foreman-code/contracts-node/server-kit'
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import { DomainError } from '../errors.js'
 import { NativeDeliveryError } from '../harnesses/errors.js'

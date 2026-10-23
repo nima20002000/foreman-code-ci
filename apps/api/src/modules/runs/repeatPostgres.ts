@@ -56,6 +56,7 @@ import { WorkExecutionFailure } from './workExecutionFailure.js'
 import { admitHierarchyGroupLocked, type HierarchyGroupAdmission } from './hierarchyGroupAdmission.js'
 import { markHierarchyContinuationStartedLocked } from './hierarchyGroupSettlement.js'
 import { isHierarchyWorkflow } from './hierarchyResults.js'
+import { declaresRepeatBlocks, usesWorkHandoffGraph } from './workflowRunMode.js'
 import { assertHierarchyDirectionReleasedLocked, readHierarchyDirectionForSourceLocked,
   reserveHierarchyDirectionLocked } from './hierarchyDirection.js'
 import { hierarchyCompletionLocked } from './hierarchyCompletion.js'
@@ -84,7 +85,8 @@ import {
   type RepeatInputBinding, type RepeatNodeRef,
   type RepeatResolution, type RepeatScope, type RepeatSource,
 } from './repeatResolution.js'
-import { CLOSED_RUN_STATES_SQL, isClosedRunState } from './runState.js'
+import { isClosedRunState } from './runState.js'
+import * as repeatQueries from './repeatQueries.js'
 
 export { readRepeatExecutionLocked, type StoredRepeatExecution } from './repeatExecutionRead.js'
 
@@ -168,9 +170,10 @@ const ResolutionSchema = z.object({
 export async function readRepeatOccurrences(sql: SqlQuery, scope: RepeatScope, blockId: string,
   afterIndex = 0, limit = 100): Promise<RepeatOccurrenceV1[]> {
   if (!Number.isInteger(limit) || limit < 1 || limit > 1000 || !Number.isInteger(afterIndex) || afterIndex < 0) return repeatConflict('REPEAT_READ_BOUND_INVALID')
-  const rows = await sql.query<{ record: unknown }>(`select record from run_repeat_occurrences
-    where run_id=$1 and workspace_id=$2 and workflow_id=$3 and workflow_version_id=$4 and block_id=$5 and occurrence_index>$6
-    order by occurrence_index limit $7`, [scope.runId, scope.workspaceId, scope.workflowId, scope.workflowVersionId, blockId, afterIndex, limit])
+  const rows = await repeatQueries.readOccurrencePage(sql, {
+    runId: scope.runId, workspaceId: scope.workspaceId, workflowId: scope.workflowId,
+    workflowVersionId: scope.workflowVersionId, blockId, afterIndex, limit
+  })
   return rows.rows.map((row) => {
     const value = RepeatOccurrenceV1Schema.parse(row.record)
     if (!sameRepeatValue(value.identity.scope, scope) || value.identity.blockId !== blockId
@@ -180,10 +183,10 @@ export async function readRepeatOccurrences(sql: SqlQuery, scope: RepeatScope, b
 }
 export async function readRepeatDecision(sql: SqlQuery, scope: RepeatScope,
   occurrenceId: string): Promise<RepeatDecisionMetadataV1 | undefined> {
-  const rows = await sql.query<{ record: unknown }>(`select d.record - 'resultData' as record from run_repeat_decisions d
-    join run_repeat_occurrences o on o.occurrence_id=d.occurrence_id
-    where o.occurrence_id=$1 and o.run_id=$2 and o.workspace_id=$3 and o.workflow_id=$4 and o.workflow_version_id=$5`,
-  [occurrenceId, scope.runId, scope.workspaceId, scope.workflowId, scope.workflowVersionId])
+  const rows = await repeatQueries.readDecisionMetadata(sql, {
+    occurrenceId, runId: scope.runId, workspaceId: scope.workspaceId, workflowId: scope.workflowId,
+    workflowVersionId: scope.workflowVersionId
+  })
   if (!rows.rows[0]) return undefined
   const value = RepeatDecisionMetadataV1Schema.parse(rows.rows[0].record)
   if (!sameRepeatValue(value.occurrence.identity.scope, scope) || value.occurrence.identity.occurrenceId !== occurrenceId) return repeatConflict('REPEAT_SCOPE_CONFLICT')
@@ -212,12 +215,7 @@ export class RepeatRunRepository {
   private async transaction<T>(work: (context: Context) => Promise<T>, options: { readOnly?: boolean } = {}): Promise<T> {
     return this.owner.oneShotConnection().transaction(async (sql) => {
       this.owner.assertOwned()
-      // Serialize Run mutations without excluding CI activity's parent-key read.
-      const lock = options.readOnly ? '' : 'for no key update of r'
-      const found = await sql.query<{ run: unknown; version: unknown; stopped: boolean; cleanup: boolean; state: string; now: string }>(
-        `select r.record as run,v.record as version,r.stop_requested_at is not null as stopped,
-          r.execution_state as state,exists(select 1 from run_cleanup_intents c where c.run_id=r.id and c.pending) as cleanup,transaction_timestamp()::text as now
-         from runs r join workflow_versions v on v.id=r.workflow_version_id where r.id=$1 ${lock}`, [this.owner.runId])
+      const found = await repeatQueries.readRunSnapshot(sql, this.owner.runId, options.readOnly)
       const row = found.rows[0]
       if (!row) return repeatConflict('RUN_NOT_FOUND')
       const version = WorkflowVersionCurrentSchema.parse(row.version)
@@ -268,10 +266,8 @@ export class RepeatRunRepository {
           : { kind: 'slot', runId: execution.runId, workflowVersionId: context.version.id, slotId: stored.slotId }
         if (native && native.nativeSessionId !== execution.nativeSessionId) return repeatConflict('CHAT_NATIVE_TARGET_CHANGED')
       } else {
-        const group = (await context.sql.query<{ group_id: string; parent_execution_id: string; state: string }>(
-          `select group_id,parent_execution_id,state from run_hierarchy_groups where run_id=$1
-            and parent_activation_id=$2 and parent_node_id=$3 for update`,
-          [context.scope.runId, target.waitingActivationId, target.agent.workflowNodeId])).rows[0]
+        const group = (await repeatQueries.readWaitingHierarchyGroup(context.sql,
+          context.scope.runId, target.waitingActivationId, target.agent.workflowNodeId)).rows[0]
         if (!group) return repeatConflict('COORDINATOR_UNAVAILABLE')
         const source = await this.execution(context, group.parent_execution_id)
         if (!source.accepted || source.execution.state !== 'completed' || !source.execution.nativeSessionId) {
@@ -381,7 +377,7 @@ export class RepeatRunRepository {
         assertActive: () => this.active(context),
       }, stored.workActivationId)
       assertWorkActivationReplay(stored, input)
-      if (context.hooks.run.resultProtocol || context.version.definition.hierarchy) {
+      if (context.hooks.run.resultProtocol || isHierarchyWorkflow(context.version)) {
         return (await readWorkResultContextLocked(context, stored.workActivationId, stored.input,
           context.hooks.run.resultProtocol))!
       }
@@ -414,22 +410,17 @@ export class RepeatRunRepository {
     const activationId = input.work.activation.activationId
     const ref: RepeatNodeRef = { nodeId: input.work.activation.workflowNodeId, occurrence: null }
     const slotId = workActivationSlotId(context.scope.runId, activationId)
-    const previous = (await context.sql.query<{ execution_id: string }>(
-      `select execution_id from run_repeat_executions where run_id=$1 and slot_id=$2
-        order by technical_attempt desc limit 1`, [context.scope.runId, slotId])).rows[0]
+    const previous = (await repeatQueries.readLatestWorkExecution(context.sql, context.scope.runId, slotId)).rows[0]
     if (previous) {
       await this.recordedEffect(context, 'input.bind', previous.execution_id)
       const stored = await this.execution(context, previous.execution_id)
       assertWorkActivationReplay(stored, input)
       return { execution: stored.execution, reused: true }
     }
-    const state = (await context.sql.query<{ state: string }>(
-      'select state from run_work_activations where run_id=$1 and activation_id=$2 for update',
-      [context.scope.runId, activationId])).rows[0]
+    const state = (await repeatQueries.readWorkActivationState(context.sql, context.scope.runId, activationId)).rows[0]
     if (state?.state !== 'queued' && !(held && state?.state === 'waiting')) return repeatConflict('WORK_ACTIVATION_NOT_QUEUED')
     // One execution of a node at a time: graph work waits for the node's running interval check.
-    const checking = await context.sql.query(`select 1 from harness_executions where run_id=$1 and workflow_node_id=$2
-      and record #> '{input,tick}' is not null and record->>'state'<>'completed' limit 1`, [context.scope.runId, ref.nodeId])
+    const checking = await repeatQueries.readRunningIntervalCheck(context.sql, context.scope.runId, ref.nodeId)
     if (checking.rowCount) return repeatConflict('INTERVAL_CHECK_RUNNING')
     const execution = HarnessExecutionSchema.parse(candidate(ref.nodeId))
     this.assertCandidate(context, ref, execution, 1)
@@ -439,9 +430,10 @@ export class RepeatRunRepository {
     await this.effect(context, 'input.bind', queued.id,
       { ref, queued, inputDigest, bindings: [], workActivationId: activationId },
       [{ type: 'repeat.execution.queued', ref, execution: repeatExecutionIdentity(queued), inputDigest }], async () => {
-        await context.sql.query(`insert into run_repeat_slots(slot_id,run_id,occurrence_id,work_activation_id,
-          workflow_node_id,input_json,input_digest) values($1,$2,null,$3,$4,$5,$6)`,
-        [slotId, context.scope.runId, activationId, ref.nodeId, canonicalGraphJson(input, 4 * 1024 * 1024), inputDigest])
+        await repeatQueries.insertWorkSlot(context.sql, {
+          slotId, runId: context.scope.runId, activationId, nodeId: ref.nodeId,
+          inputJson: canonicalGraphJson(input, 4 * 1024 * 1024), inputDigest
+        })
         await this.insertExecution(context, ref, queued, slotId, inputDigest, [], null, activationId)
         await markWorkNoticePendingLocked(context, activationId, queued.id)
         if (input.work.kind === 'hierarchy_group') {
@@ -455,7 +447,7 @@ export class RepeatRunRepository {
    * technical retry stays in the same activation and never reserves a handoff. */
   acceptWorkTerminal(executionId: string, candidate: (attempt: number) => HarnessExecution): Promise<WorkTerminalAcceptance> {
     return this.transaction<WorkTerminalAcceptance | { kind: 'control_failed'; result: ExecutionResult }>(async (context) => {
-      if (!context.version.definition.handoffs) return repeatConflict('WORK_POLICY_PIN_CONFLICT')
+      if (!usesWorkHandoffGraph(context.version)) return repeatConflict('WORK_POLICY_PIN_CONFLICT')
       const stored = await this.execution(context, executionId)
       if (!stored.workActivationId) return repeatConflict('WORK_ACTIVATION_MISSING')
       await this.recordedEffect(context, 'input.bind', executionId)
@@ -473,9 +465,7 @@ export class RepeatRunRepository {
             activationId: direction.heldActivationId, replayed: true }
         }
       }
-      const prior = (await context.sql.query<{ result_digest: string; result_json: string }>(
-        'select result_digest,result_json from run_work_results where run_id=$1 and execution_id=$2',
-        [context.scope.runId, executionId])).rows[0]
+      const prior = (await repeatQueries.readWorkResult(context.sql, context.scope.runId, executionId)).rows[0]
       if (prior) {
         if (!stored.accepted || stored.execution.state !== 'completed'
           || prior.result_json !== canonicalGraphJson(stored.execution.result, 64 * 1024)
@@ -489,8 +479,7 @@ export class RepeatRunRepository {
       }
       this.active(context)
       await this.settleAttempts(context, { kind: 'slot', id: stored.slotId, throughAttempt: stored.execution.attempt })
-      const retry = (await context.sql.query<{ execution_id: string }>(
-        'select execution_id from run_repeat_executions where previous_execution_id=$1', [executionId])).rows[0]
+      const retry = (await repeatQueries.readSuccessorExecution(context.sql, executionId)).rows[0]
       if (retry) {
         await this.recordedEffect(context, 'input.bind', retry.execution_id)
         const next = await this.execution(context, retry.execution_id)
@@ -537,21 +526,20 @@ export class RepeatRunRepository {
         { execution: stored.execution, resultDigest, workActivationId: stored.workActivationId },
         [{ type: 'repeat.result.accepted', ref: stored.ref,
           execution: repeatExecutionIdentity(stored.execution), resultDigest }], async () => {
-          await context.sql.query(`insert into run_repeat_results(execution_id,run_id,occurrence_id,result_json,result_digest,accepted_at)
-            values($1,$2,null,$3,$4,$5)`, [executionId, context.scope.runId, resultJson, resultDigest, context.now])
-          await context.sql.query(`insert into run_work_results(execution_id,run_id,activation_id,result_json,result_digest,accepted_at)
-            values($1,$2,$3,$4,$5,$6)`, [executionId, context.scope.runId,
-            stored.workActivationId, resultJson, resultDigest, context.now])
-          await context.sql.query('update harness_executions set accepted=true where id=$1 and run_id=$2',
-            [executionId, context.scope.runId])
+          await repeatQueries.insertWorkRepeatResult(context.sql, {
+            executionId, runId: context.scope.runId, resultJson, resultDigest, acceptedAt: context.now
+          })
+          await repeatQueries.insertWorkResult(context.sql, {
+            executionId, runId: context.scope.runId, activationId: stored.workActivationId, resultJson, resultDigest,
+            acceptedAt: context.now
+          })
+          await repeatQueries.acceptExecution(context.sql, executionId, context.scope.runId)
           // Input still queued for this finished turn waits for the Agent's next turn; the Run's end closes the rest.
-          await context.sql.query(`update run_work_activations set state='completed'
-            where run_id=$1 and activation_id=$2`, [context.scope.runId, stored.workActivationId])
+          await repeatQueries.completeWorkActivation(context.sql, context.scope.runId, stored.workActivationId)
           await markWorkNoticeDeliveredLocked(context, stored.workActivationId!, executionId)
-          await context.sql.query(`insert into run_activity(run_id,source,kind,harness_execution_id,occurred_at,payload)
-            values($1,'backend','work_result_accepted',$2,$3,$4::jsonb)`, [context.scope.runId, executionId,
-            context.now, canonicalGraphJson({ activationId: stored.workActivationId,
-              resultDigest, workflowNodeId: stored.ref.nodeId })])
+          await repeatQueries.insertWorkResultActivity(context.sql,
+            context.scope.runId, executionId, context.now,
+            canonicalGraphJson({ activationId: stored.workActivationId, resultDigest, workflowNodeId: stored.ref.nodeId }))
         })
       if (isHierarchyWorkflow(context.version)
         && (workResult.routing.kind === 'delegate' || workResult.routing.kind === 'request')) {
@@ -614,8 +602,7 @@ export class RepeatRunRepository {
       if (finalControlAdmissionRefusal(error)) throw new ControlAdmissionFailure((error as { code: string }).code, error)
       throw error
     }
-    const rows = await context.sql.query<{ record: unknown }>(
-      'select record from run_repeat_bindings where recipient_execution_id=$1 order by ordinal', [stored.execution.id])
+    const rows = await repeatQueries.readBindings(context.sql, stored.execution.id)
     const bindings = rows.rows.map(row => {
       const binding = BindingSchema.parse(row.record) as RepeatInputBinding
       if (!sameRepeatValue(binding.recipient, repeatExecutionIdentity(stored.execution))
@@ -654,8 +641,7 @@ export class RepeatRunRepository {
     this.active(context)
     await context.hooks.assertAuthorityLocked(context.sql)
     const effect: RepeatEffect = { kind, entityId, digest: repeatDigest(value) }
-    const prior = await context.sql.query<{ payload_digest: string }>(
-      'select payload_digest from run_repeat_effects where run_id=$1 and effect_kind=$2 and entity_id=$3', [context.scope.runId, kind, entityId])
+    const prior = await repeatQueries.readEffect(context.sql, context.scope.runId, kind, entityId)
     if (prior.rows[0]) {
       if (prior.rows[0].payload_digest !== effect.digest) return repeatConflict('REPEAT_EFFECT_CONFLICT')
       await context.hooks.assertPublicationReceiptLocked(context.sql, effect)
@@ -665,23 +651,24 @@ export class RepeatRunRepository {
     await context.hooks.publishLocked(context.sql, effect, facts, async () => {
       if (++mutations !== 1) return repeatConflict('REPEAT_PUBLICATION_CONFLICT')
       await mutate()
-      await context.sql.query(`insert into run_repeat_effects(run_id,effect_kind,entity_id,payload_digest,owner_id,owner_fence)
-        values($1,$2,$3,$4,$5,$6)`, [context.scope.runId, kind, entityId, effect.digest, context.fence.ownerId, context.fence.fence])
+      await repeatQueries.insertEffect(context.sql, {
+        runId: context.scope.runId, kind, entityId, digest: effect.digest, ownerId: context.fence.ownerId,
+        ownerFence: context.fence.fence
+      })
     })
     if (mutations !== 1) return repeatConflict('REPEAT_PUBLICATION_CONFLICT')
     // A successful callback alone is not a canonical publication receipt.
     await context.hooks.assertPublicationReceiptLocked(context.sql, effect)
   }
   private async recordedEffect(context: Context, kind: RepeatEffect['kind'], entityId: string): Promise<void> {
-    const rows = await context.sql.query<{ payload_digest: string }>(
-      'select payload_digest from run_repeat_effects where run_id=$1 and effect_kind=$2 and entity_id=$3', [context.scope.runId, kind, entityId])
+    const rows = await repeatQueries.readEffect(context.sql, context.scope.runId, kind, entityId)
     const digest = rows.rows[0]?.payload_digest
     if (!digest || !GraphDigestSchema.safeParse(digest).success) return repeatConflict('REPEAT_EFFECT_MISSING')
     await context.hooks.assertPublicationReceiptLocked(context.sql, { kind, entityId, digest })
   }
   private async occurrenceReceipt(context: Context, value: RepeatOccurrenceV1): Promise<void> {
     if (!value.input.previous) return this.recordedEffect(context, 'occurrence.create', value.identity.occurrenceId)
-    const rows = await context.sql.query<{ record: unknown }>('select record from run_repeat_decisions where occurrence_id=$1', [value.input.previous.occurrenceId])
+    const rows = await repeatQueries.readDecision(context.sql, value.input.previous.occurrenceId)
     if (!rows.rows[0]) return repeatConflict('REPEAT_DECISION_MISSING')
     const previous = RepeatDecisionV1Schema.parse(rows.rows[0].record)
     if (previous.decisionId !== value.input.previous.decisionId || previous.acceptedResultDigest !== value.input.previous.acceptedResultDigest
@@ -693,18 +680,18 @@ export class RepeatRunRepository {
   }
   private async putOccurrence(context: Context, value: StoredOccurrence): Promise<void> {
     const occurrence = RepeatOccurrenceV1Schema.parse(value.occurrence), identity = occurrence.identity, previous = occurrence.input.previous
-    await context.sql.query(`insert into run_repeat_occurrences
-      (occurrence_id,run_id,workspace_id,workflow_id,workflow_version_id,block_id,occurrence_index,binding_id,input_json,input_digest,
-       previous_occurrence_id,previous_occurrence_index,previous_decision_id,previous_result_digest,record)
-      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb)`,
-    [identity.occurrenceId, identity.scope.runId, identity.scope.workspaceId, identity.scope.workflowId, identity.scope.workflowVersionId,
-      identity.blockId, identity.occurrenceIndex, occurrence.input.bindingId, canonicalGraphJson(value.input, 4 * 1024 * 1024),
-      occurrence.input.inputDigest, previous?.occurrenceId ?? null, previous?.occurrenceIndex ?? null,
-      previous?.decisionId ?? null, previous?.acceptedResultDigest ?? null, JSON.stringify(occurrence)])
+    await repeatQueries.insertOccurrence(context.sql, {
+      occurrenceId: identity.occurrenceId, runId: identity.scope.runId, workspaceId: identity.scope.workspaceId,
+      workflowId: identity.scope.workflowId, workflowVersionId: identity.scope.workflowVersionId,
+      blockId: identity.blockId, occurrenceIndex: identity.occurrenceIndex, bindingId: occurrence.input.bindingId,
+      inputJson: canonicalGraphJson(value.input, 4 * 1024 * 1024), inputDigest: occurrence.input.inputDigest,
+      previousOccurrenceId: previous?.occurrenceId ?? null, previousOccurrenceIndex: previous?.occurrenceIndex ?? null,
+      previousDecisionId: previous?.decisionId ?? null, previousResultDigest: previous?.acceptedResultDigest ?? null,
+      record: JSON.stringify(occurrence)
+    })
   }
   private async resolutions(context: Context, occurrenceId: string | null): Promise<Map<string, RepeatResolution>> {
-    const rows = await context.sql.query<{ record: unknown }>(`select record from run_repeat_resolutions
-      where run_id=$1 and occurrence_key=$2 order by workflow_node_id limit 1001`, [context.scope.runId, occurrenceId ?? ''])
+    const rows = await repeatQueries.readResolutions(context.sql, context.scope.runId, occurrenceId ?? '')
     if (rows.rows.length > 1000) return repeatConflict('REPEAT_RESOLUTION_BOUND_EXCEEDED')
     const result = new Map<string, RepeatResolution>()
     for (const row of rows.rows) {
@@ -717,10 +704,11 @@ export class RepeatRunRepository {
   }
   private async putResolution(context: Context, resolution: RepeatResolution, outside = false): Promise<void> {
     ResolutionSchema.parse(resolution)
-    await context.sql.query(`insert into run_repeat_resolutions
-      (run_id,occurrence_key,workflow_node_id,source_occurrence_id,execution_id,record) values($1,$2,$3,$4,$5,$6::jsonb)`,
-    [context.scope.runId, outside ? '' : resolution.ref.occurrence?.occurrenceId ?? '', resolution.ref.nodeId,
-      resolution.ref.occurrence?.occurrenceId ?? null, resolution.value.execution?.executionId ?? null, JSON.stringify(resolution)])
+    await repeatQueries.insertResolution(context.sql, {
+      runId: context.scope.runId, occurrenceKey: outside ? '' : resolution.ref.occurrence?.occurrenceId ?? '',
+      nodeId: resolution.ref.nodeId, sourceOccurrenceId: resolution.ref.occurrence?.occurrenceId ?? null,
+      executionId: resolution.value.execution?.executionId ?? null, record: JSON.stringify(resolution)
+    })
   }
   private async execution(context: Context, executionId: string): Promise<StoredRepeatExecution> {
     return readStoredRepeatExecution(context.sql, context.scope, context.version, executionId, 'update')
@@ -732,8 +720,7 @@ export class RepeatRunRepository {
       return readWorkflowJobSourceLocked(context.sql, context.scope, context.version, row, relationshipId)
     }
     const stored = await this.execution(context, identity.executionId)
-    const result = await context.sql.query<{ result_json: string; result_digest: string }>(
-      'select result_json,result_digest from run_repeat_results where execution_id=$1 and run_id=$2', [identity.executionId, context.scope.runId])
+    const result = await repeatQueries.readAcceptedResult(context.sql, identity.executionId, context.scope.runId)
     const accepted = result.rows[0]
     if (!accepted || accepted.result_digest !== row.value.acceptedResultDigest) return repeatConflict('REPEAT_INPUT_NOT_ACCEPTED')
     const source: RepeatSource = { relationshipId, execution: identity, occurrence: row.ref.occurrence,
@@ -759,9 +746,7 @@ export class RepeatRunRepository {
       const stored = await this.execution(context, executionId)
       await assertHierarchyDirectionReleasedLocked(context.sql, context.scope.runId, executionId)
       await this.recordedEffect(context, 'input.bind', executionId)
-      const claimed = await context.sql.query<{ effect_digest: string }>(
-        "select effect_digest from run_graph_effects where run_id=$1 and effect_kind='execution.launch' and entity_id=$2",
-        [context.scope.runId, executionId])
+      const claimed = await repeatQueries.readLaunchEffect(context.sql, context.scope.runId, executionId)
       if (claimed.rows[0]) {
         const claim = repeatLaunchClaim(context.scope, stored.ref, stored.execution, stored.inputDigest)
         const digest = repeatDigest(claim)
@@ -861,9 +846,8 @@ export class RepeatRunRepository {
     await native.publishLocked(context.sql, change, async () => {
       if (++mutations !== 1) return repeatConflict('REPEAT_PUBLICATION_CONFLICT')
       await additionalMutation?.()
-      const updated = await context.sql.query(`update harness_executions set record=$3::jsonb
-        where id=$1 and run_id=$2 and record=$4::jsonb and accepted=false returning id`,
-      [change.next.id, context.scope.runId, JSON.stringify(change.next), JSON.stringify(change.previous)])
+      const updated = await repeatQueries.updateNativeExecution(context.sql,
+        change.next.id, context.scope.runId, JSON.stringify(change.next), JSON.stringify(change.previous))
       if (updated.rowCount !== 1) return repeatConflict('REPEAT_TERMINAL_CONFLICT')
       await workflowNativeLifecycleLocked(context, change)
     })
@@ -875,9 +859,7 @@ export class RepeatRunRepository {
     const native = requireRepeatNativeHooks(context.hooks.native)
     const claim = repeatLaunchClaim(context.scope, stored.ref, stored.execution, stored.inputDigest)
     const digest = repeatDigest(claim)
-    const row = await context.sql.query<{ effect_digest: string }>(
-      "select effect_digest from run_graph_effects where run_id=$1 and effect_kind='execution.launch' and entity_id=$2",
-      [context.scope.runId, stored.execution.id])
+    const row = await repeatQueries.readLaunchEffect(context.sql, context.scope.runId, stored.execution.id)
     if (row.rows[0]?.effect_digest !== digest) return repeatConflict('REPEAT_LAUNCH_IDENTITY_CONFLICT')
     await native.assertLaunchReceiptLocked(context.sql, claim, digest)
   }
@@ -889,11 +871,8 @@ export class RepeatRunRepository {
       || context.version.agentConfigurationVersionIds[execution.agentId] !== execution.agentConfigurationVersionId) {
       return repeatConflict('NATIVE_SESSION_IDENTITY_MISMATCH')
     }
-    const row = (await context.sql.query<{ record: unknown; reference: unknown }>(
-      `select c.record,s.reference from agent_configuration_versions c
-       join execution_native_sessions s on s.execution_id=$1
-       where c.id=$2 and c.agent_id=$3 and c.workspace_id=$4 for share of c,s`,
-      [execution.id, execution.agentConfigurationVersionId, execution.agentId, context.scope.workspaceId])).rows[0]
+    const row = (await repeatQueries.readSessionConfiguration(context.sql,
+      execution.id, execution.agentConfigurationVersionId, execution.agentId, context.scope.workspaceId)).rows[0]
     if (!row || !sameRepeatValue(NativeSessionReferenceSchema.parse(row.reference), session)
       || AgentConfigurationVersionSchema.parse(row.record).harness.harness !== session.harness) {
       return repeatConflict('NATIVE_SESSION_IDENTITY_MISMATCH')
@@ -911,8 +890,7 @@ export class RepeatRunRepository {
       await context.hooks.assertAuthorityLocked(context.sql)
       await this.launchReceipt(context, stored)
       if (stored.execution.nativeSessionId) {
-        const native = (await context.sql.query<{ reference: unknown }>(
-          'select reference from execution_native_sessions where execution_id=$1 for share', [executionId])).rows[0]
+        const native = (await repeatQueries.readNativeSession(context.sql, executionId)).rows[0]
         if (!native) return repeatConflict('NATIVE_SESSION_IDENTITY_MISMATCH')
         await this.assertSession(context, stored.execution, NativeSessionReferenceSchema.parse(native.reference))
       } else if (stored.workActivationId) {
@@ -931,8 +909,7 @@ export class RepeatRunRepository {
       await this.launchReceipt(context, stored)
       await context.hooks.assertAuthorityLocked(context.sql)
       if (!stored.execution.nativeSessionId || stored.execution.state === 'completed') return repeatConflict('NATIVE_SESSION_START_UNCERTAIN')
-      const rows = await context.sql.query<{ reference: unknown }>(
-        'select reference from execution_native_sessions where execution_id=$1 for share', [executionId])
+      const rows = await repeatQueries.readNativeSession(context.sql, executionId)
       const session = NativeSessionReferenceSchema.parse(rows.rows[0]?.reference)
       await this.assertSession(context, stored.execution, session)
       return session
@@ -952,8 +929,7 @@ export class RepeatRunRepository {
       await context.hooks.assertAuthorityLocked(context.sql)
       if (stored.execution.state === 'completed') return repeatConflict('GRAPH_TERMINAL_CONFLICT')
       if (evidence.kind !== 'first_launch') {
-        const rows = await context.sql.query<{ reference: unknown }>(
-          'select reference from execution_native_sessions where execution_id=$1 for share', [executionId])
+        const rows = await repeatQueries.readNativeSession(context.sql, executionId)
         const session = NativeSessionReferenceSchema.parse(rows.rows[0]?.reference)
         if (!stored.execution.nativeSessionId || !sameRepeatValue(session, evidence.session)) return repeatConflict('NATIVE_SESSION_IDENTITY_MISMATCH')
         await this.assertSession(context, stored.execution, session)
@@ -1002,12 +978,10 @@ export class RepeatRunRepository {
       await context.hooks.assertAdmissionLocked(context.sql, stored.execution, stored.ref)
       await requireRepeatNativeHooks(context.hooks.native).assertBoundaryLocked(
         context.sql, stored.execution, stored.ref, evidence)
-      const attempts = (await context.sql.query<{ rejected_provider_id: string }>(
-        'select rejected_provider_id from execution_work_result_repairs where execution_id=$1', [executionId])).rows
+      const attempts = (await repeatQueries.readRepairAttempts(context.sql, executionId)).rows
       // Reserve before submission: an uncertain offer is never replayed after recovery.
       if (attempts.length >= 2 || attempts.some(row => row.rejected_provider_id === providerId)) return undefined
-      await context.sql.query(`insert into execution_work_result_repairs
-        (execution_id,attempt,rejected_provider_id) values($1,$2,$3)`, [executionId, attempts.length + 1, providerId])
+      await repeatQueries.insertRepairAttempt(context.sql, executionId, attempts.length + 1, providerId)
       return attempts.length + 1
     })
   }
@@ -1034,13 +1008,13 @@ export class RepeatRunRepository {
       if (!evidence) return repeatConflict('REPEAT_NATIVE_EVIDENCE_REQUIRED')
       // Pure validation/normalization precedes even the authority adapter, which
       // may persist original native sources on this transaction.
-      const workResultRepair = context.version.definition.handoffs && incoming.result?.outcome === 'failed'
+      const workResultRepair = usesWorkHandoffGraph(context.version) && incoming.result?.outcome === 'failed'
         ? await readWorkResultRepairAttempt(context.sql, incoming.id) > 0 : false
       const deliverableFailure = await workflowDeliverableFailure(context.sql, context.version, incoming,
         context.hooks.run.resultProtocol)
       const effectFailure = await readWorkflowResultEffectFailureLocked(context.sql, context.version, incoming,
         context.hooks.run.resultProtocol, resultEffectFailure)
-      const executionContext = context.version.definition.handoffs && stored.workActivationId
+      const executionContext = usesWorkHandoffGraph(context.version) && stored.workActivationId
         && incoming.result?.outcome === 'succeeded'
         ? await readWorkResultContextLocked(context, stored.workActivationId, stored.execution.input,
           context.hooks.run.resultProtocol) : undefined
@@ -1052,8 +1026,7 @@ export class RepeatRunRepository {
       const original = await withNativeGraphProjectionBatch(context.sql, context.scope.runId,
         () => native.assertUpdateLocked(context.sql, structuredClone(stored.execution), structuredClone(incoming),
           structuredClone(stored.ref), evidence, resultEffectFailure))
-      const rows = await context.sql.query<{ reference: unknown }>(
-        'select reference from execution_native_sessions where execution_id=$1 for share', [incoming.id])
+      const rows = await repeatQueries.readNativeSession(context.sql, incoming.id)
       const session = NativeSessionReferenceSchema.parse(rows.rows[0]?.reference)
       if (!incoming.nativeSessionId || incoming.nativeSessionId !== session.nativeSessionId
         || !sameRepeatValue(session, evidence.session)) return repeatConflict('NATIVE_SESSION_IDENTITY_MISMATCH')
@@ -1085,12 +1058,7 @@ export class RepeatRunRepository {
       const stored = await this.execution(context, executionId)
       await this.recordedEffect(context, 'input.bind', executionId)
       if (stored.execution.state === 'completed') return
-      const closing = await context.sql.query(`select 1 from runs r where r.id=$1 and (
-        r.stop_requested_at is not null or r.execution_state in (${CLOSED_RUN_STATES_SQL})
-        or exists(select 1 from run_cleanup_intents c where c.run_id=r.id and c.pending)
-        or exists(select 1 from harness_executions e join approval_execution_state b on b.execution_id=e.id
-          where e.id=$2 and e.run_id=r.id and b.failure_result is not null))`,
-      [context.scope.runId, executionId])
+      const closing = await repeatQueries.readClosingRun(context.sql, context.scope.runId, executionId)
       if (closing.rowCount !== 1 || canceled !== context.stopped) return repeatConflict('GRAPH_STOP_CONFLICT')
       const reservation = workflowNativeReservation(context.scope, stored.ref, stored.execution, stored.inputDigest)
       const entry = await readWorkflowNativeEntryLocked(context.sql, reservation)
@@ -1111,12 +1079,10 @@ export class RepeatRunRepository {
           }
         })
       } else return repeatConflict('NATIVE_ENTRY_CONFLICT')
-      const budget = (await context.sql.query<{ failure_result: unknown }>(
-        'select failure_result from approval_execution_state where execution_id=$1', [executionId])).rows[0]
+      const budget = (await repeatQueries.readExecutionFailure(context.sql, executionId)).rows[0]
       const failure = budget?.failure_result ? ExecutionResultSchema.parse(budget.failure_result) : undefined
       if (failure && failure.outcome !== 'failed') return repeatConflict('RUN_FAILURE_CAUSE_INVALID')
-      const cleanup = (await context.sql.query<{ failure_result: unknown }>(
-        'select failure_result from run_cleanup_intents where run_id=$1', [context.scope.runId])).rows[0]
+      const cleanup = (await repeatQueries.readCleanupFailure(context.sql, context.scope.runId)).rows[0]
       const runFailure = cleanup?.failure_result ? ExecutionResultSchema.parse(cleanup.failure_result) : undefined
       if (runFailure && runFailure.outcome !== 'failed') return repeatConflict('RUN_FAILURE_CAUSE_INVALID')
       const siblingResult = runFailure ? { outcome: 'canceled' as const } : { outcome: 'failed' as const,
@@ -1132,9 +1098,9 @@ export class RepeatRunRepository {
           sourceDigest: change.sourceDigest, effect: null,
         })
         // An attempt closed for its own recorded cause shows that cause in Run activity.
-        if (!canceled && failure) await context.sql.query(`insert into run_activity(run_id,source,kind,harness_execution_id,occurred_at,payload)
-          values($1,'backend','result_recorded',$2,$3,$4::jsonb)`, [context.scope.runId, executionId, context.now,
-          canonicalGraphJson({ workflowNodeId: stored.ref.nodeId, result })])
+        if (!canceled && failure) await repeatQueries.insertResultActivity(context.sql,
+          context.scope.runId, executionId, context.now,
+          canonicalGraphJson({ workflowNodeId: stored.ref.nodeId, result }))
       })
     })
   }
@@ -1167,17 +1133,15 @@ export class RepeatRunRepository {
           scope: context.scope, evidence: { sourceKind: 'execution', sourceId: change.sourceId, sourceRevision: '1' },
           sourceDigest: change.sourceDigest, effect: null,
         })
-        const continuation = (await context.sql.query<{ id: string }>(`select id from run_control_continuations
-          where run_id=$1 and successor_execution_id=$2 and state='admitted' for update`,
-        [context.scope.runId, executionId])).rows[0]
+        const continuation = (await repeatQueries.readAdmittedControlContinuation(context.sql, context.scope.runId, executionId)).rows[0]
         if (continuation) await failWorkflowControlContinuationLocked(context.sql, {
           runId: context.scope.runId, continuationId: continuation.id,
           errorCode: result.error!.code, now: context.now,
         })
         await closeWorkflowControlInputLocked(context.sql, { runId: context.scope.runId, executionId, now: context.now })
-        await context.sql.query(`insert into run_activity(run_id,source,kind,harness_execution_id,occurred_at,payload)
-          values($1,'backend','result_recorded',$2,$3,$4::jsonb)`, [context.scope.runId, executionId, context.now,
-          canonicalGraphJson({ workflowNodeId: stored.ref.nodeId, result })])
+        await repeatQueries.insertResultActivity(context.sql,
+          context.scope.runId, executionId, context.now,
+          canonicalGraphJson({ workflowNodeId: stored.ref.nodeId, result }))
       })
     })
   }
@@ -1219,8 +1183,7 @@ export class RepeatRunRepository {
     return this.transaction(async (context) => {
       this.active(context)
       const block = repeatBlock(context.version, blockId)
-      const heads = await context.sql.query<{ occurrence_id: string }>(`select occurrence_id from run_repeat_occurrences
-        where run_id=$1 and block_id=$2 order by occurrence_index desc limit 1`, [context.scope.runId, blockId])
+      const heads = await repeatQueries.readLatestOccurrence(context.sql, context.scope.runId, blockId)
       if (heads.rows[0]) {
         const value = (await this.occurrence(context, heads.rows[0].occurrence_id)).occurrence
         await this.occurrenceReceipt(context, value)
@@ -1266,14 +1229,13 @@ export class RepeatRunRepository {
       if (admission.kind === 'skipped' || admission.kind === 'excluded') return { kind: 'resolved', resolution: await this.inactive(context, ref, admission.kind) }
       if (admission.kind !== 'run') return repeatConflict('REPEAT_ENTRY_UNRESOLVED')
       const slotId = repeatSlotId(context.scope.runId, ref)
-      const existing = await context.sql.query<{ execution_id: string }>(
-        'select execution_id from run_repeat_executions where slot_id=$1 order by technical_attempt desc limit 1', [slotId])
+      const existing = await repeatQueries.readLatestSlotExecution(context.sql, slotId)
       if (existing.rows[0]) {
         await this.recordedEffect(context, 'input.bind', existing.rows[0].execution_id)
         return { kind: 'admitted', execution: (await this.execution(context, existing.rows[0].execution_id)).execution, reused: true }
       }
       if (occurrence) {
-        const decided = await context.sql.query('select 1 from run_repeat_decisions where occurrence_id=$1', [occurrence.occurrence.identity.occurrenceId])
+        const decided = await repeatQueries.readDecisionExists(context.sql, occurrence.occurrence.identity.occurrenceId)
         if (decided.rowCount) return repeatConflict('REPEAT_OCCURRENCE_CLOSED')
       }
       if (occurrence?.occurrence.input.previous
@@ -1291,8 +1253,10 @@ export class RepeatRunRepository {
       await assertWorkflowExecutionCapacityLocked(context.sql, context.scope.runId, context.version)
       await this.effect(context, 'input.bind', queued.id, { ref, queued, inputDigest: bound.digest, bindings: bound.bindings },
         [{ type: 'repeat.execution.queued', ref, execution: repeatExecutionIdentity(queued), inputDigest: bound.digest }], async () => {
-          await context.sql.query(`insert into run_repeat_slots(slot_id,run_id,occurrence_id,workflow_node_id,input_json,input_digest)
-            values($1,$2,$3,$4,$5,$6)`, [slotId, context.scope.runId, ref.occurrence?.occurrenceId ?? null, ref.nodeId, canonicalGraphJson(bound.input, 4 * 1024 * 1024), bound.digest])
+          await repeatQueries.insertSlot(context.sql, {
+            slotId, runId: context.scope.runId, occurrenceId: ref.occurrence?.occurrenceId ?? null, nodeId: ref.nodeId,
+            inputJson: canonicalGraphJson(bound.input, 4 * 1024 * 1024), inputDigest: bound.digest
+          })
           await this.insertExecution(context, ref, queued, slotId, bound.digest, bound.bindings, null)
         })
       return { kind: 'admitted', execution: queued, reused: false }
@@ -1308,7 +1272,7 @@ export class RepeatRunRepository {
       if (context.hooks.run.executionState !== 'running') return { kind: 'wait', dueAt: null }
       const node = context.version.definition.nodes.find((item) => item.id === nodeId)
       if (!node || node.kind === 'job' || !node.interval || blockForNode(context.version, nodeId)) return repeatConflict('TICK_NODE_CONFLICT')
-      const facts = await readIntervalCheckFacts(context.sql, context.scope.runId, nodeId, Boolean(context.version.definition.handoffs))
+      const facts = await readIntervalCheckFacts(context.sql, context.scope.runId, nodeId, usesWorkHandoffGraph(context.version))
       if (facts.lastTickId && facts.lastTickId !== settledId) {
         await this.recordedEffect(context, 'input.bind', facts.lastTickId)
         return { kind: 'busy', execution: (await this.execution(context, facts.lastTickId)).execution }
@@ -1329,8 +1293,10 @@ export class RepeatRunRepository {
       await context.hooks.assertAdmissionLocked(context.sql, queued, ref)
       await this.effect(context, 'input.bind', queued.id, { ref, queued, inputDigest, bindings: [], tickIndex },
         [{ type: 'repeat.execution.queued', ref, execution: repeatExecutionIdentity(queued), inputDigest }], async () => {
-          await context.sql.query(`insert into run_repeat_slots(slot_id,run_id,occurrence_id,workflow_node_id,input_json,input_digest,tick_index)
-            values($1,$2,null,$3,$4,$5,$6)`, [slotId, context.scope.runId, nodeId, canonicalGraphJson(input, 4 * 1024 * 1024), inputDigest, tickIndex])
+          await repeatQueries.insertTickSlot(context.sql, {
+            slotId, runId: context.scope.runId, nodeId, inputJson: canonicalGraphJson(input, 4 * 1024 * 1024),
+            inputDigest, tickIndex
+          })
           await this.insertExecution(context, ref, queued, slotId, inputDigest, [], null)
         })
       return { kind: 'admitted', execution: queued }
@@ -1354,28 +1320,32 @@ export class RepeatRunRepository {
     const occurrenceId = ref.occurrence?.occurrenceId ?? null
     const identity = ref.occurrence ? { ...repeatExecutionIdentity(execution), occurrence: ref.occurrence } : repeatExecutionIdentity(execution)
     if (workActivationId) {
-      await context.sql.query(`insert into harness_executions(id,run_id,workflow_node_id,agent_id,attempt,repeat_occurrence_id,work_activation_id,record)
-        values($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`, [execution.id, context.scope.runId, ref.nodeId, execution.agentId,
-        execution.attempt, occurrenceId, workActivationId, JSON.stringify(execution)])
-      await context.sql.query(`insert into run_repeat_executions(execution_id,run_id,slot_id,occurrence_id,work_activation_id,
-        technical_attempt,previous_execution_id,identity)
-        values($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`, [execution.id, context.scope.runId, slotId, occurrenceId,
-        workActivationId, execution.attempt, previousExecutionId, JSON.stringify(identity)])
+      await repeatQueries.insertWorkHarnessExecution(context.sql, {
+        executionId: execution.id, runId: context.scope.runId, nodeId: ref.nodeId, agentId: execution.agentId,
+        attempt: execution.attempt, occurrenceId, activationId: workActivationId, record: JSON.stringify(execution)
+      })
+      await repeatQueries.insertWorkRepeatExecution(context.sql, {
+        executionId: execution.id, runId: context.scope.runId, slotId, occurrenceId, activationId: workActivationId,
+        attempt: execution.attempt, previousExecutionId, identity: JSON.stringify(identity)
+      })
     } else {
       // Only checks write tick_index; ordinary work keeps the statement every schema accepts.
-      await context.sql.query(`insert into harness_executions(id,run_id,workflow_node_id,agent_id,attempt,repeat_occurrence_id,record${tickIndex === null ? '' : ',tick_index'})
-        values($1,$2,$3,$4,$5,$6,$7::jsonb${tickIndex === null ? '' : ',$8'})`, [execution.id, context.scope.runId, ref.nodeId,
-        execution.agentId, execution.attempt, occurrenceId, JSON.stringify(execution), ...(tickIndex === null ? [] : [tickIndex])])
-      await context.sql.query(`insert into run_repeat_executions(execution_id,run_id,slot_id,occurrence_id,technical_attempt,previous_execution_id,identity)
-        values($1,$2,$3,$4,$5,$6,$7::jsonb)`, [execution.id, context.scope.runId, slotId, occurrenceId,
-        execution.attempt, previousExecutionId, JSON.stringify(identity)])
+      await repeatQueries.insertHarnessExecution(context.sql, {
+        executionId: execution.id, runId: context.scope.runId, nodeId: ref.nodeId, agentId: execution.agentId,
+        attempt: execution.attempt, occurrenceId, record: JSON.stringify(execution)
+      }, tickIndex)
+      await repeatQueries.insertRepeatExecution(context.sql, {
+        executionId: execution.id, runId: context.scope.runId, slotId, occurrenceId, attempt: execution.attempt,
+        previousExecutionId, identity: JSON.stringify(identity)
+      })
     }
     await reserveWorkflowNativeEntryLocked(context.sql, workflowNativeReservation(context.scope, ref, execution, inputDigest))
     await context.hooks.persistDispatchLocked?.(context.sql, execution, ref, inputDigest)
-    for (const binding of bindings) await context.sql.query(`insert into run_repeat_bindings
-      (binding_id,run_id,recipient_execution_id,source_execution_id,source_result_digest,input_digest,slot_id,ordinal,record)
-      values($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)`, [binding.bindingId, context.scope.runId, execution.id,
-      binding.source.execution.executionId, binding.source.acceptedResultDigest, inputDigest, slotId, binding.ordinal, JSON.stringify(binding)])
+    for (const binding of bindings) await repeatQueries.insertBinding(context.sql, {
+      bindingId: binding.bindingId, runId: context.scope.runId, executionId: execution.id,
+      sourceExecutionId: binding.source.execution.executionId, sourceResultDigest: binding.source.acceptedResultDigest,
+      inputDigest, slotId, ordinal: binding.ordinal, record: JSON.stringify(binding)
+    })
     if (controlContinuation) await completeWorkflowControlContinuationLocked(context.sql, {
       runId: execution.runId, continuationId: controlContinuation.id, now: context.now,
       successorExecution: { runId: execution.runId, workflowVersionId: context.version.id,
@@ -1408,7 +1378,7 @@ export class RepeatRunRepository {
       }
       this.active(context)
       await this.settleAttempts(context, { kind: 'slot', id: stored.slotId, throughAttempt: execution.attempt })
-      const next = await context.sql.query<{ execution_id: string }>('select execution_id from run_repeat_executions where previous_execution_id=$1', [executionId])
+      const next = await repeatQueries.readSuccessorExecution(context.sql, executionId)
       if (next.rows[0]) {
         await this.recordedEffect(context, 'input.bind', next.rows[0].execution_id)
         return { kind: 'retry', execution: (await this.execution(context, next.rows[0].execution_id)).execution }
@@ -1424,7 +1394,7 @@ export class RepeatRunRepository {
         this.assertCandidate(context, ref, replacement, execution.attempt + 1)
         const queued = HarnessExecutionSchema.parse({ ...replacement, input: stored.input })
         await context.hooks.assertAdmissionLocked(context.sql, queued, ref)
-        const bound = await context.sql.query<{ record: unknown }>('select record from run_repeat_bindings where recipient_execution_id=$1 order by ordinal', [executionId])
+        const bound = await repeatQueries.readBindings(context.sql, executionId)
         const bindings = bound.rows.map((row) => {
           const value = BindingSchema.parse(row.record) as RepeatInputBinding
           if (!sameRepeatValue(value.recipient, repeatExecutionIdentity(execution))
@@ -1445,14 +1415,12 @@ export class RepeatRunRepository {
         await this.settleAttempts(context, { kind: 'occurrence', id: ref.occurrence!.occurrenceId })
         const current = await this.occurrence(context, ref.occurrence!.occurrenceId)
         const exit = context.version.definition.nodes.find((node) => node.id === ref.nodeId)!
-        decision = validateRepeatDecisionV1(context.version, decideRepeatExit(context.version, current.occurrence, execution,
+        decision = decideRepeatExit(context.version, current.occurrence, execution,
           parseRepeatExitResultV1(execution.result, exit.choice!, exit.kind === 'job' ? undefined : exit.artifactOutputs,
             context.hooks.run.resultProtocol && exit.kind !== 'job' ? { resultProtocol: context.hooks.run.resultProtocol,
-              definition: context.version.definition, workflowNodeId: exit.id } : undefined), context.now),
-        execution.result, context.hooks.run.resultProtocol)
+              definition: context.version.definition, workflowNodeId: exit.id } : undefined), context.now)
         if (decision.reason === 'repeat') {
           successor = makeRepeatOccurrence(context.scope, block, repeatSuccessorInput(current.input, decision, execution.result!), decision)
-          validateRepeatSuccessorV1(context.version, decision, successor.occurrence, execution.result, context.hooks.run.resultProtocol)
         } else exported = finalRepeatExport(context.version, resolution, decision)
       }
       const facts: RepeatFact[] = [{ type: 'repeat.node.resolved', resolution, outside: ref.occurrence === null }]
@@ -1468,15 +1436,18 @@ export class RepeatRunRepository {
       await this.effect(context, 'terminal.accept', executionId, { execution, resolution, decision: decision ?? null,
         successor: successor ?? null, exported: exported ?? null }, facts, async () => {
         if (resolution.value.acceptedResultDigest) {
-          await context.sql.query(`insert into run_repeat_results(execution_id,run_id,occurrence_id,result_json,result_digest,accepted_at)
-            values($1,$2,$3,$4,$5,$6)`, [executionId, context.scope.runId, ref.occurrence?.occurrenceId ?? null,
-            canonicalGraphJson(execution.result, 64 * 1024), resolution.value.acceptedResultDigest, context.now])
-          await context.sql.query('update harness_executions set accepted=true where id=$1 and run_id=$2', [executionId, context.scope.runId])
+          await repeatQueries.insertRepeatResult(context.sql, {
+            executionId, runId: context.scope.runId, occurrenceId: ref.occurrence?.occurrenceId ?? null,
+            resultJson: canonicalGraphJson(execution.result, 64 * 1024),
+            resultDigest: resolution.value.acceptedResultDigest, acceptedAt: context.now
+          })
+          await repeatQueries.acceptExecution(context.sql, executionId, context.scope.runId)
         }
         await this.putResolution(context, resolution)
-        if (decision) await context.sql.query(`insert into run_repeat_decisions(decision_id,occurrence_id,exit_execution_id,result_digest,record)
-          values($1,$2,$3,$4,$5::jsonb)`, [decision.decisionId, decision.occurrence.identity.occurrenceId,
-          executionId, decision.acceptedResultDigest, JSON.stringify(decision)])
+        if (decision) await repeatQueries.insertDecision(context.sql, {
+          decisionId: decision.decisionId, occurrenceId: decision.occurrence.identity.occurrenceId, executionId,
+          resultDigest: decision.acceptedResultDigest, record: JSON.stringify(decision)
+        })
         if (successor) await this.putOccurrence(context, successor)
         if (exported) await this.putResolution(context, exported, true)
         await closeWorkflowControlInputLocked(context.sql, { runId: context.scope.runId, executionId, now: context.now })
@@ -1498,7 +1469,7 @@ export class RepeatRunRepository {
     return this.transaction(async (context) => {
       this.active(context) // A recorded pre-Stop repeat decision cannot reactivate work.
       const current = await this.occurrence(context, occurrenceId)
-      const rows = await context.sql.query<{ record: unknown }>('select record from run_repeat_decisions where occurrence_id=$1', [occurrenceId])
+      const rows = await repeatQueries.readDecision(context.sql, occurrenceId)
       if (!rows.rows[0]) return repeatConflict('REPEAT_DECISION_MISSING')
       const decision = RepeatDecisionV1Schema.parse(rows.rows[0].record)
       const execution = await this.execution(context, decision.exitExecution.executionId)
@@ -1507,17 +1478,15 @@ export class RepeatRunRepository {
       validateRepeatDecisionV1(context.version, decision, execution.execution.result, context.hooks.run.resultProtocol)
       await this.recordedEffect(context, 'terminal.accept', execution.execution.id)
       if (decision.reason !== 'repeat') return { decision, next: null }
-      const found = await context.sql.query<{ occurrence_id: string }>(`select occurrence_id from run_repeat_occurrences
-        where run_id=$1 and block_id=$2 and occurrence_index=$3`, [context.scope.runId, current.occurrence.identity.blockId,
-        current.occurrence.identity.occurrenceIndex + 1])
+      const found = await repeatQueries.readOccurrenceAtIndex(context.sql,
+        context.scope.runId, current.occurrence.identity.blockId, current.occurrence.identity.occurrenceIndex + 1)
       if (!found.rows[0]) return repeatConflict('REPEAT_SUCCESSOR_MISSING')
       const next = await this.occurrence(context, found.rows[0].occurrence_id)
       validateRepeatSuccessorV1(context.version, decision, next.occurrence, execution.execution.result, context.hooks.run.resultProtocol)
       if (!sameRepeatValue(next.input, repeatSuccessorInput(current.input, decision, execution.execution.result!))) return repeatConflict('REPEAT_CARRY_CONFLICT')
-      const activated = await context.sql.query<{ execution_id: string }>(`select x.execution_id
-        from run_repeat_executions x join run_repeat_slots s on s.slot_id=x.slot_id
-        where x.run_id=$1 and x.occurrence_id=$2 and s.workflow_node_id=$3 and x.technical_attempt=1`,
-      [context.scope.runId, next.occurrence.identity.occurrenceId, repeatBlock(context.version, current.occurrence.identity.blockId).entryNodeId])
+      const activated = await repeatQueries.readOccurrenceEntryExecution(context.sql,
+        context.scope.runId, next.occurrence.identity.occurrenceId,
+        repeatBlock(context.version, current.occurrence.identity.blockId).entryNodeId)
       if (!activated.rows[0]) await this.settleAttempts(context, { kind: 'occurrence', id: occurrenceId })
       else await this.recordedEffect(context, 'input.bind', activated.rows[0].execution_id)
       return { decision, next: next.occurrence }
@@ -1554,9 +1523,7 @@ export class RepeatRunRepository {
       // to revive a stopped/failed Run or reissue its completion side effects.
       if (context.hooks.run.executionState === 'completed' && !context.stopped) {
         const effect: RepeatEffect = { kind: 'run.complete', entityId: context.scope.runId, digest: repeatDigest(terminals) }
-        const prior = await context.sql.query<{ payload_digest: string }>(
-          'select payload_digest from run_repeat_effects where run_id=$1 and effect_kind=$2 and entity_id=$3',
-          [context.scope.runId, effect.kind, effect.entityId])
+        const prior = await repeatQueries.readEffect(context.sql, context.scope.runId, effect.kind, effect.entityId)
         if (prior.rows[0]?.payload_digest !== effect.digest) return repeatConflict('REPEAT_EFFECT_CONFLICT')
         await context.hooks.assertPublicationReceiptLocked(context.sql, effect)
         return
@@ -1572,7 +1539,7 @@ export class RepeatRunRepository {
   }
   async completeWorkRun(): Promise<'completed' | 'needs_direction' | 'idle'> {
     return this.transaction(async (context) => {
-      if (!context.version.definition.handoffs || context.version.definition.repeat) return repeatConflict('WORK_POLICY_PIN_CONFLICT')
+      if (!usesWorkHandoffGraph(context.version) || declaresRepeatBlocks(context.version)) return repeatConflict('WORK_POLICY_PIN_CONFLICT')
       if (isHierarchyWorkflow(context.version)) {
         const terminals = await hierarchyCompletionLocked({ ...context, assertActive: () => this.active(context) })
         if (context.hooks.run.executionState === 'completed' && !context.stopped) {
@@ -1695,9 +1662,7 @@ export class RepeatRunRepository {
   private async unresolvedWorkFailure(context: Context, items: ReadonlyArray<{ execution_id: string;
     reason: 'finish_with_findings' | 'repeated_exhausted_route' }>): Promise<ExecutionResult | undefined> {
     for (const item of items) {
-      const row = (await context.sql.query<{ record: unknown; activation_id: string }>(
-        'select record,work_activation_id as activation_id from harness_executions where id=$1 and run_id=$2',
-        [item.execution_id, context.scope.runId])).rows[0]
+      const row = (await repeatQueries.readUnresolvedExecution(context.sql, item.execution_id, context.scope.runId)).rows[0]
       if (!row) continue
       const execution = HarnessExecutionSchema.parse(row.record)
       const node = context.version.definition.nodes.find((candidate) => candidate.id === execution.workflowNodeId)
@@ -1713,17 +1678,7 @@ export class RepeatRunRepository {
   }
 
   private async workFailures(context: Context): Promise<Array<{ activationId: string; result: ExecutionResult }>> {
-    const rows = (await context.sql.query<{ activation_id: string; record: unknown; failure_result: unknown }>(`
-      select e.work_activation_id as activation_id,e.record,b.failure_result
-      from harness_executions e left join approval_execution_state b on b.execution_id=e.id
-      where e.run_id=$1 and e.work_activation_id is not null and not e.accepted
-        and (b.failure_result is not null or e.record#>>'{result,outcome}'='failed'
-          or exists(select 1 from run_control_continuations c where c.run_id=e.run_id
-            and c.previous_execution_id=e.id and c.state in ('failed','canceled'))
-          or exists(select 1 from run_chat_commands c where c.run_id=e.run_id and c.kind='stop'
-            and c.target#>>'{execution,executionId}'=e.id and c.state not in ('failed','canceled')))
-        and not exists(select 1 from run_repeat_executions n where n.previous_execution_id=e.id)
-      order by e.created_at,e.id`, [context.scope.runId])).rows
+    const rows = (await repeatQueries.readWorkFailures(context.sql, context.scope.runId)).rows
     const failures: Array<{ activationId: string; result: ExecutionResult }> = []
     for (const row of rows) {
       const execution = HarnessExecutionSchema.parse(row.record)
@@ -1752,8 +1707,7 @@ function assertWorkActivationReplay(stored: StoredRepeatExecution, input: WorkAc
 
 async function readRepeatEffectReceipt(sql: SqlTransaction, scope: RepeatScope,
   kind: RepeatEffect['kind'], entityId: string): Promise<void> {
-  const rows = await sql.query<{ payload_digest: string }>(
-    'select payload_digest from run_repeat_effects where run_id=$1 and effect_kind=$2 and entity_id=$3', [scope.runId, kind, entityId])
+  const rows = await repeatQueries.readEffect(sql, scope.runId, kind, entityId)
   const digest = rows.rows[0]?.payload_digest
   if (rows.rows.length !== 1) return repeatConflict('REPEAT_EFFECT_MISSING')
   await retainRepeatEffectReceipt(sql, scope, kind, entityId, digest)
@@ -1766,9 +1720,7 @@ async function readStoredExecutionResultLocked(sql: SqlTransaction, snapshot: Ac
   const { execution, ref } = stored
   const scope: RepeatScope = { workspaceId: run.workspaceId, workflowId: run.workflowId, runId: run.id,
     workflowVersionId: run.workflowVersionId, executionSemanticsVersion: 3 }
-  const rows = await sql.query<{ occurrence_id: string | null; result_json: string; result_digest: string }>(
-    'select occurrence_id,result_json,result_digest from run_repeat_results where execution_id=$1 and run_id=$2',
-    [execution.id, run.id])
+  const rows = await repeatQueries.readStoredResult(sql, execution.id, run.id)
   const result = rows.rows[0]
   if (rows.rows.length !== 1 || !result
     || execution.state !== 'completed' || execution.result?.outcome !== 'succeeded'
@@ -1797,9 +1749,7 @@ export async function readRepeatAcceptedResultLocked(sql: SqlTransaction, snapsh
   const { run, version } = snapshot
   const scope: RepeatScope = { workspaceId: run.workspaceId, workflowId: run.workflowId, runId: run.id,
     workflowVersionId: run.workflowVersionId, executionSemanticsVersion: 3 }
-  const resolutions = await sql.query<{ record: unknown }>(
-    'select record from run_repeat_resolutions where run_id=$1 and occurrence_key=$2 and workflow_node_id=$3',
-    [run.id, stored.ref.occurrence?.occurrenceId ?? '', stored.ref.nodeId])
+  const resolutions = await repeatQueries.readResolution(sql, run.id, stored.ref.occurrence?.occurrenceId ?? '', stored.ref.nodeId)
   const resolution = resolutions.rows[0]
   if (resolutions.rows.length !== 1 || !resolution
     || !sameRepeatValue(ResolutionSchema.parse(resolution.record),

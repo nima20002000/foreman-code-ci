@@ -6,7 +6,7 @@ import { CiIntegrationCoverageSchema, type CiCoverageSelection, type Integration
 import { compactIntegrationCoverage, usableIntegrationCoverage } from '@foreman-code/contracts/ci-coverage'
 import { ciInfrastructureFile } from '@foreman-code/contracts/ci-import-graph'
 import type { CiCommits } from './serviceTypes.js'
-import { sha256Hex } from '@foreman-code/contracts/server-kit'
+import { sha256Hex } from '@foreman-code/contracts-node/server-kit'
 
 const COVERAGE_ARTIFACT_LIMIT = 32
 
