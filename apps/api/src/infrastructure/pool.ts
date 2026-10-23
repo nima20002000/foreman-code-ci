@@ -104,7 +104,14 @@ export async function withDedicatedClient<T>(settings: pg.ClientConfig, applicat
   work: (client: pg.Client) => Promise<T>): Promise<T> {
   const client = createDedicatedClient(settings, applicationName)
   try {
-    await client.connect()
+    await client.connect().catch((error: unknown) => {
+      // pg's client reports its connect deadline as 'timeout expired'; report it the way a pool does, so callers
+      // that retry connection timeouts (automatic profile checks, edit-intent leases) keep retrying it.
+      if (error instanceof Error && error.message === 'timeout expired') {
+        throw new Error('Connection terminated due to connection timeout', { cause: error })
+      }
+      throw error
+    })
     return await work(client)
   } finally {
     await client.end().catch(ignoreError('db', 'close dedicated connection', { applicationName }))
