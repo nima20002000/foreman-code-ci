@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentConfigurationVersionSchema, ChatDeliveryReceiptSchema, EngineChatReadbackSchema,
   type HarnessExecutionRequest } from '@foreman-code/contracts'
 import { makeCurrentWorkflowFixture, WorkActivationInputSchema } from '@foreman-code/contracts/wave25'
@@ -7,6 +7,10 @@ import { currentOperatorIntegration } from './helpers/currentOperatorIntegration
 import { ControlledWorkflowProvider } from './helpers/controlledWorkflowProvider.js'
 import { workflowChatCall, workflowChatTarget } from './helpers/workflowChatRequests.js'
 import { postgresEnabled } from './helpers/wave25Agent3.js'
+import { DomainError } from '../src/modules/errors.js'
+import { isWorkflowStart } from '../src/modules/harnesses/sessionStart.js'
+
+afterEach(() => vi.unstubAllEnvs())
 
 /** The owner's saved shape: an Orchestrator connected to one Worker, no named routes, no hierarchy. */
 function orchestratorWorkerFixture() {
@@ -27,6 +31,75 @@ const output = (orchestrator: string) => (nodeId: string, request: HarnessExecut
 }
 
 describe.skipIf(!postgresEnabled)('owner chat with a workflow Agent during its Run', () => {
+  it('retains claimed owner direction through a transient launch failure and settles its receipt on the retry', async () => {
+    vi.stubEnv('FOREMAN_EXECUTION_RETRY_BACKOFF_MS', '0')
+    const fixture = orchestratorWorkerFixture()
+    const [orchestrator, worker] = fixture.version.definition.nodes.map(node => node.id) as [string, string]
+    const provider = new ControlledWorkflowProvider([orchestrator, worker], output(orchestrator))
+    let interruptedPrompt: string | undefined
+    const f = await currentOperatorIntegration({ executionChat: true, fixture, approvalNodeIds: [], collaborationPorts: {},
+      managerFactory: context => {
+        const manager = provider.connection(context), create = manager.createSession.bind(manager)
+        manager.createSession = async (start, signal) => {
+          if (isWorkflowStart(start) && start.request.workflowNodeId === orchestrator
+            && WorkActivationInputSchema.parse(start.request.input).work.kind !== 'entry' && interruptedPrompt === undefined) {
+            interruptedPrompt = start.request.initialPrompt
+            throw new DomainError('REMOTE_NATIVE_PHYSICAL_UNAVAILABLE', 'The Worker link dropped before launch.', 503)
+          }
+          return create(start, signal)
+        }
+        return manager
+      } })
+    const drive = f.engine.start(f.f.run.id).catch(error => error)
+    try {
+      await provider.entered(orchestrator)
+      provider.release(orchestrator)
+      await provider.entered(worker)
+      const target = await workflowChatTarget(f, orchestrator)
+      const receipt = ChatDeliveryReceiptSchema.parse(await workflowChatCall(f, 'agent_chat_send', {
+        commandId: 'direction-before-retry', target, intent: 'next_turn', content: 'Retain this direction across retries.', attachments: [] }))
+      expect(receipt.state).toBe('queued')
+      provider.release(worker)
+      await expect.poll(() => provider.prompts.filter(item => item.nodeId === orchestrator).length,
+        { timeout: 15_000 }).toBe(2)
+      expect(interruptedPrompt).toContain('Retain this direction across retries.')
+      expect(provider.prompts.filter(item => item.nodeId === orchestrator)[1]!.prompt).toContain('Retain this direction across retries.')
+      provider.release(orchestrator)
+      expect(await drive).not.toBeInstanceOf(Error)
+      expect(await f.runs.get(f.f.run.id)).toMatchObject({ executionState: 'completed', outcome: 'succeeded' })
+      const readback = EngineChatReadbackSchema.parse(await workflowChatCall(f, 'agent_chat_read', { target }))
+      expect(readback.receipts.find(item => item.id === receipt.id)).toMatchObject({ state: 'completed' })
+    } finally { provider.releaseAll(); await f.stop(); await drive; await f.close() }
+  }, 60_000)
+
+  it('closes queued owner input when graph failure settles the Run without an execution failure result', async () => {
+    const fixture = orchestratorWorkerFixture()
+    const orchestrator = fixture.version.definition.nodes[0]!.id
+    const provider = new ControlledWorkflowProvider([orchestrator], output(orchestrator))
+    const f = await currentOperatorIntegration({ executionChat: true, fixture, approvalNodeIds: [], collaborationPorts: {},
+      managerFactory: context => provider.connection(context) })
+    const repeat = f.runs.repeat.bind(f.runs)
+    const failure = new DomainError('WORK_JOIN_SOURCE_CONFLICT', 'The graph cannot resolve its handoff.', 409)
+    vi.spyOn(f.runs, 'repeat').mockImplementation(async (...args) => {
+      const store = await repeat(...args)
+      store.admitWorkRequest = async () => { throw failure }
+      return store
+    })
+    const drive = f.engine.start(f.f.run.id).catch(error => error)
+    try {
+      await provider.entered(orchestrator)
+      const target = await workflowChatTarget(f, orchestrator)
+      const receipt = ChatDeliveryReceiptSchema.parse(await workflowChatCall(f, 'agent_chat_send', {
+        commandId: 'note-before-graph-failure', target, intent: 'next_turn', content: 'Include the page title.', attachments: [] }))
+      expect(receipt.state).toBe('queued')
+      provider.release(orchestrator)
+      expect(await drive).toMatchObject({ code: failure.code })
+      expect(await f.runs.get(f.f.run.id)).toMatchObject({ executionState: 'completed', outcome: 'failed' })
+      const readback = EngineChatReadbackSchema.parse(await workflowChatCall(f, 'agent_chat_read', { target }))
+      expect(readback.receipts.find(item => item.id === receipt.id)).toMatchObject({ state: 'failed', errorCode: 'TARGET_SETTLED' })
+    } finally { provider.releaseAll(); await f.stop(); await drive; await f.close() }
+  }, 60_000)
+
   it('delivers a message to a finished Orchestrator turn at its next turn in the same Run', async () => {
     const fixture = orchestratorWorkerFixture()
     const [orchestrator, worker] = fixture.version.definition.nodes.map((node) => node.id) as [string, string]
