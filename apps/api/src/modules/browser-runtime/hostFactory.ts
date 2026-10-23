@@ -69,7 +69,6 @@ export async function createBrowserHost(options: BrowserHostOptions) {
     actionDirectory: root, profileDirectory: profileId => storage.directory(profileId),
     allocateGeneration: profileId => storage.allocateProcessGeneration(profileId), ...(options.log ? { log: options.log } : {}), onOrigin: (profileId, origin) => storage.noteOrigin(profileId, origin),
     onDisconnected: (profileId, generation) => { void broker.disconnected(profileId, generation).catch(options.reportFailure) },
-    reportFailure: options.reportFailure,
     downloadDirectory: profileId => join(root, 'native-downloads', browserInputHash(profileId)),
     onDownload: async event => {
       const owner = downloadOwners.get(event.nativeId) ?? broker.ownerForTarget(event.profileId, event.generation, event.targetId)
