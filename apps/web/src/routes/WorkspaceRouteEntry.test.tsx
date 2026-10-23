@@ -1,3 +1,4 @@
+import { writeSync } from 'node:fs'
 import { installBrowserLocks } from '../test/browserLocks'
 import { nativeNode } from '../shared/mocks/nativeFixtureTypes'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -231,10 +232,11 @@ describe('WorkspaceRouteEntry integration', () => {
         count += 1
         let depth = 0
         for (let e: Element | null = element; e; e = e.parentElement) depth += 1
+        const frames = String(new Error('x').stack).split('\n').filter(l => !l.includes('jsdom') && !l.includes('wrapped')).slice(1, 7).map(l => l.trim().replace(/^at /, '').replace(/file:\/\/\/home\/runner\/work\/foreman-code-ci\/foreman-code-ci\//, '')).join(' | ')
+        writeSync(2, `\nGCSY ${count} ${element.tagName}.${String(element.className).slice(0, 60)} depth=${depth} :: ${frames}\n`)
         const t0 = performance.now()
-        console.error(`GCS ${count} ${element.tagName}.${String(element.className).slice(0, 80)} depth=${depth} styleAttr=${element.getAttribute('style')?.slice(0, 120)} sheets=${document.styleSheets.length} rules=${[...document.styleSheets].reduce((n, sheet) => n + sheet.cssRules.length, 0)}`)
         const result = (original as (...args: unknown[]) => CSSStyleDeclaration)(element, ...rest)
-        console.error(`GCS ${count} done ${Math.round(performance.now() - t0)}ms`)
+        writeSync(2, `GCSY ${count} done ${Math.round(performance.now() - t0)}ms\n`)
         return result
       }) as typeof window.getComputedStyle
       window.getComputedStyle = wrapped
