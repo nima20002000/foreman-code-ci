@@ -5,7 +5,7 @@ import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresInteractionCoordinationRepository } from '../src/modules/interactions/coordination.js'
 import { PostgresApprovalBudgetRepository } from '../src/modules/interactions/budget.js'
 import { acceptRunAuthority, bindRunAuthority } from '../src/modules/access/runAuthority.js'
-import { CurrentWorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
+import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
 import { createTestPool } from './helpers/testPool.mjs'
 import { candidateFor, seedWorkflowFixture } from './helpers/workflowDatabase.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
@@ -46,7 +46,7 @@ describe.skipIf(!postgresEnabled)('CI authority reads beside credential admissio
           [fixture.run.id, accepted.principal.id])
         return accepted
       })
-      const credentials = new CurrentWorkerCredentialService(pool, access)
+      const credentials = new Wave25WorkerCredentialService(pool, access)
       const issued = await credentials.issueForExecution(execution.id)
       const worker = await access.authenticate(issued.environment.variables.GRAPHQL_MCP_TOKEN!, 'worker')
       const authority = new RunCiAuthority(pool)

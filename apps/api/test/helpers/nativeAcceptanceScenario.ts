@@ -24,7 +24,7 @@ import { applyApplicationMigrations } from '../../src/infrastructure/migrations.
 import { createCheckpointStore } from '../../src/infrastructure/checkpoints.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
-import { CurrentWorkerCredentialService as WorkerCredentialService } from '../../src/modules/interactions/current/credentials.js'
+import { Wave25WorkerCredentialService as WorkerCredentialService } from '../../src/modules/interactions/current/credentials.js'
 import { CodexAppServerSessionManager } from '../../src/modules/harnesses/codexAppServer.js'
 import { HarnessExecutionError } from '../../src/modules/harnesses/errors.js'
 import { NativeProcessRegistry } from '../../src/modules/harnesses/recovery/processRegistry.js'
@@ -32,7 +32,7 @@ import { McpDetectionService, WorkerLaunchCredentialService, type ExecutionCrede
 import { codexMcpInspectorAdapter } from '../../src/modules/harnesses/codexMcpInspectorAdapter.js'
 import { PostgresApprovalBudgetRepository } from '../../src/modules/interactions/budget.js'
 import { ApprovalExecutionCoordinator } from '../../src/modules/interactions/execution.js'
-import { CurrentInteractionRepository } from '../../src/modules/interactions/current/repository.js'
+import { Wave25InteractionRepository } from '../../src/modules/interactions/current/repository.js'
 import { ExecutionScopedNativeSessionManagerResolver } from '../../src/modules/interactions/runtimePorts.js'
 import { buildApp } from '../../src/app.js'
 import { PostgresAppInteractionService } from '../../src/modules/interactions/app.js'
@@ -84,7 +84,7 @@ export interface NativeAcceptanceRuntime {
   engine: LangGraphWorkflowEngine
   runs: PostgresRunRepository
   approvals: ApprovalExecutionCoordinator
-  interactions: CurrentInteractionRepository
+  interactions: Wave25InteractionRepository
   budgets: PostgresApprovalBudgetRepository
   registry: NativeProcessRegistry
 }
@@ -394,7 +394,7 @@ export async function runNativeAcceptanceScenario(scenario: Scenario, first: Har
             completedAt, elapsedMs, committed })
         }
       }
-      const interactions = new CurrentInteractionRepository(livePool, new ReviewNativeProofServices(reviewCapture.verify))
+      const interactions = new Wave25InteractionRepository(livePool, new ReviewNativeProofServices(reviewCapture.verify))
       const factories = new NativeHarnessFactories({
         codexBinary,
         auxiliaryRecovery: role => registry.scope(`${role}:${randomUUID()}`),

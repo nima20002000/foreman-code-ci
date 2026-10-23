@@ -151,7 +151,7 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   now a `create*` factory returning a typed object (same call order). Services reached before they are built go through
   `ProductionCallbacks` (one `Late` slot each, `composition/late.ts`); services that exist only after startup are in
   `StartedServices`; lifecycle flags are in `ProductionState`. Not typechecked (owner decision).
-- [~] #7 Business logic, authorization and SQL in `production.ts`.
+- [x] #7 Business logic, authorization and SQL in `production.ts`.
   - Moved out earlier: profile authority, device host override, provider-accounts worker authority, rsync transfer
     authority, main provisioning target, and the Run-principal query (one function, used in four places).
   - Moved out in 3c: the workflow manager resolver (`runs/workflowManagerResolver.ts`) and context preparation
@@ -159,8 +159,8 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
     selection and compaction recovery (`conversations/chatSources.ts`), the Worker native-output context and the placed
     continuation check (`placement/`), with their SQL in `readRunWorkflowScopeForShare`, `readStoredRemoteReceipt` and
     `readExecutionWorkflowNode`.
-  - Still there: the Agent chat and Operator manager factories (the per-harness allocation in `createConversationManagers`
-    and `createAgentChat`), which need most of the harness services.
+  - Completed: the Agent chat and Operator per-harness manager allocation now lives in
+    `conversations/managerResolvers.ts`; `createConversationManagers` and `createAgentChat` only wire the factories.
 - [x] #8 Missing wiring surfaces as runtime 503s. Guards that only checked wiring (`remoteWorkflow`, `workerChats`,
   `runtimeOwner`, `browserRemote`) and the `!.` reads are gone. Guards on real startup state keep their codes; no test
   asserts any of them.
@@ -179,12 +179,13 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
 - [x] #12 Test-mode branches: `buildProductionApp(options)`, a `computerUpkeep` option, and one replay value.
 
 ### PR 4: Naming (not started)
-- [x] #34 Remaining `Wave25…` TypeScript identifiers renamed to `Current…`; non-history contract docs now use `contracts/current`.
+- [ ] #34 Ticket/wave names in production: `contracts/wave25` (1,023 importers), `interactions/wave25/`,
+  `pr17/pr18` migrations, `eng04_*` SQL, W07/W08/W09 comments; one version called wave25/V3/Current.
   (#74 renamed `test/wave25` → `test/native-projection` and the test helpers.)
   PR 4b renamed the code names to `current`: `contracts/wave25` → `contracts/current` (subpath, directory and
   every importer), `interactions/wave25/` → `interactions/current/`, and all 82 `*V3*` identifiers → `*Current*`
   (2,824 occurrences; no name collided, so none was skipped). `RepeatGraphCurrentV3` became
-  `RepeatGraphCurrentCurrent`, which the owner should review. Left alone: `wave25_*` SQL,
+  `RepeatGraphCurrentCurrent`, which the owner should review. Left alone: `Wave25*` identifiers, `wave25_*` SQL,
   migration file names, `wave25*` test file names, string literals, JSON keys, prose, docs and history.
 - [ ] #35 Unfinished graphql → foreman-code rename (646 files; compose/DB names, rsync path, env compat layer).
   Deployed names need a migration plan.
