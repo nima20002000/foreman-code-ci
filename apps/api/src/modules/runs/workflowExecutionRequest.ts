@@ -11,7 +11,6 @@ import { currentInitialPrompt } from './currentRouting.js'
 import { trustedWorkNoticePrompt } from './workHandoffNotice.js'
 import { repeatTickIndex } from './repeatResolution.js'
 import { workflowCoordinationPrompt } from './workflowCoordinationPrompt.js'
-import { isCoordinatorRole, workflowTeamPrompt, type WorkflowTeam } from './workflowTeamPrompt.js'
 
 function every(seconds: number | undefined): string {
   if (!seconds) return 'on an interval'
@@ -43,8 +42,6 @@ interface WorkflowExecutionRequestInput {
   executionContext?: HarnessExecutionContext | undefined
   resultProtocol?: ResultProtocol | undefined
   collaborationPrompt?: string | undefined
-  /** Pinned roles and instructions of the connected Agents; without it the team is described from the saved graph only. */
-  team?: WorkflowTeam | undefined
 }
 
 export function workflowExecutionRequest(input: WorkflowExecutionRequestInput) {
@@ -75,14 +72,7 @@ export function workflowExecutionPromptContext(input: WorkflowExecutionRequestIn
   // Without saved choices, finish follows every outgoing execution edge; a return never does.
   const downstream = node.choice || version.definition.hierarchy ? [] : version.definition.edges
     .filter(edge => edge.kind === 'execution' && edge.source === node.id).map(edge => nameOf(edge.target))
-  const team: WorkflowTeam = { ...input.team, [node.id]: { ...input.team?.[node.id], productRole: configuration.productRole } }
-  const callerNodeId = workInput?.work.kind === 'work_request' ? workInput.work.request.requesterNodeId
-    : workInput?.parentRequest?.requesterNodeId ?? executionContext?.parentRequest?.requesterNodeId
-  const teamPrompt = tickIndex === undefined ? workflowTeamPrompt(version.definition, node.id, team, callerNodeId) : undefined
-  // A Worker without its own downstream route reports a finish back to the Orchestrator that asked for the work.
-  const reportsToCaller = !!callerNodeId && !node.choice && !version.definition.hierarchy && !version.definition.edges
-    .some(edge => edge.kind === 'execution' && edge.source === node.id) && isCoordinatorRole(team[callerNodeId]?.productRole)
-  const returnPrompt = workInput?.work.kind === 'work_request' && !reportsToCaller ? [
+  const returnPrompt = workInput?.work.kind === 'work_request' ? [
     ...(downstream.length ? [
       `To hand your deliverable to the next Agent (${downstream.join(', ')}), use {"kind":"finish"} with empty remainingFindings.`,
       `A return goes back to ${nameOf(workInput.work.request.requesterNodeId)} only and never starts ${downstream.join(', ')}.`,
@@ -102,7 +92,7 @@ export function workflowExecutionPromptContext(input: WorkflowExecutionRequestIn
   ].join('\n') : undefined
   const hierarchy = !resultProtocol && version.definition.hierarchy && tickIndex === undefined
     ? hierarchyWorkPrompt(version.definition, node.id) : undefined
-  const prompts = [initialPrompt, coordination, hierarchy, teamPrompt, input.collaborationPrompt, noticePrompt, returnPrompt, direction, execution.memoryBoardDigest?.text].filter(Boolean)
+  const prompts = [initialPrompt, coordination, hierarchy, input.collaborationPrompt, noticePrompt, returnPrompt, direction, execution.memoryBoardDigest?.text].filter(Boolean)
   return HarnessExecutionRequestSchema.omit({ workingDirectory: true, runtimeDirectory: true }).parse({
     executionId: execution.id,
     runId: execution.runId,

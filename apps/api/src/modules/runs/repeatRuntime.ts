@@ -31,7 +31,6 @@ import { buildWorkHandoffGraph } from './workHandoffGraph.js'
 import { workHandoffNodeAction } from './workHandoffNode.js'
 import { WorkExecutionFailure } from './workExecutionFailure.js'
 import { workflowCoordinationPrompt } from './workflowCoordinationPrompt.js'
-import { readWorkflowTeam } from './workflowTeamPrompt.js'
 import { isTransientExecutionError, repeatSettlementPending, transientExecutionFailure } from './executionRetryPolicy.js'
 export { repeatSettlementPending } from './executionRetryPolicy.js'
 import { ExecutionLimiter } from './limiter.js'
@@ -324,11 +323,9 @@ export function repeatNativeObserver(context: RepeatNativeObserverContext):
       check()
       const collaborationPrompt = await context.readCollaborationPrompt?.(execution)
       check()
-      const team = await readWorkflowTeam(context.version, node.id, id => context.workflows.getAgentConfiguration(id))
-      check()
       const request = workflowExecutionRequest({ execution: { ...execution, ...paths },
         version: context.version, configuration, workspaceId: run.workspaceId, executionContext,
-        resultProtocol: run.resultProtocol, collaborationPrompt, team })
+        resultProtocol: run.resultProtocol, collaborationPrompt })
       const coordinationResult = run.resultProtocol ? { resultProtocol: run.resultProtocol,
         definition: context.version.definition, workflowNodeId: node.id,
         interval: repeatTickIndex(execution.input) !== undefined } : undefined
@@ -421,7 +418,6 @@ function isRuntimeFailure(error: unknown): boolean {
     'WORK_DIRECTION_WAIT_WRITER_REQUIRED', 'WORK_FAILURE_WRITER_REQUIRED',
     'WORKFLOW_NATIVE_APPROVAL_UNHANDLED',
     'WORK_CHECKPOINT_ACTIVATION_MISSING', 'WORK_SUCCESSOR_DUPLICATE', 'WORK_HANDOFF_DELIVERY_TOO_LARGE',
-    'WORK_REPORT_LIMIT_REACHED',
   ].includes(code)
 }
 
@@ -429,7 +425,7 @@ function runtimeFailureResult(error: unknown): ExecutionResult | undefined {
   if (error instanceof WorkExecutionFailure) return error.result
   if (!(error instanceof DomainError)) return undefined
   if (!preparationFailureCodes.has(error.code) && !['WORKFLOW_EXECUTION_BUDGET_EXHAUSTED', 'JOB_PREPARATION_TIMEOUT',
-    'WORK_RUN_EXECUTION_BUDGET_EXHAUSTED', 'EXECUTION_START_INTERRUPTED', 'WORK_REPORT_LIMIT_REACHED'].includes(error.code)) return undefined
+    'WORK_RUN_EXECUTION_BUDGET_EXHAUSTED', 'EXECUTION_START_INTERRUPTED'].includes(error.code)) return undefined
   return { outcome: 'failed', error: { code: error.code, message: error.message, retryable: false } }
 }
 
@@ -554,7 +550,7 @@ export async function executeRepeatRuntime(input: {
   store: Pick<RepeatRunRepository, 'admit' | 'acceptTerminal' | 'enterBlock' | 'readOccurrence' | 'transition'
     | 'resolveExcluded' | 'completeRun' | 'ensureWorkEntry' | 'admitWorkActivation' | 'acceptWorkTerminal'
     | 'admitWorkRequest' | 'returnWork' | 'recordWorkUnresolved' | 'resolveWaitingWorkJoins' | 'completeWorkRun'>
-    & Partial<Pick<RepeatRunRepository, 'admitTick' | 'admitHierarchyGroup' | 'readWorkCallerReport'>>
+    & Partial<Pick<RepeatRunRepository, 'admitTick' | 'admitHierarchyGroup'>>
   driver: RepeatExecutionDriver; lifecycle: RepeatRuntimeLifecycle
   checkpointer: import('@langchain/langgraph-checkpoint').BaseCheckpointSaver
   configuredParallelism?: number
