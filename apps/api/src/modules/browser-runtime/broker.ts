@@ -267,7 +267,9 @@ export class BrowserBroker implements BrowserLifecyclePort {
         return { kind: 'unavailable', reason: 'disabled', retryable: false }
       }
       const preparationKey = `preparation:${key}:${input.commandId}`
-      const preparationHash = browserInputHash({ ...input, readOnly: binding.readOnly })
+      // The tab limit can change on an open session without changing its saved assignment.
+      const preparationHash = browserInputHash({ ...input, browser: { enabled: input.browser.enabled,
+        profileId: input.browser.profileId }, readOnly: binding.readOnly })
       const preparation = await this.options.journal.read(preparationKey)
       if (preparation && preparation.inputHash !== preparationHash) throw new DomainError('COMMAND_ID_CONFLICT', 'This preparation command belongs to a different saved assignment.', 409)
       if (!preparation) await this.options.journal.write(preparationKey, { inputHash: preparationHash, state: 'reserved' })
