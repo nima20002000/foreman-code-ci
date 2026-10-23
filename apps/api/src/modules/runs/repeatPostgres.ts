@@ -1445,14 +1445,12 @@ export class RepeatRunRepository {
         await this.settleAttempts(context, { kind: 'occurrence', id: ref.occurrence!.occurrenceId })
         const current = await this.occurrence(context, ref.occurrence!.occurrenceId)
         const exit = context.version.definition.nodes.find((node) => node.id === ref.nodeId)!
-        decision = validateRepeatDecisionV1(context.version, decideRepeatExit(context.version, current.occurrence, execution,
+        decision = decideRepeatExit(context.version, current.occurrence, execution,
           parseRepeatExitResultV1(execution.result, exit.choice!, exit.kind === 'job' ? undefined : exit.artifactOutputs,
             context.hooks.run.resultProtocol && exit.kind !== 'job' ? { resultProtocol: context.hooks.run.resultProtocol,
-              definition: context.version.definition, workflowNodeId: exit.id } : undefined), context.now),
-        execution.result, context.hooks.run.resultProtocol)
+              definition: context.version.definition, workflowNodeId: exit.id } : undefined), context.now)
         if (decision.reason === 'repeat') {
           successor = makeRepeatOccurrence(context.scope, block, repeatSuccessorInput(current.input, decision, execution.result!), decision)
-          validateRepeatSuccessorV1(context.version, decision, successor.occurrence, execution.result, context.hooks.run.resultProtocol)
         } else exported = finalRepeatExport(context.version, resolution, decision)
       }
       const facts: RepeatFact[] = [{ type: 'repeat.node.resolved', resolution, outside: ref.occurrence === null }]
