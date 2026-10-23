@@ -100,7 +100,7 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
 ## Findings by planned PR
 
 ### CI part 2 (#71, #72)
-- [~] #1 CI system embedded in the product.
+- [~] #1 CI system embedded in the product. A01 implements the HTTP ticket/lifecycle boundary and remaining CI read moves; Foreman CI verification pending.
   - Moved to `apps/ci`: `ci-host` (#69), plus `jobs/ci*` and the Circle accounts service (#71).
   - CI owns its routes and MCP tool specs (#71).
   - PR 12a: the 25 `ci*` migrations plus `hostCiRuns`, `hostCiActivity` and `agentCiActivity` live in
@@ -114,8 +114,9 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
     `ci_state_changed` activity in the same transaction and deletes the row.
   - PR 12a: `runs/agentCiSnapshot` and the `computers/activity` CI reads, plus the `runs/history`, `runs/agentRunStatus`
     and `runs/workflowDeliverable` ticket reads, go through `@foreman-code/ci/ciReadApi` (adapter `modules/ci/reads.ts`).
-  - Still in the product: two SQL reads of CI tables (`runs/activitiesSql` ticket join, `bug-reports/stuckExecutions`);
-    FKs from CI tables to product tables; the move into a `ci` schema; contracts CI tooling.
+  - A01: `runs/activitiesSql` ticket evidence and `bug-reports/stuckExecutions` ticket aggregates now come from the
+    CI read API, preserving the same transaction snapshot, indexed lookups and detector locks.
+  - Still open: FKs from CI tables to product tables; the move into a `ci` schema; contracts CI tooling.
 - [x] #30 (CI part): the worker declares `@foreman-code/ci` and imports CI by package name (#71); it builds its own CI
   context (#72). The rest of #30 is open: about 40 other `apps/api` modules are imported by the worker.
   - Still in the product: 25 CI migrations (PR 12); non-CI SQL reading CI tables (`runs/agentCiSnapshot`, the
@@ -541,12 +542,11 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
 - [~] CI owns its schema (12a: migrations moved, activity events, read API; the `ci` schema move is open), an HTTP
   client replaces the in-process ports, and a protocol package holds the `ci-*.mjs` tooling.
   - 12b: `CiTicketClient` (`@foreman-code/ci/client`) is the product's view of CI's ticket operations. `HostCiService`
-    is the in-process transport and stays the only one wired in production; `HttpCiClient` calls the CI routes and is
-    covered by a test against the real routes. The MCP CI tools, the CI routes and the tool specs depend on the
-    interface. The routes now accept the `ci_get` wait/test-status options and a cancel `commandId`. Not done: wiring
-    `HttpCiClient` in production (it needs a service credential that makes the routes authenticate the calling
-    principal), HTTP routes for `dispatch`, `cancelStoppedRun` and `expireOverdueRuns` (production still calls them
-    in process), and the Circle accounts, enrollment and runtime-preparation clients.
+    remains the CI implementation; A01 wires `HttpCiClient` in production through a private loopback listener with
+    an ephemeral service credential, carrying the original caller and audit source (including workspace inference). The MCP CI tools, the CI routes and the tool specs depend on the
+    interface. The routes now accept the `ci_get` wait/test-status options and a cancel `commandId`. Not done:
+    the Circle accounts, enrollment and runtime-preparation clients. A01 adds authenticated service routes for
+    `dispatch`, `cancelStoppedRun` and `expireOverdueRuns`, used by the product; CI owns its own start/close lifecycle.
   - 12b: `packages/ci-protocol` holds the test-result message (`CI_TEST_RESULT_LIMITS`, `ciTestResults`) that
     `scripts/ci-test-results.mjs` writes and Main reads; the script imports it by relative path and keeps its path.
     A script test guards it against `CiTestResultsSchema`. Not done: `apps/ci` does not import the package yet, because
