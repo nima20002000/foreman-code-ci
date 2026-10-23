@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
@@ -216,7 +215,7 @@ async function prepareRuntime(context: CiContext, { repository, commit, installe
     seedReceiptPath, contextReceiptPath, qualificationSource, cache,
   }
   if (unitCodex) {
-    prepared.unitCodex = { executable: INSTALLATION_NAMES.paths.ciCodex, sourceExecutable: codex,
+    prepared.unitCodex = { executable: '/opt/graphql-ci/tools/codex', sourceExecutable: codex,
       version: unitCodex.version, binarySha256: unitCodex.sha256 }
   }
   signal?.throwIfAborted()

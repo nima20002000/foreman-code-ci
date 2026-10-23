@@ -19,7 +19,7 @@ it('forks historical chat on its accepted Worker and denies a read-only caller',
     const listed = JSON.parse((await execute(fixture.provider.binary, ['mcp', 'list', '--json'])).stdout)
     expect(listed).toEqual([expect.objectContaining({ name: 'foreman-code',
       transport: expect.objectContaining({ type: 'stdio', command: process.execPath,
-        args: expect.any(Array), env_vars: ['GRAPHQL_MCP_TOKEN'] }) })])
+        args: expect.any(Array), env_vars: ['FOREMAN_CODE_MCP_TOKEN'] }) })])
     const { completed, id, execution, before, started } = await forkHistoricalChat(fixture, source, message)
     const calls = await fixture.provider.calls()
     const turns = calls.filter(call => call.method === 'turn/start'

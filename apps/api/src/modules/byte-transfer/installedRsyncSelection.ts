@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { constants } from 'node:fs'
 import { lstat, open } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
@@ -105,7 +104,7 @@ export async function readProtectedInstalledRsyncWriterSelection(path: string,
     .some(key => selected.registration[key as keyof typeof selected.registration] !== identity[key as keyof typeof identity])) {
     unavailable('Protected writer installation belongs to another paired identity.')
   }
-  if (!selected.remoteBinary.path.endsWith(INSTALLATION_NAMES.paths.rsyncSuffix)) unavailable('Protected worker rsync is not the app-private installation.')
+  if (!selected.remoteBinary.path.endsWith('/.local/share/graphql-tools/rsync/3.5.1/bin/rsync')) unavailable('Protected worker rsync is not the app-private installation.')
   validateRsyncEndpoint({ ...selected.endpoint, localBinary: selected.localBinary.path, remoteBinary: selected.remoteBinary.path,
     localBinarySha256: selected.localBinary.sha256, remoteBinarySha256: selected.remoteBinary.sha256 })
   await precheckInstalledFile(selected.remoteBinary, signal)
@@ -147,7 +146,7 @@ export function createInstalledRsyncSelectionProvider(ports: InstalledRsyncSelec
     } }
     let checked = await check()
     if (!isDeepStrictEqual(checked.registration, selected.registration) || checked.consent?.revision !== selected.consentRevision) unavailable('Explicit installation selection no longer matches current consent/registration.')
-    const suffix = INSTALLATION_NAMES.paths.rsyncSuffix
+    const suffix = '/.local/share/graphql-tools/rsync/3.5.1/bin/rsync'
     if (!selected.localBinary.path.endsWith(suffix) || !selected.remoteBinary.path.endsWith(suffix)) unavailable('Only explicitly pinned app-private rsync3.5.1 binaries are supported.')
     const endpoint = validateRsyncEndpoint({ ...selected.endpoint, localBinary: selected.localBinary.path, remoteBinary: selected.remoteBinary.path,
       localBinarySha256: selected.localBinary.sha256, remoteBinarySha256: selected.remoteBinary.sha256 })
