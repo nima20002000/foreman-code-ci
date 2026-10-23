@@ -18,7 +18,6 @@
     "./schema-primitives": { "types": "./dist/schemaPrimitives.d.ts", "import": "./dist/schemaPrimitives.js" },
     "./collaboration-tools": { "types": "./dist/collaborationTools.d.ts", "import": "./dist/collaborationTools.js" },
     "./failure": { "types": "./dist/failure.d.ts", "import": "./dist/failure.js" },
-    "./server-kit": { "types": "./dist/serverKit.d.ts", "import": "./dist/serverKit.js" },
     "./worker-update": { "types": "./dist/workerUpdate.d.ts", "import": "./dist/workerUpdate.js" },
     "./worker-artifact-content-node": { "types": "./dist/workerArtifactContentNode.d.mts", "import": "./dist/workerArtifactContentNode.mjs" },
     "./managed-mcp-channel": { "types": "./dist/managedMcpChannel.d.ts", "import": "./dist/managedMcpChannel.js" },

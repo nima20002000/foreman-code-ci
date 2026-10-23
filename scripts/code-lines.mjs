@@ -15,7 +15,7 @@ export function classify(path) {
   if (smokeFile.test(path)) return 'smoke'
   if (testFile.test(path)) return 'unit'
   if (testSupportDirectory.test(path) || /(?:^|\/)[^/]*fixtures?\.(?:ts|tsx|js|jsx|mjs|cjs)$/i.test(path)) return 'support'
-  if (/^(?:apps\/(?:api|ci|web)|packages\/contracts)\/src\//.test(path) || /^apps\/web\/[^/]+\.html$/.test(path)) return 'source'
+  if (/^(?:apps\/(?:api|web)|packages\/contracts)\/src\//.test(path) || /^apps\/web\/[^/]+\.html$/.test(path)) return 'source'
   return 'tooling'
 }
 

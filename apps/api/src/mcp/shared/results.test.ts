@@ -42,7 +42,7 @@ it('keeps unrecognized errors and private causes out of public tool responses', 
 
 it('reports a browser host error raised by its separately bundled copy with its own code and message', async () => {
   // The browser native host is bundled on its own, so its errors are instances of another copy of DomainError.
-  const bundledErrors = `${import.meta.resolve('@foreman-code/contracts/server-kit')}?bundled-browser-host`
+  const bundledErrors = '../../modules/errors.js?bundled-browser-host'
   const bundled = await import(/* @vite-ignore */ bundledErrors) as typeof import('../../modules/errors.js')
   expect(bundled.DomainError).not.toBe(DomainError)
   const error = new bundled.DomainError('BROWSER_NATIVE_TIMEOUT', 'The browser did not answer in time.', 504)

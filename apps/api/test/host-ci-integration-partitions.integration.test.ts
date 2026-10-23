@@ -2,8 +2,8 @@ import { CiComputersOutputSchema, CiGetOutputSchema, CiLogsOutputSchema, CiRunOu
   integrationPartition } from '@foreman-code/contracts'
 import { expect, it } from 'vitest'
 import { CI_GET_ACTIONS } from '../src/modules/jobs/ciAuthority.js'
-import { buildComputerIntegrationShards } from '@foreman-code/ci/capacity'
-import { readExecutorSpeeds } from '@foreman-code/ci/executorSpeed'
+import { buildComputerIntegrationShards } from '../src/modules/ci-host/capacity.js'
+import { readExecutorSpeeds } from '../src/modules/ci-host/executorSpeed.js'
 import { fixture } from './helpers/hostCiMcpFixture.js'
 import { ciRunReadback } from './helpers/ciRunReadback.js'
 

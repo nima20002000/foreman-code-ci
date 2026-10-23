@@ -21,7 +21,7 @@ import { COMPUTER_ACCOUNTS_NAMESPACE, ComputerAccountsListSchema, type ComputerA
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { CircleStandby } from '@foreman-code/ci/circleStandby'
+import { CircleStandby } from '../src/modules/ci-host/circleStandby.js'
 import { operatorCatalogNames } from './support/operatorCatalog.js'
 
 const mainId = '11111111-1111-4111-8111-111111111111'

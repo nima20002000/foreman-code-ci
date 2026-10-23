@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import type { z } from 'zod'
 import type { CiGetOutputSchema } from '@foreman-code/contracts'
-import { CiTicketChanges } from '@foreman-code/ci/ticketChanges'
+import { CiTicketChanges } from '../../src/modules/ci-host/ticketChanges.js'
 
 type CiGetOutput = z.infer<typeof CiGetOutputSchema>
 

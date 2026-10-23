@@ -7,10 +7,10 @@ import {
 } from '@foreman-code/contracts/management'
 import { requireAuthorization } from '../access/policy.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
-import type { CircleAccountRegistry, CircleAccountRegistryChanged, CircleAccountStatusReader } from '../ci/types.js'
+import type { CircleAccountRegistry, CircleAccountRegistryChanged, CircleAccountStatusReader } from '../ci-host/circleAccounts.js'
 import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
-import { CI_BUSY_TICKET } from '../ci/values.js'
+import { CI_BUSY_TICKET } from '../ci-host/deadlines.js'
 import type { PostgresFoundationSettingsRepository, VersionedSetting } from './foundation.js'
 
 /** Metadata and command receipts share one transaction; credential files are never mutated here. */
