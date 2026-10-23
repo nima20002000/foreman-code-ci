@@ -56,7 +56,6 @@ import { WorkExecutionFailure } from './workExecutionFailure.js'
 import { admitHierarchyGroupLocked, type HierarchyGroupAdmission } from './hierarchyGroupAdmission.js'
 import { markHierarchyContinuationStartedLocked } from './hierarchyGroupSettlement.js'
 import { isHierarchyWorkflow } from './hierarchyResults.js'
-import { declaresRepeatBlocks, usesWorkHandoffGraph } from './workflowRunMode.js'
 import { assertHierarchyDirectionReleasedLocked, readHierarchyDirectionForSourceLocked,
   reserveHierarchyDirectionLocked } from './hierarchyDirection.js'
 import { hierarchyCompletionLocked } from './hierarchyCompletion.js'
@@ -382,7 +381,7 @@ export class RepeatRunRepository {
         assertActive: () => this.active(context),
       }, stored.workActivationId)
       assertWorkActivationReplay(stored, input)
-      if (context.hooks.run.resultProtocol || isHierarchyWorkflow(context.version)) {
+      if (context.hooks.run.resultProtocol || context.version.definition.hierarchy) {
         return (await readWorkResultContextLocked(context, stored.workActivationId, stored.input,
           context.hooks.run.resultProtocol))!
       }
@@ -456,7 +455,7 @@ export class RepeatRunRepository {
    * technical retry stays in the same activation and never reserves a handoff. */
   acceptWorkTerminal(executionId: string, candidate: (attempt: number) => HarnessExecution): Promise<WorkTerminalAcceptance> {
     return this.transaction<WorkTerminalAcceptance | { kind: 'control_failed'; result: ExecutionResult }>(async (context) => {
-      if (!usesWorkHandoffGraph(context.version)) return repeatConflict('WORK_POLICY_PIN_CONFLICT')
+      if (!context.version.definition.handoffs) return repeatConflict('WORK_POLICY_PIN_CONFLICT')
       const stored = await this.execution(context, executionId)
       if (!stored.workActivationId) return repeatConflict('WORK_ACTIVATION_MISSING')
       await this.recordedEffect(context, 'input.bind', executionId)
@@ -1035,13 +1034,13 @@ export class RepeatRunRepository {
       if (!evidence) return repeatConflict('REPEAT_NATIVE_EVIDENCE_REQUIRED')
       // Pure validation/normalization precedes even the authority adapter, which
       // may persist original native sources on this transaction.
-      const workResultRepair = usesWorkHandoffGraph(context.version) && incoming.result?.outcome === 'failed'
+      const workResultRepair = context.version.definition.handoffs && incoming.result?.outcome === 'failed'
         ? await readWorkResultRepairAttempt(context.sql, incoming.id) > 0 : false
       const deliverableFailure = await workflowDeliverableFailure(context.sql, context.version, incoming,
         context.hooks.run.resultProtocol)
       const effectFailure = await readWorkflowResultEffectFailureLocked(context.sql, context.version, incoming,
         context.hooks.run.resultProtocol, resultEffectFailure)
-      const executionContext = usesWorkHandoffGraph(context.version) && stored.workActivationId
+      const executionContext = context.version.definition.handoffs && stored.workActivationId
         && incoming.result?.outcome === 'succeeded'
         ? await readWorkResultContextLocked(context, stored.workActivationId, stored.execution.input,
           context.hooks.run.resultProtocol) : undefined
@@ -1309,7 +1308,7 @@ export class RepeatRunRepository {
       if (context.hooks.run.executionState !== 'running') return { kind: 'wait', dueAt: null }
       const node = context.version.definition.nodes.find((item) => item.id === nodeId)
       if (!node || node.kind === 'job' || !node.interval || blockForNode(context.version, nodeId)) return repeatConflict('TICK_NODE_CONFLICT')
-      const facts = await readIntervalCheckFacts(context.sql, context.scope.runId, nodeId, usesWorkHandoffGraph(context.version))
+      const facts = await readIntervalCheckFacts(context.sql, context.scope.runId, nodeId, Boolean(context.version.definition.handoffs))
       if (facts.lastTickId && facts.lastTickId !== settledId) {
         await this.recordedEffect(context, 'input.bind', facts.lastTickId)
         return { kind: 'busy', execution: (await this.execution(context, facts.lastTickId)).execution }
@@ -1573,7 +1572,7 @@ export class RepeatRunRepository {
   }
   async completeWorkRun(): Promise<'completed' | 'needs_direction' | 'idle'> {
     return this.transaction(async (context) => {
-      if (!usesWorkHandoffGraph(context.version) || declaresRepeatBlocks(context.version)) return repeatConflict('WORK_POLICY_PIN_CONFLICT')
+      if (!context.version.definition.handoffs || context.version.definition.repeat) return repeatConflict('WORK_POLICY_PIN_CONFLICT')
       if (isHierarchyWorkflow(context.version)) {
         const terminals = await hierarchyCompletionLocked({ ...context, assertActive: () => this.active(context) })
         if (context.hooks.run.executionState === 'completed' && !context.stopped) {

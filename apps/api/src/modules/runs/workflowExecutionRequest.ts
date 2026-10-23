@@ -1,5 +1,3 @@
-import { isHierarchyWorkflow } from './hierarchyResults.js'
-import { usesWorkHandoffGraph } from './workflowRunMode.js'
 import { hierarchyWorkPrompt } from './hierarchyWorkPrompt.js'
 import {
   HarnessExecutionRequestSchema,
@@ -61,15 +59,13 @@ export function workflowExecutionPromptContext(input: WorkflowExecutionRequestIn
   const node = version.definition.nodes.find(item => item.id === execution.workflowNodeId)
   if (!node || node.kind === 'job') throw new Error('Native execution requires an Agent workflow node.')
   const tickIndex = repeatTickIndex(execution.input)
-  const hierarchyWorkflow = isHierarchyWorkflow(version)
-  const workHandoffs = usesWorkHandoffGraph(version)
   const initialPrompt = tickIndex !== undefined
     ? intervalCheckPrompt(tickIndex, node.interval, Boolean(execution.sessionContinuation),
       execution.sessionContinuation ? undefined : node.initialPrompt)
-    : resultProtocol || hierarchyWorkflow ? node.initialPrompt : currentInitialPrompt(node,
+    : resultProtocol || version.definition.hierarchy ? node.initialPrompt : currentInitialPrompt(node,
       version.definition.repeat?.blocks.some(block => block.exitNodeId === node.id) ?? false,
-      workHandoffs, execution.resultProtocol)
-  const workInput = workHandoffs && tickIndex === undefined
+      version.definition.handoffs !== undefined, execution.resultProtocol)
+  const workInput = version.definition.handoffs && tickIndex === undefined
     ? WorkActivationInputSchema.parse(execution.input) : undefined
   const noticePrompt = workInput ? trustedWorkNoticePrompt(workInput) : undefined
   const nameOf = (nodeId: string) => {
@@ -77,14 +73,14 @@ export function workflowExecutionPromptContext(input: WorkflowExecutionRequestIn
     return JSON.stringify(item && item.kind !== 'job' ? item.name ?? item.label ?? nodeId : nodeId)
   }
   // Without saved choices, finish follows every outgoing execution edge; a return never does.
-  const downstream = node.choice || hierarchyWorkflow ? [] : version.definition.edges
+  const downstream = node.choice || version.definition.hierarchy ? [] : version.definition.edges
     .filter(edge => edge.kind === 'execution' && edge.source === node.id).map(edge => nameOf(edge.target))
   const team: WorkflowTeam = { ...input.team, [node.id]: { ...input.team?.[node.id], productRole: configuration.productRole } }
   const callerNodeId = workInput?.work.kind === 'work_request' ? workInput.work.request.requesterNodeId
     : workInput?.parentRequest?.requesterNodeId ?? executionContext?.parentRequest?.requesterNodeId
   const teamPrompt = tickIndex === undefined ? workflowTeamPrompt(version.definition, node.id, team, callerNodeId) : undefined
   // A Worker without its own downstream route reports a finish back to the Orchestrator that asked for the work.
-  const reportsToCaller = !!callerNodeId && !node.choice && !hierarchyWorkflow && !version.definition.edges
+  const reportsToCaller = !!callerNodeId && !node.choice && !version.definition.hierarchy && !version.definition.edges
     .some(edge => edge.kind === 'execution' && edge.source === node.id) && isCoordinatorRole(team[callerNodeId]?.productRole)
   const returnPrompt = workInput?.work.kind === 'work_request' && !reportsToCaller ? [
     ...(downstream.length ? [
@@ -104,7 +100,7 @@ export function workflowExecutionPromptContext(input: WorkflowExecutionRequestIn
     `Previous summary: ${workInput.work.direction.summary}`,
     'Use the explicit direction delivered to this exact execution. Preserve the latest deliverable and account for its unresolved findings.',
   ].join('\n') : undefined
-  const hierarchy = !resultProtocol && hierarchyWorkflow && tickIndex === undefined
+  const hierarchy = !resultProtocol && version.definition.hierarchy && tickIndex === undefined
     ? hierarchyWorkPrompt(version.definition, node.id) : undefined
   const prompts = [initialPrompt, coordination, hierarchy, teamPrompt, input.collaborationPrompt, noticePrompt, returnPrompt, direction, execution.memoryBoardDigest?.text].filter(Boolean)
   return HarnessExecutionRequestSchema.omit({ workingDirectory: true, runtimeDirectory: true }).parse({
