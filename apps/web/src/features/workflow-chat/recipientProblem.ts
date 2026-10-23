@@ -1,6 +1,6 @@
 import type { WorkflowChatPostRequest } from '@foreman-code/contracts'
 import type { UseQueryResult } from '@tanstack/react-query'
-import { deliveryAction } from '../conversations/delivery/deliveryAction'
+import { deliveryAction } from '../chat-core'
 import type { RecipientTargetOption } from './RecipientTargetPicker'
 import { sameDeliveryTarget } from './draft'
 

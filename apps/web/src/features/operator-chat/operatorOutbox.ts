@@ -1,6 +1,6 @@
 import { SendOperatorMessageRequestSchema, type SendOperatorMessageRequest, type OperatorChatSettings } from '@foreman-code/contracts'
 import type { MessageAttachmentRef } from '@foreman-code/contracts/files'
-import { sameAttachmentRefs } from '../conversations/chatAttachmentAttempt'
+import { sameAttachmentRefs } from '../chat-core'
 import { readStoredCommand, withCommandLock, writeStoredCommand } from '../../shared/api/commandOutbox'
 import { protectedKey } from '../../shared/api/protectedChatStorage'
 import { assertSession, sessionGeneration, sessionIsSwitching, sessionSignal, SessionChangedError } from '../../shared/api/sessionBoundary'

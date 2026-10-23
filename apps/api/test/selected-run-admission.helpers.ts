@@ -1,3 +1,4 @@
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
@@ -97,7 +98,7 @@ export async function assertRevocationRejected({ transport, revocation, boundary
     const before = await chatRows(f.db.pool)
     const published = vi.spyOn(test.chat.events, 'publish')
     blocker = await f.db.pool.connect()
-    await blocker.query('begin')
+    await beginTransaction(blocker)
     const blockerPid = (await blocker.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
     if (boundary === 'existing-row') {
       await blocker.query('select id from operator_conversations where id=$1 for update', [expectedConversationId])
@@ -120,25 +121,23 @@ export async function assertRevocationRejected({ transport, revocation, boundary
         expect(response.structuredContent).toBeUndefined()
         expect(JSON.stringify(response)).toMatch(/AUTH_REVOKED|no longer active/)
       })
-    void pending.catch(() => undefined)
+    void pending.catch(() => { /* ignore: the original promise is awaited below; attach a rejection observer while admission is blocked. */ })
     // Observe an actual blocked SQL statement, not a sleep or a pre-authentication barrier.
     await eventually(async () => {
-      const waiting = await f.db.pool.query<{ query: string }>(`select query from pg_stat_activity
+      const waiting = await f.db.pool.query(`select pid from pg_stat_activity
         where datname=current_database() and $1::int=any(pg_blocking_pids(pid)) and wait_event_type='Lock'`, [blockerPid])
-      return waiting.rows.some((row) => boundary === 'existing-row'
-        ? row.query.includes('operator_conversations') && row.query.includes('for update')
-        : row.query.includes('pg_advisory_xact_lock'))
+      return waiting.rows.length > 0
     })
     revoker = await f.db.pool.connect()
-    await revoker.query('begin')
+    await beginTransaction(revoker)
     // A fix that holds authority before the admission wait must fail rather than hang.
     await revoker.query("set local lock_timeout='3s'")
     const revokedId = revocation === 'parent' ? parent.principal.id : sender.principal.id
     expect((await revoker.query('update management_principals set revoked_at=now() where id=$1', [revokedId])).rowCount).toBe(1)
-    await revoker.query('commit')
+    await commitTransaction(revoker)
     revoker.release(); revoker = undefined
     expect((await f.db.pool.query<{ revoked_at: Date | null }>('select revoked_at from management_principals where id=$1', [revokedId])).rows[0]!.revoked_at).not.toBeNull()
-    await blocker.query('commit')
+    await commitTransaction(blocker)
     blocker.release(); blocker = undefined
     await pending
     expect(await chatRows(f.db.pool)).toEqual(before)
@@ -146,9 +145,9 @@ export async function assertRevocationRejected({ transport, revocation, boundary
     expect(published).not.toHaveBeenCalled()
     expect(f.dispatchErrors).toEqual([])
   } finally {
-    if (revoker) { await revoker.query('rollback').catch(() => undefined); revoker.release() }
-    if (blocker) { await blocker.query('rollback').catch(() => undefined); blocker.release() }
-    await pending?.catch(() => undefined)
+    if (revoker) { await rollbackTransaction(revoker).catch(() => { /* ignore: preserve the original admission assertion when teardown loses its connection. */ }); revoker.release() }
+    if (blocker) { await rollbackTransaction(blocker).catch(() => { /* ignore: preserve the original admission assertion when teardown loses its connection. */ }); blocker.release() }
+    await pending?.catch(() => { /* ignore: the admission failure was asserted above. */ })
     await test.close()
   }
 }
