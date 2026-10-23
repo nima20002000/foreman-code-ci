@@ -8,7 +8,6 @@ import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connec
 import { requireAuthorization } from '../access/policy.js'
 import { readChatPrincipal } from '../access/conversationCredentials.js'
 import { DomainError } from '../errors.js'
-import { componentLogger } from '../diagnostics/logger.js'
 import { createBrowserProfiles } from '../browser-profiles/factory.js'
 import type { BrowserProfileEndpoint, BrowserProfileTransport } from '../browser-profiles/host.js'
 import type { BrowserInstallationBinding } from '../browser-profiles/keys.js'

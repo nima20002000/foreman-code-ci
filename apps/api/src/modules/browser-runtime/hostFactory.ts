@@ -67,7 +67,7 @@ export async function createBrowserHost(options: BrowserHostOptions) {
   })
   const driver: ManagedBrowserNativeDriver = new ManagedBrowserNativeDriver({ runtime: options.runtime,
     actionDirectory: root, profileDirectory: profileId => storage.directory(profileId),
-    allocateGeneration: profileId => storage.allocateProcessGeneration(profileId), log: options.log, onOrigin: (profileId, origin) => storage.noteOrigin(profileId, origin),
+    allocateGeneration: profileId => storage.allocateProcessGeneration(profileId), ...(options.log ? { log: options.log } : {}), onOrigin: (profileId, origin) => storage.noteOrigin(profileId, origin),
     onDisconnected: (profileId, generation) => { void broker.disconnected(profileId, generation).catch(options.reportFailure) },
     downloadDirectory: profileId => join(root, 'native-downloads', browserInputHash(profileId)),
     onDownload: async event => {
@@ -83,7 +83,7 @@ export async function createBrowserHost(options: BrowserHostOptions) {
       }
     } })
   const journal = createBrowserRuntimeJournal(join(root, 'journal'))
-  const broker: BrowserBroker = new BrowserBroker({ computerId: options.computerId, driver, journal, authority: options.subjectAuthority, log: options.log,
+  const broker: BrowserBroker = new BrowserBroker({ computerId: options.computerId, driver, journal, authority: options.subjectAuthority, ...(options.log ? { log: options.log } : {}),
     closeSessionResources: sessionId => createBrowserSessionCleanup(media, files, options.reportFailure)(sessionId) })
   const files: BrowserFileStore = new BrowserFileStore(join(root, 'session-files'), async (owner, mutate) => {
     await options.assertHostOwnership()
