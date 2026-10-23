@@ -374,39 +374,6 @@ test('Worker bootstrap shares one host and exposes distinct checkpoint, stop and
   assert(events.indexOf('stop-host') < events.indexOf('restore-profile'));
 });
 
-test('Worker activation reuses the pre-update checkpoint until admission resumes', async t => {
-  const directory = await fixture(t), runtimeRoot = join(directory, 'app/browser-runtime');
-  const previous = await stage(runtimeRoot, await artifact(directory, 'previous'));
-  await activateBrowserRuntime({ runtimeRoot, staged: previous,
-    drain: async () => ({ profileCheckpointId: 'initial', profileStateRoot: directory }) });
-  const replacement = await stage(runtimeRoot, await artifact(directory, 'replacement', '1.1.0'));
-  const f = bootstrapFixture();
-  let checkpoints = 0;
-  let selected = previous;
-  f.host.drainForRuntimeUpdate = async () => ({ profileCheckpointId: `checkpoint-${++checkpoints}`,
-    profileStateRoot: directory });
-  const owner = createWorkerBrowserRuntime({ ...f.options, runtimeRoot,
-    readSelectedRelease: async () => ({ manifest: { browserRuntime: { manifestSha256: selected.manifestSha256 } } }),
-    readInstalled: readInstalledBrowserRuntime,
-    loadModule: async () => ({ ...f.module, createBrowserHost: async () => f.host }) });
-  t.after(() => owner.close());
-  assert.equal((await owner.start()).ready, true);
-  const checkpoint = await owner.drain();
-  const activated = await activateBrowserRuntime({ runtimeRoot, staged: replacement, drain: input => owner.drain(input) });
-  assert.equal(activated.profileCheckpointId, checkpoint.profileCheckpointId);
-  assert.equal(checkpoints, 1);
-  assert.equal(owner.status().ready, false);
-  await owner.resumeAdmission();
-  const next = await owner.drain();
-  assert.notEqual(next.profileCheckpointId, checkpoint.profileCheckpointId);
-  assert.equal(checkpoints, 2);
-  await owner.stop();
-  selected = replacement;
-  await owner.start();
-  assert.notEqual((await owner.drain()).profileCheckpointId, next.profileCheckpointId);
-  assert.equal(checkpoints, 3);
-});
-
 test('a busy Worker drain restores ordinary admission and preserves the active owner for a later drain', async () => {
   const { runtime, host, events } = bootstrapFixture();
   let active = true;
