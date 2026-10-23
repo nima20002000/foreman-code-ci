@@ -1,5 +1,5 @@
 import WebSocket from 'ws'
-import { deviceTlsOptions } from '@foreman-code/contracts/device-tls-node'
+import { deviceTlsOptions } from '@foreman-code/contracts-node/device-tls-node'
 import { ManagementPrincipalSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import { BROWSER_DEVICE_EXTENSION, BROWSER_MEDIA_PATH, BrowserDeviceRequestSchema,
   BrowserPreparedBindingSchema, canonicalJson } from '@foreman-code/contracts'

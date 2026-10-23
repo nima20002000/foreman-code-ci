@@ -3,7 +3,7 @@ import { open, lstat, link, unlink, rename } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { createHash, createPublicKey, randomUUID } from 'node:crypto';
 import { WorkerPairingConfigurationSchema } from '../../../packages/contracts/src/deviceIdentity.ts';
-import { publicKeyFingerprint } from '../../../packages/contracts/src/deviceIdentityNode.ts';
+import { publicKeyFingerprint } from '../../../packages/contracts-node/src/deviceIdentityNode.ts';
 import { InstalledJobRuntimeCaptureInputRecordSchema, InstalledJobRuntimeConfigurationRecordSchema, InstalledJobRuntimeRefreshInputSchema, captureInstalledRuntimeConfigurationRecord } from '@foreman-code/api/worker/jobs';
 import { RemoteOperationJournal } from '@foreman-code/api/worker/runs';
 import { NativeProcessRegistry } from '@foreman-code/api/worker/harnesses';

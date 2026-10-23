@@ -592,7 +592,10 @@ export async function runIntegration(argv = [], {
     const contractsBuild = spawnSync('corepack', ['pnpm', '--dir', 'packages/contracts', 'build'],
       { cwd: root, stdio: 'inherit', env })
     if (contractsBuild.status !== 0) throw new Error('Integration contracts build failed')
-    // The CI package compiles against the contracts output.
+    const nodeBuild = spawnSync('corepack', ['pnpm', '--dir', 'packages/contracts-node', 'build'],
+      { cwd: root, stdio: 'inherit', env })
+    if (nodeBuild.status !== 0) throw new Error('Integration Node contracts build failed')
+    // The CI package compiles against both contracts packages.
     const ciBuild = spawnSync('corepack', ['pnpm', '--dir', 'apps/ci', 'build'], { cwd: root, stdio: 'inherit', env })
     if (ciBuild.status !== 0) throw new Error('Integration CI package build failed')
   }
