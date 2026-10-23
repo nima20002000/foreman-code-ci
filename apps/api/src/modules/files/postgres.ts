@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { withTransaction } from '../../infrastructure/transaction.js'
+import { withClientTransaction } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import { z } from 'zod'
 import {
@@ -108,7 +108,7 @@ export class PostgresFileRepository implements FileReferenceRepository {
 
   async create(input: NewStoredFile): Promise<StoredFile> {
     const client = await this.pool.connect()
-    try { await withTransaction({ client }, () => this.insert(client, input)); return (await this.read(input.value.file.fileId, input.value.revision.revisionId, client))! }
+    try { await withClientTransaction(client, () => this.insert(client, input)); return (await this.read(input.value.file.fileId, input.value.revision.revisionId, client))! }
     finally { client.release() }
   }
 
@@ -226,9 +226,9 @@ export class PostgresFileRepository implements FileReferenceRepository {
       const retentionSnapshot = this.retentionSnapshot
       const session: AllocationSession = {
         read,
-        create: (value) => withTransaction({ client }, () => insertAllocation(value)),
+        create: (value) => withClientTransaction(client, () => insertAllocation(value)),
         ...(retentionSnapshot ? { createWithRetention: (build: (durationSeconds: number) => FileAllocation) =>
-          withTransaction({ client }, async () => {
+          withClientTransaction(client, async () => {
             check()
             const duration = await retentionSnapshot(client, ownerPrincipalId)
             const value = build(duration)
@@ -237,7 +237,7 @@ export class PostgresFileRepository implements FileReferenceRepository {
           }) } : {}),
         setState: async (state) => {
           check()
-          await withTransaction({ client }, async () => {
+          await withClientTransaction(client, async () => {
             await mutation?.authorize(client)
             const current = await read()
             if (!current) throw new DomainError('FILE_UPLOAD_NOT_FOUND', 'Upload was not found.', 404)

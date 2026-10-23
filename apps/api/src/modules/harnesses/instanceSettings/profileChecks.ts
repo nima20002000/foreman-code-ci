@@ -465,7 +465,7 @@ export class HostHarnessInstanceProfileChecks {
       }
     }
   }
-  private async qualifyProfile(client: pg.ClientBase, input: HostHarnessInstanceCheckInput, checkId: string,
+  private async qualifyProfile(client: pg.PoolClient, input: HostHarnessInstanceCheckInput, checkId: string,
     authorize: (client: pg.PoolClient) => Promise<void>, signal: AbortSignal,
     options: { source?: 'system'; reuseLatest?: true } = {}) {
     const profileLock = `harness-instance-profile:${input.instanceId}`

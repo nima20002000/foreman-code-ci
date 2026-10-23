@@ -1,6 +1,6 @@
 import pg from 'pg'
 import { componentLogger } from './logger.js'
-import { acquireDatabaseConnection } from './databaseRetry.js'
+import { acquireDatabaseConnection } from './databaseReadRetry.js'
 import { ignoreError } from '../modules/diagnostics/ignoredError.js'
 import { ciDatabaseDeadline, ciDatabasePriority } from './ciDatabasePriority.js'
 
@@ -69,76 +69,6 @@ export function createPool(options: DatabaseOptions, applicationName: string, di
     componentLogger('db').error({ err: error, pool: applicationName }, 'idle PostgreSQL connection failed')
   }))
   return pool
-}
-
-/**
- * A small pool beside the application pools, with its own size and deadlines: a one-connection ownership check or
- * the lifecycle-command session pool. Idle connection failures are logged like an application pool's.
- */
-export function createAuxiliaryPool(config: pg.PoolConfig, applicationName: string,
-  onError?: (error: Error) => void): pg.Pool {
-  const pool = new pg.Pool({ ...config, application_name: applicationName })
-  pool.on('error', onError ?? ((error: Error) => {
-    componentLogger('db').error({ err: error, pool: applicationName }, 'idle PostgreSQL connection failed')
-  }))
-  return pool
-}
-
-/**
- * One connection outside every pool for a session-scoped owner: an advisory lock held across transactions, or a
- * journal that commits independently while the caller holds a pooled connection. `settings` is usually an
- * application pool's `options`, so the connection keeps that pool's deadlines. The caller connects it, handles its
- * loss and ends it; a failure while it is idle is logged instead of escaping as an unhandled 'error' event.
- */
-export function createDedicatedClient(settings: pg.ClientConfig, applicationName?: string): pg.Client {
-  const client = new pg.Client(applicationName ? { ...settings, application_name: applicationName } : settings)
-  client.on('error', (error: Error) => {
-    componentLogger('db').warn({ err: error, connection: applicationName ?? settings.application_name },
-      'dedicated PostgreSQL connection failed')
-  })
-  return client
-}
-
-/** Runs work on a fresh dedicated connection (see createDedicatedClient) and always closes it afterwards. */
-export async function withDedicatedClient<T>(settings: pg.ClientConfig, applicationName: string,
-  work: (client: pg.Client) => Promise<T>): Promise<T> {
-  const client = createDedicatedClient(settings, applicationName)
-  try {
-    await client.connect()
-    return await work(client)
-  } finally {
-    await client.end().catch(ignoreError('db', 'close dedicated connection', { applicationName }))
-  }
-}
-
-const lifecyclePools = new WeakMap<pg.Pool, pg.Pool>()
-
-/**
- * Commands that own a session for their whole lifecycle lease it from one long-lived pool beside the application
- * pool, so each command keeps its own connection without connecting and authenticating anew. It is created on first
- * use with the application pool's settings (at least ten connections) and closes when that pool ends.
- */
-export function lifecycleSessionPool(pool: pg.Pool): pg.Pool {
-  const existing = lifecyclePools.get(pool)
-  if (existing) return existing
-  const lifecycle = createAuxiliaryPool({ ...pool.options, min: 0, max: Math.max(pool.options.max ?? 10, 10) },
-    'graphql-lifecycle-command')
-  const sessions = new Set<Promise<void>>()
-  lifecycle.on('connect', client => {
-    // Ending a pool resolves before its sockets close; the application pool's end waits for them.
-    const closed: Promise<void> = new Promise(resolve => client.once('end', () => {
-      sessions.delete(closed)
-      resolve()
-    }))
-    sessions.add(closed)
-  })
-  const endApplicationPool = pool.end.bind(pool)
-  pool.end = (async (callback?: () => void) => {
-    await Promise.all([endApplicationPool(), lifecycle.end().then(() => Promise.all(sessions))])
-    callback?.()
-  }) as pg.Pool['end']
-  lifecyclePools.set(pool, lifecycle)
-  return lifecycle
 }
 
 /**

@@ -7,7 +7,7 @@ import { createTestRoot, removeTestRoot } from '../../../scripts/test-resources.
 import { installedRestartService } from './helpers/installedRestartService.js'
 
 const fixture = vi.hoisted(() => ({
-  build: vi.fn(), deploy: vi.fn(), prune: vi.fn(), lockfile: 'locked dependencies', ciSource: 'CI source', cacheRoot: '',
+  build: vi.fn(), deploy: vi.fn(), prune: vi.fn(), lockfile: 'locked dependencies', cacheRoot: '',
 }))
 vi.mock('node:module', async importOriginal => {
   const actual = await importOriginal<typeof import('node:module')>()
@@ -28,15 +28,11 @@ vi.mock('node:fs/promises', async importOriginal => {
     copyFile: vi.fn(async () => undefined),
     readdir: vi.fn(async (...args: Parameters<typeof actual.readdir>) => {
       if (fixture.cacheRoot && String(args[0]).startsWith(fixture.cacheRoot)) return actual.readdir(...args)
-      if (String(args[0]).endsWith('apps/ci/src')) {
-        return [{ name: 'runner.ts', isDirectory: (): boolean => false }]
-      }
       return []
     }),
     readFile: vi.fn(async (path: string) => {
       if (String(path).endsWith('.modules.yaml')) return 'storeDir: /fixture-package-store\n'
       if (String(path).endsWith('pnpm-lock.yaml')) return fixture.lockfile
-      if (String(path).endsWith('apps/ci/src/runner.ts')) return fixture.ciSource
       return 'fixture input'
     }),
   }
@@ -63,7 +59,6 @@ describe('installed restart artifact reuse', () => {
     fixture.cacheRoot = join(root.directory, 'cache')
     vi.stubEnv('FOREMAN_CODE_TEST_CACHE_ROOT', fixture.cacheRoot)
     fixture.lockfile = 'locked dependencies'
-    fixture.ciSource = 'CI source'
     fixture.deploy.mockReset()
     fixture.prune.mockReset()
     fixture.build.mockReset()
@@ -93,7 +88,7 @@ describe('installed restart artifact reuse', () => {
     await prepare('first')
     await prepare('second')
     expect(fixture.deploy).toHaveBeenCalledOnce()
-    expect(fixture.build).toHaveBeenCalledTimes(3)
+    expect(fixture.build).toHaveBeenCalledTimes(2)
     const [, , options] = fixture.deploy.mock.calls[0]!
     expect(options.dependencies.root).toBe(join(root.directory, 'cache/installed-api-restart-dependencies'))
   })
@@ -114,15 +109,7 @@ describe('installed restart artifact reuse', () => {
     fixture.lockfile = 'updated dependencies'
     await prepare('second')
     expect(fixture.deploy).toHaveBeenCalledTimes(2)
-    expect(fixture.build).toHaveBeenCalledTimes(6)
-  })
-
-  it('rebuilds when the extracted CI package changes', async () => {
-    await prepare('first')
-    fixture.ciSource = 'updated CI source'
-    await prepare('second')
-    expect(fixture.deploy).toHaveBeenCalledTimes(2)
-    expect(fixture.build).toHaveBeenCalledTimes(6)
+    expect(fixture.build).toHaveBeenCalledTimes(4)
   })
 
   it('does not cache failed dependency packaging', async () => {
@@ -133,7 +120,7 @@ describe('installed restart artifact reuse', () => {
       .rejects.toThrow('fixture deployment failed')
     await prepare('retry')
     expect(fixture.deploy).toHaveBeenCalledTimes(2)
-    expect(fixture.build).toHaveBeenCalledTimes(4)
+    expect(fixture.build).toHaveBeenCalledTimes(2)
   })
 
   it('reports dependency cache maintenance failures before publishing a service', async () => {
@@ -144,7 +131,7 @@ describe('installed restart artifact reuse', () => {
       .rejects.toThrow('fixture cache maintenance failed')
     await prepare('retry')
     expect(fixture.deploy).toHaveBeenCalledOnce()
-    expect(fixture.build).toHaveBeenCalledTimes(3)
+    expect(fixture.build).toHaveBeenCalledTimes(2)
     expect(fixture.prune).toHaveBeenCalledTimes(2)
   })
 
@@ -156,7 +143,7 @@ describe('installed restart artifact reuse', () => {
     expect(readFileSync(join(second, 'apps/api/dist/compiled-link.js'), 'utf8')).toBe('compiled fixture')
     expect(await readlink(join(second, 'apps/api/dist/compiled-link.js'))).toBe('compiled.js')
     expect((await stat(join(second, 'apps/api/dist/compiled.js'))).mode & 0o777).toBe(0o700)
-    expect(fixture.build).toHaveBeenCalledTimes(3)
+    expect(fixture.build).toHaveBeenCalledTimes(2)
     expect(readFileSync(join(second, 'apps/api/dist/restart-fixture.js'), 'utf8')).toBe('compiled fixture')
   })
 })

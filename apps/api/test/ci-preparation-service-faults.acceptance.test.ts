@@ -4,14 +4,14 @@ import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
-import { CiRuntimeWorker } from '@foreman-code/ci/ciRuntimeWorker'
-import { runCiRuntimeCommand } from '@foreman-code/ci/ciRuntimeCommands'
-import { reclaimInterruptedPreparation } from '@foreman-code/ci/ciRuntimePrepare'
+import { CiRuntimeWorker } from '../src/modules/jobs/ciRuntimeWorker.js'
+import { runCiRuntimeCommand } from '../src/modules/jobs/ciRuntimeCommands.js'
+import { reclaimInterruptedPreparation } from '../src/modules/jobs/ciRuntimePrepare.js'
 import { identityAlive, processIdentity, type LinuxProcessIdentity }
   from '../src/modules/harnesses/recovery/linuxIdentity.js'
 import { readProtectedRuntimeConfiguration } from '../src/modules/jobs/installedRuntimeHost.js'
 import { InstalledVerificationRuntimeConfigurationSchema, MAX_VERIFICATION_CONFIGURATION_BYTES }
-  from '@foreman-code/contracts/installed-runtime-node'
+  from '../src/modules/jobs/installedVerificationConfiguration.js'
 import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'
 import { physicalFaultEnvironment } from './helpers/physicalFaultEnvironment.js'
 

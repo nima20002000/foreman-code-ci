@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { postgresEnabled } from './helpers/wave25Agent3.js'
 import { useCiRuntimePreparationFixture } from './ci-runtime-preparation.test-support.js'
 import { PostgresDeviceAccessService } from '../src/modules/devices/access.js'
-import { CiPreparationRecordSchema, PostgresCiPreparationRepository } from '@foreman-code/ci/ciPreparationRepository'
+import { CiPreparationRecordSchema, PostgresCiPreparationRepository } from '../src/modules/jobs/ciPreparationRepository.js'
 import { commit, builder, mainId } from './helpers/ciPreparationFixture.js'
 
 describe.skipIf(!postgresEnabled)('persisted runtime preparation access over authenticated MCP', () => {

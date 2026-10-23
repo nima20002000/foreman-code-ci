@@ -4,7 +4,7 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { ManagementActionSchema, ManagedAgentDefaultsSchema, ManagedWorkflowDefaultsSchema,
   ManagedWorkspaceDefaultsSchema } from '@foreman-code/contracts/management'
 import { deferred } from './helpers/deferred.js'
-import { withTransaction } from '../src/infrastructure/transaction.js'
+import { withClientTransaction } from '../src/infrastructure/transaction.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 
 type Fixture = Awaited<ReturnType<typeof currentOperatorIntegration>>
@@ -62,7 +62,7 @@ it.each(['workspace-defaults', 'agent-defaults', 'workflow-defaults', 'create', 
       if (kind === 'agent-defaults') {
         const entered = deferred()
         blockerPid = (await blocker.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
-        authorityBlocker = withTransaction({ client: blocker }, async () => {
+        authorityBlocker = withClientTransaction(blocker, async () => {
           // Authentication reads normally; the command's live authority read takes a row lock.
           await blocker.query('select id from management_principals where id=$1 for update', [caller.principal.id])
           entered.resolve()

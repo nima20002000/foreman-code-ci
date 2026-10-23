@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { CiPreparationRecordSchema } from '@foreman-code/ci/ciPreparationRepository'
+import { CiPreparationRecordSchema } from '../../src/modules/jobs/ciPreparationRepository.js'
 import { buildComputerKey, buildComputerTarget } from '../../src/modules/settings/buildComputers.js'
 import { workflowAuthoringMigration } from '../../src/infrastructure/workflowAuthoringMigration.js'
 import { withTransaction } from '../../src/infrastructure/transaction.js'

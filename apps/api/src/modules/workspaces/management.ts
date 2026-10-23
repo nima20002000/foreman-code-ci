@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { withTransaction } from '../../infrastructure/transaction.js'
+import { withClientTransaction } from '../../infrastructure/transaction.js'
 
 import {
   ManagedWorkspaceSchema,
@@ -101,7 +101,7 @@ export class WorkspaceManagementService {
         afterRollback: async (client) => {
           if (!provisioning || !input.parentPath) return
           const parentPath = input.parentPath
-          await withTransaction({ client }, async () => {
+          await withClientTransaction(client, async () => {
             await client.query('select pg_advisory_xact_lock(hashtext($1))', [WORKSPACE_FOLDER_LIFECYCLE_LOCK])
             await provisioning.reconcile(client, parentPath)
           })

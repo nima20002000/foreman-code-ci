@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { CiRuntimeWorker } from '@foreman-code/ci/ciRuntimeWorker'
-import { closeCiRuntimeCommand, runCiRuntimeCommand } from '@foreman-code/ci/ciRuntimeCommands'
+import { CiRuntimeWorker } from '../../src/modules/jobs/ciRuntimeWorker.js'
+import { closeCiRuntimeCommand, runCiRuntimeCommand } from '../../src/modules/jobs/ciRuntimeCommands.js'
 
 interface Input {
   directory: string

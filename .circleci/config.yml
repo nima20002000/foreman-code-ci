@@ -184,7 +184,6 @@ jobs:
                 paths:
                   - node_modules/.vitest-cache
                   - apps/api/node_modules/.cache
-                  - apps/ci/node_modules/.cache
                   - apps/web/node_modules/.cache
                   - apps/web/node_modules/.tmp
                   - apps/worker/node_modules/.cache
@@ -219,7 +218,6 @@ jobs:
             - node_modules
             - .logs/pnpm-metadata
             - apps/api/node_modules
-            - apps/ci/node_modules
             - apps/web/node_modules
             - apps/worker/node_modules
             - packages/contracts/node_modules

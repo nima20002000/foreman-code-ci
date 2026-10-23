@@ -24,7 +24,7 @@ async function fixture(t) {
     ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
   };
   execFileSync('git', ['clone', '--quiet', '--shared', repository, root], { env: environment });
-  for (const path of ['node_modules', 'apps/worker/node_modules', 'apps/api/node_modules', 'apps/ci/node_modules',
+  for (const path of ['node_modules', 'apps/worker/node_modules', 'apps/api/node_modules',
     'packages/contracts/node_modules']) {
     await symlink(join(repository, path), join(root, path));
   }
@@ -55,7 +55,7 @@ test('Worker artifacts bundle new transitive API helpers without registering mod
     "import { value } from './value.js';\nexport const importedHelper = () => value;\n");
   await appendFile(join(f.root, 'apps/worker/src/workerFactory.mjs'),
     "\nexport { importedHelper } from '../../api/src/modules/worker-build-fixture/helper.ts';\n"
-      + "export { HostCiRunner } from '@foreman-code/ci/runner';\n"
+      + "export { HostCiRunner } from '../../api/src/modules/ci-host/runner.ts';\n"
       + "export { configurationWithNodeSkills } from '../../api/src/modules/skills/nodeSkills.ts';\n"
       + "export { agentInstructionBundle } from '../../api/src/modules/skills/instructions.ts';\n"
       + "export { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25';\n");

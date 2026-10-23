@@ -9,7 +9,6 @@
     "lint": "node ../../scripts/ci-remote.mjs lint -- node ../../scripts/heavy-job.mjs -- eslint . --max-warnings 0 --cache --cache-strategy content --cache-location node_modules/.cache/eslint/"
   },
   "dependencies": {
-    "@foreman-code/ci": "workspace:*",
     "@foreman-code/contracts": "workspace:*",
     "ws": "8.22.0"
   },

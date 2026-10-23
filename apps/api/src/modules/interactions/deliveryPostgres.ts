@@ -2,7 +2,7 @@ import { DurableInteractionSchema, type DurableInteraction } from '@foreman-code
 import { beginTransaction, commitTransaction, rollbackAfterFailure } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 
-import { runInDeliveryTransaction } from './connection.js'
+import { interactionConnection } from './connection.js'
 import { DomainError } from '../errors.js'
 import { RUN_CLEANUP_BOUNDARY_SQL } from './wave25/cleanupAuthority.js'
 import {
@@ -188,7 +188,7 @@ export class PostgresInteractionDeliveryRepository {
       // Native exceptions must be converted by the callback, not by this transaction:
       // a database failure after a successful write is an uncertain commit, not a failed send.
       if (writing) combined.throwIfAborted()
-      const result = typeof outcome === 'function' ? await runInDeliveryTransaction(client, () => outcome(current, combined)) : outcome
+      const result = typeof outcome === 'function' ? await interactionConnection.run(client, () => outcome(current, combined)) : outcome
       if ((claim.mode === 'reconcile' || attempt.state === 'uncertain') && result.state === 'failed') {
         throw new DomainError('DELIVERY_OUTCOME_UNCERTAIN', 'Reconciliation cannot turn an uncertain write into permission to resend.', 409)
       }

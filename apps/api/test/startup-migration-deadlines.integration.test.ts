@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createDatabase } from '../src/infrastructure/database.js'
-import { withTransaction } from '../src/infrastructure/transaction.js'
+import { withClientTransaction } from '../src/infrastructure/transaction.js'
 import { currentDatabase, postgresEnabled } from './helpers/eng04CurrentDatabase.js'
 import { deferred } from './helpers/deferred.js'
 import { readUntil } from './helpers/observableCondition.js'
@@ -18,7 +18,7 @@ describe.skipIf(!postgresEnabled)('server startup migration deadlines', () => {
     const holder = await fixture.pool.connect()
     const release = deferred()
     const entered = deferred<number>()
-    const holding = withTransaction({ client: holder }, async () => {
+    const holding = withClientTransaction(holder, async () => {
       await holder.query('lock table application_migrations in access exclusive mode')
       entered.resolve((await holder.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid)
       await release.promise

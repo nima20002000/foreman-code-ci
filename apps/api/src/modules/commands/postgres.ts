@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { beginTransaction, commitTransaction, rollbackTransaction } from '../../infrastructure/transaction.js'
-import { lifecycleSessionPool } from '../../infrastructure/pool.js'
 export { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -11,6 +10,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { DomainError } from '../errors.js'
 import type { GraphSqlClient } from '../run-graph/connection.js'
 import { ignoreError } from '../diagnostics/ignoredError.js'
+import { componentLogger } from '../diagnostics/logger.js'
 import { commandIdentity, commandReceiptPrincipals } from './identity.js'
 import { expiredCommandResult } from './receiptRetention.js'
 export { pruneCompletedCommandReceipts } from './receiptRetention.js'
@@ -53,6 +53,36 @@ function commandDatabaseFailure(error: unknown): unknown {
     { retryable: true, newCommandRequired: false, ...(code ? { sqlState: code } : {}) })
   failure.cause = error
   return failure
+}
+
+const lifecyclePools = new WeakMap<pg.Pool, pg.Pool>()
+
+/** Commands that own a session for their whole lifecycle lease it from one long-lived pool beside the application
+ * pool, so each command keeps its own connection without connecting and authenticating anew. It closes with that pool. */
+function lifecyclePool(pool: pg.Pool): pg.Pool {
+  const existing = lifecyclePools.get(pool)
+  if (existing) return existing
+  const lifecycle = new pg.Pool({ ...pool.options, min: 0, max: Math.max(pool.options.max ?? 10, 10),
+    application_name: 'graphql-lifecycle-command' })
+  const sessions = new Set<Promise<void>>()
+  lifecycle.on('connect', client => {
+    // Ending a pool resolves before its sockets close; the application pool's end waits for them.
+    const closed: Promise<void> = new Promise(resolve => client.once('end', () => {
+      sessions.delete(closed)
+      resolve()
+    }))
+    sessions.add(closed)
+  })
+  lifecycle.on('error', error => {
+    componentLogger('db').error({ err: error, pool: 'graphql-lifecycle-command' }, 'idle PostgreSQL connection failed')
+  })
+  const endApplicationPool = pool.end.bind(pool)
+  pool.end = (async (callback?: () => void) => {
+    await Promise.all([endApplicationPool(), lifecycle.end().then(() => Promise.all(sessions))])
+    callback?.()
+  }) as pg.Pool['end']
+  lifecyclePools.set(pool, lifecycle)
+  return lifecycle
 }
 
 interface PreparedMutation {
@@ -124,7 +154,7 @@ export class PostgresCommandCoordinator {
     const commandId = input.commandId ?? randomUUID()
     const inputHash = commandInputHash(input.payload)
     const dedicatedConnection = input.dedicatedConnection || input.prepare !== undefined
-    const client = await (dedicatedConnection ? lifecycleSessionPool(this.pool) : this.pool).connect()
+    const client = await (dedicatedConnection ? lifecyclePool(this.pool) : this.pool).connect()
     let releaseError: Error | undefined
     let inTransaction = false
     let lifecycleLock = false

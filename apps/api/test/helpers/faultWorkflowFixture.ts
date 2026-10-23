@@ -19,7 +19,7 @@ import { APP_MCP_TOKEN_ENVIRONMENT_VARIABLE } from '../../src/modules/access/wor
 import { componentLogger, readOperationalFailures } from '../../src/modules/diagnostics/logger.js'
 import { credentialAuthority } from '../../src/modules/interactions/wave25/credentialAuthority.js'
 import { readLiveManagementPrincipal } from '../../src/modules/access/liveManagementPrincipal.js'
-import { deliveryTransactionClient } from '../../src/modules/interactions/connection.js'
+import { interactionConnection } from '../../src/modules/interactions/connection.js'
 import { placedContinuationValidator } from '../../src/modules/placement/continuation.js'
 import { currentOperatorIntegration } from './currentOperatorIntegration.js'
 import { providerAppEndpoint } from './wave25Br1003Runtime.js'
@@ -38,7 +38,7 @@ function faultContinuation(base: Awaited<ReturnType<typeof currentOperatorIntegr
   placements: Awaited<ReturnType<typeof mixedComputerPlacement>>) {
   return placedContinuationValidator(base.db.pool, base.locations, {
     async prepare(executionId) {
-      const sql = deliveryTransactionClient() ?? base.db.pool
+      const sql = interactionConnection.getStore() ?? base.db.pool
       const placement = await readExecutionPlacement(sql, executionId)
       if (!placement) return null
       const intent = await readDispatchIntent(sql, executionId)
@@ -48,7 +48,7 @@ function faultContinuation(base: Awaited<ReturnType<typeof currentOperatorIntegr
     },
   }, {
     async assertCurrent(binding, signal) {
-      const sql = deliveryTransactionClient() ?? base.db.pool
+      const sql = interactionConnection.getStore() ?? base.db.pool
       const run = await base.runs.get(binding.intent.runId)
       if (!run) throw new Error('Expected the accepted Run')
       const current = await credentialAuthority(sql, binding.intent.executionId, 'workflow')

@@ -1,6 +1,6 @@
-import { RetryBackoff } from '@foreman-code/contracts/server-kit'
+import { RetryBackoff } from '../../infrastructure/retryBackoff.js'
 import type pg from 'pg'
-import { withTransaction } from '../../infrastructure/transaction.js'
+import { withClientTransaction } from '../../infrastructure/transaction.js'
 import type { GraphSqlClient } from '../run-graph/connection.js'
 import { PostgresSourceReservations, type SourceReservation } from './reservations.js'
 import type { PrivateSourceSnapshotStore } from './store.js'
@@ -161,7 +161,7 @@ async function releaseSnapshot(pool: pg.Pool, store: SnapshotStore,
   await store.withCaptureLock(candidate.snapshot_id, async () => {
     const sql = await pool.connect()
     try {
-      const unavailable = await withTransaction({ client: sql }, async () => {
+      const unavailable = await withClientTransaction(sql, async () => {
         const snapshot = await lockSnapshot(sql, candidate, scopeId)
         if (!snapshot || (snapshot.availability === 'retained'
           && !(await releasableSnapshots(sql, [candidate.snapshot_id], underPressure)).has(candidate.snapshot_id))) {
@@ -173,7 +173,7 @@ async function releaseSnapshot(pool: pg.Pool, store: SnapshotStore,
       })
       if (!unavailable) return
       await store.remove(candidate.snapshot_id)
-      await withTransaction({ client: sql }, async () => {
+      await withClientTransaction(sql, async () => {
         const fenced = await lockSnapshot(sql, candidate, scopeId)
         if (fenced?.availability === 'unavailable') {
           await new PostgresSourceReservations().reclaimed(sql, fenced.reservation, async () => true)

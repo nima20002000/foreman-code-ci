@@ -1,4 +1,5 @@
-export const memoryBoardsMigration = { version: 2026102124, sql: `
+/** Team D assigns the version and registers this migration in dependency order. */
+export const memoryBoardsMigration = { sql: `
 create table memory_boards (
   id text primary key, scope_key text not null unique, scope jsonb not null,
   revision bigint not null default 0, sequence bigint not null default 0,

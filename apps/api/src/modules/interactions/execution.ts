@@ -1,6 +1,6 @@
 import type { WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import { MemoryResultRejected } from '../collaboration/memoryResultError.js'
-import { isDatabaseTimeout, retryDatabaseTimeout } from '../../infrastructure/databaseRetry.js'
+import { isDatabaseTimeout, retryDatabaseTimeout } from '../../infrastructure/databaseTimeout.js'
 import { withAbortSignal } from '../../infrastructure/abortSignal.js'
 import { ExecutionLimiter } from '../runs/limiter.js'
 import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'

@@ -9,7 +9,7 @@ import { promisify } from 'node:util'
 import { expect, it } from 'vitest'
 import { parse } from 'yaml'
 import { removeFixtureDirectory } from './helpers/testResources.js'
-import { compileApiFixture, emitTypeScriptFixture } from './helpers/compiledApiFixture.js'
+import { compileApiFixture } from './helpers/compiledApiFixture.js'
 import { createLocalProductionProject } from './helpers/localProductionProject.js'
 
 const fixtureRoot = process.env.FOREMAN_CODE_TEST_ROOT ?? join(homedir(), '.cache', 'foreman-tmp')
@@ -24,7 +24,6 @@ it('keeps source development commands usable after successful and failed product
   const dependencies = { root: join(directory, 'api-dependencies'), source }
   const api = join(source, 'apps/api')
   const contracts = join(source, 'packages/contracts')
-  const ci = join(source, 'apps/ci')
   const destination = join(directory, 'deployed')
   // The repository install already populated the store; registry retries add no deployment coverage.
   const environment: NodeJS.ProcessEnv = { ...process.env, npm_config_offline: 'true' }
@@ -40,7 +39,6 @@ it('keeps source development commands usable after successful and failed product
   try {
     await mkdir(join(api, 'dist'), { recursive: true })
     await mkdir(join(contracts, 'dist'), { recursive: true })
-    await mkdir(join(ci, 'dist'), { recursive: true })
     await writeFile(join(source, 'package.json'), JSON.stringify({
       name: 'production-deployment-fixture', private: true, version: '1.0.0',
       packageManager: 'pnpm@11.27.0',
@@ -54,18 +52,13 @@ it('keeps source development commands usable after successful and failed product
     ].join('\n') + '\n')
     await writeFile(join(api, 'package.json'), JSON.stringify({
       name: '@foreman-code/api', private: true, version: '1.0.0', type: 'module',
-      main: 'dist/index.js', files: ['dist'], dependencies: { '@foreman-code/contracts': 'workspace:*', '@foreman-code/ci': 'workspace:*' },
+      main: 'dist/index.js', files: ['dist'], dependencies: { '@foreman-code/contracts': 'workspace:*' },
     }))
     await writeFile(join(contracts, 'package.json'), JSON.stringify({ name: '@foreman-code/contracts',
       private: true, version: '1.0.0', type: 'module', main: 'dist/index.js', files: ['dist'] }))
-    await writeFile(join(ci, 'package.json'), JSON.stringify({ name: '@foreman-code/ci',
-      private: true, version: '1.0.0', type: 'module', main: 'dist/index.js', files: ['dist'],
-      dependencies: { '@foreman-code/contracts': 'workspace:*' } }))
-    await writeFile(join(ci, 'dist/index.js'),
-      'export { contractValue as ciValue } from "@foreman-code/contracts"\n')
     await writeFile(join(contracts, 'dist/index.js'), 'export const contractValue = () => "production API available"\n')
     await writeFile(join(api, 'dist/index.js'),
-      'import { ciValue } from "@foreman-code/ci"; export const deployed = () => ciValue()\n')
+      'import { contractValue } from "@foreman-code/contracts"; export const deployed = () => contractValue()\n')
     const require = createRequire(new URL('../../worker/package.json', import.meta.url))
     const { parse } = require('yaml') as { parse: (text: string) => Record<string, unknown> }
     const lock = parse(await readFile(new URL('../../../pnpm-lock.yaml', import.meta.url), 'utf8'))
@@ -83,10 +76,6 @@ it('keeps source development commands usable after successful and failed product
       '.': { devDependencies: { '@types/node': { specifier: '26.5.1', version: '26.5.1' } } },
       'apps/api': { dependencies: {
         '@foreman-code/contracts': { specifier: 'workspace:*', version: 'link:../../packages/contracts' },
-        '@foreman-code/ci': { specifier: 'workspace:*', version: 'link:../ci' },
-      } },
-      'apps/ci': { dependencies: {
-        '@foreman-code/contracts': { specifier: 'workspace:*', version: 'link:../../packages/contracts' },
       } },
       'packages/contracts': {},
     } }))
@@ -95,20 +84,12 @@ it('keeps source development commands usable after successful and failed product
     await deployProductionApi(run, destination, { dependencies })
     const deployed = await import(pathToFileURL(join(destination, 'dist/index.js')).href)
     expect(deployed.deployed()).toBe('production API available')
-    const uncached = join(directory, 'uncached')
-    await deployProductionApi((command: string, args: string[]) => run(command, args.includes('deploy')
-      ? [...args, '--package-import-method=hardlink'] : args), uncached)
-    await writeFile(join(ci, 'dist/index.js'), 'export const ciValue = () => "rebuilt CI"\n')
     await writeFile(join(contracts, 'dist/index.js'), 'export const contractValue = () => "rebuilt contracts"\n')
     await writeFile(join(api, 'dist/index.js'), 'export const deployed = () => "rebuilt source API"\n')
     const { stdout } = await execute(process.execPath, ['--input-type=module', '-e',
       'const module = await import(process.argv[1]); console.log(module.deployed());',
       pathToFileURL(join(destination, 'dist/index.js')).href])
     expect(stdout.trim()).toBe('production API available')
-    const { stdout: uncachedOutput } = await execute(process.execPath, ['--input-type=module', '-e',
-      'const module = await import(process.argv[1]); console.log(module.deployed());',
-      pathToFileURL(join(uncached, 'dist/index.js')).href])
-    expect(uncachedOutput.trim()).toBe('production API available')
     await verifyDevelopment()
     const blockedDestination = join(directory, 'occupied')
     await writeFile(blockedDestination, 'occupied')
@@ -167,12 +148,11 @@ it('loads the compiled API using only its deployed production dependencies', asy
       }
       await cp(join(repository, 'patches'), join(source, 'patches'), { recursive: true })
       await cp(join(repository, 'scripts/require-pnpm.mjs'), join(source, 'scripts/require-pnpm.mjs'))
-      for (const project of ['apps/api', 'apps/ci', 'packages/contracts']) {
+      for (const project of ['apps/api', 'packages/contracts']) {
         await mkdir(join(source, project), { recursive: true })
         await cp(join(repository, project, 'package.json'), join(source, project, 'package.json'))
       }
       await cp(join(repository, 'packages/contracts/dist'), join(source, 'packages/contracts/dist'), { recursive: true })
-      await emitTypeScriptFixture(join(repository, 'apps/ci/tsconfig.build.json'), join(source, 'apps/ci/dist'))
     }
     const setup = [compileApiFixture(directory), prepareSource()] as const
     let compiledApi: string

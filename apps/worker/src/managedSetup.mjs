@@ -7,8 +7,8 @@ import { ApprovedRootAllowlistSchema } from '../../../packages/contracts/src/wor
 import { qualifyApprovedRootAllowlist } from '../../../apps/api/src/modules/sources/rootAttestation.ts';
 import { RemoteOperationJournal } from '../../../apps/api/src/modules/runs/remote/operationJournal.ts';
 import { openPrivateRoot, openChildDirectory, anchored } from '../../../apps/api/src/modules/sources/privateFilesystem.ts';
-import { CiRuntimeInstallationSchema } from '@foreman-code/ci/ciRuntimeInstallation';
-import { MAX_VERIFICATION_CONFIGURATION_BYTES } from '../../../packages/contracts/src/installedRuntimeNode.ts';
+import { CiRuntimeInstallationSchema } from '../../../apps/api/src/modules/jobs/ciRuntimeInstallation.ts';
+import { MAX_VERIFICATION_CONFIGURATION_BYTES } from '../../../apps/api/src/modules/jobs/installedVerificationConfiguration.ts';
 import { loadApprovedRoots } from './approvedRoots.mjs';
 import { acquireWorkerLock } from './runtime.mjs';
 import { createManagedStorage, optionalManagedJson, managedEntryExists, publishManagedJson } from './managedState.mjs';
