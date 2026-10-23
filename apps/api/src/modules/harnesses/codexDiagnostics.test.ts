@@ -14,8 +14,7 @@ function fixture() {
   const qualified = { binary: pin.binary, identity: 'recorded-identity', providerVersion: '0.154.0',
     protocol: fixtureProtocol, schemaManifestSha256: 'recorded', stableSchemaGitBlob: 'recorded',
     referenceSchemaManifestSha256: 'recorded' }
-  const ambient = { HOST_SETTING: 'kept', FOREMAN_CODE_MCP_TOKEN: 'main-only',
-    GRAPHQL_MCP_TOKEN: 'legacy-main-only', CUSTOM_MCP_BEARER: 'chat-only' }
+  const ambient = { HOST_SETTING: 'kept', GRAPHQL_MCP_TOKEN: 'main-only', CUSTOM_MCP_BEARER: 'chat-only' }
   const admit = vi.fn((scope: NativeProcessRecovery) => { scope.launchId = 'recorded-launch' })
   const abandon = vi.fn(async () => undefined)
   const close = vi.fn(async () => undefined)
@@ -40,7 +39,7 @@ it('owns Worker metadata reads separately and pins their binary, directory and c
       const qualified = await io.qualify('/different-codex', '/different-directory',
         { CUSTOM_MCP_BEARER: 'injected' }, true)
       await io.qualifyModel(DEFAULT_HARNESS_DEFAULTS.codex, '/different-codex', '/different-directory',
-        { FOREMAN_CODE_MCP_TOKEN: 'injected' }, undefined, f.writer, { qualified })
+        { GRAPHQL_MCP_TOKEN: 'injected' }, undefined, f.writer, { qualified })
       await io.runCommand('/different-codex', ['mcp', 'list', '--json'], '/different-directory',
         undefined, { GRAPHQL_MCP_TOKEN: 'injected' }, { recovery: f.writer })
     }, f.writer)

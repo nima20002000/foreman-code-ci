@@ -25,11 +25,11 @@ async function fixture() {
 }
 
 describe('managed launcher installation identity', () => {
-  it.each(['GRAPHQL_APP_MCP_DIRECTORY', 'FOREMAN_CODE_APP_MCP_DIRECTORY'])(
+  it.each(['GRAPHQL_APP_MCP_DIRECTORY', 'GRAPHQL_APP_MCP_DIRECTORY'])(
     'installs a configured %s launcher and rejects the default installation', async name => {
       const original = appLauncherPath()
       const { directory, source } = await fixture()
-      vi.stubEnv(name === 'GRAPHQL_APP_MCP_DIRECTORY' ? 'FOREMAN_CODE_APP_MCP_DIRECTORY' : 'GRAPHQL_APP_MCP_DIRECTORY', undefined)
+      vi.stubEnv(name === 'GRAPHQL_APP_MCP_DIRECTORY' ? 'GRAPHQL_APP_MCP_DIRECTORY' : 'GRAPHQL_APP_MCP_DIRECTORY', undefined)
       vi.stubEnv(name, directory)
       const installed = appLauncherPath()
       await installManagedLauncher(source, installed)
@@ -39,9 +39,9 @@ describe('managed launcher installation identity', () => {
       expect(isAppLauncher({ ...entry, args: [original] })).toBe(false)
     })
 
-  it.each(['GRAPHQL_APP_MCP_DIRECTORY', 'FOREMAN_CODE_APP_MCP_DIRECTORY'])(
+  it.each(['GRAPHQL_APP_MCP_DIRECTORY', 'GRAPHQL_APP_MCP_DIRECTORY'])(
     'rejects a relative %s launcher directory', name => {
-      vi.stubEnv(name === 'GRAPHQL_APP_MCP_DIRECTORY' ? 'FOREMAN_CODE_APP_MCP_DIRECTORY' : 'GRAPHQL_APP_MCP_DIRECTORY', undefined)
+      vi.stubEnv(name === 'GRAPHQL_APP_MCP_DIRECTORY' ? 'GRAPHQL_APP_MCP_DIRECTORY' : 'GRAPHQL_APP_MCP_DIRECTORY', undefined)
       for (const directory of ['', 'relative/mcp']) {
         vi.stubEnv(name, directory)
         expect(() => appLauncherPath()).toThrow('absolute directory')
@@ -51,9 +51,9 @@ describe('managed launcher installation identity', () => {
   it('accepts matching launcher aliases and rejects conflicting installation targets', async () => {
     const { directory } = await fixture()
     vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', directory)
-    vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', directory)
+    vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', directory)
     expect(appLauncherPath()).toBe(join(directory, 'launcher.mjs'))
-    vi.stubEnv('FOREMAN_CODE_APP_MCP_DIRECTORY', join(directory, 'other'))
+    vi.stubEnv('GRAPHQL_APP_MCP_DIRECTORY', join(directory, 'other'))
     expect(() => appLauncherPath()).toThrow('conflicts')
   })
 

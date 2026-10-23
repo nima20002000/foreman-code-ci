@@ -1,9 +1,5 @@
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
-import { afterEach, it, vi } from 'vitest'
-import { migratedDatabase } from './helpers/migratedDatabase.js'
-import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
-import { withTransaction } from '../src/infrastructure/transaction.js'
+import { it, vi } from 'vitest'
 import type pg from 'pg'
 import type { DurableInteraction } from '@foreman-code/contracts'
 import { ManagementPrincipalSchema } from '@foreman-code/contracts/management'
@@ -56,48 +52,58 @@ for (const revoked of [true, false]) it(`F03: App response forwards exact worker
   }
 })
 
-let current: Awaited<ReturnType<typeof migratedDatabase>> | undefined
-afterEach(async () => { await current?.close(); current = undefined })
-async function authorityDatabase() {
-  const database = current = await migratedDatabase()
-  const fixture = await seedWorkflowFixture(database.pool, database.directory)
+function authorityDatabase() {
   const expires = new Date(Date.now() + 3_600_000)
-  const caller = ManagementPrincipalSchema.parse({ id: 'chat', name: 'Chat transport', audience: 'operator',
-    grants: [{ actions: ['runs:start', 'workspace_locations:read'], scope: { workspaceIds: [fixture.scope.workspaceId] } }],
+  const rows = new Map<string, Record<string, unknown>>([
+    ['owner', { id: 'owner', name: 'Owner', audience: 'operator', revoked_at: null, delegated_from: null, expires_at: expires,
+      grants: [{ actions: ['runs:start', 'workspace_locations:read', 'operator_chat:write'], scope: { workspaceIds: ['workspace'] } }] }],
+    ['chat', { id: 'chat', name: 'Chat transport', audience: 'operator', revoked_at: null, delegated_from: 'owner', expires_at: expires,
+      grants: [{ actions: ['runs:start', 'workspace_locations:read'], scope: { workspaceIds: ['workspace'] } }] }],
+  ])
+  const bindings = new Map<string, Record<string, unknown>>()
+  const query = async (sql: string, values: unknown[] = []) => {
+    if (sql.startsWith('select id,name,audience,grants')) return { rows: rows.has(String(values[0])) ? [rows.get(String(values[0]))!] : [], rowCount: 1 }
+    if (sql.includes('from run_authority_principals')) return { rows: bindings.has(String(values[0])) ? [bindings.get(String(values[0]))!] : [], rowCount: 1 }
+    if (sql.startsWith('select id from management_principals')) return { rows: [], rowCount: 0 }
+    if (sql.startsWith('insert into management_principals')) {
+      rows.set(String(values[0]), { id: values[0], name: values[1], audience: 'operator', revoked_at: null,
+        grants: JSON.parse(String(values[3])), expires_at: new Date(String(values[4])), delegated_from: values[5] })
+      assert.match(String(values[2]), /^[0-9a-f]{64}$/)
+      return { rows: [], rowCount: 1 }
+    }
+    if (sql.startsWith('insert into run_authority_principals')) {
+      bindings.set(String(values[0]), { owner_principal_id: values[2], caller_principal_id: values[3],
+        grant_ceiling: JSON.parse(String(values[4])), accepted_expires_at: new Date(String(values[5])) })
+      return { rows: [], rowCount: 1 }
+    }
+    throw new Error(`Unexpected authority query: ${sql}`)
+  }
+  const db = { query } as unknown as pg.PoolClient
+  const row = rows.get('chat')!
+  const caller = ManagementPrincipalSchema.parse({ id: row.id, name: row.name, audience: row.audience, grants: row.grants,
     expiresAt: expires.toISOString(), revokedAt: null })
-  for (const [id, name, delegatedFrom, grants] of [
-    ['owner', 'Owner', null, [{ actions: ['runs:start', 'workspace_locations:read', 'operator_chat:write'], scope: { workspaceIds: [fixture.scope.workspaceId] } }]],
-    [caller.id, caller.name, 'owner', caller.grants],
-  ] as const) await database.pool.query(`insert into management_principals(id,name,audience,token_hash,grants,expires_at,delegated_from)
-    values($1,$2,'operator',$3,$4::jsonb,$5,$6)`, [id,name,createHash('sha256').update(id).digest('hex'),JSON.stringify(grants),expires,delegatedFrom])
-  const bind = async (accepted: Awaited<ReturnType<typeof acceptRunAuthority>>) => withTransaction(database.pool, async client => {
-    await client.query("update runs set record=jsonb_set(record,'{authorizationPrincipalId}',to_jsonb($2::text)) where id=$1", [fixture.run.id,accepted.principal.id])
-    await bindRunAuthority(client,fixture.run.id,accepted)
-  })
-  const revoke = async (id: string) => { await database.pool.query('update management_principals set revoked_at=now() where id=$1',[id]) }
-  const expire = async (id: string, at: number) => { await database.pool.query('update management_principals set expires_at=$2 where id=$1',[id,new Date(at)]) }
-  return { db: database.pool, caller, bind, revoke, expire, workspaceId: fixture.scope.workspaceId }
+  return { rows, bindings, db, caller }
 }
 
 it('F04: chat release cannot revoke the Run snapshot, but human-owner revocation still can', async () => {
-  const h = await authorityDatabase()
-  const accepted = await withTransaction(h.db, client => acceptRunAuthority(client, h.caller))
+  const h = authorityDatabase()
+  const accepted = await acceptRunAuthority(h.db, h.caller)
   assert.equal(accepted.callerId, 'chat')
   assert.equal(accepted.ownerId, 'owner')
-  await h.bind(accepted)
-  await h.revoke('chat')
+  await bindRunAuthority(h.db, 'run', accepted)
+  h.rows.get('chat')!.revoked_at = new Date()
   const current = await currentOperatorAuthority(h.db, accepted.principal.id)
   assert.equal(current.owner.id, 'owner')
   assert(current.principal.grants.some((grant) => grant.actions.includes('runs:start')))
-  await h.revoke('owner')
+  h.rows.get('owner')!.revoked_at = new Date()
   await assert.rejects(currentOperatorAuthority(h.db, accepted.principal.id), (error: unknown) => error instanceof DomainError && error.code === 'AUTH_REVOKED')
 })
 
 it('F04: both the accepted grant ceiling and the owner’s current narrower permissions apply', async () => {
-  const h = await authorityDatabase()
-  const accepted = await withTransaction(h.db, client => acceptRunAuthority(client, h.caller))
-  await h.bind(accepted)
-  await h.db.query('update management_principals set grants=$2::jsonb where id=$1', ['owner', JSON.stringify([{ actions: ['runs:start', 'runs:stop'], scope: { workspaceIds: [h.workspaceId, 'another'] } }])])
+  const h = authorityDatabase()
+  const accepted = await acceptRunAuthority(h.db, h.caller)
+  await bindRunAuthority(h.db, 'run', accepted)
+  h.rows.get('owner')!.grants = [{ actions: ['runs:start', 'runs:stop'], scope: { workspaceIds: ['workspace', 'another'] } }]
   const current = await currentOperatorAuthority(h.db, accepted.principal.id)
   assert(!current.principal.grants.some((grant) => grant.actions.includes('workspace_locations:read') || grant.actions.includes('runs:stop')))
   assert(current.principal.grants.every((grant) => !grant.scope.workspaceIds?.includes('another')))
@@ -105,18 +111,18 @@ it('F04: both the accepted grant ceiling and the owner’s current narrower perm
 })
 
 it('F04: an ordinary delegated chat principal is not accepted as durable Run authority', async () => {
-  const h = await authorityDatabase()
+  const h = authorityDatabase()
   await assert.rejects(currentOperatorAuthority(h.db, 'chat'), (error: unknown) => error instanceof DomainError && error.code === 'AUTH_INVALID')
 })
 
 
 it('an accepted Run survives expiry of the chat token that started it', async () => {
-  const h = await authorityDatabase()
+  const h = authorityDatabase()
   const tokenExpiry = Date.now() + 60_000
-  await h.expire('chat', tokenExpiry)
+  h.rows.get('chat')!.expires_at = new Date(tokenExpiry)
   h.caller.expiresAt = new Date(tokenExpiry).toISOString()
-  const accepted = await withTransaction(h.db, client => acceptRunAuthority(client, h.caller))
-  await h.bind(accepted)
+  const accepted = await acceptRunAuthority(h.db, h.caller)
+  await bindRunAuthority(h.db, 'run', accepted)
   const clock = vi.spyOn(Date, 'now').mockReturnValue(tokenExpiry + 1)
   try {
     const current = await currentOperatorAuthority(h.db, accepted.principal.id)
@@ -128,16 +134,16 @@ it('an accepted Run survives expiry of the chat token that started it', async ()
 })
 
 it('an accepted Run survives root starter expiry while retaining owner revocation', async () => {
-  const h = await authorityDatabase()
+  const h = authorityDatabase()
   const owner = await currentOperatorAuthority(h.db, 'owner')
-  const accepted = await withTransaction(h.db, client => acceptRunAuthority(client, owner.principal))
-  await h.bind(accepted)
-  await h.expire('owner', Date.now() - 1)
+  const accepted = await acceptRunAuthority(h.db, owner.principal)
+  await bindRunAuthority(h.db, 'run', accepted)
+  h.rows.get('owner')!.expires_at = new Date(Date.now() - 1)
   const current = await currentOperatorAuthority(h.db, accepted.principal.id)
   assert.equal(current.owner.id, 'owner')
   await assert.rejects(currentOperatorAuthority(h.db, 'owner'),
     (error: unknown) => error instanceof DomainError && error.code === 'AUTH_EXPIRED')
-  await h.revoke('owner')
+  h.rows.get('owner')!.revoked_at = new Date()
   await assert.rejects(currentOperatorAuthority(h.db, accepted.principal.id),
     (error: unknown) => error instanceof DomainError && error.code === 'AUTH_REVOKED')
   await assert.rejects(currentOperatorAuthority(h.db, 'owner'),

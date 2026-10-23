@@ -3,7 +3,7 @@ import Fastify from 'fastify'
 import { CiRunOutputSchema, CiRunRecordSchema, type CiRunRecord } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { expect, it, vi } from 'vitest'
-import { registerGraphqlMcp } from '../../src/mcp/unified/transport.js'
+import { registerForemanMcp } from '../../src/mcp/unified/transport.js'
 import type { OperatorServices } from '../../src/mcp/operator/types.js'
 import type { AppInteractionService } from '../../src/modules/interactions/app.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
@@ -61,7 +61,7 @@ function fixture(executionId: string | null = 'execution', audience: 'worker' | 
     throw new DomainError('AUTH_INVALID', 'Invalid token.', 401)
   })
   const app = Fastify()
-  registerGraphqlMcp(app, { access, operator: { ci, commands } as unknown as OperatorServices,
+  registerForemanMcp(app, { access, operator: { ci, commands } as unknown as OperatorServices,
     interactions: { canRead: async () => false, canRespond: async () => false,
       toolAccess: async () => ({ role: 'coder', tools: ['ci_run', 'ci_get', 'ci_logs_read', 'ci_cancel'] })
     } as unknown as AppInteractionService })

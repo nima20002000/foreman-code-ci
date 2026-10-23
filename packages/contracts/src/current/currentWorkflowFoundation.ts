@@ -1,5 +1,6 @@
+import { INSTALLATION_NAMES } from '../installationNames.mjs'
 import { z } from 'zod'
-import { graphqlToolsOutsideRole } from '../graphqlMcpTools.js'
+import { foremanToolsOutsideRole } from '../foremanMcpTools.js'
 import {
   AgentConfigurationVersionSchema, AcceptedWorkflowApprovalConfigurationSchema,
   HarnessWorkflowCompatibilitySchema,
@@ -138,8 +139,8 @@ export function validateCurrentWorkflowConfigurations(value: { version: Version 
     const configuration = configs.get(version.agentConfigurationVersionIds[node.agentId]!)
     if (node.browser?.enabled && !node.browser.profileId) fail(`node ${node.id} needs a browser profile before executable save`)
     if (!configuration || configuration.workspaceId !== version.workspaceId || configuration.agentId !== node.agentId || !configuration.productRole) fail('an exact scoped configuration with a pinned product role is required')
-    const outside = configuration?.productRole && node.graphqlTools
-      ? graphqlToolsOutsideRole(configuration.productRole, [...node.graphqlTools.add, ...node.graphqlTools.remove]) : []
+    const outside = configuration?.productRole && node[INSTALLATION_NAMES.fields.agentTools]
+      ? foremanToolsOutsideRole(configuration.productRole, [...node[INSTALLATION_NAMES.fields.agentTools].add, ...node[INSTALLATION_NAMES.fields.agentTools].remove]) : []
     if (outside.length) fail(`node ${node.id} Foreman Code MCP tools are outside its Agent role: ${outside.join(', ')}`)
     const assigned = new Set((configuration?.assignedSkills ?? []).map(skill => skill.skillId))
     for (const skillId of node.skills?.remove ?? []) {

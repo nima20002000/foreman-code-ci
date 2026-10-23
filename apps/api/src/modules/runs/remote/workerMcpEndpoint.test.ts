@@ -76,7 +76,7 @@ describe('actual worker-private HTTP relay with Main authorization double, no pa
     expect((await call('not-issued')).status).toBe(401)
     expect(request).not.toHaveBeenCalled()
     const lease = (token: string) => ({ environment: { agentId: 'admitted-operator',
-      variables: { FOREMAN_CODE_MCP_TOKEN: token } }, expiresAt: new Date(Date.now() + 60000).toISOString(), request })
+      variables: { GRAPHQL_MCP_TOKEN: token } }, expiresAt: new Date(Date.now() + 60000).toISOString(), request })
     await endpoint.bindRelay(lease('first-scoped-lease'))
     expect(endpoint.endpoint).toBe(url)
     expect((await call('first-scoped-lease')).status).toBe(200)
@@ -87,7 +87,7 @@ describe('actual worker-private HTTP relay with Main authorization double, no pa
     expect(request).toHaveBeenCalledTimes(2)
     await endpoint.close()
   })
-  it.each(['GRAPHQL_MCP_TOKEN', 'FOREMAN_CODE_MCP_TOKEN'])('forwards the scoped %s bearer and retains authorized expiry', async tokenName => {
+  it.each(['GRAPHQL_MCP_TOKEN', 'GRAPHQL_MCP_TOKEN'])('forwards the scoped %s bearer and retains authorized expiry', async tokenName => {
     const f = await setup(tokenName)
     const route = JSON.parse(await readFile(f.route, 'utf8'))
     expect(route).toMatchObject({ endpoint: f.endpoint.endpoint, expiresAt: f.expiresAt })

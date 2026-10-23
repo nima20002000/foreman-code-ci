@@ -36,8 +36,8 @@ function fixture(t, pathKind = 'direct') {
   const common = realpathSync(join(root, '.git'))
   const state = join(common, 'graphql-heavy-jobs')
   for (const folder of ['queue', 'running']) mkdirSync(join(state, folder), { recursive: true })
-  const env = { ...process.env, TMPDIR: base, FOREMAN_CODE_HEAVY_BASE_TMPDIR: root }
-  for (const key of ['FOREMAN_CODE_HEAVY_JOB_TOKEN', 'FOREMAN_CODE_HEAVY_JOB_COMMON',
+  const env = { ...process.env, TMPDIR: base, GRAPHQL_HEAVY_BASE_TMPDIR: root }
+  for (const key of ['GRAPHQL_HEAVY_JOB_TOKEN', 'GRAPHQL_HEAVY_JOB_COMMON',
     'GRAPHQL_HEAVY_JOB_TOKEN', 'GRAPHQL_HEAVY_JOB_COMMON', 'CI_HOST_RUNNER', 'NODE_OPTIONS']) delete env[key]
   const record = overrides => ({ common, pid: process.pid, start: startTime(process.pid),
     worktree: root, pgid: null, phase: 'running', namespace, token: 'occupied', ...overrides })
@@ -204,7 +204,7 @@ fs.readFileSync = (path, ...args) => {
   return read(path, ...args)
 }`)
   const result = spawnSync(process.execPath, ['scripts/heavy-job.mjs', '__hold'],
-    { cwd: f.root, env: { ...f.env, FOREMAN_CODE_HEAVY_JOB_TOKEN: 'finished' },
+    { cwd: f.root, env: { ...f.env, GRAPHQL_HEAVY_JOB_TOKEN: 'finished' },
       input: '', encoding: 'utf8', timeout: 3000 })
   assert.equal(result.status, 0, result.stderr)
   assert.doesNotMatch(result.stderr, /degraded|EACCES/)

@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { readdirSync, readlinkSync, statSync, unlinkSync } from 'node:fs'
 import { mkdir, readdir, readlink, stat, unlink } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -60,7 +61,7 @@ export function flushLogsSync(): void {
 /** The one API logger. Everything else is a child of it. */
 export const logger: Logger = pino({
   level,
-  base: { service: 'graphql-api', pid: process.pid },
+  base: { service: INSTALLATION_NAMES.protocol.apiService, pid: process.pid },
   timestamp: pino.stdTimeFunctions.isoTime,
   formatters: { level: (label) => ({ level: label }) },
   redact: { paths: REDACT_PATHS, censor: '[redacted]' },
