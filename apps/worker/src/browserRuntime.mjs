@@ -77,7 +77,9 @@ export function createWorkerBrowserRuntime(options) {
       approveRuntime(await readSelectedRelease({ root, facts, expected }), descriptor);
       await assertHostOwnership();
       const next = await module.createBrowserHost({ stateDirectory, computerId, installationId,
-        runtime: descriptor, subjectAuthority, pairing, keys, assertHostOwnership, reportFailure, originProbe });
+        runtime: descriptor, subjectAuthority, pairing, keys, assertHostOwnership, reportFailure, originProbe,
+        log: (msg, fields) => process.stdout.write(`${JSON.stringify({ level: 'info', time: new Date().toISOString(),
+          component: 'agent-browser', ...fields, msg })}\n`) });
       host = next; nativeModule = module; installed = descriptor;
       if (admissionStopped) host.stopAdmission();
       phase = admissionStopped ? 'draining' : 'ready';

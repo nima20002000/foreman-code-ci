@@ -61,7 +61,9 @@ export class BrowserBroker implements BrowserLifecyclePort {
       const owner = [...this.sessions.values()].find(value => value.record.session.profileId === profileId
         && value.record.session.browserGeneration === generation
         && value.record.leases.some(lease => lease.targetId === openerTargetId))
-      if (!owner || owner.record.closing || owner.record.session.state === 'closed') {
+      const atLimit = owner?.record.session.subject && owner.record.control.state === 'agent'
+        && owner.record.leases.length >= (owner.record.maxTabs ?? DEFAULT_AGENT_BROWSER_TABS)
+      if (!owner || owner.record.closing || owner.record.session.state === 'closed' || atLimit) {
         await options.driver.closeTab(profileId, generation, tab.targetId)
         return
       }
