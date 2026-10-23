@@ -12,7 +12,7 @@ import { COMPUTER_GITHUB_NAMESPACE } from '@foreman-code/contracts/computer-acco
 import { DevicePresenceSchema, type DevicePresence, type DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import { deviceNegotiationHash, type DeviceExtensionRegistration } from '../src/modules/devices/deviceApplicationChannel.js'
 import { generateKeyPairSync, createHash, sign } from 'node:crypto'
-import { mainIdentityProofMessage } from '@foreman-code/contracts-node/device-identity-node'
+import { mainIdentityProofMessage } from '@foreman-code/contracts/device-identity-node'
 import type { MainIdentityProofRequest, MainEnrollmentProofRequest } from '@foreman-code/contracts/device-identity'
 import WebSocket, { WebSocketServer } from 'ws'
 import { createServer } from 'node:http'

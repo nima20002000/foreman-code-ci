@@ -1,4 +1,4 @@
-import { underDeadline } from '@foreman-code/contracts-node/server-kit'
+import { underDeadline } from '@foreman-code/contracts/server-kit'
 import { safeGitArguments } from '../../shared/git.js'
 import { spawnProcess } from '../../shared/process.js'
 

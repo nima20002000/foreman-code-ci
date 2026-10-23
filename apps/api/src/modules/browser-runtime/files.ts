@@ -1,11 +1,12 @@
 import { randomUUID, createHash } from 'node:crypto'
-import { mkdir, open, readFile, rename, rm, lstat, copyFile, readdir } from 'node:fs/promises'
+import { mkdir, open, readFile, rm, lstat, copyFile, readdir } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
 import { join, basename } from 'node:path'
 import { DomainError } from '../errors.js'
 import { browserInputHash } from '../browser-profiles/identity.js'
 import { atomicBrowserPrivateJson } from './journal.js'
 import { sha256Hex } from '../../shared/hash.js'
+import { writeDurableFile } from '../../shared/durableFile.js'
 
 export interface BrowserFileMetadata {
   id: string; name: string; mimeType: string; byteLength: number; receivedBytes: number
@@ -62,15 +63,13 @@ export class BrowserFileStore {
   }
 
   private async save(value: OwnedBrowserFile): Promise<void> {
-    const directory = this.directory(value.metadata.id), temporary = join(directory, `.${randomUUID()}.tmp`)
+    const directory = this.directory(value.metadata.id)
     await mkdir(directory, { recursive: true, mode: 0o700 })
     const info = await lstat(directory)
     if (!info.isDirectory() || info.isSymbolicLink() || (info.mode & 0o077) !== 0) throw new DomainError('BROWSER_STORAGE_INVALID', 'Browser file storage is not private.', 503)
-    const handle = await open(temporary, 'wx', 0o600)
-    try { await handle.writeFile(JSON.stringify(value)); await handle.sync() } finally { await handle.close() }
-    await rename(temporary, join(directory, 'metadata.json'))
-    const parent = await open(directory, 'r')
-    try { await parent.sync() } finally { await parent.close() }
+    await writeDurableFile(join(directory, 'metadata.json'), JSON.stringify(value), {
+      createParent: false, temporaryPath: join(directory, `.${randomUUID()}.tmp`),
+    })
   }
 
   private async owned(fileId: string, sessionId: string): Promise<OwnedBrowserFile> {

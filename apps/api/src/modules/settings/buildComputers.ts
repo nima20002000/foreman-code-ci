@@ -1,4 +1,4 @@
-import { errorMessage } from '@foreman-code/contracts-node/server-kit'
+import { errorMessage } from '@foreman-code/contracts/server-kit'
 import { logIgnoredError } from '../diagnostics/index.js'
 import type pg from 'pg'
 import { withTransaction } from '../../infrastructure/transaction.js'
