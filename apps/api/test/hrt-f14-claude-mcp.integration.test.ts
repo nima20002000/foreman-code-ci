@@ -12,7 +12,7 @@ import { ExecutionReadinessSchema, HarnessCatalogEntrySchema, HarnessDefaultsUpd
 import { HostHarnessOverrideListSchema, HostHarnessOverrideSaveResultSchema, type HostHarnessProfileEvidence } from '@foreman-code/contracts/harness-registry'
 import { loadConfig } from '../src/config.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
-import { createCheckpointStore } from '../src/composition/checkpoints.js'
+import { createCheckpointStore } from '../src/infrastructure/checkpoints.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { HostHarnessProfileEvidenceRepository } from '../src/modules/harnesses/instanceSettings/profileRepository.js'
 import { HarnessInstanceSettingsRepository } from '../src/modules/harnesses/instanceSettings/repository.js'

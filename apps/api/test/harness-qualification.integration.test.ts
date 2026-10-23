@@ -34,7 +34,7 @@ import { runWithReadOnlyQualification, requireHarnessQualification } from '../sr
 import type { QualificationSuite } from '../src/modules/harnesses/qualification/types.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { postgresEnabled } from './helpers/database.js'
-import { withTransaction } from '../src/infrastructure/transaction.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 it('registers the qualification migration after earlier blocks', () => {
   const prerequisite = migrations.indexOf(fileReferenceAccessMigration)
@@ -194,10 +194,13 @@ it.skipIf(!postgresEnabled)('reads compatibility through authenticated MCP, deny
           binding, target: selected, binarySha256: launcherSha, record } })
       const client = await pool.connect()
       try {
-        await withTransaction({ client }, async transaction => {
-          await installedSettings.append(transaction, writer.principal.id, 0, value)
-          await installedProofs.append(transaction, checkId, value, proof)
-        })
+        await beginTransaction(client)
+        await installedSettings.append(client, writer.principal.id, 0, value)
+        await installedProofs.append(client, checkId, value, proof)
+        await commitTransaction(client)
+      } catch (error) {
+        await rollbackTransaction(client)
+        throw error
       } finally { client.release() }
       return record
     }

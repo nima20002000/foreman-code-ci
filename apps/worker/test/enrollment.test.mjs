@@ -14,7 +14,7 @@ const { encodeWorkerEnrollmentCode } = await tsImport('../../../packages/contrac
 const { loadOrCreateWorkerIdentity, publicKeyFingerprint, mainEnrollmentProofMessage, mainIdentityProofMessage, pairingProof } = await tsImport('../../../packages/contracts/src/deviceIdentityNode.ts', import.meta.url);
 const { ensurePairedManagedSetup } = await tsImport('../src/managedSetup.mjs', import.meta.url);
 const { loadApprovedRoots } = await tsImport('../src/approvedRoots.mjs', import.meta.url);
-const { openPrivateRoot } = await tsImport('@foreman-code/api/worker/sources', import.meta.url);
+const { openPrivateRoot } = await tsImport('../../api/src/modules/sources/privateFilesystem.ts', import.meta.url);
 
 async function fixture(t, { symlinkedParent = false } = {}) {
   // Enrollment qualifies ancestors too; shared job scratch may have other owners or writers.
