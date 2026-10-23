@@ -22,7 +22,10 @@ import { repairFixture } from './nim2644State.cases'
 // Mounted Query/Zustand transport regression. It models two browser tabs with
 // separate Zustand stores/session snapshot IDs and shared protected localStorage.
 // It is not authenticated HTTP, PostgreSQL, native Run, or browser-provider evidence.
-vi.mock('../../workflow-board/context', () => ({ useWorkflowBoard: () => ({ activeRuns: 1 }) }))
+vi.mock('../../workflow-board/context', async (original) => ({
+  ...await original<typeof import('../../workflow-board/context')>(),
+  useWorkflowBoard: () => ({ activeRuns: 1 }),
+}))
 vi.mock('../../../shared/api/settingsExperience', () => ({ useLocalHumanAccessQuery: () => ({ data: {
   principal: { expiresAt: '2099-01-01T00:00:00Z', grants: [{ actions: ['runs:start'], scope: {} }] },
 } }) }))

@@ -6,10 +6,16 @@ import type { ApiConfig } from '../../config.js'
 import type { TemporaryFileService } from './service.js'
 import type { ArtifactPublicationAuthority, VerifiedArtifactReader } from './distributed/publication.js'
 import type { AcceptedArtifactAttemptFence } from './distributed/authorization.js'
-vi.mock('../../routes/files.js', () => ({ registerFileRoutes: vi.fn() }))
-vi.mock('../../routes/fileReferences.js', () => ({ registerFileReferenceRoutes: vi.fn() }))
 vi.mock('./tools/production.js', () => ({ createProductionFileTools: vi.fn() }))
-import { registerProductionFileStorage, createProductionDistributedArtifacts } from './production.js'
+vi.mock('./distributed/publication.js')
+vi.mock('./distributed/nativeResults.js')
+vi.mock('./distributed/edges.js')
+vi.mock('../runs/remote/nativeArtifactOutputs.js')
+import { DistributedArtifactPublicationService } from './distributed/publication.js'
+import { CanonicalNativeArtifactResults } from './distributed/nativeResults.js'
+import { ArtifactEdgeService } from './distributed/edges.js'
+import { NativeArtifactOutputs } from '../runs/remote/nativeArtifactOutputs.js'
+import { createProductionFileStorage, createProductionDistributedArtifacts } from './production.js'
 function ports() {
   // No hooks, database calls or native process are run by this composition test.
   const pool = {} as pg.Pool
@@ -24,13 +30,15 @@ it('shares the original repository, bytes, authority and publication ledger with
   const input = ports(), app = { decorate: vi.fn(), addHook: vi.fn(), log: { warn: vi.fn() } } as unknown as FastifyInstance
   const config = { fileStorageRoot: '/original/files', workspaceStorageRoot: '/original/projects',
     harnesses: { workspaceRoot: '/original/runtime' } } as ApiConfig
-  const files = registerProductionFileStorage(app, input.pool, config)
+  const { service: files } = createProductionFileStorage(app, input.pool, config)
   const mounted = createProductionDistributedArtifacts({ ...input, files })
-  const store = files as unknown as { repository: unknown; bytes: unknown }
-  expect(mounted.publications).toMatchObject({ files, authority: input.authority, transfers: input.transfers })
-  expect(mounted.results).toMatchObject({ files, authority: input.authority,
-    ledger: (mounted.publications as unknown as { ledger: unknown }).ledger })
-  expect(mounted.edges).toMatchObject({ files: store.repository, bytes: store.bytes })
-  expect(mounted.outputs).toMatchObject({ results: mounted.results, authority: input.authority, edges: mounted.edges })
+  const ledger = vi.mocked(DistributedArtifactPublicationService).mock.calls[0]![1]
+  expect(DistributedArtifactPublicationService).toHaveBeenCalledExactlyOnceWith(files, ledger,
+    input.transfers, input.authority)
+  expect(CanonicalNativeArtifactResults).toHaveBeenCalledExactlyOnceWith(files, ledger, input.authority)
+  expect(ArtifactEdgeService).toHaveBeenCalledExactlyOnceWith(expect.anything(), files.repository, files.bytes,
+    expect.anything())
+  expect(NativeArtifactOutputs).toHaveBeenCalledExactlyOnceWith(mounted.results, expect.anything(),
+    input.authority, mounted.edges)
   expect(app.addHook).toHaveBeenCalledTimes(2)
 })
