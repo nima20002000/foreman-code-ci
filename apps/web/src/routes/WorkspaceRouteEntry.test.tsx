@@ -1,4 +1,4 @@
-import { Worker } from 'node:worker_threads'
+import { writeSync } from 'node:fs'
 import { installBrowserLocks } from '../test/browserLocks'
 import { nativeNode } from '../shared/mocks/nativeFixtureTypes'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -226,17 +226,13 @@ describe('WorkspaceRouteEntry integration', () => {
     await user.hover(node)
     const actions = within(screen.getByLabelText('Editable workflow graph')).getByRole('group', { name: `${title} actions` })
     {
-      const code = `
-        const { Session } = require('node:inspector'); const fs = require('node:fs');
-        const session = new Session(); session.connectToMainThread();
-        session.on('Debugger.paused', (message) => {
-          const frames = message.params.callFrames.slice(0, 25).map(f => f.functionName + ' ' + f.url.replace(/.*node_modules\\/\\.pnpm\\//, '').slice(-90) + ':' + f.location.lineNumber).join('\\n');
-          fs.writeSync(2, '\\nSTACKPROBE\\n' + frames + '\\n');
-          setTimeout(() => process.exit(0), 100);
-        });
-        session.post('Debugger.enable', () => setTimeout(() => session.post('Debugger.pause'), 25000));
-      `
-      new Worker(code, { eval: true })
+      const originalError = console.error.bind(console)
+      let seen = 0
+      console.error = (...args: unknown[]) => {
+        seen += 1
+        if (seen < 60) writeSync(2, `\nCE ${seen} ${args.map(arg => String(arg).slice(0, 400)).join(' ')}\n`)
+        originalError(...args)
+      }
     }
     await user.click(within(actions).getByRole('button', { name: `Open ${title} settings` }))
     const rail = await screen.findByRole('complementary', { name: 'Workflow side panel' })
