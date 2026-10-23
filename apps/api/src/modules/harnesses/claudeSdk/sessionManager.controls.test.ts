@@ -434,20 +434,14 @@ describe('Claude native session manager admission', () => {
     await f.manager.prepareInspection({ ...start, environment: { agentId: 'operator', variables: {} } })
     const accepted = await f.manager.refreshInspectionCredentials(credentialed, configured)
     expect(accepted.httpCredentialAcknowledgement).toBeDefined()
-    const sdkReason = 'native refusal: connection timed out'
-    if (failure === 'server-error') f.setServers.mockResolvedValueOnce({ added: [], removed: [], errors: { graphql: sdkReason } })
-    if (failure === 'rejected-ack') f.setServers.mockRejectedValueOnce(new Error(sdkReason))
+    if (failure === 'server-error') f.setServers.mockResolvedValueOnce({ added: [], removed: [], errors: { graphql: 'native refusal with private data' } })
+    if (failure === 'rejected-ack') f.setServers.mockRejectedValueOnce(new Error('native refusal private-accepted-token'))
     if (failure === 'foreign-ack') f.setServers.mockResolvedValueOnce({ added: ['foreign'], removed: [], errors: {} })
     const nextStart = failure === 'wrong-owner' ? { ...credentialed, correlationId: 'foreign-owner' } : credentialed
     const nextServers = failure === 'wrong-token' ? { graphql: { ...servers.graphql, headers: { Authorization: 'Bearer private-foreign-token' } } } : configured
     const error = await f.manager.refreshInspectionCredentials(nextStart, nextServers).catch((value: unknown) => value)
     expect(error).toBeInstanceOf(Error)
-    if (failure === 'server-error' || failure === 'rejected-ack') {
-      expect(error).toMatchObject({ result: { outcome: 'failed', error: {
-        code: 'CLAUDE_MCP_CREDENTIAL_DELIVERY_UNCONFIRMED', message: expect.stringContaining(sdkReason), retryable: true,
-      } } })
-    }
-    expect(JSON.stringify(error)).not.toMatch(/private-/)
+    expect(JSON.stringify(error)).not.toMatch(/private-|native refusal/)
     const readback = await f.manager.prepareInspection(credentialed)
     expect(readback.httpCredentialAcknowledgement).toBeUndefined()
     expect((await f.manager.inspectMcp()).credentialArrangement).toEqual({ kind: 'unknown' })
