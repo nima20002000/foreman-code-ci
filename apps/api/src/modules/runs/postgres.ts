@@ -135,9 +135,9 @@ export class PostgresRunRepository {
   async validateMemoryResult(id: string, result: ExecutionResult, owner: RunOwnership): Promise<void> {
     return (await this.repeat(owner)).validateMemoryResult(id, result)
   }
-  /** A writable Agent's turn left no card on its workflow's Kanban. */
-  async kanbanRecordMissing(id: string, result: ExecutionResult, owner: RunOwnership): Promise<boolean> {
-    if (!this.memoryBoards) return false
+  /** The assigned card needs this writable Agent's execution update. */
+  async kanbanRecordMissing(id: string, result: ExecutionResult, owner: RunOwnership): Promise<string | undefined> {
+    if (!this.memoryBoards) return undefined
     return this.read(owner.runId, owner, sql => kanbanRecordMissingLocked(sql, id, result))
   }
   async reserveWorkResultRepair(id: string, providerId: string, owner: RunOwnership, evidence: RepeatNativeEvidence) {

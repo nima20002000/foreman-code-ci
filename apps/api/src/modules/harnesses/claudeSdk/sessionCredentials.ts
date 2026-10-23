@@ -1,4 +1,5 @@
 /** Owned SDK control operations and scoped MCP credential delivery. */
+import { errorMessage } from '../../../shared/errorMessage.js'
 import { readProductEnvironment } from '@foreman-code/contracts/product-environment'
 import type { NativeSessionStart } from '../port.js'
 import { HarnessExecutionError } from '../errors.js'
@@ -73,13 +74,16 @@ export async function deliverCredentials(ctx: ClaudeManagerContext, runtime: Run
   if (!runtime.sdk.setMcpServers) throw new HarnessExecutionError('CLAUDE_MCP_CONTROL_UNAVAILABLE', 'The actual SDK scoped MCP control update is unavailable.')
   return ownedControl(ctx, runtime, async () => {
     runtime.currentAuthorizationScope = authorizationScope(ctx, start)
-    const raw = await runtime.sdk.setMcpServers!(servers).catch(() => {
-      throw new HarnessExecutionError('CLAUDE_MCP_CREDENTIAL_DELIVERY_UNCONFIRMED', 'The SDK did not confirm its owned MCP control update.')
+    // The SDK's own reason stays on the failure, so an unconfirmed update can be diagnosed.
+    const raw = await runtime.sdk.setMcpServers!(servers).catch((error: unknown) => {
+      throw new HarnessExecutionError('CLAUDE_MCP_CREDENTIAL_DELIVERY_UNCONFIRMED',
+        `The SDK did not confirm its owned MCP control update: ${errorMessage(error, 'no reason given').slice(0, 300)}`, undefined, { cause: error })
     })
     const response = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
     if (!Array.isArray(response.added) || !Array.isArray(response.removed) || !response.errors || typeof response.errors !== 'object' || Object.keys(response.errors).length
       || httpCredential && !response.added.includes(managedName)) {
-      throw new HarnessExecutionError('CLAUDE_MCP_CREDENTIAL_DELIVERY_UNCONFIRMED', 'The SDK did not confirm its owned MCP control update.')
+      throw new HarnessExecutionError('CLAUDE_MCP_CREDENTIAL_DELIVERY_UNCONFIRMED',
+        `The SDK did not confirm its owned MCP control update: ${JSON.stringify(response.errors ?? response).slice(0, 300)}`)
     }
     signal?.throwIfAborted()
     if (runtime.closed || ctx.disposed) throw new HarnessExecutionError('CLAUDE_INSPECTION_CLOSED', 'The owned SDK query closed before credential acknowledgment.')

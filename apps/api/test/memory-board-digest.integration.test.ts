@@ -112,6 +112,20 @@ describe.skipIf(!postgresEnabled)('Memory board digest selection', () => {
       .toEqual([branch.id, otherAgent.id, linked.id, own.id])
   })
 
+  it('always includes the workflow assignment even behind twenty newer links or after completion', async () => {
+    const task = await fixture.prepareWork()
+    const own = await create('Persistent Agent card', { assignee: task.value.node })
+    for (let index = 0; index < 22; index += 1) await create(`Newer link ${index}`, { linkedNodes: [task.value.node] })
+    const running = await service.readDigest({ subject: task.subject })
+    expect(running.cardIds).toContain(own.id)
+    expect(running.cardIds).toHaveLength(20)
+    expect(running.text).toContain(`Your card on this workflow's Kanban is ${own.id} "${own.title}"`)
+    await patch(own, { status: 'done', completionKind: 'completed' })
+    const completed = await service.readDigest({ subject: task.subject })
+    expect(completed.cardIds).toContain(own.id)
+    expect(completed.text).toContain(`[done] ${own.title}`)
+  })
+
   it('keeps digest membership current through edits, reopening, transaction rollback and engine completion', async () => {
     const worker = await fixture.prepareWork()
     const other = await fixture.prepareWork('running', {
@@ -129,7 +143,7 @@ describe.skipIf(!postgresEnabled)('Memory board digest selection', () => {
     expect((await digest(worker.subject)).cardIds).toEqual([card.id])
     await patch(card, { status: 'done', completionKind: 'completed' })
     expect((await digest(worker.subject)).cardIds).toEqual([])
-    expect((await digest(other.subject)).cardIds).toEqual([])
+    expect((await digest(other.subject)).cardIds).toEqual([card.id])
     await patch(card, { status: 'todo', completionKind: null, reason: 'Another review' })
 
     await expect(fixture.transaction(tx => service.applyResultLocked(tx, {
@@ -145,6 +159,6 @@ describe.skipIf(!postgresEnabled)('Memory board digest selection', () => {
     await patch(card, { title: card.title }, [{ kind: 'current', work: worker.work }])
     await fixture.publish(fixture.fact(worker, 'accepted'))
     expect((await digest(worker.subject)).cardIds).toEqual([])
-    expect((await digest(other.subject)).cardIds).toEqual([])
+    expect((await digest(other.subject)).cardIds).toEqual([card.id])
   })
 })

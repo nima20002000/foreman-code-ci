@@ -117,8 +117,10 @@ it('opens a card, closes the Kanban into the dock, restores it, and hides it wit
   const again = await screen.findByRole('region', { name: 'Kanban' })
   await streamOpened()
 
-  // A card opens the workflow's memory board on that card.
+  // A card opens in its own window; editing it opens the workflow's memory board on that card.
   await user.click(await within(again).findByRole('button', { name: 'Prepare release notes' }))
+  const card = await screen.findByRole('dialog', { name: 'Prepare release notes' })
+  await user.click(within(card).getByRole('button', { name: 'Edit in memory board' }))
   const dialog = await screen.findByRole('dialog', { name: 'Memory board' })
   await user.click(within(dialog).getByRole('button', { name: /close memory board/i }))
   await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Memory board' })).not.toBeInTheDocument())
@@ -166,3 +168,34 @@ it('shows which Agent just changed a card on that card only, with a light from t
   expect(within(updated.closest<HTMLElement>('[data-card-id]')!).getByRole('button', { name: 'Prepare release notes' })).toBeVisible()
   expect(await screen.findByText('Card updated')).toBeInTheDocument()
 })
+
+it('opens a card in its own window with what its Agent did and every update across Runs', async () => {
+  const board = install('kanban-card-window', { visible: true, frame: { x: 700, y: 0, width: 760, height: 460 } })
+  const node = board.graph.nodes[0]!
+  const agent = { workspaceId: board.graph.workspaceId, workflowId: board.graph.id, workflowNodeId: node.id, agentId: node.agentId }
+  board.memory.cards.set(board.release.id, { ...board.release, status: 'done', completionKind: 'completed', assignee: agent,
+    body: 'Drafted the release notes.\nLinked the changelog.' })
+  const update = (id: string, sequence: number, changes: MemoryChange['changes'], runId: string): MemoryChange => ({
+    id, boardId: memoryTestIds.board, sequence, boardRevision: sequence, entity: 'card', entityId: board.release.id, entityRevision: sequence,
+    actor: { kind: 'agent', id: node.agentId, displayName: 'Release Agent' }, occurredAt: memoryTestTime, changes,
+    provenance: { work: { kind: 'activation', runId, workflowVersionId: 'workflow-version-1', activationId: `activation-${runId}` } } })
+  board.memory.control.history = [
+    update('change-2', 3, { status: { before: 'doing', after: 'done' } }, 'run-second'),
+    update('change-1', 2, { body: { before: '', after: 'Drafted the release notes.' }, status: { before: 'done', after: 'doing' } }, 'run-first'),
+  ]
+  await mountMeasuredBoard(board.href)
+  const kanban = await screen.findByRole('region', { name: 'Kanban' })
+  await streamOpened()
+  await userEvent.click(await within(kanban).findByRole('button', { name: 'Prepare release notes' }))
+  const window = await screen.findByRole('dialog', { name: 'Prepare release notes' })
+  expect(within(window).getByText('Done')).toBeVisible()
+  expect(within(window).getByText(/Drafted the release notes\.\s+Linked the changelog\./)).toBeVisible()
+  const updates = await within(window).findAllByRole('listitem', { name: /Release Agent/ })
+  expect(updates).toHaveLength(2)
+  expect(updates[0]).toHaveTextContent('Moved to Done')
+  expect(updates[0]).toHaveTextContent('Run run-seco')
+  expect(updates[1]).toHaveTextContent('Moved to Doing')
+  expect(updates[1]).toHaveTextContent('Drafted the release notes.')
+  // The Board's own memory board stays closed; the card opens on its own.
+  expect(screen.queryByRole('dialog', { name: 'Memory board' })).toBeNull()
+}, 20_000)
