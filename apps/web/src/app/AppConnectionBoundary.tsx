@@ -26,7 +26,8 @@ export function AppConnectionBoundary({ children }: { children: ReactNode }) {
     <p>{access.error?.message ?? 'Check the local API connection, then try again.'}</p>
     <Button variant="primary" onClick={() => void access.refetch()}>Try again</Button>
   </section></main>
-  if (!blocked && reconnecting && !access.data) return <main className="runtime-screen">
+  // Held like the banner: each retry of a read without data clears its error, which must not flash "Connecting…".
+  if (!blocked && interrupted && !access.data) return <main className="runtime-screen">
     <section className="runtime-card" role="status">
       <p>{reconnectingMessage}</p>
       <Button variant="primary" onClick={() => void retry.refetch()}>Try again</Button>
