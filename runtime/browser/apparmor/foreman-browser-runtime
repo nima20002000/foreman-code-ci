@@ -22,3 +22,11 @@ profile foreman-browser-build /home/**/.browser-build-*/unit/chromium/chrome-lin
 
   include if exists <local/foreman-browser-build>
 }
+
+# Installing a new runtime version checks that Chromium starts from its staging directory
+# before the version is activated, so the staged binary needs the same permission.
+profile foreman-browser-stage /home/**/browser-runtime/versions/.stage-*/unit/chromium/chrome-linux64/chrome flags=(unconfined) {
+  userns,
+
+  include if exists <local/foreman-browser-stage>
+}
