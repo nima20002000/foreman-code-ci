@@ -122,10 +122,7 @@ describe.each(chatHarnesses)('mounted Board chat: %s', (harness) => {
     await screen.findByRole('region', { name: 'Selected Run board' })
     expect(screen.getByTestId('unified-workflow-board')).toBe(board)
     const runName = fixture.first.name!, runTrigger = await screen.findByRole('button', { name: `Inspect ${runName}` })
-    // This face is also a drag target; d3 needs the browser view on mousedown.
-    fireEvent.mouseDown(runTrigger, { view: window, button: 0, buttons: 1 })
-    fireEvent.mouseUp(runTrigger, { view: window, button: 0, buttons: 0 })
-    fireEvent.click(runTrigger, { view: window })
+    await userEvent.click(runTrigger)
     const runRail = await screen.findByRole('complementary', { name: 'Workflow side panel' })
     expect(runRail).toBe(rail)
     await userEvent.click(within(runRail).getByRole('button', { name: 'Chat' }))

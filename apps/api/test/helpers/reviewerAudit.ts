@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { afterEach } from 'vitest'
+import { workflowTerminalOwner } from './workflowTerminalOwner.js'
 
 import type {
   AgentConfigurationVersion, DurableInteraction, HarnessExecution, NativeHarnessEvent,
@@ -27,7 +29,10 @@ import type { PostgresRunRepository } from '../../src/modules/runs/postgres.js'
 import { nativeLanes } from './nativeLanes.js'
 import { currentUnitSnapshot } from './currentUnitSnapshot.js'
 import { rejectableDeferred } from './deferred.js'
-import { idleWorkflowControls } from './idleWorkflowControls.js'
+import { idleWorkflowControls, idleWorkflowRepeat } from './idleWorkflowControls.js'
+
+const connections: Array<{ close(): Promise<void> }> = []
+afterEach(async () => { await Promise.all(connections.splice(0).map(connection => connection.close())) })
 
 export const session = {
   harness: 'codex', providerVersion: 'codex-cli 0.154.0', nativeSessionId: 'review-native-exact',
@@ -247,9 +252,14 @@ export async function reviewerFixture(options: {
     },
   } satisfies Partial<Wave25InteractionCoordinationRepository>)
   let stopped = false
-  const owner = { runId: execution.runId, assertOwned() {}, retain: () => async () => {}, release: async () => {}, client: {} } as unknown as RunOwnership
+  const terminalOwner = workflowTerminalOwner(() => execution, value => closures.read(value), () => prepared.length ? [credential.principalId] : [])
+  connections.push(terminalOwner.connection)
+  const owner = { ...terminalOwner.owner, retain: () => async () => {}, release: async () => {} } as unknown as RunOwnership
   const runs = {
+    // These fixtures have no workflow memory board.
+    kanbanRecordMissing: async () => false,
     ...idleWorkflowControls,
+    async repeat() { return { ...idleWorkflowRepeat, ...workflowStore } },
     async acquireOwnership() { return owner },
     async getRepeatSnapshot() { return { run, version, configurations: [configuration], stopRequested: stopped, cleanupPending: false } },
     async getRepeatVersion(runId: string, versionId: string) {

@@ -61,7 +61,7 @@ async function streamOpened(after = 0) {
   return source!
 }
 
-it('adds the Kanban from the toolbar and keeps its moved place and cards across a reload', async () => {
+it('adds the Kanban from the toolbar, keeps its moved place across a reload, closes it into the dock, and never changes cards', async () => {
   const board = install('kanban-layout')
   const user = userEvent.setup()
   const first = await mountMeasuredBoard(board.href)
@@ -97,6 +97,14 @@ it('adds the Kanban from the toolbar and keeps its moved place and cards across 
   expect(moved).not.toEqual(before)
   await waitFor(() => expect(board.saves.at(-1)).toMatchObject({ visible: true, frame: { x: Math.round(moved.x), y: Math.round(moved.y) } }))
 
+  // A card opens the workflow's memory board on that card.
+  await user.click(within(kanban).getByRole('button', { name: 'Prepare release notes' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Memory board' })
+  await user.click(within(dialog).getByRole('button', { name: /close memory board/i }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Memory board' })).not.toBeInTheDocument())
+  expect(board.memory.calls.filter((call) => call.method === 'mutate')).toEqual([])
+  expect([...board.memory.cards.keys()].sort()).toEqual(['card-docs', 'card-release'])
+
   // After a reload it comes back at the same place with the same cards.
   first.unmount()
   const earlier = MemorySource.instances.length
@@ -105,25 +113,6 @@ it('adds the Kanban from the toolbar and keeps its moved place and cards across 
   expect(placed('board-kanban')).toEqual({ x: Math.round(moved.x), y: Math.round(moved.y) })
   await streamOpened(earlier)
   expect(await within(again).findByRole('button', { name: 'Update the docs' })).toBeVisible()
-  expect(board.memory.calls.filter((call) => call.method === 'mutate')).toEqual([])
-  expect([...board.memory.cards.keys()].sort()).toEqual(['card-docs', 'card-release'])
-})
-
-it('opens a card, closes the Kanban into the dock, restores it, and hides it without changing its cards', async () => {
-  const frame = { x: 700, y: 100, width: 760, height: 460 }
-  const board = install('kanban-dock', { visible: true, frame })
-  const user = userEvent.setup()
-  await mountMeasuredBoard(board.href)
-  const again = await screen.findByRole('region', { name: 'Kanban' })
-  await streamOpened()
-
-  // A card opens the workflow's memory board on that card.
-  await user.click(await within(again).findByRole('button', { name: 'Prepare release notes' }))
-  const dialog = await screen.findByRole('dialog', { name: 'Memory board' })
-  await user.click(within(dialog).getByRole('button', { name: /close memory board/i }))
-  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Memory board' })).not.toBeInTheDocument())
-  expect(board.memory.calls.filter((call) => call.method === 'mutate')).toEqual([])
-  expect([...board.memory.cards.keys()].sort()).toEqual(['card-docs', 'card-release'])
 
   // Its X only minimizes it into the dock: the saved layout and the cards stay, and the dock item restores it.
   const saved = board.saves.length
@@ -131,7 +120,7 @@ it('opens a card, closes the Kanban into the dock, restores it, and hides it wit
   await waitFor(() => expect(screen.queryByRole('region', { name: 'Kanban' })).not.toBeInTheDocument())
   await user.click(screen.getByRole('button', { name: /^Restore Kanban/ }))
   expect(await screen.findByRole('region', { name: 'Kanban' })).toBeInTheDocument()
-  expect(placed('board-kanban')).toEqual({ x: frame.x, y: frame.y })
+  expect(placed('board-kanban')).toEqual({ x: Math.round(moved.x), y: Math.round(moved.y) })
   expect(board.saves).toHaveLength(saved)
 
   // Pressed again, the toolbar button takes it off the Board; its cards stay.
