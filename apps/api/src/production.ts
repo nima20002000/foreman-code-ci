@@ -1,4 +1,3 @@
-import { assertActiveHarnessConfiguration, capabilityDescriptorsOf } from './modules/harnesses/index.js'
 import { BROWSER_DEVICE_EXTENSION } from '@foreman-code/contracts'
 import { createProductionBrowser } from './modules/collaboration/browserComposition.js'
 import { createMainBrowserRemote } from './modules/collaboration/browserRemote.js'
@@ -116,7 +115,7 @@ import { createProductionWorkerConversations } from './modules/conversations/wor
 import { REMOTE_EXECUTION_EXTENSION, REMOTE_PREPARATION_EXTENSION, WorkerConversationCallbackSchema } from '@foreman-code/contracts/remote-execution-rpc'
 import { executionExtension } from './modules/runs/remote/executionRouter.js'
 import { AcceptedHarnessProfileAdmission, AcceptedClaudeProfileAdmission, type AcceptedProfileAuthority } from './modules/harnesses/instanceSettings/acceptedProfile.js'
-import { type AgentConfigurationVersion, type AgentDefaults } from '@foreman-code/contracts'
+import { RETIRED_OPENCODE_MESSAGE, type AgentConfigurationVersion, type AgentDefaults } from '@foreman-code/contracts'
 import { inspectClaudeOperatorConfiguration } from './modules/harnesses/claudeSdk/operatorConfigurationInspection.js'
 import { inspectWorkerClaudeOperatorConfiguration } from './modules/harnesses/workerClaudeOperatorInspection.js'
 import { requireClaudePolicyQualification } from './modules/harnesses/claudeSdk/configuration.js'
@@ -1336,9 +1335,11 @@ function createConversationManagers({ base, callbacks, started, transport, devic
     accountBinding: conversationId => operatorAccountBindings.get(conversationId),
     createDevice: (configuration, conversationId, fileInputs) => workerChats.create({
       configuration, conversationId, workingDirectory: operatorWorkingDirectory, fileInputs,
-      appMcpAccess: fileInputs && capabilityDescriptorsOf(configuration.harness).files === 'session_bridge' ? 'none' : 'scoped' }),
+      appMcpAccess: fileInputs && configuration.harness.harness === 'claude' ? 'none' : 'scoped' }),
     createSelected: (configuration, conversationId, fileInputs, recovery) => {
-      assertActiveHarnessConfiguration(configuration.harness)
+      if (configuration.harness.harness === 'opencode') {
+        throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
+      }
       if (!configuration.harnessProfileSelection || configuration.harness.harness === 'claude') throw new DomainError('HARNESS_PROFILE_UNAVAILABLE', 'The selected Operator driver profile is unavailable.', 409)
       return productionSelectedProfileManager({ factories: nativeFactories, registry: harnessRegistry, profiles: selectedProfiles,
         ...(operatorAccountBindings.get(conversationId)
@@ -1498,7 +1499,9 @@ function createAgentChat({ base, callbacks, transport, accountStage, repositoryS
   const conversationNativeAccess = new ConversationNativeAccess(new ConversationCredentials(database.pool))
   const resolveAgentChatManager = async (conversationId: string, configuration: AgentConfigurationVersion, workingDirectory: string,
     accountSource?: { executionId: string }, featureContext?: ConversationFeatureContext): Promise<NativeHarnessSessionManager> => {
-    assertActiveHarnessConfiguration(configuration.harness)
+    if (configuration.harness.harness === 'opencode') {
+      throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
+    }
     const existing = agentChatManagers.get(conversationId)
     if (existing) return existing
     const accountBinding = await providerAccounts.runtimeBinding('agent-conversation', conversationId,

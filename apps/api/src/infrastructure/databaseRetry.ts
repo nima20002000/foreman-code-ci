@@ -3,7 +3,7 @@
  *
  * | Helper | Retries | Policy |
  * |---|---|---|
- * | `retryDatabaseRead` (`@foreman-code/contracts/server-kit`, shared with CI) | idempotent read; lock/statement timeout | 3 attempts, no wait; a persistent timeout becomes DATABASE_READ_TIMEOUT |
+ * | `retryDatabaseRead` (`@foreman-code/contracts-node/server-kit`, shared with CI) | idempotent read; lock/statement timeout | 3 attempts, no wait; a persistent timeout becomes DATABASE_READ_TIMEOUT |
  * | `retryDatabaseTimeout` | replay-safe bookkeeping; statement/lock/query timeout | backoff 100 ms doubling to 1 s, 30 s deadline (or `timeoutMs`) |
  * | `retryDatabaseOperation` | replay-safe work; caller-chosen classifier | same backoff and deadline as above |
  * | `retryStartupDatabase` | one replay-safe startup step; timeout or lost/refused connection | same backoff and deadline as above |

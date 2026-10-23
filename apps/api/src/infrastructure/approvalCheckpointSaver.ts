@@ -4,7 +4,7 @@ import type { BaseCheckpointSaver, LangGraphPostgresSaver, SerializerProtocol } 
 import type { DurableInteraction } from '@foreman-code/contracts'
 import type { SqlTransaction } from './transaction.js'
 import { assertGraphTransaction } from '../modules/run-graph/connection.js'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '@foreman-code/contracts-node/server-kit'
 import { nextApprovalResumeValues } from './approvalCheckpointPlan.js'
 import { CheckpointMutationSaver } from './checkpointMutations.js'
 

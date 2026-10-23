@@ -1,4 +1,4 @@
-import { isReadOnlyHarnessConfiguration, COLLABORATION_AGENT_TOOLS, memoryBoardTools, RecordedHarnessConfigurationSchema } from '@foreman-code/contracts'
+import { isReadOnlyHarnessConfiguration, COLLABORATION_AGENT_TOOLS, memoryBoardTools, HarnessConfigurationSchema } from '@foreman-code/contracts'
 import { browserAgentTools } from '../collaboration/index.js'
 import { readConversationCredential } from '../access/conversationCredentials.js'
 import {
@@ -179,7 +179,7 @@ export class PostgresAppInteractionService implements AppInteractionService {
     const subject = row.purpose === 'consultation'
       ? await readConsultationCredentialSubject(this.pool, principal.id) : undefined
     const implemented = [...memoryBoardTools('write'), 'workflow_chat_read', 'workflow_chat_post', ...(row.browser?.enabled ? browserAgentTools : [])] as const
-    const harness = RecordedHarnessConfigurationSchema.parse(row.harness)
+    const harness = HarnessConfigurationSchema.parse(row.harness)
     const readOnly = isReadOnlyHarnessConfiguration(harness)
     const tools = effectiveGraphqlTools(role, defaults, override, row.interval != null, implemented).filter(tool => {
       if (tool.startsWith('browser_') && readOnly && !COLLABORATION_AGENT_TOOLS[tool as keyof typeof COLLABORATION_AGENT_TOOLS].readOnly) return false

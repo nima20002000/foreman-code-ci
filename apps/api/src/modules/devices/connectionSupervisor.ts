@@ -1,6 +1,6 @@
 import { DEVICE_APPLICATION_MAX_EXTENSIONS, negotiateDeviceExtensions, parseExtensionDescriptors } from '@foreman-code/contracts/device-application'
 import { DeviceApplicationChannel, DeviceApplicationError, deviceNegotiationHash, extensionDescriptors, type DeviceApplicationRequestOptions, type DeviceExtensionRegistration } from './deviceApplicationChannel.js'
-import { verifyMainIdentityProof } from '@foreman-code/contracts/device-identity-node'
+import { verifyMainIdentityProof } from '@foreman-code/contracts-node/device-identity-node'
 import type { MainIdentityProofRequest } from '@foreman-code/contracts/device-identity'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { DEVICE_PROTOCOL_VERSION, type DeviceConnectionView, type DeviceHello, type DeviceSessionBinding } from '@foreman-code/contracts/device-connection'

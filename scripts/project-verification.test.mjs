@@ -129,6 +129,9 @@ const now = new Date().toISOString();
 writeFileSync(join(directory, 'packages_contracts_build.command.json'), JSON.stringify({
   key: 'packages/contracts:build', code: 0, startedAt: now, finishedAt: now,
 }));
+writeFileSync(join(directory, 'packages_contracts-node_build.command.json'), JSON.stringify({
+  key: 'packages/contracts-node:build', code: 0, startedAt: now, finishedAt: now,
+}));
 const file = ${JSON.stringify(file)};
 const totals = { total: 1, passed: 1, failed: 0, skipped: 0 };
 writeFileSync(join(output, 'summary.json'), JSON.stringify({ schemaVersion: 1, suite: 'integration',

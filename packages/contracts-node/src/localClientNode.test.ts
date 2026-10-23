@@ -3,7 +3,7 @@ import { createServer } from 'node:http'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
 import { localHumanProxyRequest } from './localClientNode.js'
-import { APP_MCP_TOKEN_NAMES } from './product.js'
+import { APP_MCP_TOKEN_NAMES } from '@foreman-code/contracts/product'
 
 const runClient = promisify(execFile)
 

@@ -1,5 +1,4 @@
-import { harnessMaintenanceCapabilities } from '../harnesses/index.js'
-import { errorMessage } from '@foreman-code/contracts/server-kit'
+import { errorMessage } from '@foreman-code/contracts-node/server-kit'
 import { readOperationalFailures } from '../diagnostics/logger.js'
 import { readServiceHealth } from '../diagnostics/index.js'
 import { readClaudePlugins, claudeCliResult } from './claudePlugins.js'
@@ -374,10 +373,13 @@ export class ComputerMaintenance {
           try {
             const before = await this.installedVersion(harness, signal)
             await this.installLatest(harness, step)
-            const selectInstalled = { codex: this.ports.selectInstalledCodex, claude: this.ports.selectInstalledClaude }[harness]
-            if (selectInstalled) {
-              const selected = await selectInstalled.call(this.ports, signal)
-              if (selected) task.outputTail = tail(`${task.outputTail}\nSelected ${selected} for this computer's ${LABELS[harness]}.`)
+            if (harness === 'codex' && this.ports.selectInstalledCodex) {
+              const selected = await this.ports.selectInstalledCodex(signal)
+              if (selected) task.outputTail = tail(`${task.outputTail}\nSelected ${selected} for this computer's Codex.`)
+            }
+            if (harness === 'claude' && this.ports.selectInstalledClaude) {
+              const selected = await this.ports.selectInstalledClaude(signal)
+              if (selected) task.outputTail = tail(`${task.outputTail}\nSelected ${selected} for this computer's Claude.`)
             }
             const after = await this.installedVersion(harness, signal)
             if (!after || !latest[harness]) throw new Error(`${LABELS[harness]} update could not be verified.`)
@@ -460,7 +462,7 @@ export class ComputerMaintenance {
 
   private async installLatest(harness: MaintainedHarness, step: Step) {
     const home = this.ports.environment.HOME ?? homedir()
-    if (harnessMaintenanceCapabilities(harness).update === 'native') {
+    if (harness === 'claude') {
       const claude = await this.ports.find('claude')
       // The native Claude build updates itself; a missing one uses the official installer.
       if (claude) { await step(claude, ['update'], 'claude update'); return }
@@ -514,7 +516,7 @@ export class ComputerMaintenance {
         managed.delete(name)
         continue
       }
-      const result = await step(binary, ['mcp', 'remove', ...harnessMaintenanceCapabilities(harness).mcp.scopeArguments, name],
+      const result = await step(binary, harness === 'codex' ? ['mcp', 'remove', name] : ['mcp', 'remove', '--scope', 'user', name],
         `${harness} mcp remove ${name}`, { timeoutMs: 30_000, allowFailure: true })
       if (result.code === 0) {
         removed.push(name)
@@ -528,13 +530,14 @@ export class ComputerMaintenance {
         await assertStdioAvailable(server, this.ports)
         if (replacing && matchesMcpDefinition(server, existing.get(server.name))) continue
         if (replacing) {
-          await step(binary, ['mcp', 'remove', ...harnessMaintenanceCapabilities(harness).mcp.scopeArguments, server.name], `${harness} mcp remove ${server.name}`,
+          await step(binary, harness === 'codex' ? ['mcp', 'remove', server.name]
+            : ['mcp', 'remove', '--scope', 'user', server.name], `${harness} mcp remove ${server.name}`,
           { timeoutMs: 30_000 })
         }
         // Reserve only absent native entries before installation so interruption preserves ownership.
         managed.add(server.name)
         await saveOwnership()
-        if (harnessMaintenanceCapabilities(harness).mcp.registration === 'arguments') {
+        if (harness === 'codex') {
           const label = `codex mcp add ${server.name}`
           // Codex saves the server, then waits for a browser sign-in on OAuth servers. That sign-in
           // belongs to the person at that computer, so a saved server counts as added.
@@ -573,7 +576,7 @@ export class ComputerMaintenance {
   }
 
   private async mcpDefinitions(harness: MaintainedHarness, binary: string, signal: AbortSignal): Promise<Map<string, unknown>> {
-    if (harnessMaintenanceCapabilities(harness).mcp.read === 'cli') {
+    if (harness === 'codex') {
       const listed = await this.ports.run(binary, ['mcp', 'list', '--json'], { signal, timeoutMs: 60_000 })
       if (listed.code !== 0) {
         throw new Error('Codex could not list its MCP servers. Update or reinstall Codex on this computer, then retry sync.')

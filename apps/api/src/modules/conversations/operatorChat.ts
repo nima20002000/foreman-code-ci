@@ -1,4 +1,3 @@
-import { assertActiveHarnessConfiguration, capabilityDescriptorsOf, currentOperatorHistory, operatorActivity, completedNativeAssistantMessage } from '../harnesses/index.js'
 import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { nativeChatPrompt, preflightChatInput, restoreAcceptedChatInput, validateChatInput, type AcceptedChatInput, type AcceptedChatSettings, type PreparedChatInput } from './nativeChatInput.js'
 import { operatorMessagePrompt } from './operatorInput.js'
@@ -17,7 +16,8 @@ import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.j
 import { validateMessageAttachments } from './messageAttachments.js'
 import { logIgnoredError } from '../diagnostics/index.js'
 import type { ReadObservation } from '@foreman-code/contracts'
-import { errorMessage } from '@foreman-code/contracts/server-kit'
+import { errorMessage } from '@foreman-code/contracts-node/server-kit'
+import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
 import type { ChatResponseAcknowledgment } from '@foreman-code/contracts/interaction-activity'
 import { withInteractionResponse, isSessionNativeInteraction } from '@foreman-code/contracts'
 import { publicOperatorConversation } from './operatorConversationRecord.js'
@@ -46,7 +46,7 @@ import {
   CodexSessionCompatibilitySchema, OperatorConversationStreamEventSchema, SendOperatorMessageRequestSchema,
   type ContextSnapshot, type NativeHarnessEvent, type OperatorActivityQuery, type OperatorConfigurationVersion, type OperatorConversationStreamEvent, type NativeSessionReference,
   type ExecutionResult, type SendOperatorMessageRequest, type RespondOperatorInteractionRequest, type OperatorChatSetup, type OperatorChatSetupQuery,
-  type RecordedHarnessConfiguration,
+  type HarnessConfiguration,
 } from '@foreman-code/contracts'
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
 import type { ManagementAction, ManagementPrincipal } from '@foreman-code/contracts/management'
@@ -66,6 +66,8 @@ import type { PostgresOperatorRepository } from '../operators/index.js'
 import { withFilesystemDeadline } from '../workspaces/filesystem.js'
 import { nativeCorrelation, PostgresOperatorConversationRepository, type ConversationRow } from './operatorChatRepository.js'
 import { nativePersistenceRedactor } from '../interactions/index.js'
+import { currentOperatorHistory, operatorActivity } from './operatorActivity.js'
+import { completedNativeAssistantMessage } from './operatorText.js'
 import { nativeActivityFence } from './nativeActivityFence.js'
 import { createNativeTextStream } from './nativeTextStream.js'
 import { ignoreError } from '../diagnostics/index.js'
@@ -203,7 +205,7 @@ export class OperatorChatService {
     private readonly managers: NativeManagerResolver,
     private readonly workingDirectory: string,
     private readonly authority: OperatorChatAuthority,
-    private readonly prepareAccountProfile?: (principal: ManagementPrincipal, configuration: RecordedHarnessConfiguration,
+    private readonly prepareAccountProfile?: (principal: ManagementPrincipal, configuration: HarnessConfiguration,
       commandId: string) => Promise<HarnessProfileSelection | undefined>,
   ) {}
 
@@ -218,7 +220,9 @@ export class OperatorChatService {
     if (this.closing) throw new DomainError('OPERATOR_CHAT_CLOSING', 'Operator chat is shutting down.', 503)
   }
   private validate(configuration: OperatorConfigurationVersion): void {
-    assertActiveHarnessConfiguration(configuration.harness)
+    if (configuration.harness.harness === 'opencode') {
+      throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
+    }
     if (configuration.harness.harness === 'codex') {
       CodexSessionCompatibilitySchema.parse({ configuration: configuration.harness, requiresResume: true })
     }
@@ -249,7 +253,9 @@ export class OperatorChatService {
       throw new DomainError('OPERATOR_CONFIGURATION_CONFLICT', 'The requested message configuration does not match its Operator harness.', 409)
     }
     const selected = configuration
-    assertActiveHarnessConfiguration(selected.harness)
+    if (selected.harness.harness === 'opencode') {
+      throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
+    }
     const configurationId = `${principal.id}:${selected.id}:${selected.contentHash}`
     if (this.setupCheck?.configurationId === configurationId) return this.setupCheck.promise
     const check = (async () => {
@@ -791,7 +797,7 @@ export class OperatorChatService {
       || !sameOperatorExecutionConfiguration(resident.configuration, configuration))) await this.release(id)
     const existing = this.runtimes.get(id)
     if (controlPrincipalId) existing?.manager.setSessionControlPrincipal?.(controlPrincipalId)
-    const fileOnly = fileInputs && capabilityDescriptorsOf(configuration.harness).files === 'session_bridge'
+    const fileOnly = fileInputs && configuration.harness.harness === 'claude'
     if (existing?.session) {
       const environment = await this.authority.prepare(existing.manager, configuration, id, row.owner_principal_id!, signal)
       if (commandInputHash(environment) !== commandInputHash(existing.environment)) {
@@ -865,7 +871,7 @@ export class OperatorChatService {
         // This is deliberately NOT an issued credential: the App rejects it.
         // Do not mint fresh owner authority merely to inspect/stop old work.
         environment: { agentId: configuration.operatorId,
-          variables: fileInputs && capabilityDescriptorsOf(configuration.harness).files === 'session_bridge'
+          variables: fileInputs && configuration.harness.harness === 'claude'
             ? {} : { [APP_MCP_TOKEN]: 'operator-cleanup-disabled' } },
         ...(row.active_native_turn_id ? { nativeTurnId: row.active_native_turn_id } : {}),
       }, signal)
@@ -1247,7 +1253,7 @@ export class OperatorChatService {
     const messageMatches = submission?.kind === 'message' && submission.nativeSessionId === row.native_session_id
       && submission.clientCorrelationId === correlationId && history.terminalTurn?.correlationId === correlationId
       && history.terminalTurn.providerId === submission.nativeMessageId
-    const turnMatches = capabilityDescriptorsOf(row).inputIdentity !== 'message'
+    const turnMatches = row.harness !== 'claude'
       && Boolean(history.nativeTurnId && history.nativeTurnId === row.active_native_turn_id)
     if (!history.terminalResult || history.correlationId !== correlationId || !messageMatches && !turnMatches) return
     await this.journalTerminal(id, row.active_request_id, history.terminalResult, {
@@ -1374,7 +1380,7 @@ export class OperatorChatService {
     const delivery = this.control(id, async () => {
       const row = await this.repository.active(id)
       if (!row || row.active_request_id !== requestId || !row.cancel_requested) return
-      const initialSessionBound = capabilityDescriptorsOf(row).inputIdentity === 'message' && row.native_session_id
+      const initialSessionBound = row.harness === 'claude' && row.native_session_id
       const beforeSubmission = row.active_phase === 'accepted' || row.active_phase === 'ready' && !initialSessionBound
       if (beforeSubmission && !this.tasks.has(id)) {
         await this.complete(id, requestId, { outcome: 'canceled' }); return
@@ -1591,7 +1597,7 @@ export class OperatorChatService {
           return
         }
         const offeredInitialInput = await this.repository.initialInputOffered(row.id, requestId)
-        const initialSessionBound = (offeredInitialInput || capabilityDescriptorsOf(row).inputIdentity === 'message') && row.native_session_id
+        const initialSessionBound = (offeredInitialInput || row.harness === 'claude') && row.native_session_id
         if (row.active_phase === 'accepted' || row.active_phase === 'ready' && !initialSessionBound) {
           await this.complete(row.id, requestId, row.cancel_requested ? { outcome: 'canceled' }
             : failure(new Error('The server stopped before native submission. Retry the same request.')), undefined, !row.cancel_requested)
@@ -1599,7 +1605,7 @@ export class OperatorChatService {
         }
         if (!row.native_session_id) {
           let resident = this.runtimes.get(row.id)
-          const initialTurn = offeredInitialInput || capabilityDescriptorsOf(row).inputIdentity === 'message' && row.active_phase === 'submitting'
+          const initialTurn = offeredInitialInput || row.harness === 'claude' && row.active_phase === 'submitting'
           const creating = row.active_phase === 'creating' || initialTurn
           if (!resident && creating) {
             const configuration = await this.repository.configuration(row.operator_configuration_version_id)
