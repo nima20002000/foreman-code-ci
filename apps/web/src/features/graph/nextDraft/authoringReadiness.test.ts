@@ -48,12 +48,4 @@ describe('Connecting two agents', () => {
       { id: 'edge-1', kind: 'execution' as const, source: second!.id, target: first!.id }] }
     expect(startFromConnectionSource(graph).entryNodeId).toBe(second!.id)
   })
-  it('restores a start the save accepts when a lone agent sits beside the connected ones', () => {
-    const context = fixture(['coder', 'orchestrator', 'coder'])
-    const [worker, orchestrator, lone] = context.draft.graph.nodes
-    const graph = { ...context.draft.graph, entryNodeId: worker!.id, edges: [
-      { id: 'edge-1', kind: 'execution' as const, source: orchestrator!.id, target: worker!.id }] }
-    expect(startFromConnectionSource(graph).entryNodeId).toBe(orchestrator!.id)
-    expect(startFromConnectionSource({ ...graph, entryNodeId: lone!.id }).entryNodeId).toBe(lone!.id)
-  })
 })

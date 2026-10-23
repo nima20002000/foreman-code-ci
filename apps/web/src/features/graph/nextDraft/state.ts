@@ -1,7 +1,7 @@
 import type { AgentForm } from './agentForm'
 import { sameAuthoredWorkflow, type GraphDraftOperationV3, type GraphEditIntentV3, type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 import { hasAgentEdits, rebaseAgentEdits, referencedAgentEdits, snapshotAgentEdits, type DraftAgentEdits } from './agentEdits'
-import { hasLocalChanges, sameValue, startFromConnectionSource, type AuthoringIssue, type NextDraftContext } from './model'
+import { hasLocalChanges, sameValue, type AuthoringIssue, type NextDraftContext } from './model'
 
 /** Opaque workspace/workflow IDs are encoded, never ambiguously concatenated. */
 export function nextDraftKey(workspaceId: string, workflowId: string): string {
@@ -126,11 +126,6 @@ export function createNextDraftSlice(set: SetSlice): NextDraftSlice {
     const current = state.nextDrafts[key]
     if (!current) return state
     let next = change(current)
-    // Every change, a restored draft included, keeps a start the save accepts.
-    if (next.graph !== current.graph) {
-      const graph = startFromConnectionSource(next.graph)
-      if (graph !== next.graph) next = { ...next, graph }
-    }
     if (next.context.draft.revision !== current.context.draft.revision
       || next.context.draft.baseWorkflowVersionId !== current.context.draft.baseWorkflowVersionId) next = { ...next, future: [] }
     return next === current ? state : { nextDrafts: { ...state.nextDrafts, [key]: next } }
