@@ -229,15 +229,14 @@ describe('WorkspaceRouteEntry integration', () => {
     {
       const original = window.getComputedStyle.bind(window)
       let count = 0
-      window.getComputedStyle = ((...args: Parameters<typeof original>) => {
+      const wrapped = ((...args: Parameters<typeof original>) => {
         count += 1
-        if (count === 2000 || count === 20000 || count === 100000) {
-          const frames = String(new Error('x').stack).split('\n').filter(line => !line.includes('jsdom')).slice(0, 40).join('\n')
-          console.error(`GCS ${count}\n${frames}`)
-        }
-        if (count === 200000) throw new Error('GCS LOOP')
+        const frames = String(new Error('x').stack).split('\n').filter(line => !line.includes('jsdom') && !line.includes('node_modules/.pnpm/@testing-library') ).slice(1, 9).join('\n')
+        console.error(`GCS ${count}\n${frames}`)
         return original(...args)
       }) as typeof window.getComputedStyle
+      window.getComputedStyle = wrapped
+      globalThis.getComputedStyle = wrapped
     }
     console.error('BEFORE CLICK')
     await user.click(within(actions).getByRole('button', { name: `Open ${title} settings` }))
