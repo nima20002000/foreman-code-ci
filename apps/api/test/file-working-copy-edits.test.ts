@@ -377,3 +377,21 @@ describe('FIL-05b authenticated file-only MCP', () => {
     } finally { await app.close() }
   })
 })
+
+describe('plain text attachments', () => {
+  it.each([['notes.txt', 'plain notes marker\n'], ['data.json', '{"marker":"json value"}\n']])(
+    'uploads %s as text/plain and reads its UTF-8 text back over the file MCP', async (filename, text) => {
+      const f = await fixture(), c = await copy(f, Buffer.from(text), filename, 'text/plain'), { app, rpc } = await endpoint(f)
+      try {
+        const read = await rpc('tools/call', { name: 'files.read', arguments: { ...c.source, offset: 0, length: 1024 } })
+        const result = read.body.result as { structuredContent?: { status: string; revision: { mediaType: string } }; content?: { type: string; text: string }[] }
+        expect(result.structuredContent).toMatchObject({ status: 'ready', revision: { mediaType: 'text/plain', filename } })
+        expect(result.content?.some((part) => part.text === text)).toBe(true)
+      } finally { await app.close() }
+    })
+
+  it('rejects text/plain bytes that are not valid UTF-8', async () => {
+    const f = await fixture()
+    await expect(copy(f, Buffer.from([0x68, 0xff, 0x0a]), 'bad.txt', 'text/plain')).rejects.toBeInstanceOf(DomainError)
+  })
+})

@@ -17,7 +17,7 @@ export const MAX_FILE_RETENTION_SECONDS = 365 * 24 * 60 * 60;
 export const FILE_MEDIA_TYPES = [
   "image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "text/markdown", "application/zip",
+  "text/markdown", "text/plain", "application/zip",
 ] as const;
 export const FileMediaTypeSchema = z.enum(FILE_MEDIA_TYPES);
 export type FileMediaType = z.infer<typeof FileMediaTypeSchema>;
@@ -29,6 +29,11 @@ export const FILE_EXTENSIONS_BY_MEDIA_TYPE: Readonly<Record<FileMediaType, reado
   "application/pdf": Object.freeze(["pdf"]),
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": Object.freeze(["docx"]),
   "text/markdown": Object.freeze(["md"]),
+  "text/plain": Object.freeze([
+    "txt", "text", "csv", "tsv", "json", "yaml", "yml", "xml", "log", "ini", "toml", "env",
+    "ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "sh", "bash", "sql", "css", "html", "htm",
+    "go", "rs", "java", "c", "h", "cpp", "rb", "php",
+  ]),
   "application/zip": Object.freeze(["zip"]),
 });
 export const FileSha256Schema = z.string().regex(/^[a-f0-9]{64}$/);

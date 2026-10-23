@@ -240,3 +240,5 @@
 .workflow-panel-resize[data-edge='nw'], .workflow-panel-resize[data-edge='se'] { cursor: nwse-resize; }
 /* Thin scrollbars that sit on the panel's surface instead of the platform's arrowed track. */
 .workflow-floating-panel, .workflow-floating-panel * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.workflow-panel-tabs > .n-icon-button { width: 28px; height: 28px; min-height: 28px; padding: 0; }
+.workflow-panel-tabs > .n-icon-button[aria-pressed='true'] { background: var(--surface-hover); color: var(--text-strong); }

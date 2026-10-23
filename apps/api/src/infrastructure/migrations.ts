@@ -197,6 +197,7 @@ import { workflowCollaborationMigration } from './workflowCollaborationMigration
 import { codexNeverAskDefaultsMigration } from './codexNeverAskDefaultsMigration.js'
 import { removedProjectFolderMigration } from './removedProjectFolderMigration.js'
 import { draftChatCredentialsMigration } from './draftChatCredentialsMigration.js'
+import { plainTextFilesMigration } from './plainTextFilesMigration.js'
 
 export const migrations = [
   { version: 1, sql: `
@@ -1052,6 +1053,7 @@ export const migrations = [
   codexNeverAskDefaultsMigration,
   removedProjectFolderMigration,
   draftChatCredentialsMigration,
+  plainTextFilesMigration,
 ] as const
 
 export function assertMigrationVersions(entries: readonly { version: number }[]): void {

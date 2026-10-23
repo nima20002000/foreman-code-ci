@@ -200,7 +200,8 @@ export function WorkflowSidePanel({ scope, workspaceId, workflowId, runId, workf
         {tabs.map(([tab, label]) => <Button key={tab} size="sm" variant="ghost" disabled={!agentSelection}
           aria-pressed={selection.kind === 'agent' && selection.tab === tab}
           onClick={() => { if (agentSelection) onSelect({ ...agentSelection, tab }) }}>{label}</Button>)}
-        <Button size="sm" variant="ghost" aria-pressed={selection.kind === 'browser'} onClick={() => onSelect({ kind: 'browser' })}>Browser</Button>
+        <IconButton label="Browser" size="sm" variant="ghost" aria-pressed={selection.kind === 'browser'} onClick={() => onSelect({ kind: 'browser' })}>
+          <Icon name="globe" size={15} /></IconButton>
       </nav>
     </footer>}
   </aside>

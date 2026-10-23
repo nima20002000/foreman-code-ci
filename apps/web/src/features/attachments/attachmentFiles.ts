@@ -20,10 +20,11 @@ export function inspectAttachment(file: File): InspectedAttachment {
   if (file.size > MAX_FILE_BYTES) return { ok: false, issue: { label: 'Too large', message: `Files must be at most ${MAX_FILE_BYTES / 1024 / 1024} MiB.` } }
   const extension = name.data.includes('.') ? name.data.slice(name.data.lastIndexOf('.') + 1).toLowerCase() : ''
   const mediaType = FILE_MEDIA_TYPES.find((type) => FILE_EXTENSIONS_BY_MEDIA_TYPE[type].includes(extension))
-  if (!mediaType) return { ok: false, issue: { label: 'Unsupported', message: 'Choose PNG, JPEG, WebP, GIF, PDF, DOCX, Markdown or ZIP.' } }
+  if (!mediaType) return { ok: false, issue: { label: 'Unsupported', message: 'Choose PNG, JPEG, WebP, GIF, PDF, DOCX, Markdown, text or ZIP.' } }
   // Empty/generic browser MIME values are common for Markdown and ZIP. Canonicalize
   // from the allowed extension, but reject a contradictory recognized MIME value.
-  if (FILE_MEDIA_TYPES.some((type) => type === file.type) && file.type !== mediaType) {
+  if (FILE_MEDIA_TYPES.some((type) => type === file.type) && file.type !== mediaType
+    && !(file.type === 'text/plain' && mediaType === 'text/markdown')) {
     return { ok: false, issue: { label: 'Type mismatch', message: 'The filename extension and browser file type do not match.' } }
   }
   return { ok: true, filename: name.data, mediaType }

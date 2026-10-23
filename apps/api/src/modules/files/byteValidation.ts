@@ -241,15 +241,15 @@ async function archive(handle: FileHandle, expected: DocumentExpectedFileBytes, 
 
 /** Type/structure validation, not malware scanning, PDF sanitization, or full image/Office decoding. */
 export async function verifyFileType(handle: FileHandle, expected: DocumentExpectedFileBytes, maxBytes: number): Promise<void> {
-  if (expected.mediaType === 'text/markdown') {
+  if (expected.mediaType === 'text/markdown' || expected.mediaType === 'text/plain') {
     const decoder = new TextDecoder('utf-8', { fatal: true })
     try {
       for await (const chunk of readFileChunks(handle)) {
         const text = decoder.decode(chunk as Uint8Array, { stream: true })
-        if (binaryControls(text, true)) invalid('Markdown contains binary control characters.')
+        if (binaryControls(text, true)) invalid('Text contains binary control characters.')
       }
       decoder.decode()
-    } catch (error) { if (error instanceof DomainError) throw error; invalid('Markdown must use valid UTF-8.') }
+    } catch (error) { if (error instanceof DomainError) throw error; invalid('Text must use valid UTF-8.') }
     return
   }
   const head = await at(handle, 0, Math.min(expected.byteSize, 16))

@@ -10,6 +10,7 @@ const typeLabels: Record<FileMediaType, string> = {
   'application/pdf': 'PDF',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word document',
   'text/markdown': 'Markdown file',
+  'text/plain': 'Text file',
   'application/zip': 'ZIP archive',
 }
 

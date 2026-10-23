@@ -1,7 +1,7 @@
 import type { AgentFileReadResult } from '@foreman-code/contracts/files'
 
 export function markdownReadText(result: AgentFileReadResult): string | undefined {
-  if (result.status !== 'ready' || result.revision.mediaType !== 'text/markdown') return undefined
+  if (result.status !== 'ready' || (result.revision.mediaType !== 'text/markdown' && result.revision.mediaType !== 'text/plain')) return undefined
   try {
     return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
       .decode(Buffer.from(result.contentBase64, 'base64'))

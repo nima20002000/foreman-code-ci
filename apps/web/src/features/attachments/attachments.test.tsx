@@ -179,6 +179,7 @@ describe('shared attachment picker and real HTTP boundary', () => {
     ['photo.webp', 'image/webp'], ['photo.gif', 'image/gif'], ['paper.pdf', 'application/pdf'],
     ['paper.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
     ['notes.md', 'text/markdown'], ['bundle.zip', 'application/zip'],
+    ['notes.txt', 'text/plain'], ['data.json', 'text/plain'], ['script.py', 'text/plain'],
   ])('uploads and finalizes %s, retaining it as an unsent draft', async (name, type) => {
     const view = mount()
     await userEvent.setup().upload(picker(), file(name, type))
@@ -199,12 +200,13 @@ describe('shared attachment picker and real HTTP boundary', () => {
     expect(view.draft.items).toHaveLength(1) // Preparing is not acknowledging a send either.
   })
 
-  it.each([['NOTES.MD', ''], ['notes.md', 'text/plain'], ['bundle.zip', 'application/x-zip-compressed']])(
+  it.each([['NOTES.MD', ''], ['notes.md', 'text/plain'], ['bundle.zip', 'application/x-zip-compressed'], ['data.json', 'application/json'], ['table.csv', 'text/csv']])(
     'canonicalizes browser MIME hints for %s (%s)', async (name, type) => {
       const view = mount()
       await userEvent.setup().upload(picker(), file(name, type, ''))
       await ready(view)
-      expect(uploads[0].mediaType).toBe(name.toLowerCase().endsWith('.zip') ? 'application/zip' : 'text/markdown')
+      const extension = name.toLowerCase().slice(name.lastIndexOf('.') + 1)
+      expect(uploads[0].mediaType).toBe(extension === 'zip' ? 'application/zip' : extension === 'md' ? 'text/markdown' : 'text/plain')
       expect(uploads[0].byteSize).toBe(0)
     },
   )

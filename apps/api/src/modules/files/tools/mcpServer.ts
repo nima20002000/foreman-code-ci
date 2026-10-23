@@ -59,7 +59,7 @@ export async function createFileMcpServer(service: FileMcpService, token: string
     inputSchema: AgentFileListInputSchema, outputSchema: AgentFileListResultSchema, annotations: annotations(false),
   }, async (input) => invoke(() => service.list(token, input)))
   if (allowed('files.read')) server.registerTool('files.read', {
-    description: 'Read at most 64 KiB using exact fileId and revisionId pins. Markdown includes UTF-8 text alongside the base64 bytes. Expired or removed files return unavailable; never substitute a newer revision.',
+    description: 'Read at most 64 KiB using exact fileId and revisionId pins. Markdown and text files include UTF-8 text alongside the base64 bytes. Expired or removed files return unavailable; never substitute a newer revision.',
     inputSchema: AgentFileReadInputSchema, outputSchema: AgentFileReadResultSchema, annotations: annotations(false),
   }, async (input) => invoke(() => service.read(token, input), async (result) => markdownReadText(result)))
   if (allowed('files.create_working_copy')) server.registerTool('files.create_working_copy', {

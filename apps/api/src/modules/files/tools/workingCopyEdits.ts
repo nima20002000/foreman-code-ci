@@ -32,7 +32,7 @@ async function scratch<T>(work: (directory: string) => Promise<T>): Promise<T> {
 /** All format work finishes before taking the writer CAS. Parse/helper failures leave the copy intact. */
 async function formatEdit(mediaType: FileMediaType, data: Buffer, edit: AgentFileFormatEdit): Promise<Buffer> {
   if (edit.kind === 'append_text') {
-    const format = mediaType === 'text/markdown' ? 'markdown' : mediaType === 'application/pdf' ? 'pdf'
+    const format = mediaType === 'text/markdown' || mediaType === 'text/plain' ? 'markdown' : mediaType === 'application/pdf' ? 'pdf'
       : mediaType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ? 'docx' : undefined
     if (!format) throw unsupported()
     const { editDocument } = await import('../formats/index.js')
@@ -44,7 +44,7 @@ async function formatEdit(mediaType: FileMediaType, data: Buffer, edit: AgentFil
         : result.status === 'timeout' ? 504 : 422
       throw new DomainError(`FILE_FORMAT_${result.status.toUpperCase()}`, result.reason, status)
     }
-    if (result.mediaType !== mediaType) throw unsupported()
+    if (result.mediaType !== (mediaType === 'text/plain' ? 'text/markdown' : mediaType)) throw unsupported()
     return bounded(result.bytes)
   }
   if (edit.kind === 'resize_image') {

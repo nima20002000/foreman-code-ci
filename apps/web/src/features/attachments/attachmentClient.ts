@@ -5,7 +5,7 @@ import {
   type FileMediaType, type FileWithRevision, type TemporaryFileScope,
 } from '@foreman-code/contracts/files'
 import { apiClient, ApiError } from '../../shared/api/client'
-import { assertSession, sessionGeneration, sessionIsSwitching, sessionSignal, SessionChangedError } from '../../shared/api/sessionBoundary'
+import { assertSession, installationHeaders, sessionGeneration, sessionIsSwitching, sessionSignal, SessionChangedError } from '../../shared/api/sessionBoundary'
 import { attachmentDraftKey, inspectAttachment } from './attachmentFiles'
 
 export interface AttachmentProgress { phase: 'uploading' | 'finalizing'; percent: number | null }
@@ -136,6 +136,8 @@ function uploadBytes(path: string, body: File, signal: AbortSignal,
     xhr.timeout = 120_000
     xhr.setRequestHeader('Accept', 'application/json')
     xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+    // The API rejects browser writes that do not name this document's app installation.
+    installationHeaders().forEach((value, name) => xhr.setRequestHeader(name, value))
     xhr.upload.onprogress = (event) => {
       if (!settled && !signal.aborted) onProgress({
         phase: 'uploading',
