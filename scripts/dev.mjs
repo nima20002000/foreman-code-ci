@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '../packages/contracts/src/installationNames.mjs'
 import { readProductEnvironment } from '../packages/contracts/src/productEnvironment.mjs'
 import { createRequire } from 'node:module'
 import { apiIdentityMatches, webIdentityMatches } from './dev-identity.mjs'
@@ -98,7 +99,7 @@ async function main() {
     await chmod(apiEnv, 0o600)
     console.log('Created apps/api/.env from the local example.')
   }
-  process.env.FOREMAN_CODE_API_ENV_FILE = apiEnv
+  process.env[INSTALLATION_NAMES.environment.API_ENV_FILE] = apiEnv
   loadProductEnvFile(apiEnv)
   const port = Number(process.env.PORT ?? 3000)
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be a valid TCP port.')
@@ -110,7 +111,7 @@ async function main() {
   const { resolveLocalBrowserOrigin } = await import('../packages/contracts/dist/browserOrigin.js')
   const { createRuntimeIdentity } = await import('../packages/contracts/dist/runtimeIdentityNode.js')
   const browser = resolveLocalBrowserOrigin(process.env)
-  process.env.FOREMAN_CODE_BROWSER_ORIGIN = browser.origin
+  process.env[INSTALLATION_NAMES.environment.BROWSER_ORIGIN] = browser.origin
   const webUrl = browser.origin
   const { Client } = createRequire(join(root, 'apps/api/package.json'))('pg')
   async function expectedIdentity() {
@@ -128,8 +129,8 @@ async function main() {
   const webReady = webIdentityMatches(createRuntimeIdentity(root, process.env.DATABASE_URL, '').checkoutId, apiUrl)
 
   if (['127.0.0.1', 'localhost'].includes(database.hostname)
-      && (database.port || '5432') === '5432' && database.pathname === '/graphql'
-      && database.username === 'graphql' && database.password === 'graphql') {
+      && (database.port || '5432') === '5432' && database.pathname === `/${INSTALLATION_NAMES.database.development}`
+      && database.username === INSTALLATION_NAMES.database.development && database.password === INSTALLATION_NAMES.database.development) {
     await run('PostgreSQL', ['db:up'])
   } else {
     console.log('Using the configured PostgreSQL database; Docker Compose was skipped.')
@@ -151,7 +152,7 @@ async function main() {
     api = start('API', ['--filter', '@foreman-code/api', 'dev'], {
       // Keep API logs on disk by default (.logs/api.*.log) unless the caller chose a destination.
       env: { ...process.env, ...(!process.env.LOG_DIR && !process.env.LOG_FILE ? { LOG_DIR: join(root, '.logs') } : {}),
-        FOREMAN_CODE_BROWSER_ORIGIN: webUrl },
+        [INSTALLATION_NAMES.environment.BROWSER_ORIGIN]: webUrl },
     })
   }
   await waitFor('API', `${apiUrl}/health/ready`, apiReady, api)

@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from './installationNames.mjs'
 import { z } from 'zod'
 import { JobExecutionSchema, JobInputRevisionSchema } from './jobs.js'
 import { RunInputSchema } from './schemaPrimitives.js'
@@ -5,7 +6,7 @@ import { FileScopeSchema, FileSha256Schema } from './files.js'
 import { TransferIntentSchema } from './byteTransfer.js'
 import { JobVerificationRepositoryContextSchema } from './jobVerificationRuntime.js'
 const Relative=z.string().min(1).max(2048).refine(path=>!path.startsWith('/')&&!path.includes('\\')&&!path.includes('\0')&&!path.split('/').some(part=>!part||part==='.'||part==='..'),'Safe relative input path required.')
-export const JOB_INPUT_DIRECTORY='.graphql-job-inputs' as const
+export const JOB_INPUT_DIRECTORY=INSTALLATION_NAMES.paths.jobInputs
 const JobInputRecipientSchema=z.object({workspaceId:JobExecutionSchema.shape.workspaceId,executionId:JobExecutionSchema.shape.id,
   attemptId:JobExecutionSchema.shape.attemptId,operationId:JobExecutionSchema.shape.operationId,owner:JobExecutionSchema.shape.owner,
   bindingHash:FileSha256Schema,specDigest:FileSha256Schema,materializationId:z.uuid(),materializationDigest:FileSha256Schema}).strict()
@@ -22,7 +23,7 @@ export const JobInputAdmissionSchema=z.object({version:z.literal(1),manifest:Job
   transfers:z.array(z.object({relativePath:Relative,intent:TransferIntentSchema}).strict()).max(259)}).strict()
 export const JobInputDeliveryReceiptSchema=z.object({version:z.literal(1),recipient:JobInputRecipientSchema,
   bindingId:FileSha256Schema,inputSnapshotDigest:FileSha256Schema,manifestSha256:FileSha256Schema,manifestByteSize:z.number().int().nonnegative(),
-  directory:z.object({relativePath:z.literal('.graphql-job-inputs'),device:z.string().regex(/^\d+$/),inode:z.string().regex(/^\d+$/),mountId:z.string().regex(/^\d+$/)}).strict(),
+  directory:z.object({relativePath:z.literal(INSTALLATION_NAMES.paths.jobInputs),device:z.string().regex(/^\d+$/),inode:z.string().regex(/^\d+$/),mountId:z.string().regex(/^\d+$/)}).strict(),
   files:z.array(z.object({relativePath:Relative,sha256:FileSha256Schema,byteSize:z.number().int().nonnegative()}).strict()).max(258),
   verificationContext: z.object({ relativePath: z.literal('verification.json'), sha256: FileSha256Schema,
     byteSize: z.number().int().positive().max(1024*1024) }).strict().optional(),

@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import type { AcceptedProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
 import { createClaudeFileCallResolver } from '../../files/claude/callResolver.js'
 import { createClaudeFileMcpServer, type ClaudeFileSdk } from '../../files/claude/server.js'
@@ -329,7 +330,7 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
       tools: compiled.tools, allowedTools: compiled.allowedTools, disallowedTools: compiled.disallowedTools,
       strictMcpConfig: compiled.strictMcpConfig, settingSources: compiled.settingSources, systemPrompt: compiled.systemPrompt,
       mcpServers: { ...(input.appMcpAccess === 'none' ? Object.fromEntries(Object.entries(compiled.mcpServers).filter(([name]) => !isSupportedAppMcpServerName(name))) : compiled.mcpServers),
-        ...(fileServer ? { 'graphql-files': fileServer.server } : {}) }, env: compiled.env, sandbox: compiled.sandbox, includePartialMessages: true, forwardSubagentText: true, ...callbacks }
+        ...(fileServer ? { [INSTALLATION_NAMES.mcp.files]: fileServer.server } : {}) }, env: compiled.env, sandbox: compiled.sandbox, includePartialMessages: true, forwardSubagentText: true, ...callbacks }
     return { harness: 'claude', role: input.role, workingDirectory: input.workingDirectory, ownerAgentId: input.ownerAgentId,
       appMcpAccess: input.appMcpAccess, processRecovery: input.recovery, scope, runner, sdkOptions: options,
       qualification: { sdkVersion: accepted.currentBinding.pin.sdkVersion, cliVersion: accepted.currentBinding.pin.cliVersion,
@@ -365,10 +366,10 @@ export function productionClaudeManager(input: ProductionClaudeInput) {
       if (input.appMcpAccess === 'none' && Object.keys(servers).some(isSupportedAppMcpServerName)) {
         throw new DomainError('HARNESS_ROLE_AUTHORITY_INVALID', 'This Claude owner cannot receive management MCP tools.', 403)
       }
-      if (fileServer && servers['graphql-files'] !== undefined && servers['graphql-files'] !== fileServer.server) {
+      if (fileServer && servers[INSTALLATION_NAMES.mcp.files] !== undefined && servers[INSTALLATION_NAMES.mcp.files] !== fileServer.server) {
         throw new DomainError('CLAUDE_MCP_SCOPE_CONFLICT', 'The local file server cannot be replaced during credential refresh.', 409)
       }
-      const acceptedServers = { ...servers, ...(fileServer ? { 'graphql-files': fileServer.server } : {}) }
+      const acceptedServers = { ...servers, ...(fileServer ? { [INSTALLATION_NAMES.mcp.files]: fileServer.server } : {}) }
       const snapshot = session ? await refreshSession(session, start, acceptedServers, signal)
         : await refresh(start, acceptedServers, signal)
       const manifests = input.appMcpAccess === 'none' ? [] : await acceptedClaudeAppTools({

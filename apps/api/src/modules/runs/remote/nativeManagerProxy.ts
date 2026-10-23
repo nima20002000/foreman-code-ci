@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { isWorkflowStart } from '../../harnesses/sessionStart.js'
 import { CompactionStateSchema, ContextSnapshotSchema, SessionControlCapabilitiesSchema, SessionPreferencesSchema, type ContextSnapshot, type SessionPreferences } from '@foreman-code/contracts'
 import type { NativeCompactInput, NativeSteerInput, NativeCancelInput, NativeSteerReceipt } from '../../harnesses/port.js'
@@ -342,8 +343,8 @@ export class RemoteNativeSessionManager implements NativeHarnessSessionManager {
   }
   async createSession(input: NativeSessionStart, signal?: AbortSignal) {
     if (!isWorkflowStart(input)) throw new Error('Remote proxy owns workflow execution only')
-    if (input.environment && (input.environment.agentId !== this.options.configuration.agentId || Object.keys(input.environment.variables).some(key => key !== 'GRAPHQL_MCP_TOKEN'))) throw new Error('Only the exact scoped main application lease may cross the worker carrier')
-    const token = input.environment?.variables.GRAPHQL_MCP_TOKEN
+    if (input.environment && (input.environment.agentId !== this.options.configuration.agentId || Object.keys(input.environment.variables).some(key => key !== INSTALLATION_NAMES.environment.MCP_TOKEN))) throw new Error('Only the exact scoped main application lease may cross the worker carrier')
+    const token = input.environment?.variables[INSTALLATION_NAMES.environment.MCP_TOKEN]
     const applicationAccess = token ? { kind: 'scoped-worker-mcp', token, executionId: this.intent.executionId, agentId: this.options.configuration.agentId, operationId: this.intent.operationId, attemptId: this.intent.attemptId, bindingHash: this.intent.bindingHash } : undefined
     if (input.request.executionId !== this.intent.executionId || input.correlationId !== `execution:${this.intent.executionId}`) throw new Error('Remote session execution mismatch')
     this.prepareAttempted = true

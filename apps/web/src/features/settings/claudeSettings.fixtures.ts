@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import type { ClaudeHarnessConfiguration } from '@foreman-code/contracts/claude'
 
 export const savedClaudeConfiguration: ClaudeHarnessConfiguration = {
@@ -5,5 +6,5 @@ export const savedClaudeConfiguration: ClaudeHarnessConfiguration = {
   configDirectory: '/actual/claude/profile', permissionMode: 'default', sandbox: 'danger-full-access',
   tools: ['Read', 'Bash'], permissionRules: [{ tool: 'Read', effect: 'allow' }, { tool: 'Bash', effect: 'ask' }],
   instructions: 'Retain these saved instructions.',
-  mcpServers: { graphql: { type: 'http', url: 'http://127.0.0.1:4100/mcp' } },
+  mcpServers: { [INSTALLATION_NAMES.mcp.server]: { type: 'http', url: 'http://127.0.0.1:4100/mcp' } },
 }

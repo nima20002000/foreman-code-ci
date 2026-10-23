@@ -25,7 +25,7 @@ const mcpName = 'foreman-code'
 const disabled = args.some((value, index) => value === '-c' && args[index + 1] === `mcp_servers.${mcpName}.enabled=false`)
 const nativeConfigFile = join(process.env.CODEX_HOME ?? join(root, 'codex-home'), 'config.toml')
 const defaultMcp = { command: process.execPath, args: [settings.launcher],
-  env_vars: ['FOREMAN_CODE_MCP_TOKEN'], enabled: true, required: true }
+  env_vars: ['GRAPHQL_MCP_TOKEN'], enabled: true, required: true }
 // The external fixture stores its native configuration as JSON in the user file.
 const readNativeConfig = () => {
   const text = existsSync(nativeConfigFile) ? readFileSync(nativeConfigFile, 'utf8').trim() : ''
@@ -139,7 +139,7 @@ async function qualificationFiles(turn, prompt) {
 
 async function mcpCall(name, arguments_) {
   const { Client, StreamableHTTPClientTransport } = await import(settings.clientModule)
-  const token = process.env.FOREMAN_CODE_MCP_TOKEN
+  const token = process.env.GRAPHQL_MCP_TOKEN
   const digest = createHash('sha256').update(token).digest('hex')
   const route = JSON.parse(readFileSync(join(dirname(settings.launcher), 'routes', `${digest}.json`), 'utf8'))
   const client = new Client({ name: 'Remote reviewer protocol fixture', version: '1' })

@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { JobPreparationRetryError, retryJobPreparation } from './preparationRetry.js'
 import { JOB_GIT_ENVIRONMENT, JOB_PRIVATE_GIT_LAYOUT, requireJobGitMounts } from './privateGitMounts.js'
 import { requireJobInputReceipt,JOB_INPUT_MANIFEST_CONTAINER_PATH,type VerifiedJobSource } from './inputs.js'
@@ -258,7 +259,7 @@ export async function executeJob(input: JobExecution, ports: JobExecutorPorts, c
       const cwd = spec.relativeCwd ? `${source.privateRepositoryRoot}/${spec.relativeCwd}` : source.privateRepositoryRoot
       if (cwd !== spec.target.destination.canonicalCwd) throw new Error('Accepted working directory changed.')
       const prepared: JobLaunchPlan = { identity, execution, privateRepositoryRoot: source.privateRepositoryRoot, verifiedSource:{...source}, inputs, cwd, argv: spec.argv,
-        environment: { HOME: '/tmp/job-home', PATH: '/usr/local/bin:/usr/bin:/bin', LANG: 'C.UTF-8', CI: '1',...JOB_GIT_ENVIRONMENT,FOREMAN_CODE_JOB_INPUT_MANIFEST:JOB_INPUT_MANIFEST_CONTAINER_PATH,GRAPHQL_JOB_INPUT_MANIFEST:JOB_INPUT_MANIFEST_CONTAINER_PATH }, stdin: 'closed', pty: false, profile }
+        environment: { HOME: '/tmp/job-home', PATH: '/usr/local/bin:/usr/bin:/bin', LANG: 'C.UTF-8', CI: '1',...JOB_GIT_ENVIRONMENT,[INSTALLATION_NAMES.environment.JOB_INPUT_MANIFEST]:JOB_INPUT_MANIFEST_CONTAINER_PATH, }, stdin: 'closed', pty: false, profile }
       await retryJobPreparation(signal, () => ports.authority.recheck(execution))
       return prepared
     })
@@ -313,8 +314,7 @@ export async function executeVerificationJob(
       return { identity, execution, privateRepositoryRoot: source.privateRepositoryRoot, verifiedSource: source, inputs,
         cwd, argv: spec.argv, environment: { HOME: '/job-scratch/home', TMPDIR: '/job-scratch/tmp',
           PATH: '/usr/local/bin:/usr/bin:/bin', LANG: 'C.UTF-8', CI: '1', ...JOB_GIT_ENVIRONMENT,
-          FOREMAN_CODE_JOB_INPUT_MANIFEST: JOB_INPUT_MANIFEST_CONTAINER_PATH,
-          GRAPHQL_JOB_INPUT_MANIFEST: JOB_INPUT_MANIFEST_CONTAINER_PATH }, stdin: 'closed', pty: false, profile }
+          [INSTALLATION_NAMES.environment.JOB_INPUT_MANIFEST]: JOB_INPUT_MANIFEST_CONTAINER_PATH, }, stdin: 'closed', pty: false, profile }
     })
   } catch (error) {
     if (!cancellation.aborted && error instanceof JobPreparationRetryError) throw error.cause

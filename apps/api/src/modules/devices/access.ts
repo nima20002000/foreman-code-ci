@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { DeviceSetupApproveInputSchema,DeviceSetupOptionsSchema,encodeWorkerEnrollmentCode,type DeviceSetupApproveInput,type DeviceSetupOptions } from '@foreman-code/contracts/device-setup'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import { verifiedWorkerIdentityRequest } from '@foreman-code/contracts/device-setup-node'
@@ -116,7 +117,7 @@ export class PostgresDeviceAccessService {
       if (row.consumed_request_id && row.consumed_request_id !== input.requestId) throw new DeviceAccessError('conflict')
       if (row.consumed_request_id && row.credential_expires_at.getTime() <= Date.now()) throw new DeviceAccessError('expired')
       if (!row.consumed_request_id && row.expires_at.getTime() <= Date.now()) throw new DeviceAccessError('expired')
-      const credential = digest(JSON.stringify(['graphql-worker-credential-v1', input.grant, input.requestId]))
+      const credential = digest(JSON.stringify([INSTALLATION_NAMES.protocol.workerCredential, input.grant, input.requestId]))
       const registration = { ...row.record, status: 'paired' as const }
       const expiresAt = row.consumed_request_id
         ? row.credential_expires_at.toISOString()
@@ -149,7 +150,7 @@ export class PostgresDeviceAccessService {
     const result = await this.pool.query<DeviceRow>('select record,public_key,credential_expires_at from device_registrations where credential_hash=$1', [digest(token)])
     const row = result.rows[0]
     if (!row) throw new DeviceAccessError('unauthorized')
-    const principal: DevicePrincipal = { audience: 'graphql-worker', mainId: row.record.mainId, deviceId: row.record.deviceId,
+    const principal: DevicePrincipal = { audience: INSTALLATION_NAMES.protocol.workerAudience, mainId: row.record.mainId, deviceId: row.record.deviceId,
       workerInstallationId: row.record.workerInstallationId, keyRevision: row.record.keyRevision,
       authorizationRevision: row.record.authorizationRevision, expiresAt: row.credential_expires_at.toISOString() }
     await this.revalidateDevice(principal, scope)
