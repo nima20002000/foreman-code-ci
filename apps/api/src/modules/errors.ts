@@ -10,7 +10,6 @@ export class DomainError extends Error {
     if (this !== DomainError) return Function.prototype[Symbol.hasInstance].call(this, value)
     return typeof value === 'object' && value !== null && (value as { [domainErrorBrand]?: unknown })[domainErrorBrand] === true
   }
-  readonly [domainErrorBrand] = true
   // Transport handlers reuse a denial already recorded by the domain service.
   denialAudited = false
 
@@ -23,6 +22,7 @@ export class DomainError extends Error {
   ) {
     super(message, options)
     this.name = 'DomainError'
+    Object.defineProperty(this, domainErrorBrand, { value: true })
   }
 }
 
