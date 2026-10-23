@@ -1,5 +1,6 @@
-import { ChatAttachmentBoundary, agentChatContextKey } from '../../chat-core'
+import { ChatAttachmentBoundary } from '../ChatAttachmentBoundary'
 import { identityEpoch } from '../../../shared/api/protectedChatStorage'
+import { agentChatContextKey } from './model'
 import { AgentConversationContent, type AgentConversationContentProps } from './AgentConversationContent'
 
 type AgentConversationProps = Omit<AgentConversationContentProps, 'canonical' | 'browser' | 'onRecover'>
