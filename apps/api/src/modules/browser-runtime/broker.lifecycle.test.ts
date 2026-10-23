@@ -539,3 +539,21 @@ it('updates a chat browser tab limit when its existing preparation command is re
     .rejects.toMatchObject({ code: 'BROWSER_TAB_LIMIT' })
   expect(f.broker.read(session.id).tabs).toHaveLength(1)
 })
+
+it('admits only one concurrent tab creation when one place remains under the saved limit', async () => {
+  const f = fixture(), request = f.request(), browser = { ...request.browser, maxTabs: 3 }
+  f.assignment(request.subject, browser)
+  const { session } = ready(await f.broker.prepare({ ...request, browser }))
+  const input = { sessionId: session.id, actor: agent(session) }
+  await f.broker.createTab({ ...input, commandId: 'second' })
+  const results = await Promise.allSettled([
+    f.broker.createTab({ ...input, commandId: 'concurrent-a' }),
+    f.broker.createTab({ ...input, commandId: 'concurrent-b' }),
+  ])
+  expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+  expect(results.filter(result => result.status === 'rejected')).toEqual([
+    expect.objectContaining({ reason: expect.objectContaining({ code: 'BROWSER_TAB_LIMIT' }) }),
+  ])
+  expect(f.broker.read(session.id).tabs).toHaveLength(3)
+  expect(f.driver.createTab).toHaveBeenCalledTimes(3)
+})
