@@ -40,6 +40,13 @@ export type ControlCommandSummary = Omit<ControlCommandRow, 'command_id' | 'prin
 export const CONTROL_COMMAND_SUMMARY_COLUMNS = `id,run_id,target,kind,operation,state,native_target,receipt,
   continuation_id,consultation_id,delivered_execution,sequence::text,revision::text`
 
+/** Pending input follows technical attempts, not an explicit control continuation. */
+export const WORKFLOW_INPUT_RETRIES = `with recursive retries(id) as (
+  select $2::text union select x.previous_execution_id from run_repeat_executions x
+  join retries r on r.id=x.execution_id where x.run_id=$1 and x.previous_execution_id is not null
+    and not exists(select 1 from run_control_continuations k where k.run_id=$1 and k.successor_execution_id=x.execution_id)
+)`
+
 export async function readControlCommand(sql: GraphSqlClient, id: string): Promise<ControlCommandRow | undefined> {
   return (await sql.query<ControlCommandRow>(`select ${CONTROL_COMMAND_COLUMNS} from run_chat_commands where id=$1`, [id])).rows[0]
 }

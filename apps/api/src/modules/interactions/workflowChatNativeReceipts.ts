@@ -1,6 +1,6 @@
 import type { GraphTransactionSql } from '../run-graph/connection.js'
 import type { WorkflowNativeProofRecord } from '../runs/workflowNativeProof.js'
-import { CONTROL_COMMAND_COLUMNS, captureWorkflowControlNativeLocked, markWorkflowControlCommandLocked,
+import { CONTROL_COMMAND_COLUMNS, WORKFLOW_INPUT_RETRIES, captureWorkflowControlNativeLocked, markWorkflowControlCommandLocked,
   type ControlCommandRow } from '../collaboration/workflowControlRecords.js'
 import type { WorkflowChatNativeTarget } from '../collaboration/workflowControlTypes.js'
 
@@ -8,13 +8,14 @@ const projectedNonTerminal = new WeakMap<GraphTransactionSql, Set<string>>()
 
 const ACTIVE_CONTROL_FILTER = `run_id=$1 and state not in ('completed','failed','canceled') and (
       delivered_execution->>'executionId'=$2
+      or operation='input' and delivered_execution->>'executionId' in (select id from retries)
       or target #>> '{execution,executionId}'=$2 and operation in ('steer','stop'))`
 
 /** One statement tells a batch of frames for the same execution whether any of
  * them can have a chat receipt to project, instead of one lookup per frame. */
 export async function hasWorkflowChatNativeReceiptsLocked(sql: GraphTransactionSql,
   runId: string, executionId: string): Promise<boolean> {
-  return (await sql.query(`select 1 from run_chat_commands where ${ACTIVE_CONTROL_FILTER} limit 1`,
+  return (await sql.query(`${WORKFLOW_INPUT_RETRIES} select 1 from run_chat_commands where ${ACTIVE_CONTROL_FILTER} limit 1`,
     [runId, executionId])).rows.length > 0
 }
 
@@ -34,13 +35,16 @@ export async function projectWorkflowChatNativeReceiptsLocked(sql: GraphTransact
     if (seen.has(key)) return
     seen.add(key)
   }
-  const rows = (await sql.query<ControlCommandRow>(`select ${CONTROL_COMMAND_COLUMNS} from run_chat_commands
+  const rows = (await sql.query<ControlCommandRow>(`${WORKFLOW_INPUT_RETRIES} select ${CONTROL_COMMAND_COLUMNS} from run_chat_commands
     where ${ACTIVE_CONTROL_FILTER}
     order by sequence`, [proof.scope.runId, proof.execution.executionId])).rows
   for (const row of rows) {
     const captured = row.native_target as WorkflowChatNativeTarget | null
     const delivered = row.delivered_execution as { executionId?: string } | null
-    if (delivered?.executionId === proof.execution.executionId && row.kind === 'delivery') {
+    const retryInput = !!delivered && row.operation === 'input' && delivered.executionId !== proof.execution.executionId
+    if (retryInput && captured && (captured.nativeSessionId !== proof.session.nativeSessionId
+      || captured.ownerRequestId !== proof.commandId)) continue
+    if ((delivered?.executionId === proof.execution.executionId || retryInput) && row.kind === 'delivery') {
       if (row.state === 'accepted' && !terminal) continue
       if (!captured) await captureWorkflowControlNativeLocked(sql, {
         runId: row.run_id, commandId: row.id, now: proof.observedAt,

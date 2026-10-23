@@ -9,7 +9,7 @@ import { releaseHierarchyDirectionLocked } from '../runs/hierarchyDirection.js'
 import { assertWorkflowExecutionCapacityLocked } from '../runs/workflowExecutionBudget.js'
 import {
   CONTROL_COMMAND_COLUMNS, CONTROL_COMMAND_SUMMARY_COLUMNS, commandReceipt, controlId, readControlCommand,
-  updateControlCommand, type ControlCommandRow, type ControlCommandSummary,
+  updateControlCommand, WORKFLOW_INPUT_RETRIES, type ControlCommandRow, type ControlCommandSummary,
 } from './workflowControlRecords.js'
 import type { WorkflowChatLockedTarget, WorkflowQueuedInput } from './workflowControlTypes.js'
 export { readWorkflowControlDispositionLocked } from './workflowControlDisposition.js'
@@ -142,9 +142,12 @@ export async function claimWorkflowControlInputLocked(sql:GraphTransactionSql,
   input:{execution:ExecutionRef;now:string;claimNew?:boolean}):Promise<WorkflowQueuedInput | undefined> {
   assertGraphTransaction(sql)
   const ref=ExecutionRefSchema.parse(input.execution)
-  const retained=(await sql.query<ControlCommandRow>(`select ${CONTROL_COMMAND_COLUMNS} from run_chat_commands
-    where run_id=$1 and kind='delivery' and delivered_execution->>'executionId'=$2
-      and state in ('submitting','accepted','unknown') order by sequence limit 1`,[ref.runId,ref.executionId])).rows[0]
+  const retained=(await sql.query<ControlCommandRow>(`${WORKFLOW_INPUT_RETRIES} select ${CONTROL_COMMAND_COLUMNS} from run_chat_commands
+    where run_id=$1 and kind='delivery' and delivered_execution->>'executionId' in (select id from retries)
+      and state in ('submitting','accepted','unknown')
+      and (delivered_execution->>'executionId'=$2 or operation='input' and (
+        state='submitting' and native_target is null or native_target->>'ownerRequestId'='execution:' || $2))
+    order by sequence limit 1`,[ref.runId,ref.executionId])).rows[0]
   if(retained) {
     const target=ChatDeliveryReceiptSchema.parse(retained.receipt).target
     const sameWork=target.kind!=='workflow_execution' || target.execution.executionId===ref.executionId
@@ -167,8 +170,8 @@ export async function claimWorkflowControlInputLocked(sql:GraphTransactionSql,
   return queuedInput(row,ref,row.same_work)
 }
 const LINEAGE=`with recursive lineage(id) as (
-      select $2::text union select k.previous_execution_id from run_control_continuations k
-      join lineage l on l.id=k.successor_execution_id where k.run_id=$1 and k.successor_execution_id is not null
+      select $2::text union select k.previous_execution_id from run_repeat_executions k
+      join lineage l on l.id=k.execution_id where k.run_id=$1 and k.previous_execution_id is not null
     )`
 /** A prompt saved for an earlier turn is not this turn's; the new turn's own request then carries the message. */
 function queuedInput(row:ControlCommandRow,execution:ExecutionRef,sameWork:boolean):WorkflowQueuedInput {
