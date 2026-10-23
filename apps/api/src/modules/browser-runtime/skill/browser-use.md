@@ -6,7 +6,7 @@ Start from `browser_session_get` and `browser_tabs_list`, then use `browser_stat
 
 Reuse your tabs. To go somewhere else, or when asked to reload or repeat something, navigate a tab you already have instead of opening a new one. Open another tab only when two pages must stay open at the same time, and close tabs you no longer need. Each agent has a saved tab limit; at the limit `browser_tab_create` is refused until you close one.
 
-When the user controls the browser, agent page reads and writes fail immediately with `BROWSER_USER_CONTROL`; failed calls do not queue or resume automatically. Tell the user what you need or do other work while waiting for them to release control. Do not create a different session, use a global current tab, send raw CDP, execute arbitrary Python, or use the upstream Harness daemon to bypass that control. After release, read the current session and control epoch, then observe fresh page state before acting. Stale generation/epoch errors require current readback, not guessed handles.
+When the user controls the browser, both agent reads and writes pause. Do not create a different session, use a global current tab, send raw CDP, execute arbitrary Python, or use the upstream Harness daemon to bypass that pause. On return, observe fresh page state before acting. Stale generation/epoch errors require current readback, not guessed handles.
 
 Preserve command IDs when a response is lost. Reconcile the original action receipt before a new effect. An unknown result is not proof of failure and must never be blindly repeated. Read-only agents may use only their existing observation tools; this runtime does not expand their sandbox or grant browser mutation authority.
 

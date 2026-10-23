@@ -266,23 +266,3 @@ it('serializes concurrent preparation commands before accepting a changed saved 
   expect((await f.http('browser_sessions_list', { subject }, 'GET', '/api/browser/sessions')).json().sessions).toHaveLength(1)
   expect(f.driver.openProfile).toHaveBeenCalledTimes(1)
 })
-
-it('advertises the user-control error through MCP discovery and resumes observations with refreshed control', async () => {
-  const f = await fixture(), owner = await f.connect(), subject = browserSubjects()[0]!
-  const tools = (await owner.listTools()).tools
-  expect(tools.find(tool => tool.name === 'browser_state_read')?.description).toContain('BROWSER_USER_CONTROL')
-  const request = f.bindSubject(subject)
-  f.addCaller('agent', { subject })
-  const client = await f.connect('agent')
-  const { session } = ready(await value(f, client, 'browser_session_open', { intent: 'prepare', request }))
-  const sessionId = session.id, tabId = session.selectedTabId!, browserGeneration = session.browserGeneration
-  const held = BrowserControlSchema.parse(await value(f, owner, 'browser_control_acquire', {
-    sessionId, browserGeneration, viewerId: 'human', commandId: 'take',
-  }))
-  errorCode(await call(f, client, 'browser_state_read', { sessionId, tabId, actor: browserAgent(session, held.epoch) }), 'BROWSER_USER_CONTROL')
-  const resumed = BrowserControlSchema.parse(await value(f, owner, 'browser_control_release', {
-    sessionId, viewerId: 'human', epoch: held.epoch, commandId: 'return',
-  }))
-  expect(await value(f, client, 'browser_state_read', { sessionId, tabId, actor: browserAgent(session, resumed.epoch) }))
-    .toMatchObject({ text: 'Fixture content' })
-})
