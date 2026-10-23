@@ -24,8 +24,9 @@ import { startStateDeadlineSweeper } from './modules/diagnostics/stateDeadlines.
 import { reportServiceFailure, trackService } from './modules/diagnostics/serviceHealth.js'
 import { ProductionCiEnrollmentInventory } from './modules/ci/enrollmentInventory.js'
 import { CI_HOST_NAMESPACE, CI_RUNTIME_NAMESPACE, DEFAULT_STUCK_EXECUTION_IDLE_MS } from '@foreman-code/contracts'
+import { createCiHttpTransport } from './modules/ci/client.js'
 import { agentFileReader, CiEnrollment, CiRuntimeProvisioner, createCircleCi, createHostCi } from './modules/ci/mount.js'
-import type { CircleCreditUsage, CircleStandby, CloudCis, HostCiService, ReadAgentFiles } from './modules/ci/types.js'
+import type { CircleCreditUsage, CircleStandby, CloudCis, CiServiceClient, ReadAgentFiles } from './modules/ci/types.js'
 import { FleetMaintenanceService } from './modules/computers/fleet.js'
 import { computerConnectionsReader } from './modules/computers/connections.js'
 import { startWorkerPublicationSync } from './modules/computers/workerPublicationSync.js'
@@ -394,7 +395,7 @@ interface StartedServices {
   artifactOutputsGate?: ReturnType<typeof createWorkflowArtifactOutputsGate>
   localWorkflowArtifacts?: LocalWorkflowArtifacts
   telemetry?: ResourceTelemetryRuntime
-  hostCi?: HostCiService
+  hostCi?: CiServiceClient
   cloudCis?: CloudCis
 }
 
@@ -698,7 +699,7 @@ function createDeviceRuntime({ base, callbacks, started, transport }: {
           applicationInstallationId: binding.workerInstallationId,
           keyRevision: binding.keyRevision, authorizationRevision: binding.authorizationRevision,
         })
-        void ci?.dispatch()
+        void ci?.dispatch().catch(error => callbacks.app.get().log.error({ err: error }, 'CI dispatch failed'))
       }
       if (computerSync) {
         void computerSync.paired({
@@ -2482,15 +2483,20 @@ async function initializeCiServices(
   const hostCi = createHostCi({ pool: database.pool, mainId: machine.installationId, commands,
     devices: () => deviceRuntime.endpointForDomains(), workerExecution, clouds, discoverClouds, readAgentFiles,
     circleCredits, circleStandby })
-  started.hostCi = hostCi
+  const ciTransport = await createCiHttpTransport(hostCi)
+  const ci = ciTransport.client
+  started.hostCi = ci
   hostCi.start()
-  app.addHook('onClose', async () => { await hostCi.close() })
+  app.addHook('onClose', async () => {
+    await ciTransport.close()
+    await hostCi.close()
+  })
   const stopDeadlineSweeper = startStateDeadlineSweeper(database.pool, {
-    ciRuns: now => hostCi.expireOverdueRuns(now),
+    ciRuns: now => ci.expireOverdueRuns(now),
     workerPublication: () => readProductionWorkerReleasePublication({ environment: process.env,
       releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }) })
   app.addHook('onClose', async () => { stopDeadlineSweeper() })
-  runtimeServices.ci = hostCi
+  runtimeServices.ci = ci
   runtimeServices.jobRuntimeProfiles = jobRuntime.profiles
   const ciRuntime = runtimeServices.ciRuntime = new CiRuntimeProvisioner(database.pool, jobRuntime.profiles, jobRuntime.sources,
     () => deviceRuntime.endpointForDomains(), commands, { changed: () => jobRuntime.jobs.requestQueueWake(),
@@ -2499,7 +2505,7 @@ async function initializeCiServices(
     ciRuntime, new ProductionCiEnrollmentInventory(database.pool, jobRuntime.sources,
       () => deviceRuntime.endpointForDomains(), () => jobRuntime.mainCiRuntime, workerExecution,
       new ManagedWorkspaceRootService(commands, workspaceRoots, jobRuntime.policies)),
-    () => { if (!runtimeState.closing) void hostCi.dispatch() })
+    () => { if (!runtimeState.closing) void ci.dispatch().catch(error => app.log.error({ err: error }, 'CI dispatch failed')) })
   runtimeServices.ciEnrollment.request()
   const enrollmentTimer = setInterval(() => runtimeServices.ciEnrollment?.request(), 30_000)
   enrollmentTimer.unref()
