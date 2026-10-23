@@ -2,6 +2,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { ReactElement } from 'react'
 import { DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
 import { AgentSettingsForm } from './AgentSettingsForm'
 import { WorkflowExecutionLimits } from './WorkflowExecutionLimits'
@@ -14,11 +16,12 @@ vi.mock('../../shared/api/query', () => ({
   useAgentDefaultsQuery: () => ({ data: undefined }),
 }))
 afterEach(cleanup)
+const renderForm = (ui: ReactElement) => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>)
 describe('agent and workflow execution limits', () => {
   it('keeps workflow limits out of the agent inspector and preserves the existing policy', async () => {
     const onSave = vi.fn()
     const policy = { maxNodeExecutions: 50, maxParallelism: 7 }
-    render(<AgentSettingsForm agent={{ id: 'agent', name: 'Coder', harnessConfiguration: DEFAULT_HARNESS_DEFAULTS.codex }} executionPolicy={policy} onSave={onSave} onClose={() => {}} />)
+    renderForm(<AgentSettingsForm agent={{ id: 'agent', name: 'Coder', harnessConfiguration: DEFAULT_HARNESS_DEFAULTS.codex }} executionPolicy={policy} onSave={onSave} onClose={() => {}} />)
     expect(screen.queryByLabelText('Maximum node executions')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save agent settings' })).toBeDisabled()
     const user = userEvent.setup()
@@ -28,7 +31,7 @@ describe('agent and workflow execution limits', () => {
   })
   it('allows a name validation attempt and focuses its explained error', async () => {
     const onSave = vi.fn()
-    render(<AgentSettingsForm agent={{ id: 'agent', name: 'Coder', harnessConfiguration: DEFAULT_HARNESS_DEFAULTS.codex }} onSave={onSave} onClose={() => {}} />)
+    renderForm(<AgentSettingsForm agent={{ id: 'agent', name: 'Coder', harnessConfiguration: DEFAULT_HARNESS_DEFAULTS.codex }} onSave={onSave} onClose={() => {}} />)
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: '  ' } })
     await userEvent.setup().click(screen.getByRole('button', { name: 'Save agent settings' }))
     expect(screen.getByLabelText('Name')).toHaveAttribute('aria-invalid', 'true')

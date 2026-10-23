@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { ChatSendRequestSchema, DEFAULT_HARNESS_DEFAULTS, operatorChatSettings,
@@ -79,13 +79,14 @@ it('keeps the durable prepared body visible after failure and reload, then clear
   await waitFor(() => expect(input).toHaveValue(body))
   expect(state.messages).toHaveLength(0)
   first.unmount(); first.client.clear()
-  mount()
+  const reloaded = mount()
   const retained = await screen.findByRole('group', { name: 'Retained input' })
   expect(retained).toHaveTextContent(body)
   expect(screen.getByRole('textbox', { name: 'Message' })).toHaveValue(body)
   expect(sends).toBe(1)
   denied = true
-  fireEvent.click(within(retained).getByRole('button', { name: 'Refresh delivery status' }))
+  // The next read of the chat (its polling) learns about the denial.
+  await act(async () => { await reloaded.client.invalidateQueries() })
   expect(await screen.findByText('Operator access unavailable')).toBeVisible()
   expect(screen.queryByText(body)).not.toBeInTheDocument()
   expect(screen.queryByRole('group', { name: 'Retained input' })).not.toBeInTheDocument()
@@ -105,28 +106,28 @@ it('does not duplicate a retained input already represented by its native user r
 
 it('refreshes the exact retained receipt even when the parent readback still contains its older state', async () => {
   save({ target, commandId: 'queued-before-adoption', intent: 'next_turn', content: body, attachments: [] })
-  receipt = { ...receipt!, state: 'queued', errorCode: undefined }
+  receipt = { ...receipt!, state: 'unknown', errorCode: undefined }
   mount()
   const retained = await screen.findByRole('group', { name: 'Retained input' })
-  expect(within(retained).getByText('Queued')).toBeVisible()
+  expect(within(retained).getByText('Delivery unconfirmed')).toBeVisible()
   exactReceipt = { ...receipt, state: 'accepted', updatedAt: '2026-10-01T00:01:00Z' }
-  fireEvent.click(within(retained).getByRole('button', { name: 'Refresh delivery status' }))
+  fireEvent.click(within(retained).getByRole('button', { name: 'Check status' }))
   expect(await within(retained).findByText('Delivered')).toBeVisible()
-  expect(within(retained).queryByText('Queued')).not.toBeInTheDocument()
+  expect(within(retained).queryByText('Delivery unconfirmed')).not.toBeInTheDocument()
   expect(within(retained).getByText(body)).toBeVisible()
   expect(sends).toBe(0)
 })
 
 it('labels a failed status refresh while retaining the last receipt and retries without sending', async () => {
   save({ target, commandId: 'status-retry-command', intent: 'next_turn', content: body, attachments: [] })
-  receipt = { ...receipt!, state: 'queued', errorCode: undefined }
+  receipt = { ...receipt!, state: 'unknown', errorCode: undefined }
   mount()
   const retained = await screen.findByRole('group', { name: 'Retained input' })
-  expect(within(retained).getByText('Queued')).toBeVisible()
+  expect(within(retained).getByText('Delivery unconfirmed')).toBeVisible()
   receiptOffline = true
-  fireEvent.click(within(retained).getByRole('button', { name: 'Refresh delivery status' }))
+  fireEvent.click(within(retained).getByRole('button', { name: 'Check status' }))
   expect(await within(retained).findByRole('alert')).toHaveTextContent('Delivery status could not be refreshed. The last known receipt is shown.')
-  expect(within(retained).getByText('Queued')).toBeVisible()
+  expect(within(retained).getByText('Delivery unconfirmed')).toBeVisible()
   expect(within(retained).getByText(body)).toBeVisible()
   receiptOffline = false
   exactReceipt = { ...receipt, state: 'accepted', updatedAt: '2026-10-01T00:01:00Z' }

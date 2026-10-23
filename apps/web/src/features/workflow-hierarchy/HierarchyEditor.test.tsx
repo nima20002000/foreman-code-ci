@@ -206,7 +206,9 @@ it('retains a Move Workers destination across refresh, cancels without changes a
   expect(changed.graph.edges.some(edge => edge.source === 'node-1' || edge.target === 'node-1')).toBe(false)
   expect(changed.history).toHaveLength(1)
   await userEvent.click(screen.getByRole('button', { name: 'Undo' }))
-  expect(useGraphDraftStore.getState().nextDrafts[draftKey]!.graph).toEqual(original)
+  // Undo restores the team; the nodes stay pinned where the Board showed them.
+  const unpinned = (graph: typeof original) => ({ ...graph, nodes: graph.nodes.map(({ position: _position, ...node }) => node) })
+  expect(unpinned(useGraphDraftStore.getState().nextDrafts[draftKey]!.graph)).toEqual(unpinned(original))
   expect(report).not.toHaveBeenCalled()
 })
 
