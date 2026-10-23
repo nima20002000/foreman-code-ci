@@ -1,3 +1,4 @@
+import { usesWorkHandoffGraph } from './workflowRunMode.js'
 import { settleMemoryRunLocked } from './memoryRunSettlement.js'
 import { closeRunControlInputsLocked } from '../collaboration/index.js'
 import type { MemoryBoardPort } from '../collaboration/index.js'
@@ -151,7 +152,7 @@ export async function persistWorkflowApprovalWait(owner: RunOwnership, saver: Ba
       await retainOwner(sql, owner)
       if (snapshot.stopRequested || snapshot.cleanupPending) return fail('GRAPH_STOP_CONFLICT')
       if (!isRunInProgress(run.executionState)) return fail('GRAPH_TERMINAL_CONFLICT')
-      const workHandoffs = version.definition.handoffs !== undefined
+      const workHandoffs = usesWorkHandoffGraph(version)
       const wrappers = workHandoffs ? null : new Map(compileRepeatLayout(version).nodes.map((node) => [node.name, node]))
       const seen = new Set<string>(), current: DurableInteraction[] = []
       const retained: Array<{ item: DurableInteraction; checkpointId: string }> = []
@@ -260,7 +261,7 @@ export async function persistWorkDirectionWait(owner: RunOwnership,
     const { publication, snapshot } = await openWorkflowLifecycleLocked(sql, owner.runId)
     const { run, version } = snapshot
     await retainOwner(sql, owner)
-    if (!version.definition.handoffs || snapshot.stopRequested || snapshot.cleanupPending
+    if (!usesWorkHandoffGraph(version) || snapshot.stopRequested || snapshot.cleanupPending
       || !isRunInProgress(run.executionState)) return fail('WORK_DIRECTION_WAIT_CONFLICT')
     const rows = (await sql.query<{ unresolved_id: string }>(
       'select unresolved_id from run_work_unresolved where run_id=$1 order by unresolved_id limit 1001',
@@ -321,7 +322,7 @@ export async function recordWorkflowExecutionFailure(owner: RunOwnership, execut
     }
     const stored = await readRepeatExecutionLocked(sql, snapshot, executionId)
     const intervalCheck = repeatTickIndex(stored.execution.input) !== undefined
-    if (!intervalCheck && !abandoned && (!snapshot.version.definition.handoffs || !stored.workActivationId
+    if (!intervalCheck && !abandoned && (!usesWorkHandoffGraph(snapshot.version) || !stored.workActivationId
       || stored.execution.nativeSessionId || !['queued', 'starting'].includes(stored.execution.state))) {
       return fail('RUN_FAILURE_CAUSE_INVALID')
     }
@@ -451,7 +452,7 @@ export async function settleWorkflowRun(owner: RunOwnership, interrupted = false
       await writeRunStateLocked(sql, run.executionState, next, canonicalGraphJson(next))
       await assertWorkflowRunSettlementLocked(sql, next, owner, 'cleanup')
       await closeRunControlInputsLocked(sql, { runId: run.id, now: next.finishedAt! })
-      if (snapshot.version.definition.handoffs) {
+      if (usesWorkHandoffGraph(snapshot.version)) {
         await sql.query(`update run_work_activations set state='completed'
           where run_id=$1 and state<>'completed'`, [run.id])
       }

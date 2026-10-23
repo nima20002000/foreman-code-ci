@@ -362,10 +362,12 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
 - [~] #14 "repeat" is the universal run engine despite AGENTS.md. `runs/workflowRunMode.ts` names the three modes
   (`graph`, `handoff`, `hierarchy`; only explicit repeat blocks declare repeat). `executeRepeatRuntime` now takes a
   `WorkflowGraphMode` (`handoffGraphMode` or `workflowGraphMode`) instead of branching on `work`/`repeat`, the native
-  prompt contract per mode is `nativeWorkContracts`, and the engine asks `usesWorkHandoffGraph`. Open: the `repeat*`
+  prompt contract per mode is `nativeWorkContracts`, and the engine asks `usesWorkHandoffGraph`. Finding #14 follow-up:
+  `workflowExecutionRequest.ts`, `repeatPostgres.ts` and `workflowLifecycle.ts` now use the shared
+  `usesWorkHandoffGraph`/`isHierarchyWorkflow` predicates instead of branching on saved handoff/hierarchy fields;
+  completion uses `declaresRepeatBlocks`. Behavior and saved names are unchanged. Open: the `repeat*`
   file and symbol names (`repeatRuntime.ts`, `repeatNode.ts`, `repeatGraph.ts`, `RepeatRunRepository`) still cover
-  the ordinary graph; renaming them is a mechanical follow-up, and `workflowExecutionRequest.ts`,
-  `repeatPostgres.ts` and `workflowLifecycle.ts` still branch on `definition.handoffs`/`hierarchy` directly.
+  the ordinary graph; renaming them remains a separate mechanical follow-up.
 - [~] #15 Two chat engines: shared `conversationEngine.ts` and `conversationRepositoryCore.ts`, and an Operator
   unsubscribe bug fixed. `runTurn`, observe/settle and recovery are still per engine. The web copies are untouched.
   Prompt rules are shared (`refineChatPrompt` in contracts): text-or-attachment and no attachments on steer apply to the
