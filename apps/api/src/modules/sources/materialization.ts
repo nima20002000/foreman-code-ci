@@ -385,7 +385,20 @@ export async function releaseMaterializationClaimForCancellation(receipt: Materi
   return archiveMaterializationClaim(receipt, { filesystem, verifyOriginalSource: true, signal }, reconcile)
 }
 
+/** A native owner confirms closure when it has signalled its processes, which may still be exiting: give them a
+ * short grace before a process inside the namespace counts as a live owner. */
 export async function preparationChildrenClosed(namespace: string, signal?: AbortSignal): Promise<boolean> {
+  const deadline = Date.now() + 3_000
+  for (;;) {
+    try { return await inspectPreparationChildren(namespace, signal) } catch (error) {
+      if (!(error instanceof SourceError) || error.code !== 'source-reconciliation-unconfirmed' || Date.now() >= deadline) throw error
+    }
+    await new Promise(resolve => setTimeout(resolve, 100))
+    signal?.throwIfAborted()
+  }
+}
+
+async function inspectPreparationChildren(namespace: string, signal?: AbortSignal): Promise<boolean> {
   signal?.throwIfAborted()
   const entries = await readdir('/proc')
   signal?.throwIfAborted()
