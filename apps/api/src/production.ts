@@ -1105,7 +1105,7 @@ function configureHarnessProfiles(composition: ProductionComposition) {
           binding: captured.binding, inventory: result.payload, suiteRevision: selectedSuites.codex.revision })
       },
     }) : undefined)
-  const harnessInstances = composition.harnessInstances = new HostHarnessOverrideService(hostSettings, commands, hostAuthority, async (value, client) => {
+  composition.harnessInstances = new HostHarnessOverrideService(hostSettings, commands, hostAuthority, async (value, client) => {
     await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef,
           value.target.applicationInstallationId)
     const proof = await harnessRegistry.profileEvidence(value, client, { includeFailed: true })
@@ -2395,9 +2395,7 @@ function configureRuntimeStartup(composition: ProductionComposition) {
     config,
     database,
     checkpoints,
-    infrastructure,
     deviceRuntime,
-    providerAccounts,
     harnessRegistry,
     foundationSettings,
     operators,
@@ -2575,7 +2573,6 @@ async function initializeRuntimeOwner(composition: ProductionComposition) {
     startupDatabase,
     synchronizeOperatorDefaults,
     config,
-    infrastructure,
   } = composition
 
   assertOpen()
@@ -2625,7 +2622,6 @@ async function initializeJobServices(composition: ProductionComposition, machine
     locations,
     approvals,
     runtimeServices,
-    app,
     config,
     database,
     infrastructure,
@@ -2782,7 +2778,6 @@ async function initializeComputerServices(composition: ProductionComposition, ma
     deviceRuntime,
     commands,
     projectRoot,
-    locations,
     maintenancePorts,
     harnessSettings,
     runtimeServices,
@@ -2889,7 +2884,7 @@ async function initializeComputerServices(composition: ProductionComposition, ma
 }
 
 async function initializeCircleCi(composition: ProductionComposition, machine: ProductionMainInstallation) {
-  const { database, foundationSettings, commands, runtimeServices, app } = composition
+  const { database, foundationSettings, commands, runtimeServices } = composition
   const { circleAccounts, ...circleCi } = await createCircleCi({ pool: database.pool, mainId: machine.installationId,
     foundationSettings, commands })
   runtimeServices.circleAccounts = circleAccounts
