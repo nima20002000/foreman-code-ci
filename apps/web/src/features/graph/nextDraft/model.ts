@@ -212,15 +212,24 @@ export function putRelationship(graph: WorkflowDefinitionV3, relationship: Workf
   return { ...graph, edges: previous ? graph.edges.map((edge) => edge.id === relationship.id ? relationship : edge) : [...graph.edges, relationship] }
 }
 
-/** A line into the starting agent makes its source the start, so connecting two agents just works.
- * Only a source that nothing feeds can start the work; otherwise the graph is left for the save checks. */
+/** The starting agent must have no line into it and must lead to everything that feeds its work.
+ * When the start breaks that (a line drawn into it, Agents added in another order), the agent that
+ * leads to the most others starts instead, so connecting agents just works. Otherwise the save checks report it. */
 export function startFromConnectionSource(graph: WorkflowDefinitionV3): WorkflowDefinitionV3 {
-  if (graph.hierarchy && graph.handoffs) return graph
-  const into = (id: string) => graph.edges.filter((edge) => edge.kind === 'execution' && edge.target === id)
-  const feeders = graph.entryNodeId === null ? [] : into(graph.entryNodeId)
-  const source = feeders[0]?.source
-  if (!source || new Set(feeders.map((edge) => edge.source)).size !== 1 || into(source).length) return graph
-  return { ...graph, entryNodeId: source }
+  if ((graph.hierarchy && graph.handoffs) || graph.entryNodeId === null) return graph
+  const execution = graph.edges.filter((edge) => edge.kind === 'execution')
+  const reach = (id: string) => {
+    if (execution.some((edge) => edge.target === id)) return 0
+    const reached = new Set([id])
+    for (let grew = true; grew;) {
+      grew = false
+      for (const edge of execution) if (reached.has(edge.source) && !reached.has(edge.target)) { reached.add(edge.target); grew = true }
+    }
+    return execution.some((edge) => !reached.has(edge.source) && reached.has(edge.target)) ? 0 : reached.size
+  }
+  if (reach(graph.entryNodeId)) return graph
+  const best = graph.nodes.map((node) => ({ id: node.id, size: reach(node.id) })).reduce((a, b) => b.size > a.size ? b : a, { id: '', size: 0 })
+  return best.size ? { ...graph, entryNodeId: best.id } : graph
 }
 
 export function setWorkConnectionLimit(graph: WorkflowDefinitionV3, relationshipId: string, limit?: number): WorkflowDefinitionV3 {
