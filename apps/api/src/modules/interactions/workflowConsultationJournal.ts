@@ -1,7 +1,7 @@
 import { canonicalJson, type CoordinatorConsultationBinding, type NativeHarnessEvent,
   type NativeSessionReference } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import type { NativeHistory } from '../harnesses/port.js'
 import type { SessionWriteLease } from './sessionWriter.js'
 import { sha256Hex } from '../../shared/hash.js'
@@ -15,7 +15,7 @@ export interface ConsultationWriter {
   assertCurrent(): void
 }
 
-export async function assertConsultationWriterLocked(sql: GraphTransactionSql,
+export async function assertConsultationWriterLocked(sql: SqlTransaction,
   writer: ConsultationWriter): Promise<void> {
   writer.assertCurrent()
   const { lease, binding, session } = writer
@@ -42,7 +42,7 @@ export async function assertConsultationWriterLocked(sql: GraphTransactionSql,
 
 /** Original observer events retain their native IDs. The hash only deduplicates
  * the same original event across the stream/history reply gap. */
-export async function appendConsultationNativeLocked(sql: GraphTransactionSql, writer: ConsultationWriter,
+export async function appendConsultationNativeLocked(sql: SqlTransaction, writer: ConsultationWriter,
   input: { events: readonly NativeHarnessEvent[]; history?: NativeHistory; now: string }): Promise<void> {
   await assertConsultationWriterLocked(sql, writer)
   for (const event of input.events) {

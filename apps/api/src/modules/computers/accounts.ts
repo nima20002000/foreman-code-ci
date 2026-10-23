@@ -7,10 +7,10 @@ import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-re
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { requireAuthorization } from '../access/policy.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
-import type { PostgresCommandCoordinator } from '../commands/postgres.js'
+import type { PostgresCommandCoordinator } from '../commands/index.js'
 import { probeComputerAccounts } from './accountProbe.js'
 import { assertComputerTarget } from './target.js'
-import { logIgnoredError } from '../diagnostics/ignoredError.js'
+import { logIgnoredError } from '../diagnostics/index.js'
 
 export interface ComputerAccountsEndpoint {
   capabilities(deviceId: string): readonly { namespace: string; mainCanRequest: boolean }[]

@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import type { RepeatGraphScopeV3, RunActivitiesPage, RunActivityPublic } from '@foreman-code/contracts/wave25'
+import type { RepeatGraphScopeCurrent, RunActivitiesPage, RunActivityPublic } from '@foreman-code/contracts/current'
 import { server } from '../../mocks/server'
 import { ApiError } from '../../shared/api/client'
 import { isTransientRunActivityError, mergeOlderRunActivities, mergeRunActivities,
   readRunActivities, readRunActivityFeed, runActivitiesRefetchInterval } from './runActivitiesQuery'
 
-const scope: RepeatGraphScopeV3 = { workspaceId: 'workspace-a', workflowId: 'workflow-a',
+const scope: RepeatGraphScopeCurrent = { workspaceId: 'workspace-a', workflowId: 'workflow-a',
   workflowVersionId: 'version-a', runId: 'run-a', executionSemanticsVersion: 3 }
 const item = (sequence: string): RunActivityPublic => ({ id: `run-a:${sequence}`, scope,
   sequence, occurredAt: '2026-09-28T00:00:00.000Z', source: 'backend', kind: 'work_notice',

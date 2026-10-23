@@ -15,18 +15,18 @@ import { qualifiedGit } from '../../src/modules/sources/capture.js'
 import { sourceSha256 } from '../../src/modules/sources/manifest.js'
 import { WorkspaceBoundLocationService } from '../../src/modules/workspace-roots/service.js'
 import { WorkflowManagementService } from '../../src/modules/workflows/management.js'
-import { sch11Actions, type Sch11Fixture } from './scheduleFixture.js'
-import { sch11Once } from './scheduleClockCases.js'
+import { scheduleManagementActions, type ScheduleDispatchFixture } from './scheduleFixture.js'
+import { onceSchedule } from './scheduleClockCases.js'
 import { scheduleHarnessFixture } from './scheduleHarnessFixture.js'
 
 /** Admission uses persisted authorities and physical host discovery. */
-export async function schedulePlacementFixture(f: Sch11Fixture) {
+export async function schedulePlacementFixture(f: ScheduleDispatchFixture) {
   const pool = f.database.pool
   const mainId = (await pool.query<{ id: string }>('select id from application_installation')).rows[0]!.id
   const hostRef = { kind: 'main' as const, mainId }
   const writer = await f.access.issue({ name: 'Schedule placement owner', audience: 'operator',
     expiresAt: new Date(Date.now() + 3_600_000), grants: [
-      { actions: [...sch11Actions, 'sources:read', 'sources:approve', 'source_roots:read', 'source_roots:bind',
+      { actions: [...scheduleManagementActions, 'sources:read', 'sources:approve', 'source_roots:read', 'source_roots:bind',
         'workspace_locations:update', 'workspace_locations:validate'], scope: { workspaceIds: [f.scope.workspaceId] } },
       { actions: ['harnesses:read', 'harnesses:update'], scope: {} },
     ] })
@@ -111,7 +111,7 @@ export async function schedulePlacementFixture(f: Sch11Fixture) {
     connectRootWorker: (worker: RootWorkerClient) => { rootWorker = worker },
     get sources() { return authorities.sources },
     get producer() { return producer() },
-    save: async (schedule: ScheduleConfiguration = sch11Once) =>
+    save: async (schedule: ScheduleConfiguration = onceSchedule) =>
       (await f.service.save(writer.principal, 'http', { ...f.command(0), schedule })).value,
     changeInstance: () => harness.changeInstance(),
     changeHostConfiguration: () => publishConfiguration('2'),

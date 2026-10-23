@@ -1,14 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildComputerPriorityMigration } from '../src/infrastructure/buildComputerPriorityMigration.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 const mainA = '11111111-1111-4111-8111-111111111111'
 const mainB = '22222222-2222-4222-8222-222222222222'
 
 describe.skipIf(!postgresEnabled)('build computer priority migration', () => {
-  let database: Awaited<ReturnType<typeof agent3Database>>
-  beforeAll(async () => { database = await agent3Database() })
+  let database: Awaited<ReturnType<typeof migratedDatabase>>
+  beforeAll(async () => { database = await migratedDatabase() })
   afterAll(async () => { await database?.close() })
 
   it('folds Primary/Backup into one priority order per Main and drops the role', async () => {

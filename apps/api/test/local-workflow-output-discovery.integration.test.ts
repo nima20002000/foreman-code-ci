@@ -2,17 +2,17 @@ import { workerToolServices } from './helpers/workerMcpServices.js'
 import { randomUUID } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { AgentConfigurationVersionSchema, DEFAULT_HARNESS_DEFAULTS, HarnessExecutionSchema } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture, WorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
 import { WORKER_NATIVE_OUTPUT_TOOL_NAMES } from '@foreman-code/contracts/worker-native-output'
 import { expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { PostgresAppInteractionService } from '../src/modules/interactions/app.js'
-import { Wave25WorkerCredentialService } from '../src/modules/interactions/wave25/credentials.js'
+import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
 import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { insertProviderRun } from './helpers/checkpointRuntime.js'
-import { candidateFor, seedAgent3 } from './helpers/workflowDatabase.js'
+import { candidateFor, seedWorkflowFixture } from './helpers/workflowDatabase.js'
 
 it.runIf(postgresEnabled)(
   'keeps retired local output tools unavailable and rejects revoked or unrelated worker callers', async () => {
@@ -26,7 +26,7 @@ it.runIf(postgresEnabled)(
         graphqlTools: ['context_get', ...Object.values(WORKER_NATIVE_OUTPUT_TOOL_NAMES)],
       }))
       f.version.definition.nodes[0]!.artifactOutputs = { version: 1, outputKeys: ['report'] }
-      await seedAgent3(db.pool, db.directory, f, { run: false })
+      await seedWorkflowFixture(db.pool, db.directory, f, { run: false })
       const access = new PostgresAccessService(db.pool)
       const owner = await access.issue({ name: 'Output discovery owner', audience: 'operator',
         expiresAt: new Date(Date.now() + 300_000), grants: [{
@@ -34,7 +34,7 @@ it.runIf(postgresEnabled)(
           scope: { workspaceIds: [f.scope.workspaceId], workflowIds: [f.scope.workflowId] },
         }],
       })
-      f.run = WorkflowRunV3Schema.parse({ ...f.run, authorizationPrincipalId: owner.principal.id,
+      f.run = WorkflowRunCurrentSchema.parse({ ...f.run, authorizationPrincipalId: owner.principal.id,
         executionLocation: { ...f.run.executionLocation, runnerId: 'runner-local' },
       })
       await insertProviderRun(db.pool, f)

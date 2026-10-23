@@ -10,7 +10,7 @@ import { ApprovalInbox } from '../features/approvals'
 import { useAgentDefaultsQuery } from '../shared/api/query'
 import { useAccessFailureLatch } from '../shared/api/useAccessFailureLatch'
 import { sessionIsSwitching } from '../shared/api/sessionBoundary'
-import { useSyncedTheme } from '../features/theme/useSyncedTheme'
+import { useSyncedTheme } from '../features/theme'
 
 export function RootShell() {
   return <AppConnectionBoundary><AppNavigationHistoryProvider><UnsavedChangesProvider><ReleaseAutoReload /><LocalShell /></UnsavedChangesProvider></AppNavigationHistoryProvider></AppConnectionBoundary>

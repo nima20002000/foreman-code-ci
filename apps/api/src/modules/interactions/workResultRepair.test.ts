@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseWorkHandoffResult } from '@foreman-code/contracts/wave25'
+import { parseWorkHandoffResult } from '@foreman-code/contracts/current'
 import { ZodError } from 'zod'
 import { currentInitialPrompt } from '../runs/currentRouting.js'
 import { workResultRepairPrompt } from './workResultRepair.js'

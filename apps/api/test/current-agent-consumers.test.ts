@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import { describe, expect, it, vi } from 'vitest'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { WorkflowDefinitionV3Schema, WorkflowVersionV3Schema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { WorkflowDefinitionCurrentSchema, WorkflowVersionCurrentSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { NodePlacementChoicesService } from '../src/modules/placement/choicesService.js'
 import { CurrentWorkflowAuthoring } from '../src/modules/workflows/currentAuthoring.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
@@ -9,11 +9,11 @@ import { DeterministicNativeSessionManager } from '../src/testing/deterministicN
 
 function fixture() {
   const f = makeCurrentWorkflowFixture('agent-consumers', 'sequential'), configuration = f.configurations[0]!
-  const graph = WorkflowDefinitionV3Schema.parse({ ...f.version.definition, nodes: [f.version.definition.nodes[0],
+  const graph = WorkflowDefinitionCurrentSchema.parse({ ...f.version.definition, nodes: [f.version.definition.nodes[0],
     { kind: 'job', id: f.version.definition.nodes[1]!.id, name: 'Build job', jobDefinitionId: 'job-definition',
       jobDefinitionRevision: 1, jobDefinitionVersionId: 'job-version' }] })
   const pins = { [configuration.agentId]: configuration.id }
-  const version = WorkflowVersionV3Schema.parse({ ...f.version, definition: graph, agentConfigurationVersionIds: pins })
+  const version = WorkflowVersionCurrentSchema.parse({ ...f.version, definition: graph, agentConfigurationVersionIds: pins })
   const principal: ManagementPrincipal = { id: 'reader', name: 'Reader', audience: 'operator', revokedAt: null,
     expiresAt: '2099-01-01T00:00:00Z', grants: [{ actions: ['workflows:read', 'graph:read', 'agents:read', 'workspace_locations:read', 'source_roots:read', 'sources:read', 'harnesses:read'], scope: {} }] }
   const query = vi.fn(async (text: string, values?: unknown[]) => {

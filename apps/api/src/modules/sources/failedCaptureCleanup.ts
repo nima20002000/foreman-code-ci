@@ -1,5 +1,5 @@
 import type pg from 'pg'
-import { withTransaction, rollbackTransaction } from '../../infrastructure/transaction.js'
+import { withTransaction } from '../../infrastructure/transaction.js'
 import { DomainError } from '../errors.js'
 import { PostgresSourceReservations, type SourceReservation } from './reservations.js'
 import type { PrivateSourceSnapshotStore } from './store.js'
@@ -104,7 +104,6 @@ export async function reconcileFailedCaptures(pool: pg.Pool, store: CaptureStore
         }
       }
     } catch (error) {
-      await rollbackTransaction(sql)
       if (!(error instanceof Error) || !('code' in error) || error.code !== 'SOURCE_CLAIM_LOCK_FAILED') report(error)
     } finally {
       if (commandLocked) {

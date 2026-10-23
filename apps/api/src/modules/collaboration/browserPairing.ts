@@ -4,7 +4,7 @@ import type pg from 'pg'
 import { DeviceRegistrationSchema } from '@foreman-code/contracts/device-identity'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
-import type { BrowserPairingAuthority, BrowserInstallationBinding } from '../browser-profiles/keys.js'
+import type { BrowserPairingAuthority, BrowserInstallationBinding } from '../browser-profiles/index.js'
 import { DomainError } from '../errors.js'
 import { sha256Digest } from '../../shared/hash.js'
 

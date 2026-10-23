@@ -12,7 +12,7 @@ export { hostCiCapacity } from '@foreman-code/ci/capacity'
 export { cloudCiId } from '@foreman-code/ci/cloudProviders'
 export { buildComputerKey, buildComputerTarget } from '@foreman-code/ci/buildComputers'
 export { disabledCiEnrollmentHosts } from '@foreman-code/ci/ciEnrollmentState'
-export { buildCiRuntimeContext, ciRuntimeInputDigest, parseCiLock } from '../../../../worker/artifacts/ci-runtime/context.mjs'
+export { buildCiRuntimeContext, ciRuntimeInputDigest, parseCiLock } from '../jobs/ciRuntimeContext.mjs'
 
 export function expireOverdueCiRuns(pool: pg.Pool, now?: Date,
   reconcile?: (run: CiRunRecord, hostKey: string | null) => Promise<CiRunRecord>): Promise<number> {

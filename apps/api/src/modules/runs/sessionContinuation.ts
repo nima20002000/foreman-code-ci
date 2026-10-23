@@ -3,7 +3,7 @@ import {
   AgentConfigurationVersionSchema, HarnessExecutionSchema,
   WorkflowControlContinuationSchema, type HarnessExecution, type WorkflowSessionContinuation,
 } from '@foreman-code/contracts'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { readWorkflowClosure } from '../interactions/workflowClosure.js'
 import { readDispatchIntent, readExecutionPlacement } from '../placement/persistence.js'
 import type { AcceptedNodePlacement } from '@foreman-code/contracts/node-placement'
@@ -31,7 +31,7 @@ export function canContinueWorkflowSession(previous: HarnessExecution, execution
 }
 
 /** Select history while the Run's launch transaction holds its owner lock. */
-export async function readWorkflowSessionContinuation(sql: GraphTransactionSql,
+export async function readWorkflowSessionContinuation(sql: SqlTransaction,
   execution: HarnessExecution): Promise<WorkflowSessionContinuation | undefined> {
   const control = (await sql.query<{ record: unknown; previous_execution_id: string }>(
     `select record,previous_execution_id from run_control_continuations

@@ -1,16 +1,16 @@
 import type { SqlQuery } from '../../infrastructure/transaction.js'
-import { readChatPrincipal, readConversationCredential } from '../access/conversationCredentials.js'
+import { readChatPrincipal, readConversationCredential } from '../access/index.js'
 import type pg from 'pg'
-import { AgentConfigurationVersionSchema, AgentSubjectSchema, HarnessExecutionSchema, effectiveGraphqlTools } from '@foreman-code/contracts'
+import { isReadOnlyHarnessConfiguration, AgentConfigurationVersionSchema, AgentSubjectSchema, HarnessExecutionSchema, effectiveGraphqlTools } from '@foreman-code/contracts'
 import { requireChatAuthorization } from './chatAuthorization.js'
-import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
-import { readConsultationCredentialSubject } from '../access/consultationAuthority.js'
-import { WORKER_BINDING_ELIGIBLE } from '../access/workerEligibility.js'
+import { readLiveManagementPrincipal } from '../access/index.js'
+import { readConsultationCredentialSubject } from '../access/index.js'
+import { WORKER_BINDING_ELIGIBLE } from '../access/index.js'
 import { DomainError } from '../errors.js'
-import { createWorkflowChatFeature, type SharedChatAccess } from '../workflow-chat/feature.js'
-import type { AgentChatService, ConversationFeatureBinder } from '../conversations/agentChat.js'
-import type { OperatorChatService } from '../conversations/operatorChat.js'
-import type { PostgresAgentChatRepository } from '../conversations/agentChatRepository.js'
+import { createWorkflowChatFeature, type SharedChatAccess } from '../workflow-chat/index.js'
+import type { AgentChatService, ConversationFeatureBinder } from '../conversations/index.js'
+import type { OperatorChatService } from '../conversations/index.js'
+import type { PostgresAgentChatRepository } from '../conversations/index.js'
 import type { WorkflowExecutionChatService } from './workflowChatService.js'
 import { authorizeWorkflowChat, withWorkflowChatRead } from './workflowChatRead.js'
 import { readWorkflowChatIdentity, readWorkflowChatVersion, readWorkflowChatAgent } from './workflowChatIdentity.js'
@@ -56,7 +56,7 @@ export function productionChatAccess(pool: pg.Pool): SharedChatAccess {
       const tool = action === 'agent_chat:read' ? 'workflow_chat_read' : 'workflow_chat_post'
       const enabled = effectiveGraphqlTools(agent.productRole, configuration.graphqlTools,
         node?.kind === 'job' ? undefined : node?.graphqlTools, Boolean(node && 'interval' in node && node.interval), ['workflow_chat_read', 'workflow_chat_post'])
-      const readOnly = configuration.harness.harness === 'opencode' || configuration.harness.sandbox === 'read-only'
+      const readOnly = isReadOnlyHarnessConfiguration(configuration.harness)
       if (!enabled.includes(tool) || readOnly && action !== 'agent_chat:read') {
         throw new DomainError('ACCESS_DENIED', 'This Agent cannot use the requested Group chat operation.', 403)
       }

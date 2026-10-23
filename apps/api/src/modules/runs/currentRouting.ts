@@ -3,7 +3,7 @@ import { WorkflowArtifactOutputsV1Schema, type WorkflowArtifactOutputsV1 } from 
 import {
   AcceptedCurrentNodeResultSchema, OUTPUT_REFERENCE_KEYWORD, WorkflowChoiceSchema, parseChoiceResultEnvelope,
   type WorkflowChoice, type ChoiceResultEnvelope,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 
 /** Parsing-only native text view; the complete original result remains the
  * accepted/digested evidence. No prefix salvage, Markdown or mixed carriers. */

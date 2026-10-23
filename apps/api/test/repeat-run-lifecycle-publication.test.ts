@@ -5,8 +5,9 @@ import { EventEmitter } from 'node:events'
 import { createHash } from 'node:crypto'
 import { test, vi } from 'vitest'
 import type pg from 'pg'
-import { GraphRunStateSchema, type AcceptedWorkflowRunV3 } from '@foreman-code/contracts/wave25'
-import { beforeGraphCommit, ExclusiveGraphConnection, type GraphTransactionSql } from '../src/modules/run-graph/connection.js'
+import { GraphRunStateSchema, type AcceptedWorkflowRunCurrent } from '@foreman-code/contracts/current'
+import { beforeGraphCommit, ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
+import type { SqlTransaction } from '../src/infrastructure/transaction.js'
 import type { RunOwnership } from '../src/modules/runs/ownership.js'
 import type { RunStateUpdate } from '../src/modules/runs/port.js'
 import { startFixture } from './start-fixtures.js'
@@ -14,7 +15,7 @@ import { startFixture } from './start-fixtures.js'
 // Real exclusive-connection/finalizer implementation; SQL, immutable readers and
 // canonical producers below are EXPLICIT doubles. Real PG coverage is separate.
 interface Database {
-  run: AcceptedWorkflowRunV3; stopped: boolean; cleanup: boolean; head: number; published: string
+  run: AcceptedWorkflowRunCurrent; stopped: boolean; cleanup: boolean; head: number; published: string
   stopEffect?: { digest: string; entityId: string }
 }
 type EffectInput = import('../src/modules/run-graph/publication.js').GraphEffectChange
@@ -37,7 +38,7 @@ function readback() {
     evidence: { sourceKind: 'run' as const, sourceId: db.run.id, sourceRevision: String(db.head) },
     sourceDigest: stateDigest(db), semanticDigest: digest([db.run.executionState, db.run.outcome, db.stopped]) }
 }
-function stage(sql: GraphTransactionSql) {
+function stage(sql: SqlTransaction) {
   const fixture = current(), db = fixture.db(), source = readback()
   fixture.publications++
   // The actual production publisher finalizes BEFORE the receipt assertion.
@@ -50,25 +51,25 @@ function stage(sql: GraphTransactionSql) {
 }
 vi.mock('../src/modules/run-graph/publication.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/modules/run-graph/publication.js')>()
-  const publications = new WeakMap<GraphTransactionSql, {
-    sql: GraphTransactionSql; scope: EffectGuard['expected']['scope']
-    effect(input: EffectInput, guard: EffectGuard, mutate: (sql: GraphTransactionSql) => Promise<void>): Promise<void>
+  const publications = new WeakMap<SqlTransaction, {
+    sql: SqlTransaction; scope: EffectGuard['expected']['scope']
+    effect(input: EffectInput, guard: EffectGuard, mutate: (sql: SqlTransaction) => Promise<void>): Promise<void>
     repeatStoppedRunReadback(): Promise<ReturnType<typeof stage>>
   }>()
   return {
     ...actual,
     graphSourceDigest: digest,
-    currentRunGraphPublication: (sql: GraphTransactionSql, scope: unknown) => {
+    currentRunGraphPublication: (sql: SqlTransaction, scope: unknown) => {
       const publication = publications.get(sql)
       assert.deepEqual(publication?.scope, scope)
       return publication
     },
-    openRunGraphPublication: async (sql: GraphTransactionSql, scope: EffectGuard['expected']['scope'], reader: PublicProjectionReader, options?: unknown) => {
+    openRunGraphPublication: async (sql: SqlTransaction, scope: EffectGuard['expected']['scope'], reader: PublicProjectionReader, options?: unknown) => {
       assert.equal(reader, readPublicProjectionLocked)
       assert.equal(options, undefined, 'lifecycle must not initialize a missing head')
       if (current().missingHead) throw Object.assign(new Error('missing head'), { code: 'GRAPH_NOT_INITIALIZED' })
       const publication = { sql, scope,
-        effect: async (input: EffectInput, guard: EffectGuard, mutate: (sql: GraphTransactionSql) => Promise<void>) => {
+        effect: async (input: EffectInput, guard: EffectGuard, mutate: (sql: SqlTransaction) => Promise<void>) => {
           // Explicit producer double: retain the current Stop effect's identity,
           // live authority read, transactional fence, and cleanup mutation.
           assert.deepEqual(input.effect.identity, { kind: 'run.stop', entityId: scope.runId })
@@ -118,7 +119,7 @@ vi.mock('../src/modules/runs/repeatStartRead.js', () => ({
   },
 }))
 vi.mock('../src/modules/run-graph/repeatReceipts.js', () => ({
-  requireRepeatCanonicalReceiptBeforeCommit: (sql: GraphTransactionSql, receipt: {
+  requireRepeatCanonicalReceiptBeforeCommit: (sql: SqlTransaction, receipt: {
     sourceDigest: string; effect: { kind: string; entityId: string; digest: string } | null
   }) => {
     beforeGraphCommit(sql, async () => {
@@ -135,7 +136,7 @@ vi.mock('../src/modules/run-graph/repeatReceipts.js', () => ({
   },
 }))
 vi.mock('../src/modules/run-graph/repeatPublication.js', () => ({
-  publishRepeatRunStateLocked: async ({ sql }: { sql: GraphTransactionSql }) => {
+  publishRepeatRunStateLocked: async ({ sql }: { sql: SqlTransaction }) => {
     const receipt = stage(sql)
     beforeGraphCommit(sql, async () => {
       if (current().missingReceipt || current().db().published !== receipt.sourceDigest) throw new Error('fixture-missing-receipt')

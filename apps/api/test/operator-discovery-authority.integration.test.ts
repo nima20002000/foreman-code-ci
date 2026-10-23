@@ -90,7 +90,7 @@ async function expectHidden(client: Client, name: string) {
   expect(await listedNames(client)).not.toContain(name)
   await expectDiscovery(client, name, false)
   await expectDiscovery(client, name, false, { workspaceId })
-  await expectDenied(client, 'operator_tool_schema_get', { name })
+  await expectDenied(client, 'tool_schema', { name })
 }
 
 async function rootReadback() {
@@ -121,7 +121,7 @@ it('requires overlapping workspace grants for root adoption and filters the requ
   await expectDiscovery(allowed, adoptionTool, true)
   await expectDiscovery(allowed, adoptionTool, true, { workspaceId })
   await expectDiscovery(allowed, adoptionTool, false, { workspaceId: otherWorkspaceId })
-  const schema = await allowed.callTool({ name: 'operator_tool_schema_get', arguments: { name: adoptionTool } })
+  const schema = await allowed.callTool({ name: 'tool_schema', arguments: { name: adoptionTool } })
   expect(schema.isError).not.toBe(true)
   expect(decodeMcpToolResult(schema)).toMatchObject({ permissionRequirements: { actions: expect.arrayContaining([...rootActions]) } })
 })

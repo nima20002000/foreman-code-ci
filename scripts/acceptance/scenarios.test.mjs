@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { mkdtemp, mkdir, readFile, realpath, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { CurrentEditStageInputSchema } from '../../packages/contracts/dist/wave25/index.js'
+import { CurrentEditStageInputSchema } from '../../packages/contracts/dist/current/index.js'
 import { CLAUDE_MODEL, SCENARIOS, scenarioGraph, seed } from './scenarios.mjs'
 
 const claudeConfigDirectory = '/owned/claude-profile'

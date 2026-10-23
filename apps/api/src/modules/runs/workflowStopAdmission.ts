@@ -1,8 +1,9 @@
 import type pg from 'pg'
 import { commandInputHash } from '../commands/postgres.js'
-import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson } from '@foreman-code/contracts/current'
 import { DomainError } from '../errors.js'
-import { beforeGraphCommit, withExclusiveGraphConnection, type GraphTransactionSql } from '../run-graph/connection.js'
+import { beforeGraphCommit, withExclusiveGraphConnection } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { graphSourceDigest, readRepeatRunSourceLocked } from '../run-graph/publication.js'
 import { readPublicRunStateLocked } from '../run-graph/publicRunState.js'
 import { requireRepeatCanonicalReceiptBeforeCommit } from '../run-graph/repeatReceipts.js'
@@ -42,7 +43,7 @@ function intentEvidence(intent: StopIntent) {
   return { sourceKind: 'cleanup' as const,
     sourceId: `stop-intent:${graphSourceDigest([intent.principalId, intent.commandId]).slice(7)}`, sourceRevision: '1' }
 }
-async function lockStopRun(sql: GraphTransactionSql, context: CurrentStopContext) {
+async function lockStopRun(sql: SqlTransaction, context: CurrentStopContext) {
   // Acquire the stronger parent lock BEFORE the head or any child; B's callback
   // takes this same lock, so there is no late NO KEY UPDATE -> UPDATE upgrade.
   if ((await sql.query('select id from runs where id=$1 for update', [context.input.runId])).rowCount !== 1) {

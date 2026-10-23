@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CiRunJob } from '@foreman-code/contracts'
-import type { EdgePulse } from '../../graph/SignalEdgeShape'
+import type { EdgePulse } from '../../graph'
 import { ciGroupStates, ciTransfers, type CiGroupStates } from './ciServer'
 
 const FLIGHT_MS = 1400, RESULT_DELAY_MS = 1700, SETTLE_MS = 2200

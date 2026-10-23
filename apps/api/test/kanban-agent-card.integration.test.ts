@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 import { DEFAULT_CODEX_ADVANCED_CONFIGURATION, MemoryBoardViewSchema, MemoryBoardWireSchemas,
   MemoryCardDetailSchema, newAgentGraphqlTools, type HarnessExecutionRequest, type MemoryCard } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture, WorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, WorkActivationInputSchema, WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
 import { HarnessExecutionError } from '../src/modules/harnesses/errors.js'
 import { isWorkflowStart } from '../src/modules/harnesses/sessionStart.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
@@ -43,7 +43,7 @@ it.runIf(postgresEnabled).each([false, true])('reuses one engine card across Run
     boardId = ((await memoryCall(runtime.client, 'memory_board_get', { scope })).board as { id: string }).id
     const runIds = [runtime.f.run.id]
     await runtime.engine.start(runIds[0]!)
-    const run = WorkflowRunV3Schema.parse({ ...runtime.f.run, id: `run-${randomUUID()}` })
+    const run = WorkflowRunCurrentSchema.parse({ ...runtime.f.run, id: `run-${randomUUID()}` })
     await insertProviderRun(runtime.db.pool, { ...runtime.f, run })
     runIds.push(run.id)
     await runtime.engine.start(run.id)
@@ -101,7 +101,7 @@ it.runIf(postgresEnabled)('blocks the engine card with the execution error and r
       provenance: expect.objectContaining({ execution: expect.objectContaining({ runId: runtime.f.run.id }) }),
       changes: expect.objectContaining({ status: { before: 'doing', after: 'blocked' }, reason: { before: null, after: reason } }) }))
     fail = false
-    const run = WorkflowRunV3Schema.parse({ ...runtime.f.run, id: `run-${randomUUID()}` })
+    const run = WorkflowRunCurrentSchema.parse({ ...runtime.f.run, id: `run-${randomUUID()}` })
     await insertProviderRun(runtime.db.pool, { ...runtime.f, run })
     await runtime.engine.start(run.id)
     expect((await runtime.runs.get(run.id))?.outcome).toBe('succeeded')
@@ -130,5 +130,56 @@ it.runIf(postgresEnabled)('keeps a same-title unrelated card separate from the A
     const original = MemoryCardDetailSchema.parse(await memoryCall(runtime.client, 'memory_board_get', {
       boardId, view: 'card', cardId: (unrelated.card as { id: string }).id }))
     expect(original.card).toMatchObject({ title: node.name, body: 'Owner notes', status: 'todo', assignee: null })
+  } finally { await runtime.close() }
+}, 60000)
+
+it.runIf(postgresEnabled)('reuses a reviewer card with unresolved findings across handoff rounds', async () => {
+  const fixture = agentFixture(true)
+  const coder = fixture.version.definition.nodes[0]!
+  const reviewer = { ...coder, id: 'reviewer', name: 'Reviewer' }
+  fixture.version.definition.nodes.push(reviewer)
+  fixture.version.definition.edges = [{ id: 'review', kind: 'execution', source: coder.id, target: reviewer.id }]
+  fixture.version.definition.handoffs = { contractVersion: 1 }
+  fixture.version.definition.executionPolicy = { maxParallelism: 2, maxNodeExecutions: 4 }
+  let round = 0
+  const reviewExecutionIds: string[] = []
+  const runtime = await currentOperatorIntegration({ fixture, approvalNodeIds: [], outputFor: (nodeId, request) => {
+    if (nodeId === coder.id) {
+      round += 1
+      return { routing: { kind: 'finish' }, data: { latestDeliverable: { round }, remainingFindings: [] } }
+    }
+    const { work } = WorkActivationInputSchema.parse(request.input)
+    if (work.kind !== 'work_request') throw new Error('The reviewer needs a handoff request')
+    reviewExecutionIds.push(request.executionId)
+    return { routing: { kind: 'return', requestId: work.request.requestId, outcome: round === 1 ? 'needs_changes' : 'accepted' },
+      data: { latestDeliverable: { round }, remainingFindings: round === 1 ? ['The source still needs review.'] : [] } }
+  } })
+  try {
+    await runtime.engine.start(runtime.f.run.id)
+    expect((await runtime.runs.get(runtime.f.run.id))?.outcome).toBe('succeeded')
+    expect(round).toBe(2)
+    const scope = { kind: 'workflow', workspaceId: runtime.f.scope.workspaceId, workflowId: runtime.f.scope.workflowId }
+    const board = MemoryBoardViewSchema.parse(await memoryCall(runtime.client, 'memory_board_get', { scope }))
+    const blocked = MemoryBoardWireSchemas.cards.parse(await memoryCall(runtime.client, 'memory_board_get', {
+      boardId: board.board.id, view: 'cards', status: 'blocked' }))
+    expect(blocked.items).toEqual([expect.objectContaining({ assignee: expect.objectContaining({ workflowNodeId: reviewer.id }) })])
+    const detail = MemoryCardDetailSchema.parse(await memoryCall(runtime.client, 'memory_board_get', {
+      boardId: board.board.id, view: 'card', cardId: blocked.items[0]!.id }))
+    expect(detail.bindings).toHaveLength(2)
+    expect(detail.bindings).toContainEqual(expect.objectContaining({ state: 'accepted', currentExecutionId: reviewExecutionIds[1] }))
+    const previous = detail.bindings.find(binding => binding.state === 'blocked')
+    expect(previous).toMatchObject({ reason: 'The source still needs review.', currentExecutionId: reviewExecutionIds[0] })
+    expect(previous?.resolution).toBeUndefined()
+    const details = await runtime.runs.getDetails(scope.workspaceId, runtime.f.run.id)
+    const reviews = details!.executions.filter(execution => execution.workflowNodeId === reviewer.id)
+    expect(reviews).toHaveLength(2)
+    expect(reviewExecutionIds).toHaveLength(2)
+    // Run details are ordered by execution ID, not handoff round.
+    expect(reviews.find(execution => execution.id === reviewExecutionIds[0])?.result).toMatchObject({ outcome: 'succeeded', output: {
+      routing: { kind: 'return', outcome: 'needs_changes' },
+      data: { latestDeliverable: { round: 1 }, remainingFindings: ['The source still needs review.'] } } })
+    expect(reviews.find(execution => execution.id === reviewExecutionIds[1])?.result).toMatchObject({ outcome: 'succeeded', output: {
+      routing: { kind: 'return', outcome: 'accepted' },
+      data: { latestDeliverable: { round: 2 }, remainingFindings: [] } } })
   } finally { await runtime.close() }
 }, 60000)

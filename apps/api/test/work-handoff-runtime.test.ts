@@ -1,7 +1,7 @@
 import { MemorySaver } from '@langchain/langgraph'
 import { describe, expect, it } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { DomainError } from '../src/modules/errors.js'
 import { executeRepeatRuntime, type RepeatRuntimeLifecycle } from '../src/modules/runs/repeatRuntime.js'
 
@@ -9,7 +9,7 @@ import { executeRepeatRuntime, type RepeatRuntimeLifecycle } from '../src/module
 // Persistence, native closure and MCP readback are covered in the SQL regression.
 function fixture(code: string) {
   const base = makeCurrentWorkflowFixture('handoff-runtime', 'single')
-  const version = WorkflowVersionV3Schema.parse({ ...base.version,
+  const version = WorkflowVersionCurrentSchema.parse({ ...base.version,
     definition: { ...base.version.definition, handoffs: { contractVersion: 1 } } })
   const node = version.definition.nodes[0]!
   if (node.kind === 'job') throw new Error('Agent fixture contains a Job')

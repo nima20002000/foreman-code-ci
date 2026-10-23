@@ -1,10 +1,10 @@
 import type { TransactionSql } from '../../infrastructure/transaction.js'
 import { ManagementPrincipalSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { WorkflowSchedule } from '@foreman-code/contracts/schedules'
-import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
-import { currentOperatorAuthority } from '../access/runAuthority.js'
-import { intersectGrants } from '../access/operatorDelegation.js'
-import { requireAuthorization } from '../access/policy.js'
+import { readLiveManagementPrincipal } from '../access/index.js'
+import { currentOperatorAuthority } from '../access/index.js'
+import { intersectGrants } from '../access/index.js'
+import { requireAuthorization } from '../access/index.js'
 import { DomainError } from '../errors.js'
 
 type Sql = TransactionSql

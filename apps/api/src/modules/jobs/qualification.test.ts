@@ -9,7 +9,7 @@ import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson } from '@foreman-code/contracts/current'
 import type { JobRuntimeProfile } from '@foreman-code/contracts/job-runtime'
 import { CI_QUALIFICATION_SUITE, JobQualificationCandidateSchema, fingerprintQualificationPath, jobQualificationFingerprint,
   validateBoundedVolumeGeometry, qualificationMountId, qualifyJobRuntime, validateIsolationMeasurement, verifyJobQualification,

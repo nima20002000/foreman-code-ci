@@ -1,7 +1,7 @@
 import { readUntil } from './helpers/observableCondition.js'
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { LocalWorkflowArtifactAuthority } from '../src/modules/runs/remote/localWorkflowArtifactAuthority.js'
 import { runWorkHandoffWithRestart, workHandoffRuntimeFixture } from './helpers/workHandoffRuntimeFixture.js'

@@ -9,9 +9,9 @@ import {
   WorkflowScheduleSchema, type ScheduleConfiguration, type ScheduleGetInput, type ScheduleGetResult,
   type ScheduleSaveResult, type WorkflowSchedule,
 } from '@foreman-code/contracts/schedules'
-import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
-import { requireAuthorization } from '../access/policy.js'
-import type { PostgresCommandCoordinator } from '../commands/postgres.js'
+import { readLiveManagementPrincipal } from '../access/index.js'
+import { requireAuthorization } from '../access/index.js'
+import type { PostgresCommandCoordinator } from '../commands/index.js'
 import { DomainError } from '../errors.js'
 import { captureScheduleAuthority } from './authority.js'
 import { PostgresWorkflowScheduleRepository, type ScheduleSlot } from './postgres.js'

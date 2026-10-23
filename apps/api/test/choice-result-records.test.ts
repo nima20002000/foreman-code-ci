@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { HarnessExecutionSchema, type HarnessExecution } from '@foreman-code/contracts'
-import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson } from '@foreman-code/contracts/current'
 import { assertGraphTransaction } from '../src/modules/run-graph/connection.js'
 import { graphSourceDigest } from '../src/modules/run-graph/publication.js'
 import { readRecordedExecutionResultLocked, readRepeatAcceptedResultLocked } from '../src/modules/runs/repeatPostgres.js'
@@ -8,8 +8,8 @@ import { repeatTerminalResolution } from '../src/modules/runs/repeatNode.js'
 import { currentExecutionReadUnit } from './helpers/currentExecutionReadUnit.js'
 import { currentUnitSnapshot } from './helpers/currentUnitSnapshot.js'
 import {
-  br2001Fixture, br2001InvalidTexts, br2001Providers, br2001Terminal, br2001Text,
-  type Br2001Provider,
+  choiceProviderFixture, invalidChoiceTexts, choiceProviders, choiceProviderTerminal, choiceProviderText,
+  type ChoiceProvider,
 } from './helpers/choiceProviders.js'
 
 /** The removed putNodeResolution/oneShotResolution seam is now the current
@@ -17,8 +17,8 @@ import {
  * its saved resolution and input identity, and requires canonical receipts.
  * SQL data is synthetic; the real V3 reader/parser/transaction guards execute.
  * Acceptance writes are covered separately by eng04-a-repeat-core.test.ts. */
-function fixture(provider: Br2001Provider, suffix: string, ordinary = false) {
-  const choice = br2001Fixture(provider, suffix)
+function fixture(provider: ChoiceProvider, suffix: string, ordinary = false) {
+  const choice = choiceProviderFixture(provider, suffix)
   if (ordinary) delete choice.version.definition.nodes[0]!.choice
   const f = currentUnitSnapshot(suffix, 'sequential')
   return currentExecutionReadUnit({ ...f, version: choice.version, configurations: choice.configurations })
@@ -41,11 +41,11 @@ async function rejectsRead(f: Fixture) {
   expect(f.calls.some(({ q }) => /^(insert|update|delete)\b/i.test(q))).toBe(false)
 }
 
-describe.each(br2001Providers)('%s stored choice result validation', (provider) => {
+describe.each(choiceProviders)('%s stored choice result validation', (provider) => {
   it('reads historical results while retaining digest and canonical receipt checks', async () => {
     const f = fixture(provider, `historical-result-${provider}`)
     try {
-      const terminal = br2001Terminal(f.state.execution, provider, br2001Text('pass'))
+      const terminal = choiceProviderTerminal(f.state.execution, provider, choiceProviderText('pass'))
       const resolution = claimedResolution(f, terminal.execution)
       const historical = { ...resolution, value: { ...resolution.value, branchEnded: false } }
       f.seedAccepted(terminal.execution, historical)
@@ -66,7 +66,7 @@ describe.each(br2001Providers)('%s stored choice result validation', (provider) 
   it.each(['pass', 'issues'])('reads %s from the exact accepted raw carrier without rewriting it', async (outcome) => {
     const f = fixture(provider, `br2001-record-${provider}`)
     try {
-      const terminal = br2001Terminal(f.state.execution, provider, br2001Text(outcome, { provider }))
+      const terminal = choiceProviderTerminal(f.state.execution, provider, choiceProviderText(outcome, { provider }))
       const before = structuredClone(terminal.execution), resolution = claimedResolution(f, terminal.execution, outcome)
       f.seedAccepted(terminal.execution, resolution)
       expect(await f.read()).toEqual(terminal.result)
@@ -80,10 +80,10 @@ describe.each(br2001Providers)('%s stored choice result validation', (provider) 
     } finally { await f.connection.close() }
   })
 
-  it.each(br2001InvalidTexts)('independently rejects stored $name despite a matching raw digest', async ({ text }) => {
+  it.each(invalidChoiceTexts)('independently rejects stored $name despite a matching raw digest', async ({ text }) => {
     const f = fixture(provider, `br2001-record-invalid-${provider}`)
     try {
-      const execution = br2001Terminal(f.state.execution, provider, text).execution
+      const execution = choiceProviderTerminal(f.state.execution, provider, text).execution
       f.seedAccepted(execution, claimedResolution(f, execution))
       await rejectsRead(f)
     } finally { await f.connection.close() }
@@ -92,7 +92,7 @@ describe.each(br2001Providers)('%s stored choice result validation', (provider) 
   it('does not accept mixed, nested, non-string or array carriers', async () => {
     const f = fixture(provider, `br2001-record-mixed-${provider}`)
     try {
-      const text = br2001Text(), base = br2001Terminal(f.state.execution, provider, text).execution
+      const text = choiceProviderText(), base = choiceProviderTerminal(f.state.execution, provider, text).execution
       for (const output of [{ text, extra: true }, { text, routing: { outcome: 'issues' }, data: null },
         { text: JSON.parse(text) }, { text: null }, { text: 0 }, { output: { text } }, [{ text }]]) {
         const execution = HarnessExecutionSchema.parse({ ...base, result: { outcome: 'succeeded', output } })
@@ -105,14 +105,14 @@ describe.each(br2001Providers)('%s stored choice result validation', (provider) 
   it('preserves complete raw-result byte limits at the independent durable boundary', async () => {
     const f = fixture(provider, `br2001-record-bound-${provider}`)
     try {
-      const empty = br2001Terminal(f.state.execution, provider, br2001Text('pass', ''))
+      const empty = choiceProviderTerminal(f.state.execution, provider, choiceProviderText('pass', ''))
       const overhead = Buffer.byteLength(canonicalGraphJson(empty.result), 'utf8')
       const data = 'x'.repeat(64 * 1024 - overhead)
-      const atLimit = br2001Terminal(f.state.execution, provider, br2001Text('pass', data)).execution
+      const atLimit = choiceProviderTerminal(f.state.execution, provider, choiceProviderText('pass', data)).execution
       f.seedAccepted(atLimit, claimedResolution(f, atLimit))
       expect(Buffer.byteLength(f.state.result!.result_json, 'utf8')).toBe(64 * 1024)
       expect(await f.read()).toEqual(atLimit.result)
-      const overLimit = br2001Terminal(f.state.execution, provider, br2001Text('pass', data + 'x')).execution
+      const overLimit = choiceProviderTerminal(f.state.execution, provider, choiceProviderText('pass', data + 'x')).execution
       f.seedAccepted(overLimit, claimedResolution(f, overLimit))
       await rejectsRead(f)
     } finally { await f.connection.close() }
@@ -121,7 +121,7 @@ describe.each(br2001Providers)('%s stored choice result validation', (provider) 
   it('rolls back a failed choice read even when its caller catches the rejection', async () => {
     const f = fixture(provider, `br2001-record-poison-${provider}`)
     try {
-      const execution = br2001Terminal(f.state.execution, provider, 'not JSON').execution
+      const execution = choiceProviderTerminal(f.state.execution, provider, 'not JSON').execution
       f.seedAccepted(execution, claimedResolution(f, execution))
       await rejectsRead(f)
       expect(f.state.execution.result).toEqual(execution.result)
@@ -132,7 +132,7 @@ describe.each(br2001Providers)('%s stored choice result validation', (provider) 
   it('cannot commit after a caller swallows a missing canonical receipt error', async () => {
     const f = fixture(provider, `br2001-record-receipt-${provider}`)
     try {
-      const execution = br2001Terminal(f.state.execution, provider, br2001Text()).execution
+      const execution = choiceProviderTerminal(f.state.execution, provider, choiceProviderText()).execution
       f.seedAccepted(execution)
       f.state.receipts = f.state.receipts.filter((row) => row.effect?.kind !== 'input.bind')
       await expect(f.transaction(async (sql) => {
@@ -148,7 +148,7 @@ describe.each(br2001Providers)('%s stored choice result validation', (provider) 
   it('retains acceptance, raw digest, identity, immutable pin and declared-route checks', async () => {
     const f = fixture(provider, `br2001-record-fences-${provider}`)
     try {
-      const terminal = br2001Terminal(f.state.execution, provider, br2001Text('issues'))
+      const terminal = choiceProviderTerminal(f.state.execution, provider, choiceProviderText('issues'))
       const execution = terminal.execution, resolution = claimedResolution(f, execution, 'issues')
       f.seedAccepted(execution, resolution)
       f.state.accepted = false
@@ -177,9 +177,9 @@ describe.each(br2001Providers)('%s stored choice result validation', (provider) 
     for (const ordinary of [false, true]) {
       const f = fixture(provider, `br2001-record-compatible-${provider}`, ordinary)
       try {
-        const base = br2001Terminal(f.state.execution, provider, br2001Text()).execution
+        const base = choiceProviderTerminal(f.state.execution, provider, choiceProviderText()).execution
         const values = ordinary ? [{ text: 'ordinary reply' }, 'plain text', { done: true }]
-          : [br2001Text(), JSON.parse(br2001Text()), { text: ` \n${br2001Text()}\t ` }]
+          : [choiceProviderText(), JSON.parse(choiceProviderText()), { text: ` \n${choiceProviderText()}\t ` }]
         for (const output of values) {
           const execution = HarnessExecutionSchema.parse({ ...base, result: { outcome: 'succeeded', output } })
           const resolution = repeatTerminalResolution(f.f.version, f.f.scope, f.ref, execution)

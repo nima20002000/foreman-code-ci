@@ -5,7 +5,7 @@ import { decodeMcpToolResult, WorkflowSummaryPageSchema } from '@foreman-code/co
 import {
   CurrentWorkflowReadResultSchema, SavedManagedWorkflowCommandResultSchema, makeCurrentWorkflowFixture,
   type CurrentWorkflowCreateInput,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import { initialSave, setupWorkflowCreateIntegration } from './helpers/operatorWorkflowCreate.js'
 
 const currentOperatorIntegration = setupWorkflowCreateIntegration()

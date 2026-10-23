@@ -4,7 +4,7 @@ import {
   AgentFileListInputSchema, AgentFileReadInputSchema, AgentFileCreateWorkingCopyInputSchema,
   AgentFileWriteWorkingCopyInputSchema, AgentFileApplyFormatEditInputSchema, AgentFilePublishInputSchema,
 } from '@foreman-code/contracts/files'
-import type { ClaudeMcpToolManifest } from '../../harnesses/claudeSdk/mcpPolicy.js'
+import type { ClaudeMcpToolManifest } from '../../harnesses/index.js'
 import type { FileToolOperation } from '../tools/types.js'
 
 export type ClaudeFileSdk = { createSdkMcpServer: typeof createSdkMcpServer; tool: typeof tool }

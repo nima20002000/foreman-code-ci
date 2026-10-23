@@ -1,19 +1,16 @@
 import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { sameAuthoredWorkflow, type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import { sameAuthoredWorkflow, type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 import { ToastContext } from '../../../shared/ui/nocturne/toastContext'
 import { UnsavedChangesContext } from '../../../shared/ui/unsavedChanges'
 import { useGraphPresentationStore } from '../useGraphPresentation'
-import { applyGraphGeometry, type GraphGeometryChange } from '../geometry'
+import { applyGraphGeometry, type GraphGeometryChange, type useWorkflowBoard, type NextDraftEdit } from '../../board-core'
 import { useGraphDraftStore } from '../store'
-import { boardScope, clearBoardRedo } from '../../workflow-board/boardUndo'
-import type { useWorkflowBoard } from '../../workflow-board/context'
-import type { WorkflowNameHandle } from '../../workflow-board/WorkflowName'
+import { boardScope, clearBoardRedo, type WorkflowNameHandle } from '../../workflow-board'
 import type { DraftCanvasHandle, OpenAgentPanel } from './DraftCanvas'
 import { useDraftLayout } from './useDraftLayout'
 import type { useGraphEditIntent } from './useGraphEditIntent'
-import type { NextDraftEdit } from './state'
 import { draftFailure } from './writer'
 import { scheduleCommandOwner } from '../../schedules/queries'
 
@@ -82,7 +79,7 @@ export function useDraftEditorCore({ draftKey, edit, editIntent, board }: {
     if (node) presentation.getState().setFocusedEdgeId(undefined)
     // URL changes project selection only; neither polling nor Run selection replaces the draft.
   }, [linkedAgent, draftKey, presentation, linkedSelection])
-  const change = useCallback((update: (graph: WorkflowDefinitionV3) => WorkflowDefinitionV3) => {
+  const change = useCallback((update: (graph: WorkflowDefinitionCurrent) => WorkflowDefinitionCurrent) => {
     const schedule = scheduleCommandOwner(queryClient, { workspaceId: graph.workspaceId, workflowId: graph.id })
     if ((schedule.pending || schedule.unconfirmed) && schedule.state?.variables?.history) {
       setLocalError('Confirm the pending schedule change before editing the Board.')

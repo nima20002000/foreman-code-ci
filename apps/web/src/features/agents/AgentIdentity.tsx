@@ -1,4 +1,4 @@
-import { retiredHarnessLabel } from '../settings/settingsPresentation'
+import { retiredHarnessLabel } from '../settings'
 import type { Agent } from '@foreman-code/contracts'
 
 export interface AgentIdentityProps {

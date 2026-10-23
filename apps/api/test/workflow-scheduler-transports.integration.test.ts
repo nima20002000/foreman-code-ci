@@ -8,31 +8,31 @@ import { PostgresLocalHumanAccess } from '../src/modules/access/localHuman.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { ScheduleClearResultSchema } from '../src/modules/schedules/transportSchemas.js'
 import { DomainError } from '../src/modules/errors.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
-import { sch11Once, sch11Settings } from './helpers/scheduleClockCases.js'
-import { sch11Actions, sch11DomainState, sch11Fixture, type Sch11Database, type Sch11Fixture } from './helpers/scheduleFixture.js'
+import { onceSchedule, utcScheduleSettings } from './helpers/scheduleClockCases.js'
+import { scheduleManagementActions, scheduleDomainState, scheduleDispatchFixture, type ScheduleDatabase, type ScheduleDispatchFixture } from './helpers/scheduleFixture.js'
 
 // HTTP/MCP use their real service clock. A far-future Once gives an exact cursor
 // without changing auth clocks or monkey-patching product methods. Deterministic
 // calendar/dispatch clocks are covered by the separate SCH-11 vector suites.
-const futureOnce = { ...sch11Once, localDate: '2099-01-01' }
+const futureOnce = { ...onceSchedule, localDate: '2099-01-01' }
 const operations = ['save', 'enable', 'disable', 'clear'] as const
 const deniedCases = operations.flatMap((operation) => [
   { operation, caller: 'read-only' as const }, { operation, caller: 'foreign-workspace' as const },
 ])
 
 describe.skipIf(!postgresEnabled)('SCH-11 authenticated HTTP and MCP persisted state / denials', () => {
-  let database: Sch11Database
-  let f: Sch11Fixture
+  let database: ScheduleDatabase
+  let f: ScheduleDispatchFixture
   let app: ReturnType<typeof buildApp> | undefined
   let address: string
   let clients: Client[] = []
-  beforeAll(async () => { database = await agent3Database() }, 60_000)
+  beforeAll(async () => { database = await migratedDatabase() }, 60_000)
   afterAll(async () => { await database?.close() })
   beforeEach(async () => {
     clients = []; app = undefined
-    f = await sch11Fixture(database)
+    f = await scheduleDispatchFixture(database)
     app = buildApp({ readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
       operator: { access: f.access, services: { workflows: f.workflows, commands: f.commands } as unknown as OperatorServices },
       localHuman: new PostgresLocalHumanAccess(database.pool, f.access) })
@@ -150,14 +150,14 @@ describe.skipIf(!postgresEnabled)('SCH-11 authenticated HTTP and MCP persisted s
 
       const outsider = await f.issue(['workflows:read', 'capabilities:read'], `foreign-${randomUUID()}`)
       const deniedClient = await connect(outsider.token)
-      const before = await sch11DomainState(f)
+      const before = await scheduleDomainState(f)
       expect((await http('GET', '/occurrences?limit=1', undefined, outsider.token)).statusCode).toBe(403)
       const denied = await deniedClient.callTool({
         name: 'workflow_schedule_occurrences_list', arguments: { ...f.scope, limit: 1 },
       })
       expect(denied.isError).toBe(true)
       expect(JSON.stringify(denied.content)).toContain('ACCESS_DENIED')
-      expect(await sch11DomainState(f)).toEqual(before)
+      expect(await scheduleDomainState(f)).toEqual(before)
       const after = await http('GET', '/occurrences?limit=1', undefined, f.reader.token)
       expect(after.statusCode).toBe(200)
       expect(ScheduleOccurrencePageSchema.parse(after.json())).toEqual(page)
@@ -225,18 +225,18 @@ describe.skipIf(!postgresEnabled)('SCH-11 authenticated HTTP and MCP persisted s
 
   it.each(deniedCases)('$caller: HTTP and MCP $operation deny without changing any domain state', async ({ caller, operation }) => {
     const saved = await f.save()
-    const identity = caller === 'read-only' ? f.reader : await f.issue(sch11Actions, `foreign-${randomUUID()}`)
+    const identity = caller === 'read-only' ? f.reader : await f.issue(scheduleManagementActions, `foreign-${randomUUID()}`)
     const deniedClient = await connect(identity.token), reader = await connect(f.reader.token)
-    const before = await sch11DomainState(f)
+    const before = await scheduleDomainState(f)
     const body = { commandId: randomUUID(), expectedRevision: saved.revision,
       ...(operation === 'save' ? { schedule: futureOnce } : {}) }
     const response = await http(operation === 'save' ? 'PUT' : 'POST', operation === 'save' ? '' : `/${operation}`, body, identity.token)
     expect(response.statusCode).toBe(403)
-    expect(await sch11DomainState(f)).toEqual(before)
+    expect(await scheduleDomainState(f)).toEqual(before)
     const denied = await deniedClient.callTool({ name: `workflow_schedule_${operation}`, arguments: { ...f.scope, ...body } })
     expect(denied.isError).toBe(true)
     expect(JSON.stringify(denied.content)).toContain('ACCESS_DENIED')
-    expect(await sch11DomainState(f)).toEqual(before)
+    expect(await scheduleDomainState(f)).toEqual(before)
     expect(await readback(reader)).toEqual({ schedule: saved })
   }, 60_000)
 
@@ -244,7 +244,7 @@ describe.skipIf(!postgresEnabled)('SCH-11 authenticated HTTP and MCP persisted s
     await f.save()
     const outsider = await f.issue(['workflows:read', 'capabilities:read'], `foreign-${randomUUID()}`)
     const client = await connect(outsider.token)
-    const before = await sch11DomainState(f)
+    const before = await scheduleDomainState(f)
     for (const path of ['', '/occurrences']) expect((await http('GET', path, undefined, outsider.token)).statusCode).toBe(403)
     for (const name of ['workflow_schedule_get', 'workflow_schedule_occurrences_list']) {
       const result = await client.callTool({ name, arguments: f.scope })
@@ -254,34 +254,34 @@ describe.skipIf(!postgresEnabled)('SCH-11 authenticated HTTP and MCP persisted s
       commandId: randomUUID(), expectedRevision: 1, schedule: futureOnce,
     } })
     expect(anonymous.statusCode).toBe(403)
-    expect(await sch11DomainState(f)).toEqual(before)
+    expect(await scheduleDomainState(f)).toEqual(before)
   }, 60_000)
 
   it('a revoked owner cannot replay an old successful HTTP command', async () => {
     const body = { commandId: randomUUID(), expectedRevision: 0, schedule: futureOnce }
     const first = await http('PUT', '', body)
     expect(first.statusCode).toBe(200)
-    const before = await sch11DomainState(f)
+    const before = await scheduleDomainState(f)
     await database.pool.query('update management_principals set revoked_at=now() where id=$1', [f.writer.principal.id])
     const replay = await http('PUT', '', body)
     expect([401, 403]).toContain(replay.statusCode)
-    expect(await sch11DomainState(f)).toEqual(before)
+    expect(await scheduleDomainState(f)).toEqual(before)
   }, 60_000)
 
   const invalid = [
-    { name: 'duplicate weekday', schedule: { ...sch11Settings, mode: 'weekly', weekdays: [1, 1], time: '10:00' } },
+    { name: 'duplicate weekday', schedule: { ...utcScheduleSettings, mode: 'weekly', weekdays: [1, 1], time: '10:00' } },
     { name: 'invalid timezone', schedule: { ...futureOnce, timezone: 'EST' } },
-    { name: 'zero-minute interval', schedule: { ...sch11Settings, mode: 'interval', every: 0, unit: 'minute', anchorAt: '2030-01-01T00:00:00.000Z' } },
-    { name: 'past Once (even disabled)', schedule: { ...sch11Once, localDate: '2000-01-01', enabled: false } },
+    { name: 'zero-minute interval', schedule: { ...utcScheduleSettings, mode: 'interval', every: 0, unit: 'minute', anchorAt: '2030-01-01T00:00:00.000Z' } },
+    { name: 'past Once (even disabled)', schedule: { ...onceSchedule, localDate: '2000-01-01', enabled: false } },
   ]
   it.each(invalid)('$name: HTTP and MCP reject invalid inputs without a receipt or mutation', async ({ schedule }) => {
     await f.save()
     const client = await connect(f.writer.token)
-    const before = await sch11DomainState(f)
+    const before = await scheduleDomainState(f)
     const body = { commandId: randomUUID(), expectedRevision: 1, schedule }
     const response = await http('PUT', '', body)
     expect(response.statusCode).toBe(400)
-    expect(await sch11DomainState(f)).toEqual(before)
+    expect(await scheduleDomainState(f)).toEqual(before)
     await client.callTool({ name: 'workflow_schedule_save', arguments: { ...f.scope, ...body } }).then((result) => {
       expect(result.isError).toBe(true)
       expect(JSON.stringify(result.content)).toMatch(/invalid|validation|schema/i)
@@ -290,17 +290,17 @@ describe.skipIf(!postgresEnabled)('SCH-11 authenticated HTTP and MCP persisted s
       // transport/network/server failures must not count as input validation.
       expect(error).toMatchObject({ code: -32602 })
     })
-    expect(await sch11DomainState(f)).toEqual(before)
+    expect(await scheduleDomainState(f)).toEqual(before)
   }, 60_000)
 
   it('ignores an MCP caller cursor and persists the server-computed occurrence', async () => {
     await f.save()
     const client = await connect(f.writer.token)
-    const before = await sch11DomainState(f)
+    const before = await scheduleDomainState(f)
     const body = { commandId: randomUUID(), expectedRevision: 1,
       schedule: { ...futureOnce, nextOccurrenceAt: '2098-01-01T00:00:00.000Z' } }
     expect((await http('PUT', '', body)).statusCode).toBe(400)
-    expect(await sch11DomainState(f)).toEqual(before)
+    expect(await scheduleDomainState(f)).toEqual(before)
     const result = await client.callTool({ name: 'workflow_schedule_save', arguments: { ...f.scope, ...body } })
     expect(result.isError, JSON.stringify(result)).not.toBe(true)
     const saved = ScheduleSaveResultSchema.parse(decodeMcpToolResult(result))
@@ -314,10 +314,10 @@ describe.skipIf(!postgresEnabled)('SCH-11 authenticated HTTP and MCP persisted s
 
   it('HTTP route scope cannot be replaced by a workspace/workflow in its body', async () => {
     await f.save()
-    const before = await sch11DomainState(f)
+    const before = await scheduleDomainState(f)
     const response = await http('PUT', '', { commandId: randomUUID(), expectedRevision: 1, schedule: futureOnce,
       workspaceId: `foreign-${randomUUID()}`, workflowId: `foreign-${randomUUID()}` })
     expect(response.statusCode).toBe(400)
-    expect(await sch11DomainState(f)).toEqual(before)
+    expect(await scheduleDomainState(f)).toEqual(before)
   }, 60_000)
 })

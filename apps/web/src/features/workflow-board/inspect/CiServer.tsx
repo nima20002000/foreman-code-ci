@@ -5,11 +5,11 @@ import '../dock/boardDock.css'
 import { useQuery } from '@tanstack/react-query'
 import { Handle, NodeResizer, Position, type Edge, type EdgeProps, type Node, type NodeProps } from '@xyflow/react'
 import type { CiRunJob, CiTestStatus } from '@foreman-code/contracts'
-import type { RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
+import type { RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
 import { Alert, Badge, Button, EmptyState, Icon, IconButton, Spinner, Tabs, type Tone } from '../../../shared/ui/nocturne'
 import { PulseFlight, type EdgePulse } from '../../graph/SignalEdgeShape'
-import { useFloatingCurve } from '../../graph/signalEdge'
-import { formatClock, formatDuration } from '../../run-subagents/presentation'
+import { useFloatingCurve } from '../../board-core'
+import { formatClock, formatDuration } from '../../run-subagents'
 import { ciComputerLabel, ciJobLabel } from './runLiveStatus'
 import { runInspectionQueryKey } from './queries'
 import { WorkflowJobs } from './WorkflowJobs'
@@ -69,7 +69,7 @@ const label = (value: string) => value[0]!.toUpperCase() + value.slice(1)
 type Tab = 'jobs' | 'tests' | 'log' | 'workflow-jobs'
 /** The CI server's jobs for this Run; a job opens its test results and log tail. */
 export function CiServerDialog({ open, onOpenChange, scope, workflow, jobs, names, truncated, error, loading, ticketId }: {
-  open: boolean; onOpenChange(open: boolean): void; scope?: RepeatGraphScopeV3 | undefined; jobs: readonly CiRunJob[]
+  open: boolean; onOpenChange(open: boolean): void; scope?: RepeatGraphScopeCurrent | undefined; jobs: readonly CiRunJob[]
   workflow?: { workspaceId: string; workflowId: string } | undefined
   names: ReadonlyMap<string, string>; truncated: boolean; error: boolean; loading: boolean
   ticketId?: string | undefined
@@ -191,7 +191,7 @@ function CiJobHeader({ job, agent }: { job: CiRunJob; agent?: string }) {
   </p>
 }
 
-function CiJobTests({ scope, job, agent, statuses, onStatusesChange }: { scope: RepeatGraphScopeV3; job: CiRunJob; agent: string
+function CiJobTests({ scope, job, agent, statuses, onStatusesChange }: { scope: RepeatGraphScopeCurrent; job: CiRunJob; agent: string
   statuses: readonly CiTestStatus[]; onStatusesChange(statuses: CiTestStatus[]): void }) {
   const selected = STATUSES.filter((status) => statuses.includes(status))
   const query = useQuery({
@@ -243,7 +243,7 @@ function CiTestFiles({ files, truncated }: { files: NonNullable<Awaited<ReturnTy
   </>
 }
 
-function CiJobLog({ scope, job }: { scope: RepeatGraphScopeV3; job: CiRunJob }) {
+function CiJobLog({ scope, job }: { scope: RepeatGraphScopeCurrent; job: CiRunJob }) {
   const started = job.ci.state !== 'queued'
   const query = useQuery({
     queryKey: [...runInspectionQueryKey(scope), 'ci-log', job.ticketId, job.ci.state],

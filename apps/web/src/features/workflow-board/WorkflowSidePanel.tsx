@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefCallback, type RefObject } from 'react'
-import type { BoardSidePanel } from '@foreman-code/contracts/wave25'
+import type { BoardSidePanel } from '@foreman-code/contracts/current'
 import type { HierarchyReport } from '@foreman-code/contracts'
 import { Button, Icon, IconButton } from '../../shared/ui/nocturne'
 import { placeBeside } from '../../shared/ui/floatingWindow'
 import { useManagedWorkflowQuery } from '../../shared/api/query'
 import { useSidePanelScroll } from './sidePanelPresentation'
-import type { CollaborationFieldSlots } from '../graph/collaborationFields'
-import type { WorkflowExecutionChatSlotSelection } from '../workflow-hierarchy/execution-chat/types'
+import type { CollaborationFieldSlots } from '../board-core'
+import type { WorkflowExecutionChatSlotSelection } from '../workflow-hierarchy'
 
 export interface WorkflowCollaborationSlots extends CollaborationFieldSlots {
   groupChat?(scope: { workspaceId: string; workflowId: string; runId?: string }): ReactNode

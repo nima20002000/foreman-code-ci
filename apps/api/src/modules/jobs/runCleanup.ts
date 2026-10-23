@@ -1,10 +1,11 @@
 import { JobWorkflowExecutionReferenceSchema } from '@foreman-code/contracts/job-workflow'
 import { randomUUID } from 'node:crypto'
-import { AcceptedWorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
 import { JobRunCleanupSchema,type JobRunCleanup } from '@foreman-code/contracts/job-run-cleanup'
 import type { JobExecutionRecord } from '@foreman-code/contracts/job-verification'
 import { RemoteJobDispatchIntentSchema } from '@foreman-code/contracts/remote-job-execution'
-import { assertGraphTransaction,beforeGraphCommit,type GraphTransactionSql } from '../run-graph/connection.js'
+import { assertGraphTransaction, beforeGraphCommit } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import type { RunOwnership } from '../runs/ownership.js'
 import { DomainError } from '../errors.js'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
@@ -23,14 +24,14 @@ async function requireRunJobMapping(sql:JobSql,execution:JobExecutionRecord,work
 }
 /** Request is recorded before any native control. Existing Run cleanup must
  * already be persisted by the common lifecycle before it aborts job drivers. */
-export async function requestRunJobCleanup(sql:GraphTransactionSql,execution:JobExecutionRecord,owner:RunOwnership,reason:JobRunCleanup['reason']):Promise<JobRunCleanup> {
+export async function requestRunJobCleanup(sql:SqlTransaction,execution:JobExecutionRecord,owner:RunOwnership,reason:JobRunCleanup['reason']):Promise<JobRunCleanup> {
   assertGraphTransaction(sql);owner.assertOwned()
   if(execution.workflow?.runId!==owner.runId)throw new DomainError('JOB_CLEANUP_PIN_CONFLICT','Cleanup belongs to a different actual Run owner.',409)
   const readAuthority=async()=>{
     const fence=await owner.readOneShotFence(sql)
     const row=(await sql.query<{record:unknown;requested_at:Date;stopped:boolean}>(`select r.record,c.requested_at,r.stop_requested_at is not null as stopped from runs r join run_cleanup_intents c on c.run_id=r.id where r.id=$1 and c.pending for update of r,c`,[owner.runId])).rows[0]
     if(!row)throw new DomainError('JOB_CLEANUP_AUTHORITY_MISSING','Persist the real Run cleanup intent before aborting owned jobs.',409)
-    const run=AcceptedWorkflowRunV3Schema.parse(row.record)
+    const run=AcceptedWorkflowRunCurrentSchema.parse(row.record)
     if(run.workspaceId!==execution.workspaceId||run.workflowId!==execution.workflow!.workflowId)throw new DomainError('JOB_CLEANUP_PIN_CONFLICT','Cleanup must use the accepted Job Run scope.',409)
     await requireRunJobMapping(sql,execution,run.workflowVersionId)
     return {run,fence,stopped:row.stopped,requestedAt:row.requested_at.toISOString()}
@@ -62,7 +63,7 @@ export async function readRunJobCleanup(sql:JobSql,execution:JobExecutionRecord)
   // committed owner receipt, not a new Run authorization or launch grant.
   const run=(await sql.query<{record:unknown;requested_at:Date}>(`select r.record,c.requested_at from runs r join run_cleanup_intents c on c.run_id=r.id where r.id=$1`,[cleanup.runId])).rows[0]
   if(!run)throw new DomainError('JOB_CLEANUP_AUTHORITY_MISSING','The original Run cleanup authority disappeared.',409)
-  const accepted=AcceptedWorkflowRunV3Schema.parse(run.record)
+  const accepted=AcceptedWorkflowRunCurrentSchema.parse(run.record)
   if(accepted.workspaceId!==cleanup.workspaceId||accepted.workflowId!==cleanup.workflowId||accepted.workflowVersionId!==cleanup.workflowVersionId||run.requested_at.toISOString()!==cleanup.cleanupRequestedAt)throw new DomainError('JOB_CLEANUP_PIN_CONFLICT','The original accepted Run cleanup scope changed.',409)
   await requireRunJobMapping(sql,execution,cleanup.workflowVersionId)
   return cleanup

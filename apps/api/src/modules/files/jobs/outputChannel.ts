@@ -4,7 +4,7 @@ import { JobOutputDeviceRequestSchema, type JobOutputPublicationInput } from '@f
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import type { DeviceExtensionRegistration } from '../../devices/deviceApplicationChannel.js'
 import { DeviceApplicationError } from '../../devices/deviceApplicationError.js'
-import { TransferExpiredError, type ResumableByteTransferService } from '../../byte-transfer/service.js'
+import { TransferExpiredError, type ResumableByteTransferService } from '../../byte-transfer/index.js'
 import type { CanonicalJobArtifactPort } from './port.js'
 import type { PostgresJobOutputAdmission } from './outputAdmission.js'
 import { JOB_OUTPUT_NAMESPACE, outputTransferContext } from './workerProtocol.js'

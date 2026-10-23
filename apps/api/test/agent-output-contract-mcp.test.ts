@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, afterEach, beforeAll, expect, it } from 'vitest'
 import {
   CURRENT_WORKFLOW_TOOLS, CurrentWorkflowCapabilitiesSchema, CurrentWorkflowReadResultSchema, CurrentWorkflowSaveResultSchema,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import type { ResolvedSkill } from '@foreman-code/contracts'
 import { SkillCatalogService } from '../src/modules/skills/catalog.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'

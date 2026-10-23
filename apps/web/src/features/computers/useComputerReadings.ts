@@ -2,8 +2,7 @@ import { useRef } from 'react'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import type { TelemetryStorage } from '@foreman-code/contracts/resource-telemetry'
 import { useComputerUtilization } from '../../shared/api/computerActivity'
-import { metricView, sampleClock } from '../resource-telemetry/telemetryView'
-import { useMonotonicElapsed } from '../resource-telemetry/useMonotonicElapsed'
+import { metricView, sampleClock, useMonotonicElapsed } from '../resource-telemetry'
 
 /** How long the last current reading may stand in, dimmed, for a late refresh. */
 const LAST_KNOWN_MS = 60_000

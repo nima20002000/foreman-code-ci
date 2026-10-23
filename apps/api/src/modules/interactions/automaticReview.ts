@@ -4,14 +4,14 @@ import { DurableInteractionSchema, type DurableInteraction } from '@foreman-code
 import type pg from 'pg'
 import type { NativeRollout } from '../harnesses/nativeRollout.js'
 import type { PostgresRunRepository } from '../runs/postgres.js'
-import type { WorkspaceLocationService } from '../workspaces/location.js'
+import type { WorkspaceLocationService } from '../workspaces/index.js'
 import type { PostgresInteractionCoordinationRepository } from './coordination.js'
 import type { ReviewerDispatcher } from './reviewer.js'
 import { assertOrchestratorGraphAuthority } from './graphAuthority.js'
 import { DomainError } from '../errors.js'
 import { requestReviewFailureStop } from './reviewFailureLifecycle.js'
 import type { ApprovalExecutionCoordinator } from './execution.js'
-import { ignoreError, logIgnoredError } from '../diagnostics/ignoredError.js'
+import { ignoreError, logIgnoredError } from '../diagnostics/index.js'
 import { isRunInProgress } from '../runs/runState.js'
 
 /** Drives durable, explicitly assigned reviewers; never fabricates a board Agent or grants. */

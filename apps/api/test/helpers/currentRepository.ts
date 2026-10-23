@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { currentOperatorAuthority } from '../../src/modules/access/runAuthority.js'
 import { requireAuthorization } from '../../src/modules/access/policy.js'
@@ -15,12 +15,13 @@ import { repeatStartPublication } from '../../src/modules/run-graph/repeatStartP
 import { PostgresWorkflowRepository } from '../../src/modules/workflows/postgres.js'
 import { WorkspaceLocationService } from '../../src/modules/workspaces/location.js'
 import type { WorkflowNativeVerificationPort } from '../../src/modules/interactions/workflowNativeCapture.js'
-import type { GraphTransactionSql } from '../../src/modules/run-graph/connection.js'
-import { seedAgent3, type agent3Database } from './workflowDatabase.js'
+import type { SqlTransaction } from '../../src/infrastructure/transaction.js'
+import { seedWorkflowFixture } from './workflowDatabase.js'
+import type { migratedDatabase } from './migratedDatabase.js'
 
 /** The repository services production wires for every started Run, including the
  * memory board service the pinned coordination protocol requires. */
-export function currentRepositoryServices(db: Pick<Awaited<ReturnType<typeof agent3Database>>, 'pool'>,
+export function currentRepositoryServices(db: Pick<Awaited<ReturnType<typeof migratedDatabase>>, 'pool'>,
   captures: WorkflowNativeVerificationPort, ...rest: Parameters<typeof createWorkflowRepositoryServices> extends [unknown, ...infer R] ? R : never) {
   const runtime = createWorkflowRepositoryServices(captures, ...rest)
   return { ...runtime, services: { ...runtime.services,
@@ -30,9 +31,9 @@ export function currentRepositoryServices(db: Pick<Awaited<ReturnType<typeof age
 /** Real typed Save, Start authority, canonical publication, filesystem identity
  * and repository services. No provider is connected and no native proof is
  * manufactured: tests can qualify admission, ownership and pre-submission cuts. */
-export async function currentRepositoryFixture(db: Awaited<ReturnType<typeof agent3Database>>,
+export async function currentRepositoryFixture(db: Awaited<ReturnType<typeof migratedDatabase>>,
   f = makeCurrentWorkflowFixture(randomUUID())) {
-  await seedAgent3(db.pool, db.directory, f, { run: false })
+  await seedWorkflowFixture(db.pool, db.directory, f, { run: false })
   const commands = new PostgresCommandCoordinator(db.pool)
   const access = new PostgresAccessService(db.pool)
   const issued = await access.issue({ name: 'Current repository test author', audience: 'operator',
@@ -52,7 +53,7 @@ export async function currentRepositoryFixture(db: Awaited<ReturnType<typeof age
   const capture = createWorkflowNativeCaptureChannel()
   const repository = new PostgresRunRepository(db.pool, new PostgresWorkflowRepository(db.pool), locations,
     { runtimeRoot: db.directory, ...currentRepositoryServices(db, capture.verify) })
-  const authorizeStop = async (sql: GraphTransactionSql) => {
+  const authorizeStop = async (sql: SqlTransaction) => {
     // The authority reader uses only the promise/string query overload. Keep
     // it on this leased transaction, never on db.pool outside the Stop fence.
     const database = { query: sql.query.bind(sql) as Parameters<typeof currentOperatorAuthority>[0]['query'] }

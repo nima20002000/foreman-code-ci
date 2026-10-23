@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { SourceRootRecordSchema, type ApprovedSource, type SourceRootRecord } from '@foreman-code/contracts/source-admission'
-import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
+import { sameWorkflowValue } from '@foreman-code/contracts/current'
 import { commandInputHash } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
 import { requireAuthorization } from '../access/policy.js'

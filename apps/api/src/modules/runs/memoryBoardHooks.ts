@@ -1,6 +1,6 @@
-import { createWorkflowCollaborationHooks, type WorkflowCollaborationHooks } from '../collaboration/workflowHooks.js'
-import { MemoryResultRejected } from '../collaboration/memoryResultError.js'
-import type { MemoryBoardService } from '../memory-boards/service.js'
+import { createWorkflowCollaborationHooks, type WorkflowCollaborationHooks } from '../collaboration/index.js'
+import { MemoryResultRejected } from '../collaboration/index.js'
+import type { MemoryBoardService } from '../memory-boards/index.js'
 import { DomainError } from '../errors.js'
 import { isWorkflowResultEffectFailure } from './workflowResultEffectFailure.js'
 

@@ -6,7 +6,7 @@ import { provisionSessionControlSubjects } from './provision-session-controls.mj
 const [contracts, management, profiles, placements, workflows, roots, boundLocations] = await Promise.all([
   import('../../packages/contracts/dist/index.js'), import('../../packages/contracts/dist/management/index.js'),
   import('../../packages/contracts/dist/harnessRegistry.js'), import('../../packages/contracts/dist/nodePlacement.js'),
-  import('../../packages/contracts/dist/wave25/index.js'),
+  import('../../packages/contracts/dist/current/index.js'),
   import('../../packages/contracts/dist/workspaceRootPolicies.js'),
   import('../../packages/contracts/dist/workspaceBoundLocation.js'),
 ])
@@ -156,7 +156,7 @@ function fixture() {
         productRole: staged.productRole, harness: staged.harnessConfiguration,
         harnessProfileSelection: staged.harnessProfileSelection, prompt: staged.prompt,
         assignedSkills: staged.assignedSkills, contentHash: digest, createdAt })
-      workflows.ExecutableWorkflowV3Schema.parse({ version: { id: randomUUID(), workspaceId: request.workspaceId,
+      workflows.ExecutableWorkflowCurrentSchema.parse({ version: { id: randomUUID(), workspaceId: request.workspaceId,
         workflowId: request.workflowId, version: 1, executionSemanticsVersion: 3,
         entryNodeId: request.graph.entryNodeId, definition: { ...request.graph, version: 1 },
         approval: request.graph.approval, agentConfigurationVersionIds: { [staged.id]: configuration.id },

@@ -16,7 +16,7 @@ import { DeviceHistoryPageSchema } from '@foreman-code/contracts/device-applicat
 import { RemoteNativeHistorySchema } from '@foreman-code/contracts/remote-workflow-physical'
 import { DEFAULT_HARNESS_DEFAULTS, CODEX_APPROVAL_OPTIONS_FIXTURE, withInteractionResponse,
   type ApprovalResponseOption, type AgentConfigurationVersion } from '@foreman-code/contracts'
-import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson } from '@foreman-code/contracts/current'
 import { freezePlacement, deriveDispatch } from '../../placement/binding.js'
 import { ExecutionScopedNativeSessionManagerResolver } from '../../interactions/runtimePorts.js'
 import type { NativeHarnessSessionManager } from '../../harnesses/port.js'

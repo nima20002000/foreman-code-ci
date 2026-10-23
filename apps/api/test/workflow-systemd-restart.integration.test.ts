@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
+import { SavedRunDetailsSchema } from '@foreman-code/contracts/current'
 import { readUntil } from './helpers/observableCondition.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 import { DomainError } from '../src/modules/errors.js'

@@ -2,7 +2,7 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { SavedRunPageSchema, SavedWorkflowRunSchema } from '@foreman-code/contracts/wave25'
+import { SavedRunPageSchema, SavedWorkflowRunSchema } from '@foreman-code/contracts/current'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 
 type Fixture = Awaited<ReturnType<typeof currentOperatorIntegration>>

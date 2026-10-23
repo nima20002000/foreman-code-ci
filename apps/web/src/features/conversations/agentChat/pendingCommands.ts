@@ -4,9 +4,9 @@ import { ChatDeliveryReceiptSchema, type ChatDeliveryReceipt } from '@foreman-co
 import { writeStoredCommand } from '../../../shared/api/commandOutbox'
 import { identityEpoch, protectedKey } from '../../../shared/api/protectedChatStorage'
 import { sessionIsSwitching } from '../../../shared/api/sessionBoundary'
-import { sameDeliveryTarget } from '../../workflow-chat/draft'
+import { sameDeliveryTarget } from '../../workflow-chat'
 import type { AgentChatCommand, AgentChatCommandResult } from './commandRecords'
-import { AGENT_CHAT_ACKNOWLEDGEMENT_LIMIT, agentChatCommandOrder, agentChatReadbacksKey, retireAgentChatAcknowledgements, type AgentChatReadbacks } from './commandRecords'
+import { AGENT_CHAT_ACKNOWLEDGEMENT_LIMIT, agentChatCommandOrder, readAgentChatReadbacks, retireAgentChatAcknowledgements, writeAgentChatReadbacks } from './commandRecords'
 
 const documentEpoch = identityEpoch()
 const storageError = 'Pending message storage is unavailable. Recover the original message before sending again.'
@@ -68,12 +68,12 @@ export function acceptPendingDelivery(client: QueryClient, draftKey: string, gen
       const recovered = cache.build(client, { ...mutation.options,
         meta: { ...mutation.options.meta, chatCommandOrder: agentChatCommandOrder(mutation) },
       }, { ...mutation.state, data: { ...result, receipt }, status: 'success', error: null, failureReason: null, failureCount: 0 })
-      const readbacks = client.getQueryData<AgentChatReadbacks>(agentChatReadbacksKey)
-      const prior = readbacks?.[mutation.mutationId]
-      if (readbacks && prior) {
+      const readbacks = readAgentChatReadbacks(client)
+      const prior = readbacks[mutation.mutationId]
+      if (prior) {
         const retained = { ...readbacks, [recovered.mutationId]: prior }
         delete retained[mutation.mutationId]
-        client.setQueryData(agentChatReadbacksKey, retained)
+        writeAgentChatReadbacks(client, retained)
       }
     })
   }

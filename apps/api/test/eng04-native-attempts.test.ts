@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { GraphTransactionSql } from '../src/modules/run-graph/connection.js'
+import type { SqlTransaction } from '../src/infrastructure/transaction.js'
 import { visitRepeatNativeAttemptsLocked, type RepeatNativeAttemptSelection } from '../src/modules/runs/repeatNativeAttempts.js'
 
 type Attempt = { id: string; run: string; occurrence: string | null; slot: string | null; attempt: number }
@@ -18,7 +18,7 @@ function database(attempts: Attempt[]) {
       .sort((a, b) => a.id.localeCompare(b.id)).slice(0, 100).map(({ id }) => ({ id }))
     return { rows, rowCount: rows.length }
   } }
-  return { sql: sql as unknown as GraphTransactionSql, queries }
+  return { sql: sql as unknown as SqlTransaction, queries }
 }
 function rows(count: number): Attempt[] {
   return Array.from({ length: count }, (_, i) => ({ id: `execution-${String(i).padStart(5, '0')}`,
@@ -68,7 +68,7 @@ describe('ENG04 native attempt settlement scope', () => {
     expect(db.queries).toHaveLength(0)
   })
   it('fails closed on a duplicated page rather than revisiting the same receipt indefinitely', async () => {
-    const sql = { query: async () => ({ rows: [{ id: 'duplicate' }, { id: 'duplicate' }], rowCount: 2 }) } as unknown as GraphTransactionSql
+    const sql = { query: async () => ({ rows: [{ id: 'duplicate' }, { id: 'duplicate' }], rowCount: 2 }) } as unknown as SqlTransaction
     await expect(visitRepeatNativeAttemptsLocked(sql, 'run', { kind: 'run' }, async () => {})).rejects.toMatchObject({ code: 'REPEAT_EXECUTION_SCAN_CONFLICT' })
   })
 })

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { ExecutableWorkflowV3Schema } from '@foreman-code/contracts/wave25'
+import { ExecutableWorkflowCurrentSchema } from '@foreman-code/contracts/current'
 import { agentWorkflowVersion } from './helpers/agentWorkflowFixture.js'
 import { postgresEnabled } from './helpers/database.js'
 import { graphHarness } from './helpers/graphScenarioHarness.js'
@@ -26,7 +26,7 @@ describe.skipIf(!postgresEnabled)('current execution parallel regressions', () =
     f.f.version = agentWorkflowVersion(saved.value.version)
     f.f.scope.workflowVersionId = saved.value.currentVersionId
     f.f.run.workflowVersionId = saved.value.currentVersionId
-    ExecutableWorkflowV3Schema.parse({ version: f.f.version, configurations: f.f.configurations })
+    ExecutableWorkflowCurrentSchema.parse({ version: f.f.version, configurations: f.f.configurations })
     let active = 0, peak = 0
     const overlap = deferred()
     const parallelNodes = f.f.version.definition.nodes.slice(1, 3).map(node => node.id)

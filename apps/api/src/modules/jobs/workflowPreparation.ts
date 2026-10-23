@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { GraphIdSchema } from '@foreman-code/contracts/wave25'
+import { GraphIdSchema } from '@foreman-code/contracts/current'
 import { RunInputSchema } from '@foreman-code/contracts'
 import type { RepeatNodeRef, RepeatNodeInput, RepeatScope } from '../runs/repeatResolution.js'
 

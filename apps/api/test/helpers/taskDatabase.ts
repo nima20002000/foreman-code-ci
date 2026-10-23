@@ -8,7 +8,7 @@ import { registerTestResourceCleanup } from '../../../../scripts/test-resources.
 
 /** A fresh database and directory for one task. The test database it is created from is neither migrated nor
  * cleaned. */
-export async function nim2691TaskDatabase<T>(work: (pool: pg.Pool, directory: string, connectionString: string) => Promise<T>): Promise<T> {
+export async function withTaskDatabase<T>(work: (pool: pg.Pool, directory: string, connectionString: string) => Promise<T>): Promise<T> {
   const configured = process.env.TEST_DATABASE_URL
   assert.ok(configured, 'TEST_DATABASE_URL is required')
   const url = new URL(configured)

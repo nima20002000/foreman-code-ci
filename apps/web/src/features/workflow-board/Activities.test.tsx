@@ -4,15 +4,15 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { RunActivityPublicSchema, type RepeatGraphScopeV3, type RunActivitiesPage,
-  type RunActivityPublic } from '@foreman-code/contracts/wave25'
+import { RunActivityPublicSchema, type RepeatGraphScopeCurrent, type RunActivitiesPage,
+  type RunActivityPublic } from '@foreman-code/contracts/current'
 import { server } from '../../mocks/server'
-import { RunsSelectorSearchSchema } from '../runs-selector/search'
+import { RunsSelectorSearchSchema } from '../runs-selector'
 import { Activities } from './Activities'
 import { runActivitiesKey, type RunActivityFeed } from './runActivitiesQuery'
 import { deferred } from '../../test/deferred'
 
-const scope: RepeatGraphScopeV3 = { workspaceId: 'workspace-a', workflowId: 'workflow-a',
+const scope: RepeatGraphScopeCurrent = { workspaceId: 'workspace-a', workflowId: 'workflow-a',
   workflowVersionId: 'version-a', runId: 'run-a', executionSemanticsVersion: 3 }
 const agent = { agentId: 'agent-builder', agentName: 'Builder', nodeId: 'agent-node', nodeName: 'Agent node' }
 const job = { kind: 'job' as const, nodeId: 'job-node', nodeName: 'Build release',

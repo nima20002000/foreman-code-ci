@@ -7,6 +7,7 @@ import type { WorkspaceRootPolicyPort } from '../sources/rootPolicyPorts.js'
 import { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { WorkspaceBoundLocationService } from './service.js'
 import { DomainError } from '../errors.js'
+import { liveAuthorityQuery, livePrincipalRow } from '../../../test/helpers/livePrincipal.js'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -26,17 +27,24 @@ function fixture() {
     canonicalProjectRoot: '/approved/project', filesystem: fs, directoryIdentityHash: hash, managedRuntimeRoot: '/runtime', runtimeFilesystem: fs, attestationDigest: hash }
   let revoked = false, receipt: unknown, location: unknown = null, revision = '1'
   let inTransaction = false
+  // Statements are told apart by the values they bind: the principal id answers the live authority and owner reads, the
+  // workspace id the location read, `[principals, operation, commandId]` the receipt read, and the six-value write is
+  // the receipt insert. Transaction control and locks bind nothing, or only a lock key.
+  const authority = liveAuthorityQuery(id => id === principal.id ? livePrincipalRow(principal, { revoked }) : undefined)
   const query = vi.fn(async (sql: string, values: unknown[] = []) => {
     if (sql.startsWith('begin')) inTransaction = true
     if (sql === 'commit' || sql === 'rollback') inTransaction = false
-    if (sql.includes('pg_try_advisory_lock')) return { rows: [{ locked: true }], rowCount: 1 }
-    if (sql.startsWith('with recursive owners')) return { rows: [{ id: principal.id }], rowCount: 1 }
-    if (sql.includes('from management_principals')) return { rows: [{ id: principal.id, name: principal.name, audience: principal.audience, grants: principal.grants,
-      expires_at: new Date(principal.expiresAt), revoked_at: revoked ? new Date() : null, delegated_from: null }], rowCount: 1 }
-    if (sql.includes('from management_command_receipts')) return { rows: receipt ? [receipt] : [], rowCount: receipt ? 1 : 0 }
-    if (sql.includes('from workspaces')) return { rows: [{ execution_location: location, location_revision: revision, archived_at: null }], rowCount: 1 }
-    if (sql.startsWith('update workspaces')) { location = JSON.parse(String(values[1])); revision = String(values[3]); return { rows: [], rowCount: 1 } }
-    if (sql.includes('insert into management_command_receipts')) receipt = { input_hash: values[4], target_key: values[3], result: JSON.parse(String(values[5])) }
+    const live = await authority(sql, values)
+    if (live.rowCount) return live
+    if (values.length === 1 && values[0] === selection.workspaceId) {
+      return { rows: [{ execution_location: location, location_revision: revision, archived_at: null }], rowCount: 1 }
+    }
+    if (values.length === 1 && typeof values[0] === 'string') return { rows: [{ locked: true }], rowCount: 1 }
+    if (values.length === 3 && Array.isArray(values[0])) return { rows: receipt ? [receipt] : [], rowCount: receipt ? 1 : 0 }
+    if (values.length === 5 && values[0] === selection.workspaceId) {
+      location = JSON.parse(String(values[1])); revision = String(values[3]); return { rows: [], rowCount: 1 }
+    }
+    if (values.length === 6) receipt = { input_hash: values[4], target_key: values[3], result: JSON.parse(String(values[5])) }
     return { rows: [], rowCount: 1 }
   })
   const client = { query, release: vi.fn() }

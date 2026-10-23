@@ -1,9 +1,8 @@
 import { InfoHint } from '../../shared/ui/InfoHint'
-import { retiredHarnessLabel } from '../settings/settingsPresentation'
+import { retiredHarnessLabel, claudeAccessOptions } from '../settings'
 import { changeCodexSandbox, withAdvancedDefaults, type HarnessConfiguration } from '@foreman-code/contracts'
 import { Select } from '../../shared/ui/nocturne'
 import { CLAUDE_FULL_ACCESS_REQUIRED } from '@foreman-code/contracts/claude'
-import { claudeAccessOptions } from '../settings/claudeAccess'
 
 const sandboxChoices = [
   { value: 'read-only', label: 'Read only' },

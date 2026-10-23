@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { RunDirectionWait } from '@foreman-code/contracts/wave25'
-import { readWorkflowDraft, workflowDraftKey } from '../../workflow-chat/draft'
+import type { RunDirectionWait } from '@foreman-code/contracts/current'
+import { readWorkflowDraft, workflowDraftKey } from '../../workflow-chat'
 import { DirectionWaitNotice } from './directionWait'
 import { acceptFindingsDirection, mentionInGroupChat } from './directionWaitModel'
 

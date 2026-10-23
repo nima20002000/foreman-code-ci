@@ -2,7 +2,7 @@ import { collectBoundTools, type BoundTool } from './catalog.js'
 import type { McpServer, ServerContext, StandardSchemaWithJSON } from '@modelcontextprotocol/server'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { CI_TOOL_SPECS, ciToolInputSchema } from '../../modules/ci/tools.js'
-import type { HostCiService } from '../../modules/ci/types.js'
+import type { CiTicketClient } from '../../modules/ci/types.js'
 import type { PostgresCommandCoordinator } from '../../modules/commands/postgres.js'
 import { hasAction, isAuthorized, type AuthorizedResource } from '../../modules/access/policy.js'
 import { DomainError, databaseConnectionFailure } from '../../modules/errors.js'
@@ -15,7 +15,7 @@ type CiTool = typeof CI_TOOLS[number]
 interface CiContext {
   principal: ManagementPrincipal
   signal?: AbortSignal
-  services: { ci?: HostCiService; commands: PostgresCommandCoordinator }
+  services: { ci?: CiTicketClient; commands: PostgresCommandCoordinator }
 }
 export function ciCapabilities(context: CiContext, resource: AuthorizedResource) {
   if (!context.services.ci) return []
@@ -25,7 +25,7 @@ export function ciCapabilities(context: CiContext, resource: AuthorizedResource)
 }
 
 const catalogs = new WeakMap<object, {
-  ci: HostCiService; roles: Map<string, BoundTool<CiContext>[]>
+  ci: CiTicketClient; roles: Map<string, BoundTool<CiContext>[]>
 }>()
 
 export function registerCiTools(server: McpServer, context: CiContext): void {

@@ -3,14 +3,13 @@ import { expect, it, vi } from 'vitest'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { ComputerActivityService, type CloudCiService } from './activity.js'
+import { liveAuthorityQuery, livePrincipalRow } from '../../../test/helpers/livePrincipal.js'
 
 it('returns local activity and the last cloud answer while one shared readiness refresh is pending', async () => {
   const principal: ManagementPrincipal = { id: 'reader', name: 'Reader', audience: 'operator',
     expiresAt: '2099-01-01T00:00:00Z', revokedAt: null,
     grants: [{ actions: ['settings:read', 'jobs:read', 'runs:read'], scope: {} }] }
-  const query = async (text: string) => ({ rows: text.includes('from management_principals')
-    ? [{ ...principal, expires_at: new Date(principal.expiresAt), revoked_at: null, delegated_from: null }]
-    : [] })
+  const query = liveAuthorityQuery(id => id === principal.id ? livePrincipalRow(principal) : undefined)
   const pool = { connect: async () => ({ query, release() {} }) } as unknown as pg.Pool
   let release!: (ready: boolean) => void
   const pending = new Promise<boolean>(resolve => { release = resolve })

@@ -1,7 +1,7 @@
 import type { CanUseTool, HookCallback, Options } from '@anthropic-ai/claude-agent-sdk'
 import type { ClaudeCallbackIdentity } from './interactions.js'
 import type { ClaudeNativeSessionManager } from './sessionManager.js'
-import { componentLogger } from '../../diagnostics/logger.js'
+import { componentLogger } from '../../diagnostics/index.js'
 
 /** The existing B bridge is injected, never replaced by another response/interaction store. */
 export interface ClaudeSdkPolicyBridge {

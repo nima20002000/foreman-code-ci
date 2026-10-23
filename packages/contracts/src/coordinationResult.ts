@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import { BoardResultSchema } from './memoryBoards.js';
 import { canonicalGraphJson } from './canonicalJson.js';
-import { ChoiceOutcomeSchema } from './wave25/choice.js';
-import { checkDeliverable } from './wave25/outputContract.js';
-import type { WorkflowDefinitionV3 } from './wave25/workflowShape.js';
+import { ChoiceOutcomeSchema } from './current/choice.js';
+import { checkDeliverable } from './current/outputContract.js';
+import type { WorkflowDefinitionCurrent } from './current/workflowShape.js';
 import { WorkflowArtifactResultV1Schema } from './workflowArtifactDeclarations.js';
 import { DelegateRoutingSchema, WorkHandoffRoutingSchema, WorkHandoffDataSchema, WorkflowDelegationContextSchema } from './workflowHierarchy.js';
 
@@ -52,7 +52,7 @@ export type CoordinationResult = z.infer<typeof CoordinationResultSchema>;
 
 export type CoordinationResultContext = {
   resultProtocol: ResultProtocol;
-  definition: WorkflowDefinitionV3;
+  definition: WorkflowDefinitionCurrent;
   workflowNodeId: string;
   interval?: boolean;
   outstandingRequestIds?: readonly string[];

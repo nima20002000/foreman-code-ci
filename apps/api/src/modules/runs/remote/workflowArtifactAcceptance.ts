@@ -4,11 +4,12 @@ import { ArtifactAttemptSchema } from '@foreman-code/contracts/artifact-edges'
 import { TransferContextSchema } from '@foreman-code/contracts/byte-transfer'
 import { RemoteOperationReceiptSchema, remoteWorkflowTurnId, remoteWorkflowHasTurn } from '@foreman-code/contracts/remote-execution'
 import { workflowArtifactDigestsByOutputKey } from '@foreman-code/contracts/workflow-artifact-result'
-import type { AcceptedWorkflowRunV3, WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import type { AcceptedWorkflowRunCurrent, WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 import { DomainError } from '../../errors.js'
 import { assertOriginalWorkflowTerminal } from '../../interactions/workflowTerminalSource.js'
 import { readDispatchIntent } from '../../placement/persistence.js'
-import { assertGraphTransaction, beforeGraphCommit, poisonGraphTransaction, type GraphTransactionSql } from '../../run-graph/connection.js'
+import { assertGraphTransaction, beforeGraphCommit, poisonGraphTransaction } from '../../run-graph/connection.js'
+import type { SqlTransaction } from '../../../infrastructure/transaction.js'
 import { assertRepeatCanonicalReceiptLocked, requireRepeatCanonicalReceiptBeforeCommit } from '../../run-graph/repeatReceipts.js'
 import { assertRepeatExecution, repeatDigest, repeatExecutionIdentity } from '../repeatResolution.js'
 import type { WorkflowNativeProofRecord } from '../workflowNativeProof.js'
@@ -29,8 +30,8 @@ const conflict = (): never => { throw new DomainError('WORKFLOW_ARTIFACT_OUTPUTS
 export function createWorkflowArtifactOutputsGate(mainId: string,
   authority: Pick<PostgresArtifactPublicationAuthority,
     'resolveWorkflowContext' | 'resolvePublicationContext' | 'authorizePublication'>) {
-  const verify = async (sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
-    version: WorkflowVersionV3, supplied: HarnessExecution) => {
+  const verify = async (sql: SqlTransaction, run: AcceptedWorkflowRunCurrent,
+    version: WorkflowVersionCurrent, supplied: HarnessExecution) => {
     const execution = HarnessExecutionSchema.parse(supplied)
     const node = version.definition.nodes.find(node => node.id === execution.workflowNodeId)
     if (node?.kind === 'job' || !node?.artifactOutputs) return
@@ -107,8 +108,8 @@ export function createWorkflowArtifactOutputsGate(mainId: string,
     }
     if (!same(remote.terminal?.artifactDigests, workflowArtifactDigestsByOutputKey(digests))) return conflict()
   }
-  return async function assertWorkflowArtifactOutputsLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
-    version: WorkflowVersionV3, execution: HarnessExecution): Promise<void> {
+  return async function assertWorkflowArtifactOutputsLocked(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent,
+    version: WorkflowVersionCurrent, execution: HarnessExecution): Promise<void> {
     assertGraphTransaction(sql)
     try {
       await verify(sql, run, version, execution)

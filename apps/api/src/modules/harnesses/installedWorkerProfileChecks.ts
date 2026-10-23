@@ -19,6 +19,7 @@ import { createInstalledClaudeQualifier } from './installedClaudeQualification.j
 import { createInstalledClaudeOperatorInspection } from './installedClaudeOperatorInspection.js'
 import { createInstalledWorkerHarnessOptions } from './installedWorkerHarnessOptions.js'
 import { PayloadFingerprintCache } from './payloadFingerprintCache.js'
+import { hostEnvironment } from '../../shared/process.js'
 
 export async function createInstalledWorkerProfileChecks(input: {
   stateDirectory: string
@@ -63,7 +64,7 @@ export async function createInstalledWorkerProfileChecks(input: {
       const accountEnvironment = pinnedCodexAccountEnvironment(accounts, accountId,
         undefined, undefined, accountBinding)
       await accountEnvironment.prepare()
-      const environment = accountEnvironment.environment(process.env)
+      const environment = accountEnvironment.environment(hostEnvironment())
       const qualifier = createInstalledNativeQualifier({ harness,
         binding, trustedCurrentBinding: input.current,
         inspect: (current, signal) => inspectInstalledCodex({ binding: current,

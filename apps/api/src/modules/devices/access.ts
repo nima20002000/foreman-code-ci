@@ -10,7 +10,7 @@ import { commandInputHash, PostgresCommandCoordinator } from '../commands/postgr
 import { requireAuthorization } from '../access/policy.js'
 import { DomainError } from '../errors.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
-import { initializePairedBuildComputer } from '../settings/buildComputers.js'
+import { initializePairedBuildComputer } from '../settings/index.js'
 import { DeviceAccessError } from './accessError.js'
 import { sha256Hex } from '../../shared/hash.js'
 

@@ -1,5 +1,5 @@
 import { ZodError } from 'zod'
-import { componentLogger } from '../../diagnostics/logger.js'
+import { componentLogger } from '../../diagnostics/index.js'
 
 const log = componentLogger('harness')
 function errorIdentity(error: unknown) {

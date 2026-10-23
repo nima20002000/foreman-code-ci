@@ -6,7 +6,8 @@ import { MemoryBoardService } from '../service.js'
 import { createMemoryBoardService } from '../production.js'
 import type { BoardSnapshot, CardDetail, MemoryBoardAuthority, ResolvedWork, SubjectAccess } from '../types.js'
 import { memoryReadTools, memoryWriteTools } from '../types.js'
-import { withExclusiveGraphConnection, type GraphTransactionSql } from '../../run-graph/connection.js'
+import { withExclusiveGraphConnection } from '../../run-graph/connection.js'
+import type { SqlTransaction } from '../../../infrastructure/transaction.js'
 import { DomainError } from '../../errors.js'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 
@@ -18,8 +19,8 @@ export function memoryFixture(pool: pg.Pool, principal: ManagementPrincipal) {
   const agent:AgentIdentity={workspaceId,workflowId,workflowNodeId:'worker',agentId:randomUUID(),
     productRole:'coder',displayName:'Worker',configurationVersionId:randomUUID()}
   const permissions={tools:[...memoryReadTools,...memoryWriteTools] as string[],readOnly:false}
-  const transaction=<T>(work:(tx:GraphTransactionSql)=>Promise<T>)=>withExclusiveGraphConnection(pool,connection=>connection.transaction(work))
-  const findWork=async(tx:GraphTransactionSql,work:LogicalWorkRef):Promise<ResolvedWork>=>{
+  const transaction=<T>(work:(tx:SqlTransaction)=>Promise<T>)=>withExclusiveGraphConnection(pool,connection=>connection.transaction(work))
+  const findWork=async(tx:SqlTransaction,work:LogicalWorkRef):Promise<ResolvedWork>=>{
     const result=await tx.query<{record:ResolvedWork}>('select record from memory_test_owner where id=$1',[canonicalJson(work)])
     if(!result.rows[0])throw new DomainError('NOT_FOUND','Work is not available.',404)
     return result.rows[0].record

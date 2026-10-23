@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it, vi } from 'vitest'
 import { AgentConfigurationVersionSchema, type NativeHarnessEvent, type NativeSessionReference } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import type { ClaudeHarnessConfiguration } from '@foreman-code/contracts/claude'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresAgentChatRepository, agentChatCorrelation, agentChatKey } from '../src/modules/conversations/agentChatRepository.js'
@@ -16,7 +16,8 @@ import { createClaudeSdkCallbacks } from '../src/modules/harnesses/claudeSdk/sdk
 import {
   createClaudeNativeSessionManager, type ClaudeMessageTurnInput, type ClaudeNativeSessionManager,
 } from '../src/modules/harnesses/claudeSdk/sessionManager.js'
-import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 
 async function drain(events: AsyncIterable<NativeHarnessEvent>) {
   const values: NativeHarnessEvent[] = []
@@ -25,7 +26,7 @@ async function drain(events: AsyncIterable<NativeHarnessEvent>) {
 }
 
 it('persists one message admission across later tool rounds and validates each callback against the real domain', async () => {
-  const db = await agent3Database()
+  const db = await migratedDatabase()
   let manager: ClaudeNativeSessionManager | undefined
   try {
     const access = new PostgresAccessService(db.pool)
@@ -42,7 +43,7 @@ it('persists one message admission across later tool rounds and validates each c
     const fixture = makeCurrentWorkflowFixture(randomUUID(), 'sequential')
     fixture.configurations = fixture.configurations.map(configuration =>
       AgentConfigurationVersionSchema.parse({ ...configuration, harness }))
-    const seeded = await seedAgent3(db.pool, db.directory, fixture, { run: false })
+    const seeded = await seedWorkflowFixture(db.pool, db.directory, fixture, { run: false })
     const node = seeded.version.definition.nodes[0]!
     const configuration = seeded.configurations.find(value => value.agentId === node.agentId)!
     const context = { workspaceId: seeded.scope.workspaceId, workflowId: seeded.scope.workflowId,

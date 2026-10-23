@@ -4,7 +4,7 @@
 .run-board-current[hidden], .run-board[hidden] { display: none !important; }
 .run-board { position: relative; overflow: hidden; color: var(--text); }
 .run-board > p { margin: 0; padding: 1rem; font: var(--type-caption); }
-.run-board > .n-empty, .run-board > .n-error-state { padding-block: var(--space-8, 48px); }
+.run-board > .n-empty, .run-board > .n-error-state { padding-block: var(--space-8); }
 /* One quiet line above a standalone Run canvas; inside the Board the same caption sits in the floating toolbar. */
 .run-board-header { position: relative; z-index: 6; display: flex; align-items: center; gap: var(--space-3); min-height: 28px; padding: 0 var(--space-4); }
 .run-board-header .run-board-label { margin-left: auto; }
@@ -87,7 +87,7 @@
 .run-node-attempt-state { padding: 0 8px; border-radius: 999px; color: var(--text-muted); background: color-mix(in srgb, var(--text-muted) 14%, transparent); font: var(--type-caption); line-height: 20px; }
 .run-node-attempt-state[data-state='completed'] { color: var(--success); background: color-mix(in srgb, var(--success) 14%, transparent); }
 .run-node-attempt-state[data-state='failed'], .run-node-attempt-state[data-state='cancelled'] { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
-.run-node-attempt-state[data-state='running'] { color: var(--info, var(--accent)); background: color-mix(in srgb, var(--info, var(--accent)) 14%, transparent); }
+.run-node-attempt-state[data-state='running'] { color: var(--info); background: color-mix(in srgb, var(--info) 14%, transparent); }
 .run-execution-inspector code { overflow-wrap: anywhere; }
 .run-execution-inspector > p, .run-execution-inspector > section > p { margin: 0; color: var(--text-muted); font: var(--type-caption); }
 .run-board > .run-board-stale { display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-4); color: var(--warning); }

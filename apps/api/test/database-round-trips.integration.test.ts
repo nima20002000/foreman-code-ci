@@ -2,11 +2,12 @@ import { randomUUID } from 'node:crypto'
 import pg from 'pg'
 import { afterAll, beforeAll, expect, it, vi } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { readCurrentRunDetails } from '../src/modules/runs/currentRead.js'
 import { appendNormalizedNativeEvents } from '../src/modules/runs/nativeEventBatch.js'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
-import { withExclusiveGraphConnection, type GraphSqlClient } from '../src/modules/run-graph/connection.js'
+import { withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
+import type { SqlQuery } from '../src/infrastructure/transaction.js'
 import { normalizeNativeProducerEvent } from '../src/modules/run-graph/nativeProducerNormalization.js'
 import { readRepeatGraphPinsLocked } from '../src/modules/run-graph/repeatProjectionRows.js'
 import { currentDatabase } from './helpers/database.js'
@@ -21,7 +22,7 @@ afterAll(async () => {
   await db?.close()
 })
 
-async function measure<T>(label: string, work: () => Promise<T>, sql?: GraphSqlClient) {
+async function measure<T>(label: string, work: () => Promise<T>, sql?: SqlQuery) {
   const query = sql ? vi.spyOn(sql, 'query') : vi.spyOn(pg.Client.prototype, 'query')
   try {
     const value = await work()

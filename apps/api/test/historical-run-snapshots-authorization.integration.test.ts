@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
-import { seedAgent3 } from './helpers/workflowDatabase.js'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import {
   historicalFixture, historicalRows, openHistoricalApi, readSnapshot,
@@ -18,7 +18,7 @@ describe.skipIf(!postgresEnabled)('Historical Run snapshots / authorization / Po
       await runA(f)
       // A genuinely persisted foreign workspace/workflow/Run in the SAME schema,
       // not an ID from another isolated database that merely looks nonexistent.
-      const foreign = await seedAgent3(f.db.pool, f.db.directory, makeCurrentWorkflowFixture(randomUUID(), 'single'))
+      const foreign = await seedWorkflowFixture(f.db.pool, f.db.directory, makeCurrentWorkflowFixture(randomUUID(), 'single'))
       api = await openHistoricalApi(f)
       const reader = await f.access.issue({ name: 'SCH-12 snapshot reader', audience: 'operator', expiresAt: new Date(Date.now() + 600_000),
         grants: [{ actions: ['runs:read'], scope: { workspaceIds: [f.f.scope.workspaceId], workflowIds: [f.f.scope.workflowId] } }] })

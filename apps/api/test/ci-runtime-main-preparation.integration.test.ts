@@ -2,13 +2,13 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { CiPreparationRecordSchema, PostgresCiPreparationRepository } from '@foreman-code/ci/ciPreparationRepository'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { verificationCapacityFixture } from './helpers/verificationCapacityFixture.js'
 
 describe.skipIf(!postgresEnabled)('CI runtime preparations on Main', () => {
-  let database: Awaited<ReturnType<typeof agent3Database>>
-  beforeAll(async () => { database = await agent3Database() }, 60000)
+  let database: Awaited<ReturnType<typeof migratedDatabase>>
+  beforeAll(async () => { database = await migratedDatabase() }, 60000)
   afterAll(async () => { await database?.close() })
 
   it('persists Main under its installation id, one active preparation at a time', async () => {

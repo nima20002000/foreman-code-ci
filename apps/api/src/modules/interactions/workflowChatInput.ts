@@ -1,5 +1,5 @@
 import { HarnessExecutionRequestSchema, type ChatSendRequest, type HarnessExecutionRequest } from '@foreman-code/contracts'
-import type { WorkflowQueuedInput } from '../collaboration/workflowControlTypes.js'
+import type { WorkflowQueuedInput } from '../collaboration/index.js'
 import { DomainError } from '../errors.js'
 
 export function admittedWorkflowChatPrompt(command: { nativePrompt?: string }): string {

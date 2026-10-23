@@ -10,7 +10,7 @@ import { OperatorInteractionService } from '../src/modules/interactions/operator
 import { approvalResponse } from './helpers/approvalResponse.js'
 import { routedApprovalFixture } from './helpers/routedApprovalFixture.js'
 import { approvalReviewCuts } from './helpers/approvalReviewCuts.js'
-import { br1002At } from './helpers/continuationCuts.js'
+import { continuationAt } from './helpers/continuationCuts.js'
 import { postgresEnabled } from './helpers/database.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 import { codexApprovalRuntime } from './helpers/codexApprovalRuntime.js'
@@ -87,9 +87,9 @@ describe.skipIf(!postgresEnabled)('current durable approval orchestration', () =
       expect(f.counts().responses).toBe(0)
       dispatch = f.native.reviewers.dispatchNext(f.reviewerId, 'current-mcp-proof')
       void dispatch.catch(() => {
-        // ignore: br1002At and the awaited dispatch below observe the rejection.
+        // ignore: continuationAt and the awaited dispatch below observe the rejection.
       })
-      await br1002At(cuts.started.promise, dispatch)
+      await continuationAt(cuts.started.promise, dispatch)
       const credential = await f.credentials.issueForReviewer(f.reviewer.id)
       const reviewer = await connect('/mcp', credential.environment.variables.GRAPHQL_MCP_TOKEN!)
       const input = approvalResponse(f.interaction)
@@ -102,12 +102,12 @@ describe.skipIf(!postgresEnabled)('current durable approval orchestration', () =
       expect(f.counts().responses).toBe(0)
       cuts.continueStart.resolve()
       f.provider.completeReview(f.job.correlationId, f.reviewer.nativeSessionId!)
-      await br1002At(cuts.assistant.promise, dispatch)
+      await continuationAt(cuts.assistant.promise, dispatch)
       cuts.continueAssistant.resolve()
-      await br1002At(beforeHistory.promise, dispatch)
+      await continuationAt(beforeHistory.promise, dispatch)
       expect(f.counts().responses).toBe(0)
       publishHistory.resolve()
-      await br1002At(afterHistory.promise, dispatch)
+      await continuationAt(afterHistory.promise, dispatch)
       finishHistory.resolve()
       await dispatch
       expect((await f.service.recover({ limit: 10 })).errors).toEqual([])

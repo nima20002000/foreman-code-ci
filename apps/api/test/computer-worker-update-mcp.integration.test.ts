@@ -1,16 +1,14 @@
-import { operatorCatalogNames, operatorCatalog } from './support/operatorCatalog.js'
+import { computerMaintenanceHttp } from './support/computerMaintenanceHttp.js'
 import { execFileSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { describe, expect, it, vi } from 'vitest'
 import {
   COMPUTER_MAINTENANCE_NAMESPACE, WORKER_UPDATE_NAMESPACE, ComputerMaintenanceListSchema, ComputerMaintenanceStartResultSchema,
   MaintenanceRequestSchema, MaintenanceStatusSchema, type MaintenanceStatus, type MaintenanceTask,
 } from '@foreman-code/contracts/computer-maintenance'
-import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
@@ -115,16 +113,7 @@ async function fixture() {
     readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
     operator: { access: new PostgresAccessService(pool), services },
   })
-  const address = await app.listen({ host: '127.0.0.1', port: 0 })
-  const clients: Client[] = []
-  const connect = async (token: string) => {
-    const connected = new Client({ name: 'worker-update-test', version: '1' })
-    clients.push(connected)
-    await connected.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), {
-      authProvider: { token: async () => credentials[token as keyof typeof credentials]?.token ?? token },
-    }))
-    return connected
-  }
+  const connect = (token: string) => computerMaintenanceHttp(app, credentials[token as keyof typeof credentials]?.token ?? token)
   return {
     app, connect, registration, saveRegistration, writer, reader, scoped, readAudits, pool, readWorker, saveWorker, directory,
     mountUpdater: (ports: NonNullable<MaintenancePorts['workerUpdate']>) => {
@@ -139,7 +128,6 @@ async function fixture() {
       services.computerMaintenance = createFleet(services.commands)
     },
     close: async () => {
-      await Promise.all(clients.map(connected => connected.close()))
       await app.close()
       await db.close()
       await rm(directory, { recursive: true, force: true })
@@ -147,28 +135,16 @@ async function fixture() {
   }
 }
 
-const readStatus = async (client: Client) => ComputerMaintenanceListSchema.parse(decodeMcpToolResult(
-  await client.callTool({ name: 'computers_maintenance_status', arguments: { detail: 'full', refresh: true } }),
-))
+const readStatus = async (client: ReturnType<typeof computerMaintenanceHttp>) =>
+  ComputerMaintenanceListSchema.parse((await client.status({ refresh: true })).body)
 
-describe('Worker updates through authenticated Operator MCP', () => {
+describe('Worker updates through the authenticated HTTP API', () => {
   it('starts paired Workers, replays saved targets and outcomes, and retries a rolled-back update', async () => {
     const f = await fixture()
     try {
-      const operator = await f.connect('writer')
-      const tools = (await operatorCatalog(operator))
-      expect(JSON.stringify(tools.find(tool => tool.name === 'computers_maintenance_start')?.inputSchema))
-        .toContain('update-worker')
-      const capabilities = decodeMcpToolResult(await operator.callTool({
-        name: 'operator_get_capabilities', arguments: { detail: 'full' },
-      })) as { runtimeLimits: { feature: string; detail: string }[]; requirements: { name: string; actions: string[] }[] }
-      expect(capabilities.runtimeLimits.find(limit => limit.feature === 'worker_updates')?.detail).toContain('rolls back')
-      expect(capabilities.requirements.find(requirement => requirement.name === 'computers_maintenance_start')?.actions)
-        .toEqual(['settings:update'])
+      const operator = f.connect('writer')
       const input = { commandId: randomUUID(), task: { kind: 'update-worker' } }
-      const first = ComputerMaintenanceStartResultSchema.parse(decodeMcpToolResult(await operator.callTool({
-        name: 'computers_maintenance_start', arguments: input,
-      })))
+      const first = ComputerMaintenanceStartResultSchema.parse((await operator.start(input)).body)
       expect(first.computers).toHaveLength(1)
       expect(first.computers[0]).toMatchObject({ target: { hostRef: { deviceId: f.registration.deviceId } },
         task: { kind: 'update-worker', state: 'running' }, error: null })
@@ -186,23 +162,21 @@ describe('Worker updates through authenticated Operator MCP', () => {
         { operation: 'computers.maintenance.start', result: first },
       ])
       f.recreate()
-      const afterRestart = await f.connect('writer')
-      const replay = ComputerMaintenanceStartResultSchema.parse(decodeMcpToolResult(await afterRestart.callTool({
-        name: 'computers_maintenance_start', arguments: input,
-      })))
+      const afterRestart = f.connect('writer')
+      const replay = ComputerMaintenanceStartResultSchema.parse((await afterRestart.start(input)).body)
       expect(replay.computers).toHaveLength(1)
       expect(replay.computers[0]?.task).toMatchObject({ id: first.computers[0]?.task?.id, state: 'failed' })
       expect((await readStatus(afterRestart)).computers[1]?.status?.worker).toEqual(retained.worker)
       expect(f.counts()).toEqual({ starts: 1, mainStarts: 0 })
-      const retry = await afterRestart.callTool({ name: 'computers_maintenance_start', arguments: {
+      const retry = await afterRestart.start({
         commandId: randomUUID(), task: { kind: 'update-worker' }, targets: [first.computers[0]!.target],
-      } })
-      expect(ComputerMaintenanceStartResultSchema.parse(decodeMcpToolResult(retry)).computers[0]?.task)
+      })
+      expect(ComputerMaintenanceStartResultSchema.parse(retry.body).computers[0]?.task)
         .toMatchObject({ kind: 'update-worker', state: 'running' })
       expect(f.counts()).toEqual({ starts: 2, mainStarts: 0 })
       expect((await f.readAudits()).filter(audit => audit.action === 'computers.maintenance.start')).toEqual([
-        { principalId: f.writer.id, source: 'mcp', action: 'computers.maintenance.start', outcome: 'succeeded' },
-        { principalId: f.writer.id, source: 'mcp', action: 'computers.maintenance.start', outcome: 'succeeded' },
+        { principalId: f.writer.id, source: 'http', action: 'computers.maintenance.start', outcome: 'succeeded' },
+        { principalId: f.writer.id, source: 'http', action: 'computers.maintenance.start', outcome: 'succeeded' },
       ])
     } finally { await f.close() }
   })
@@ -211,25 +185,22 @@ describe('Worker updates through authenticated Operator MCP', () => {
     const f = await fixture()
     try {
       for (const token of ['reader', 'scoped']) {
-        const caller = await f.connect(token)
-        expect(await operatorCatalogNames(caller)).not.toContain('computers_maintenance_start')
-        const denied = await caller.callTool({ name: 'computers_maintenance_start', arguments: {
-          commandId: randomUUID(), task: { kind: 'update-worker' },
-        } })
-        expect(denied.isError).toBe(true)
-        expect(JSON.stringify(denied.content)).toContain('ACCESS_DENIED')
+        const caller = f.connect(token)
+        const denied = await caller.start({ commandId: randomUUID(), task: { kind: 'update-worker' } })
+        expect(denied.ok).toBe(false)
+        expect(JSON.stringify(denied.body)).toContain('ACCESS_DENIED')
       }
-      const invalid = await f.app.inject({ method: 'POST', url: '/mcp', headers: {
-        authorization: 'Bearer invalid', accept: 'application/json, text/event-stream', 'content-type': 'application/json',
-      }, payload: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: {
-        name: 'computers_maintenance_start', arguments: { commandId: randomUUID(), task: { kind: 'update-worker' } },
-      } } })
+      const invalid = await f.connect('invalid').start({ commandId: randomUUID(), task: { kind: 'update-worker' } })
       expect(invalid.statusCode).toBe(401)
       expect(f.counts()).toEqual({ starts: 0, mainStarts: 0 })
-      expect((await f.readAudits()).filter(audit => audit.outcome === 'denied').map(audit => audit.principalId))
-        .toEqual([f.reader.id, f.scoped.id, null])
-      expect((await f.readAudits()).at(-1)).toEqual({ principalId: null, source: 'mcp', action: 'AUTH_INVALID', outcome: 'denied' })
-      expect((await readStatus(await f.connect('reader'))).computers[1]?.status?.worker)
+      // Each denied caller is audited twice: by the service under the tool name, then by the generic HTTP handler.
+      const denial = (principalId: string | null, action: string) => ({ principalId, source: 'http', action, outcome: 'denied' })
+      expect((await f.readAudits()).filter(audit => audit.outcome === 'denied')).toEqual([
+        denial(f.reader.id, 'computers_maintenance_start'), denial(f.reader.id, 'ACCESS_DENIED'),
+        denial(f.scoped.id, 'computers_maintenance_start'), denial(f.scoped.id, 'ACCESS_DENIED'),
+        denial(null, 'AUTH_INVALID'),
+      ])
+      expect((await readStatus(f.connect('reader'))).computers[1]?.status?.worker)
         .toMatchObject({ currentVersion: '0.0.55', targetVersion: '0.0.56', state: 'pending', lastError: null })
     } finally { await f.close() }
   })
@@ -237,29 +208,25 @@ describe('Worker updates through authenticated Operator MCP', () => {
   it('reports Main as unsupported and preserves command identity and current pairing checks', async () => {
     const f = await fixture()
     try {
-      const operator = await f.connect('writer')
+      const operator = f.connect('writer')
       const targets = (await readStatus(operator)).computers.map(computer => computer.target)
-      const main = ComputerMaintenanceStartResultSchema.parse(decodeMcpToolResult(await operator.callTool({
-        name: 'computers_maintenance_start', arguments: {
-          commandId: randomUUID(), task: { kind: 'update-worker' }, targets: [targets[0]],
-        },
-      })))
+      const main = ComputerMaintenanceStartResultSchema.parse((await operator.start({
+        commandId: randomUUID(), task: { kind: 'update-worker' }, targets: [targets[0]],
+      })).body)
       expect(main.computers[0]).toMatchObject({ task: null, error: expect.stringContaining('production:install') })
       const input = { commandId: randomUUID(), task: { kind: 'update-worker' }, targets: [targets[1]] }
-      expect((await operator.callTool({ name: 'computers_maintenance_start', arguments: input })).isError).not.toBe(true)
-      const changed = await operator.callTool({ name: 'computers_maintenance_start', arguments: { ...input, targets } })
-      expect(changed.isError).toBe(true)
-      expect(JSON.stringify(changed.content)).toContain('COMMAND_ID_CONFLICT')
+      expect((await operator.start(input)).ok).toBe(true)
+      const changed = await operator.start({ ...input, targets })
+      expect(changed.ok).toBe(false)
+      expect(JSON.stringify(changed.body)).toContain('COMMAND_ID_CONFLICT')
       await f.saveRegistration({ ...f.registration, authorizationRevision: 2 })
-      const stale = ComputerMaintenanceStartResultSchema.parse(decodeMcpToolResult(await operator.callTool({
-        name: 'computers_maintenance_start', arguments: { ...input, commandId: randomUUID() },
-      })))
+      const stale = ComputerMaintenanceStartResultSchema.parse(
+        (await operator.start({ ...input, commandId: randomUUID() })).body)
       expect(stale.computers[0]).toMatchObject({ task: null, error: expect.stringContaining('not paired') })
       expect(f.counts()).toEqual({ starts: 1, mainStarts: 0 })
       f.withoutUpdateExtension()
-      const legacy = ComputerMaintenanceStartResultSchema.parse(decodeMcpToolResult(await operator.callTool({
-        name: 'computers_maintenance_start', arguments: { commandId: randomUUID(), task: { kind: 'update-worker' } },
-      })))
+      const legacy = ComputerMaintenanceStartResultSchema.parse(
+        (await operator.start({ commandId: randomUUID(), task: { kind: 'update-worker' } })).body)
       expect(legacy.computers[0]).toMatchObject({ task: null, error: expect.stringContaining('updater-enabled Worker') })
       expect(f.counts()).toEqual({ starts: 1, mainStarts: 0 })
     } finally { await f.close() }
@@ -267,7 +234,7 @@ describe('Worker updates through authenticated Operator MCP', () => {
 })
 
 
-it('reports concrete updater failures through authenticated MCP and persists them for a read-only caller', async () => {
+it('reports concrete updater failures through authenticated HTTP and persists them for a read-only caller', async () => {
   const f = await fixture()
   const { WorkerUpdater } = await import(new URL('../../worker/src/update.mjs', import.meta.url).href)
   const hash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
@@ -302,11 +269,9 @@ it('reports concrete updater failures through authenticated MCP and persists the
   }).initialize()
   try {
     f.mountUpdater({ status: () => updater.status(), start: () => updater.start({ retry: true }) })
-    const writer = await f.connect('writer')
+    const writer = f.connect('writer')
     const input = { commandId: randomUUID(), task: { kind: 'update-worker' } }
-    const started = ComputerMaintenanceStartResultSchema.parse(decodeMcpToolResult(await writer.callTool({
-      name: 'computers_maintenance_start', arguments: input,
-    })))
+    const started = ComputerMaintenanceStartResultSchema.parse((await writer.start(input)).body)
     const taskId = started.computers[0]!.task!.id
     const task = await vi.waitFor(async () => {
       const value = (await readStatus(writer)).computers.find(computer => computer.target.hostRef.kind === 'device')
@@ -317,12 +282,12 @@ it('reports concrete updater failures through authenticated MCP and persists the
     expect(task).toMatchObject({ state: 'failed', summary: expect.stringContaining('dependency-helper missing') })
     expect(task!.summary).toContain('installing')
     f.recreate()
-    const reader = await f.connect('reader')
+    const reader = f.connect('reader')
     const retained = (await readStatus(reader)).computers.find(computer => computer.target.hostRef.kind === 'device')!
     expect(retained.status!.tasks.find(value => value.id === taskId)).toEqual(task)
     expect(retained.status!.worker!.lastError).toContain('dependency-helper missing')
-    const denied = await reader.callTool({ name: 'computers_maintenance_start', arguments: input })
-    expect(denied.isError).toBe(true)
+    const denied = await reader.start(input)
+    expect(denied.ok).toBe(false)
     expect(f.counts().starts).toBe(1)
   } finally {
     await updater.close()

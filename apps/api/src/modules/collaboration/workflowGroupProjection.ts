@@ -1,5 +1,5 @@
-import type { CommittedReplySource } from '../workflow-chat/projection.js'
-import { readWorkflowNativeChat } from '../interactions/workflowChatNativeRead.js'
+import type { CommittedReplySource } from '../workflow-chat/index.js'
+import { readWorkflowNativeChat } from '../interactions/index.js'
 
 export const workflowGroupReplies: CommittedReplySource = {
   async read(sql, fact) {

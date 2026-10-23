@@ -1,4 +1,4 @@
-import { withTransaction } from '../../infrastructure/transaction.js'
+import { withTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import { isDeepStrictEqual } from 'node:util'
 import { DeviceRegistrationSchema } from '@foreman-code/contracts/device-identity'
@@ -8,20 +8,19 @@ import { ProviderAccountBindingSchema, ProviderAccountModelsSchema, ProviderAcco
   ProviderAccountNativeAuthenticationObservationSchema, PROVIDER_ACCOUNT_WORKER_NAMESPACE,
   ProviderAccountWorkerRequestSchema,
   type ProviderAccountBinding, type ProviderAccountTarget } from '@foreman-code/contracts/provider-accounts'
-import type { DeviceEndpoint } from '../devices/deviceEndpoint.js'
-import type { GraphSqlClient } from '../run-graph/connection.js'
-import { requireAuthorization, requireLiveAccountAuthorization } from '../access/policy.js'
-import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
-import { assertDeviceHostInstallation } from '../devices/hostAuthorization.js'
+import type { DeviceEndpoint } from '../devices/index.js'
+import { requireAuthorization, requireLiveAccountAuthorization } from '../access/index.js'
+import { readLiveManagementPrincipal } from '../access/index.js'
+import { assertDeviceHostInstallation } from '../devices/index.js'
 import { DomainError } from '../errors.js'
-import type { PostgresCommandCoordinator } from '../commands/postgres.js'
+import type { PostgresCommandCoordinator } from '../commands/index.js'
 import { ProviderAccountsRepository } from './repository.js'
 import { ProviderAccountsService, type ProviderAccountCredentials, type ProviderAccountOperationNativePort } from './service.js'
 import { ProviderAccountWorkerCarrier } from './workerCarrier.js'
 import { assertAccountUnused } from './authenticationOperations.js'
 import { sha256Hex } from '../../shared/hash.js'
 
-export async function authorizeAccountTarget(sql: GraphSqlClient, principal: ManagementPrincipal,
+export async function authorizeAccountTarget(sql: SqlQuery, principal: ManagementPrincipal,
   target: DeviceProvisioningTarget, manage: boolean, accountId?: string): Promise<void> {
   const resource = { mainId: target.hostRef.mainId, applicationInstallationId: target.applicationInstallationId,
     ...(target.hostRef.kind === 'device' ? { deviceId: target.hostRef.deviceId } : {}),
@@ -114,7 +113,7 @@ export function createRemoteAccountServices(input: {
       }
       return targets
     },
-    async locate(accountId: string, sql: GraphSqlClient = input.pool) {
+    async locate(accountId: string, sql: SqlQuery = input.pool) {
       const rows = await sql.query<{ binding: unknown }>(
         "select a->'binding' as binding from application_settings s cross join lateral jsonb_array_elements(s.record->'accounts') a "
         + "where s.key like 'provider-accounts:worker:%' and a->>'id'=$1", [accountId])
@@ -124,7 +123,7 @@ export function createRemoteAccountServices(input: {
       const account = (await repository(binding.target).read(sql)).accounts.find(value => value.id === accountId)
       return account?.binding ? { ...account.binding, subject: account.observation?.subject ?? account.binding.subject } : undefined
     },
-    async resolve(binding: ProviderAccountBinding, sql?: GraphSqlClient, signal?: AbortSignal) {
+    async resolve(binding: ProviderAccountBinding, sql?: SqlQuery, signal?: AbortSignal) {
       signal?.throwIfAborted()
       const reader = sql ?? input.pool
       const store = repository(binding.target)

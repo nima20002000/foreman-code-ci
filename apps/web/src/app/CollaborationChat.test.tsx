@@ -7,8 +7,8 @@ import { agentChatFixtures, type AgentChatState } from '@foreman-code/contracts/
 import { server } from '../mocks/server'
 import { createAgentChatMock } from '../shared/mocks/agentChatHandlers'
 import { useCollaborationUISlots } from '../shared/ui/collaborationSlots'
-import { useConversationDraftStore } from '../features/conversations/conversationDraftStore'
-import { workflowExecutionChatClient, executionChatReadKey } from '../features/workflow-hierarchy/execution-chat/client'
+import { useConversationDraftStore } from '../features/conversations'
+import { workflowExecutionChatClient, executionChatReadKey } from '../features/workflow-hierarchy'
 import { CollaborationFeatures } from './CollaborationFeatures'
 
 const fixture = collaborationContractFixtures

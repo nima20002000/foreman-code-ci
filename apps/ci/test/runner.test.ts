@@ -82,6 +82,9 @@ async function computer(options: { github?: boolean; suiteExit?: number; watchdo
   for (const file of suiteFiles) {
     await copyFile(new URL(`../../../scripts/${file}`, import.meta.url), join(origin, 'scripts', file))
   }
+  await mkdir(join(origin, 'packages/ci-protocol/src'), { recursive: true })
+  await copyFile(new URL('../../../packages/ci-protocol/src/testResults.mjs', import.meta.url),
+    join(origin, 'packages/ci-protocol/src/testResults.mjs'))
   await writeFile(join(origin, 'scripts/test-command.mjs'),
     "import { spawnSync } from 'node:child_process'; const [, command, ...args] = process.argv.slice(2);"
       + " const result = spawnSync(command, args, { stdio: 'inherit' }); process.exit(result.status ?? 1);\n")

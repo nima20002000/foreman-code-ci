@@ -110,7 +110,7 @@ it('builds Operator schemas once across authenticated requests while retaining c
     }
     f.callers.set('reader', principal)
     const schema = decodeMcpToolResult(await f.rpc<CallToolResult>('tools/call', {
-      name: 'operator_tool_schema_get', arguments: { name: 'workspace_get' },
+      name: 'tool_schema', arguments: { name: 'workspace_get' },
     }))
     expect(schema).toMatchObject({ name: 'workspace_get' })
   } finally { await f.app.close() }
@@ -169,11 +169,12 @@ it('keeps simultaneous callers and schema discovery separate after warming the c
     release()
     for (const result of await pending) expect(decodeMcpToolResult(result)).toEqual(f.workspace)
     expect(f.get.mock.calls.map(([actor]) => actor.id).sort()).toEqual(['other-reader', 'reader'])
-    const schemaParams = { name: 'operator_tool_schema_get', arguments: { name: 'workspace_get' } }
+    const schemaParams = { name: 'tool_schema', arguments: { name: 'workspace_get' } }
     const [allowed, denied] = await Promise.all([f.rpc<CallToolResult>('tools/call', schemaParams),
       f.rpc<CallToolResult>('tools/call', schemaParams, 'limited')])
     expect(decodeMcpToolResult(allowed)).toMatchObject({ name: 'workspace_get' })
     expect(denied.isError).toBe(true)
-    expect(f.recordDenied).toHaveBeenCalledWith('limited', 'mcp', 'operator_tool_schema_get', 'mcp:operator_tool_schema_get')
+    expect(decodeMcpToolResult(denied)).toMatchObject({ error: { code: 'ACCESS_DENIED' } })
+    expect(f.recordDenied).toHaveBeenCalledWith('limited', 'mcp', 'tool_schema', 'mcp:tool_schema')
   } finally { release(); await f.app.close() }
 })

@@ -4,7 +4,7 @@ import { claudeAccessOptions } from './claudeAccess'
 import type { HarnessOptions } from '@foreman-code/contracts/management'
 import { Alert, Combobox, Select, TextField } from '../../shared/ui/nocturne'
 import { fieldMessage, type FieldIssue } from './fieldValidation'
-import { useProviderAccounts } from '../provider-accounts/providerAccountsQueries'
+import { useProviderAccounts } from '../provider-accounts'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 import './harnessModelFields.css'
 

@@ -12,7 +12,7 @@ import { PostgresAccessService } from '../access/postgres.js'
 import { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { PostgresDeviceAccessService } from './access.js'
 import { loadOrCreateMainDeviceIdentity, mainDeviceIdentityMigration } from './mainIdentity.js'
-import { deviceIdentityMigration } from './migration.js'
+import { deviceIdentityMigration } from '../../infrastructure/deviceIdentityMigration.js'
 
 /** Root runs this fixture after applying the real /mcp and management-route composition patch. */
 it('serves device management through the existing authenticated API/MCP with denial audit and persisted readback', async () => {

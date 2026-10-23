@@ -1,4 +1,4 @@
-import { settleObserved } from '../../diagnostics/ignoredError.js'
+import { settleObserved } from '../../diagnostics/index.js'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { McpServer } from '@modelcontextprotocol/server'
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node'

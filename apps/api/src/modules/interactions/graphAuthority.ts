@@ -4,12 +4,12 @@ import {
   type DurableInteraction,
   type DirectApprovalConnection,
 } from '@foreman-code/contracts'
-import { AcceptedWorkflowRunV3Schema, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import { AcceptedWorkflowRunCurrentSchema, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 
 import { DomainError } from '../errors.js'
 import { assertRepeatReviewerBinding, PostgresRepeatReviewerBindings } from './repeatReviewer.js'
-import { resolveImmutableApprovalRoute, usesNativeSelfReview } from '../workflows/approvalRoutes.js'
+import { resolveImmutableApprovalRoute, usesNativeSelfReview } from '../workflows/index.js'
 
 type RequestIdentity = Pick<DurableInteraction,
   'workspaceId' | 'workflowId' | 'runId' | 'executionId' | 'requestingAgentId' | 'approval'>
@@ -26,7 +26,7 @@ function denied(): never {
  * Native self-review never enters this routed-interaction boundary.
  */
 export async function assertOrchestratorGraphAuthority(
-  client: GraphSqlClient,
+  client: SqlQuery,
   interaction: RequestIdentity,
   reviewer: { executionId?: string; principalId?: string; nativeSessionId?: string } = {},
 ): Promise<DirectApprovalConnection | undefined> {
@@ -52,8 +52,8 @@ export async function assertOrchestratorGraphAuthority(
       interaction.requestingAgentId, reviewerId],
   )
   const row = found.rows[0]
-  const run = AcceptedWorkflowRunV3Schema.safeParse(row?.run_record)
-  const version = WorkflowVersionV3Schema.safeParse(row?.version_record)
+  const run = AcceptedWorkflowRunCurrentSchema.safeParse(row?.run_record)
+  const version = WorkflowVersionCurrentSchema.safeParse(row?.version_record)
   const execution = HarnessExecutionSchema.safeParse(row?.execution_record)
   const configuration = AgentConfigurationVersionSchema.safeParse(row?.configuration_record)
   if (found.rows.length !== 1 || !run.success || !version.success || !execution.success || !configuration.success) return denied()

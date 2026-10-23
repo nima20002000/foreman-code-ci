@@ -13,8 +13,7 @@ import { prepareBundledBrowserRuntime, activateBrowserRuntime, rollbackBrowserRu
   offlineBrowserRuntimeLifecycle, readBrowserRuntimeActivation } from './browserRuntimeInstall.mjs';
 import { readUpdateRecord, writeUpdateRecord, locateWorkerLaunch, launchUpdateSupervisor,
   recoverPendingWorkerUpdate, workerPointerMatches } from './updateSupervisor.mjs';
-import { DeviceConnectionError } from '../../../apps/api/src/modules/devices/deviceWire.ts';
-import { DeviceApplicationError } from '../../../apps/api/src/modules/devices/deviceApplicationError.ts';
+import { DeviceConnectionError, DeviceApplicationError } from '@foreman-code/api/worker/devices';
 import { extractWorkerArchive, fetchGitHubAsset, workerArchiveLimits, requireArchiveCapacity }
   from './workerArtifactArchive.mjs';
 

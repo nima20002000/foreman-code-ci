@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { postgresEnabled } from './helpers/database.js'
-import { CURRENT_WORKFLOW_TOOLS } from '@foreman-code/contracts/wave25'
+import { CURRENT_WORKFLOW_TOOLS } from '@foreman-code/contracts/current'
 import { unsupportedReviewerScopes } from './helpers/reviewerScope.testSupport.js'
 import { definitionUrl, transports } from './helpers/saveAdmission.testSupport.js'
 import { candidate, counts, rejected } from './helpers/reviewerScopeAdmission.js'

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { canonicalGraphJson, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { readImmutableWorkflowVersion } from '../src/modules/workflows/immutableRead.js'
 
 function fixture(form: 'sequential' | 'repeat' = 'sequential') {

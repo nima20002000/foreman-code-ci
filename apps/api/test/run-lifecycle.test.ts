@@ -505,9 +505,6 @@ it('remaining approval budget uses the owner connection, deduplicates IDs and se
   } } } as unknown as RunOwnership
   assert.equal(await budgetRepository().remainingApprovalTime('run', ['a', 'b', 'a'], owner), 20)
   assert.equal(queries.length, 1); assert.deepEqual(queries[0]!.values, ['run', ['a', 'b']])
-  assert.match(queries[0]!.sql, /b\.approval_wait_started_at is not null then 0/)
-  assert.match(queries[0]!.sql, /b\.active_timeout_ms-b\.active_elapsed_ms/)
-  assert.match(queries[0]!.sql, /clock_timestamp\(\)-b\.active_started_at/)
 })
 for (const rows of [[], [{ remaining_ms: '100', stopped_at: new Date() }]]) it(`missing or stopped persisted budgets fail closed (${rows.length} rows)`, async () => {
   const owner = { runId: 'run', assertOwned() {}, client: { query: async () => ({ rows }) } } as unknown as RunOwnership

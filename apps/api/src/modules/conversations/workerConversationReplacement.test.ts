@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
@@ -63,10 +63,7 @@ it('keeps the saved archive unchanged when one generation exceeds its existing b
     turns: [{ correlationId: 'completed', inputHash: `sha256:${'a'.repeat(64)}`, status: 'completed',
       nativeTurnId: 'original-turn', result: { outcome: 'succeeded', output: 'Saved result '.repeat(200) } }], compactions: [] }
   const byteLimit = Buffer.byteLength(JSON.stringify({ receipt: record, digest: commandInputHash(record) }))
-  const archive = new WorkerConversationArchive(join(directory, 'operations.json'), byteLimit, async (path, value) => {
-    await mkdir(join(path, '..'), { recursive: true })
-    await writeFile(path, value)
-  })
+  const archive = new WorkerConversationArchive(join(directory, 'operations.json'), byteLimit)
   const generation = randomUUID()
   try {
     await archive.save(record)

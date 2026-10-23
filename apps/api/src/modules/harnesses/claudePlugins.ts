@@ -1,4 +1,4 @@
-import { logIgnoredError } from '../diagnostics/ignoredError.js'
+import { logIgnoredError } from '../diagnostics/index.js'
 import {
   ClaudePluginChangeInputSchema, ClaudePluginChangeResultSchema, ClaudePluginListInputSchema,
   ClaudePluginListResultSchema, ClaudePluginMarketplaceAddInputSchema, ClaudePluginMarketplaceAddResultSchema,
@@ -8,7 +8,7 @@ import {
 import type pg from 'pg'
 import { requireAuthorization } from '../access/policy.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
-import type { PostgresCommandCoordinator } from '../commands/postgres.js'
+import type { PostgresCommandCoordinator } from '../commands/index.js'
 import { claudeBinary, claudeCliResult, readClaudePlugins, type PluginPorts, type ClaudePluginCatalog } from '../computers/claudePlugins.js'
 import { DomainError } from '../errors.js'
 import { QualificationCache } from './qualificationCache.js'

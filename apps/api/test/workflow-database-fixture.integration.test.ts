@@ -1,16 +1,17 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { currentRepositoryFixture } from './helpers/currentRepository.js'
-import { agent3Database, candidateFor, seedAgent3 } from './helpers/workflowDatabase.js'
+import { candidateFor, seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 // Regression for CURRENT_TYPED_WRITER_REQUIRED: fixture setup must use the same
 // authenticated typed Save service as /definition, not a direct version update.
 describe.skipIf(!postgresEnabled)('Current Agent3 fixture publication', () => {
-  let db: Awaited<ReturnType<typeof agent3Database>>
-  beforeAll(async () => { db = await agent3Database() }, 60000)
+  let db: Awaited<ReturnType<typeof migratedDatabase>>
+  beforeAll(async () => { db = await migratedDatabase() }, 60000)
   afterAll(async () => { await db?.close() })
   it.each([false, true])('saves through the current writer, with Run=%s', async (run) => {
-    const f = await seedAgent3(db.pool, db.directory, undefined, { run })
+    const f = await seedWorkflowFixture(db.pool, db.directory, undefined, { run })
     const saved = (await db.pool.query<{ current_version_id: string; record: unknown }>(
       `select w.current_version_id,v.record from workflows w join workflow_versions v on v.id=w.current_version_id
        where w.id=$1 and w.workspace_id=$2`, [f.scope.workflowId, f.scope.workspaceId])).rows[0]!

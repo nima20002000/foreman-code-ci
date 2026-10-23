@@ -2,7 +2,7 @@ import { createFixtureDatabase, dropFixtureDatabase } from './helpers/testResour
 import { createHash, randomUUID } from 'node:crypto'
 import pg from 'pg'
 import { describe, expect, it, vi } from 'vitest'
-import { makeCurrentWorkflowFixture, WorkflowVersionV3Schema, canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, WorkflowVersionCurrentSchema, canonicalGraphJson } from '@foreman-code/contracts/current'
 import { RemoteJobDispatchIntentSchema, RemoteJobOperationReceiptSchema } from '@foreman-code/contracts/remote-job-execution'
 import { jobSpecDigests } from '@foreman-code/contracts/jobs-node'
 import { PostgresJobDispatch } from '../src/modules/jobs/dispatch.js'
@@ -53,7 +53,7 @@ describe.skipIf(!postgresEnabled)('Run/Job production lock order', () => {
       const base = makeCurrentWorkflowFixture(randomUUID()), execution = jobExecution()
       const node = { kind: 'job' as const, id: 'build', name: 'Build', jobDefinitionId: execution.acceptedSpec.definitionId,
         jobDefinitionRevision: 1, jobDefinitionVersionId: execution.acceptedSpec.definitionVersionId }
-      const parsed = WorkflowVersionV3Schema.parse(JSON.parse(JSON.stringify({ ...base.version, agentConfigurationVersionIds: {}, entryNodeId: node.id,
+      const parsed = WorkflowVersionCurrentSchema.parse(JSON.parse(JSON.stringify({ ...base.version, agentConfigurationVersionIds: {}, entryNodeId: node.id,
         definition: { ...base.version.definition, requiredAgentCount: 0, entryNodeId: node.id, nodes: [node], edges: [], repeat: undefined, handoffs: undefined } })))
       const version = { ...parsed, contentHash: `sha256:${createHash('sha256').update(canonicalGraphJson({
         definition: parsed.definition, configurations: parsed.agentConfigurationVersionIds, entryNodeId: parsed.entryNodeId })).digest('hex')}` }

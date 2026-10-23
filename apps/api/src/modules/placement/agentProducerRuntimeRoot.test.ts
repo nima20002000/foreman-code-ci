@@ -5,7 +5,7 @@ import { persistentFixtureRoot } from '../../../test/helpers/fixtureStorage.js'
 import type pg from 'pg'
 import { afterEach, expect, it, vi } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { canonicalGraphJson, makeCurrentWorkflowFixture, RunStartV3InputSchema } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson, makeCurrentWorkflowFixture, RunStartCurrentInputSchema } from '@foreman-code/contracts/current'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import type { ApprovedRootAllowlist } from '@foreman-code/contracts/workspace-root-policies'
 import type { SourceRootRecord, SourceMaterializationRecord } from '@foreman-code/contracts/source-admission'
@@ -106,7 +106,7 @@ async function fixture() {
       hostRef: value.target.hostRef, harnessInstallationId: value.target.harnessInstallationId,
       connectionGeneration: '1', environmentGeneration: '1' }) }, { codex: 'codex-live-4' },
     new WorkerExecutionPolicy({ enabled: true, managedBy: 'startup' }))
-  const prepared = await producer.prepare(RunStartV3InputSchema.parse({ workspaceId: version.workspaceId, workflowId: version.workflowId,
+  const prepared = await producer.prepare(RunStartCurrentInputSchema.parse({ workspaceId: version.workspaceId, workflowId: version.workflowId,
     workflowVersionId: version.id, expectedAgentConfigurationVersionIds: version.agentConfigurationVersionIds, commandId: 'root-admission',
     executionSemanticsVersion: 3, expectedWorkflowRevision: 1, expectedLocationRevision: 1, input: {} }),
   { id: 'operator', name: 'test', audience: 'operator', grants: [], expiresAt: '2099-01-01T00:00:00Z', revokedAt: null })

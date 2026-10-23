@@ -4,7 +4,7 @@ import { expect, it } from 'vitest'
 import { AgentConfigurationVersionSchema, unavailableSessionControls, type ExecutionResult } from '@foreman-code/contracts'
 import type { WorkerConversationReceipt } from '@foreman-code/contracts/remote-execution-rpc'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { buildApp } from '../src/app.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
@@ -20,13 +20,14 @@ import { workerConversationFixture } from '../src/modules/conversations/workerFi
 import type { NativeHarnessSessionManager, NativeHistory } from '../src/modules/harnesses/port.js'
 import { readSystemPromptSetting } from '../src/modules/settings/foundation.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
-import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 import { admittedWorkerManager, prepareWorkerInput } from './helpers/workerChatPreparation.js'
 import { deferred, rejectableDeferred } from './helpers/deferred.js'
 
 it.each([false, true])('reconciles an uncertain turn through shutdown without replay (Worker exits on completion: %s)', async exitsOnCompletion => {
-  const db = await agent3Database()
+  const db = await migratedDatabase()
   const f = workerConversationFixture('agent')
   const fixture = makeCurrentWorkflowFixture(randomUUID(), 'sequential')
   fixture.configurations = fixture.configurations.map(value => AgentConfigurationVersionSchema.parse({ ...value,
@@ -38,7 +39,7 @@ it.each([false, true])('reconciles an uncertain turn through shutdown without re
   let result: ExecutionResult | undefined
   const completed = { outcome: 'succeeded' as const, output: 'Recovered native completion' }
   try {
-    const seeded = await seedAgent3(db.pool, db.directory, fixture, { run: false })
+    const seeded = await seedWorkflowFixture(db.pool, db.directory, fixture, { run: false })
     const node = seeded.version.definition.nodes[0]!
     const configuration = seeded.configurations.find(value => value.agentId === node.agentId)!
     const context = { workspaceId: configuration.workspaceId, workflowId: seeded.scope.workflowId,

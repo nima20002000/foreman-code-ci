@@ -8,8 +8,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import {
   AcceptedRepeatStartV1Schema, CurrentOperatorCapabilitiesSchema, CurrentWorkflowSaveResultSchema, CURRENT_WORKFLOW_TOOLS,
-  makeCurrentWorkflowFixture, RunStartV3ResultSchema,
-} from '@foreman-code/contracts/wave25'
+  makeCurrentWorkflowFixture, RunStartCurrentResultSchema,
+} from '@foreman-code/contracts/current'
 import { RunBoardSnapshotGetResultSchema, RunDropdownPageSchema } from '@foreman-code/contracts/run-snapshots'
 import { RUN_HISTORY_TOOLS, type RunHistoryToolName } from '../src/mcp/operator/tools/runHistory.js'
 import { withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
@@ -18,7 +18,7 @@ import { insertRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
 import { encodeRunHistoryCursor } from '../src/modules/runs/historyCursor.js'
 import { LOCAL_RUNNER_ID } from '../src/modules/workspaces/location.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { waitForSuccessfulRunCleanup } from './helpers/runSettlement.testSupport.js'
 
@@ -185,7 +185,7 @@ describe.skipIf(!postgresEnabled)('SCH-05 immutable Board/history authenticated 
         executionSemanticsVersion: 3, commandId: randomUUID(), expectedWorkflowRevision: layoutSaved.revision,
         expectedAgentConfigurationVersionIds: saved.version.agentConfigurationVersionIds,
         expectedLocationRevision: location.value.locationRevision, input: {} }
-      const started = RunStartV3ResultSchema.parse(value(await f.client.callTool({ name: 'run_start', arguments: startInput })))
+      const started = RunStartCurrentResultSchema.parse(value(await f.client.callTool({ name: 'run_start', arguments: startInput })))
       await terminal(f, started.run.id)
       const after = RunBoardSnapshotGetResultSchema.parse(await parity(f, r.client, r.token, RUN_HISTORY_TOOLS.snapshot, snapshotScope(f, started.run.id)))
       if (after.snapshot.kind !== 'available') throw new Error('Run B must be captured')
@@ -214,12 +214,12 @@ describe.skipIf(!postgresEnabled)('SCH-05 immutable Board/history authenticated 
         expect(tool).not.toHaveProperty('outputSchema')
         expect(tool?.annotations?.readOnlyHint).toBe(true)
         const schema = OperatorToolSchemaResultSchema.parse(value(await r.client.callTool({
-          name: 'operator_tool_schema_get', arguments: { name, includeOutputSchema: true },
+          name: 'tool_schema', arguments: { name, includeOutputSchema: true },
         })))
         expect(schema.name).toBe(name)
         expect(compactJsonSchema(schema.inputSchema)).toEqual(tool?.inputSchema)
         expect(schema.outputSchema?.type).toBe('object')
-        expect(schema.permissionRequirements.actions).toEqual(['runs:read'])
+        expect(schema.permissionRequirements?.actions).toEqual(['runs:read'])
       }
       expect(discovery.map((tool) => tool.name)).not.toContain('run_start')
       const historyNames = Object.values(RUN_HISTORY_TOOLS)
@@ -255,7 +255,7 @@ describe.skipIf(!postgresEnabled)('SCH-05 immutable Board/history authenticated 
       await denied(f, noRead.client, noRead.token, RUN_HISTORY_TOOLS.list, scope(f), 403, 'ACCESS_DENIED')
       await denied(f, r.client, r.token, RUN_HISTORY_TOOLS.snapshot, { ...args, workspaceId: 'forged-workspace' }, 403, 'ACCESS_DENIED')
       await denied(f, r.client, r.token, RUN_HISTORY_TOOLS.snapshot, { ...args, workflowId: 'forged-workflow' }, 403, 'ACCESS_DENIED')
-      const other = await seedAgent3(f.db.pool, f.db.directory, makeCurrentWorkflowFixture(randomUUID()))
+      const other = await seedWorkflowFixture(f.db.pool, f.db.directory, makeCurrentWorkflowFixture(randomUUID()))
       await denied(f, r.client, r.token, RUN_HISTORY_TOOLS.snapshot, { ...args, runId: other.run.id }, 404, 'RUN_NOT_FOUND')
       await denied(f, r.client, r.token, RUN_HISTORY_TOOLS.snapshot, { ...args, runId: 'nonexistent-run' }, 404, 'RUN_NOT_FOUND')
       const duplicateScope = await f.app.inject({ method: 'GET', url: url(RUN_HISTORY_TOOLS.snapshot, args) + '?runId=forged',

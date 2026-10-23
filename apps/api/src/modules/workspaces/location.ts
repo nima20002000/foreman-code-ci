@@ -1,6 +1,5 @@
 export { requiredLocationAccess } from './locationAccess.js'
-import type { GraphSqlClient } from '../run-graph/connection.js'
-import { withTransaction } from '../../infrastructure/transaction.js'
+import { withTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
 import { isDeepStrictEqual } from 'node:util'
 import { constants } from 'node:fs'
 import { access, mkdir, realpath, rmdir, stat } from 'node:fs/promises'
@@ -24,7 +23,7 @@ import { WorkspaceLocationIdentitySchema } from '@foreman-code/contracts/workspa
 import { requireAuthorization } from '../access/policy.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { currentOperatorAuthority } from '../access/runAuthority.js'
-import { PostgresCommandCoordinator } from '../commands/postgres.js'
+import { PostgresCommandCoordinator } from '../commands/index.js'
 import { DomainError } from '../errors.js'
 import { canonicalRuntimePath, pathsOverlap, withFilesystemDeadline } from './filesystem.js'
 import { WORKSPACE_FOLDER_LIFECYCLE_LOCK } from './projectFolderCleanup.js'
@@ -257,7 +256,7 @@ export class WorkspaceLocationService {
   }
 
   async snapshot(
-    client: GraphSqlClient,
+    client: SqlQuery,
     workspaceId: string,
     expectedLocationRevision: number,
     accessMode: WorkspaceLocationAccessMode,
@@ -274,7 +273,7 @@ export class WorkspaceLocationService {
   /** Records the workspace selection for a Run whose complete Agent placement
    * admission validates execution directories through their owning hosts. */
   async snapshotAssigned(
-    client: GraphSqlClient,
+    client: SqlQuery,
     workspaceId: string,
     expectedLocationRevision: number,
     signal?: AbortSignal,
@@ -316,7 +315,7 @@ export class WorkspaceLocationService {
     principalId: string,
     workspaceId: string,
     workflowId: string,
-    client?: GraphSqlClient,
+    client?: SqlQuery,
     atCommit = false,
   ): Promise<void> {
     // Preserve the accepted ceiling and live root owner without acquiring a nested connection.
@@ -334,7 +333,7 @@ export class WorkspaceLocationService {
     }
   }
 
-  async inspect(principal: ManagementPrincipal, workspaceId: string, client: GraphSqlClient = this.pool) {
+  async inspect(principal: ManagementPrincipal, workspaceId: string, client: SqlQuery = this.pool) {
     requireAuthorization(principal, 'workspace_locations:read', { workspaceId })
     const result = await client.query<LocationRow>(
       `select execution_location, execution_location_identity, location_revision, archived_at
@@ -355,7 +354,7 @@ export class WorkspaceLocationService {
       [row.id, await this.inspectRow(principal, row.id, row, this.pool)] as const)))
   }
 
-  private async inspectRow(principal: ManagementPrincipal, workspaceId: string, row: LocationRow, sql: GraphSqlClient) {
+  private async inspectRow(principal: ManagementPrincipal, workspaceId: string, row: LocationRow, sql: SqlQuery) {
     const locationRevision = Number(row.location_revision)
     if (!row.execution_location) return { executionLocation: null, locationRevision, locationValidation: { status: 'unconfigured' as const } }
     const executionLocation = ExecutionLocationSchema.parse(row.execution_location)

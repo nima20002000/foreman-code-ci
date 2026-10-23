@@ -1,8 +1,8 @@
 import { agentWorkflowVersion } from './agentWorkflowFixture.js'
 import { AgentConfigurationVersionSchema, type ExecutionResult } from '@foreman-code/contracts'
 import {
-  ExecutableWorkflowV3Schema, WorkflowVersionV3Schema, makeCurrentWorkflowFixture,
-} from '@foreman-code/contracts/wave25'
+  ExecutableWorkflowCurrentSchema, WorkflowVersionCurrentSchema, makeCurrentWorkflowFixture,
+} from '@foreman-code/contracts/current'
 
 export const scenarioIds = ['S3-01', 'S3-02', 'S3-03', 'S3-04', 'S3-05-early', 'S3-05-limit'] as const
 export type ScenarioId = typeof scenarioIds[number]
@@ -43,7 +43,7 @@ export function scenarioFixture(id: ScenarioId, suffix: string) {
     { outcome: 'issues', target: { kind: 'branch_end' } },
     { outcome: 'pass', target: { kind: 'branch_end' } },
   ] }
-  source.version = agentWorkflowVersion(WorkflowVersionV3Schema.parse({ ...source.version,
+  source.version = agentWorkflowVersion(WorkflowVersionCurrentSchema.parse({ ...source.version,
     agentConfigurationVersionIds: Object.fromEntries(source.configurations.map((configuration) => [configuration.agentId, configuration.id])),
     definition: { ...source.version.definition, name: id, nodes, edges,
       executionPolicy: { maxParallelism: id === 'S3-02' || id === 'S3-03' ? 2 : 1,
@@ -52,7 +52,7 @@ export function scenarioFixture(id: ScenarioId, suffix: string) {
   source.run.agentConfigurationVersionIds = { ...source.version.agentConfigurationVersionIds }
   source.identities = nodes.map((node, index) => ({ workflowNodeId: node.id, executionId: `exec-${suffix}-${index}`,
     agentId: node.agentId, agentConfigurationVersionId: source.version.agentConfigurationVersionIds[node.agentId]!, attempt: 1 }))
-  ExecutableWorkflowV3Schema.parse({ version: source.version, configurations: source.configurations })
+  ExecutableWorkflowCurrentSchema.parse({ version: source.version, configurations: source.configurations })
   const occurrences = repeat ? id === 'S3-05-early' ? 2 : 3 : 1
   const executedIndexes = Array.from({ length: count }, (_, index) => index).filter((index) => id !== 'S3-03' || index !== 4)
   const predecessors = pairs.filter(([from, to]) => executedIndexes.includes(from!) && executedIndexes.includes(to!))

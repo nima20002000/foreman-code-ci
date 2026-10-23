@@ -1,6 +1,6 @@
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { WorkflowChatPostRequestSchema, type WorkflowChatPostResponse } from '@foreman-code/contracts'
-import { componentLogger } from '../diagnostics/logger.js'
+import { componentLogger } from '../diagnostics/index.js'
 import { DomainError } from '../errors.js'
 import type { ChatDeliveryRouter } from './delivery.js'
 import type { PostgresWorkflowChatRepository } from './repository.js'

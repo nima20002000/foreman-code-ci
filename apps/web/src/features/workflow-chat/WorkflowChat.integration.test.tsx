@@ -6,7 +6,7 @@ import { http, HttpResponse } from 'msw'
 import { WorkflowChatPostRequestSchema, type AgentIdentity, type ChatDeliveryReceipt, type WorkflowChatPost,
   type WorkflowChatPostRequest } from '@foreman-code/contracts'
 import { server } from '../../mocks/server'
-import { useConversationDraftStore } from '../conversations/conversationDraftStore'
+import { useConversationDraftStore } from '../conversations'
 import { WorkflowChatPanel, type WorkflowChatPanelProps } from './WorkflowChatPanel'
 import { useWorkflowDraftStore } from './draft'
 import type { WorkflowTargetResolver } from './RecipientTargetPicker'

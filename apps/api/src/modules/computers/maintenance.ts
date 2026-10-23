@@ -1,6 +1,6 @@
 import { errorMessage } from '@foreman-code/contracts/server-kit'
 import { readOperationalFailures } from '../diagnostics/logger.js'
-import { readServiceHealth } from '../diagnostics/serviceHealth.js'
+import { readServiceHealth } from '../diagnostics/index.js'
 import { readClaudePlugins, claudeCliResult } from './claudePlugins.js'
 import { isCodexStagingRenameError, removeCodexStagingDirectories } from './npmStaging.js'
 import { syncFingerprint } from './syncFingerprint.js'
@@ -28,7 +28,8 @@ import {
   type WorkerUpdateStatus,
   SyncedPluginSchema, type SyncedPlugin,
 } from '@foreman-code/contracts/computer-maintenance'
-import { runProcessSettled } from '../../shared/process.js'
+import { runProcessSettled, hostEnvironment } from '../../shared/process.js'
+import { createHostAdministration, type HostAdministration, type HostStep } from '../ci/hostAdmin.js'
 
 export type { MaintenancePorts }
 
@@ -40,12 +41,8 @@ const LATEST_MS = 60 * 60_000
 const LONG_MS = 20 * 60_000
 /** Steps stop after LONG_MS and a Worker update attempt after 45 minutes; a task never stays running longer. */
 const TASK_DEADLINE_MS = 60 * 60_000
-const APT = ['env', 'LC_ALL=C', 'DEBIAN_FRONTEND=noninteractive', 'NEEDRESTART_MODE=a', 'apt-get', '-y', '-q',
-  '-o', 'Dpkg::Options::=--force-confdef', '-o', 'Dpkg::Options::=--force-confold']
 
 function tail(text: string, limit = 8000) { return text.length > limit ? text.slice(-limit) : text }
-type Step = (binary: string, args: string[], label: string, options?: { timeoutMs?: number; allowFailure?: boolean; environment?: NodeJS.ProcessEnv | undefined })
-  => Promise<{ code: number | null; stdout: string; stderr: string }>
 function versionOf(output: string): string | null {
   return output.match(/\d+\.\d+\.\d+(?:[-+][\w.-]+)?/u)?.[0] ?? null
 }
@@ -85,6 +82,7 @@ export class ComputerMaintenance {
   private taskRevision = 0
   private readonly taskStore: MaintenanceTaskStore
   private readonly commandStore: MaintenanceCommandStore
+  private readonly host: HostAdministration
   private readonly taskCommands = new Map<string, Map<string, string>>()
   private admissions: Promise<unknown> = Promise.resolve()
   private closing = false
@@ -93,6 +91,7 @@ export class ComputerMaintenance {
   private latest: { at: number; value: Promise<Partial<Record<MaintainedHarness, string | null>>> } | undefined
   constructor(private readonly ports: MaintenancePorts = systemMaintenancePorts()) {
     const home = ports.environment.HOME ?? homedir()
+    this.host = createHostAdministration(ports)
     this.taskStore = new MaintenanceTaskStore(join(home, '.local', 'state', 'foreman-code', 'maintenance-tasks.json'), ports)
     this.commandStore = new MaintenanceCommandStore(join(home, '.local', 'state', 'foreman-code', 'maintenance-commands'), ports)
   }
@@ -146,9 +145,9 @@ export class ComputerMaintenance {
     const [versions, latest, packageUpdates, rebootRequired, sudo, disk] = await Promise.all([
       Promise.all((['codex', 'claude'] as const).map(harness => this.installedVersion(harness, signal))),
       this.latestVersions(signal),
-      this.packageUpdates(signal),
-      this.ports.exists('/var/run/reboot-required'),
-      this.sudo(signal),
+      this.host.system.packageUpdates(signal),
+      this.host.system.rebootRequired(),
+      this.host.system.sudo(signal),
       this.ports.disk(home).then(value => value && { path: home, ...value }),
     ])
     return MaintenanceStatusSchema.parse({
@@ -344,7 +343,7 @@ export class ComputerMaintenance {
 
   private async perform(request: MaintenanceTaskStart, task: MaintenanceTask): Promise<string> {
     const signal = AbortSignal.timeout(LONG_MS)
-    const step: Step = async (binary, args, label, options = {}) => {
+    const step: HostStep = async (binary, args, label, options = {}) => {
       const result = await this.ports.run(binary, args, { signal, timeoutMs: options.timeoutMs ?? LONG_MS, environment: options.environment })
       task.outputTail = tail(`${task.outputTail}\n$ ${label}\n${result.stdout}${result.stderr}`)
       if (result.code !== 0 && !options.allowFailure) throw new Error(`${label} failed${result.code === null ? '' : ` (exit ${result.code})`}.`)
@@ -396,29 +395,13 @@ export class ComputerMaintenance {
         if (failures.length) throw new Error([...changes, ...failures].join(' · '))
         return changes.join(' · ')
       }
-      case 'update-system': {
-        await this.requireSudo(signal)
-        await step('sudo', ['-n', ...APT, 'update'], 'apt-get update')
-        const upgrade = await step('sudo', ['-n', ...APT, '--with-new-pkgs', 'upgrade'], 'apt-get upgrade --with-new-pkgs')
-        const upgraded = upgrade.stdout.match(/(\d+) upgraded/u)?.[1]
-        if (!upgraded) throw new Error('The package upgrade result could not be read; check pending updates before retrying.')
-        const remaining = await this.packageUpdates(signal)
-        if (!remaining) throw new Error(`${upgraded} packages upgraded, but remaining updates could not be verified.`)
-        if (remaining.installable > 0) {
-          throw new Error(`${upgraded} packages upgraded; ${remaining.installable} installable updates remain.`)
-        }
-        const reboot = await this.ports.exists('/var/run/reboot-required')
-        const pending = remaining.pending ? ` · ${remaining.pending} updates pending (deferred or held by APT)` : ' · no pending updates'
-        return `${upgraded} packages upgraded${pending}${reboot ? ' · restart needed' : ''}`
-      }
-      case 'restart': {
-        await this.requireSudo(signal)
-        task.summary = 'Restart scheduled in a few seconds.'
-        await this.taskStore.save(this.tasks)
-        await new Promise<void>(resolve => { this.ports.later(resolve, 3_000) })
-        await step('sudo', ['-n', 'systemctl', 'reboot'], 'Restart command', { timeoutMs: 60_000 })
-        return 'Restart command accepted. Waiting for this computer to reconnect.'
-      }
+      case 'update-system':
+        return this.host.system.update(step, signal)
+      case 'restart':
+        return this.host.system.restart(step, signal, async () => {
+          task.summary = 'Restart scheduled in a few seconds.'
+          await this.taskStore.save(this.tasks)
+        })
       case 'sync-mcp': {
         const ledger = await this.readLedger()
         const results: string[] = [...request.warnings ?? []]
@@ -829,30 +812,6 @@ export class ComputerMaintenance {
     void value.catch(() => { this.latest = undefined })
     return value
   }
-
-  private async packageUpdates(signal: AbortSignal): Promise<{ pending: number; installable: number } | null> {
-    const apt = await this.ports.find('apt-get')
-    if (!apt) return null
-    const result = await this.ports.run(apt, ['-s', '-o', 'Debug::NoLocking=1', '--with-new-pkgs', 'upgrade'],
-      { signal, timeoutMs: 60_000 })
-    if (result.code !== 0) throw new DomainError('COMPUTER_PACKAGE_UPDATES_UNAVAILABLE',
-      `Package updates inspection failed (exit ${result.code}).`, 503)
-    const counts = result.stdout.match(/(\d+) upgraded, (\d+) newly installed, \d+ to remove and (\d+) not upgraded\./u)
-    if (!counts) throw new DomainError('COMPUTER_PACKAGE_UPDATES_UNAVAILABLE',
-      'Package updates inspection returned invalid output.', 503)
-    return { pending: Number(counts[1]) + Number(counts[3]), installable: Number(counts[1]) + Number(counts[2]) }
-  }
-
-  private async sudo(signal: AbortSignal): Promise<boolean> {
-    const result = await this.ports.run('sudo', ['-n', 'true'], { signal, timeoutMs: 10_000 })
-    if (result.code === 0) return true
-    if (result.code === 1 && /a password is required|not allowed to execute|not in the sudoers/iu.test(result.stderr)) return false
-    throw new DomainError('COMPUTER_PRIVILEGE_CHECK_UNAVAILABLE', `Sudo inspection failed (exit ${result.code}).`, 503)
-  }
-
-  private async requireSudo(signal: AbortSignal) {
-    if (!await this.sudo(signal)) throw new Error('This computer needs passwordless sudo for OS updates and restarts.')
-  }
 }
 
 /** User-scope Claude MCP servers from ~/.claude.json (CLAUDE_CONFIG_DIR when set). */
@@ -888,7 +847,7 @@ export async function pluginMarketplaces(ports: Pick<MaintenancePorts, 'run'>, c
     local: entry.marketplaceSource?.sourceType === 'local' }])
 }
 
-export function systemMaintenancePorts(environment: NodeJS.ProcessEnv = process.env,
+export function systemMaintenancePorts(environment: NodeJS.ProcessEnv = hostEnvironment(),
   binaries: Readonly<Partial<Record<string, string>>> = {}): MaintenancePorts {
   const home = environment.HOME ?? homedir()
   const directories = [join(home, '.local', 'bin'), ...(environment.PATH ?? '').split(delimiter), '/usr/local/bin', '/usr/bin', '/bin']

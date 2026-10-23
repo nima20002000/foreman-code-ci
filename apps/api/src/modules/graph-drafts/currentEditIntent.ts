@@ -2,20 +2,20 @@ import type pg from 'pg'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import {
   CurrentEditDraftSchema, CurrentEditIntentSchema, CurrentEditReadResultSchema, CurrentEditStageInputSchema,
-  CurrentEditSaveInputSchema, CurrentWorkflowSavedSchema, WorkflowVersionV3Schema,
+  CurrentEditSaveInputSchema, CurrentWorkflowSavedSchema, WorkflowVersionCurrentSchema,
   sameExecutableWorkflow, sameWorkflowValue,
   type CurrentEditIntent, type CurrentEditStageInput, type CurrentEditDraft,
-  type CurrentEditSaveInput, type WorkflowVersionV3,
-} from '@foreman-code/contracts/wave25'
-import { authorizeWorkflowWorktreeContent } from '../workflows/worktreeSettings.js'
-import { requireCurrentWorkflowAccess } from '../workflows/currentWorkflowPolicy.js'
+  type CurrentEditSaveInput, type WorkflowVersionCurrent,
+} from '@foreman-code/contracts/current'
+import { authorizeWorkflowWorktreeContent } from '../workflows/index.js'
+import { requireCurrentWorkflowAccess } from '../workflows/index.js'
 import { commandInputHash, type PostgresCommandCoordinator } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
-import { lockAgentConfigurations } from '../workspaces/agentConfiguration.js'
+import { lockAgentConfigurations } from '../workspaces/index.js'
 import { authorizeStagedAgents, resolveNewStagedAgentDefaults } from './currentStagedAgents.js'
 import { DurableEditIntentService, type EditIntentSource } from './durableEditIntent.js'
 import { IMMUTABLE_WORKFLOW_VERSION_COLUMNS, readImmutableWorkflowVersion,
-  type ImmutableWorkflowVersionRow } from '../workflows/immutableRead.js'
+  type ImmutableWorkflowVersionRow } from '../workflows/index.js'
 
 async function requiresRunSettlement(client: pg.PoolClient, draft: CurrentEditDraft): Promise<boolean> {
   if (draft.presentationOnly) return false
@@ -24,7 +24,7 @@ async function requiresRunSettlement(client: pg.PoolClient, draft: CurrentEditDr
     from workflow_versions where id=$1 and workspace_id=$2 and workflow_id=$3`,
   [draft.baseWorkflowVersionId, draft.workspaceId, draft.workflowId])).rows[0]
   if (!row) throw new DomainError('WORKFLOW_VERSION_NOT_FOUND', 'The staged workflow version is unavailable.', 409)
-  const base = WorkflowVersionV3Schema.parse(readImmutableWorkflowVersion(row, {
+  const base = WorkflowVersionCurrentSchema.parse(readImmutableWorkflowVersion(row, {
     id: draft.baseWorkflowVersionId, workspaceId: draft.workspaceId, workflowId: draft.workflowId,
   }))
   return !sameExecutableWorkflow(base.definition, draft.graph)
@@ -35,7 +35,7 @@ export interface CurrentEditWriter {
   assertStopReady(): void
   validate(client: pg.PoolClient, principal: ManagementPrincipal, input: CurrentEditSaveInput,
     options?: { intentId?: string; source?: EditIntentSource }):
-    Promise<{ version: WorkflowVersionV3; presentationOnly: boolean; graph: CurrentEditSaveInput['graph'] }>
+    Promise<{ version: WorkflowVersionCurrent; presentationOnly: boolean; graph: CurrentEditSaveInput['graph'] }>
   publish(principal: ManagementPrincipal, source: EditIntentSource, input: CurrentEditSaveInput, intentId: string): Promise<unknown>
 }
 /** Same durable Stage/Discard/Stop-and-save coordinator, now with a complete

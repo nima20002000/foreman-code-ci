@@ -2,7 +2,7 @@ import { HostHarnessProfileEvidenceSchema, type HostHarnessOverride, type HostHa
 import { withAdvancedDefaults } from '@foreman-code/contracts'
 import { commandInputHash } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
-import { WorkerExecutionPolicy } from '../settings/workerExecution.js'
+import { WorkerExecutionPolicy } from '../settings/index.js'
 import type { DeviceEndpoint } from '../devices/deviceEndpoint.js'
 import type { HostHarnessProfileQualifier } from './instanceSettings/profileChecks.js'
 import { harnessHostKey } from './instanceSettings/repository.js'

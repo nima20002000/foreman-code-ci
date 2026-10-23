@@ -1,10 +1,10 @@
 import { InfoHint } from '../../shared/ui/InfoHint'
-import { PinnedNodePlacement } from '../node-placement/PinnedNodePlacement'
+import { PinnedNodePlacement } from '../node-placement'
 import { SavedWorkflowWorktree } from './SavedWorkflowWorktree'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
 import { useEffect, useRef, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
+import type { RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
 import { Alert, Badge, Button } from '../../shared/ui/nocturne'
 import { assertSession, sessionGeneration } from '../../shared/api/sessionBoundary'
 import { useLocalHumanAccessQuery } from '../../shared/api/settingsExperience'
@@ -16,14 +16,14 @@ import { JsonValue } from './inspect/JsonValue'
 import { useInspectionPresentation } from './inspect/presentation'
 import { recordBoardStopReceipt, reserveBoardStop, sendBoardStop, settleBoardStop, useBoardStopOutbox } from './stopOutbox'
 import { canUseBoardAction } from './permissions'
-import { runsSelectorApi } from '../runs-selector/client'
-import { PinnedProviderAccount } from '../provider-accounts/PinnedProviderAccount'
+import { runsSelectorApi } from '../runs-selector'
+import { PinnedProviderAccount } from '../provider-accounts'
 import { RunHistory } from './RunHistory'
 
 /** Lane C replaces the action controls, not the Board's passive Stop-journal
  * settlement. Both authenticated Run readbacks must confirm terminal + cleanup
  * settled before the existing locked, exact-request outbox may be cleared. */
-export type RunDetailsProps = { scope: RepeatGraphScopeV3; runActions?: ReactNode }
+export type RunDetailsProps = { scope: RepeatGraphScopeCurrent; runActions?: ReactNode }
 export function CurrentRunDetails({ scope, runActions }: RunDetailsProps) {
   const canonical = useCurrentRunQuery(scope, false), cache = useQueryClient(), generation = sessionGeneration()
   const access = useLocalHumanAccessQuery(), outbox = useBoardStopOutbox(scope)

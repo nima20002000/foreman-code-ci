@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
 import { fixture } from './core.cases'
-import { draftOperations, hasLocalChanges } from './model'
-import { editNextDraft, newNextDraft, nextDraftDirty, redoNextDraft, undoNextDraft } from './state'
-import { changeDraftAgent, configureAgentOperations, hasAgentEdits } from './agentEdits'
+import {
+  draftOperations, hasLocalChanges, editNextDraft, newNextDraft, nextDraftDirty, redoNextDraft, undoNextDraft,
+  changeDraftAgent, configureAgentOperations, hasAgentEdits,
+} from '../../board-core'
 
 describe('frozen board edit classification', () => {
   const movedFixture = () => {

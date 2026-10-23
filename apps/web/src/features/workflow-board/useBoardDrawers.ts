@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, type MutableRefObject } from 'react'
-import type { RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
+import type { RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
 import { useInspectionPresentation } from './inspect/presentation'
 
 /** The Board's location dialog and Activities drawer, and the guard that keeps editor shortcuts off a shown Run. */
 export function useBoardDrawers({ workspaceId, workflowId, current, currentRef, detailsScope }: {
   workspaceId: string; workflowId: string; current: boolean; currentRef: MutableRefObject<boolean>
-  detailsScope: RepeatGraphScopeV3 | undefined
+  detailsScope: RepeatGraphScopeCurrent | undefined
 }) {
   const detailsRef = useRef(detailsScope)
   detailsRef.current = detailsScope

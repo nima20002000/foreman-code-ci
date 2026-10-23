@@ -29,7 +29,7 @@ between start location and isolation are documented in
 
 For the NIM-2576 owner walkthrough, route/API/schema inventory, mock scenario
 semantics, UX decisions, backend handoff boundary, and verification record, see
-[`docs/NIM-2576-handoff.md`](./docs/NIM-2576-handoff.md).
+[`docs/history/NIM-2576-handoff.md`](./docs/history/NIM-2576-handoff.md).
 
 ## Commands
 
@@ -177,7 +177,7 @@ Both `dev` and standalone `dev:web` use the real backend through Vite's `/api`
 proxy. MSW remains only in the unit-test harness. Configure an existing runner directory in Workspace
 Settings before Start. The Website workspace, saved workflow graph, Start action,
 and run status/result reads use the real backend.
-See [`docs/ENG-02-real-workflow-engine.md`](./docs/ENG-02-real-workflow-engine.md)
+See [`docs/history/ENG-02-real-workflow-engine.md`](./docs/history/ENG-02-real-workflow-engine.md)
 for the qualified harness contract and acceptance workflow.
 
 The interface starts in dark mode. Use the workspace-header theme button to

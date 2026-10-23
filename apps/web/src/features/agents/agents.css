@@ -71,8 +71,8 @@
 
 .agent-settings-advanced {
   padding-top: 0.4rem;
-  border-top: 1px solid var(--color-border);
-  color: var(--color-text-muted);
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
   font-size: 11px;
 }
 
@@ -81,9 +81,9 @@
 .agent-settings-advanced-fields label { display: grid; gap: var(--space-1); font-weight: 600; }
 .agent-settings-advanced-fields small,
 .agent-settings-advanced-fields p { margin: 0; line-height: 1.4; }
-.agent-settings-rules { display: grid; gap: var(--space-2); margin: 0; padding: 0.5rem; border: 1px solid var(--color-border); }
+.agent-settings-rules { display: grid; gap: var(--space-2); margin: 0; padding: 0.5rem; border: 1px solid var(--border); }
 .agent-settings-rules > div { display: grid; grid-template-columns: 1fr 1fr 0.75fr; gap: var(--space-1); }
-.agent-settings-rules button { min-height: 1.8rem; border: 1px solid var(--color-border-strong); color: var(--color-text); background: var(--color-surface); cursor: pointer; }
+.agent-settings-rules button { min-height: 1.8rem; border: 1px solid var(--border-strong); color: var(--text); background: var(--surface); cursor: pointer; }
 
 .agent-settings-limits {
   display: grid;
@@ -92,13 +92,13 @@
   min-width: 0;
   margin: 0;
   padding: 0.625rem;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
 }
 
 .agent-settings-limits legend {
   padding: 0 0.25rem;
-  color: var(--color-text-muted);
+  color: var(--text-muted);
   font-size: 11px;
   font-weight: 600;
 }
@@ -106,7 +106,7 @@
 .agent-settings-limits label {
   display: grid;
   gap: var(--space-1);
-  color: var(--color-text-muted);
+  color: var(--text-muted);
   font-size: 11px;
   font-weight: 600;
 }
@@ -116,10 +116,10 @@
 .agent-settings-confirm button {
   min-height: 2rem;
   padding: 0.375rem 0.5rem;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  color: var(--color-text-strong);
-  background: var(--color-surface);
+  color: var(--text-strong);
+  background: var(--surface);
   cursor: pointer;
   text-align: left;
 }
@@ -150,14 +150,14 @@
   place-items: center;
   padding: 0;
   border-color: transparent;
-  color: var(--color-text-muted);
+  color: var(--text-muted);
   background: transparent;
 }
 
 .agent-settings-actions button:hover:not(:disabled) {
-  border-color: var(--color-border-strong);
-  color: var(--color-text-strong);
-  background: var(--color-surface-subtle);
+  border-color: var(--border-strong);
+  color: var(--text-strong);
+  background: var(--surface-hover);
 }
 
 .agent-settings-confirm {
@@ -170,9 +170,9 @@
   grid-template-columns: 1fr 1fr;
   gap: var(--space-2);
   padding: 0.875rem;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  background: var(--color-surface-raised);
+  background: var(--surface-raised);
   box-shadow: var(--shadow-dialog);
   transform: translate(-50%, -50%);
 }
@@ -180,20 +180,20 @@
 .agent-settings-confirm p {
   grid-column: 1 / -1;
   margin: 0;
-  color: var(--color-text-muted);
+  color: var(--text-muted);
   font-size: 12px;
 }
 
 .agent-removal-blocked p {
   margin: 0 0 0.375rem;
-  color: var(--color-text-muted);
+  color: var(--text-muted);
   font-size: 12px;
 }
 
 .agent-removal-blocked a {
   display: block;
   padding: 0.25rem 0;
-  color: var(--color-text-strong);
+  color: var(--text-strong);
   font-size: 12px;
   font-weight: 600;
 }
@@ -205,12 +205,12 @@
 }
 
 .agent-directory-card-shell:hover .agent-directory-card {
-  border-color: var(--color-border-strong);
-  background: var(--color-surface-subtle);
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
 }
 
 .agent-directory-card-shell:focus-visible {
-  outline: 2px solid var(--color-focus);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -232,13 +232,13 @@
 .agent-navigation-state {
   margin: 0;
   padding: 0.25rem 0.625rem 0.25rem 1.375rem;
-  color: var(--color-text-faint);
+  color: var(--text-faint);
   font-size: 12px;
   line-height: 1.4;
 }
 
 .agent-navigation-state-error {
-  color: var(--color-text-muted);
+  color: var(--text-muted);
 }
 
 .workspace-shell-navigation-collapsed .agent-navigation {

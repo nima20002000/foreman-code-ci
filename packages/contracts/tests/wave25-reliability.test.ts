@@ -8,7 +8,7 @@ import {
   NATIVE_GRAPH_EVIDENCE_MAX_BYTES, classifyGraphObservation, GraphRunStateSchema, GraphNodeStateSchema,
   assertGraphRunTransition, assertGraphNodeTransition, RunGraphSnapshotSchema, applyRunGraphPageFixture,
   NativeGraphActivityRecordSchema, NativeGraphCorrelationRecordSchema,
-} from '../src/wave25/index.js'
+} from '../src/current/index.js'
 
 const digest = 'sha256:' + 'a'.repeat(64)
 function fences() {

@@ -7,8 +7,7 @@ import type { getManagedHarnessCatalog } from '../../shared/api/client'
 type HarnessCatalog = Awaited<ReturnType<typeof getManagedHarnessCatalog>>
 import { defaultAgentForHarness } from '../agents/agentSettings'
 import { useGraphDraftStore } from '../graph/store'
-import { editorAgents } from '../graph/nextDraft/agentEdits'
-import type { NextDraftEdit } from '../graph/nextDraft/state'
+import { editorAgents, type NextDraftEdit } from '../board-core'
 import { currentBoardView, pinBoardLayout, placeNewNode } from '../graph/nextDraft/placement'
 import { hierarchyNodes, stageHierarchyAgent } from './authoring'
 

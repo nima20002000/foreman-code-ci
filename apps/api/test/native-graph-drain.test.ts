@@ -4,13 +4,13 @@ import { cleanupTimeoutMs } from '../src/modules/interactions/cleanup.js'
 import { DomainError } from '../src/modules/errors.js'
 import { executeRepeatRuntime, type RepeatRuntimeLifecycle } from '../src/modules/runs/repeatRuntime.js'
 import { WorkExecutionFailure } from '../src/modules/runs/workExecutionFailure.js'
-import { a1Scenario, graphHarness } from './helpers/graphScenarioHarness.js'
+import { graphScenario, graphHarness } from './helpers/graphScenarioHarness.js'
 
 // Real LangGraph/checkpointer; native and persistence are deterministic unit ports.
 it('keeps a healthy sibling observing beyond the cleanup deadline during a pending native boundary', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   try {
-    const f = a1Scenario('parallel')
+    const f = graphScenario('parallel')
     let reached!: () => void, pending = true
     const siblingStarted = new Promise<void>((resolve) => { reached = resolve })
     const h = graphHarness(f, { beforeObserve: async (execution, _ref, signal) => {
@@ -59,7 +59,7 @@ it('keeps a healthy sibling observing beyond the cleanup deadline during a pendi
 
 it.each(['EXECUTION_START_INTERRUPTED', 'APP_MCP_PREFLIGHT_FAILED'])(
   'retains the Run and its sibling when a retryable %s escapes native cleanup', async code => {
-    const f = a1Scenario('parallel')
+    const f = graphScenario('parallel')
     const failure = new DomainError(code, 'The native attempt needs another observation.', 503)
     let started!: () => void
     const siblingStarted = new Promise<void>(resolve => { started = resolve })
@@ -108,7 +108,7 @@ it.each(['EXECUTION_START_INTERRUPTED', 'APP_MCP_PREFLIGHT_FAILED'])(
   })
 
 it('settles an exhausted work failure even when its original native cause was retryable', async () => {
-  const f = a1Scenario('single')
+  const f = graphScenario('single')
   const result = { outcome: 'failed' as const, error: {
     code: 'NATIVE_EXECUTION_FAILED', message: 'The native retry budget was exhausted.', retryable: true,
   } }

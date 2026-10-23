@@ -1,5 +1,5 @@
 import { readActivityAcknowledgment } from './activityAcknowledgment.js'
-import { withTransaction, beginTransaction, commitTransaction, rollbackAfterFailure } from '../../infrastructure/transaction.js'
+import { withTransaction, rollbackAfterFailure } from '../../infrastructure/transaction.js'
 import {
   DurableInteractionSchema,
   InteractionRecoveryQuerySchema,
@@ -208,62 +208,64 @@ export class PostgresInteractionRepository {
   }): Promise<DecisionResult> {
     const response = DurableInteractionSchema.shape.nativeResponse.unwrap().parse(input.nativeResponse)
     const client = await this.pool.connect()
-    let committing = false
+    let commitFailed = false
     let releaseError: Error | undefined
     try {
-      await beginTransaction(client)
-      let principal: ManagementPrincipal | undefined
-      let targetRunId: string | undefined
-      if (input.principal) {
-        const target = await client.query<{ run_id: string }>('select run_id from durable_interactions where id=$1', [input.id])
-        targetRunId = target.rows[0]?.run_id
-        principal = await lockActiveWorkerPrincipal(client, input.principal, targetRunId, 'update')
-      }
-      const found = await client.query<{ record: unknown }>('select record from durable_interactions where id=$1 for update', [input.id])
-      const current = found.rows[0] ? DurableInteractionSchema.parse(found.rows[0].record) : undefined
-      if (!current) throw new DomainError('INTERACTION_NOT_FOUND', 'The interaction was not found.', 404)
-      if (principal) {
-        requireRespondableInteraction(principal, current)
-        if (current.runId !== targetRunId) throw new DomainError('INTERACTION_NOT_FOUND', 'The interaction was not found.', 404)
-      }
-      await assertOrchestratorGraphAuthority(client, current, principal ? { principalId: principal.id } : {})
-      if (current.status === 'canceled') throw new DomainError('INTERACTION_CANCELED', 'The interaction was canceled.', 409)
-      if (current.status !== 'pending') {
-        if (current.selectedOptionId === input.optionId) {
-          const result = { interaction: current, replayed: true }
-          await input.beforeCommit?.(client, result)
-          if (principal) await requireActiveWorkerBinding(client, principal.id)
-          committing = true
-          await commitTransaction(client)
-          return result
+      return await withTransaction({ client }, async () => {
+        let principal: ManagementPrincipal | undefined
+        let targetRunId: string | undefined
+        if (input.principal) {
+          const target = await client.query<{ run_id: string }>('select run_id from durable_interactions where id=$1', [input.id])
+          targetRunId = target.rows[0]?.run_id
+          principal = await lockActiveWorkerPrincipal(client, input.principal, targetRunId, 'update')
         }
-        throw new DomainError('INTERACTION_ALREADY_DECIDED', 'The interaction already has a different decision.', 409)
-      }
-      if (current.revision !== input.expectedRevision) throw new DomainError('REVISION_CONFLICT', 'The interaction changed since it was read.', 409, { currentRevision: current.revision })
-      const option = current.responseOptions.find((candidate) => candidate.optionId === input.optionId)
-      if (!option) throw new DomainError('INTERACTION_OPTION_INVALID', 'The response option is not valid for this interaction.', 409)
-      const now = new Date().toISOString()
-      const next = DurableInteractionSchema.parse({
-        ...current, revision: current.revision + 1, status: 'delivery_pending',
-        selectedOptionId: option.optionId, selectedSemantic: option.semantic,
-        nativeResponse: principal ? { optionId: option.optionId, semantic: option.semantic } : response, deliveryState: 'pending',
-        ...(input.auditReference ? { auditReference: input.auditReference } : {}),
-        decidedAt: now, updatedAt: now,
+        const found = await client.query<{ record: unknown }>('select record from durable_interactions where id=$1 for update', [input.id])
+        const current = found.rows[0] ? DurableInteractionSchema.parse(found.rows[0].record) : undefined
+        if (!current) throw new DomainError('INTERACTION_NOT_FOUND', 'The interaction was not found.', 404)
+        if (principal) {
+          requireRespondableInteraction(principal, current)
+          if (current.runId !== targetRunId) throw new DomainError('INTERACTION_NOT_FOUND', 'The interaction was not found.', 404)
+        }
+        await assertOrchestratorGraphAuthority(client, current, principal ? { principalId: principal.id } : {})
+        if (current.status === 'canceled') throw new DomainError('INTERACTION_CANCELED', 'The interaction was canceled.', 409)
+        if (current.status !== 'pending') {
+          if (current.selectedOptionId === input.optionId) {
+            const result = { interaction: current, replayed: true }
+            await input.beforeCommit?.(client, result)
+            if (principal) await requireActiveWorkerBinding(client, principal.id)
+            return result
+          }
+          throw new DomainError('INTERACTION_ALREADY_DECIDED', 'The interaction already has a different decision.', 409)
+        }
+        if (current.revision !== input.expectedRevision) throw new DomainError('REVISION_CONFLICT', 'The interaction changed since it was read.', 409, { currentRevision: current.revision })
+        const option = current.responseOptions.find((candidate) => candidate.optionId === input.optionId)
+        if (!option) throw new DomainError('INTERACTION_OPTION_INVALID', 'The response option is not valid for this interaction.', 409)
+        const now = new Date().toISOString()
+        const next = DurableInteractionSchema.parse({
+          ...current, revision: current.revision + 1, status: 'delivery_pending',
+          selectedOptionId: option.optionId, selectedSemantic: option.semantic,
+          nativeResponse: principal ? { optionId: option.optionId, semantic: option.semantic } : response, deliveryState: 'pending',
+          ...(input.auditReference ? { auditReference: input.auditReference } : {}),
+          decidedAt: now, updatedAt: now,
+        })
+        const updated = await client.query(
+          `update durable_interactions set status=$2, revision=$3, record=$4::jsonb, updated_at=now()
+           where id=$1 and revision=$5`, [next.id, next.status, next.revision, JSON.stringify(next), current.revision],
+        )
+        if (updated.rowCount !== 1) throw new DomainError('REVISION_CONFLICT', 'The interaction changed during the decision.', 409)
+        const result = { interaction: next, replayed: false }
+        await input.beforeCommit?.(client, result)
+        if (principal) await requireActiveWorkerBinding(client, principal.id)
+        return result
+      }, {
+        rollback: async (connection, { phase }) => {
+          commitFailed = phase === 'commit'
+          releaseError = await rollbackAfterFailure(connection)
+          return releaseError
+        },
       })
-      const updated = await client.query(
-        `update durable_interactions set status=$2, revision=$3, record=$4::jsonb, updated_at=now()
-         where id=$1 and revision=$5`, [next.id, next.status, next.revision, JSON.stringify(next), current.revision],
-      )
-      if (updated.rowCount !== 1) throw new DomainError('REVISION_CONFLICT', 'The interaction changed during the decision.', 409)
-      const result = { interaction: next, replayed: false }
-      await input.beforeCommit?.(client, result)
-      if (principal) await requireActiveWorkerBinding(client, principal.id)
-      committing = true
-      await commitTransaction(client)
-      return result
     } catch (error) {
-      releaseError = await rollbackAfterFailure(client)
-      if (committing) {
+      if (commitFailed) {
         throw new DomainError('INTERACTION_DECISION_STATUS_UNKNOWN', 'Decision commit could not be confirmed. Read the interaction before retrying; the decision may already have committed.', 503, undefined, { cause: error })
       }
       throw error

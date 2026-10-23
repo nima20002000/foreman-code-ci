@@ -2,12 +2,12 @@ import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { AgentBranchPrefixSchema, AgentWorktreeSettingsSchema,
   SourceRootReferenceSchema, WorkflowWorktreeSettingsSchema } from './worktreeSettings.js'
-import { CurrentWorkflowCreateInputSchema } from './wave25/currentAuthoring.js'
-import { GraphDraftOperationV3Schema } from './wave25/currentBoardAuthoring.js'
-import { CurrentWorkflowNodeSchema, WorkflowDefinitionV3Schema } from './wave25/workflowShape.js'
-import { makeCurrentWorkflowFixture } from './wave25/currentFixture.js'
-import { sameExecutableWorkflow } from './wave25/meaningfulEdit.js'
-import { workflowRequiresWorkspaceDirectory, workflowUsesAgentPlacements } from './wave25/workflowExecutionLocation.js'
+import { CurrentWorkflowCreateInputSchema } from './current/currentAuthoring.js'
+import { GraphDraftOperationCurrentSchema } from './current/currentBoardAuthoring.js'
+import { CurrentWorkflowNodeSchema, WorkflowDefinitionCurrentSchema } from './current/workflowShape.js'
+import { makeCurrentWorkflowFixture } from './current/currentFixture.js'
+import { sameExecutableWorkflow } from './current/meaningfulEdit.js'
+import { workflowRequiresWorkspaceDirectory, workflowUsesAgentPlacements } from './current/workflowExecutionLocation.js'
 
 const rootBinding = { rootId: randomUUID(), bindingRevision: 1 }
 
@@ -32,7 +32,7 @@ describe('workflow worktree contracts', () => {
 
   it('keeps absent historical settings absent and distinguishes creation opt-out', () => {
     const definition = makeCurrentWorkflowFixture().version.definition
-    expect(WorkflowDefinitionV3Schema.parse(definition)).not.toHaveProperty('defaultWorktree')
+    expect(WorkflowDefinitionCurrentSchema.parse(definition)).not.toHaveProperty('defaultWorktree')
     const create = { workspaceId: definition.workspaceId, commandId: randomUUID(), name: 'Example' }
     expect(CurrentWorkflowCreateInputSchema.parse(create)).not.toHaveProperty('defaultWorktree')
     expect(CurrentWorkflowCreateInputSchema.parse({ ...create, defaultWorktree: null })).toHaveProperty('defaultWorktree', null)
@@ -55,7 +55,7 @@ describe('workflow worktree contracts', () => {
   })
 
   it('allows clearing a draft default and rejects Agent settings on Jobs', () => {
-    expect(GraphDraftOperationV3Schema.parse({ type: 'workflow.set_worktree', worktree: null }))
+    expect(GraphDraftOperationCurrentSchema.parse({ type: 'workflow.set_worktree', worktree: null }))
       .toEqual({ type: 'workflow.set_worktree', worktree: null })
     const job = { kind: 'job' as const, id: 'job', name: 'Build', jobDefinitionId: 'build',
       jobDefinitionRevision: 1, jobDefinitionVersionId: 'build-version' }

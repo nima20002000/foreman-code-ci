@@ -9,7 +9,7 @@ import {
   CurrentWorkflowReadResultSchema,
   SavedManagedWorkflowCommandResultSchema,
   type CurrentWorkflowSaveInput,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import { buildApp } from '../src/app.js'
 import { ProviderAccountConfigurationService } from '../src/modules/harnesses/providerAccountConfiguration.js'
 import { postgresEnabled } from './helpers/database.js'

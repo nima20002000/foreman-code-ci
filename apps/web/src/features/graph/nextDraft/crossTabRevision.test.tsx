@@ -1,13 +1,13 @@
 import { nativeNode } from '../../../shared/mocks/nativeFixtureTypes'
 import { journalRequest, journalIntent, savedJournal } from './nim2644Journal.fixture'
-import { boardStartClient } from '../../workflow-board/startClient'
+import { boardStartClient } from '../../workflow-board'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createStore } from 'zustand/vanilla'
-import { CURRENT_WORKFLOW_CAPABILITIES, GraphEditReadResultV3Schema,
-  type GraphEditReadResultV3, type GraphEditStageInputV3 } from '@foreman-code/contracts/wave25'
+import { CURRENT_WORKFLOW_CAPABILITIES, GraphEditReadResultCurrentSchema,
+  type GraphEditReadResultCurrent, type GraphEditStageInputCurrent } from '@foreman-code/contracts/current'
 import { ApiError } from '../../../shared/api/client'
 import { protectedKey } from '../../../shared/api/protectedChatStorage'
 import { queryKeys } from '../../../shared/api/query'
@@ -15,14 +15,17 @@ import { useGraphDraftStore } from '../store'
 import { NextDraftEditor } from './NextDraftEditor'
 import { acknowledgeEditIntentSnapshot } from './useGraphEditIntent'
 import { acknowledgeEditOutbox, readEditOutbox, reserveEditOutbox, storeEditSnapshot, type EditIntentOutbox } from './editIntentStorage'
-import { newNextDraft, nextDraftKey, type NextDraftEdit } from './state'
+import { newNextDraft, nextDraftKey, type NextDraftEdit } from '../../board-core'
 import { nextDraftApi } from './transport'
 import { repairFixture } from './nim2644State.cases'
 
 // Mounted Query/Zustand transport regression. It models two browser tabs with
 // separate Zustand stores/session snapshot IDs and shared protected localStorage.
 // It is not authenticated HTTP, PostgreSQL, native Run, or browser-provider evidence.
-vi.mock('../../workflow-board/context', () => ({ useWorkflowBoard: () => ({ activeRuns: 1 }) }))
+vi.mock('../../board-core/context', async (original) => ({
+  ...await original<typeof import('../../board-core/context')>(),
+  useWorkflowBoard: () => ({ activeRuns: 1 }),
+}))
 vi.mock('../../../shared/api/settingsExperience', () => ({ useLocalHumanAccessQuery: () => ({ data: {
   principal: { expiresAt: '2099-01-01T00:00:00Z', grants: [{ actions: ['runs:start'], scope: {} }] },
 } }) }))
@@ -85,12 +88,12 @@ function outbox(current: NextDraftEdit, commandId: string): EditIntentOutbox {
   return { request: journalRequest(current, commandId), target: current.graph,
     ...(current.agentEdits ? { agentTarget: current.agentEdits } : {}) }
 }
-function savedRead(current: NextDraftEdit, submitted: EditIntentOutbox): GraphEditReadResultV3 {
-  return GraphEditReadResultV3Schema.parse({ intent: savedJournal(journalIntent(submitted.request, current.context), 6),
+function savedRead(current: NextDraftEdit, submitted: EditIntentOutbox): GraphEditReadResultCurrent {
+  return GraphEditReadResultCurrentSchema.parse({ intent: savedJournal(journalIntent(submitted.request, current.context), 6),
     current: [], canStop: false, affectedSetChanged: false })
 }
 
-function stagedRead(request: GraphEditStageInputV3): GraphEditReadResultV3 {
+function stagedRead(request: GraphEditStageInputCurrent): GraphEditReadResultCurrent {
   const retained = readEditOutbox(key)!
   const context = edit().context
   expect(retained.request).toEqual(request)
@@ -98,7 +101,7 @@ function stagedRead(request: GraphEditStageInputV3): GraphEditReadResultV3 {
     workflowVersionId: context.draft.baseWorkflowVersionId!, executionSemanticsVersion: 3 as const,
     agentConfigurationVersionIds: { 'agent-0': 'configuration-agent-0' } }
   const intent = journalIntent(request, context, [pin])
-  return GraphEditReadResultV3Schema.parse({ intent, canStop: true, affectedSetChanged: false,
+  return GraphEditReadResultCurrentSchema.parse({ intent, canStop: true, affectedSetChanged: false,
     current: [{ pin, terminal: false, settled: false, outcome: 'pending', cleanupPending: false,
       nativePending: true, interactionPending: false, reviewPending: false }] })
 }

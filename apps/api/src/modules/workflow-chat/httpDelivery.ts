@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { DeliveryTargetSchema } from '@foreman-code/contracts'
 import type { FastifyInstance } from 'fastify'
-import { requirePrincipal } from '../access/http.js'
+import { requirePrincipal } from '../access/index.js'
 import { DomainError } from '../errors.js'
 import type { ChatDeliveryRouter } from './delivery.js'
 

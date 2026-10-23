@@ -3,8 +3,6 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import pg from 'pg'
-import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
-import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { expect, it, vi } from 'vitest'
 import { buildApp } from '../../app.js'
@@ -14,7 +12,7 @@ import type { ComputerMaintenance } from './maintenance.js'
 import { FleetMaintenanceService, type FleetSources } from './fleet.js'
 import type { OperatorServices } from '../../mcp/operator/types.js'
 
-it('reads persisted Worker publication errors through authenticated MCP and denies a caller without settings read', async () => {
+it('reads persisted Worker publication errors through authenticated HTTP and denies a caller without settings read', async () => {
   const parent = join(homedir(), '.cache', 'foreman-tmp')
   await mkdir(parent, { recursive: true })
   const directory = await mkdtemp(join(parent, 'worker-publication-'))
@@ -43,32 +41,20 @@ it('reads persisted Worker publication errors through authenticated MCP and deni
     readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
     operator: { access, services: { commands, computerMaintenance } as unknown as OperatorServices },
   })
-  const address = await app.listen({ host: '127.0.0.1', port: 0 })
-  const clients: Client[] = []
-  const connect = async (token: string) => {
-    const client = new Client({ name: 'worker-publication-test', version: '1' })
-    clients.push(client)
-    await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', address), {
-      authProvider: { token: async () => token },
-    }))
-    return client
-  }
+  const read = (token: string) => app.inject({ method: 'GET', url: '/api/management/computers/maintenance',
+    headers: { authorization: `Bearer ${token}` } })
   try {
-    const reader = await connect('reader')
-    const unauthorized = await connect('denied')
-    const result = await reader.callTool({ name: 'computers_maintenance_status', arguments: {} })
-    expect(result.isError).not.toBe(true)
-    expect(decodeMcpToolResult(result)).toMatchObject({ computers: [{ workerPublication: publication }] })
-    const rejection = await unauthorized.callTool({ name: 'computers_maintenance_status', arguments: {} })
-    expect(rejection.isError).toBe(true)
-    expect(recordDenied).toHaveBeenCalledWith(denied.id, 'mcp', 'computers_maintenance_status',
-      'mcp:computers_maintenance_status')
+    const result = await read('reader')
+    expect(result.statusCode).toBe(200)
+    expect(result.json()).toMatchObject({ computers: [{ workerPublication: publication }] })
+    const rejection = await read('denied')
+    expect(rejection.statusCode).toBe(403)
+    expect(recordDenied).toHaveBeenCalledWith(denied.id, 'http', 'computers_maintenance_status', mainId)
     const published = { ...publication, state: 'published', lastError: null }
     await writeFile(indexPath, JSON.stringify({ publication: published }))
-    const readback = await reader.callTool({ name: 'computers_maintenance_status', arguments: {} })
-    expect(decodeMcpToolResult(readback)).toMatchObject({ computers: [{ workerPublication: published }] })
+    const readback = await read('reader')
+    expect(readback.json()).toMatchObject({ computers: [{ workerPublication: published }] })
   } finally {
-    await Promise.all(clients.map(client => client.close()))
     await app.close()
     await pool.end()
     vi.restoreAllMocks()

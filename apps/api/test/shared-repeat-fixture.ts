@@ -1,14 +1,14 @@
 import { createHash } from 'node:crypto'
 import {
-  makeCurrentWorkflowFixture, WorkflowVersionV3Schema, WorkflowRunV3Schema, canonicalGraphJson,
-} from '@foreman-code/contracts/wave25'
+  makeCurrentWorkflowFixture, WorkflowVersionCurrentSchema, WorkflowRunCurrentSchema, canonicalGraphJson,
+} from '@foreman-code/contracts/current'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 
 /** SQL-shaped tests only. No live DB, credentials or native session. */
 export function sharedFixture() {
   const f = makeCurrentWorkflowFixture('eng04-shared-api')
   const entry = f.version.definition.nodes[0]!, exit = f.version.definition.nodes[1]!
-  const version = WorkflowVersionV3Schema.parse({ ...f.version, id: `${f.version.id}-v3`, executionSemanticsVersion: 3,
+  const version = WorkflowVersionCurrentSchema.parse({ ...f.version, id: `${f.version.id}-v3`, executionSemanticsVersion: 3,
     definition: { ...f.version.definition, executionSemanticsVersion: 3,
       nodes: [entry, { ...exit, choice: { outcomes: [
         { outcome: 'pass', target: { kind: 'branch_end' } }, { outcome: 'issues', target: { kind: 'branch_end' } },
@@ -23,7 +23,7 @@ export function sharedFixture() {
     identityHash: `sha256:${createHash('sha256').update('1:2').digest('hex')}` }
   const locationRow = { id: version.workspaceId, execution_location: { runnerId: location.runnerId, rootPath: location.rootPath },
     execution_location_identity: identity, location_revision: '4', archived_at: null }
-  const run = WorkflowRunV3Schema.parse({ ...f.run, workflowVersionId: version.id, executionSemanticsVersion: 3,
+  const run = WorkflowRunCurrentSchema.parse({ ...f.run, workflowVersionId: version.id, executionSemanticsVersion: 3,
     executionLocation: location, authorizationPrincipalId: 'synthetic-principal' })
   const versionRow = { id: version.id, workspace_id: version.workspaceId, workflow_id: version.workflowId,
     version: version.version, entry_node_id: version.entryNodeId, execution_semantics_version: 3, record: version }

@@ -7,15 +7,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { WorkflowDefinitionV3Schema, WorkflowRunV3Schema, makeCurrentWorkflowFixture, type GraphEditReadResultV3 } from '@foreman-code/contracts/wave25'
+import { WorkflowDefinitionCurrentSchema, WorkflowRunCurrentSchema, makeCurrentWorkflowFixture, type GraphEditReadResultCurrent } from '@foreman-code/contracts/current'
 import { routeTree } from '../../app/router'
 import { server } from '../../mocks/server'
 import { createCurrentBoardMock } from '../../shared/mocks/currentBoard'
 import { queryKeys } from '../../shared/api/query'
-import { useGraphDraftStore } from '../graph/store'
-import { nextDraftKey, nextDraftDirty } from '../graph/nextDraft/state'
-import { readEditOutbox } from '../graph/nextDraft/editIntentStorage'
-import { graphEditIntentKey } from '../graph/nextDraft/useGraphEditIntent'
+import { useGraphDraftStore, readEditOutbox, graphEditIntentKey } from '../graph'
+import { nextDraftKey, nextDraftDirty } from '../board-core'
 import { readBoardStart, clearBoardStartStorage } from './startOutbox'
 import { readBoardStop, clearBoardStopStorage } from './stopOutbox'
 
@@ -65,7 +63,7 @@ afterEach(() => {
 function fixture(form: Form) {
   const current = makeCurrentWorkflowFixture(`eng06-board-${++serial}`, form)
   const mock = createCurrentBoardMock({ workspaceId: current.scope.workspaceId, allowSimulatedStart: true })
-  const graph = WorkflowDefinitionV3Schema.parse({ ...current.version.definition,
+  const graph = WorkflowDefinitionCurrentSchema.parse({ ...current.version.definition,
     nodes: current.version.definition.nodes.map((node, index) => ({ ...node, agentId: mock.agents[index]!.id })),
   })
   mock.install(graph, true)
@@ -102,7 +100,7 @@ async function returnToDraft(user: ReturnType<typeof userEvent.setup>) {
 }
 function recover(f: Fixture, runId: string, state: 'running' | 'interrupted') {
   const detail = f.mock.runs.get(runId)!, current = f.mock.currents.get(runId)!
-  detail.run = WorkflowRunV3Schema.parse({ ...detail.run, executionState: state, outcome: 'pending' })
+  detail.run = WorkflowRunCurrentSchema.parse({ ...detail.run, executionState: state, outcome: 'pending' })
   detail.cleanupPending = false
   current.state.run = { ...current.state.run, executionState: state, outcome: 'pending', cleanupPending: false }
   current.asOfSequence = String(BigInt(current.asOfSequence) + 1n)
@@ -245,7 +243,7 @@ describe.each(forms)('%s Board recovery', (form) => {
     act(() => useGraphDraftStore.setState({ nextDrafts: {} }))
     const reopened = await mount(f, href)
     const draftId = useGraphDraftStore.getState().nextDrafts[f.key]!.context.draft.id
-    await waitFor(() => expect(reopened.query.getQueryData<GraphEditReadResultV3>(
+    await waitFor(() => expect(reopened.query.getQueryData<GraphEditReadResultCurrent>(
       graphEditIntentKey(f.mock.workspaceId, f.workflowId, draftId))?.intent?.id).toBe(intent.id))
     expect(readEditOutbox(f.key)).toEqual(retained)
     expect(nativeNode(useGraphDraftStore.getState().nextDrafts[f.key]!.graph.nodes[0]!).initialPrompt)

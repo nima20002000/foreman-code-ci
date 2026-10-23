@@ -7,7 +7,7 @@ import { z } from 'zod'
 import type { MaintenancePorts } from './maintenancePorts.js'
 import {
   readInstalledWorkflowConfiguration, type InstalledWorkflowConfigurationLocation,
-} from '../runs/remote/installedWorkflowConfiguration.js'
+} from '../runs/index.js'
 import { hostEnvironment, runProcessSettled } from '../../shared/process.js'
 
 /** Where `npm install --global --prefix ~/.local @openai/codex` puts the platform's native Codex binaries. */

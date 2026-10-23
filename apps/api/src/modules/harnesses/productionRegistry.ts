@@ -2,7 +2,7 @@ import type { discoverInstalledClaudeSdk } from './claudeSdk/currentPin.js'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import { harnessConnectionGeneration, harnessSessionConnectionGeneration, matchesHarnessConnectionGeneration } from './hostConnectionGeneration.js'
 import type pg from 'pg'
-import { HarnessConfigurationSchema, RETIRED_OPENCODE_MESSAGE, withAdvancedDefaults, type HarnessDefaults } from '@foreman-code/contracts'
+import { HarnessConfigurationSchema, withAdvancedDefaults, type HarnessDefaults } from '@foreman-code/contracts'
 import { HarnessHostReferenceSchema, HarnessRegistryReadbackSchema, type HarnessRegistryReadback,
   type HostHarnessOverride, type HostHarnessProfileEvidence } from '@foreman-code/contracts/harness-registry'
 import type { CanonicalMachineReference } from '@foreman-code/contracts/device-identity'
@@ -19,6 +19,8 @@ import { HarnessInstallationRegistry, type HarnessInstallationRecord, type Regis
 import { projectHarnessRegistry, projectHarnessInstance } from './registryProjection.js'
 import { harnessHostKey } from './instanceSettings/repository.js'
 import type { HostHarnessProfileEvidenceRepository } from './instanceSettings/profileRepository.js'
+import { hostEnvironment } from '../../shared/process.js'
+import { retiredHarnessError } from './retiredHarness.js'
 
 /** Runtime inventory is a projection, not another host, process or authority
  * registry. Collectors run on lifecycle/explicit refresh; settings GET never probes. */
@@ -53,10 +55,9 @@ export class ProductionHarnessRegistry {
     private readonly managedDefaults: (client?: pg.ClientBase) => Promise<{ revision: number; defaults: HarnessDefaults; retiredDefaults?: ConfiguredHarnessInstance[] }>,
     private readonly profiles: HostHarnessProfileEvidenceRepository,
     private readonly currentRemoteBinding: (deviceId: string) => DeviceSessionBinding | null,
-    private readonly environment: NodeJS.ProcessEnv = process.env,
+    private readonly environment: NodeJS.ProcessEnv = hostEnvironment(),
     private readonly discovery: { launcher: typeof discoverLauncher; payloads: typeof passiveDriverPayloads;
-      claude?: (host: Extract<CanonicalMachineReference, { kind: 'main' }>, environment: TargetEnvironment, signal?: AbortSignal)
-        => Promise<Awaited<ReturnType<typeof discoverInstalledClaudeSdk>> | { unavailable: string } | null> }
+      claude?: (host: Extract<CanonicalMachineReference, { kind: 'main' }>, environment: TargetEnvironment, signal?: AbortSignal) => Promise<Awaited<ReturnType<typeof discoverInstalledClaudeSdk>> | null> }
       = { launcher: discoverInventoryLauncher, payloads: inventoryDriverPayloads },
     private readonly collectingBinding: (deviceId: string) => DeviceSessionBinding | null = currentRemoteBinding,
     private readonly connection: (deviceId: string) => DevicePresence | null = () => null) {}
@@ -112,12 +113,10 @@ export class ProductionHarnessRegistry {
     const records: HarnessInstallationRecord[] = []
     for (const driver of localHarnessDrivers) {
       if (driver.driverId === 'claude') {
-        const result = await this.discovery.claude?.(hostRef, environment, signal)
+        const discovered = await this.discovery.claude?.(hostRef, environment, signal)
         this.assertOpen(); signal?.throwIfAborted()
-        const discovered = result && !('unavailable' in result) ? result : undefined
         const launcher = discovered?.launcher ?? { requested: 'installed Claude SDK native executable', resolvedLauncher: null,
-          fingerprint: null, status: 'missing' as const, interpreter: null, diagnostics: ['The actual installed Claude SDK native declaration is unavailable.',
-            ...(result && 'unavailable' in result ? [result.unavailable] : [])],
+          fingerprint: null, status: 'missing' as const, interpreter: null, diagnostics: ['The actual installed Claude SDK native declaration is unavailable.'],
           environment, checkedAt: new Date().toISOString() }
         records.push({ hostRef, harnessInstallationId: discovered?.declaration.harnessInstallationId
           ?? commandInputHash({ hostRef, driverId: driver.driverId, unavailable: 'sdk-native-declaration' }),
@@ -170,7 +169,7 @@ export class ProductionHarnessRegistry {
   // in-flight launches revalidate their original selection until the engine detaches them for restart.
   pinAccepted(configuration: { id: string; agentId: string; harness: unknown }): RegistryHarnessSelection {
     const value = HarnessConfigurationSchema.parse(configuration.harness)
-    if (value.harness === 'opencode') throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
+    if (value.harness === 'opencode') throw retiredHarnessError()
     const instance: ConfiguredHarnessInstance = { instanceId: configuration.id, instanceRevision: configuration.id,
       driverId: value.harness, enabled: true, configuration: value }
     const prior = this.accepted.get(instance.instanceId)
@@ -193,8 +192,7 @@ export class ProductionHarnessRegistry {
       environmentGeneration: this.targetEnvironment().generation })
   }
   pinOverride(value: HostHarnessOverride): RegistryHarnessSelection {
-    if (value.driverId === 'opencode' || value.configuration.harness === 'opencode') throw new DomainError(
-      'HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
+    if (value.driverId === 'opencode' || value.configuration.harness === 'opencode') throw retiredHarnessError()
     const instance: ConfiguredHarnessInstance = { instanceId: value.instanceId, instanceRevision: value.instanceRevision,
       driverId: value.driverId, enabled: value.enabled, configuration: value.configuration }
     const hostRef = value.target.hostRef

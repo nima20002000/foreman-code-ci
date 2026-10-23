@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture, type AcceptedWorkflowRunV3, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, type AcceptedWorkflowRunCurrent, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 import type { RunOwnership } from '../runs/ownership.js'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { workflowExecutionRequest } from '../runs/workflowExecutionRequest.js'
 import { workflowMemoryDigestPrompt } from './workflowPreparation.js'
 import { WorkflowCollaborationIntegration } from './workflowIntegration.js'
@@ -16,7 +16,7 @@ describe('workflow collaboration public preparation boundaries', () => {
     const execution = HarnessExecutionSchema.parse({ ...identity, id: executionId,
       runId: saved.run.id, state: 'queued', input: {}, createdAt: saved.createdAt })
     const integration = new WorkflowCollaborationIntegration(undefined, async () => { throw new Error('Disabled browser discovered a host') })
-    await integration.prepare(owner, saved.run as AcceptedWorkflowRunV3, saved.version, execution)
+    await integration.prepare(owner, saved.run as AcceptedWorkflowRunCurrent, saved.version, execution)
     expect(await integration.readPrompt(owner, execution, saved.version)).toBeUndefined()
     await integration.release(owner, execution, 'stop', saved.version)
   })
@@ -31,8 +31,8 @@ describe('workflow collaboration public preparation boundaries', () => {
       prepare: async () => { throw new Error('Disabled browser prepared a session') },
       release: async () => { throw new Error('Disabled browser released a session') },
     } }, async () => { throw new Error('Disabled browser discovered a computer') })
-    await integration.prepare(owner, saved.run as AcceptedWorkflowRunV3, saved.version, execution)
-    const read: (owner: RunOwnership, execution: ReturnType<typeof HarnessExecutionSchema.parse>, version: WorkflowVersionV3) => Promise<string | undefined>
+    await integration.prepare(owner, saved.run as AcceptedWorkflowRunCurrent, saved.version, execution)
+    const read: (owner: RunOwnership, execution: ReturnType<typeof HarnessExecutionSchema.parse>, version: WorkflowVersionCurrent) => Promise<string | undefined>
       = integration.readPrompt.bind(integration)
     await expect(read(owner, execution, saved.version)).resolves.toBeUndefined()
     await integration.release(owner, execution, 'stop', saved.version)
@@ -43,7 +43,7 @@ describe('workflow collaboration public preparation boundaries', () => {
     const { executionId, ...identity } = saved.identities[0]!
     const execution = HarnessExecutionSchema.parse({ ...identity, id: executionId,
       runId: saved.run.id, state: 'queued', input: {}, createdAt: saved.createdAt })
-    const transaction = new Proxy({}, { get(): never { throw new Error('Historical Run touched a new transaction seam') } }) as GraphTransactionSql
+    const transaction = new Proxy({}, { get(): never { throw new Error('Historical Run touched a new transaction seam') } }) as SqlTransaction
     const hooks = createWorkflowCollaborationHooks()
     const input = { run: saved.run, version: saved.version, execution, sourceEventKey: 'old-event' }
     await hooks.lifecycleLocked(transaction, { ...input, phase: 'admitted' })

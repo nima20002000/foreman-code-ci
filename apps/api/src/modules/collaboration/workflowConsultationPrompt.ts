@@ -1,7 +1,7 @@
 import { canonicalJson, effectiveGraphqlTools, type AgentConfigurationVersion,
   type ChatSendRequest } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
-import { workflowChatInputPrompt } from '../interactions/workflowChatInput.js'
+import { workflowChatInputPrompt } from '../interactions/index.js'
 import { readWorkflowCollaborationPromptLocked } from './workflowPreparation.js'
 import type { WorkflowChatLockedTarget } from './workflowControlTypes.js'
 

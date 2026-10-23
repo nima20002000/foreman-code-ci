@@ -3,7 +3,7 @@ import {
 } from '@foreman-code/contracts/resource-telemetry'
 import { newCollectorGeneration } from './collector/lifecycle.js'
 import { createLinuxResourceCollector } from './collector/ports.js'
-import { trackService } from '../diagnostics/serviceHealth.js'
+import { trackService } from '../diagnostics/index.js'
 import { passiveRegistryOwnershipReader, type PassiveNativeRegistry, type TrustedNativeScopes } from './collector/registryAdapter.js'
 import { ResourceTelemetryService, TelemetryRejected } from './ingestion/service.js'
 import type { TelemetryClock, TelemetryOwnershipReader, TelemetryReadAuthority, TelemetrySessionReader } from './ingestion/ports.js'

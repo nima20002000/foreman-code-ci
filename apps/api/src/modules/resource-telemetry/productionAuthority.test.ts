@@ -5,7 +5,7 @@ import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node'
 import type pg from 'pg'
 import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
-import { AcceptedWorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
 import type { HarnessExecution, NativeSessionLane, NativeSessionReference } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { DevicePresence, DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
@@ -73,7 +73,7 @@ function source(index = 1) {
       protocolRevision: '1', credentialScopeRefs: [] } })
   const intent = deriveDispatch(placement, { executionId: execution.id, occurrenceId: null, occurrenceIndex: 0, technicalAttempt: execution.attempt,
     attemptId: `actual-attempt-uuid-${index}`, operationId: `actual-operation-${index}`, owner: { grantId: `actual-grant-${index}`, epoch: '3' }, inputDigest: `sha256:${'e'.repeat(64)}` })
-  const run = AcceptedWorkflowRunV3Schema.parse({ id: execution.runId, workspaceId: `workspace-${index}`, workflowId: `workflow-${index}`,
+  const run = AcceptedWorkflowRunCurrentSchema.parse({ id: execution.runId, workspaceId: `workspace-${index}`, workflowId: `workflow-${index}`,
     workflowVersionId: `version-${index}`, executionSemanticsVersion: 3, agentConfigurationVersionIds: { [execution.agentId]: execution.agentConfigurationVersionId },
     approval: { handler: 'user' }, executionCondition: { kind: 'manual' }, executionState: 'running', outcome: 'pending', input: {},
     createdAt: execution.createdAt, authorizationPrincipalId: 'actual-principal',

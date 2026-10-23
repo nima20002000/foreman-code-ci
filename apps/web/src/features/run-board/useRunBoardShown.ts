@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { SelectedRunState } from '../runs-selector/useSelectedRun'
+import type { SelectedRunState } from '../runs-selector'
 import { useRunBoardReady } from './useRunBoardReady'
 
 /** How long the draft may stay up while a started Run is read; a slower read shows the Run board's own loading. */

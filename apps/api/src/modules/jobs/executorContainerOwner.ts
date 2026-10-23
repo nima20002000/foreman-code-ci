@@ -1,10 +1,10 @@
 import { constants } from 'node:fs'
 import { open, readFile, realpath, statfs } from 'node:fs/promises'
 import { normalize } from 'node:path'
-import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson } from '@foreman-code/contracts/current'
 import type { JobRuntimeNativeAdmissionRecord } from '@foreman-code/contracts/job-verification-runtime'
 import type { ChildProcess } from 'node:child_process'
-import { ignoreError, logIgnoredError } from '../diagnostics/ignoredError.js'
+import { ignoreError, logIgnoredError } from '../diagnostics/index.js'
 
 export interface PodmanCommandRunner {
   run(argv: string[], timeoutMs?: number): Promise<{ exitCode: number; stdout: string }>

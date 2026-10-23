@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { AgentConfigurationVersionSchema, HarnessExecutionSchema, DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
-import { ExecutableWorkflowV3Schema, makeCurrentWorkflowFixture, AcceptedWorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
+import { ExecutableWorkflowCurrentSchema, makeCurrentWorkflowFixture, AcceptedWorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
 import { candidateFor } from './helpers/workflowDatabase.js'
-import type { GraphSqlClient } from '../src/modules/run-graph/connection.js'
+import type { SqlQuery } from '../src/infrastructure/transaction.js'
 import { assertOrchestratorGraphAuthority } from '../src/modules/interactions/graphAuthority.js'
 
 type AuthorityRequest = Parameters<typeof assertOrchestratorGraphAuthority>[1]
@@ -23,17 +23,17 @@ function authorityFixture() {
     } },
   }))
   const relationshipId = `approval-${worker.id}`
-  const version = ExecutableWorkflowV3Schema.parse({ configurations, version: {
+  const version = ExecutableWorkflowCurrentSchema.parse({ configurations, version: {
     ...f.version, approval, definition: { ...f.version.definition, approval,
       edges: [...f.version.definition.edges, { id: relationshipId, kind: 'approval', source: entry.id, target: worker.id }] },
   } }).version
-  const run = AcceptedWorkflowRunV3Schema.parse({ ...f.run, approval, authorizationPrincipalId: 'fixture-author',
+  const run = AcceptedWorkflowRunCurrentSchema.parse({ ...f.run, approval, authorizationPrincipalId: 'fixture-author',
     executionLocation: { runnerId: 'local', rootPath: '/synthetic/authority', locationRevision: 1, identityHash: `sha256:${'1'.repeat(64)}` } })
   const execution = HarnessExecutionSchema.parse({ ...candidateFor(f, worker.id), state: 'running', nativeSessionId: 'ses_br1002_worker' })
   const row = { run_record: run, version_record: version, execution_record: execution,
     configuration_record: configurations[0], requester_configuration_record: configurations[1], workflow_node_id: worker.id }
   const query = vi.fn(async () => ({ rows: [row] }))
-  const client = { query } as unknown as GraphSqlClient
+  const client = { query } as unknown as SqlQuery
   const request: AuthorityRequest = { workspaceId: run.workspaceId, workflowId: run.workflowId, runId: run.id,
     executionId: execution.id, requestingAgentId: execution.agentId, approval,
     nativeSessionId: execution.nativeSessionId!, harness: 'codex' }

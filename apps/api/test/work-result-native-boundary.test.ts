@@ -3,8 +3,8 @@ import { mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { AgentConfigurationVersionSchema, HarnessExecutionSchema,
   type HarnessExecutionRequest } from '@foreman-code/contracts'
-import { AcceptedWorkflowRunV3Schema, makeCurrentWorkflowFixture, WorkActivationInputSchema,
-  WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema, makeCurrentWorkflowFixture, WorkActivationInputSchema,
+  WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { normalizeRepeatTerminal } from '../src/modules/runs/repeatNode.js'
 import { repeatNativeObserver } from '../src/modules/runs/repeatRuntime.js'
 import { RunnerAdmission } from '../src/modules/runs/runnerAdmission.js'
@@ -13,7 +13,7 @@ import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'
 describe('NIM-2691 native work result boundary', () => {
   it('preserves a complete typed work request and rejects prose without inventing a route', () => {
     const fixture = makeCurrentWorkflowFixture('work-native-result')
-    const version = WorkflowVersionV3Schema.parse({ ...fixture.version, definition: {
+    const version = WorkflowVersionCurrentSchema.parse({ ...fixture.version, definition: {
       ...fixture.version.definition, handoffs: { contractVersion: 1 },
       nodes: fixture.version.definition.nodes.map((node, index) => index === 0 ? {
         ...node, choice: { outcomes: [{ outcome: 'review',
@@ -39,10 +39,10 @@ describe('NIM-2691 native work result boundary', () => {
 
   it('does not submit an uncertain recovered activation without an exact native session', async () => {
     const fixture = makeCurrentWorkflowFixture('work-native-unknown')
-    const version = WorkflowVersionV3Schema.parse({ ...fixture.version, definition: {
+    const version = WorkflowVersionCurrentSchema.parse({ ...fixture.version, definition: {
       ...fixture.version.definition, handoffs: { contractVersion: 1 },
     } })
-    const run = AcceptedWorkflowRunV3Schema.parse({ ...fixture.run, authorizationPrincipalId: 'principal-unknown',
+    const run = AcceptedWorkflowRunCurrentSchema.parse({ ...fixture.run, authorizationPrincipalId: 'principal-unknown',
       executionLocation: { runnerId: 'runner-local', rootPath: '/tmp/nim2691-unknown-work',
         locationRevision: 1, identityHash: `sha256:${'1'.repeat(64)}` } })
     const node = version.definition.nodes[0]!
@@ -79,7 +79,7 @@ describe('NIM-2691 native work result boundary', () => {
 
   it.each(['codex'] as const)('delivers the received return correlation unchanged to %s', async () => {
     const fixture = makeCurrentWorkflowFixture('work-return-prompt')
-    const version = WorkflowVersionV3Schema.parse({ ...fixture.version, definition: {
+    const version = WorkflowVersionCurrentSchema.parse({ ...fixture.version, definition: {
       ...fixture.version.definition, handoffs: { contractVersion: 1 },
     } })
     const node = version.definition.nodes[1]!
@@ -103,7 +103,7 @@ describe('NIM-2691 native work result boundary', () => {
           acceptedSourceResult: { outcome: 'succeeded', output: { routing: { kind: 'finish' },
             data: { latestDeliverable: { revision: 0 }, remainingFindings: [] } } },
         } })
-      const run = AcceptedWorkflowRunV3Schema.parse({ ...fixture.run,
+      const run = AcceptedWorkflowRunCurrentSchema.parse({ ...fixture.run,
         authorizationPrincipalId: 'principal-return-prompt', executionLocation: {
           runnerId: 'runner-local', rootPath: directory, locationRevision: 1,
           identityHash: `sha256:${'2'.repeat(64)}`,

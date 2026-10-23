@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { withTransaction } from '../../infrastructure/transaction.js'
+import { withTransaction, type SqlQuery } from '../../infrastructure/transaction.js'
 import { isDeepStrictEqual } from 'node:util'
 import type pg from 'pg'
 import { readJobComputerSelection } from '../jobs/computerSelection.js'
@@ -9,11 +9,10 @@ import { SourcePreparationGetInputSchema, SourcePreparationReconcileInputSchema,
   SourcePreparationClosureSchema, SourceRootRecordSchema, SourceMaterializationRecordSchema,
   type SourcePreparationClosure } from '@foreman-code/contracts/source-admission'
 import { SourceOperationOwnerSchema, type SourceOperationOwner } from '@foreman-code/contracts/source-operations'
-import type { GraphSqlClient } from '../run-graph/connection.js'
-import type { PostgresCommandCoordinator } from '../commands/postgres.js'
+import type { PostgresCommandCoordinator } from '../commands/index.js'
 import { requireAuthorization } from '../access/policy.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
-import { assertDeviceHostInstallation } from '../devices/hostAuthorization.js'
+import { assertDeviceHostInstallation } from '../devices/index.js'
 import { DomainError } from '../errors.js'
 import { authorizeSource } from './authority.js'
 import { sourceBindingHash } from './bindingHash.js'
@@ -23,7 +22,7 @@ import { assertWorkflowPreparationClosed, loadWorkflowPreparation } from './work
 import { requireQueuedPreparationClosed } from './queuedPreparationAuthority.js'
 import { JobQueueTicketSchema, type JobQueueTicket } from '@foreman-code/contracts/job-admission'
 
-export async function loadSourcePreparation(sql: GraphSqlClient, workspaceId: string, operationId: string) {
+export async function loadSourcePreparation(sql: SqlQuery, workspaceId: string, operationId: string) {
   const row = (await sql.query<{ execution_id: string; attempt_id: string; principal_id: string; start_command_id: string; definition: unknown; created_at: Date; workflow_run_id: string | null;
     reservation_id: string; scope_id: string; reservation: SourceReservation; reservation_state: string; reserved_bytes: string; materialization: unknown | null;
     reconciliation_id: string | null; command_id: string | null; status: string | null; owner: unknown | null; closure: unknown | null }>(`with preparations as (
@@ -116,7 +115,7 @@ function metadata(state: State) {
     materializationId: state.record?.receipt.materializationId ?? closure?.materializationId ?? null,
     closure })
 }
-export async function admissionClosed(sql: GraphSqlClient, state: State) {
+export async function admissionClosed(sql: SqlQuery, state: State) {
   if (state.kind === 'workflow') return assertWorkflowPreparationClosed(sql, state)
   const job = (await sql.query<{ record: unknown }>('select record from job_executions where id=$1 or operation_id=$2 for share',
     [state.attempt.executionId, state.operationId])).rows[0]
@@ -165,12 +164,12 @@ export async function admissionClosed(sql: GraphSqlClient, state: State) {
   if (!ownerLost && !failure.rowCount && Date.now() - state.created_at.getTime() < state.definition.spec.policy.preparationTimeoutMs)
     throw new DomainError('SOURCE_PREPARATION_ACTIVE', 'The original Job preparation still has admission authority.', 409)
 }
-async function authorize(sql: GraphSqlClient, principal: ManagementPrincipal, workspaceId: string, write: boolean) {
+async function authorize(sql: SqlQuery, principal: ManagementPrincipal, workspaceId: string, write: boolean) {
   await authorizeSource(sql, principal, 'sources:read', workspaceId)
   await authorizeSource(sql, principal, 'source_roots:read', workspaceId)
   return write ? (await authorizeSource(sql, principal, 'sources:reconcile', workspaceId)).principal : principal
 }
-export async function requireSourcePreparationHost(sql: GraphSqlClient, state: State) {
+export async function requireSourcePreparationHost(sql: SqlQuery, state: State) {
   const root = state.root
   const policy = await sql.query('select 1 from workspace_root_policies where workspace_id=$1 and root_policy_id=$2 and root_policy_revision=$3 and revoked_at is null for share',
     [state.workspaceId, root.selection.rootPolicyId, root.selection.rootPolicyRevision])
@@ -182,7 +181,7 @@ export async function requireSourcePreparationHost(sql: GraphSqlClient, state: S
 }
 
 /** Cleanup authority is separate from the host's physical closure confirmation. */
-export async function resolvePreparationReconciliationOwner(sql: GraphSqlClient, reconciliationId: string) {
+export async function resolvePreparationReconciliationOwner(sql: SqlQuery, reconciliationId: string) {
   const row = (await sql.query<{ workspace_id: string; operation_id: string; principal_id: string;
     status: string; owner: unknown; queue_ticket_id: string | null }>(
     'select workspace_id,operation_id,principal_id,status,owner,queue_ticket_id from source_preparation_reconciliations where reconciliation_id=$1 for share', [reconciliationId])).rows[0]

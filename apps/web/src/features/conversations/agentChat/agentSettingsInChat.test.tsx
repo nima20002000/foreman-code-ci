@@ -7,7 +7,7 @@ import { agentChatFixtures, type AgentChatState } from '@foreman-code/contracts/
 import { AgentUpdateInputSchema, type AgentUpdateInput } from '@foreman-code/contracts/management'
 import { server } from '../../../mocks/server'
 import { agentChatTestActions } from '../../../shared/mocks/agentChatHandlers'
-import { defaultAgentForHarness } from '../../agents/agentSettings'
+import { defaultAgentForHarness } from '../../agents'
 import { savedClaudeConfiguration } from '../../settings/claudeSettings.fixtures'
 import { installChatSource, mountChat } from './testSupport'
 

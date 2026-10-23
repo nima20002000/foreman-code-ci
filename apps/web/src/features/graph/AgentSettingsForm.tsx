@@ -1,12 +1,12 @@
 import { InfoHint } from '../../shared/ui/InfoHint'
 import { errorMessage } from '../../shared/errorMessage'
-import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
+import { sameWorkflowValue } from '@foreman-code/contracts/current'
 import { SavedNodePlacementSchema, type SavedNodePlacement } from '@foreman-code/contracts/node-placement'
 import {
   AgentWorktreeSettingsSchema, type AgentWorktreeSettings, type WorkflowWorktreeSettings,
 } from '@foreman-code/contracts/worktree-settings'
-import { NodePlacementField, type NodePlacementOption, type UnavailableComputer } from '../node-placement/NodePlacementField'
-import type { AgentForm } from './nextDraft/agentForm'
+import { NodePlacementField, type NodePlacementOption, type UnavailableComputer } from '../node-placement'
+import type { AgentForm } from '../board-core'
 import { useUnsavedChanges } from '../../shared/ui/unsavedChanges'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
@@ -19,15 +19,15 @@ import { Alert, Button, Icon, IconButton, Select, Textarea, TextField } from '..
 import { configuredHarness, initialModel } from '../agents/agentSettings'
 import { useAgentDefaultsQuery, useHarnessDefaultsQuery, useManagedHarnessCatalogQuery } from '../../shared/api/query'
 import { ClaudeFullAccessConfigurationSchema } from '@foreman-code/contracts/claude'
-import { harnessNames, retiredHarnessLabel } from '../settings/settingsPresentation'
-import { HarnessConfigurationFields } from '../settings/HarnessConfigurationFields'
-import { createHarnessEditor, prepareHarnessEditor } from '../settings/harnessEditor'
-import { FieldValidationError, fieldMessage, focusFirstInvalid, issuesAt, validationIssues, type FieldIssue } from '../settings/fieldValidation'
-import { ProviderAccountSelect } from '../provider-accounts/ProviderAccountSelect'
+import {
+  harnessNames, retiredHarnessLabel, HarnessConfigurationFields, createHarnessEditor, prepareHarnessEditor,
+  FieldValidationError, fieldMessage, focusFirstInvalid, issuesAt, validationIssues, type FieldIssue,
+} from '../settings'
+import { ProviderAccountSelect } from '../provider-accounts'
 import { GraphqlToolsFields } from './GraphqlToolsFields'
 import { AgentHarnessRows, AgentMemoryRow, NodeRow } from './AgentMainFields'
 import { harnessSwitchPreset, switchAgentHarness } from './harnessSwitch'
-import { AgentSkillsField } from '../skills/AgentSkillsField'
+import { AgentSkillsField } from '../skills'
 import './agentSettingsPanel.css'
 
 /** What Save hands back: the edited Agent and this workflow node's own settings for it. */
@@ -41,55 +41,81 @@ export type AgentSettingsSave = {
   worktree?: AgentWorktreeSettings
 }
 
-type EditableAgentSettingsFormProps = {
-  /** Inside an agent popover: the popover owns the title and close button. */
-  embedded?: boolean
-  additionalDirty?: boolean
-  additionalFields?: ReactNode
-  /** Node rows shown with the main settings (browser). */
-  mainFields?: ReactNode
-  /** Node settings folded under More settings (workflow start, routes). */
-  moreFields?: ReactNode
+/** This workflow node's own settings for the Agent. */
+export type AgentSettingsNode = {
+  initialPrompt?: string
+  /** This node's change to the Agent's default Foreman Code MCP tools. */
+  graphqlTools?: GraphqlToolOverride
+  placement?: SavedNodePlacement
+  worktree?: AgentWorktreeSettings
+  executionPolicy?: WorkflowExecutionPolicy
+}
+
+/** The workflow the node belongs to. */
+export type AgentSettingsWorkflow = {
+  workspaceId?: string
+  approvalHandler?: ApprovalHandler
+  designatedOrchestrator?: boolean
+  worktree?: WorkflowWorktreeSettings
+  worktreeLabel?: string
+}
+
+/** Which computers the node can be placed on, and whether that choice can be changed right now. */
+export type AgentSettingsPlacementChoices = {
+  options?: readonly NodePlacementOption[]
+  optionsState?: 'ready' | 'loading' | 'unavailable'
   /** Paired computers that can't run this Agent, with the plain reason. */
   unavailableComputers?: readonly UnavailableComputer[]
   /** Why computer choices can't be read right now. */
-  placementNote?: string
-  nodePlacement?: SavedNodePlacement
-  nodeWorktree?: AgentWorktreeSettings
-  workflowWorktree?: WorkflowWorktreeSettings
-  workflowWorktreeLabel?: string
-  worktreeDisabled?: boolean
-  placementOptions?: readonly NodePlacementOption[]
+  note?: string
   /** Placement access was denied: hide its details but keep the retained draft base and edits. */
-  placementHidden?: boolean
-  placementOptionsState?: 'ready' | 'loading' | 'unavailable'
-  placementStage?: 'draft' | 'saved'
-  retainedForm?: AgentForm
-  onFormChange?(form: AgentForm): void
-  onDiscardForm?(): void
+  hidden?: boolean
+  /** Placement and branch prefix are locked while the workflow is busy. */
+  disabled?: boolean
+}
+
+/** A draft kept by the owner of the form, so edits survive closing and reopening it. */
+export type AgentSettingsDraft = {
+  retained?: AgentForm
+  onChange?(form: AgentForm): void
+  onDiscard?(): void
   canResume?(): boolean
+  /** The owner has unsaved changes beyond this form's own fields. */
+  extraDirty?: boolean
+}
+
+/** Rows the owner adds to the form. */
+export type AgentSettingsSlots = {
+  /** Node rows shown with the main settings (browser). */
+  main?: ReactNode
+  /** Node settings folded under More settings (workflow start, routes). */
+  more?: ReactNode
+  /** Extra fields inside More settings. */
+  additional?: ReactNode
+}
+
+type AgentSettingsFormProps = {
   agent: Agent
-  initialPrompt?: string
-  /** This workflow node's change to the Agent's default Foreman Code MCP tools. */
-  nodeGraphqlTools?: GraphqlToolOverride
+  /** Inside an agent popover: the popover owns the title and close button. */
+  embedded?: boolean
   creationDefaults?: HarnessDefaults
+  node?: AgentSettingsNode
+  workflow?: AgentSettingsWorkflow
+  placementChoices?: AgentSettingsPlacementChoices
+  draft?: AgentSettingsDraft
+  slots?: AgentSettingsSlots
   onClose(): void
   onRemove?(): void
   /** Embedded on the Board: Save applies these settings and then saves the whole workflow. */
   onSaveWorkflow?(): void
   onSave(value: AgentSettingsSave): void
-  executionPolicy?: WorkflowExecutionPolicy
-  workflowNodeCount?: number
-  workspaceId?: string
-  workflowApprovalHandler?: ApprovalHandler
-  designatedOrchestrator?: boolean
 }
 
-function useAgentSettingsForm({ agent, initialPrompt, nodeGraphqlTools, creationDefaults, onClose, onSave, retainedForm, onFormChange, onDiscardForm, canResume, additionalDirty = false,
-  nodePlacement, nodeWorktree,
-  executionPolicy = { maxNodeExecutions: 1, maxParallelism: 1 },
-  workflowApprovalHandler, designatedOrchestrator = false,
-}: EditableAgentSettingsFormProps) {
+function useAgentSettingsForm({ agent, creationDefaults, node = {}, workflow = {}, draft = {}, onClose, onSave }: AgentSettingsFormProps) {
+  const { initialPrompt, graphqlTools: nodeGraphqlTools, placement: nodePlacement, worktree: nodeWorktree,
+    executionPolicy = { maxNodeExecutions: 1, maxParallelism: 1 } } = node
+  const { approvalHandler: workflowApprovalHandler, designatedOrchestrator = false } = workflow
+  const { retained: retainedForm, onChange: onFormChange, onDiscard: onDiscardForm, canResume, extraDirty: additionalDirty = false } = draft
   const [localName, setLocalName] = useState(agent.name)
   const [localPrompt, setLocalPrompt] = useState(initialPrompt ?? '')
   const [localGraphqlTools, setLocalGraphqlTools] = useState<NonNullable<AgentForm['graphqlTools']>>(() => ({
@@ -235,10 +261,13 @@ const markedField = (path: readonly PropertyKey[]) => {
   return mainFields.has(key) || moreFields.has(key) || key.startsWith('harness.advanced.')
 }
 
-function EditableAgentSettingsForm(props: EditableAgentSettingsFormProps) {
-  const { agent, onClose, onRemove, onFormChange, nodePlacement, workflowWorktree, workflowWorktreeLabel, worktreeDisabled,
-    placementOptions, placementHidden, placementOptionsState, workspaceId, workflowApprovalHandler, embedded = false,
-    additionalFields, mainFields, moreFields, unavailableComputers, placementNote } = props
+function EditableAgentSettingsForm(props: AgentSettingsFormProps) {
+  const { agent, onClose, onRemove, onSaveWorkflow, embedded = false, node = {}, workflow = {}, placementChoices = {},
+    draft = {}, slots = {} } = props
+  const { workspaceId, approvalHandler: workflowApprovalHandler, worktree: workflowWorktree, worktreeLabel: workflowWorktreeLabel } = workflow
+  const { options: placementOptions, optionsState: placementOptionsState, unavailableComputers, note: placementNote,
+    hidden: placementHidden, disabled: worktreeDisabled } = placementChoices
+  const { onChange: onFormChange, onDiscard: onDiscardForm } = draft
   const form = useAgentSettingsForm(props)
   const { error, issues, moreOpen, setMoreOpen, root, setLocalPlacement, setLocalPrefix, name, prompt, editor, placement,
     branchPrefix, graphqlTools, instructions, skills, changeForm, setName, setPrompt, setGraphqlTools,
@@ -249,7 +278,7 @@ function EditableAgentSettingsForm(props: EditableAgentSettingsFormProps) {
   const changeTools = (defaults: Parameters<typeof setGraphqlTools>[0]['defaults'], override: Parameters<typeof setGraphqlTools>[0]['override']) => {
     setGraphqlTools({ ...(defaults ? { defaults } : {}), ...(override ? { override } : {}) }); clearErrors()
   }
-  const showPlacement = !placementHidden && Boolean(workspaceId || nodePlacement || placementOptions)
+  const showPlacement = !placementHidden && Boolean(workspaceId || node.placement || placementOptions)
   return <div ref={root} className={`agent-settings-panel${embedded ? ' agent-settings-panel-embedded' : ''}`}>
     {embedded ? null : <header className="agent-settings-heading">
       <div className="agent-settings-title"><strong>Agent settings</strong></div>
@@ -266,7 +295,7 @@ function EditableAgentSettingsForm(props: EditableAgentSettingsFormProps) {
             onChange={(event) => switchHarness(AgentHarnessSchema.parse(event.target.value))} />
         </NodeRow>
         <AgentHarnessRows value={configuration} issues={harnessIssues} onChange={updateConfiguration} accountHost={placement?.hostRef} />
-        {mainFields}
+        {slots.main}
         <AgentMemoryRow role={role} defaults={graphqlTools.defaults} override={graphqlTools.override} readOnly={readOnly} onChange={changeTools} />
         {showPlacement ? <NodePlacementField value={placement} options={placementOptions ?? []} unavailableComputers={unavailableComputers}
           optionsState={placementOptionsState} note={placementNote} disabled={worktreeDisabled} inheritedWorktree={workflowWorktreeLabel}
@@ -293,7 +322,7 @@ function EditableAgentSettingsForm(props: EditableAgentSettingsFormProps) {
               options={[{ value: 'subscription', label: 'Claude subscription' }, { value: 'api-key', label: 'API key' }]}
               onChange={(event) => updateConfiguration({ ...configuration, authMode: event.target.value as typeof configuration.authMode })} />
           </> : null}
-          {additionalFields}
+          {slots.additional}
           {showPlacement ? <TextField label="Branch prefix" value={branchPrefix} placeholder={workflowWorktree?.branchPrefix ?? 'Automatic'}
             disabled={worktreeDisabled} error={fieldMessage(issues, 'branchPrefix')}
             onChange={event => {
@@ -308,7 +337,7 @@ function EditableAgentSettingsForm(props: EditableAgentSettingsFormProps) {
           <Textarea label="Initial prompt" aria-label="Initial prompt" className="agent-settings-prompt" rows={2} value={prompt}
             labelHint={<InfoHint label="Initial prompt">The task this node starts with.</InfoHint>}
             onChange={(event) => { setPrompt(event.target.value); clearErrors() }} />
-          {moreFields}
+          {slots.more}
           <GraphqlToolsFields role={role} defaults={graphqlTools.defaults} override={graphqlTools.override} hideMemory
             executionReadOnly={configuration.harness === 'codex' && configuration.sandbox === 'read-only'} readOnly={readOnly} onChange={changeTools} />
           <HarnessConfigurationFields editor={editor} issues={harnessIssues} onChange={(next) => { setEditor(next); clearErrors() }} allowHarnessChange={false} harnessDefaults={providerDefaults} workspaceId={workspaceId} routedApproval={Boolean(workflowApprovalHandler)} allowAutoReview={workflowApprovalHandler === 'orchestrator'} compact advancedOnly />
@@ -318,21 +347,21 @@ function EditableAgentSettingsForm(props: EditableAgentSettingsFormProps) {
     {error ? <Alert tone="danger" live title={error} /> : null}
     <footer className="agent-settings-footer">
       {onRemove ? <Button size="sm" variant="ghost" className="agent-settings-trash" aria-label={`Remove ${agent.name} from workflow`} onClick={() => void leave(onRemove)}>Remove</Button> : null}
-      {embedded ? <Button size="sm" variant="ghost" className="agent-settings-cancel" onClick={() => { props.onDiscardForm?.(); onClose() }}>Cancel</Button> : null}
-      {embedded ? <Button size="sm" variant={props.onSaveWorkflow ? 'secondary' : 'primary'} className="agent-settings-save" aria-label="Apply agent settings to draft"
+      {embedded ? <Button size="sm" variant="ghost" className="agent-settings-cancel" onClick={() => { onDiscardForm?.(); onClose() }}>Cancel</Button> : null}
+      {embedded ? <Button size="sm" variant={onSaveWorkflow ? 'secondary' : 'primary'} className="agent-settings-save" aria-label="Apply agent settings to draft"
         disabled={!isDirty} onClick={save}>Apply</Button> : null}
-      {embedded && props.onSaveWorkflow ? <Button size="sm" variant="primary" aria-label="Save agent settings and workflow"
-        onClick={() => { if (!isDirty || save()) props.onSaveWorkflow?.() }}>Save</Button> : null}
+      {embedded && onSaveWorkflow ? <Button size="sm" variant="primary" aria-label="Save agent settings and workflow"
+        onClick={() => { if (!isDirty || save()) onSaveWorkflow?.() }}>Save</Button> : null}
     </footer>
   </div>
 }
 
-export function AgentSettingsForm(props: Parameters<typeof EditableAgentSettingsForm>[0]) {
+export function AgentSettingsForm(props: AgentSettingsFormProps) {
   if (props.agent.harness === 'opencode' || props.agent.harnessConfiguration?.harness === 'opencode') {
     return <div className="harness-form-stack"><p role="status">{retiredHarnessLabel}</p>
       <p>{props.agent.name}</p><p>Model: {props.agent.harnessConfiguration?.model ?? props.agent.model ?? 'Not set'}</p>
       {props.agent.prompt?.system ? <p>{props.agent.prompt.system}</p> : null}
-      {props.initialPrompt ? <p>{props.initialPrompt}</p> : null}
+      {props.node?.initialPrompt ? <p>{props.node.initialPrompt}</p> : null}
     </div>
   }
   return <EditableAgentSettingsForm {...props} />

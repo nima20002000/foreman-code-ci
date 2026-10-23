@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest'
 import { HarnessExecutionSchema, type ExecutionResult } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { DomainError } from '../src/modules/errors.js'
 import { repeatExecutionDriver } from '../src/modules/runs/repeatRuntime.js'
 import { canContinueWorkflowSession } from '../src/modules/runs/sessionContinuation.js'

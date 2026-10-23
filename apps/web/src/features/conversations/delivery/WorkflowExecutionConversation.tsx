@@ -1,5 +1,5 @@
 import { AgentConversation } from '../agentChat/AgentConversation'
-import type { WorkflowExecutionChatViewProps } from '../../workflow-hierarchy/execution-chat/types'
+import type { WorkflowExecutionChatViewProps } from '../../workflow-hierarchy'
 import { ExecutionChatPanel } from './ExecutionChatPanel'
 import { productionExecutionChatSource } from './productionExecutionChatSource'
 

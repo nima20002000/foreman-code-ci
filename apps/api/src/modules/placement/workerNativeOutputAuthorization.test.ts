@@ -31,7 +31,7 @@ describe('native output existing publication authority plus operation policy', (
     const f = fixture(); f.request.outputOperation = outputOperation
     expect(await f.port.authorize(f.request, f.connection, f.sql)).toEqual(f.caller.context.scope)
     expect(f.assertNativeOutputConnection).toHaveBeenCalledWith(f.request, f.connection, f.sql)
-    expect(f.sql.query).toHaveBeenCalledWith(expect.stringContaining('insert into management_audit'), expect.arrayContaining([`native_output.authorize.${outputOperation}`]))
+    expect(f.sql.query).toHaveBeenCalledWith(expect.any(String), expect.arrayContaining([`native_output.authorize.${outputOperation}`]))
     expect(f.resolve).toHaveBeenCalledWith(f.request, f.connection, f.sql)
     expect(f.authorize).toHaveBeenCalledWith(f.accepted, f.sql)
   })

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   RUN_INSPECTION_TOOLS, RunExecutionDetailSchema, RunExecutionsPageSchema,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { postgresEnabled } from './helpers/database.js'
 import {

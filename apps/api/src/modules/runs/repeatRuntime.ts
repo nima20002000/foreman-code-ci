@@ -4,10 +4,10 @@ import { beginRuntimeTiming, timeRuntimeOperation } from '../../infrastructure/r
 import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { setTimeout as delay } from 'node:timers/promises'
-import { interrupt, isGraphInterrupt } from '@langchain/langgraph'
+import { interrupt, isGraphInterrupt } from '../../infrastructure/langgraph.js'
 import { HarnessExecutionSchema, type ExecutionResult, type HarnessExecution } from '@foreman-code/contracts'
-import { AcceptedWorkflowRunV3Schema, CurrentRunVersionSnapshotSchema,
-  type AcceptedWorkflowRunV3, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema, CurrentRunVersionSnapshotSchema,
+  type AcceptedWorkflowRunCurrent, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 import { DomainError } from '../errors.js'
 import { REPEAT_NATIVE_PENDING_MESSAGE } from '../interactions/repeatNativeEvidence.js'
 import { assertNativeWorkflowConfiguration } from '../harnesses/nativeWorkflowConfiguration.js'
@@ -31,6 +31,7 @@ import { workHandoffNodeAction } from './workHandoffNode.js'
 import { WorkExecutionFailure } from './workExecutionFailure.js'
 import { workflowCoordinationPrompt } from './workflowCoordinationPrompt.js'
 import { readWorkflowTeam } from './workflowTeamPrompt.js'
+import { usesWorkHandoffGraph } from './workflowRunMode.js'
 import { isTransientExecutionError, repeatSettlementPending, transientExecutionFailure } from './executionRetryPolicy.js'
 export { repeatSettlementPending } from './executionRetryPolicy.js'
 import { ExecutionLimiter } from './limiter.js'
@@ -47,7 +48,7 @@ import { sha256Hex } from '../../shared/hash.js'
  * Neither a saved occurrence nor a returned candidate is a dispatch permission.
  */
 export function repeatExecutionDriver(input: {
-  scope: RepeatScope; version: WorkflowVersionV3
+  scope: RepeatScope; version: WorkflowVersionCurrent
   owner: Pick<RunOwnership, 'assertOwned'>
   store: Pick<RepeatRunRepository, 'readExecution' | 'settleNativeExecution'>
   /** Required existing native boundary; never supply native.ensureObserve directly.
@@ -169,8 +170,8 @@ export function repeatExecutionDriver(input: {
 }
 
 export interface RepeatNativeObserverContext {
-  run: AcceptedWorkflowRunV3
-  version: WorkflowVersionV3
+  run: AcceptedWorkflowRunCurrent
+  version: WorkflowVersionCurrent
   owner: RunOwnership
   store: RepeatNativeLaunchStore
   native: Pick<ApprovalExecutionCoordinator, 'observeExact' | 'assertResume'>
@@ -185,12 +186,33 @@ export interface RepeatNativeObserverContext {
   directory(executionId: string): string
 }
 
+/** The prompt contract of one native execution, by workflow mode: the coordination protocol, the hierarchy
+ * routing, or the plain handoff contract. Interval checks and ordinary workflows have none. */
+function nativeWorkContracts(input: {
+  run: AcceptedWorkflowRunCurrent
+  version: WorkflowVersionCurrent
+  node: Exclude<WorkflowVersionCurrent['definition']['nodes'][number], { kind: 'job' }>
+  execution: HarnessExecution
+}) {
+  const { run, version, node, execution } = input
+  const interval = repeatTickIndex(execution.input) !== undefined
+  const coordinationResult = run.resultProtocol ? { resultProtocol: run.resultProtocol,
+    definition: version.definition, workflowNodeId: node.id, interval } : undefined
+  const hierarchyResult = !run.resultProtocol && version.definition.hierarchy && !interval
+    ? { version, workflowNodeId: node.id } : undefined
+  const workHandoffContract = coordinationResult ? workflowCoordinationPrompt(coordinationResult)
+    : hierarchyResult ? hierarchyWorkPrompt(version.definition, node.id)
+    : version.definition.handoffs && !interval
+    ? currentInitialPrompt({ ...node, initialPrompt: undefined }, false, true) : undefined
+  return { coordinationResult, hierarchyResult, workHandoffContract }
+}
+
 /** Physical adapter for repeatExecutionDriver.observeExact. The same coordinator
  * owns native events, response delivery, approval checkpointing and cleanup.
  * No Run-wide finishRun, candidate allocation, new scheduler or provider shim. */
 export function repeatNativeObserver(context: RepeatNativeObserverContext):
   (admitted: HarnessExecution, signal: AbortSignal) => Promise<void> {
-  const run = AcceptedWorkflowRunV3Schema.parse(context.run)
+  const run = AcceptedWorkflowRunCurrentSchema.parse(context.run)
   CurrentRunVersionSnapshotSchema.parse({ run, version: context.version })
   const { owner, store, native, locations } = context
   const common = { workflowId: run.workflowId, graphThreadId: run.id, approval: run.approval, owner,
@@ -329,15 +351,8 @@ export function repeatNativeObserver(context: RepeatNativeObserverContext):
       const request = workflowExecutionRequest({ execution: { ...execution, ...paths },
         version: context.version, configuration, workspaceId: run.workspaceId, executionContext,
         resultProtocol: run.resultProtocol, collaborationPrompt, team })
-      const coordinationResult = run.resultProtocol ? { resultProtocol: run.resultProtocol,
-        definition: context.version.definition, workflowNodeId: node.id,
-        interval: repeatTickIndex(execution.input) !== undefined } : undefined
-      const hierarchyResult = !run.resultProtocol && context.version.definition.hierarchy && repeatTickIndex(execution.input) === undefined
-        ? { version: context.version, workflowNodeId: node.id } : undefined
-      const workHandoffContract = coordinationResult ? workflowCoordinationPrompt(coordinationResult)
-        : hierarchyResult ? hierarchyWorkPrompt(context.version.definition, node.id)
-        : context.version.definition.handoffs && repeatTickIndex(execution.input) === undefined
-        ? currentInitialPrompt({ ...node, initialPrompt: undefined }, false, true) : undefined
+      const { coordinationResult, hierarchyResult, workHandoffContract } = nativeWorkContracts({
+        run, version: context.version, node, execution })
       const deliverable = workflowDeliverableContract(context.version, execution,
         (kind, values) => context.workflows.referencesCreatedByExecution(kind, values, run.workspaceId, execution.id), run.resultProtocol)
       for (;;) {
@@ -365,7 +380,7 @@ export function repeatExecutionDirectoryKey(executionId: string): string {
 
 /** Call from the existing coordinator BEFORE either durable terminal observation.
  * Never invoke this to replace an already-written terminal with a different one. */
-export function repeatTerminalNormalizer(version: WorkflowVersionV3, scope: RepeatScope, ref: RepeatNodeRef) {
+export function repeatTerminalNormalizer(version: WorkflowVersionCurrent, scope: RepeatScope, ref: RepeatNodeRef) {
   return (execution: HarnessExecution): HarnessExecution => normalizeRepeatTerminal(version, scope, ref, execution)
 }
 
@@ -439,7 +454,7 @@ function runtimeFailureResult(error: unknown): ExecutionResult | undefined {
  * bounded cleanup deadline after Stop or graph failure. Failed checks settle independently;
  * incomplete cleanup backs off and re-observes the same check. */
 export function startIntervalChecks(input: {
-  version: WorkflowVersionV3; store: Partial<Pick<RepeatRunRepository, 'admitTick'>>
+  version: WorkflowVersionCurrent; store: Partial<Pick<RepeatRunRepository, 'admitTick'>>
   driver: RepeatExecutionDriver; signal: AbortSignal
   track(task: Promise<unknown>): void
 }): () => void {
@@ -541,13 +556,82 @@ function workActivationDriver(input: Parameters<typeof executeRepeatRuntime>[0],
   }
 }
 
+type RepeatRuntimeInput = Parameters<typeof executeRepeatRuntime>[0]
+
+/** What the two graph modes share while a Run executes. */
+interface WorkflowGraphModeShared {
+  signal: AbortSignal
+  track(task: Promise<unknown>): void
+  limiter: ExecutionLimiter
+  bookkeeping: <T>(work: () => Promise<T>) => Promise<T>
+  checkpointOwner: { checkpoint_owner_generation: string | undefined }
+}
+
+/** The graph a Run executes: its state, how it settles and which failures it leaves to the caller. */
+interface WorkflowGraphMode {
+  /** The first graph state; a saved checkpoint of this Run resumes with null instead. */
+  readonly initial: unknown
+  /** The ordinary graph surfaces a failed wrapper after the drain; the work engine settles its own failures. */
+  readonly rethrowsTaskFailure: boolean
+  getState(): Promise<import('./repeatGraph.js').RepeatCheckpoint>
+  invoke(state: unknown): Promise<unknown>
+  /** Runs once after the Run is marked running, before the checkpoint is read. */
+  prepare(): Promise<void>
+  /** Completes the Run's selected work once the graph finished with no approval wait. */
+  settle(): Promise<'idle' | 'needs_direction' | 'settled'>
+}
+
+/** Handoff and hierarchy Runs: the work-handoff graph, which never uses repeat blocks. */
+function handoffGraphMode(input: RepeatRuntimeInput, shared: WorkflowGraphModeShared): WorkflowGraphMode {
+  const { signal, track, limiter, bookkeeping, checkpointOwner } = shared
+  const work = buildWorkHandoffGraph({
+    runId: input.runId, version: input.version, checkpointer: input.checkpointer, signal, track,
+    port: { ensureEntryActivation: () => input.store.ensureWorkEntry(),
+      executeActivation: workActivationDriver(input, limiter, signal, bookkeeping),
+    },
+  })
+  Object.assign(work.config.configurable, checkpointOwner)
+  return {
+    initial: work.initial,
+    rethrowsTaskFailure: false,
+    getState: async () => await work.graph.getState(work.config) as import('./repeatGraph.js').RepeatCheckpoint,
+    invoke: (state) => work.graph.invoke(state as typeof work.initial | null, work.config),
+    prepare: async () => {},
+    settle: async () => {
+      const completion = await bookkeeping(() => input.store.completeWorkRun())
+      return completion === 'needs_direction' ? 'needs_direction' : completion === 'idle' ? 'idle' : 'settled'
+    },
+  }
+}
+
+/** Ordinary Runs: the workflow graph. Its explicit finite repeat blocks are the only use of repeat. */
+async function workflowGraphMode(input: RepeatRuntimeInput, shared: WorkflowGraphModeShared): Promise<WorkflowGraphMode> {
+  const { buildRepeatGraph } = await import('./repeatGraph.js')
+  const { signal, track, limiter, bookkeeping, checkpointOwner } = shared
+  const repeat = buildRepeatGraph({ ...input, signal, track, limiter })
+  Object.assign(repeat.config.configurable, checkpointOwner)
+  return {
+    initial: { runId: input.runId, occurrences: {}, boundaries: {}, executionIds: {} },
+    rethrowsTaskFailure: true,
+    getState: () => repeat.graph.getState(repeat.config),
+    invoke: (state) => repeat.graph.invoke(state as import('./repeatNode.js').RepeatGraphState | null, repeat.config),
+    prepare: async () => { await bookkeeping(() => input.store.resolveExcluded()) },
+    settle: async () => {
+      // Interval checks keep an idle Run alive; every other finished graph completes its Run.
+      const idle = input.version.definition.nodes.some(node => node.kind !== 'job' && node.interval)
+      if (!idle) await timeRuntimeOperation('engine', 'run.settle', () => bookkeeping(() => input.store.completeRun()))
+      return idle ? 'idle' : 'settled'
+    },
+  }
+}
+
 /** Executes the one graph on the existing Run thread. Settlement retries drain
  * wrappers and re-enter the same checkpoint; business progression stays inside
  * guarded graph edges. The shared engine owns Run ownership/admission,
  * authenticated graph-resume claims and choosing this semantics-3 entry point. */
 export async function executeRepeatRuntime(input: {
   jobs?: { store: import('../jobs/workflowNode.js').WorkflowJobNodeStore; driver: import('../jobs/workflowRuntimePorts.js').WorkflowJobDriver }
-  runId: string; version: WorkflowVersionV3
+  runId: string; version: WorkflowVersionCurrent
   owner: Pick<RunOwnership, 'assertOwned'>; signal: AbortSignal
   checkpointOwnerGeneration?: string | undefined
   store: Pick<RepeatRunRepository, 'admit' | 'acceptTerminal' | 'enterBlock' | 'readOccurrence' | 'transition'
@@ -555,11 +639,10 @@ export async function executeRepeatRuntime(input: {
     | 'admitWorkRequest' | 'returnWork' | 'recordWorkUnresolved' | 'resolveWaitingWorkJoins' | 'completeWorkRun'>
     & Partial<Pick<RepeatRunRepository, 'admitTick' | 'admitHierarchyGroup' | 'readWorkCallerReport'>>
   driver: RepeatExecutionDriver; lifecycle: RepeatRuntimeLifecycle
-  checkpointer: import('@langchain/langgraph-checkpoint').BaseCheckpointSaver
+  checkpointer: import('../../infrastructure/langgraph.js').BaseCheckpointSaver
   configuredParallelism?: number
   limiter?: ExecutionLimiter
 }): Promise<void> {
-  const { buildRepeatGraph } = await import('./repeatGraph.js')
   const failed = new AbortController(), signal = AbortSignal.any([input.signal, failed.signal])
   const bookkeeping = <T>(work: () => Promise<T>) => retryDatabaseTimeout(work, {
     signal, check: () => input.owner.assertOwned(),
@@ -594,35 +677,23 @@ export async function executeRepeatRuntime(input: {
   // Graph Agent work and Jobs share the Run's parallelism limit.
   const limiter = input.limiter ?? new ExecutionLimiter(
     input.version.definition.executionPolicy!.maxParallelism, 1000)
-  const work = input.version.definition.handoffs ? buildWorkHandoffGraph({
-    runId: input.runId, version: input.version, checkpointer: input.checkpointer, signal, track,
-    port: { ensureEntryActivation: () => input.store.ensureWorkEntry(),
-      executeActivation: workActivationDriver(input, limiter, signal, bookkeeping),
-    },
-  }) : null
-  const repeat = work ? null : buildRepeatGraph({ ...input, signal, track, limiter })
   const checkpointOwner = { checkpoint_owner_generation: input.checkpointOwnerGeneration }
-  if (work) Object.assign(work.config.configurable, checkpointOwner)
-  if (repeat) Object.assign(repeat.config.configurable, checkpointOwner)
-  const readCheckpoint = (): Promise<import('./repeatGraph.js').RepeatCheckpoint> => bookkeeping(async () => work
-    ? await work.graph.getState(work.config) as import('./repeatGraph.js').RepeatCheckpoint
-    : await repeat!.graph.getState(repeat!.config))
-  const invoke = (state: unknown): Promise<unknown> => work
-    ? work.graph.invoke(state as typeof work.initial | null, work.config)
-    : repeat!.graph.invoke(state as import('./repeatNode.js').RepeatGraphState | null, repeat!.config)
+  const shared = { signal, track, limiter, bookkeeping, checkpointOwner }
+  const mode = usesWorkHandoffGraph(input.version) ? handoffGraphMode(input, shared) : await workflowGraphMode(input, shared)
+  const readCheckpoint = (): Promise<import('./repeatGraph.js').RepeatCheckpoint> => bookkeeping(() => mode.getState())
+  const invoke = (state: unknown): Promise<unknown> => mode.invoke(state)
   try {
     input.owner.assertOwned()
     await bookkeeping(() => input.lifecycle.preflight())
     preflightComplete = true
     signal.throwIfAborted()
     await bookkeeping(() => input.lifecycle.markRunning())
-    if (!work) await bookkeeping(() => input.store.resolveExcluded())
+    await mode.prepare()
     const snapshot = await readCheckpoint()
     if (snapshot.values.runId && snapshot.values.runId !== input.runId) return repeatConflict('RUN_PIN_CONFLICT')
     // A2 commits authenticated task-local resume writes on this checkpointer.
     // The runtime never accepts an unreceipted raw resume Command.
-    let state = snapshot.values.runId === input.runId ? null
-      : work ? work.initial : { runId: input.runId, occurrences: {}, boundaries: {}, executionIds: {} }
+    let state: unknown = snapshot.values.runId === input.runId ? null : mode.initial
     for (let attempt = 0; ; attempt++) {
       try {
         // Native iterators need not honor cancellation; the graph invocation is raced
@@ -646,20 +717,15 @@ export async function executeRepeatRuntime(input: {
         await drain()
         signal.throwIfAborted()
         if (await bookkeeping(async () => input.lifecycle.persistWait(await readCheckpoint()))) return
-        if (!work && firstFailure) throw firstFailure
-        let idle = input.version.definition.nodes.some(node => node.kind !== 'job' && node.interval)
-        if (work) {
-          const completion = await bookkeeping(() => input.store.completeWorkRun())
-          idle = completion === 'idle'
-          if (completion === 'needs_direction') {
-            if (!input.lifecycle.persistDirectionWait) throw new DomainError('WORK_DIRECTION_WAIT_WRITER_REQUIRED',
-              'Unresolved work requires the durable workflow direction-wait writer.', 409)
-            await bookkeeping(() => input.lifecycle.persistDirectionWait!())
-            return
-          }
+        if (mode.rethrowsTaskFailure && firstFailure) throw firstFailure
+        const settlement = await mode.settle()
+        if (settlement === 'needs_direction') {
+          if (!input.lifecycle.persistDirectionWait) throw new DomainError('WORK_DIRECTION_WAIT_WRITER_REQUIRED',
+            'Unresolved work requires the durable workflow direction-wait writer.', 409)
+          await bookkeeping(() => input.lifecycle.persistDirectionWait!())
+          return
         }
-        else if (!idle) await timeRuntimeOperation('engine', 'run.settle', () => bookkeeping(() => input.store.completeRun()))
-        if (idle) {
+        if (settlement === 'idle') {
           await waitForIntervalRun({ version: input.version, store: input.store, driver: input.driver,
             signal, track, currentState: readCurrentState })
           await drain()

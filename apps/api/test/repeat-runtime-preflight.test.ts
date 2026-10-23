@@ -1,10 +1,10 @@
 import { expect, it, vi } from 'vitest'
 import { DomainError } from '../src/modules/errors.js'
 import { executeRepeatRuntime, type RepeatRuntimeLifecycle } from '../src/modules/runs/repeatRuntime.js'
-import { a1Scenario, graphHarness } from './helpers/graphScenarioHarness.js'
+import { graphScenario, graphHarness } from './helpers/graphScenarioHarness.js'
 
 function fixture() {
-  const graph = graphHarness(a1Scenario('single', 'preflight-recovery'))
+  const graph = graphHarness(graphScenario('single', 'preflight-recovery'))
   const lifecycle = {
     preflight: vi.fn(async () => {}),
     markRunning: vi.fn(async () => {}),

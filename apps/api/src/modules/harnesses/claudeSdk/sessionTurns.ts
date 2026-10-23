@@ -1,7 +1,7 @@
 /** Message turns: submission, cancellation, retirement, history and read-only reconciliation. */
 import { claudeNativeEvent } from './nativeEvents.js'
 import { createClaudeEventNormalizer } from './normalization.js'
-import { childHistoryCursor, childHistoryEvent, encodeChildHistoryCursor } from '../../subagents/nativeReadback.js'
+import { childHistoryCursor, childHistoryEvent, encodeChildHistoryCursor } from '../../subagents/index.js'
 import type { NativeHarnessEvent, NativeSessionReference, PendingNativeInteraction, ApprovalResponseOption } from '@foreman-code/contracts'
 import type { NativeHistory, NativeTurnInput, NativeSubagentHistoryPage } from '../port.js'
 import { HarnessExecutionError } from '../errors.js'

@@ -2,12 +2,12 @@ import { randomUUID } from 'node:crypto'
 import { expect, it, vi } from 'vitest'
 import { DEFAULT_CODEX_ADVANCED_CONFIGURATION } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { makeCurrentWorkflowFixture, SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, SavedRunDetailsSchema } from '@foreman-code/contracts/current'
 import { RunGraphError } from '../src/modules/run-graph/errors.js'
 import { ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { readUntil } from './helpers/observableCondition.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { retryDatabaseTimeout } from '../src/infrastructure/databaseRetry.js'
 import { renewOwnedLeases } from '../src/modules/leases/ownerLeases.js'
 import { deferred } from './helpers/deferred.js'
@@ -159,7 +159,7 @@ it('keeps graph work and an interval Agent alive through database timeouts and r
 }, 60_000)
 
 it('rolls back a real PostgreSQL statement deadline and keeps the same connection usable', async () => {
-  const db = await agent3Database()
+  const db = await migratedDatabase()
   const client = await db.pool.connect()
   const connection = new ExclusiveGraphConnection(client, () => {})
   try {

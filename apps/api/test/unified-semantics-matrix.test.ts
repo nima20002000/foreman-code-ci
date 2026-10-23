@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
 import {
-  AcceptedWorkflowRunV3Schema,
-  ExecutableWorkflowV3Schema,
-  RunStartV3InputSchema,
+  AcceptedWorkflowRunCurrentSchema,
+  ExecutableWorkflowCurrentSchema,
+  RunStartCurrentInputSchema,
   SavedRunVersionSnapshotSchema,
   SavedWorkflowVersionDetailSchema,
-  WorkflowVersionV3Schema,
-} from '@foreman-code/contracts/wave25'
+  WorkflowVersionCurrentSchema,
+} from '@foreman-code/contracts/current'
 
 import { at, digest, location, noRepeatScenario, runCandidate } from './helpers/architectureScenarios.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
@@ -35,12 +35,12 @@ describe('NIM-2648 ENG04-D reusable ENG-S3-ONLY architecture matrix', () => {
     expect(rawDefinition.executionSemanticsVersion).toBe(3)
 
     // Ordinary workflows use absent repeat data throughout the same V3 family.
-    const version = WorkflowVersionV3Schema.parse(scenario.version)
-    expect(ExecutableWorkflowV3Schema.parse({ version, configurations: scenario.configurations }).version).toEqual(version)
+    const version = WorkflowVersionCurrentSchema.parse(scenario.version)
+    expect(ExecutableWorkflowCurrentSchema.parse({ version, configurations: scenario.configurations }).version).toEqual(version)
     expect(SavedWorkflowVersionDetailSchema.parse({ version }).version).toEqual(version)
 
     const input = { scenario: id, exact: { requestId: `request-${id}` } }
-    const request = RunStartV3InputSchema.parse({
+    const request = RunStartCurrentInputSchema.parse({
       workspaceId: version.workspaceId,
       workflowId: version.workflowId,
       workflowVersionId: version.id,
@@ -52,7 +52,7 @@ describe('NIM-2648 ENG04-D reusable ENG-S3-ONLY architecture matrix', () => {
       input,
     })
     expect(runStartSemantics(request)).toBe(3)
-    const run = AcceptedWorkflowRunV3Schema.parse(runCandidate(scenario, input))
+    const run = AcceptedWorkflowRunCurrentSchema.parse(runCandidate(scenario, input))
     expect(SavedRunVersionSnapshotSchema.parse({ run, version })).toEqual({ run, version })
     expect(run.workflowVersionId).toBe(version.id)
     expect(run.agentConfigurationVersionIds).toEqual(version.agentConfigurationVersionIds)
@@ -161,9 +161,9 @@ describe('NIM-2648 ENG04-D reusable ENG-S3-ONLY architecture matrix', () => {
     expect([before, withRepeat, after].map((item) => Object.hasOwn(item.definition as object, 'repeat'))).toEqual([false, true, false])
     expect(before.agentConfigurationVersionIds).toEqual(withRepeat.agentConfigurationVersionIds)
     expect(after.agentConfigurationVersionIds).toEqual(withRepeat.agentConfigurationVersionIds)
-    expect(WorkflowVersionV3Schema.parse(before)).toEqual(before)
-    expect(WorkflowVersionV3Schema.parse(withRepeat)).toEqual(withRepeat)
-    expect(WorkflowVersionV3Schema.parse(after)).toEqual(after)
+    expect(WorkflowVersionCurrentSchema.parse(before)).toEqual(before)
+    expect(WorkflowVersionCurrentSchema.parse(withRepeat)).toEqual(withRepeat)
+    expect(WorkflowVersionCurrentSchema.parse(after)).toEqual(after)
   })
 
   it('retired and unknown execution tags never select a second Start family', () => {

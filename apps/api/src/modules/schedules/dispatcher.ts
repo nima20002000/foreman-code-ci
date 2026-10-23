@@ -1,5 +1,5 @@
-import { logIgnoredError } from '../diagnostics/ignoredError.js'
-import { trackService } from '../diagnostics/serviceHealth.js'
+import { logIgnoredError } from '../diagnostics/index.js'
+import { trackService } from '../diagnostics/index.js'
 import type { WorkflowSchedule } from '@foreman-code/contracts/schedules'
 import { DomainError } from '../errors.js'
 import type { ScheduleDispatchContext, ScheduleDispatchErrorReporter } from './dispatchErrors.js'

@@ -2,17 +2,17 @@ import assert from 'node:assert/strict'
 import { MemorySaver } from '@langchain/langgraph'
 import { afterAll, beforeAll, vi } from 'vitest'
 import type { ExecutionResult, HarnessExecution } from '@foreman-code/contracts'
-import type { WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import type { WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 import { executeRepeatRuntime } from '../../src/modules/runs/repeatRuntime.js'
 import { applyApplicationMigrations } from '../../src/infrastructure/migrations.js'
-import { nim2691TaskDatabase } from './taskDatabase.js'
+import { withTaskDatabase } from './taskDatabase.js'
 import type { currentDatabase } from './database.js'
 import { workflowSettlementFixture } from './workflowSettlementFixture.js'
 import { buildApp } from '../../src/app.js'
 import type { OperatorServices } from '../../src/mcp/operator/types.js'
 import { InteractionService } from '../../src/modules/interactions/service.js'
 import { OperatorInteractionService } from '../../src/modules/interactions/operator.js'
-import { Wave25InteractionRepository } from '../../src/modules/interactions/wave25/repository.js'
+import { Wave25InteractionRepository } from '../../src/modules/interactions/current/repository.js'
 import { PostgresApprovalBudgetRepository } from '../../src/modules/interactions/budget.js'
 import { RunGraphReadService } from '../../src/modules/run-graph/readService.js'
 import { graphRpc } from '../graph-composition-fixture.js'
@@ -27,7 +27,7 @@ export const finish = (revision = 1): ExecutionResult => ({ outcome: 'succeeded'
 } })
 export const failed = (retryable: boolean): ExecutionResult => ({ outcome: 'failed',
   error: { code: 'PROVIDER_FAILED', message: 'Native execution failed.', retryable } })
-export const handoffs = (budget: number) => (graph: WorkflowDefinitionV3): WorkflowDefinitionV3 => ({ ...graph,
+export const handoffs = (budget: number) => (graph: WorkflowDefinitionCurrent): WorkflowDefinitionCurrent => ({ ...graph,
   handoffs: { contractVersion: 1 }, executionPolicy: { maxParallelism: 2, maxNodeExecutions: budget },
 })
 
@@ -40,7 +40,7 @@ export function useSettlementFixtures() {
     const released = new Promise<void>((resolve) => { release = resolve })
     let ready: () => void
     const initialized = new Promise<void>((resolve) => { ready = resolve })
-    lifetime = nim2691TaskDatabase(async (pool, directory) => {
+    lifetime = withTaskDatabase(async (pool, directory) => {
       await applyApplicationMigrations(pool)
       database = { pool, directory, schema: 'public', close: async () => undefined }
       ready()
@@ -55,7 +55,7 @@ export function useSettlementFixtures() {
   }, timeout)
 
   return async function withFixture(
-    configure: (graph: WorkflowDefinitionV3) => WorkflowDefinitionV3,
+    configure: (graph: WorkflowDefinitionCurrent) => WorkflowDefinitionCurrent,
     work: (fixture: Fixture) => Promise<void>,
     form: 'single' | 'sequential' | 'parallel' = 'sequential',
     options: Parameters<typeof workflowSettlementFixture>[3] = {},

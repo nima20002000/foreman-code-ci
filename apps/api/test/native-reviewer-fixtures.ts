@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import type pg from 'pg'
-import { assertGraphTransaction, ExclusiveGraphConnection, type GraphTransactionSql } from '../src/modules/run-graph/connection.js'
+import { assertGraphTransaction, ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
+import type { SqlTransaction } from '../src/infrastructure/transaction.js'
 import { AgentConfigurationVersionSchema, HarnessExecutionSchema, type HarnessExecution,
   type NativeSessionReference, type ReviewJob } from '@foreman-code/contracts'
-import { AcceptedWorkflowRunV3Schema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { DEFAULT_WORKER_CREDENTIAL_TTL_MS } from '../src/modules/access/workerCredentials.js'
 import { ApprovalExecutionCoordinator } from '../src/modules/interactions/execution.js'
 import type { RepeatNativeObservationStore } from '../src/modules/interactions/repeatObservation.js'
@@ -15,13 +16,13 @@ import { nativeCompleted, nativeFixture, nativeStored, nativeAt } from './native
 import { idleWorkflowControls, idleWorkflowRepeat } from './helpers/idleWorkflowControls.js'
 
 /** Doubles only. These tests never start a provider, DB, native process or browser. */
-export function native2Fixture(completed = true,
+export function nativeReviewerFixture(completed = true,
   validateContinuation: (executionId: string, signal?: AbortSignal) => Promise<void> = async () => undefined) {
   const fixture = nativeFixture()
   const base = makeCurrentWorkflowFixture('eng04-native')
   const configuration = AgentConfigurationVersionSchema.parse({ ...base.configurations[0],
     id: fixture.execution.agentConfigurationVersionId, agentId: fixture.execution.agentId })
-  const run = AcceptedWorkflowRunV3Schema.parse({ ...base.run, executionSemanticsVersion: 3,
+  const run = AcceptedWorkflowRunCurrentSchema.parse({ ...base.run, executionSemanticsVersion: 3,
     agentConfigurationVersionIds: fixture.version.agentConfigurationVersionIds, executionState: 'running',
     authorizationPrincipalId: 'principal-native2-authorized',
     executionLocation: { runnerId: 'runner-native2', locationRevision: 1, rootPath: '/accepted/root',
@@ -81,7 +82,7 @@ export function native2Fixture(completed = true,
   }
   const connection = new ExclusiveGraphConnection({ query } as unknown as pg.ClientBase, assertOwned)
   const owner = { runId: execution.runId, client: {}, assertOwned, oneShotConnection: () => connection,
-    readOneShotFence: async (sql: GraphTransactionSql) => {
+    readOneShotFence: async (sql: SqlTransaction) => {
       assertGraphTransaction(sql); assertOwned(); return { ownerId: 'native2-owner', fence: '1' }
     } }
   const forbidden = (name: string) => () => { calls.push(name); throw new Error(`Forbidden native operation: ${name}`) }

@@ -10,7 +10,7 @@ import type { NativeResponseDeliveryEvidence } from '../src/modules/interactions
 import { ApprovalExecutionCoordinator } from '../src/modules/interactions/execution.js'
 import type { RepeatNativeObservationStore } from '../src/modules/interactions/repeatObservation.js'
 import type { PostgresRunRepository } from '../src/modules/runs/postgres.js'
-import { Wave25InteractionRepository } from '../src/modules/interactions/wave25/repository.js'
+import { Wave25InteractionRepository } from '../src/modules/interactions/current/repository.js'
 import type pg from 'pg'
 import type { PostgresApprovalBudgetRepository } from '../src/modules/interactions/budget.js'
 import type { NativeSessionManagerResolver } from '../src/modules/interactions/runtimePorts.js'

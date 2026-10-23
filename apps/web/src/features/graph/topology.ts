@@ -1,8 +1,6 @@
-import type { WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import type { WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 import type { Agent } from '@foreman-code/contracts'
-import { workflowToGraph } from './mapper'
-import { retainArray, sameFields } from './graphReferences'
-import type { GraphMapperOptions, GraphNode, GraphProjection } from './types'
+import { workflowToGraph, retainArray, sameFields, type GraphMapperOptions, type GraphNode, type GraphProjection } from '../board-core'
 
 /** No runtime, selection, menu, or animation input is accepted by the static projector. */
 export type GraphTopologyActions = Pick<GraphMapperOptions,
@@ -46,14 +44,14 @@ function retainNode(previous: GraphNode | undefined, next: GraphNode): GraphNode
  * In particular, a runtime-only Agent change does not call workflowToGraph at all.
  */
 export function createGraphTopologyProjector(project = workflowToGraph) {
-  let priorWorkflow: WorkflowDefinitionV3 | undefined
+  let priorWorkflow: WorkflowDefinitionCurrent | undefined
   let priorActions: GraphTopologyActions | undefined
   let agents: Agent[] = []
   let labels = new Map<string, string | undefined>()
   let graph: GraphProjection = { nodes: [], edges: [] }
   const metadataBySource = new WeakMap<Agent, Agent>()
 
-  return (workflow: WorkflowDefinitionV3, incomingAgents: readonly Agent[], actions: GraphTopologyActions = {}): GraphProjection => {
+  return (workflow: WorkflowDefinitionCurrent, incomingAgents: readonly Agent[], actions: GraphTopologyActions = {}): GraphProjection => {
     // Pick actions explicitly: structurally assignable wider option objects cannot leak runtime fields.
     const staticActions: GraphTopologyActions = {
       onOpenJobNode:actions.onOpenJobNode,onSelectAgent: actions.onSelectAgent, onOpenNodeSettings: actions.onOpenNodeSettings,

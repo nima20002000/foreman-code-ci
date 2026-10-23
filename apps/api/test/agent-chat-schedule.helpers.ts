@@ -7,7 +7,7 @@ import { expect, vi } from 'vitest'
 import { NativeHarnessEventSchema, type NativeHarnessEvent,
   type NativeSessionReference, type HarnessExecution } from '@foreman-code/contracts'
 import { ReadSelectedRunChatResponseSchema, type SelectedRunChatTarget } from '@foreman-code/contracts/selected-run-chat'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { buildApp } from '../src/app.js'
 import { AgentChatService } from '../src/modules/conversations/agentChat.js'
 import { qualifiedAgentChatSteer } from '../src/modules/conversations/chatSteerQualification.js'
@@ -19,7 +19,7 @@ import { WorkflowScheduleService } from '../src/modules/schedules/service.js'
 import { admitRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
 import { repeatStartPublication } from '../src/modules/run-graph/repeatStartPublication.js'
 import type { NativeSessionStart, NativeSteerInput } from '../src/modules/harnesses/port.js'
-import { AgentChatF5Native } from './helpers/agentChatF5.js'
+import { ScriptedChatNative } from './helpers/agentChatF5.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { waitForSuccessfulRunCleanup } from './helpers/runSettlement.testSupport.js'
 
@@ -39,7 +39,7 @@ vi.mock('../src/infrastructure/migrations.js', async (importOriginal) => {
 })
 
 /** Native-port substitute, not a live harness qualification. It records exact source/child identities. */
-class RunChatNative extends AgentChatF5Native {
+class RunChatNative extends ScriptedChatNative {
   override readonly session: NativeSessionReference
   readonly forks: Array<{ source: NativeSessionReference; input: NativeSessionStart }> = []
   readonly attachments: NativeSessionReference[] = []

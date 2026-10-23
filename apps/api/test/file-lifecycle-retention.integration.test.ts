@@ -9,15 +9,15 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { FileRetentionService } from '../src/modules/files/retention.js'
 import { FileByteStorage } from '../src/modules/files/storage.js'
 import { postgresEnabled } from './helpers/database.js'
-import { absent, allocate, base, candidate, collect, contentUrl, fil14Database, headers, historical, hour, markdown, owner, pins, reread, save, sweep, target, waitFor, type Fil14Database, type Owner, type Runtime } from './helpers/fil14Lifecycle.js'
+import { absent, allocate, base, candidate, collect, contentUrl, fileLifecycleDatabase, headers, historical, hour, markdown, owner, pins, reread, save, sweep, target, waitFor, type FileLifecycleDatabase, type Owner, type Runtime } from './helpers/fileLifecycleFixtures.js'
 import { deferred } from './helpers/deferred.js'
 
 /** Real DB time and independent PostgreSQL sessions; no fake Date/SQL model.
  * The tiny trigger below is confined to the disposable schema and pauses only the
  * chosen retention command AFTER its changes and BEFORE receipt insertion/COMMIT. */
 describe.skipIf(!postgresEnabled)('FIL-14 retention, expiry and sweeper lifecycle verification', () => {
-  let database: Fil14Database, runtime: Runtime
-  beforeAll(async () => { database = await fil14Database(); runtime = await database.open() }, 60_000)
+  let database: FileLifecycleDatabase, runtime: Runtime
+  beforeAll(async () => { database = await fileLifecycleDatabase(); runtime = await database.open() }, 60_000)
   afterAll(async () => { await database?.close() })
 
   it('persists retention saves in the fixture database for independent service readback', async () => {

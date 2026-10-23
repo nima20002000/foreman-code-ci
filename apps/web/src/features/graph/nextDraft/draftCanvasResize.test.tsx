@@ -5,12 +5,11 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import canvasStyles from './nextDraft.css?inline'
 import { GraphPresentationProvider } from '../GraphPresentation'
-import { applyGraphGeometry, type GraphGeometryChange } from '../geometry'
+import { applyGraphGeometry, type GraphGeometryChange, nextDraftKey } from '../../board-core'
 import { useGraphDraftStore } from '../store'
 import { installFlowLayout } from '../../run-board/testFlowLayout'
 import { fixture } from './core.cases'
 import { DraftCanvas } from './DraftCanvas'
-import { nextDraftKey } from './state'
 
 const key = nextDraftKey('workspace', 'workflow'), context = fixture()
 // These cases measure resizing from a known size, not the role default.

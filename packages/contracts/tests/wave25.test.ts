@@ -4,7 +4,7 @@ import {
   WorkflowChoiceSchema, parseChoiceResultEnvelope, NodeResolutionSchema,
   GraphSequenceSchema, GraphFactSchema, RunGraphBatchSchema, RunGraphPageSchema, RunGraphEventSchema,
   RUN_GRAPH_LIMITS, graphJsonBytes, applyRunGraphPageFixture,
-} from '../src/wave25/index.js'
+} from '../src/current/index.js'
 
 const choice = WorkflowChoiceSchema.parse({ outcomes: [
   { outcome: 'pass', target: { kind: 'branch_end' } },

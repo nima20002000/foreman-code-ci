@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from 'node:util'
-import { AcceptedWorkflowRunV3Schema, GraphIdSchema, type AcceptedWorkflowRunV3 } from '@foreman-code/contracts/wave25'
-import { assertGraphTransaction, beforeGraphCommit, poisonGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
+import { AcceptedWorkflowRunCurrentSchema, GraphIdSchema, type AcceptedWorkflowRunCurrent } from '@foreman-code/contracts/current'
+import { assertGraphTransaction, beforeGraphCommit, poisonGraphTransaction } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { settleRepeatNativeExecutionsWithProofLocked } from '../interactions/repeatNativeSettlementBatch.js'
 import { repeatNativePending } from '../interactions/repeatNativeEvidence.js'
 import type { RunOwnership } from './ownership.js'
@@ -14,7 +15,7 @@ import { readAcceptedRepeatRunLocked } from './repeatStartRead.js'
  * receipt; no missing row or terminal enum authorizes cleanup. */
 export const repeatSettlementServices = { assertSettlementLocked } satisfies Pick<RepeatRepositoryServices, 'assertSettlementLocked'>
 
-function immutableRun(run: AcceptedWorkflowRunV3): unknown {
+function immutableRun(run: AcceptedWorkflowRunCurrent): unknown {
   const value: Record<string, unknown> = { ...run }
   // Selected-work completion in the enclosing transaction may advance only
   // these lifecycle fields. All accepted authority/location/config/input pins
@@ -30,11 +31,11 @@ function executionPins(stored: StoredRepeatExecution): unknown {
   return { execution, ref, slotId, input, inputDigest }
 }
 
-export async function assertSettlementLocked(sql: GraphTransactionSql, suppliedRun: AcceptedWorkflowRunV3,
+export async function assertSettlementLocked(sql: SqlTransaction, suppliedRun: AcceptedWorkflowRunCurrent,
   suppliedIds: readonly string[], owner: RunOwnership): Promise<void> {
   assertGraphTransaction(sql)
   try {
-    const run = AcceptedWorkflowRunV3Schema.parse(structuredClone(suppliedRun))
+    const run = AcceptedWorkflowRunCurrentSchema.parse(structuredClone(suppliedRun))
     const ids = suppliedIds.map((id) => GraphIdSchema.parse(id)).sort()
     if (!ids.length || new Set(ids).size !== ids.length || owner.runId !== run.id) {
       return repeatNativePending('REPEAT_NATIVE_IDENTITY_CONFLICT')

@@ -1,5 +1,5 @@
 import { CI_HOST_NAMESPACE, CiHostRequestSchema } from '@foreman-code/contracts'
-import { componentLogger } from '../diagnostics/logger.js'
+import { componentLogger } from '../diagnostics/index.js'
 import { randomUUID } from 'node:crypto'
 import {
   DEVICE_APPLICATION_BUFFER_BYTES, DEVICE_APPLICATION_CHUNK_BYTES, DEVICE_APPLICATION_CHUNK_WINDOW,

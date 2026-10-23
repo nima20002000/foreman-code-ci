@@ -2,9 +2,8 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, it, vi } from 'vitest'
-import { useGraphDraftStore } from '../graph/store'
-import { nextDraftDirty } from '../graph/nextDraft/state'
-import { readConflictRecoveries, readEditOutbox } from '../graph/nextDraft/editIntentStorage'
+import { useGraphDraftStore, readConflictRecoveries, readEditOutbox } from '../graph'
+import { nextDraftDirty } from '../board-core'
 import { installBoardTestLifecycle } from './eng05D.testSupport'
 import { authoring, draft, findDialog, inspectLatest, labelled, mount, queryDialog, recovery, recoveryFixture, rename, settings,
   storedRecoveries, toolbar } from './hierarchyRecovery.testSupport'

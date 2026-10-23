@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { F1Store } from './helpers/agentChatF1.js'
+import { ScriptedConversationStore } from './helpers/agentChatF1.js'
 import { bindingIdentity } from '../src/modules/files/tools/context.js'
 import { readConversationPublicationReceipts } from '../src/modules/conversations/messagePublications.js'
 import { readClaudeMessagePublications } from '../src/modules/harnesses/claudeSdk/publications.js'
 
 function seeded() {
-  const store = new F1Store(), now = new Date()
+  const store = new ScriptedConversationStore(), now = new Date()
   store.row.harness = 'claude'
   const receipt = { request_id: 'accepted-request', turn_sequence: '1', intent: 'next_turn' as const,
     delivery: 'completed' as const, message_id: 'accepted-message', native_turn_id: null, target_native_turn_id: null,
@@ -70,7 +70,7 @@ describe('F1 exact Claude publication query fixture', () => {
       expect(f.store.statements.some(({ sql }) => sql.includes('from file_tool_publications p'))).toBe(false)
     })
   it('keeps unsupported SQL visible rather than returning generic empty rows', async () => {
-    const store = new F1Store()
+    const store = new ScriptedConversationStore()
     await expect(store.pool.query('select * from file_tool_publications')).rejects.toThrow('Unhandled F1 SQL')
   })
 })

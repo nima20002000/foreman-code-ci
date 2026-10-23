@@ -1,5 +1,5 @@
 import { expect } from 'vitest'
-import { RUN_INSPECTION_TOOLS, RunVersionDetailSchema } from '@foreman-code/contracts/wave25'
+import { RUN_INSPECTION_TOOLS, RunVersionDetailSchema } from '@foreman-code/contracts/current'
 import { readback, readParity, recoveryFixture, scope, type Form } from './recoveryFixture.js'
 
 // These are normal positive assertions, not expected-failure tests. In particular

@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { BrowserHostOptions, createBrowserHost } from '../browser-runtime/hostFactory.js'
 import type { BrowserRuntimeInstallation } from '../browser-runtime/browserUseAdapter.js'
 import { DomainError } from '../errors.js'
+import { configuredHome } from '../../config.js'
 
 type Host = Awaited<ReturnType<typeof createBrowserHost>>
 type Descriptor = BrowserRuntimeInstallation & { nativeHostModule: string; manifestSha256: string }
@@ -50,7 +51,7 @@ export class MainBrowserRuntime {
       if (this.runtimeRoot && this.runtimeRoot !== receipt.runtimeRoot) throw new Error('The browser release belongs to another runtime root.')
       this.runtimeRoot = receipt.runtimeRoot
       const diagnostics = await import(pathToFileURL(join(this.release, 'apps/worker/src/diagnostics.mjs')).href)
-      const facts = await diagnostics.hostFacts(process.env.HOME ?? '', [this.options.stateDirectory])
+      const facts = await diagnostics.hostFacts(configuredHome() ?? '', [this.options.stateDirectory])
       const descriptor = await (await this.installer()).readInstalledBrowserRuntime({ runtimeRoot: this.runtimeRoot, target: facts })
       if (!receipt.staged?.manifestSha256 || descriptor.manifestSha256 !== receipt.staged.manifestSha256) {
         throw new Error('The installed browser runtime does not match this release.')

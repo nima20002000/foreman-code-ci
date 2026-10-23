@@ -26,21 +26,26 @@ function fixture(repository = false) {
     locationRevision: 1, identityHash: `sha256:${'b'.repeat(64)}` }
   const state = { connections: 0, transactions: 0, ownerId: principal.id, approvals: 0, snapshot: undefined as unknown,
     repository: repository ? { provider: 'github', owner: 'fixture', name: 'project', defaultBranch: 'main' } : undefined }
+  // Reads are told apart by their bound values. The principal id alone is bound twice per source authorization, first by
+  // the live authority read and then by the root-owner read. The workspace id alone is a workspace read, no value is the
+  // Main installation read, and four values read a snapshot (the write of a snapshot binds five, the last being its JSON record, and an approval nine).
+  let principalReads = 0
   const query = async (sql: string, values: unknown[] = []) => {
     if (sql.startsWith('begin')) state.transactions++
     if (sql === 'commit' || sql === 'rollback') state.transactions--
-    if (sql.includes('with recursive owners')) return { rows: [{ id: state.ownerId }] }
-    if (sql.includes('from management_principals where id=')) return { rows: [{
-      id: principal.id, name: principal.name, audience: principal.audience, grants: principal.grants,
-      expires_at: new Date(principal.expiresAt), revoked_at: null, delegated_from: null,
-    }] }
-    if (sql.includes('from application_installation')) return { rows: [{ id: mainId }] }
-    if (sql.includes('from workspaces')) return { rows: [{ archived_at: null,
+    if (values.length === 1 && values[0] === principal.id) {
+      return ++principalReads % 2 === 0 ? { rows: [{ id: state.ownerId }] } : { rows: [{
+        id: principal.id, name: principal.name, audience: principal.audience, grants: principal.grants,
+        expires_at: new Date(principal.expiresAt), revoked_at: null, delegated_from: null,
+      }] }
+    }
+    if (values.length === 0) return { rows: [{ id: mainId }] }
+    if (values.length === 1 && values[0] === input.workspaceId) return { rows: [{ archived_at: null,
       location_revision: String(location.locationRevision), record: { id: input.workspaceId, name: 'Project',
         ...(state.repository ? { repository: state.repository } : {}) } }] }
-    if (sql.includes('insert into source_approvals')) state.approvals++
-    if (sql.includes('insert into source_snapshots')) state.snapshot = JSON.parse(String(values[4]))
-    if (sql.includes('from source_snapshots where workspace_id=')) {
+    if (values.length === 9) state.approvals++
+    if (values.length === 5 && String(values[4]).startsWith('{')) state.snapshot = JSON.parse(String(values[4]))
+    if (values.length === 4) {
       return { rows: [{ record: state.snapshot, availability: 'retained' }] }
     }
     return { rows: [], rowCount: 0 }

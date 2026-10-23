@@ -3,7 +3,7 @@ import { nativeNode } from '../../shared/mocks/nativeFixtureTypes'
 import { act, queryAllByAttribute, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Edge, Node, ReactFlowProps } from '@xyflow/react'
-import { CurrentRunDetailsSchema, RepeatGraphCurrentV3Schema, WorkflowVersionV3Schema, repeatGraphTopologyV3 } from '@foreman-code/contracts/wave25'
+import { CurrentRunDetailsSchema, RepeatGraphCurrentStateSchema, WorkflowVersionCurrentSchema, repeatGraphTopologyCurrent } from '@foreman-code/contracts/current'
 import { inspectionBoardFixture } from './inspect/inspectionFixtures'
 import {
   boardHref, installBoardTestLifecycle, measureBoardWire, mountMeasuredBoard, openRunDetails, setRunState,
@@ -42,7 +42,7 @@ async function largeBoard() {
     position: { x: (index % 20) * 280, y: Math.floor(index / 20) * 160 } }))
   const pins = Object.fromEntries(nodes.map((node, index) => [node.agentId, index === 0
     ? fixture.before.agentConfigurationVersionIds[first.agentId]! : `scale-config-${index}`]))
-  const version = WorkflowVersionV3Schema.parse({ ...fixture.before, agentConfigurationVersionIds: pins,
+  const version = WorkflowVersionCurrentSchema.parse({ ...fixture.before, agentConfigurationVersionIds: pins,
     definition: { ...fixture.before.definition, nodes,
       edges: nodes.slice(1).map((node, index) => ({ id: `scale-edge-${index}`, kind: 'execution', source: nodes[index]!.id, target: node.id })),
       executionPolicy: { maxParallelism: 1, maxNodeExecutions: 200 } } })
@@ -50,7 +50,7 @@ async function largeBoard() {
   const details = fixture.mock.runs.get(scope.runId)!
   fixture.mock.runs.set(scope.runId, CurrentRunDetailsSchema.parse({ ...details, run: { ...details.run, agentConfigurationVersionIds: pins } }))
   const current = fixture.mock.currents.get(scope.runId)!
-  fixture.mock.currents.set(scope.runId, RepeatGraphCurrentV3Schema.parse({ ...current, topology: repeatGraphTopologyV3(version) }))
+  fixture.mock.currents.set(scope.runId, RepeatGraphCurrentStateSchema.parse({ ...current, topology: repeatGraphTopologyCurrent(version) }))
   setRunState(fixture, scope, 'running')
   const wire = measureBoardWire(fixture.mock)
   const mounted = await mountMeasuredBoard(boardHref(scope))

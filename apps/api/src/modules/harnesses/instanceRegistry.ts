@@ -1,6 +1,8 @@
 import { HarnessConfigurationSchema, RETIRED_OPENCODE_MESSAGE, type HarnessDefaults } from '@foreman-code/contracts'
 import { isDeepStrictEqual } from 'node:util'
 import { DomainError } from '../errors.js'
+import { deepFreeze } from '../../shared/deepFreeze.js'
+import { retiredHarnessError } from './retiredHarness.js'
 
 /** Reusable code/metadata only. A registration must not contain a live manager. */
 export interface HarnessDriverRegistration {
@@ -19,14 +21,6 @@ export type HarnessInstanceProjection = ConfiguredHarnessInstance & {
   readonly availability: 'available' | 'disabled' | 'unknown-driver' | 'invalid-configuration' | 'retired'
   readonly driverRevision?: string
   readonly retirementMessage?: string
-}
-
-function freeze(value: unknown): unknown {
-  if (value && typeof value === 'object') {
-    for (const child of Object.values(value)) freeze(child)
-    Object.freeze(value)
-  }
-  return value
 }
 
 /** Reloads affect new selections only: accepted callers retain their immutable value. */
@@ -63,7 +57,7 @@ export class HarnessInstanceRegistry {
       const retired = instance.driverId === 'opencode'
         || savedConfiguration.success && savedConfiguration.data.harness === 'opencode'
       if (retired) availability = 'retired'
-      const projection: HarnessInstanceProjection = { ...instance, configuration: freeze(configuration), availability, ...(retired ? { retirementMessage: RETIRED_OPENCODE_MESSAGE } : {}), ...(driver ? { driverRevision: driver.driverRevision } : {}) }
+      const projection: HarnessInstanceProjection = { ...instance, configuration: deepFreeze(configuration), availability, ...(retired ? { retirementMessage: RETIRED_OPENCODE_MESSAGE } : {}), ...(driver ? { driverRevision: driver.driverRevision } : {}) }
       if (prior?.instanceRevision === instance.instanceRevision && JSON.stringify(prior) !== JSON.stringify(projection)) {
         throw new Error('A configured instance revision is immutable.')
       }
@@ -76,7 +70,7 @@ export class HarnessInstanceRegistry {
   select(instanceId: string): HarnessInstanceProjection {
     const instance = this.instances.get(instanceId)
     if (!instance) throw new DomainError('HARNESS_INSTANCE_UNAVAILABLE', 'Harness instance inventory is unavailable.', 503)
-    if (instance.availability === 'retired') throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
+    if (instance.availability === 'retired') throw retiredHarnessError()
     if (instance.availability !== 'available') {
       throw new DomainError('HARNESS_INSTANCE_INVALID', `Harness instance unavailable: ${instance.availability}.`, 409)
     }

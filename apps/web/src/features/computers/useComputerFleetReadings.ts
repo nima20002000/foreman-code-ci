@@ -1,7 +1,6 @@
 import type { ComputerActivity } from '@foreman-code/contracts/computer-activity'
 import { useComputerUtilizations } from '../../shared/api/computerActivity'
-import { metricView, sampleClock } from '../resource-telemetry/telemetryView'
-import { useMonotonicElapsed } from '../resource-telemetry/useMonotonicElapsed'
+import { metricView, sampleClock, useMonotonicElapsed } from '../resource-telemetry'
 import { computerLoad } from './computerLoad'
 
 /** Keep cached readings as last known when activity or telemetry cannot refresh. */

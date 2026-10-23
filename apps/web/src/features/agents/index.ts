@@ -22,3 +22,4 @@ export type {
   ReorderableAgent,
   ReorderableAgentsResult,
 } from './useReorderableAgents'
+export { defaultAgentForHarness } from './agentSettings'

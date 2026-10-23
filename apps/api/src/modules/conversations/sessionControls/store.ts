@@ -15,7 +15,7 @@ import type { NativeHarnessSessionManager } from '../../harnesses/port.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { DomainError } from '../../errors.js'
 import { NativeConversationControlCommands } from '../nativeControlCommands.js'
-import { componentLogger } from '../../diagnostics/logger.js'
+import { componentLogger } from '../../diagnostics/index.js'
 import { isDefiniteCompactionRejection } from '../../harnesses/errors.js'
 import type { AcceptedChatSettings } from '../nativeChatInput.js'
 

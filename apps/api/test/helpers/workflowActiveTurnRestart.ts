@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect } from 'vitest'
-import { SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
+import { SavedRunDetailsSchema } from '@foreman-code/contracts/current'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { startWhenReady, runningTurn, completedRun }
   from './harnessInstallationUpdate.js'

@@ -104,8 +104,8 @@
 .agent-chat-message--user .n-message header { justify-content: flex-end; }
 .agent-chat-message--user .n-message-content { width: fit-content; margin-left: auto; border-radius: var(--radius-lg) var(--radius-sm) var(--radius-lg) var(--radius-lg); }
 .agent-chat-message--agent .n-message { max-width: 96%; margin-right: auto; }
-.agent-chat-message--agent .n-message-content { white-space: normal; color: var(--color-text); }
-.agent-chat-answer { border: 1px solid var(--color-border); background: var(--color-surface-raised); border-radius: var(--radius-sm) var(--radius-lg) var(--radius-lg) var(--radius-lg); padding: .7rem .85rem; }
+.agent-chat-message--agent .n-message-content { white-space: normal; color: var(--text); }
+.agent-chat-answer { border: 1px solid var(--border); background: var(--surface-raised); border-radius: var(--radius-sm) var(--radius-lg) var(--radius-lg) var(--radius-lg); padding: .7rem .85rem; }
 .agent-chat-message .n-message time { opacity: 0; }
 .agent-chat-message:hover .n-message time, .agent-chat-message:focus-within .n-message time { opacity: 1; }
 .agent-chat-message--agent .conversation-message-content { white-space: normal; line-height: 1.65; }
@@ -203,7 +203,7 @@ body:has(.n-agent-popover[data-panel='chat']) .operator-chat-launcher { visibili
 /* Live execution activity: labeled executions (interval checks, retries) with one row per step. */
 .agent-chat-execution { display: grid; gap: var(--space-2); min-width: 0; }
 .agent-chat-execution-label { margin: 0; color: var(--text-muted); font: var(--type-caption); }
-.agent-chat-tool[data-status="failed"] summary small { color: var(--danger, currentColor); }
+.agent-chat-tool[data-status="failed"] summary small { color: var(--danger); }
 
 /* Attach sits inline with the message field; chips wrap above the row. */
 .agent-chat-input-box > .attachment-control { display: contents; }

@@ -36,11 +36,11 @@ import { sourceSha256 } from '../sources/manifest.js'
 import { verifiedSourceWorkingTree } from '../sources/nativeStamp.js'
 import { authorizeSource } from '../sources/authority.js'
 import { DomainError } from '../errors.js'
-import { componentLogger } from '../diagnostics/logger.js'
+import { componentLogger } from '../diagnostics/index.js'
 import { DeviceAccessError } from '../devices/access.js'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { JobRepository, type JobSql } from './repository.js'
-import { computerNameKey, readComputerNames } from '../computers/names.js'
+import { computerNameKey, readComputerNames } from '../computers/index.js'
 import { JobPreparationService, type JobPreparationSources } from './preparation.js'
 
 /** W07/CI qualification readback; no probing, installing or pulling during authoring. */

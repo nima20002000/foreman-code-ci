@@ -6,7 +6,7 @@ import { loadConfig } from '../src/config.js'
 import { createAppMcpRuntime, localAppMcpEndpoint } from '../src/modules/app-runtime/composition.js'
 import { McpDetectionService, WorkerLaunchCredentialService } from '../src/modules/harnesses/mcpDetection.js'
 import { registerMcpDetectionRoute } from '../src/routes/mcpDetection.js'
-import { Wave25WorkerCredentialService } from '../src/modules/interactions/wave25/credentials.js'
+import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
 
 afterEach(() => vi.restoreAllMocks())
 

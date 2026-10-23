@@ -4,13 +4,13 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { http, HttpResponse } from 'msw'
 import { expect, it, vi } from 'vitest'
 import type { JobQueueTicket } from '@foreman-code/contracts/job-admission'
-import type { RunExecutionSummary, RepeatGraphScopeV3, RunExecutionDetail } from '@foreman-code/contracts/wave25'
+import type { RunExecutionSummary, RepeatGraphScopeCurrent, RunExecutionDetail } from '@foreman-code/contracts/current'
 import { server } from '../../mocks/server'
-import type { SelectedRunState } from '../runs-selector/useSelectedRun'
+import type { SelectedRunState } from '../runs-selector'
 import { autoQueueTicket, execution as job, definition, logPage } from '../jobs/fixtures'
 import { AgentExecutionResults } from './AgentExecutionResults'
 
-const scope: RepeatGraphScopeV3 = { workspaceId: 'workspace-a', workflowId: 'workflow-a', runId: 'run-a',
+const scope: RepeatGraphScopeCurrent = { workspaceId: 'workspace-a', workflowId: 'workflow-a', runId: 'run-a',
   workflowVersionId: 'version-a', executionSemanticsVersion: 3 }
 const selection = { identity: scope, generation: { id: 1 }, active: true, invalid: false,
   isCurrent: () => true } as unknown as SelectedRunState

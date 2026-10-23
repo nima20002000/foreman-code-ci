@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { COORDINATION_RESULT_PROTOCOL } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
-import { Wave25WorkerCredentialService } from '../src/modules/interactions/wave25/credentials.js'
+import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
 import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
 import { postgresEnabled } from './helpers/database.js'
 

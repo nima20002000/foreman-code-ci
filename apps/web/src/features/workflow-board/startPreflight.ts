@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import { ManagedWorkspaceSchema } from '@foreman-code/contracts/management'
 import { CurrentManagedWorkflowSchema, CurrentWorkflowCapabilitiesSchema, CurrentWorkflowVersionDetailSchema,
-  CURRENT_WORKFLOW_ROUTES, RunStartV3InputSchema, sameExecutableWorkflow, sameWorkflowValue,
+  CURRENT_WORKFLOW_ROUTES, RunStartCurrentInputSchema, sameExecutableWorkflow, sameWorkflowValue,
   workflowRequiresWorkspaceDirectory,
-  type GraphDraftV3, type RunStartV3Input } from '@foreman-code/contracts/wave25'
+  type GraphDraftCurrent, type RunStartCurrentInput } from '@foreman-code/contracts/current'
 import { apiClient, ApiError, type ApiClient, type RequestOptions } from '../../shared/api/client'
 import { sessionGeneration } from '../../shared/api/sessionBoundary'
 const part = encodeURIComponent
@@ -11,7 +11,7 @@ const mismatch = (message: string) => new ApiError({ code: 'START_PREFLIGHT_CONF
 
 /** Generic saved V3 reads, irrespective of optional repeat. These are not native admission authority. */
 export function createBoardPreflightClient(client: ApiClient = apiClient) {
-  return async (displayed: GraphDraftV3, options?: RequestOptions) => {
+  return async (displayed: GraphDraftCurrent, options?: RequestOptions) => {
     const { workspaceId, workflowId } = displayed
     const workflowPath = `/api/management/workspaces/${part(workspaceId)}/workflows/${part(workflowId)}`
     // The Board draft is local; Start pins come only from saved server reads.
@@ -35,10 +35,10 @@ export function createBoardPreflightClient(client: ApiClient = apiClient) {
 }
 export const readBoardStartPreflight = createBoardPreflightClient()
 export type BoardStartPreflight = Awaited<ReturnType<typeof readBoardStartPreflight>>
-export type BoardStartPins = Pick<RunStartV3Input, 'workflowVersionId' | 'expectedWorkflowRevision' |
+export type BoardStartPins = Pick<RunStartCurrentInput, 'workflowVersionId' | 'expectedWorkflowRevision' |
   'expectedAgentConfigurationVersionIds' | 'expectedLocationRevision'>
 
-export function boardStartPins(displayed: GraphDraftV3, facts: BoardStartPreflight): BoardStartPins {
+export function boardStartPins(displayed: GraphDraftCurrent, facts: BoardStartPreflight): BoardStartPins {
   const { workflow, workspace, capabilities, version } = facts
   if (!capabilities.runtimeAdmission || !capabilities.persistedReadback) {
     throw new Error(`Current workflow Start is unavailable on this deployment${capabilities.reasons.length ? `: ${capabilities.reasons.join(', ')}` : '.'}`)
@@ -72,11 +72,11 @@ export function changedAgentIds(facts: BoardStartPreflight): string[] {
     && agent.configurationVersionId !== pins[agent.id]).map(({ agent }) => agent.id)
 }
 export function sameBoardStartPins(a: BoardStartPins, b: BoardStartPins) { return sameWorkflowValue(a, b) }
-export function currentBoardStartRequest(displayed: GraphDraftV3, facts: BoardStartPreflight, commandId: string): RunStartV3Input {
-  return RunStartV3InputSchema.parse({ executionSemanticsVersion: 3, workspaceId: displayed.workspaceId,
+export function currentBoardStartRequest(displayed: GraphDraftCurrent, facts: BoardStartPreflight, commandId: string): RunStartCurrentInput {
+  return RunStartCurrentInputSchema.parse({ executionSemanticsVersion: 3, workspaceId: displayed.workspaceId,
     workflowId: displayed.workflowId, ...boardStartPins(displayed, facts), commandId, input: {} })
 }
-export function useBoardStartPreflight(draft: GraphDraftV3, options: { enabled: boolean } = { enabled: true }) {
+export function useBoardStartPreflight(draft: GraphDraftCurrent, options: { enabled: boolean } = { enabled: true }) {
   return useQuery({ queryKey: ['workbench', 'board-start-preflight', sessionGeneration(), draft.workspaceId, draft.workflowId,
     draft.id, draft.revision, draft.baseWorkflowVersionId],
     queryFn: ({ signal }) => readBoardStartPreflight(draft, { signal }), enabled: options.enabled,

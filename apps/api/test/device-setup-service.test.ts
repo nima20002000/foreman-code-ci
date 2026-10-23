@@ -6,22 +6,27 @@ import { publicKeyFingerprint } from '@foreman-code/contracts/device-identity-no
 import { workerIdentityRequestCode } from '@foreman-code/contracts/device-setup-node'
 import { decodeWorkerEnrollmentCode } from '@foreman-code/contracts/device-setup'
 import { PostgresDeviceAccessService } from '../src/modules/devices/access.js'
+import { liveAuthorityQuery, livePrincipalRow } from './helpers/livePrincipal.js'
 afterEach(()=>vi.restoreAllMocks())
 function fixture(){
   const mainId=randomUUID(),keys=generateKeyPairSync('ed25519'),mainPublicKey=keys.publicKey.export({type:'spki',format:'pem'}).toString(),worker=generateKeyPairSync('ed25519'),publicKey=worker.publicKey.export({type:'spki',format:'pem'}).toString(),identity={workerInstallationId:randomUUID(),publicKey,publicKeyFingerprint:publicKeyFingerprint(publicKey)}
   const principal:ManagementPrincipal={id:'setup-actor',name:'Actor',audience:'operator',grants:[{actions:['settings:read','settings:update'],scope:{}}],expiresAt:'2099-01-01T00:00:00.000Z',revokedAt:null},receipts=new Map<string,unknown>(),registrations:unknown[]=[]
   let grants=0,available=true,revoked=false
-  const query=vi.fn(async(text:string,values?:unknown[])=>{
-    let rows:unknown[]=[]
-    if(text.includes('pg_try_advisory_lock'))rows=[{locked:true}]
-    else if(text.includes('select id,name,audience,grants'))rows=[{id:principal.id,name:principal.name,audience:'operator',grants:principal.grants,expires_at:new Date(principal.expiresAt),revoked_at:revoked?new Date():null,delegated_from:null}]
-    else if(text.includes('from device_main_identity'))rows=[{mainPublicKey,mainPublicKeyFingerprint:publicKeyFingerprint(mainPublicKey)}]
-    else if(text.includes('device_authorization_secret'))rows=[{secret:'a'.repeat(64)}]
-    else if(text.includes('input_hash, target_key, result'))rows=receipts.has(`${values![1]}:${values![2]}`)?[receipts.get(`${values![1]}:${values![2]}`)]:[]
-    else if(text.startsWith('select record from device_registrations'))rows=registrations.length?[{record:registrations[0]}]:[]
-    if(text.startsWith('insert into management_command_receipts'))receipts.set(`${values![1]}:${values![2]}`,{input_hash:values![4],target_key:values![3],result:JSON.parse(values![5] as string)})
-    if(text.startsWith('insert into device_registrations'))registrations.push(values![4])
-    if(text.startsWith('insert into device_pairing_grants'))grants++
+  // Statements are told apart by their bound values: ids and keys for the single-value reads, the principal ids, operation
+  // and command id for the receipt read, and the write shapes (receipt six values with a text target, pairing grant six
+  // with a numeric revision, registration five with the Main id second).
+  const authority=liveAuthorityQuery(id=>id===principal.id?livePrincipalRow(principal,{revoked}):undefined)
+  const query=vi.fn(async(text:string,values:unknown[]=[])=>{
+    const live=await authority(text,values)
+    let rows:unknown[]=live.rows
+    if(!rows.length&&values.length===1&&values[0]===mainId)rows=[{mainPublicKey,mainPublicKeyFingerprint:publicKeyFingerprint(mainPublicKey)}]
+    else if(!rows.length&&values.length===1&&values[0]===identity.workerInstallationId)rows=registrations.length?[{record:registrations[0]}]:[]
+    else if(!rows.length&&values.length===1&&typeof values[0]==='string'&&/^[0-9a-f]{64}$/.test(values[0]))rows=[{secret:'a'.repeat(64)}]
+    else if(!rows.length&&values.length===1&&typeof values[0]==='string')rows=[{locked:true}]
+    else if(values.length===3&&Array.isArray(values[0]))rows=receipts.has(`${values[1]}:${values[2]}`)?[receipts.get(`${values[1]}:${values[2]}`)]:[]
+    if(values.length===6&&typeof values[3]==='number')grants++
+    else if(values.length===6)receipts.set(`${values[1]}:${values[2]}`,{input_hash:values[4],target_key:values[3],result:JSON.parse(values[5] as string)})
+    if(values.length===5&&values[1]===mainId)registrations.push(values[4])
     return {rows,rowCount:rows.length,command:'SELECT',oid:0,fields:[]}
   })
   const connection={query,release:vi.fn()},pool=new pg.Pool()

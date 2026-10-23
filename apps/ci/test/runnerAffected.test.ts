@@ -31,6 +31,9 @@ it.each([
       await writeFile(join(origin, 'scripts', file),
         await readFile(new URL(`../../../scripts/${file}`, import.meta.url), 'utf8'))
     }
+    await mkdir(join(origin, 'packages/ci-protocol/src'), { recursive: true })
+    await writeFile(join(origin, 'packages/ci-protocol/src/testResults.mjs'),
+      await readFile(new URL('../../../packages/ci-protocol/src/testResults.mjs', import.meta.url), 'utf8'))
     await mkdir(bin)
     await writeFile(join(origin, 'package.json'), JSON.stringify({ scripts: { 'test:integration': 'fixture' } }))
     await writeFile(join(origin, 'pnpm-lock.yaml'), '')

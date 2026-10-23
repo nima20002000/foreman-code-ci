@@ -19,11 +19,11 @@ import { NativeResponseJournal } from '../src/modules/harnesses/recovery/respons
 import { NativeHarnessFactories } from '../src/modules/harnesses/runtimeFactory.js'
 import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('Retired Operator conversation history', () => {
-  let database: Awaited<ReturnType<typeof agent3Database>>
+  let database: Awaited<ReturnType<typeof migratedDatabase>>
   let access: PostgresAccessService
   let repository: PostgresOperatorConversationRepository
   let chat: OperatorChatService
@@ -45,7 +45,7 @@ describe.skipIf(!postgresEnabled)('Retired Operator conversation history', () =>
     managers.clear()
     prepare.mockClear()
     setup.mockClear()
-    database = await agent3Database()
+    database = await migratedDatabase()
     access = new PostgresAccessService(database.pool)
     owner = await access.issue({ name: 'Historical conversation owner', audience: 'operator',
       grants: [{ actions: ['operator_chat:read', 'operator_chat:write', 'harnesses:read'], scope: {} }],

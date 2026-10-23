@@ -29,13 +29,10 @@ describe('Start preparation deadline', () => {
     let now = 0
     let locks = 0
     const clock = vi.spyOn(performance, 'now').mockImplementation(() => now)
-    f.state.rows = (sql, _values, rows) => {
-      if (sql.includes('pg_try_advisory_xact_lock')) {
-        locks += 1
-        // The initial and post-preparation command locks together exhaust the budget.
-        now += RUN_START_LOCK_WAIT_MS / 2
-      }
-      return rows
+    f.state.onCommandLock = () => {
+      locks += 1
+      // The initial and post-preparation command locks together exhaust the budget.
+      now += RUN_START_LOCK_WAIT_MS / 2
     }
     try {
       await expect(admitRepeatRun(f.pool, f.locations, f.principal, 'mcp', f.request, {

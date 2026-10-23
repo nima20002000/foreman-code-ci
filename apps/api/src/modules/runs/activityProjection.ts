@@ -1,5 +1,5 @@
 import { GraphIdSchema, RunActivityPublicSchema, WorkHandoffResultSchema,
-  type RunActivityPublic, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+  type RunActivityPublic, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 import { CiActivitySchema, COORDINATION_RESULT_PROTOCOL, ExecutionResultSchema, parseCoordinationResult,
   WorkHandoffDataSchema, type CoordinationResult } from '@foreman-code/contracts'
 import { nativePersistenceRedactor } from '../interactions/nativePersistence.js'
@@ -32,7 +32,7 @@ const id = (value: unknown): string | undefined => GraphIdSchema.safeParse(value
 const count = (value: unknown): number | undefined => typeof value === 'number'
   && Number.isSafeInteger(value) && value >= 0 ? value : undefined
 
-function coordinatedActivityResult(row: ActivityReadRow, version: WorkflowVersionV3): CoordinationResult | undefined {
+function coordinatedActivityResult(row: ActivityReadRow, version: WorkflowVersionCurrent): CoordinationResult | undefined {
   if (row.result_protocol !== COORDINATION_RESULT_PROTOCOL || !row.execution_node_id) return undefined
   const result = ExecutionResultSchema.safeParse(row.work_result)
   if (!result.success || result.data.outcome !== 'succeeded') return undefined
@@ -73,7 +73,7 @@ function activityWorkResult(raw: unknown, coordinated?: CoordinationResult, mark
   })
 }
 
-function recordedResultActivity(row: ActivityReadRow, version: WorkflowVersionV3): Pick<RunActivityPublic, 'status' | 'summary' | 'detail' | 'workResult'> {
+function recordedResultActivity(row: ActivityReadRow, version: WorkflowVersionCurrent): Pick<RunActivityPublic, 'status' | 'summary' | 'detail' | 'workResult'> {
   const raw = row.work_result
   const result = ExecutionResultSchema.safeParse(raw)
   if (result.success && result.data.outcome === 'failed') {
@@ -287,7 +287,7 @@ function ciActivity(ci: RunActivityPublic['ci']): ActivityView {
 }
 
 /** Project typed activity details and recorded work results; exclude native provider bodies. */
-export function publicRunActivity(row: ActivityReadRow, version: WorkflowVersionV3,
+export function publicRunActivity(row: ActivityReadRow, version: WorkflowVersionCurrent,
   runId: string, runOutcome: string): RunActivityPublic {
   const scope = { workspaceId: version.workspaceId, workflowId: version.workflowId,
     runId, workflowVersionId: version.id,

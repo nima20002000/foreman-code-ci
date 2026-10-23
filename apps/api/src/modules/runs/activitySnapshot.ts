@@ -1,11 +1,11 @@
 import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { ActivitySnapshotV1Schema, type ActivitySnapshotV1, type ActivitySourceRevision,
   type InteractionSummary, type WorkRef, type WorkSummary, type CiActivity, ciActivityFromRecord } from '@foreman-code/contracts'
-import { REPEAT_GRAPH_LIMITS, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import { REPEAT_GRAPH_LIMITS, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 import { DomainError } from '../errors.js'
 import { RUN_ACTIVITIES_BOUNDS_SQL, RUN_ACTIVITIES_PAGE_SQL } from './activitiesSql.js'
 import { readNativeActivityFacts, projectNativeActivityFacts } from './nativeActivitySnapshot.js'
-import { AGENT_CI_SNAPSHOT_SQL } from './agentCiSnapshot.js'
+import { AGENT_CI_SNAPSHOT_SQL } from '../ci/reads.js'
 import { publicRunActivity, type ActivityReadRow } from './activityProjection.js'
 
 type Queryable = SqlQuery
@@ -115,7 +115,7 @@ async function facts(sql: Queryable, scope: RunActivityScope) {
 }
 
 /** Read on the existing authorized Run transaction. A validated revision vector protects READ COMMITTED callers. */
-export async function readRunActivitySnapshot(sql: Queryable, scope: RunActivityScope, version: WorkflowVersionV3): Promise<ActivitySnapshotV1> {
+export async function readRunActivitySnapshot(sql: Queryable, scope: RunActivityScope, version: WorkflowVersionCurrent): Promise<ActivitySnapshotV1> {
   if (version.id !== scope.workflowVersionId || version.workspaceId !== scope.workspaceId || version.workflowId !== scope.workflowId) {
     throw new DomainError('RUN_PIN_CONFLICT', 'The activity version does not match its immutable Run scope.', 409)
   }

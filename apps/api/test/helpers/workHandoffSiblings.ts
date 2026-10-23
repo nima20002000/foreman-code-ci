@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { HarnessExecutionRequest } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture, WorkActivationInputSchema } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, WorkActivationInputSchema } from '@foreman-code/contracts/current'
 
 export function workHandoffSiblings() {
   const fixture = makeCurrentWorkflowFixture(randomUUID(), 'parallel')

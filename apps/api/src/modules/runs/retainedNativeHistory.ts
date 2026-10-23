@@ -1,6 +1,7 @@
 import type { HarnessNativeEvent } from '@foreman-code/contracts'
 import { runtimeTimingPoint } from '../../infrastructure/runtimeTiming.js'
-import { assertGraphTransaction, beforeGraphCommit, type GraphTransactionSql } from '../run-graph/connection.js'
+import { assertGraphTransaction, beforeGraphCommit } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { claudeNativeGraphObservation, nativeGraphSource } from '../run-graph/nativeIngestion.js'
 import { selectNativeGraphEvidence } from '../run-graph/nativeEvidence.js'
 import { normalizeNativeProducerEvent } from '../run-graph/nativeProducerNormalization.js'
@@ -23,7 +24,7 @@ interface RetainedRow {
 const sourceKey = (connection: string | null, sequence: number) => JSON.stringify([connection, sequence])
 
 /** Only byte-identical committed frames can avoid a second graph ingestion. */
-export async function retainedNativeHistoryEvents(sql: GraphTransactionSql, scope: RepeatScope,
+export async function retainedNativeHistoryEvents(sql: SqlTransaction, scope: RepeatScope,
   events: readonly HarnessNativeEvent[], capture: WorkflowNativeCapture): Promise<Set<HarnessNativeEvent>> {
   assertGraphTransaction(sql)
   const key = { execution: repeatExecutionIdentity(capture.execution), workKind: 'workflow' as const,

@@ -1,6 +1,6 @@
 import { parseCoordinationResult, type CoordinationResult, type CoordinationResultContext,
   type ExecutionResult, type HarnessExecutionContext, type ResultProtocol } from '@foreman-code/contracts'
-import { canonicalGraphJson, parseWorkHandoffArtifactResult, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson, parseWorkHandoffArtifactResult, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 import { parseWorkflowArtifactResult, type WorkflowArtifactResultV1 } from '@foreman-code/contracts/workflow-artifact-result'
 import { parseWorkResultForInput, receivedWorkRequestIds, resolveWorkResultForInput } from './workHandoffResult.js'
 import { parseHierarchyWorkResult, type HierarchyWorkResult } from './hierarchyResults.js'
@@ -23,7 +23,7 @@ export function parseWorkflowCoordinationResult(result: ExecutionResult, context
   return handoff
 }
 
-export function parseWorkflowWorkResult(result: ExecutionResult, version: WorkflowVersionV3,
+export function parseWorkflowWorkResult(result: ExecutionResult, version: WorkflowVersionCurrent,
   workflowNodeId: string, resultProtocol?: ResultProtocol, input?: unknown, executionContext?: HarnessExecutionContext) {
   if (!resultProtocol && version.definition.hierarchy) {
     const parsed = parseHierarchyWorkResult(result, version, workflowNodeId, undefined, executionContext?.outstandingRequestIds)
@@ -39,7 +39,7 @@ export function parseWorkflowWorkResult(result: ExecutionResult, version: Workfl
 
 /** Artifact mappings still come from this exact native result. The coordinated
  * envelope adds summary/board without creating a second artifact authority. */
-export function workflowArtifactResult(result: ExecutionResult, version: WorkflowVersionV3,
+export function workflowArtifactResult(result: ExecutionResult, version: WorkflowVersionCurrent,
   workflowNodeId: string, resultProtocol?: ResultProtocol): WorkflowArtifactResultV1 {
   const node = version.definition.nodes.find(item => item.id === workflowNodeId)
   if (!node || node.kind === 'job' || !node.artifactOutputs) throw new Error('WORKFLOW_ARTIFACT_OUTPUTS_UNDECLARED')

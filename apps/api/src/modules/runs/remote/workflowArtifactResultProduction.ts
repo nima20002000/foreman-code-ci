@@ -5,7 +5,8 @@ import type { AcceptedArtifactPublication } from '../../files/distributed/public
 import { DomainError } from '../../errors.js'
 import type { WorkflowNativeCapture, WorkflowNativeVerificationPort } from '../../interactions/workflowNativeCapture.js'
 import { readAcceptedPlacement, readDispatchIntent } from '../../placement/persistence.js'
-import { assertGraphTransaction, beforeGraphCommit, didGraphTransactionCommit, type GraphTransactionSql } from '../../run-graph/connection.js'
+import { assertGraphTransaction, beforeGraphCommit, didGraphTransactionCommit } from '../../run-graph/connection.js'
+import type { SqlTransaction } from '../../../infrastructure/transaction.js'
 import { assertRepeatCanonicalReceiptLocked, requireRepeatCanonicalReceiptBeforeCommit } from '../../run-graph/repeatReceipts.js'
 import { readRepeatExecutionLocked } from '../repeatPostgres.js'
 import { readAcceptedRepeatRunLocked } from '../repeatStartRead.js'
@@ -19,14 +20,14 @@ import { readReconciledDispatchIntent } from './persistence.js'
 import type { WorkflowArtifactResultSourcePort } from './workflowArtifactResultAdoption.js'
 
 export interface WorkflowArtifactTerminalPorts {
-  artifactTerminalContext(sql: GraphTransactionSql, owner: RunOwnership, capture: WorkflowNativeCapture,
+  artifactTerminalContext(sql: SqlTransaction, owner: RunOwnership, capture: WorkflowNativeCapture,
     proof: WorkflowNativeProofRecord): Promise<TransferContext>
-  assertArtifactTerminal(sql: GraphTransactionSql, owner: RunOwnership, capture: WorkflowNativeCapture,
+  assertArtifactTerminal(sql: SqlTransaction, owner: RunOwnership, capture: WorkflowNativeCapture,
     proof: WorkflowNativeProofRecord): Promise<void>
-  assertAdoptedArtifacts(sql: GraphTransactionSql, owner: RunOwnership, capture: WorkflowNativeCapture): Promise<void>
+  assertAdoptedArtifacts(sql: SqlTransaction, owner: RunOwnership, capture: WorkflowNativeCapture): Promise<void>
 }
 interface Retained {
-  sql: GraphTransactionSql
+  sql: SqlTransaction
   capture: WorkflowNativeCapture
   proof: WorkflowNativeProofRecord
   accepted: AcceptedArtifactPublication
@@ -43,7 +44,7 @@ export function createProductionWorkflowArtifactResultSource(ports: {
 }) {
   const originals = new WeakMap<RepeatNativeEvidence, Retained>()
   const executions = new Map<string, Retained>()
-  const verify = async (sql: GraphTransactionSql, entry: Retained) => {
+  const verify = async (sql: SqlTransaction, entry: Retained) => {
     assertGraphTransaction(sql)
     const { capture, proof, accepted } = entry
     capture.owner.assertOwned()
@@ -95,7 +96,7 @@ export function createProductionWorkflowArtifactResultSource(ports: {
   }
   return {
     source,
-    async assertLaunchDeclarationLocked(sql: GraphTransactionSql, executionId: string, runId: string): Promise<void> {
+    async assertLaunchDeclarationLocked(sql: SqlTransaction, executionId: string, runId: string): Promise<void> {
       assertGraphTransaction(sql)
       const snapshot = await readAcceptedRepeatRunLocked(sql, runId)
       const stored = await readRepeatExecutionLocked(sql, snapshot, executionId)
@@ -107,7 +108,7 @@ export function createProductionWorkflowArtifactResultSource(ports: {
         return unavailable()
       }
     },
-    async retainOriginalLocked(sql: GraphTransactionSql, evidence: RepeatNativeEvidence, raw: WorkflowNativeProofRecord): Promise<void> {
+    async retainOriginalLocked(sql: SqlTransaction, evidence: RepeatNativeEvidence, raw: WorkflowNativeProofRecord): Promise<void> {
       assertGraphTransaction(sql)
       const proof = structuredClone(raw), capture = ports.captures.read(evidence)
       if (proof.original.type !== 'history' || proof.original.history.terminalTurn?.result.outcome !== 'succeeded') return

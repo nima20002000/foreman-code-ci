@@ -1,18 +1,18 @@
 import assert from 'node:assert/strict'
 import { readFile, writeFile } from 'node:fs/promises'
-import { runEng03NativeScenario, type Eng03NativeControl } from './nativeAcceptanceScenario.js'
+import { runNativeAcceptanceScenario, type NativeAcceptanceControl } from './nativeAcceptanceScenario.js'
 import { waitForStartedBranches } from './nativeAcceptanceState.js'
 import { ownedTestPath } from './testResources.js'
 
 const [observation] = process.argv.slice(2)
 if (!observation) throw new Error('An owned retention report path is required')
 ownedTestPath(observation)
-const state: { context?: Eng03NativeControl; branchCount: number; reserved: boolean } = {
+const state: { context?: NativeAcceptanceControl; branchCount: number; reserved: boolean } = {
   branchCount: 0, reserved: false,
 }
 let failure: unknown
 try {
-  await runEng03NativeScenario('E03-P01', 'codex', 'codex', {
+  await runNativeAcceptanceScenario('E03-P01', 'codex', 'codex', {
     control: async current => {
       state.context = current
       const started = await waitForStartedBranches(current)

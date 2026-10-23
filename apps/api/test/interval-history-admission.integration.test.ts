@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
-import { canonicalGraphJson, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { readRunIntervalChecks } from '../src/modules/runs/intervalChecks.js'
 import { repeatNativeObserver } from '../src/modules/runs/repeatRuntime.js'

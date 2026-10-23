@@ -1,7 +1,7 @@
 import type { GitWorktreePorts, MainCiContext } from './environment.js'
 import type { ReadObservation } from '@foreman-code/contracts'
 import { mkdir, mkdtemp, open, readFile, readdir, rm, writeFile } from 'node:fs/promises'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { gzipSync } from 'node:zlib'
 import { compactIntegrationCoverage } from '@foreman-code/contracts/ci-coverage'
 import { homedir, hostname, userInfo } from 'node:os'
@@ -30,6 +30,7 @@ import { readFleetIdentityInventory } from './fleetIdentityInventory.js'
 import type { CircleAccountContext, CircleAccountRegistry } from './circleAccounts.js'
 import { CircleStandby } from './circleStandby.js'
 import { unresolvedCloudAttemptIds } from './cloudAttempts.js'
+import { sha256Hex } from '@foreman-code/contracts/server-kit'
 
 const MAX_DISPATCH_ATTEMPTS = 3
 const GITHUB_INPUT_LIMIT_BYTES = 65_535
@@ -682,7 +683,7 @@ export class CloudCi {
     const { git, snapshot } = publication
     const data = canonicalJson({ commit: snapshot, slice: input.slice,
       files: input.files ?? '', partition: input.partition ?? '' })
-    const hash = createHash('sha256').update(data).digest('hex')
+    const hash = sha256Hex(data)
     await mkdir(this.root, { recursive: true, mode: 0o700 })
     const directory = await mkdtemp(join(this.root, 'dispatch-'))
     try {
@@ -753,7 +754,7 @@ export class CloudCi {
   }
 
   private configErrorPath(run: CloudRun) {
-    const key = createHash('sha256').update(canonicalJson({ mirror: run.mirror, commit: run.commit })).digest('hex')
+    const key = sha256Hex(canonicalJson({ mirror: run.mirror, commit: run.commit }))
     return join(this.root, 'config-errors', `${key}.json`)
   }
 
@@ -1005,7 +1006,7 @@ export class CloudCi {
 
   private async publishLocked(repository: string, mirror: string, commit: string, defaultBranch: string | undefined,
     baseCommit: string | undefined, durations: CiDurations, exact: boolean, coverage?: CiCoverageSelection) {
-    const coverageKey = coverage ? createHash('sha256').update(canonicalJson(coverage)).digest('hex') : ''
+    const coverageKey = coverage ? sha256Hex(canonicalJson(coverage)) : ''
     const prefix = `${commit}\n${defaultBranch ?? ''}\n${baseCommit ?? ''}\n${coverageKey}\n`
     const key = `${prefix}${canonicalJson(durations)}`
     const publications = this.publications(repository, mirror)

@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { freezePlacement, deriveDispatch } from '../src/modules/placement/binding.js'
 import { reserveRemoteDispatchOrigin } from '../src/modules/placement/remoteReceiptCommit.js'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
-import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 function dispatch(run: { id: string }) {
@@ -29,10 +30,10 @@ function dispatch(run: { id: string }) {
 
 describe.skipIf(!postgresEnabled)('original dispatch delivery connection in PostgreSQL', () => {
   it('keeps the first delivery on replay and refuses a different Worker boot', async () => {
-    const db = await agent3Database()
+    const db = await migratedDatabase()
     let owner: RunOwnership | undefined
     try {
-      const { run } = await seedAgent3(db.pool, db.directory)
+      const { run } = await seedWorkflowFixture(db.pool, db.directory)
       owner = await RunOwnership.acquire(db.pool, run.id, () => undefined)
       if (!owner) throw new Error('Expected Run ownership')
       const owned = owner

@@ -3,10 +3,10 @@ import { HarnessExecutionSchema, NativeSessionReferenceSchema, NativeSessionLane
   type HarnessExecution, type NativeSessionReference } from '@foreman-code/contracts'
 import { SourceActiveNativeSessionSchema, type SourceActiveNativeSession } from '@foreman-code/contracts/source-operations'
 import type { SourceMaterializationRecord } from '@foreman-code/contracts/source-admission'
-import type { GraphSqlClient } from '../run-graph/connection.js'
-import { readAcceptedPlacement, readDispatchIntent, readNativePlacement } from '../placement/persistence.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
+import { readAcceptedPlacement, readDispatchIntent, readNativePlacement } from '../placement/index.js'
 import { readReconciledDispatchIntent } from '../runs/remote/persistence.js'
-import { readNativeExecutionBinding } from '../placement/executionBinding.js'
+import { readNativeExecutionBinding } from '../placement/index.js'
 import { repeatExecutionIdentity } from '../runs/repeatResolution.js'
 import { sourceMaterializationDigest } from './bindingHash.js'
 import { sourceSha256 } from './manifest.js'
@@ -18,7 +18,7 @@ export interface SourceOwnedNativeSession {
 }
 /** An entered COMMIT permits the first allocation; it is not an allocated
  * session. Only an actual original session row switches to continuation. */
-export async function readSourceCurrentNativeSession(sql: GraphSqlClient, record: SourceMaterializationRecord,
+export async function readSourceCurrentNativeSession(sql: SqlQuery, record: SourceMaterializationRecord,
   captures: readonly SourceOwnedNativeSession[]): Promise<SourceActiveNativeSession | null> {
   if (record.receipt.binding.accessMode !== 'exclusive-write') return null
   await readReconciledDispatchIntent(sql, record.operationId, true)
@@ -36,7 +36,7 @@ export async function readSourceCurrentNativeSession(sql: GraphSqlClient, record
 }
 /** Read-only SQL qualification of the ORIGINAL entered lifetime. The capture is
  * supplied by the installed manager, never reconstructed from these rows. */
-export async function readSourceActiveNativeSession(sql: GraphSqlClient, record: SourceMaterializationRecord,
+export async function readSourceActiveNativeSession(sql: SqlQuery, record: SourceMaterializationRecord,
   capture: SourceOwnedNativeSession): Promise<SourceActiveNativeSession | null> {
   capture.signal.throwIfAborted(); await capture.assertCurrent()
   if (record.receipt.binding.accessMode !== 'exclusive-write' || !record.finalDispatchBindingHash

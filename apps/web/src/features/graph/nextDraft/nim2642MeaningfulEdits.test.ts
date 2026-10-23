@@ -1,9 +1,10 @@
 import { nativeNode } from '../../../shared/mocks/nativeFixtureTypes'
 import { describe, expect, it } from 'vitest'
 import { fixture } from './core.cases'
-import { discardMeaningfulChanges, draftOperations, hasLocalChanges, mergeAcknowledgement } from './model'
-import { changeDraftAgent } from './agentEdits'
-import { newNextDraft, nextDraftDirty } from './state'
+import {
+  discardMeaningfulChanges, draftOperations, hasLocalChanges, mergeAcknowledgement, changeDraftAgent,
+  newNextDraft, nextDraftDirty,
+} from '../../board-core'
 
 const moved = () => {
   const context = fixture(), graph = structuredClone(context.draft.graph)

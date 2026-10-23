@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 import { AgentConfigurationVersionSchema, HarnessExecutionSchema, type ResolvedSkill } from '@foreman-code/contracts'
-import { AcceptedWorkflowRunV3Schema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { AgentChatService } from '../src/modules/conversations/agentChat.js'
 import { PostgresAgentChatRepository } from '../src/modules/conversations/agentChatRepository.js'
@@ -12,7 +12,8 @@ import { agentInstructionBundle } from '../src/modules/skills/instructions.js'
 import type { PostgresRunRepository } from '../src/modules/runs/postgres.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import { eventually } from './helpers/agentChatF5.js'
-import { agent3Database, candidateFor, seedAgent3 } from './helpers/workflowDatabase.js'
+import { candidateFor, seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 
 function skill(skillId: string, instructions: string): ResolvedSkill {
   return { skillId, version: '1', instructions,
@@ -20,7 +21,7 @@ function skill(skillId: string, instructions: string): ResolvedSkill {
 }
 
 it.each(['fork', 'recovery'] as const)('keeps the originating node skills during Claude chat %s', async phase => {
-  const db = await agent3Database()
+  const db = await migratedDatabase()
   const services: AgentChatService[] = []
   try {
     const skills = [skill('shared', 'Shared guidance'), skill('removed', 'Removed guidance'),
@@ -34,7 +35,7 @@ it.each(['fork', 'recovery'] as const)('keeps the originating node skills during
         tools: [], permissionRules: [], instructions: '', mcpServers: {} },
     }))
     fixture.version.definition.nodes[0]!.skills = { remove: ['removed'], add: [reference(2)] }
-    const saved = await seedAgent3(db.pool, db.directory, fixture, { skills })
+    const saved = await seedWorkflowFixture(db.pool, db.directory, fixture, { skills })
     const candidate = candidateFor(saved)
     await db.pool.query(`insert into harness_executions(id,run_id,workflow_node_id,agent_id,attempt,record)
       values($1,$2,$3,$4,1,$5::jsonb)`,
@@ -42,7 +43,7 @@ it.each(['fork', 'recovery'] as const)('keeps the originating node skills during
     const source = HarnessExecutionSchema.parse({ ...candidate, state: 'completed',
       nativeSessionId: 'source-session', workingDirectory: db.directory,
       result: { outcome: 'succeeded', output: {} }, finishedAt: saved.createdAt })
-    const run = AcceptedWorkflowRunV3Schema.parse({ ...saved.run, executionState: 'completed',
+    const run = AcceptedWorkflowRunCurrentSchema.parse({ ...saved.run, executionState: 'completed',
       outcome: 'succeeded', result: { outcome: 'succeeded', output: {} }, finishedAt: saved.createdAt })
     const runs: Pick<PostgresRunRepository, 'getForWorkspace' | 'getExecution' | 'executionPages'> = {
       getForWorkspace: async () => run,

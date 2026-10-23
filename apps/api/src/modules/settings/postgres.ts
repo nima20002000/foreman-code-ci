@@ -7,7 +7,7 @@ import {
   type HarnessDefaults,
 } from '@foreman-code/contracts'
 import type pg from 'pg'
-import type { ConfiguredHarnessInstance } from '../harnesses/instanceRegistry.js'
+import type { ConfiguredHarnessInstance } from '../harnesses/index.js'
 import { UnavailableHarnessDefaultsSchema } from '@foreman-code/contracts/management'
 import { withTransaction } from '../../infrastructure/transaction.js'
 

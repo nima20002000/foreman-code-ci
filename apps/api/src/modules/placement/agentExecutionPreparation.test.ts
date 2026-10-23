@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import type { HarnessExecution } from '@foreman-code/contracts'
-import type { AcceptedWorkflowRunV3 } from '@foreman-code/contracts/wave25'
+import type { AcceptedWorkflowRunCurrent } from '@foreman-code/contracts/current'
 import type { AcceptedNodePlacement, NativeExecutionPlacement } from '@foreman-code/contracts/node-placement'
 import type { RunOwnership } from '../runs/ownership.js'
 import type { SourceAdmissionPort } from '../sources/admissionPorts.js'
@@ -24,7 +24,7 @@ function fixture(host: 'main' | 'device', bound = true) {
     ...(bound ? { nativeSessionId: 'original-native-session' } : {}),
   } satisfies HarnessExecution
   const run = { id: 'run', workspaceId: 'workspace', workflowId: 'workflow',
-    workflowVersionId: 'version', authorizationPrincipalId: 'principal' } as AcceptedWorkflowRunV3
+    workflowVersionId: 'version', authorizationPrincipalId: 'principal' } as AcceptedWorkflowRunCurrent
   const placement = {
     hostRef: { kind: host }, payload: { kind: 'agent', agentConfigurationVersionId: 'configuration' },
     source: { kind: 'pending', rootId: 'root', bindingRevision: 1 },

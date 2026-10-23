@@ -1,10 +1,10 @@
 import { AgentConfigurationVersionSchema, HarnessExecutionSchema } from '@foreman-code/contracts'
-import { AcceptedWorkflowRunV3Schema, RunWorktreeSchema } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema, RunWorktreeSchema } from '@foreman-code/contracts/current'
 import type pg from 'pg'
 import { DomainError } from '../errors.js'
 import { deliveryTransactionClient } from '../interactions/connection.js'
 import { requiredLocationAccess } from '../workspaces/location.js'
-import type { WorkspaceLocationService } from '../workspaces/location.js'
+import type { WorkspaceLocationService } from '../workspaces/index.js'
 
 /** Shared by preflight, attachment and approval writes, before native side effects. */
 export function continuationValidator(pool: pg.Pool, locations: WorkspaceLocationService) {
@@ -22,7 +22,7 @@ export function continuationValidator(pool: pg.Pool, locations: WorkspaceLocatio
     const row = result.rows[0]
     if (!row) throw new DomainError('WORKER_EXECUTION_NOT_FOUND', 'The accepted execution is unavailable.', 409)
     const execution = HarnessExecutionSchema.parse(row.execution)
-    const run = AcceptedWorkflowRunV3Schema.parse(row.run)
+    const run = AcceptedWorkflowRunCurrentSchema.parse(row.run)
     const configuration = AgentConfigurationVersionSchema.parse(row.configuration)
     const treeRow = (await client.query<{ record: unknown }>(
       `select record from run_worktrees where run_id=$1 and allocation_id in ($2,'')

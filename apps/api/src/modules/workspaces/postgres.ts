@@ -9,11 +9,11 @@ import type pg from 'pg'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { requireAuthorization } from '../access/policy.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
-import { SavedWorkspaceDetailsSchema, type SavedWorkspaceDetails } from '@foreman-code/contracts/wave25'
+import { SavedWorkspaceDetailsSchema, type SavedWorkspaceDetails } from '@foreman-code/contracts/current'
 
 import { DomainError } from '../errors.js'
 import type { PostgresRunRepository } from '../runs/postgres.js'
-import type { PostgresWorkflowRepository } from '../workflows/postgres.js'
+import type { PostgresWorkflowRepository } from '../workflows/index.js'
 
 function requireWorkspaceRead(principal: ManagementPrincipal, workspaceId: string): void {
   for (const action of ['workspaces:read', 'workflows:read', 'agents:read', 'runs:read'] as const) {

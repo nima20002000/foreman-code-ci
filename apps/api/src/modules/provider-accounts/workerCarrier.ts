@@ -4,7 +4,7 @@ import { PROVIDER_ACCOUNT_WORKER_NAMESPACE, ProviderAccountWorkerRequestSchema,
   ProviderAccountObservationSchema, ProviderAccountModelsSchema, ProviderAccountNativeAuthenticationObservationSchema,
   ProviderAccountNativeDiscoverySchema, ProviderAccountSchema,
   type ProviderAccountBinding, type ProviderAccountWorkerRequest } from '@foreman-code/contracts/provider-accounts'
-import type { DeviceEndpoint } from '../devices/deviceEndpoint.js'
+import type { DeviceEndpoint } from '../devices/index.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { DomainError } from '../errors.js'
 

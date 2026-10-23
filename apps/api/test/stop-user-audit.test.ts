@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import Fastify from 'fastify'
 import { it, vi } from 'vitest'
 import type { DurableInteraction } from '@foreman-code/contracts'
-import { AcceptedWorkflowRunV3Schema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import type { RunOwnership } from '../src/modules/runs/ownership.js'
 import { DomainError } from '../src/modules/errors.js'
 import type { PostgresAccessService } from '../src/modules/access/postgres.js'
@@ -18,7 +18,7 @@ it('F11: failed cleanup remains retryable after terminal settlement and a fresh 
   // a terminal Run inside settleOrphan even when physical closure had failed.
   // Current V3 instead preserves the accepted result while cleanup is retried.
   const f = makeCurrentWorkflowFixture('pr17-stop-user-audit', 'single')
-  const record = AcceptedWorkflowRunV3Schema.parse({ ...f.run, executionState: 'completed',
+  const record = AcceptedWorkflowRunCurrentSchema.parse({ ...f.run, executionState: 'completed',
     outcome: 'succeeded', result: { outcome: 'succeeded' }, finishedAt: f.createdAt,
     authorizationPrincipalId: 'principal-pr17-cleanup', executionLocation: { runnerId: 'runner-pr17-cleanup',
       rootPath: '/synthetic/pr17-stop-user-audit', locationRevision: 1, identityHash: `sha256:${'a'.repeat(64)}` } })

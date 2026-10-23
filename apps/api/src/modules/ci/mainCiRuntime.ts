@@ -1,11 +1,12 @@
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { RemoteOperationJournal } from '../runs/remote/operationJournal.js'
+import type { RemoteOperationJournal } from '../runs/index.js'
 import { systemGitWorktreePorts } from '../sources/gitWorktree.js'
 import { CiRuntimeWorker, currentCiRuntimePaths, lastCiRuntimeRefresh, prepareCiRuntime, retainedCiJobImages,
   retireCiRuntimeConfigurations, scheduleCiRuntimeRefresh } from './runtime.js'
 import { retainMainJobSourceClosures } from '../jobs/mainJobJournal.js'
 import type { JobSql } from '../jobs/repository.js'
+import { hostEnvironment } from '../../shared/process.js'
 
 /** The command that refreshes Main's protected runtime while Main is stopped: this same Node runtime and loader
  * flags (an environment file, a TypeScript loader) with the Main refresh entry beside this module. */
@@ -26,7 +27,7 @@ export function createMainCiRuntime(input: {
 }): CiRuntimeWorker {
   const workDirectory = join(input.runtimeRoot, 'ci-runtime-refresh')
   return new CiRuntimeWorker(input.runtimeRoot, {
-    git: systemGitWorktreePorts(process.env),
+    git: systemGitWorktreePorts(hostEnvironment()),
     managedRuntimeRoot: async () => input.runtimeRoot,
     prepare: async options => {
       const journal = await input.journal()

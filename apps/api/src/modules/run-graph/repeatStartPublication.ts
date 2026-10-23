@@ -1,10 +1,11 @@
 import { readPublicProjectionLocked } from './compactSnapshot.js'
 import {
-  AcceptedRepeatStartV1Schema, canonicalGraphJson, RepeatGraphScopeV3Schema,
-  type RepeatGraphScopeV3, type AcceptedRepeatStartV1,
-} from '@foreman-code/contracts/wave25'
+  AcceptedRepeatStartV1Schema, canonicalGraphJson, RepeatGraphScopeCurrentSchema,
+  type RepeatGraphScopeCurrent, type AcceptedRepeatStartV1,
+} from '@foreman-code/contracts/current'
 import type { RepeatStartPublication } from '../runs/repeatStartAdmission.js'
-import { assertGraphTransaction, poisonGraphTransaction, type GraphTransactionSql } from './connection.js'
+import { assertGraphTransaction, poisonGraphTransaction } from './connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { openRunGraphPublication, type RunGraphPublication } from './publication.js'
 import { readRepeatGraphPinsLocked } from './repeatProjectionRows.js'
 import { requireRepeatCanonicalReceiptBeforeCommit } from './repeatReceipts.js'
@@ -15,12 +16,12 @@ import { RunGraphError } from './errors.js'
  * No bootstrap from an old Run, owner substitute, child activation or scheduler.
  */
 export const repeatStartPublication: RepeatStartPublication = Object.freeze({
-  async initializeLocked(sql: GraphTransactionSql, raw: AcceptedRepeatStartV1) {
+  async initializeLocked(sql: SqlTransaction, raw: AcceptedRepeatStartV1) {
     assertGraphTransaction(sql)
     try {
       const accepted = AcceptedRepeatStartV1Schema.parse(JSON.parse(canonicalGraphJson(raw)))
       const { run } = accepted
-      const scope = RepeatGraphScopeV3Schema.parse({ workspaceId: run.workspaceId, workflowId: run.workflowId,
+      const scope = RepeatGraphScopeCurrentSchema.parse({ workspaceId: run.workspaceId, workflowId: run.workflowId,
         workflowVersionId: run.workflowVersionId, runId: run.id, executionSemanticsVersion: 3 })
       // Run before head/children, same lock mode as canonical G1. A preexisting
       // head is never silently relabelled from_snapshot to from_admission.
@@ -51,7 +52,7 @@ export const repeatStartPublication: RepeatStartPublication = Object.freeze({
  * Existing head required; no Run ownership is forged and no effect can progress.
  * Caller must obtain this publication FIRST, before its Run/child mutations.
  */
-export async function publishRepeatStoppedRunLocked(publication: RunGraphPublication<RepeatGraphScopeV3>): Promise<void> {
+export async function publishRepeatStoppedRunLocked(publication: RunGraphPublication<RepeatGraphScopeCurrent>): Promise<void> {
   const { sql, scope } = publication
   try {
     assertGraphTransaction(sql)

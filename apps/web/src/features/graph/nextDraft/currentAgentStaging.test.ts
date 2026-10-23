@@ -1,8 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import type { GraphEditIntentV3 } from '@foreman-code/contracts/wave25'
+import type { GraphEditIntentCurrent } from '@foreman-code/contracts/current'
 import { fixture } from './core.cases'
-import { newNextDraft, nextDraftKey } from './state'
-import { stageAgentEdits } from './agentEdits'
+import { newNextDraft, nextDraftKey, stageAgentEdits } from '../../board-core'
 import { acknowledgeEditIntentSnapshot } from './useGraphEditIntent'
 import * as storage from './editIntentStorage'
 
@@ -45,7 +44,7 @@ function savedIntent(includeAgents: boolean) {
     expectedWorkflowVersionId: 'workflow-version-1', stageCommandId: 'stage-agent', state: 'saved',
     stagedDraft: { graph: edit.graph, stagedAgents: [{ agent, baseRevision: 3 }] },
     result: { revision: 8, currentVersionId: 'workflow-version-2', version: { definition: { ...edit.graph, version: 2 }, agentConfigurationVersionIds: { 'agent-0': 'configuration-result', 'agent-1': 'configuration-1' } },
-      ...(includeAgents ? { agents: [persisted] } : {}) } } as unknown as GraphEditIntentV3
+      ...(includeAgents ? { agents: [persisted] } : {}) } } as unknown as GraphEditIntentCurrent
   return { edit, intent, persisted }
 }
 it('acknowledges Agent edits using only the exact persisted publication snapshot', () => {

@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest'
 import { DurableInteractionSchema, HarnessExecutionSchema, NATIVE_INTERACTION_FIXTURES, ReviewJobSchema,
   withAdvancedDefaults } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { deliveredReview, reviewInProgress } from './helpers/remoteReviewProductionCases.js'
 import { projectInteractionActivity } from '../src/modules/interactions/activityProjection.js'
 

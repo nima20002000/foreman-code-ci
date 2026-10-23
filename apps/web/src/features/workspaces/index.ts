@@ -12,3 +12,5 @@ export {
   MIN_NAVIGATION_WIDTH,
   useNavigationUiStore,
 } from './navigationUiStore'
+export { COLLAPSED_NAVIGATION_WIDTH } from './navigationUiStore'
+export { WorkspaceDetailPage } from './WorkspaceDetailPage'

@@ -7,7 +7,7 @@ import { isTransientReadError, useBlockingReadError } from '../shared/api/readFa
 import { reconnectingMessage, retryApiReads, useApiReconnect } from '../shared/api/reconnect'
 import { useManualRefetch } from '../shared/api/useManualRefetch'
 import { RuntimeInstanceBoundary } from './RuntimeInstanceBoundary'
-import { ChatAttachmentBoundary } from '../features/conversations/ChatAttachmentBoundary'
+import { ChatAttachmentBoundary } from '../features/conversations'
 import { useHeld } from '../shared/ui/useHeld'
 import './runtimeBoundary.css'
 

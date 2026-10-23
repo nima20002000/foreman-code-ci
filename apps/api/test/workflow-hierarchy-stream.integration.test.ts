@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { WORKFLOW_HIERARCHY_TOOLS, WorkflowHierarchyReadResultSchema, WorkflowReportsPageSchema } from '@foreman-code/contracts'
-import { WorkActivationInputSchema } from '@foreman-code/contracts/wave25'
+import { WorkActivationInputSchema } from '@foreman-code/contracts/current'
 import { graphHeaders, graphRpc, graphRpcValue } from './graph-composition-fixture.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { coordinationOutput, hierarchyRuntimeFixture } from './helpers/hierarchyRuntimeFixture.js'

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { RunActivitiesPageSchema } from '@foreman-code/contracts/wave25'
+import { RunActivitiesPageSchema } from '@foreman-code/contracts/current'
 import { attempts, describeRetryBudget, sameSlot } from './helpers/retryBudget.js'
 import { executionRows, readback, recoveryFixture, scope, toolValue, type RecoveryFixture } from './helpers/recoveryFixture.js'
 

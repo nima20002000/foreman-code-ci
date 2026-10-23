@@ -1,7 +1,7 @@
-import { createHash } from 'node:crypto'
 import { isBuiltin } from 'node:module'
 import { posix } from 'node:path'
 import { ciCodeFile, ciInfrastructureFile, importSpecifiers, resolveImport } from '@foreman-code/contracts/ci-import-graph'
+import { sha256Hex } from '@foreman-code/contracts/server-kit'
 
 /** Bump when the key inputs or the doubt rules change, so earlier passes stop matching. */
 const CI_RESULT_CACHE_VERSION = 1
@@ -129,9 +129,8 @@ export class CiResultKeys {
       const harness = await this.harnessFiles(project, environment)
       const own = await this.closure([file], true)
       const paths = [...new Set([...environment, ...harness, ...own])].sort()
-      const hash = createHash('sha256').update(JSON.stringify([CI_RESULT_CACHE_VERSION, suite, part,
-        paths.map(path => [path, this.tree.blobs.get(path)])]))
-      return { key: hash.digest('hex') }
+      return { key: sha256Hex(JSON.stringify([CI_RESULT_CACHE_VERSION, suite, part,
+        paths.map(path => [path, this.tree.blobs.get(path)])])) }
     } catch (error) {
       if (error instanceof CacheDoubt) return { key: null, reason: error.message }
       throw error

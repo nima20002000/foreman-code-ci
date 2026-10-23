@@ -10,11 +10,11 @@ import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { probeComputerAccounts, systemPorts, type AccountProbePorts } from '../src/modules/computers/accountProbe.js'
 import { ComputerAccountsService } from '../src/modules/computers/accounts.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 it.skipIf(!postgresEnabled)('reads passive Codex account state through authenticated MCP', async () => {
-  const database = await agent3Database()
+  const database = await migratedDatabase()
   const mainId = (await database.pool.query<{ id: string }>('select id from application_installation')).rows[0]!.id
   const target = { hostRef: { kind: 'main' as const, mainId }, applicationInstallationId: mainId,
     keyRevision: null, authorizationRevision: null }

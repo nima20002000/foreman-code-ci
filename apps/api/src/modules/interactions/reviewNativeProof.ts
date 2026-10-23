@@ -1,8 +1,9 @@
 import { HarnessExecutionSchema, NativeSessionReferenceSchema, ReviewJobSchema, type NativeHarnessEvent, type ReviewJob } from '@foreman-code/contracts'
-import { canonicalGraphJson, type NativeGraphObservation } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson, type NativeGraphObservation } from '@foreman-code/contracts/current'
 import { REMOTE_NATIVE_SOURCE_LIMIT } from '@foreman-code/contracts/remote-workflow-physical'
 import { DomainError } from '../errors.js'
-import { beforeGraphCommit, type GraphTransactionSql } from '../run-graph/connection.js'
+import { beforeGraphCommit } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { currentRunGraphPublication, hasRunGraphPublication, graphSourceDigest, type RunGraphPublication } from '../run-graph/publication.js'
 import { requireRepeatCanonicalReceiptBeforeCommit } from '../run-graph/repeatReceipts.js'
 import { normalizeNativeProducerEvent } from '../run-graph/nativeProducerNormalization.js'
@@ -11,9 +12,9 @@ import { readRepeatExecutionLocked } from '../runs/repeatExecutionRead.js'
 import { readAcceptedRepeatRunLocked } from '../runs/repeatStartRead.js'
 import { repeatDigest, repeatExecutionIdentity, sameRepeatValue, type RepeatNodeRef, type RepeatScope } from '../runs/repeatResolution.js'
 import type { CapturedReviewNativeSource, ReviewNativeCapture, ReviewNativeVerificationPort } from './reviewNativeCapture.js'
-import { readExecutionPlacement } from '../placement/persistence.js'
+import { readExecutionPlacement } from '../placement/index.js'
 import { ReviewEvidenceTracker } from './reviewerEvidence.js'
-import { requireLeaseAtCommit } from './wave25/context.js'
+import { requireLeaseAtCommit } from './current/context.js'
 import { readWorkflowClosure } from './workflowClosure.js'
 
 function fail(code = 'REVIEW_ORIGINAL_SOURCE_CONFLICT'): never {
@@ -67,7 +68,7 @@ export function reviewSourceReadiness(record: Pick<ReviewNativeProofRecord, 'ori
 /** Paired with the real coordinator channel during production construction. */
 export class ReviewNativeProofServices {
   constructor(private readonly captures: ReviewNativeVerificationPort,
-    private readonly verifyRemote?: (sql: GraphTransactionSql, capture: CapturedReviewNativeSource) => Promise<void>) {}
+    private readonly verifyRemote?: (sql: SqlTransaction, capture: CapturedReviewNativeSource) => Promise<void>) {}
 
   private async verifyLocked(publication: RunGraphPublication, job: ReviewJob, capture: CapturedReviewNativeSource) {
     const sql = publication.sql
@@ -142,7 +143,7 @@ export class ReviewNativeProofServices {
   }
 }
 
-export async function assertReviewOriginalProofLocked(sql: GraphTransactionSql, job: ReviewJob,
+export async function assertReviewOriginalProofLocked(sql: SqlTransaction, job: ReviewJob,
   observation: NativeGraphObservation, proofId: string): Promise<ReviewNativeProofRecord> {
   // Graph reads verify this inside a read-only repeatable-read cut, where a
   // row lock is both unavailable and unnecessary; writers still lock it.
@@ -167,7 +168,7 @@ export async function assertReviewOriginalProofLocked(sql: GraphTransactionSql, 
 
 /** A job JSON cleanup enum is never physical proof. No-submission is a positive
  * sealed reservation; closed is the original manager's latest durable receipt. */
-export async function assertReviewCleanupProofLocked(sql: GraphTransactionSql, job: ReviewJob,
+export async function assertReviewCleanupProofLocked(sql: SqlTransaction, job: ReviewJob,
   executionId: string): Promise<void> {
   const cleanup = job.cleanup
   if (!cleanup || cleanup.nativeState === 'pending') return fail('REVIEW_NATIVE_SETTLEMENT_PENDING')
@@ -202,7 +203,7 @@ export { jobIdentity as reviewJobIdentity }
 
 /** Checks durable original evidence before the coordinator closes a reviewer and
  * again at Run settlement. A caller-supplied terminal job is not authority. */
-export async function assertReviewJobTerminalProofLocked(sql: GraphTransactionSql,
+export async function assertReviewJobTerminalProofLocked(sql: SqlTransaction,
   job: ReviewJob, executionId: string): Promise<void> {
   const row = (await sql.query<{ record: unknown; execution_id: string; approval_native_evidence: NativeGraphObservation | null;
     approval_original_proof_id: string | null }>(`select record,execution_id,approval_native_evidence,approval_original_proof_id

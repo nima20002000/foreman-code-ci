@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { copyFile, mkdir, readFile, readdir, rm, writeFile, chmod } from 'node:fs/promises'
 import { availableParallelism, totalmem } from 'node:os'
@@ -15,6 +14,7 @@ import { DEVICE_MIB, DEVICE_RESOURCE_HOST_RESERVE, DeviceResourceLimitsSchema, t
 import { readCiRuntimeInstallation, readCiRuntimeTemplate, relocateCiQuotaSlots } from './ciRuntimeInstallation.js'
 import { DomainError } from '@foreman-code/contracts/server-kit'
 import type { CiContext } from './environment.js'
+import { sha256Hex } from '@foreman-code/contracts/server-kit'
 
 const run = promisify(execFile)
 
@@ -100,7 +100,7 @@ export async function scheduleCiRuntimeRefresh(context: CiContext, input: {
     { root: input.root, manifest: input.manifest, seedReceiptPath, resources: input.resources, toolSources })
   const refreshPath = join(base, `reviewed-refresh-${short}.json`)
   const refreshInput = currentBytes
-    ? { expectedConfigurationSha256: createHash('sha256').update(currentBytes).digest('hex'), captureInput }
+    ? { expectedConfigurationSha256: sha256Hex(currentBytes), captureInput }
     : captureInput
   const workerUnit = await currentServiceUnit()
   const unit = `foreman-ci-refresh-${short}`

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { COORDINATION_RESULT_PROTOCOL, type HarnessExecutionRequest } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture, RunStartV3ResultSchema, type RunStartV3Input } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, RunStartCurrentResultSchema, type RunStartCurrentInput } from '@foreman-code/contracts/current'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { checkpointRuntimeFixture } from './helpers/checkpointRuntime.js'
 import { hierarchyRuntimeFixture, coordinationOutput } from './helpers/hierarchyRuntimeFixture.js'
@@ -66,14 +66,14 @@ describe.skipIf(!postgresEnabled)('immutable workflow result protocol and coordi
         [version.workspaceId, JSON.stringify({ device: String(directory.dev), inode: String(directory.ino) })])
       const revision = (await f.db.pool.query<{ revision: string }>('select revision::text from workflows where id=$1',
         [version.workflowId])).rows[0]!.revision
-      const input: RunStartV3Input = { workspaceId: version.workspaceId, workflowId: version.workflowId,
+      const input: RunStartCurrentInput = { workspaceId: version.workspaceId, workflowId: version.workflowId,
         workflowVersionId: version.id, executionSemanticsVersion: 3, commandId: randomUUID(),
         expectedWorkflowRevision: Number(revision), expectedAgentConfigurationVersionIds: version.agentConfigurationVersionIds,
         expectedLocationRevision: f.f.run.executionLocation!.locationRevision, input: { task: 'Run the saved hierarchy' } }
       const url = `/api/management/workspaces/${version.workspaceId}/workflows/${version.workflowId}/runs`
       const http = await f.app.inject({ method: 'POST', url, headers: graphHeaders(f.writer.token), payload: input })
       expect(http.statusCode, http.body).toBe(202)
-      const started = RunStartV3ResultSchema.parse(http.json())
+      const started = RunStartCurrentResultSchema.parse(http.json())
       expect(started.run.resultProtocol).toBe(COORDINATION_RESULT_PROTOCOL)
       const mcp = await graphRpc(f.app, f.writer.token, 'tools/call', { name: 'run_start', arguments: input })
       expect(mcp.result?.isError).not.toBe(true)

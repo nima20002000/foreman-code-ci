@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { currentWorkflowFixture } from '../../shared/mocks/currentWorkflow'
-import { workflowToGraph } from './mapper'
-import { applyGraphGeometry, createGraphGeometryAdapter } from './geometry'
-import { putRelationship, removeRelationship } from './nextDraft/model'
+import {
+  workflowToGraph, applyGraphGeometry, createGraphGeometryAdapter, putRelationship, removeRelationship,
+  editNextDraft, newNextDraft, nextDraftDirty,
+} from '../board-core'
 import { fixture } from './nextDraft/core.cases'
-import { editNextDraft, newNextDraft, nextDraftDirty } from './nextDraft/state'
 
 describe('current V3 geometry and explicit typed relationships', () => {
   it('projects larger Orchestrators without authoring default geometry or executable edits', () => {

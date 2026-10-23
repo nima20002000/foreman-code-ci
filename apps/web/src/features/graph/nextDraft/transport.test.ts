@@ -1,11 +1,11 @@
-import { createBoardStartClient } from '../../workflow-board/startClient'
+import { createBoardStartClient } from '../../workflow-board'
 import { describe, expect, it, vi } from 'vitest'
 import { ApiClient } from '../../../shared/api/client'
 import { createNextDraftApi } from './transport'
 import { createCurrentBoardMock } from '../../../shared/mocks/currentBoard'
-import { CurrentWorkflowSaveResultSchema } from '@foreman-code/contracts/wave25'
+import { CurrentWorkflowSaveResultSchema } from '@foreman-code/contracts/current'
 import { currentWorkflowFixture as makeWave25Fixture } from '../../../shared/mocks/currentWorkflow'
-import type { DraftRequest } from './state'
+import type { DraftRequest } from '../../board-core'
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
 describe('workflow HTTP client boundary', () => {

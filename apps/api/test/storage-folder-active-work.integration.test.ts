@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
-import { RunStartV3ResultSchema } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { RunStartCurrentResultSchema } from '@foreman-code/contracts/current'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
@@ -19,7 +19,7 @@ import { WorkflowManagementService } from '../src/modules/workflows/management.j
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { insertCurrentRunFixture } from './helpers/currentRunFixture.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
-import { seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
 import { sourceWorktreeMcpFixture } from './helpers/sourceWorktreeMcpFixture.js'
 
 let database: Awaited<ReturnType<typeof migratedDatabase>>
@@ -42,7 +42,7 @@ async function workspace() {
   const registered = join(directory, 'registered')
   await mkdir(storage, { recursive: true })
   await mkdir(registered)
-  const fixture = await seedAgent3(database.pool, registered, makeCurrentWorkflowFixture(randomUUID(), 'single'),
+  const fixture = await seedWorkflowFixture(database.pool, registered, makeCurrentWorkflowFixture(randomUUID(), 'single'),
     { run: false })
   const path = join(storage, 'active-project')
   await mkdir(path)
@@ -127,7 +127,7 @@ it('protects the native materialization directory of an executing Run', async ()
   try {
     const started = await f.client.callTool({ name: 'run_start', arguments: { ...f.input, commandId: randomUUID() } })
     expect(started.isError, JSON.stringify(started)).not.toBe(true)
-    const runId = RunStartV3ResultSchema.parse(decodeMcpToolResult(started)).run.id
+    const runId = RunStartCurrentResultSchema.parse(decodeMcpToolResult(started)).run.id
     await expect.poll(async () => (await f.base.runs.get(runId))?.executionState, { timeout: 90_000 }).toBe('waiting')
     const native = (await f.base.db.pool.query<{ path: string }>(`select record#>>'{workingTree,canonicalProjectRoot}' as path
       from execution_native_placements where record->>'runId'=$1 order by execution_id limit 1`, [runId])).rows[0]!

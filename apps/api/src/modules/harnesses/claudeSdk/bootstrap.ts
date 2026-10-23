@@ -1,5 +1,4 @@
-import { logIgnoredError } from '../../diagnostics/ignoredError.js'
-import { componentLogger } from '../../diagnostics/logger.js'
+import { logIgnoredError } from '../../diagnostics/index.js'
 import { inventoryPayloadFingerprints } from '../payloadFingerprintCache.js'
 import { createRequire } from 'node:module'
 import { realpath } from 'node:fs/promises'
@@ -70,34 +69,15 @@ export function createClaudeProductionDiscovery(input: {
   workingDirectory: string
 }) {
   const resolvers = new Map<string, ReturnType<typeof createClaudeCurrentPinResolver>>()
-  // Inventory refreshes every few seconds; each distinct failure is logged once until discovery succeeds again.
-  const reported = new Set<string>()
-  const discover = async (host: Extract<CanonicalMachineReference, { kind: 'main' }>, environment: TargetEnvironment,
-    signal?: AbortSignal): Promise<Awaited<ReturnType<typeof discoverInstalledClaudeSdk>> | { unavailable: string }> => {
-    let harnessInstallationId: string | undefined
+  const discover = async (host: Extract<CanonicalMachineReference, { kind: 'main' }>, environment: TargetEnvironment, signal?: AbortSignal) => {
     try {
       signal?.throwIfAborted()
       const sdk = installedSdk(), selectedExecutable = await sdkNativeExecutable(sdk.entrypoint)
-      if (!selectedExecutable) throw new DomainError('CLAUDE_NATIVE_EXECUTABLE_UNAVAILABLE',
-        'The installed Claude SDK has no native executable for this platform.', 409)
-      harnessInstallationId = commandInputHash({ hostRef: host, driverId: 'claude',
+      if (!selectedExecutable) return null
+      const harnessInstallationId = commandInputHash({ hostRef: host, driverId: 'claude',
         launcher: packageRelativeLauncher(selectedExecutable) })
-      const discovered = await discoverInstalledClaudeSdk({ ...sdk, selectedExecutable }, { harnessInstallationId, environment }, signal, inventoryPayloadFingerprints)
-      reported.clear()
-      return discovered
-    } catch (error) {
-      signal?.throwIfAborted()
-      const code = (error as { code?: unknown } | null)?.code
-      const message = error instanceof Error ? error.message : String(error)
-      const key = JSON.stringify([host, harnessInstallationId ?? null, typeof code === 'string' ? code : null, message])
-      if (!reported.has(key)) {
-        if (reported.size >= 64) reported.clear()
-        reported.add(key)
-        componentLogger('harness').warn({ operation: 'discover Claude installation', host, harnessInstallationId, code, err: error },
-          'Claude installation discovery failed')
-      }
-      return { unavailable: `Claude installation discovery failed: ${message}` }
-    }
+      return await discoverInstalledClaudeSdk({ ...sdk, selectedExecutable }, { harnessInstallationId, environment }, signal, inventoryPayloadFingerprints)
+    } catch { signal?.throwIfAborted(); return null }
   }
   const currentForConfiguration = async (value: Parameters<AcceptedProfileAuthority<ClaudeProfileOwner>['current']>[1], signal?: AbortSignal) => {
     if (value.configuration.harness !== 'claude' || value.target.hostRef.kind !== 'main') throw new DomainError('HARNESS_PROFILE_UNAVAILABLE',

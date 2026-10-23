@@ -3,20 +3,20 @@ import { useMemo } from 'react'
 import { ExecutionBranch } from './ExecutionBranch'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  readRunInspectionKey, runInspectionKey, type RepeatGraphScopeV3, type RunExecutionDetail,
-  type RunExecutionSummary, type WorkflowVersionV3, type WorkspaceBoardExecutionSelection,
-} from '@foreman-code/contracts/wave25'
+  readRunInspectionKey, runInspectionKey, type RepeatGraphScopeCurrent, type RunExecutionDetail,
+  type RunExecutionSummary, type WorkflowVersionCurrent, type WorkspaceBoardExecutionSelection,
+} from '@foreman-code/contracts/current'
 import { Alert, Button, Select } from '../../../shared/ui/nocturne'
 import { useProtectedAccessError } from '../../../shared/api/useProtectedAccessError'
-import { JobRunResult } from '../../jobs/JobRunResult'
-import { useBoardSelection } from '../context'
+import { JobRunResult } from '../../jobs'
+import { useBoardSelection } from '../../board-core'
 import { assertExecutionVersion } from '../runDetailsClient'
 import { useBindingPages, useExecutionPages, useExecutionQuery, executionPagesKey, bindingsPagesKey, refreshFirstInspectionPage } from './queries'
 import { useInspectionPresentation } from './presentation'
 import { JsonValue, JsonDisclosure } from './JsonValue'
 import './inspection.css'
 
-export function ExecutionInspector({ scope, version }: { scope: RepeatGraphScopeV3; version: WorkflowVersionV3 }) {
+export function ExecutionInspector({ scope, version }: { scope: RepeatGraphScopeCurrent; version: WorkflowVersionCurrent }) {
   const board = useBoardSelection(), cache = useQueryClient()
   const inspection = board?.inspection ?? {}
   const selection = readRunInspectionKey(inspection.runExchangeKey)
@@ -102,7 +102,7 @@ export function ExecutionInspector({ scope, version }: { scope: RepeatGraphScope
 }
 
 function ExactExecution({ scope, version, executionId, nodeId, occurrenceId, relationshipId }: {
-  scope: RepeatGraphScopeV3; version: WorkflowVersionV3; executionId: string
+  scope: RepeatGraphScopeCurrent; version: WorkflowVersionCurrent; executionId: string
   nodeId?: string; occurrenceId?: string; relationshipId?: string
 }) {
   const query = useExecutionQuery(scope, executionId)
@@ -150,7 +150,7 @@ function ExactExecution({ scope, version, executionId, nodeId, occurrenceId, rel
   </article>
 }
 
-function ExecutionBindings({ scope, detail, relationshipId }: { scope: RepeatGraphScopeV3; detail: RunExecutionDetail; relationshipId?: string }) {
+function ExecutionBindings({ scope, detail, relationshipId }: { scope: RepeatGraphScopeCurrent; detail: RunExecutionDetail; relationshipId?: string }) {
   const cache = useQueryClient()
   const disclosure = JSON.stringify([scope, detail.execution.executionId, 'bindings'])
   const open = useInspectionPresentation((state) => !!state.open[disclosure])

@@ -3,7 +3,6 @@ import { randomUUID } from 'node:crypto'
 
 import {
   HarnessConfigurationSchema,
-  RETIRED_OPENCODE_MESSAGE,
   OperatorAgentSchema,
   OperatorConfigurationVersionSchema,
   type HarnessConfiguration,
@@ -17,14 +16,15 @@ import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-re
 import { canonicalJsonNumericKeysFirstLegacy, canonicalJsonValueLegacy } from '@foreman-code/contracts/canonical-json'
 
 import { withTransaction } from '../../infrastructure/transaction.js'
-import { PostgresFoundationSettingsRepository } from '../settings/foundation.js'
+import { PostgresFoundationSettingsRepository } from '../settings/index.js'
 
 import { DomainError } from '../errors.js'
-import { harnessProfileSelectionConflict } from '../harnesses/instanceSettings/selectionConflict.js'
-import type { ProviderAccountConfigurationService } from '../harnesses/providerAccountConfiguration.js'
+import { harnessProfileSelectionConflict } from '../harnesses/index.js'
+import type { ProviderAccountConfigurationService } from '../harnesses/index.js'
 import { resolveWorkspaceSkills } from '../skills/catalog.js'
 import { composeInstructionText, instructionsTooLarge } from '../skills/instructions.js'
 import { sha256Hex } from '../../shared/hash.js'
+import { retiredHarnessError } from '../harnesses/retiredHarness.js'
 
 const OPERATOR_ID = 'application-operator'
 
@@ -33,7 +33,7 @@ const OPERATOR_ID = 'application-operator'
 function hash(value: unknown) { return `sha256:${sha256Hex(canonicalJsonNumericKeysFirstLegacy(value))}` }
 
 function acceptedConfiguration(value: HarnessConfiguration): HarnessConfiguration {
-  if (value.harness === 'opencode') throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
+  if (value.harness === 'opencode') throw retiredHarnessError()
   // Persisted settings do not grant execution; admission validates the selected native profile.
   return HarnessConfigurationSchema.parse(value)
 }

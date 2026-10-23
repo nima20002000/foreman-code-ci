@@ -11,7 +11,7 @@ import type { DeviceExtensionRegistration } from '../src/modules/devices/deviceA
 import { deviceApplicationFailure } from '../src/modules/devices/deviceApplicationError.js'
 import { createFixtureSchema, dropFixtureSchema } from './helpers/testResources.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 // Placement, device registration and Operator authority are other domains; this file holds real
@@ -50,13 +50,13 @@ const applicationAccess = { kind: 'scoped-worker-mcp' as const, token: 'original
 
 describe.skipIf(!postgresEnabled)('Worker device requests while the Run is busy', () => {
   const schema = `busy_run_${randomUUID().replaceAll('-', '')}`
-  let database: Awaited<ReturnType<typeof agent3Database>>
+  let database: Awaited<ReturnType<typeof migratedDatabase>>
   let pool: pg.Pool
   let authority: DeviceExtensionRegistration
   let relay: MainWorkerMcpRelay
 
   beforeAll(async () => {
-    database = await agent3Database()
+    database = await migratedDatabase()
     await createFixtureSchema(database.pool, schema)
     const tables = [
       'runs(id text primary key,workspace_id text,workflow_id text,execution_state text,stop_requested_at timestamptz,record jsonb)',

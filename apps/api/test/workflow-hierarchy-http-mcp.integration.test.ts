@@ -6,7 +6,7 @@ import { AgentDefaultsUpdateResultSchema, AgentMutationResultSchema, ManagedAgen
   ManagedAgentDetailSchema, type ManagementGrant } from '@foreman-code/contracts/management'
 import { CurrentManagedWorkflowSchema, CurrentWorkflowSaveResultSchema, SavedManagedWorkflowCommandResultSchema,
   CURRENT_WORKFLOW_TOOLS, CurrentEditReadResultSchema, WorkflowHierarchyUpdateResultSchema,
-  type CurrentEditStageInput, type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+  type CurrentEditStageInput, type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { postgresEnabled } from './helpers/database.js'
 import { graphHeaders, graphRpc, graphRpcValue, graphCatalogNames } from './graph-composition-fixture.js'
@@ -36,7 +36,7 @@ async function createHierarchy(f: AppFixture, includeHierarchy = true) {
     { workflowNodeId: 'node-2', parentNodeId: 'node-0' },
     { workflowNodeId: 'node-3', parentNodeId: 'node-1' },
   ] }
-  const graph: WorkflowDefinitionV3 = { ...managed.workflow, entryNodeId: 'node-0', ...(includeHierarchy ? { hierarchy } : {}),
+  const graph: WorkflowDefinitionCurrent = { ...managed.workflow, entryNodeId: 'node-0', ...(includeHierarchy ? { hierarchy } : {}),
     handoffs: { contractVersion: 1 }, approval: { handler: 'user' }, executionCondition: { kind: 'manual' },
     executionPolicy: { maxParallelism: 4, maxNodeExecutions: 100 }, edges,
     nodes: agents.map(({ agent }, index) => {
@@ -66,7 +66,7 @@ async function readAgent(f: AppFixture, agentId: string) {
   expect(reply.statusCode, reply.body).toBe(200)
   return ManagedAgentDetailSchema.parse(reply.json())
 }
-function stageInput(saved: SavedWorkflow, graph: WorkflowDefinitionV3,
+function stageInput(saved: SavedWorkflow, graph: WorkflowDefinitionCurrent,
   stagedAgents: CurrentEditStageInput['stagedAgents']): CurrentEditStageInput {
   return { action: 'stage_edits', workspaceId: saved.workspaceId, workflowId: saved.workflowId,
     draftId: `editor-${randomUUID()}`, commandId: randomUUID(), executionSemanticsVersion: 3,
@@ -90,7 +90,7 @@ async function publishEdits(f: AppFixture, base: string, staged: Awaited<ReturnT
   expect(finished.intent?.state, JSON.stringify(finished.intent?.error)).toBe('saved')
   return finished.intent!.result!
 }
-function routeNodes(graph: WorkflowDefinitionV3, routes: [number, number][]): WorkflowDefinitionV3 {
+function routeNodes(graph: WorkflowDefinitionCurrent, routes: [number, number][]): WorkflowDefinitionCurrent {
   const edges = [...graph.edges]
   for (const [from, to] of routes) if (!edges.some(edge => edge.kind === 'execution' && edge.source === `node-${from}` && edge.target === `node-${to}`)) {
     edges.push({ id: `added-route-${edges.length}`, kind: 'execution', source: `node-${from}`, target: `node-${to}` })
@@ -229,7 +229,7 @@ describe.skipIf(!postgresEnabled)('Master hierarchy authenticated HTTP/MCP parit
       const fresh = SavedManagedWorkflowCommandResultSchema.parse(created.json()).value
       const base = `/api/management/workspaces/${t.workspaceId}/workflows/${fresh.workflow.id}`
       const master = { ...seed, id: `private-master-${randomUUID()}`, configurationVersionId: undefined, name: 'Private new Master' }
-      const graph: WorkflowDefinitionV3 = { ...fresh.workflow, entryNodeId: 'new-master',
+      const graph: WorkflowDefinitionCurrent = { ...fresh.workflow, entryNodeId: 'new-master',
         executionPolicy: { maxParallelism: 1, maxNodeExecutions: 1 }, approval: { handler: 'user' },
         nodes: [{ id: 'new-master', agentId: master.id, name: master.name }], edges: [], handoffs: { contractVersion: 1 },
         hierarchy: { version: 1, masterNodeId: 'new-master', parents: [] } }
@@ -437,7 +437,7 @@ describe.skipIf(!postgresEnabled)('Master hierarchy authenticated HTTP/MCP parit
       // A legacy existing Agent's absent policy remains absent even under a new role template.
       const legacy = await readAgent(f, f.f.configurations[0]!.agentId)
       expect(legacy.agent.graphqlTools).toBeUndefined()
-      const existingGraph: WorkflowDefinitionV3 = { ...saved.version.definition,
+      const existingGraph: WorkflowDefinitionCurrent = { ...saved.version.definition,
         nodes: [...saved.version.definition.nodes, { id: 'legacy-worker', agentId: legacy.agent.id, name: legacy.agent.name }],
         hierarchy: { ...saved.version.definition.hierarchy!, parents: [...saved.version.definition.hierarchy!.parents,
           { workflowNodeId: 'legacy-worker', parentNodeId: 'node-1' }] },

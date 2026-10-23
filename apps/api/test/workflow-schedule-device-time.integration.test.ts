@@ -6,20 +6,20 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { ScheduleGetResultSchema, ScheduleSaveResultSchema, scheduleUtcToLocalTime } from '@foreman-code/contracts/schedules'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
-import { sch11DomainState, sch11Fixture, type Sch11Database, type Sch11Fixture } from './helpers/scheduleFixture.js'
+import { scheduleDomainState, scheduleDispatchFixture, type ScheduleDatabase, type ScheduleDispatchFixture } from './helpers/scheduleFixture.js'
 
 describe.skipIf(!postgresEnabled)('device-time and seconds authenticated HTTP/MCP parity', () => {
-  let database: Sch11Database
-  let f: Sch11Fixture
+  let database: ScheduleDatabase
+  let f: ScheduleDispatchFixture
   let app: ReturnType<typeof buildApp> | undefined
   let address: string
   let clients: Client[] = []
-  beforeAll(async () => { database = await agent3Database() }, 60_000)
+  beforeAll(async () => { database = await migratedDatabase() }, 60_000)
   afterAll(async () => { await database?.close() })
   beforeEach(async () => {
-    f = await sch11Fixture(database)
+    f = await scheduleDispatchFixture(database)
     clients = []
     app = buildApp({ readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },
       operator: { access: f.access, services: { workflows: f.workflows, commands: f.commands } as unknown as OperatorServices } })
@@ -66,11 +66,11 @@ describe.skipIf(!postgresEnabled)('device-time and seconds authenticated HTTP/MC
     expect(second).toEqual({ ...saved.value, revision: 2 })
     expect(scheduleUtcToLocalTime(second.nextOccurrenceAt!, 'Asia/Tokyo')).toEqual({ localDate: '2099-08-25', time: '00:30' })
     expect(scheduleUtcToLocalTime(second.nextOccurrenceAt!, 'America/Los_Angeles')).toEqual({ localDate: '2099-08-24', time: '08:30' })
-    const before = await sch11DomainState(f)
+    const before = await scheduleDomainState(f)
     const denied = await reader.callTool({ name: 'workflow_schedule_save', arguments: { ...f.command(2), schedule: body.schedule } })
     expect(denied.isError).toBe(true)
     expect(JSON.stringify(denied.content)).toContain('ACCESS_DENIED')
-    expect(await sch11DomainState(f)).toEqual(before)
+    expect(await scheduleDomainState(f)).toEqual(before)
     expect(await readBoth(reader)).toEqual(second)
     expect(await f.countRuns()).toBe(0)
   }, 60_000)
@@ -98,25 +98,25 @@ describe.skipIf(!postgresEnabled)('device-time and seconds authenticated HTTP/MC
     const current = ScheduleSaveResultSchema.parse(edit.json()).value
     expect(current).toMatchObject({ every: 2, unit: 'second', anchorAt: saved.mode === 'interval' ? saved.anchorAt : null })
     expect(await readBoth(reader)).toEqual(current)
-    const before = await sch11DomainState(f)
+    const before = await scheduleDomainState(f)
     const denied = await reader.callTool({ name: 'workflow_schedule_save', arguments: { ...f.command(2), schedule } })
     expect(denied.isError).toBe(true)
     expect(JSON.stringify(denied.content)).toContain('ACCESS_DENIED')
-    expect(await sch11DomainState(f)).toEqual(before)
+    expect(await scheduleDomainState(f)).toEqual(before)
     expect(await f.countRuns()).toBe(0)
   }, 60_000)
 
   it.each([0, -1, 0.5])('rejects invalid %s Seconds through HTTP and MCP without persistence', async (every) => {
     const owner = await connect(f.writer.token)
     const schedule = { mode: 'interval', timezone: 'UTC', every, unit: 'second', anchorAt: '2099-08-24T15:30:00.000Z', enabled: true, policy: 'latest_saved' }
-    const before = await sch11DomainState(f)
+    const before = await scheduleDomainState(f)
     const body = { commandId: randomUUID(), expectedRevision: 0, schedule }
     const http = await app!.inject({ method: 'PUT', url: root(), headers: { authorization: `Bearer ${f.writer.token}` }, payload: body })
     expect(http.statusCode).toBe(400)
     await owner.callTool({ name: 'workflow_schedule_save', arguments: { ...f.scope, ...body } }).then((result) => {
       expect(result.isError).toBe(true)
     }, (error: unknown) => { expect(error).toMatchObject({ code: -32602 }) })
-    expect(await sch11DomainState(f)).toEqual(before)
+    expect(await scheduleDomainState(f)).toEqual(before)
     expect(await f.countRuns()).toBe(0)
   }, 60_000)
 

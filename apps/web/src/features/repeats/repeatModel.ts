@@ -6,8 +6,8 @@ import {
   canonicalGraphJson,
   type RepeatBlockV1,
   type RepeatPlanV1,
-  type WorkflowDefinitionV3,
-} from '@foreman-code/contracts/wave25'
+  type WorkflowDefinitionCurrent,
+} from '@foreman-code/contracts/current'
 
 export type RepeatLocalBlockDraft = {
   id: string
@@ -42,14 +42,14 @@ export function localDraftFromPlan(plan: RepeatPlanV1 | null | undefined): Repea
   } : emptyRepeatDraft()
 }
 
-function exitTargets(graph: WorkflowDefinitionV3, block: RepeatLocalBlockDraft) {
+function exitTargets(graph: WorkflowDefinitionCurrent, block: RepeatLocalBlockDraft) {
   const choice = graph.nodes.find((node) => node.id === block.exitNodeId)?.choice
   const repeat = choice?.outcomes.find((item) => item.outcome === block.repeatOutcome)
   return { choice, repeat }
 }
 
 /** Build the shared contract shape. The backend remains authoritative for full candidate-version validation. */
-export function repeatPlanFromLocalDraft(draft: RepeatLocalDraft, graph: WorkflowDefinitionV3): RepeatPlanV1 | null {
+export function repeatPlanFromLocalDraft(draft: RepeatLocalDraft, graph: WorkflowDefinitionCurrent): RepeatPlanV1 | null {
   const blocks: RepeatBlockV1[] = []
   for (const block of draft.blocks) {
     const { repeat } = exitTargets(graph, block)
@@ -66,7 +66,7 @@ export function repeatPlanFromLocalDraft(draft: RepeatLocalDraft, graph: Workflo
  * UI preflight only. It mirrors the frozen A0 shape rules so users get immediate explanations,
  * but save/admission must still run RepeatWorkflowVersionV1Schema and authenticated domain checks.
  */
-export function validateRepeatDraft(draft: RepeatLocalDraft, graphValue: WorkflowDefinitionV3): RepeatValidationIssue[] {
+export function validateRepeatDraft(draft: RepeatLocalDraft, graphValue: WorkflowDefinitionCurrent): RepeatValidationIssue[] {
   const issues: RepeatValidationIssue[] = []
   const { repeat: _repeat, ...ordinary } = graphValue
   void _repeat
@@ -157,7 +157,7 @@ export function repeatDraftEqual(left: RepeatLocalDraft, right: RepeatLocalDraft
   return canonicalGraphJson(left) === canonicalGraphJson(right)
 }
 
-export function blockOutcomeOptions(graph: WorkflowDefinitionV3, exitNodeId: string) {
+export function blockOutcomeOptions(graph: WorkflowDefinitionCurrent, exitNodeId: string) {
   return graph.nodes.find((node) => node.id === exitNodeId)?.choice?.outcomes.map((item) => item.outcome) ?? []
 }
 

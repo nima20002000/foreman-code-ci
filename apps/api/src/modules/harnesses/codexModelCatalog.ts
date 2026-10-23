@@ -8,7 +8,7 @@ import type { NativeProcessRecovery } from './recovery/processRegistry.js'
 import { inheritedAgentEnvironment } from './secrets.js'
 import { APP_MCP_SERVER_NAME, chatExcludedAppMcpServerNames } from './appMcpLauncher.js'
 import { runCommand } from './process.js'
-import { logIgnoredError } from '../diagnostics/ignoredError.js'
+import { logIgnoredError } from '../diagnostics/index.js'
 
 function reportRefreshFailure(): void {
   logIgnoredError('harness', 'refresh native model catalog',

@@ -3,8 +3,8 @@ import {
   AgentSubjectSchema, BrowserPrepareResultSchema, BrowserReleaseResultSchema, NodeBrowserSettingsSchema,
   type HarnessExecution,
 } from '@foreman-code/contracts'
-import type { AcceptedWorkflowRunV3, WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
-import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
+import type { AcceptedWorkflowRunCurrent, WorkflowVersionCurrent } from '@foreman-code/contracts/current'
+import { sameWorkflowValue } from '@foreman-code/contracts/current'
 import { DomainError } from '../errors.js'
 import type { RunOwnership } from '../runs/ownership.js'
 import type { BrowserLifecyclePort } from './ports.js'
@@ -41,7 +41,7 @@ export class WorkflowBrowserOwnership {
     this.installed = browser !== undefined
   }
 
-  async prepare(owner: RunOwnership, run: AcceptedWorkflowRunV3, version: WorkflowVersionV3,
+  async prepare(owner: RunOwnership, run: AcceptedWorkflowRunCurrent, version: WorkflowVersionCurrent,
     execution: HarnessExecution, computer: () => Promise<string>): Promise<void> {
     const node = version.definition.nodes.find(item => item.id === execution.workflowNodeId)
     if (!node || node.kind === 'job' || !node.browser?.enabled) return
@@ -103,7 +103,7 @@ export class WorkflowBrowserOwnership {
     })
   }
 
-  async readPrompt(owner: RunOwnership, execution: HarnessExecution, version: WorkflowVersionV3): Promise<string | undefined> {
+  async readPrompt(owner: RunOwnership, execution: HarnessExecution, version: WorkflowVersionCurrent): Promise<string | undefined> {
     const node = version.definition.nodes.find(item => item.id === execution.workflowNodeId)
     if (!node || node.kind === 'job' || !node.browser?.enabled) return undefined
     return this.readSessionPrompt(owner, execution)
@@ -120,7 +120,7 @@ export class WorkflowBrowserOwnership {
   }
 
   async release(owner: RunOwnership, execution: HarnessExecution, reason: 'terminal' | 'stop',
-    version: WorkflowVersionV3): Promise<void> {
+    version: WorkflowVersionCurrent): Promise<void> {
     const node = version.definition.nodes.find(item => item.id === execution.workflowNodeId)
     if (!this.installed || !node || node.kind === 'job' || !node.browser?.enabled) return
     let binding = await withWorkflowPreparation(owner, execution, false, async (sql, run, state) => {

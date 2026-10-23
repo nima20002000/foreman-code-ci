@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { makeCurrentWorkflowFixture, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 import { COORDINATION_RESULT_PROTOCOL } from '@foreman-code/contracts'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { ExclusiveGraphConnection } from '../run-graph/connection.js'
 import type pg from 'pg'
 import { hierarchyRequestedWork } from './hierarchyGroupAdmission.js'
@@ -13,7 +13,7 @@ function fixture() {
   const [parent, ...children] = saved.version.definition.nodes
   const edges = children.map((child, index) => ({ id: `route-${index}`, kind: 'execution' as const,
     source: parent!.id, target: child.id }))
-  const version: WorkflowVersionV3 = { ...saved.version, definition: { ...saved.version.definition,
+  const version: WorkflowVersionCurrent = { ...saved.version, definition: { ...saved.version.definition,
     handoffs: { contractVersion: 1 }, hierarchy: { version: 1, masterNodeId: parent!.id,
       parents: children.map(child => ({ workflowNodeId: child.id, parentNodeId: parent!.id })) },
     nodes: [{ ...parent!, choice: { outcomes: edges.map((edge, index) => ({ outcome: `task_${index}`,
@@ -72,7 +72,7 @@ describe('hierarchy delegation preparation', () => {
   })
   it('requires capacity for all children and the parent summary together', async () => {
     const f = fixture()
-    const query = vi.fn<GraphTransactionSql['query']>()
+    const query = vi.fn<SqlTransaction['query']>()
       .mockResolvedValue({ rows: [{ total: '4' }], rowCount: 1, command: 'SELECT', oid: 0, fields: [] })
     const connection = new ExclusiveGraphConnection({ query } as unknown as pg.ClientBase, () => {})
     await connection.transaction(async sql => {

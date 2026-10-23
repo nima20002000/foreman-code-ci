@@ -1,16 +1,14 @@
 import { useState } from 'react'
 import { createStore, useStore } from 'zustand'
-import type { RepeatGraphScopeV3, RunExecutionSummary } from '@foreman-code/contracts/wave25'
+import type { RepeatGraphScopeCurrent, RunExecutionSummary } from '@foreman-code/contracts/current'
 import { ApiError } from '../../shared/api/client'
 import { Button } from '../../shared/ui/nocturne'
-import type { SelectedRunState } from '../runs-selector/useSelectedRun'
-import { runReadErrorLabel } from '../runs-selector/query'
-import { CiJobsTable, CiServerDialog } from '../workflow-board/inspect/CiServer'
-import { runCiApi } from '../workflow-board/inspect/ciServer'
+import { type SelectedRunState, runReadErrorLabel } from '../runs-selector'
+import { CiJobsTable, CiServerDialog, runCiApi } from '../workflow-board'
 import { useRunNodeRead } from './inspectionQuery'
 
 export function AgentHostCiResults({ selection, scope, execution }: {
-  selection: SelectedRunState; scope: RepeatGraphScopeV3; execution: Exclude<RunExecutionSummary, { kind: 'job' }>
+  selection: SelectedRunState; scope: RepeatGraphScopeCurrent; execution: Exclude<RunExecutionSummary, { kind: 'job' }>
 }) {
   const [store] = useState(() => createStore<{ open: boolean; ticketId?: string }>(() => ({ open: false })))
   const open = useStore(store, state => state.open)

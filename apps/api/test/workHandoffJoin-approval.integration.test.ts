@@ -5,7 +5,7 @@ import { finished, workHandoffFixture } from './helpers/workHandoffFixture.js'
 import { workHandoffJoinDatabase } from './helpers/workHandoffJoinDatabase.js'
 import { Command, MemorySaver, interrupt } from '@langchain/langgraph'
 import { buildWorkHandoffGraph } from '../src/modules/runs/workHandoffGraph.js'
-import { WorkActivationInputSchema } from '@foreman-code/contracts/wave25'
+import { WorkActivationInputSchema } from '@foreman-code/contracts/current'
 
 describe.skipIf(!postgresEnabled)('work join routing and rounds', () => {
   const database = workHandoffJoinDatabase()

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 import type { AgentConfigurationVersion } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture, type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 import type { SavedNodePlacement } from '@foreman-code/contracts/node-placement'
 import { reconcileAgentProfilePlacements } from './agentProfilePlacements.js'
 
@@ -18,7 +18,7 @@ function fixture() {
     hostRef, applicationInstallationId: hostRef.mainId, harnessInstallationId: 'selected-installation',
     installationFingerprint: 'fingerprint',
   } }
-  const nodes: Extract<WorkflowDefinitionV3['nodes'][number], { agentId: string }>[] =
+  const nodes: Extract<WorkflowDefinitionCurrent['nodes'][number], { agentId: string }>[] =
     f.version.definition.nodes.map(node => {
       return { ...node, agentId: configuration.agentId, placement: structuredClone(placement) }
     })

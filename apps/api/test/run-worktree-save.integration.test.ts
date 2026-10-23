@@ -3,8 +3,8 @@ import { randomUUID } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { AcceptedWorkflowRunV3Schema, CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema,
-  makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema, CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema,
+  makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { repeatRuntimeDirectory } from '../src/modules/runs/repeatRepositoryHost.js'
 import { RunWorktrees } from '../src/modules/runs/runWorktrees.js'
 import { systemGitWorktreePorts } from '../src/modules/sources/gitWorktree.js'
@@ -50,7 +50,7 @@ for (const transport of transports) describe.skipIf(!postgresEnabled)(`Run workt
       const executions = await readCurrentExecutions(f.runs, f.f.run.id)
       expect(executions).toHaveLength(1)
       const execution = executions[0]!
-      const tree = await worktrees.prepare(AcceptedWorkflowRunV3Schema.parse(f.f.run))
+      const tree = await worktrees.prepare(AcceptedWorkflowRunCurrentSchema.parse(f.f.run))
       expect(execution.nativeSessionId).toBeDefined()
       expect(execution.workingDirectory).toBe(tree!.workingDirectory)
       expect(execution.workingDirectory).not.toBe(run!.executionLocation!.rootPath)

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, it } from 'vitest'
 import type pg from 'pg'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import type { ManagementGrant } from '@foreman-code/contracts/management'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { acceptRunAuthority, bindRunAuthority, currentOperatorAuthority } from '../src/modules/access/runAuthority.js'
@@ -10,26 +10,28 @@ import { requireAuthorization } from '../src/modules/access/policy.js'
 import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
 import { markRepeatRunRunning, requestRepeatRunStop } from '../src/modules/runs/repeatLifecycle.js'
-import { withExclusiveGraphConnection, type GraphTransactionSql } from '../src/modules/run-graph/connection.js'
+import { withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
+import type { SqlTransaction } from '../src/infrastructure/transaction.js'
 import { readRepeatRunSourceLocked } from '../src/modules/run-graph/publication.js'
 import { repeatStartPublication } from '../src/modules/run-graph/repeatStartPublication.js'
 import { insertRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
-import { agent3Database, graphHead, seedAgent3 } from './helpers/workflowDatabase.js'
+import { graphHead, seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
-import { createRepeatFixtureWriter, insertFixtureRepeatRun, repeatReadyAgent3Fixture } from './repeat-fixture-writer.js'
+import { createRepeatFixtureWriter, insertFixtureRepeatRun, repeatReadyWorkflowFixture } from './repeat-fixture-writer.js'
 
 // Opt-in REAL PostgreSQL/migrations/ownership/authority/canonical publication.
 // Setup creates synthetic immutable Runs, NOT authenticated HTTP/MCP Start.
 // No native session, receipt, grant bypass or process-absence proof is fabricated.
 // No source outside this lane or existing graph fixture suite is changed.
 describe.skipIf(!postgresEnabled)('ENG04 production runtime lifecycle PostgreSQL slice', () => {
-  let db: Awaited<ReturnType<typeof agent3Database>>
+  let db: Awaited<ReturnType<typeof migratedDatabase>>
   const owners: RunOwnership[] = []
-  beforeAll(async () => { db = await agent3Database() }, 60000)
+  beforeAll(async () => { db = await migratedDatabase() }, 60000)
   afterAll(async () => { for (const owner of owners) await owner.release(); await db?.close() })
   async function fixture(withHead = true) {
-    const f = repeatReadyAgent3Fixture(makeCurrentWorkflowFixture(randomUUID()))
-    await seedAgent3(db.pool, db.directory, f, { run: false })
+    const f = repeatReadyWorkflowFixture(makeCurrentWorkflowFixture(randomUUID()))
+    await seedWorkflowFixture(db.pool, db.directory, f, { run: false })
     const fixtureWriter = await createRepeatFixtureWriter(db.pool, f)
     const saved = await fixtureWriter.publish(3)
     const version = saved.version
@@ -51,7 +53,7 @@ describe.skipIf(!postgresEnabled)('ENG04 production runtime lifecycle PostgreSQL
     assert.ok(owner); owners.push(owner)
     const scope = { workspaceId: run.workspaceId, workflowId: run.workflowId, workflowVersionId: version.id,
       runId: run.id, executionSemanticsVersion: 3 as const }
-    const authorize = async (sql: GraphTransactionSql) => {
+    const authorize = async (sql: SqlTransaction) => {
       await sql.query('select id from management_principals where id=$1 for share', [principal.id])
       const live = await currentOperatorAuthority(sql as unknown as Pick<pg.Pool, 'query'>, principal.id)
       requireAuthorization(live.principal, 'runs:stop', { workspaceId: run.workspaceId, workflowId: run.workflowId, runId: run.id })

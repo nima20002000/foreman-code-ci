@@ -5,7 +5,7 @@ import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { ManagedWorkspaceSchema } from '@foreman-code/contracts/management'
 import { describe, expect, it } from 'vitest'
 import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema, CurrentWorkflowSaveResultSchema,
-  ManualRunStartResultSchema, SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
+  ManualRunStartResultSchema, SavedRunDetailsSchema } from '@foreman-code/contracts/current'
 import { remoteReviewProduction, waitForRemoteReview } from './helpers/remoteReviewProduction.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 

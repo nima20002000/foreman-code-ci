@@ -5,7 +5,7 @@ import { RunEventsPageSchema } from '@foreman-code/contracts/management'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import {
   makeCurrentWorkflowFixture, WorkActivationInputSchema, type WorkActivationInput,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { deferred } from './helpers/deferred.js'
 import { postgresEnabled } from './helpers/database.js'

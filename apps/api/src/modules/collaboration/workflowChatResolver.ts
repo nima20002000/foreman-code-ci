@@ -2,9 +2,9 @@ import { AgentNodeRefSchema, HarnessExecutionSchema, WorkflowExecutionChatResolu
   WorkflowExecutionChatSelectionSchema, type WorkflowExecutionChatResolution,
   type WorkflowExecutionChatSelection } from '@foreman-code/contracts'
 import { z } from 'zod'
-import { isAuthorized, requireAuthorization } from '../access/policy.js'
+import { isAuthorized, requireAuthorization } from '../access/index.js'
 import { DomainError } from '../errors.js'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import type { Principal } from './ports.js'
 import { controlDigest } from './workflowControlRecords.js'
 import { readWorkflowChatAgent, readWorkflowChatIdentity, readWorkflowChatVersion, workflowChatExecutionRef, workflowChatState,
@@ -32,7 +32,7 @@ function nextCursor(input: WorkflowExecutionChatSelection, before: string) {
 
 /** Resolve only actual Run facts. An absent Run is an explicit outside-run choice;
  * a historical or ambiguous execution never silently becomes another target. */
-export async function resolveWorkflowChatTarget(sql: GraphSqlClient, principal: Principal,
+export async function resolveWorkflowChatTarget(sql: SqlQuery, principal: Principal,
   raw: unknown, action: 'agent_chat:read' | 'workflows:read' = 'agent_chat:read'): Promise<WorkflowExecutionChatResolution> {
   const input = WorkflowExecutionChatSelectionSchema.parse(raw), before = selectionCursor(input)
   if (input.runId) {
@@ -74,7 +74,7 @@ export async function resolveWorkflowChatTarget(sql: GraphSqlClient, principal: 
     nextCursor: hasMore ? nextCursor(input, runs[input.limit - 1]!.id) : null, revision: 0 })
 }
 
-async function outsideRun(sql: GraphSqlClient, principal: Principal,
+async function outsideRun(sql: SqlQuery, principal: Principal,
   input: WorkflowExecutionChatSelection, action: 'agent_chat:read' | 'workflows:read'): Promise<WorkflowExecutionChatResolution> {
   requireAuthorization(principal, action, { workspaceId: input.workspaceId,
       workflowId: input.workflowId, ...(input.runId ? { runId: input.runId } : {}) })
@@ -97,7 +97,7 @@ async function outsideRun(sql: GraphSqlClient, principal: Principal,
       workspaceId: input.workspaceId, workflowId: input.workflowId, workflowNodeId: node.id }) }
 }
 
-async function resolveRunNode(sql: GraphSqlClient, input: WorkflowExecutionChatSelection,
+async function resolveRunNode(sql: SqlQuery, input: WorkflowExecutionChatSelection,
   run: WorkflowChatRunRow, before?: string): Promise<WorkflowExecutionChatResolution> {
   const version = await readWorkflowChatVersion(sql, { ...input, workflowVersionId: run.workflow_version_id })
   const agent = await readWorkflowChatAgent(sql, version, input.workflowNodeId)

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { RunRecordDetailSchema } from '@foreman-code/contracts/wave25'
+import { RunRecordDetailSchema } from '@foreman-code/contracts/current'
 import { DomainError } from '../src/modules/errors.js'
 import { postgresEnabled } from './helpers/database.js'
 import { approvalResponse } from './helpers/approvalResponse.js'

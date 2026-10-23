@@ -1,8 +1,8 @@
-import type { WorkHandoffResult, WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import type { WorkHandoffResult, WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 import type { HierarchyWorkResult } from './hierarchyResults.js'
 import { repeatConflict } from './repeatResolution.js'
 
-export function selectedWorkHandoffRoutes(definition: WorkflowDefinitionV3, nodeId: string,
+export function selectedWorkHandoffRoutes(definition: WorkflowDefinitionCurrent, nodeId: string,
   result: WorkHandoffResult | HierarchyWorkResult): string[] {
   const node = definition.nodes.find((item) => item.id === nodeId)
   if (!node) return repeatConflict('WORKFLOW_NODE_NOT_FOUND')

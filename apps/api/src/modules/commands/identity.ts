@@ -1,5 +1,5 @@
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 
 interface CommandIdentity {
   key: string
@@ -8,7 +8,7 @@ interface CommandIdentity {
   slotId?: string | null
 }
 
-export async function commandIdentity(sql: GraphSqlClient, principal: ManagementPrincipal): Promise<CommandIdentity> {
+export async function commandIdentity(sql: SqlQuery, principal: ManagementPrincipal): Promise<CommandIdentity> {
   if (principal.audience !== 'worker') return { key: principal.id }
   const row = (await sql.query<{ run_id: string; work_activation_id: string | null; slot_id: string | null }>(`
     select e.run_id,e.work_activation_id,x.slot_id
@@ -22,7 +22,7 @@ export async function commandIdentity(sql: GraphSqlClient, principal: Management
 }
 
 export async function commandReceiptPrincipals(
-  sql: GraphSqlClient, identity: CommandIdentity, principalId: string,
+  sql: SqlQuery, identity: CommandIdentity, principalId: string,
 ): Promise<string[]> {
   if (!identity.runId) return [principalId]
   // Retain the issuing principal on receipts and audits, while replacement credentials share their effects.

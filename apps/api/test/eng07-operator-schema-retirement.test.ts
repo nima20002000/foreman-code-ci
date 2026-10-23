@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveInputSchema, CurrentWorkflowReadResultSchema,
   ManualRunStartInputSchema, makeCurrentWorkflowFixture,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import { registerCurrentWorkflowTools } from '../src/mcp/operator/tools/currentWorkflow.js'
 import { runTools } from '../src/mcp/operator/tools/runs.js'
 import { registerOperatorToolGroup } from '../src/mcp/operator/server.js'

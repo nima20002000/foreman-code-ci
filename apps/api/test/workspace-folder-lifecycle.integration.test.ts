@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { lstat, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
+import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { ManagedWorkspaceCommandResultSchema } from '@foreman-code/contracts/management'
 import { HarnessDirectoryBrowser } from '../src/modules/harnesses/directoryBrowser.js'
@@ -14,6 +15,7 @@ import { workspace, add, get } from './helpers/workspaceRepositoryOnboarding.js'
 import { deferred } from './helpers/deferred.js'
 import { observe, lockWaiter, qualifyConfiguration } from './helpers/concurrentMutations.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
+import { workspaceStorageFoldersHttp } from './support/workspaceStorageFoldersHttp.js'
 
 it.each([
   { delivery: 'queued', tool: 'workspace_archive' }, { delivery: 'accepted', tool: 'workspace_archive' },
@@ -66,7 +68,7 @@ it.each(['rename', 'delete', 'undo'] as const)('serializes folder %s with an att
   const f = await workspaceRepositoryFixture()
   const release = deferred()
   let saving: ReturnType<typeof f.owner.client.callTool> | undefined
-  let mutating: ReturnType<typeof f.owner.client.callTool> | undefined
+  let mutating: Promise<{ value: unknown } | { error: unknown }> | undefined
   try {
     const input = await workspace(f)
     const browser = new HarnessDirectoryBrowser([f.storage], f.pool)
@@ -87,13 +89,15 @@ it.each(['rename', 'delete', 'undo'] as const)('serializes folder %s with an att
       accessMode: 'read-write', expectedLocationRevision: 0, expectedRootPolicyRevision: 0 }
     saving = f.owner.client.callTool({ name: 'workspace_root_location_set', arguments: selection })
     await entered.promise
-    const tool = operation === 'delete' ? 'workspace_folders_delete' : `workspace_folder_${operation}`
-    const mutation = { commandId: randomUUID(), ...(operation === 'delete' ? { paths: [folder.path] }
-      : operation === 'undo' ? { creationCommandId } : { path: folder.path, name: 'Renamed folder' }) }
+    const commandId = randomUUID()
+    const mutate = (principal: ManagementPrincipal) => operation === 'delete'
+      ? browser.deleteFolders(principal, 'http', { commandId, paths: [folder.path] })
+      : operation === 'undo' ? browser.undoCreated(principal, 'http', { commandId, creationCommandId })
+        : browser.renameCreated(principal, 'http', { commandId, path: folder.path, name: 'Renamed folder' })
     const reader = await f.issue([{ actions: ['workspaces:read'], scope: {} }])
-    await expectMcpAccessDenied(reader.client.callTool({ name: tool, arguments: mutation }))
+    await expect(mutate(reader.principal)).rejects.toMatchObject({ code: 'ACCESS_DENIED' })
     let finished = false
-    mutating = f.owner.client.callTool({ name: tool, arguments: mutation }).then(result => {
+    mutating = mutate(f.owner.principal).then(value => ({ value }), error => ({ error })).then(result => {
       finished = true
       return result
     })
@@ -101,9 +105,9 @@ it.each(['rename', 'delete', 'undo'] as const)('serializes folder %s with an att
     release.resolve()
     expect(await saving).not.toMatchObject({ isError: true })
     const result = await mutating
-    if (operation === 'delete') expect(decodeMcpToolResult(result)).toMatchObject({ value: { deleted: [],
-      failed: [{ path: folder.path, message: expect.any(String) }] } })
-    else expect(result).toMatchObject({ isError: true })
+    if (operation === 'delete') expect(result).toMatchObject({ value: { value: { deleted: [],
+      failed: [{ path: folder.path, message: expect.any(String) }] } } })
+    else expect(result).toHaveProperty('error')
     expect((await lstat(folder.path)).isDirectory()).toBe(true)
     expect(decodeMcpToolResult(await f.owner.client.callTool({ name: 'workspace_root_location_get',
       arguments: { workspaceId: input.workspaceId } }))).toMatchObject({ evidence: 'bound',
@@ -136,15 +140,15 @@ it('protects a repository import container before its location is assigned', asy
     // Keep the rejected promise observed even when a pre-fix deletion breaks cloning.
     const settled = importing.then(value => ({ value }), error => ({ error }))
     await cloning.promise
-    const listed = decodeMcpToolResult(await f.owner.client.callTool({ name: 'workspace_storage_folders_list',
-      arguments: {} })) as { items: Array<{ path: string; identity: string; deletion: { status: string } }> }
+    const owner = workspaceStorageFoldersHttp(f.app, f.owner.token)
+    const listed = (await owner.list()).body as { items: Array<{ path: string; identity: string; deletion: { status: string } }> }
     expect(listed.items).toHaveLength(1)
     const folder = listed.items[0]!
     const mutation = { commandId: randomUUID(), path: folder.path, expectedIdentity: folder.identity }
     const reader = await f.issue([{ actions: ['workspaces:read', 'workspace_locations:read'], scope: {} }])
-    await expectMcpAccessDenied(reader.client.callTool({ name: 'workspace_storage_folder_delete', arguments: mutation }))
-    const removed = await f.owner.client.callTool({ name: 'workspace_storage_folder_delete', arguments: mutation })
-    expect(removed.isError).toBe(true)
+    expect((await workspaceStorageFoldersHttp(f.app, reader.token).remove(mutation)).statusCode).toBe(403)
+    const removed = await owner.remove(mutation)
+    expect(removed.ok).toBe(false)
     expect(folder.deletion.status).toBe('protected')
     expect((await lstat(folder.path)).isDirectory()).toBe(true)
     release.resolve()

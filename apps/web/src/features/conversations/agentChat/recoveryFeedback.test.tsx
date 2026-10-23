@@ -8,7 +8,7 @@ import { AgentChatTranscript } from './AgentChatTranscript'
 import { installChatSource, mountChat } from './testSupport'
 import { fixture as fileFixture } from '../../file-cards/testFixtures'
 import { operatorState } from '../../operator-chat/pr17-test-fixtures'
-import { operatorNavigationStatus, operatorTurnStatus, summarizeOperatorConversation } from '../../operator-chat/operatorChatStatus'
+import { operatorNavigationStatus, operatorTurnStatus, summarizeOperatorConversation } from '../../operator-chat'
 
 const state = (): AgentChatState => structuredClone(agentChatFixtures.idleAfterCompletion)
 function snapshot(value: AgentChatState): ActivitySnapshotV1 {

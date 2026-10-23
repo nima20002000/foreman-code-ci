@@ -11,7 +11,7 @@ import {
   type SendAgentChatMessageRequest,
 } from '@foreman-code/contracts/agent-chat'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
@@ -21,13 +21,14 @@ import { agentChatKey, PostgresAgentChatRepository } from '../src/modules/conver
 import { PostgresOperatorActivityRepository } from '../src/modules/conversations/operatorActivityRepository.js'
 import { OPERATOR_HISTORY_PAGE_BYTES, OPERATOR_SNAPSHOT_MESSAGE_BYTES, PostgresOperatorConversationRepository } from '../src/modules/conversations/operatorChatRepository.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
-import { AgentChatF5Native, approval } from './helpers/agentChatF5.js'
-import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { ScriptedChatNative, approval } from './helpers/agentChatF5.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 /** Opt-in PostgreSQL and authenticated HTTP/MCP. Native ports are substitutes, never real providers. */
 describe.skipIf(!postgresEnabled)('G4 PostgreSQL / HTTP / MCP regressions', () => {
-  let database: Awaited<ReturnType<typeof agent3Database>>
+  let database: Awaited<ReturnType<typeof migratedDatabase>>
   let pool: pg.Pool
   let fixture: ReturnType<typeof makeCurrentWorkflowFixture>
   let access: PostgresAccessService
@@ -36,8 +37,8 @@ describe.skipIf(!postgresEnabled)('G4 PostgreSQL / HTTP / MCP regressions', () =
   let deniedToken: string
   let readerToken: string
   beforeAll(async () => {
-    database = await agent3Database(); pool = database.pool
-    fixture = await seedAgent3(pool, database.directory, makeCurrentWorkflowFixture(`g4-${randomUUID()}`), { run: false })
+    database = await migratedDatabase(); pool = database.pool
+    fixture = await seedWorkflowFixture(pool, database.directory, makeCurrentWorkflowFixture(`g4-${randomUUID()}`), { run: false })
     access = new PostgresAccessService(pool)
     const issue = (name: string, actions: ManagementPrincipal['grants'][number]['actions'], workflowId: string) => access.issue({
       name, audience: 'operator', expiresAt: new Date(Date.now() + 600_000),
@@ -57,7 +58,7 @@ describe.skipIf(!postgresEnabled)('G4 PostgreSQL / HTTP / MCP regressions', () =
     const context = { workspaceId: fixture.scope.workspaceId, workflowId: fixture.scope.workflowId, workflowNodeId: node.id, agentId: node.agentId }
     const { workspaceId, ...query } = context
     const repository = new PostgresAgentChatRepository(pool)
-    const native = new AgentChatF5Native()
+    const native = new ScriptedChatNative()
     const chat = new AgentChatService(pool, repository, new PostgresOperatorConversationRepository(pool), new PostgresWorkflowRepository(pool),
       { getForWorkspace: async () => { throw new Error('G4 tests must not access a Run.') }, getExecution: async () => { throw new Error('This fixture must not read a Run execution.') }, async *executionPages() { yield [] } },
       () => native, database.directory)

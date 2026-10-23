@@ -7,7 +7,7 @@ import {
   CurrentWorkflowReadResultSchema, CurrentWorkflowSaveResultSchema,
   SavedManagedWorkflowCommandResultSchema,
   makeCurrentWorkflowFixture, type CurrentWorkflowSaveInput,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import { WorkflowManagementService } from '../../src/modules/workflows/management.js'
 import type { ProviderAccountConfigurationService } from '../../src/modules/harnesses/providerAccountConfiguration.js'
 import { currentOperatorIntegration } from './currentOperatorIntegration.js'

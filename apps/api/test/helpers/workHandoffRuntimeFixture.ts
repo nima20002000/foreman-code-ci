@@ -1,9 +1,9 @@
 import { vi } from 'vitest'
 import type { HarnessExecution, HarnessExecutionRequest } from '@foreman-code/contracts'
-import { WorkActivationInputSchema, makeCurrentWorkflowFixture, type WorkHandoffResult } from '@foreman-code/contracts/wave25'
+import { WorkActivationInputSchema, makeCurrentWorkflowFixture, type WorkHandoffResult } from '@foreman-code/contracts/current'
 import { RepeatRunRepository } from '../../src/modules/runs/repeatPostgres.js'
 import { checkpointRuntimeFixture } from './checkpointRuntime.js'
-import { br1002At } from './continuationCuts.js'
+import { continuationAt } from './continuationCuts.js'
 import { rejectableDeferred } from './deferred.js'
 
 export async function workHandoffRuntimeFixture(definition: ReturnType<typeof makeCurrentWorkflowFixture>,
@@ -48,9 +48,9 @@ export async function runWorkHandoffWithRestart(f: Fixture, restart: boolean,
   const start = f.engine.start(f.f.run.id)
   const settled = Promise.allSettled([start])
   try {
-    await br1002At(accepted.promise, start)
+    await continuationAt(accepted.promise, start)
     const shutdown = f.engine.shutdown()
-    await br1002At(closing.promise, shutdown)
+    await continuationAt(closing.promise, shutdown)
     release.resolve()
     await shutdown
     await settled

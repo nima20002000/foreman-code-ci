@@ -2,14 +2,14 @@ import { randomUUID } from 'node:crypto'
 import { expect, it, vi } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import {
-  CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveResultSchema, RunStartV3InputSchema,
-  RunStartV3ResultSchema, makeCurrentWorkflowFixture,
-} from '@foreman-code/contracts/wave25'
+  CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveResultSchema, RunStartCurrentInputSchema,
+  RunStartCurrentResultSchema, makeCurrentWorkflowFixture,
+} from '@foreman-code/contracts/current'
 import { LOCAL_RUNNER_ID } from '../src/modules/workspaces/location.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
-import { sch11Fixture, sch11DomainState } from './helpers/scheduleFixture.js'
+import { scheduleDispatchFixture, scheduleDomainState } from './helpers/scheduleFixture.js'
 import { deferred } from './helpers/deferred.js'
 
 const maintenanceKey = 'foreman-code:production-maintenance'
@@ -27,7 +27,7 @@ async function starter() {
       arguments: await runtime.create() })
     expect(savedResponse.isError).not.toBe(true)
     const saved = CurrentWorkflowSaveResultSchema.parse(decodeMcpToolResult(savedResponse)).value
-    const input = RunStartV3InputSchema.parse({ workspaceId: saved.version.workspaceId,
+    const input = RunStartCurrentInputSchema.parse({ workspaceId: saved.version.workspaceId,
       workflowId: saved.workflowId, workflowVersionId: saved.version.id, executionSemanticsVersion: 3,
       commandId: randomUUID(), expectedWorkflowRevision: saved.revision,
       expectedAgentConfigurationVersionIds: saved.version.agentConfigurationVersionIds,
@@ -66,7 +66,7 @@ it.skipIf(!postgresEnabled)('closes HTTP and MCP Start while retaining grants, c
     await holder.query('select pg_advisory_unlock(hashtext($1), hashtext(current_schema()))', [maintenanceKey])
     const accepted = await runtime.client.callTool({ name: 'run_start', arguments: input })
     expect(accepted.isError).not.toBe(true)
-    const result = RunStartV3ResultSchema.parse(decodeMcpToolResult(accepted))
+    const result = RunStartCurrentResultSchema.parse(decodeMcpToolResult(accepted))
     expect(result.replayed).toBe(false)
     const readback = await runtime.client.callTool({ name: 'run_get', arguments: {
       workspaceId: input.workspaceId, runId: result.run.id, detail: 'full',
@@ -77,7 +77,7 @@ it.skipIf(!postgresEnabled)('closes HTTP and MCP Start while retaining grants, c
     } })
     await holder.query('select pg_advisory_lock(hashtext($1), hashtext(current_schema()))', [maintenanceKey])
     const replay = await runtime.client.callTool({ name: 'run_start', arguments: input })
-    expect(RunStartV3ResultSchema.parse(decodeMcpToolResult(replay))).toEqual({ ...result, replayed: true })
+    expect(RunStartCurrentResultSchema.parse(decodeMcpToolResult(replay))).toEqual({ ...result, replayed: true })
   } finally {
     await holder.query('select pg_advisory_unlock_all()')
     holder.release()
@@ -121,16 +121,16 @@ it.skipIf(!postgresEnabled)('rejects a Start that entered preparation before mai
 }, 60_000)
 
 it.skipIf(!postgresEnabled)('defers a due schedule during maintenance and admits its original occurrence afterward', async () => {
-  const database = await agent3Database()
+  const database = await migratedDatabase()
   const holder = await database.pool.connect()
   try {
-    const f = await sch11Fixture(database)
+    const f = await scheduleDispatchFixture(database)
     const saved = await f.save()
     f.time.now = saved.nextOccurrenceAt!
-    const before = await sch11DomainState(f)
+    const before = await scheduleDomainState(f)
     await holder.query('select pg_advisory_lock(hashtext($1), hashtext(current_schema()))', [maintenanceKey])
     await expect(f.dispatcher().dispatch(saved)).rejects.toMatchObject({ code: 'RUN_START_MAINTENANCE' })
-    expect(await sch11DomainState(f)).toEqual(before)
+    expect(await scheduleDomainState(f)).toEqual(before)
     expect(await f.countRuns()).toBe(0)
     await holder.query('select pg_advisory_unlock(hashtext($1), hashtext(current_schema()))', [maintenanceKey])
     await f.dispatcher().dispatch(saved)
@@ -157,7 +157,7 @@ it.skipIf(!postgresEnabled)('the installer holds admission closed across the idl
     })).rejects.toThrow('Installation aborted before stop')
     const retry = await runtime.client.callTool({ name: 'run_start', arguments: input })
     expect(retry.isError).not.toBe(true)
-    expect(RunStartV3ResultSchema.parse(decodeMcpToolResult(retry)).replayed).toBe(false)
+    expect(RunStartCurrentResultSchema.parse(decodeMcpToolResult(retry)).replayed).toBe(false)
   } finally {
     await runtime.close()
   }

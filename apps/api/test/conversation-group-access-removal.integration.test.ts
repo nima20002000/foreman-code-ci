@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from 'vitest'
 import { ReadAgentChatResponseSchema } from '@foreman-code/contracts/agent-chat'
-import { CurrentWorkflowReadResultSchema } from '@foreman-code/contracts/wave25'
+import { CurrentWorkflowReadResultSchema } from '@foreman-code/contracts/current'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { closeActivityReplay, eventually, setup } from './helpers/activityReplayFixture.js'
 

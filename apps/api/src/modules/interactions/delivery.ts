@@ -1,5 +1,5 @@
 import { withInteractionResponse, type DurableInteraction, type NativeSessionReference } from '@foreman-code/contracts'
-import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson } from '@foreman-code/contracts/current'
 import type { NativeHistory, NativeResponseDeliveryEvidence } from '../harnesses/port.js'
 import { sha256Hex } from '../../shared/hash.js'
 

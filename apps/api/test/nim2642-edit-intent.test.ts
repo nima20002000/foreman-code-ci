@@ -1,10 +1,10 @@
 import type pg from 'pg'
 import { describe, expect, it, vi } from 'vitest'
-import { CurrentJournalRunPinSchema, type CurrentJournalRunState } from '@foreman-code/contracts/wave25'
+import { CurrentJournalRunPinSchema, type CurrentJournalRunState } from '@foreman-code/contracts/current'
 import { currentSaveAdmissionFixture } from './helpers/currentSaveAdmission.js'
 import { readAffectedGraphRuns } from '../src/modules/graph-drafts/saveAdmission.js'
 import { sameAffectedSet } from '../src/modules/graph-drafts/durableEditIntent.js'
-import { CANCELED_INTERACTION_RETIRED_SQL } from '../src/modules/interactions/wave25/publication.js'
+import { CANCELED_INTERACTION_RETIRED_SQL } from '../src/modules/interactions/current/publication.js'
 
 const { pin, row } = currentSaveAdmissionFixture('edit-intent')
 const settled: CurrentJournalRunState = { pin, terminal: true, settled: true, outcome: 'succeeded',

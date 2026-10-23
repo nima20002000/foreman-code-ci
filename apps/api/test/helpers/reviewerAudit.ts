@@ -6,7 +6,7 @@ import type {
   AgentConfigurationVersion, DurableInteraction, HarnessExecution, NativeHarnessEvent,
   NativeSessionReference, PendingNativeInteraction, ReviewJob,
 } from '@foreman-code/contracts'
-import { WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 
 import type { IssuedWorkerCredential } from '../../src/modules/access/workerCredentials.js'
 import { DomainError } from '../../src/modules/errors.js'
@@ -15,9 +15,9 @@ import type { ExecutionCredentialProvider } from '../../src/modules/harnesses/mc
 import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart, NativeTurnInput } from '../../src/modules/harnesses/port.js'
 import type { PostgresApprovalBudgetRepository } from '../../src/modules/interactions/budget.js'
 import type { WriterFence } from '../../src/modules/interactions/coordination.js'
-import type { Wave25InteractionCoordinationRepository } from '../../src/modules/interactions/wave25/reviews.js'
+import type { Wave25InteractionCoordinationRepository } from '../../src/modules/interactions/current/reviews.js'
 import { ApprovalExecutionCoordinator } from '../../src/modules/interactions/execution.js'
-import type { Wave25InteractionRepository as PostgresInteractionRepository } from '../../src/modules/interactions/wave25/repository.js'
+import type { Wave25InteractionRepository as PostgresInteractionRepository } from '../../src/modules/interactions/current/repository.js'
 import { createReviewNativeCaptureChannel, type ReviewNativeCapture } from '../../src/modules/interactions/reviewNativeCapture.js'
 import { createWorkflowNativeCaptureChannel } from '../../src/modules/interactions/workflowNativeCapture.js'
 import type { RepeatNativeObservationStore } from '../../src/modules/interactions/repeatObservation.js'
@@ -97,7 +97,7 @@ export async function reviewerFixture(options: {
     agentConfigurationVersionIds: { [configuration.agentId]: configuration.id },
     executionState: 'waiting', outcome: 'pending',
     approval: { handler: 'orchestrator' as const, designatedOrchestratorAgentId: execution.agentId } }
-  const version = WorkflowVersionV3Schema.parse({
+  const version = WorkflowVersionCurrentSchema.parse({
     ...snapshot.version,
     workspaceId: run.workspaceId,
     workflowId: run.workflowId,

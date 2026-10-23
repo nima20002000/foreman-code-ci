@@ -1,5 +1,5 @@
 import { ExecutionFactsRequestSchema, ExecutionFactsResultSchema, ExecutionAuthorityRequestSchema, ExecutionAuthorityResultSchema, EXECUTION_AUTHORITY_EXTENSION } from '@foreman-code/contracts/execution-authority'
-import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
+import { sameWorkflowValue } from '@foreman-code/contracts/current'
 import type { DispatchIntent, AcceptedNodePlacement } from '@foreman-code/contracts/node-placement'
 import { DomainError } from '../errors.js'
 import type { RemoteReviewerRequest, RemoteOwnerControl } from '@foreman-code/contracts/remote-execution'

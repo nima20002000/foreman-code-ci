@@ -1,6 +1,6 @@
 import { nativeNode } from '../../../shared/mocks/nativeFixtureTypes'
 import { describe, expect, it } from 'vitest'
-import { makeCurrentWorkflowFixture, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { pinnedNodeStates, pinnedTopology, runningIntervalChecks, type PinnedNodeDisplayCut } from './pinnedTopology'
 
 describe('immutable canvas display projection', () => {
@@ -45,7 +45,7 @@ describe('immutable canvas display projection', () => {
     expect(pinnedTopology(version).nodes.every((node) => node.blockId === 'repair')).toBe(true)
     const { repeat: _repeat, ...definition } = version.definition
     void _repeat
-    const ordinary = WorkflowVersionV3Schema.parse({ ...version, definition })
+    const ordinary = WorkflowVersionCurrentSchema.parse({ ...version, definition })
     expect(pinnedTopology(ordinary).nodes.every((node) => node.blockId === undefined)).toBe(true)
   })
 
@@ -95,7 +95,7 @@ describe('immutable canvas display projection', () => {
     const { version } = makeCurrentWorkflowFixture('large-pinned', 'single')
     const nodes = Array.from({ length: 1000 }, (_, index) => ({ id: `n-${index}`, agentId: `a-${index}`, name: `Saved ${index}` }))
     const edges = nodes.slice(1).map((node, index) => ({ id: `e-${index}`, kind: 'execution' as const, source: nodes[index]!.id, target: node.id }))
-    const large = WorkflowVersionV3Schema.parse({ ...version, entryNodeId: nodes[0]!.id,
+    const large = WorkflowVersionCurrentSchema.parse({ ...version, entryNodeId: nodes[0]!.id,
       agentConfigurationVersionIds: Object.fromEntries(nodes.map((node) => [node.agentId, `cfg-${node.agentId}`])),
       definition: { ...version.definition, entryNodeId: nodes[0]!.id, nodes, edges,
         executionPolicy: { maxParallelism: 1, maxNodeExecutions: 1000 } } })

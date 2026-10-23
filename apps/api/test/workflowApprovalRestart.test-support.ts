@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { afterEach, expect, vi } from 'vitest'
-import { WorkActivationInputSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { WorkActivationInputSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { INTERRUPT } from '@langchain/langgraph'
 import { ApprovalPostgresSaver } from '../src/infrastructure/approvalCheckpointSaver.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'

@@ -5,11 +5,11 @@ import {
   parseWorkflowArtifactResult,
   workflowArtifactDigestsByOutputKey,
 } from './workflowArtifactResult.js'
-import { makeCurrentWorkflowFixture } from './wave25/currentFixture.js'
-import { WorkflowVersionV3Schema } from './wave25/saved.js'
-import { parseChoiceResultEnvelope } from './wave25/currentResult.js'
-import { parseRepeatExitResultV1 } from './wave25/repeat.js'
-import { canonicalGraphJson } from './wave25/json.js'
+import { makeCurrentWorkflowFixture } from './current/currentFixture.js'
+import { WorkflowVersionCurrentSchema } from './current/saved.js'
+import { parseChoiceResultEnvelope } from './current/currentResult.js'
+import { parseRepeatExitResultV1 } from './current/repeat.js'
+import { canonicalGraphJson } from './current/json.js'
 
 const declaration = { version: 1 as const, outputKeys: ['report'] }
 const artifacts = { version: 1, outputs: [{ outputKey: 'report', commandId: 'publish-report-original' }] }
@@ -34,11 +34,11 @@ describe('saved original workflow artifact declarations and result association',
       nodes: f.version.definition.nodes.map((node, index) => index ? node : { ...node, artifactOutputs: declaration }),
       edges: f.version.definition.edges.map(edge => ({ ...edge, artifactInputs: declaration })),
     } }
-    const version = WorkflowVersionV3Schema.parse(input)
+    const version = WorkflowVersionCurrentSchema.parse(input)
     expect(version.definition.nodes[0]).toMatchObject({ artifactOutputs: declaration })
     expect(version.definition.edges[0]).toMatchObject({ artifactInputs: declaration })
     expect(canonicalGraphJson(version.definition)).not.toBe(before)
-    expect(WorkflowVersionV3Schema.parse(f.version)).toEqual(f.version)
+    expect(WorkflowVersionCurrentSchema.parse(f.version)).toEqual(f.version)
   })
   it.each(['approval', 'bidirectional', 'undeclared', 'missing-declaration'] as const)('rejects %s edge authority', reason => {
     const f = makeCurrentWorkflowFixture('edge-' + reason, 'sequential')
@@ -50,7 +50,7 @@ describe('saved original workflow artifact declarations and result association',
         artifactInputs: reason === 'undeclared' ? { ...declaration, outputKeys: ['foreign'] } : declaration,
       })),
     } }
-    expect(WorkflowVersionV3Schema.safeParse(input).success).toBe(false)
+    expect(WorkflowVersionCurrentSchema.safeParse(input).success).toBe(false)
   })
   it.each([null, { version: 1, outputKeys: [] }, { version: 1, outputKeys: ['same', 'same'] },
     { version: 1, outputKeys: [''] }, { version: 2, outputKeys: ['report'] },
@@ -112,7 +112,7 @@ describe('saved original workflow artifact declarations and result association',
   })
   // Five cold Node starts: run them together, and allow for a loaded CI machine.
   it('loads declaration/result and existing shape modules as fresh first ESM imports', async () => {
-    const names = ['workflowArtifactDeclarations', 'workflowArtifactResult', 'wave25/workflowShape', 'wave25/currentResult', 'index']
+    const names = ['workflowArtifactDeclarations', 'workflowArtifactResult', 'current/workflowShape', 'current/currentResult', 'index']
     const results = await Promise.all(names.map(name => new Promise<{ code: number | null; stderr: string }>(resolve => {
       const url = new URL(`../dist/${name}.js`, import.meta.url).href
       const child = spawn(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(url)})`])

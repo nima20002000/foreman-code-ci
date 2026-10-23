@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import type { WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 
 /**
  * Board settings that save straight to the server (for example the schedule) join the draft's
@@ -109,10 +109,10 @@ export function dismissBoardNotice(id: string) {
 }
 
 const quoted = (value: string) => `“${value}”`
-const nodeName = (node: WorkflowDefinitionV3['nodes'][number]) => node.name ?? node.label ?? 'node'
+const nodeName = (node: WorkflowDefinitionCurrent['nodes'][number]) => node.name ?? node.label ?? 'node'
 
 /** Plain words for what one draft step changed, from `before` to `after`. */
-export function describeDraftChange(before: WorkflowDefinitionV3, after: WorkflowDefinitionV3): string {
+export function describeDraftChange(before: WorkflowDefinitionCurrent, after: WorkflowDefinitionCurrent): string {
   const parts: string[] = []
   if (before.name !== after.name) parts.push(`workflow name ${quoted(before.name)} → ${quoted(after.name)}`)
   if (JSON.stringify(before.defaultWorktree ?? null) !== JSON.stringify(after.defaultWorktree ?? null)) parts.push('worktree')

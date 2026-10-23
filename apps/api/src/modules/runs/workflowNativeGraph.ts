@@ -1,7 +1,7 @@
 import { renewWorkflowNativePublicationLease } from './workflowNativeLease.js'
 import { DurableInteractionSchema, HarnessExecutionSchema, type DurableInteraction, type HarnessExecution, type HarnessNativeEvent,
   type NativeSessionReference } from '@foreman-code/contracts'
-import { RunGraphScopeSchema, WorkflowRunV3Schema, type RunGraphScope, type NativeGraphProjectionKey } from '@foreman-code/contracts/wave25'
+import { RunGraphScopeSchema, WorkflowRunCurrentSchema, type RunGraphScope, type NativeGraphProjectionKey } from '@foreman-code/contracts/current'
 import type { RunOwnership } from './ownership.js'
 import { currentRunGraphPublication } from '../run-graph/publication.js'
 import { appendNativeGraphEvent } from '../run-graph/nativeIngestion.js'
@@ -10,7 +10,8 @@ import { appendNormalizedNativeEvent, readPersistedNativeSequence } from './nati
 import { readNativeGraphActivity, readNativeGraphCorrelation, type NativeGraphProjectionGuard } from '../run-graph/records.js'
 import { PostgresNativeGraphProjectionWriter } from '../run-graph/nativeWriter.js'
 import { DomainError } from '../errors.js'
-import { assertGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
+import { assertGraphTransaction } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { activeNativeBatch, forgetNativeRow, memoizeNativeRead, nativeCommitCheck, prefetchedNativeAppend } from '../run-graph/nativeBatch.js'
 import { flushNativeGraphRows } from '../run-graph/nativeWriter.js'
 import { stagedNativeRecordId } from '../run-graph/records.js'
@@ -37,7 +38,7 @@ export interface WorkflowContinuationProof {
 
 /** Validated by the private capture consumer for this frame in the same transaction. */
 interface WorkflowNativeEventContext {
-  sql: GraphTransactionSql
+  sql: SqlTransaction
   scope: RunGraphScope
   execution: HarnessExecution
   appended?: NativeEventAppendResult
@@ -45,7 +46,7 @@ interface WorkflowNativeEventContext {
 
 /** SQL composition used only AFTER the private native-capture verifier. The
  * original source, execution mutation and G1 receipts share this transaction. */
-export async function appendWorkflowNativeGraphEventLocked(sql: GraphTransactionSql, owner: RunOwnership,
+export async function appendWorkflowNativeGraphEventLocked(sql: SqlTransaction, owner: RunOwnership,
   input: HarnessNativeEvent, lease?: WorkflowNativeLease, approval?: WorkflowApprovalCorrelation,
   _continuation?: WorkflowContinuationProof, context?: WorkflowNativeEventContext | undefined): Promise<void> {
   void _continuation
@@ -63,7 +64,7 @@ export async function appendWorkflowNativeGraphEventLocked(sql: GraphTransaction
     execution = context.execution
   } else {
     const found = (await sql.query<{ record: unknown }>('select record from runs where id=$1', [owner.runId])).rows[0]
-    const run = WorkflowRunV3Schema.parse(found?.record)
+    const run = WorkflowRunCurrentSchema.parse(found?.record)
     scope = RunGraphScopeSchema.parse({ workspaceId: run.workspaceId, workflowId: run.workflowId,
       runId: run.id, workflowVersionId: run.workflowVersionId, executionSemanticsVersion: 3 })
     const stored = (await sql.query<{ record: unknown }>(

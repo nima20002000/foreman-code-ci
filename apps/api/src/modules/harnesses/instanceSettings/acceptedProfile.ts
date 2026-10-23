@@ -6,6 +6,7 @@ import type { RegistryHarnessSelection } from '../installationRegistry.js'
 import type { HarnessInstanceSettingsRepository } from './repository.js'
 import type { HostHarnessProfileEvidenceRepository } from './profileRepository.js'
 import { DomainError } from '../../errors.js'
+import { deepFreeze } from '../../../shared/deepFreeze.js'
 
 export interface AcceptedProfileSelector {
   instanceId: string
@@ -42,13 +43,6 @@ export interface AcceptedProfileAuthority<Owner> {
   assertCurrent(binding: RegistryHarnessSelection): void
   assertReady?(profile: HostHarnessOverride): void
 }
-function freeze<T>(value: T): T {
-  if (value && typeof value === 'object') {
-    for (const child of Object.values(value)) freeze(child)
-    Object.freeze(value)
-  }
-  return value
-}
 const unavailable = (): never => { throw new DomainError('HARNESS_PROFILE_UNAVAILABLE', 'The exact accepted native profile is unavailable or its proof is stale.', 409) }
 
 /** Reads existing immutable settings and real native proof. No manager, native probe or default-profile synthesis. */
@@ -75,7 +69,7 @@ export class AcceptedHarnessProfileAdmission<Owner> {
     }
   }
   protected remember<T extends object>(accepted: T, selector: AcceptedProfileSelector): T {
-    this.selectors.set(accepted, freeze(structuredClone(selector)))
+    this.selectors.set(accepted, deepFreeze(structuredClone(selector)))
     return accepted
   }
   async admitObservation(owner: Owner, selector: AcceptedProfileSelector): Promise<AcceptedHarnessProfile> {
@@ -84,7 +78,7 @@ export class AcceptedHarnessProfileAdmission<Owner> {
   private async readProfile(owner: Owner, selector: AcceptedProfileSelector,
     options: { purpose: 'execution' | 'observation' }): Promise<AcceptedHarnessProfile> {
     // Snapshot before any await so a mutable caller cannot change the authorized selector.
-    const selected = freeze(structuredClone(selector))
+    const selected = deepFreeze(structuredClone(selector))
     return this.settings.readAuthorized(async client => {
       await this.authority.authorize(owner, selected, client)
       // Readers share placement's lock; settings appends still exclude both.
@@ -135,7 +129,7 @@ export class AcceptedHarnessProfileAdmission<Owner> {
         || !isDeepStrictEqual(proof.claudeProof.pin, binding.pin) || binding.pin.profilePath !== value.configuration.configDirectory)) return unavailable()
       await this.authority.authorize(owner, selected, client)
       this.authority.assertCurrent(current.registry)
-      return freeze(structuredClone({ override: value, persistedProof: proof, currentBinding: binding }))
+      return deepFreeze(structuredClone({ override: value, persistedProof: proof, currentBinding: binding }))
     })
   }
   /** Invoke in the existing async native-effect guard; the synchronous factory consumes only the frozen snapshot. */
@@ -162,6 +156,6 @@ export class AcceptedClaudeProfileAdmission<Owner> extends AcceptedHarnessProfil
   override async admit(owner: Owner, selector: AcceptedProfileSelector): Promise<AcceptedClaudeProfile> {
     const accepted = await super.admit(owner, selector)
     if (accepted.override.driverId !== 'claude' || accepted.override.configuration.harness !== 'claude' || !accepted.currentBinding.pin) return unavailable()
-    return this.remember(freeze({ ...accepted, currentBinding: { ...accepted.currentBinding, pin: accepted.currentBinding.pin } }), selector)
+    return this.remember(deepFreeze({ ...accepted, currentBinding: { ...accepted.currentBinding, pin: accepted.currentBinding.pin } }), selector)
   }
 }

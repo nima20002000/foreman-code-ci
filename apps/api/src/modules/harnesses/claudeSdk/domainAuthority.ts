@@ -6,7 +6,7 @@ import { readCoordinatorCredentialAuthority } from '../../access/consultationAut
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { currentOperatorAuthority, readRunAuthorizationPrincipal } from '../../access/runAuthority.js'
 import { requireAuthorization } from '../../access/policy.js'
-import { credentialAuthority } from '../../interactions/wave25/credentialAuthority.js'
+import { credentialAuthority } from '../../interactions/current/credentialAuthority.js'
 import { assertWorkflowCorrelation } from '../../runs/workResultRepair.js'
 import type { RunOwnership } from '../../runs/ownership.js'
 import type { PostgresOperatorConversationRepository } from '../../conversations/operatorChatRepository.js'

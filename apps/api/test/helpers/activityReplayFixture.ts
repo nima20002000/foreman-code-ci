@@ -6,7 +6,7 @@ import { expect } from 'vitest'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { AgentConfigurationVersionSchema, DEFAULT_CODEX_ADVANCED_CONFIGURATION } from '@foreman-code/contracts'
 import { ManagementActionSchema, ManagedAgentDefaultsSchema, WorkspaceLocationSetResultSchema } from '@foreman-code/contracts/management'
-import { ManualRunStartResultSchema, SavedRunDetailsSchema, WorkflowVersionV3Schema, makeCurrentWorkflowFixture, type CurrentFixtureForm } from '@foreman-code/contracts/wave25'
+import { ManualRunStartResultSchema, SavedRunDetailsSchema, WorkflowVersionCurrentSchema, makeCurrentWorkflowFixture, type CurrentFixtureForm } from '@foreman-code/contracts/current'
 import { LOCAL_RUNNER_ID } from '../../src/modules/workspaces/location.js'
 import { loadConfig } from '../../src/config.js'
 import { createCheckpointStore } from '../../src/infrastructure/checkpoints.js'
@@ -16,7 +16,8 @@ import { buildProductionApp } from '../../src/production.js'
 import { ActivityProductionReplay } from './activityProductionReplay.js'
 import { createActivityReplayFileStorage, createActivityReplayWorkspace, startActivityReplayProduction } from './activityReplayLifecycle.js'
 import { privateFixtureDirectory } from './privateFixtureDirectory.js'
-import { agent3Database, seedAgent3 } from './workflowDatabase.js'
+import { seedWorkflowFixture } from './workflowDatabase.js'
+import { migratedDatabase } from './migratedDatabase.js'
 import { agentWorkflowVersion } from './agentWorkflowFixture.js'
 
 const closes: Array<() => Promise<void>> = []
@@ -74,7 +75,7 @@ async function freePort() {
   return address.port
 }
 export async function setup(options: { operatorSandbox?: 'read-only' | 'workspace-write'; form?: CurrentFixtureForm; handoffs?: boolean; approvalPolicy?: 'on-request'; chatTools?: boolean } = {}) {
-  const db = await agent3Database(); closes.push(db.close)
+  const db = await migratedDatabase(); closes.push(db.close)
   const directory = await privateFixtureDirectory('activity-replay-workspace-')
   closes.push(() => removeFixtureDirectory(directory))
   const workspace = await createActivityReplayWorkspace(directory)
@@ -91,14 +92,14 @@ export async function setup(options: { operatorSandbox?: 'read-only' | 'workspac
   await checkpoints.setup()
   closes.push(async () => { await checkpoints.close(); await dropFixtureSchema(db.pool, cpSchema) })
   const seed = makeCurrentWorkflowFixture(randomUUID(), options.form ?? 'single')
-  if (options.handoffs) seed.version = agentWorkflowVersion(WorkflowVersionV3Schema.parse({ ...seed.version,
+  if (options.handoffs) seed.version = agentWorkflowVersion(WorkflowVersionCurrentSchema.parse({ ...seed.version,
     definition: { ...seed.version.definition, handoffs: { contractVersion: 1 } } }))
   seed.configurations = seed.configurations.map((configuration) => AgentConfigurationVersionSchema.parse({ ...configuration,
     ...(options.chatTools ? { graphqlTools: ['workflow_chat_read', 'workflow_chat_post'] } : {}),
     harness: { harness: 'codex', model: 'test-model', reasoningEffort: 'low', sandbox: 'read-only', serviceTier: 'standard',
       ...(options.approvalPolicy ? { advanced: { ...DEFAULT_CODEX_ADVANCED_CONFIGURATION, approvalPolicy: options.approvalPolicy } } : {}),
     } }))
-  const saved = await seedAgent3(db.pool, workspace.workingDirectory, seed, { run: false })
+  const saved = await seedWorkflowFixture(db.pool, workspace.workingDirectory, seed, { run: false })
   const access = new PostgresAccessService(db.pool)
   const writer = await access.issue({ name: 'W05 production fixture writer', audience: 'operator',
     expiresAt: new Date(Date.now() + 600000), grants: [{ actions: ManagementActionSchema.options, scope: {} }] })

@@ -1,7 +1,7 @@
 import { HarnessExecutionSchema, parseCoordinationResult, type ResultProtocol,
   type ExecutionResult, type HarnessExecution, type HarnessExecutionContext } from '@foreman-code/contracts'
 import { AcceptedCurrentNodeResultSchema, NodeResolutionSchema, parseRepeatExitResultV1,
-  type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+  type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 
 import { ExecutionLimiter } from './limiter.js'
 import { waitBeforeRetry } from './executionRetryPolicy.js'
@@ -52,7 +52,7 @@ export interface RepeatTerminalOptions {
  * Already-written/accepted evidence must instead be checked, never normalized in place.
  * The shared parser accepts only the exact native text carrier, without changing
  * stored result bytes or accepting mixed carriers, prose or Markdown. */
-export function normalizeRepeatTerminal(version: WorkflowVersionV3, scope: RepeatScope,
+export function normalizeRepeatTerminal(version: WorkflowVersionCurrent, scope: RepeatScope,
   ref: RepeatNodeRef, value: HarnessExecution, options: RepeatTerminalOptions = {}): HarnessExecution {
   const execution = HarnessExecutionSchema.parse(value)
   assertRepeatExecution(version, scope, ref, execution)
@@ -117,7 +117,7 @@ function invalidWorkResult(execution: HarnessExecution): HarnessExecution {
  * validate the exact native session/owner/lease, approval receipts and Stop and
  * publish the returned record atomically with its canonical lifecycle facts.
  * Do not use this on raw provider-event storage or result acceptance/replay. */
-export function prepareRepeatNativeUpdate(version: WorkflowVersionV3, scope: RepeatScope,
+export function prepareRepeatNativeUpdate(version: WorkflowVersionCurrent, scope: RepeatScope,
   ref: RepeatNodeRef, previousValue: HarnessExecution, incomingValue: HarnessExecution,
   options: RepeatTerminalOptions = {}): HarnessExecution {
   const previous = HarnessExecutionSchema.parse(previousValue)
@@ -128,7 +128,7 @@ export function prepareRepeatNativeUpdate(version: WorkflowVersionV3, scope: Rep
   return normalizeRepeatTerminal(version, scope, ref, incoming, options)
 }
 
-export function repeatTerminalResolution(version: WorkflowVersionV3, scope: RepeatScope,
+export function repeatTerminalResolution(version: WorkflowVersionCurrent, scope: RepeatScope,
   ref: RepeatNodeRef, execution: HarnessExecution, resultProtocol?: ResultProtocol): RepeatResolution {
   assertRepeatExecution(version, scope, ref, execution)
   if (execution.state !== 'completed' || !execution.result || !execution.finishedAt) return repeatConflict('EXECUTION_RESULT_NOT_ACCEPTABLE')
@@ -160,7 +160,7 @@ export function repeatTerminalResolution(version: WorkflowVersionV3, scope: Repe
     unselectedRelationshipIds: outgoing.filter((id) => !selected.includes(id) && !deferred.includes(id)), resolvedAt: execution.finishedAt,
   }) }
 }
-export function inactiveRepeatResolution(version: WorkflowVersionV3, ref: RepeatNodeRef,
+export function inactiveRepeatResolution(version: WorkflowVersionCurrent, ref: RepeatNodeRef,
   kind: 'skipped' | 'excluded', resolvedAt: string): RepeatResolution {
   return { ref, deferredRelationshipIds: [], value: NodeResolutionSchema.parse({ workflowNodeId: ref.nodeId,
     resolution: kind, branchEnded: false, selectedRelationshipIds: [],

@@ -9,10 +9,10 @@ import { RunnerAdmission } from '../src/modules/runs/runnerAdmission.js'
 import type { RepeatNativeLaunchStore } from '../src/modules/interactions/repeatObservation.js'
 import type { ApprovalExecutionCoordinator } from '../src/modules/interactions/execution.js'
 import { nativeCompleted } from './native-repeat-fixtures.js'
-import { native2Fixture } from './native-reviewer-fixtures.js'
+import { nativeReviewerFixture } from './native-reviewer-fixtures.js'
 
 function observerFixture(completed = false) {
-  const f = native2Fixture(completed)
+  const f = nativeReviewerFixture(completed)
   const store: RepeatNativeLaunchStore = { ...f.store,
     readWorkExecutionContext: async () => { throw new Error('Ordinary workflows have no work-handoff context') },
     beginNativeEntry: async () => { throw Object.assign(new Error('No preparation permit'), { code: 'NATIVE_ENTRY_CONFLICT' }) },

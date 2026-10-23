@@ -2,9 +2,10 @@ import { HarnessExecutionSchema } from '@foreman-code/contracts'
 import {
   AcceptedCurrentNodeResultSchema, HierarchyWorkGroupSchema, HierarchyWorkTaskSchema,
   WorkActivationIdentitySchema, WorkActivationInputSchema, WorkRequestSchema, canonicalGraphJson, workConnectionForRequest,
-  type HierarchyWorkGroup, type HierarchyWorkTask, type WorkRequest, type WorkflowVersionV3, type WorkflowRunV3,
-} from '@foreman-code/contracts/wave25'
-import { assertGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
+  type HierarchyWorkGroup, type HierarchyWorkTask, type WorkRequest, type WorkflowVersionCurrent, type WorkflowRunCurrent,
+} from '@foreman-code/contracts/current'
+import { assertGraphTransaction } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import type { RepeatLockedHooks } from './repeatPostgres.js'
 import { repeatConflict, repeatDigest, repeatId, sameRepeatValue, type RepeatScope } from './repeatResolution.js'
 import { hasWorkflowExecutionCapacityLocked } from './workflowExecutionBudget.js'
@@ -14,8 +15,8 @@ import { hasHierarchyParentInputCapacity } from './hierarchyInputCapacity.js'
 import { workflowLifecycleLocked } from './workflowCollaborationRuntime.js'
 
 export interface HierarchyGroupContext {
-  sql: GraphTransactionSql; scope: RepeatScope; version: WorkflowVersionV3
-  hooks: RepeatLockedHooks & { run: RepeatLockedHooks['run'] & Pick<WorkflowRunV3, 'resultProtocol'> }
+  sql: SqlTransaction; scope: RepeatScope; version: WorkflowVersionCurrent
+  hooks: RepeatLockedHooks & { run: RepeatLockedHooks['run'] & Pick<WorkflowRunCurrent, 'resultProtocol'> }
   now: string; assertActive(): void
 }
 interface RequestedWork {
@@ -32,7 +33,7 @@ export type HierarchyGroupAdmission = {
 }
 
 /** Selection never follows unselected routes or dispatches a second DAG path. */
-export function hierarchyRequestedWork(version: WorkflowVersionV3, parentNodeId: string,
+export function hierarchyRequestedWork(version: WorkflowVersionCurrent, parentNodeId: string,
   result: HierarchyWorkResult): RequestedWork[] {
   const definition = version.definition
   const hierarchy = definition.hierarchy

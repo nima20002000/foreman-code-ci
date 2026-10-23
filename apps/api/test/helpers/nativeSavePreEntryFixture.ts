@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll } from 'vitest'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
-import { agent3Database } from './workflowDatabase.js'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
+import { migratedDatabase } from './migratedDatabase.js'
 import { currentOperatorIntegration } from './currentOperatorIntegration.js'
 
 export function nativeSavePreEntryFixtures() {
-  let database: Awaited<ReturnType<typeof agent3Database>> | undefined
+  let database: Awaited<ReturnType<typeof migratedDatabase>> | undefined
 
   beforeAll(async () => {
-    database = await agent3Database()
+    database = await migratedDatabase()
   }, 60000)
 
   afterAll(async () => {

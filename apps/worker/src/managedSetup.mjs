@@ -4,9 +4,8 @@ import { realpath, unlink } from 'node:fs/promises';
 import { CiManagedSetupSchema } from '../../../packages/contracts/src/ciEnrollment.ts';
 import { loadWorkerPairing } from '../../../packages/contracts/src/deviceIdentityNode.ts';
 import { ApprovedRootAllowlistSchema } from '../../../packages/contracts/src/workspaceRootPolicies.ts';
-import { qualifyApprovedRootAllowlist } from '../../../apps/api/src/modules/sources/rootAttestation.ts';
-import { RemoteOperationJournal } from '../../../apps/api/src/modules/runs/remote/operationJournal.ts';
-import { openPrivateRoot, openChildDirectory, anchored } from '../../../apps/api/src/modules/sources/privateFilesystem.ts';
+import { qualifyApprovedRootAllowlist, openPrivateRoot, openChildDirectory, anchored } from '@foreman-code/api/worker/sources';
+import { RemoteOperationJournal } from '@foreman-code/api/worker/runs';
 import { CiRuntimeInstallationSchema } from '@foreman-code/ci/ciRuntimeInstallation';
 import { MAX_VERIFICATION_CONFIGURATION_BYTES } from '../../../packages/contracts/src/installedRuntimeNode.ts';
 import { loadApprovedRoots } from './approvedRoots.mjs';
@@ -15,7 +14,7 @@ import { createManagedStorage, optionalManagedJson, managedEntryExists, publishM
 import { discoverManagedInstallation, inspectManagedInstallation, retireManagedInstallation,
   pairingTarget, samePairingTarget } from './managedInstallation.mjs';
 import { hostFacts, requirePrivateDirectory, WorkerError } from './diagnostics.mjs';
-import { DomainError } from '../../../apps/api/src/modules/errors.ts';
+import { DomainError } from '@foreman-code/contracts/server-kit';
 import { assertRuntimeQuiescent } from './jobRuntimeCapture.mjs';
 
 const runtimeUnavailable = 'Pairing approved the private managed roots. This computer has no installed quota-enabled CI runtime to adopt.';

@@ -1,7 +1,8 @@
-import { withExclusiveGraphConnection, type GraphTransactionSql } from '../run-graph/connection.js'
+import { withExclusiveGraphConnection } from '../run-graph/index.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import type pg from 'pg'
 import { HarnessExecutionSchema, NativeSessionLaneSchema, NativeSessionReferenceSchema, type HarnessExecution, type NativeSessionReference } from '@foreman-code/contracts'
-import { AcceptedWorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
 import { RemoteOperationReceiptSchema, type RemoteNativeIdentity } from '@foreman-code/contracts/remote-execution'
 import type { ManagementAction, ManagementPrincipal } from '@foreman-code/contracts/management'
 import { DeviceRegistrationSchema, DeviceConnectionIdentitySchema } from '@foreman-code/contracts/device-identity'
@@ -11,10 +12,10 @@ import {
   TELEMETRY_LIMITS, TelemetrySelectorSchema, telemetryCanonical, telemetrySelectorKey,
   type TelemetryHost, type TelemetryIdentity, type TelemetryOwner, type TelemetrySelector, type TelemetrySelectorTarget, type TrustedTelemetryContext,
 } from '@foreman-code/contracts/resource-telemetry'
-import { isAuthorized, type AuthorizedResource } from '../access/policy.js'
-import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
+import { isAuthorized, type AuthorizedResource } from '../access/index.js'
+import { readLiveManagementPrincipal } from '../access/index.js'
 import { DomainError } from '../errors.js'
-import { readAcceptedPlacement, readDispatchIntent } from '../placement/persistence.js'
+import { readAcceptedPlacement, readDispatchIntent } from '../placement/index.js'
 import { readReconciledDispatchIntent } from '../runs/remote/persistence.js'
 import type { NativeLaunchObservation, PassiveNativeRegistry, TrustedNativeScope, TrustedNativeScopes } from './collector/registryAdapter.js'
 import type { TelemetryOwnershipReader, TelemetryReadAuthority, TelemetrySessionReader } from './ingestion/ports.js'
@@ -88,10 +89,10 @@ interface TelemetryScopeContext {
   mainContext: PassiveTelemetryServicesInput['mainContext']
   captureHost(capture: CapturedTelemetryNativeOwner): TelemetryOwnedTargetFacts['host'] | null
   currentCapture(capture: CapturedTelemetryNativeOwner): boolean
-  computerAllowed(sql: GraphTransactionSql, target: Extract<TelemetrySelectorTarget, { scope: 'computer' }>): Promise<boolean>
+  computerAllowed(sql: SqlTransaction, target: Extract<TelemetrySelectorTarget, { scope: 'computer' }>): Promise<boolean>
 }
 
-async function readTelemetryScope(sql: GraphTransactionSql, capture: CapturedTelemetryNativeOwner,
+async function readTelemetryScope(sql: SqlTransaction, capture: CapturedTelemetryNativeOwner,
   observed: readonly NativeLaunchObservation[], signal: AbortSignal, context: TelemetryScopeContext): Promise<ScopeFacts | null> {
   const { captureHost, currentCapture, computerAllowed } = context
 
@@ -110,7 +111,7 @@ async function readTelemetryScope(sql: GraphTransactionSql, capture: CapturedTel
   const rows = await sql.query<{ id: string; run_id: string; workflow_node_id: string; agent_id: string; attempt: number;
     accepted: boolean; record: unknown; workspace_id: string; workflow_id: string; workflow_version_id: string; run_record: unknown }>(`select e.id,e.run_id,e.workflow_node_id,e.agent_id,e.attempt,e.accepted,e.record,r.workspace_id,r.workflow_id,r.workflow_version_id,r.record as run_record
     from harness_executions e join runs r on r.id=e.run_id where e.id=$1 and e.run_id=$2`, [capture.execution.id, capture.execution.runId])
-  const row = rows.rows[0], execution = HarnessExecutionSchema.safeParse(row?.record), run = AcceptedWorkflowRunV3Schema.safeParse(row?.run_record)
+  const row = rows.rows[0], execution = HarnessExecutionSchema.safeParse(row?.record), run = AcceptedWorkflowRunCurrentSchema.safeParse(row?.run_record)
   if (rows.rows.length !== 1 || !row || !execution.success || !row.accepted || row.id !== capture.execution.id
     || row.run_id !== capture.execution.runId || row.workflow_node_id !== capture.execution.workflowNodeId
     || row.agent_id !== capture.execution.agentId || row.attempt !== capture.execution.attempt
@@ -204,7 +205,7 @@ export function createPassiveTelemetryAuthorities(input: PassiveTelemetryService
       applicationInstallationId: binding.workerInstallationId, bootId: binding.bootId, runtimeEpoch: binding.connectionEpoch,
       keyRevision: binding.keyRevision, authorizationRevision: binding.authorizationRevision, connectionGeneration: binding.connectionGeneration }
   }
-  const withSql = async <T>(signal: AbortSignal, work: (sql: GraphTransactionSql) => Promise<T>): Promise<T> => {
+  const withSql = async <T>(signal: AbortSignal, work: (sql: SqlTransaction) => Promise<T>): Promise<T> => {
     signal.throwIfAborted()
     return withExclusiveGraphConnection(input.pool, connection => connection.transaction(async (client) => {
       const result = await work(client)
@@ -212,7 +213,7 @@ export function createPassiveTelemetryAuthorities(input: PassiveTelemetryService
       return result
     }, true))
   }
-  const authorized = async (sql: GraphTransactionSql, principal: ManagementPrincipal, target: TelemetrySelectorTarget) => {
+  const authorized = async (sql: SqlTransaction, principal: ManagementPrincipal, target: TelemetrySelectorTarget) => {
     const requirement = grant(target)
     if (!isAuthorized(principal, requirement.action, requirement.resource)) return false
     try {
@@ -221,7 +222,7 @@ export function createPassiveTelemetryAuthorities(input: PassiveTelemetryService
     } catch (error) { if (error instanceof DomainError && error.status === 403) return false; throw error }
   }
 
-  const load = async (sql: GraphTransactionSql, signal: AbortSignal, executionId?: string): Promise<ScopeFacts[]> => {
+  const load = async (sql: SqlTransaction, signal: AbortSignal, executionId?: string): Promise<ScopeFacts[]> => {
     const source = captures()
     if (!source.length || executionId && !source.some(capture => capture.execution.id === executionId)) return []
     const observed = input.registry.snapshot().launches
@@ -244,7 +245,7 @@ export function createPassiveTelemetryAuthorities(input: PassiveTelemetryService
       return !executionId || capture.execution.id === executionId ? [scope] : []
     })
   }
-  const computerAllowed = async (sql: GraphTransactionSql, target: Extract<TelemetrySelectorTarget, { scope: 'computer' }>) => {
+  const computerAllowed = async (sql: SqlTransaction, target: Extract<TelemetrySelectorTarget, { scope: 'computer' }>) => {
     const host = localHost()
     if (!host || target.mainId !== host.hostRef.mainId) return false
     if (target.hostRef.kind === 'main') return telemetryCanonical(target.hostRef) === telemetryCanonical(host.hostRef)

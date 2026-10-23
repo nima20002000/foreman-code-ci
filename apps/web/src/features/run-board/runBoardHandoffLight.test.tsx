@@ -3,9 +3,9 @@ import { createMemoryHistory, createRootRoute, createRouter, RouterProvider } fr
 import { cleanup, render, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { RepeatGraphCurrentV3Schema, repeatGraphTopologyV3 } from '@foreman-code/contracts/wave25'
+import { RepeatGraphCurrentStateSchema, repeatGraphTopologyCurrent } from '@foreman-code/contracts/current'
 import { server } from '../../mocks/server'
-import { WorkflowBoardProvider } from '../workflow-board/context'
+import { WorkflowBoardProvider } from '../board-core'
 import { RunBoardCanvas } from './RunBoardCanvas'
 import { runA, versionReply } from './testFixtures'
 import { installFlowLayout } from './testFlowLayout'
@@ -15,8 +15,8 @@ const { scope, version } = versionReply(runA)
 const identity = (node: string) => ({ workflowNodeId: node, executionId: `exec-${node}`, agentId: `agent-${node.slice(5)}`,
   agentConfigurationVersionId: version.agentConfigurationVersionIds[`agent-${node.slice(5)}`]!, attempt: 1, occurrence: null })
 // X has finished and handed its result to Y, which is now working on it.
-const current = RepeatGraphCurrentV3Schema.parse({
-  kind: 'current', protocolVersion: 1, scope, topology: repeatGraphTopologyV3(version),
+const current = RepeatGraphCurrentStateSchema.parse({
+  kind: 'current', protocolVersion: 1, scope, topology: repeatGraphTopologyCurrent(version),
   asOfSequence: '2', retentionFloor: '0', historyCoverage: 'from_admission',
   state: { run: { executionState: 'running', outcome: 'pending', stopRequested: false,
     cleanupPending: false, unsettledReviewCount: 0, pendingInteractionCount: 0 },

@@ -22,7 +22,7 @@ export function nativeAcceptanceEnvironment(source) {
 
 export function nativeAcceptanceConfiguration(environment) {
   return {
-    databaseUrl: environment.ENG03_A_TEST_DATABASE_URL ?? environment.TEST_DATABASE_URL,
+    databaseUrl: environment.TEST_DATABASE_URL,
     evidenceRoot: environment.ENG03_A_EVIDENCE_DIR ?? join(root, '.logs', 'native-acceptance'),
   }
 }

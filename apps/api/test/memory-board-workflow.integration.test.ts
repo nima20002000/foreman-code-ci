@@ -4,7 +4,7 @@ import type { Client } from '@modelcontextprotocol/client'
 import { memoryBoardTools, DEFAULT_CODEX_ADVANCED_CONFIGURATION, type HarnessExecutionRequest } from '@foreman-code/contracts'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { SavedManagedWorkflowCommandResultSchema, CurrentWorkflowSaveResultSchema,
-  RunStartV3ResultSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+  RunStartCurrentResultSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { APP_MCP_TOKEN_ENVIRONMENT_VARIABLE } from '../src/modules/access/workerCredentials.js'
 import { isWorkflowStart } from '../src/modules/harnesses/sessionStart.js'
 import { LOCAL_RUNNER_ID } from '../src/modules/workspaces/location.js'
@@ -79,7 +79,7 @@ it.runIf(postgresEnabled)('creates and runs a board-write workflow through authe
       workSelections: [{ kind: 'next_activation', node: { workspaceId, workflowId: saved.workflowId,
         workflowNodeId: node.id, agentId: node.agentId } }],
     })
-    const started = RunStartV3ResultSchema.parse(await call(runtime.client, 'run_start', {
+    const started = RunStartCurrentResultSchema.parse(await call(runtime.client, 'run_start', {
       workspaceId, workflowId: saved.workflowId, workflowVersionId: saved.version.id,
       executionSemanticsVersion: 3, expectedWorkflowRevision: saved.revision,
       expectedAgentConfigurationVersionIds: saved.version.agentConfigurationVersionIds,

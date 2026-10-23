@@ -15,14 +15,17 @@ beforeEach(() => vi.resetAllMocks())
 function startSetup() {
   const t = sharedFixture()
   // Answers reads only: any write (Run, receipt, native action) reaches the throw below and fails the test.
-  const query = vi.fn(async (sql: string) => {
-    if (sql.includes('pg_try_advisory_xact_lock')) return { rows: [{ locked: true }], rowCount: 1 }
-    if (sql.includes('from workspaces where')) return { rows: [t.locationRow], rowCount: 1 }
-    if (sql.includes('from workflows where')) return { rows: [t.workflow], rowCount: 1 }
-    if (sql.includes('from workflow_versions where')) return { rows: [t.versionRow], rowCount: 1 }
-    if (sql.includes('from agents a')) return { rows: t.configurations, rowCount: t.configurations.length }
-    if (sql.includes('from graph_drafts')) return { rows: [], rowCount: 0 }
-    throw new Error(`Unexpected SQL ${sql}`)
+  // Reads are told apart by their bound values: the workspace id alone is the workspace read and any other single key is
+  // the Start lock; the workflow and workspace ids are the workflow read; the workspace with a list of Agent ids is the
+  // configuration read; and three values are the pinned version read (version id first) or the draft read.
+  const query = vi.fn(async (_sql: string, values: unknown[] = []) => {
+    if (values.length === 1 && values[0] === t.locationRow.id) return { rows: [t.locationRow], rowCount: 1 }
+    if (values.length === 1) return { rows: [{ locked: true }], rowCount: 1 }
+    if (values.length === 2 && Array.isArray(values[1])) return { rows: t.configurations, rowCount: t.configurations.length }
+    if (values.length === 2) return { rows: [t.workflow], rowCount: 1 }
+    if (values.length === 3 && values[0] === t.versionRow.id) return { rows: [t.versionRow], rowCount: 1 }
+    if (values.length === 3) return { rows: [], rowCount: 0 }
+    throw new Error(`Unexpected read binding ${values.length} values`)
   })
   const client = { query } as unknown as pg.PoolClient
   fences.live.mockResolvedValue(t.principal)

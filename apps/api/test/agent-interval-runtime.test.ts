@@ -4,7 +4,7 @@ import { DomainError } from '../src/modules/errors.js'
 import { executeRepeatRuntime, type RepeatRuntimeLifecycle } from '../src/modules/runs/repeatRuntime.js'
 import type { RepeatExecutionDriver } from '../src/modules/runs/repeatNode.js'
 import type { RepeatTickAdmission } from '../src/modules/runs/repeatPostgres.js'
-import { a1Scenario, graphHarness } from './helpers/graphScenarioHarness.js'
+import { graphScenario, graphHarness } from './helpers/graphScenarioHarness.js'
 import { deferred } from './helpers/deferred.js'
 
 const untilAborted = (signal: AbortSignal) => new Promise<never>((_resolve, reject) => {
@@ -15,7 +15,7 @@ const untilAborted = (signal: AbortSignal) => new Promise<never>((_resolve, reje
 /** Real graph runtime with deterministic ports: the entry Agent checks every 10 seconds while the
  * second node works until released. Checks are admitted once the second node has started. */
 function intervalRun(options: { maxParallelism: number; observeCheck(check: HarnessExecution, signal: AbortSignal): Promise<void> }) {
-  const f = a1Scenario('sequential', `interval-runtime-${options.maxParallelism}`)
+  const f = graphScenario('sequential', `interval-runtime-${options.maxParallelism}`)
   f.configurations = f.configurations.map((configuration) => ({ ...configuration, harness: { ...configuration.harness,
     advanced: { ...DEFAULT_CODEX_ADVANCED_CONFIGURATION, approvalPolicy: 'never' as const } } })) as typeof f.configurations
   const [watcher, worker] = f.version.definition.nodes

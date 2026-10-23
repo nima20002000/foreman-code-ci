@@ -3,7 +3,7 @@ import type { RetainedSourceFootprint } from '@foreman-code/contracts/source-ope
 import type { SourceWorktreeRequest, MaterializationReceipt } from '@foreman-code/contracts/source-materialization'
 import type { RootBinding } from '@foreman-code/contracts/source-materialization'
 import type { SourceQuotaPool } from './materialization.js'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { SourceRootRecord, SourceMaterializationRecord, VerifiedSourceWorkingTree } from '@foreman-code/contracts/source-admission'
 import type { SourceManifest } from '@foreman-code/contracts/source-materialization'
@@ -21,7 +21,7 @@ import type { SourceStorageCapacity } from '@foreman-code/contracts/source-opera
 import { readSourceStorageCapacity } from './storageCapacity.js'
 
 export type SourceNativeSessionCaptureReader = (record: SourceMaterializationRecord) => Promise<SourceNativeSessionCapture | null>
-export type SourceActiveNativeSessionReader = (sql: GraphSqlClient, record: SourceMaterializationRecord) => Promise<SourceActiveNativeSession | null>
+export type SourceActiveNativeSessionReader = (sql: SqlQuery, record: SourceMaterializationRecord) => Promise<SourceActiveNativeSession | null>
 /** Worker independently observes these original installed-host facts. Main owns
  * the entered SQL row and current session lane, so the worker never invents them. */
 export interface SourceInstalledNativeOwner {
@@ -76,10 +76,10 @@ export class InstalledSourceExecutionHosts implements SourceExecutionHostPort {
       () => this.localPreparation!.authorize(reconciliationId, owner),
       await this.quotaPoolFor?.(owner.root.binding, owner.attempt))
   }
-  authorize(sql: GraphSqlClient, principal: ManagementPrincipal, input: { workspaceId: string; root: SourceRootRecord; attempt: MaterializationAttempt; operationId: string }) {
+  authorize(sql: SqlQuery, principal: ManagementPrincipal, input: { workspaceId: string; root: SourceRootRecord; attempt: MaterializationAttempt; operationId: string }) {
     return this.authority.authorize(sql, principal, input)
   }
-  authorizeFinal(sql: GraphSqlClient, principal: ManagementPrincipal, record: SourceMaterializationRecord, hash: string) {
+  authorizeFinal(sql: SqlQuery, principal: ManagementPrincipal, record: SourceMaterializationRecord, hash: string) {
     return this.authority.authorizeFinal(sql, principal, record, hash)
   }
   async prepare(manifest: SourceManifest, root: SourceRootRecord, attempt: MaterializationAttempt,

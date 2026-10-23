@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type pg from 'pg'
-import { WorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
+import { WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
 import { sharedFixture } from './shared-repeat-fixture.js'
 import { assertMeaningfulSaveAdmitted, readAffectedGraphRuns } from '../src/modules/graph-drafts/saveAdmission.js'
 import { currentSaveAdmissionFixture } from './helpers/currentSaveAdmission.js'
@@ -9,7 +9,7 @@ import { recoveryIdentity } from './helpers/recoveryExecution.testSupport.js'
 
 function fixture() {
   const t = sharedFixture()
-  const record = WorkflowRunV3Schema.parse({ ...t.run, executionState: 'completed', outcome: 'succeeded',
+  const record = WorkflowRunCurrentSchema.parse({ ...t.run, executionState: 'completed', outcome: 'succeeded',
     input: { note: 'PRIVATE_RUN_INPUT' }, result: { outcome: 'succeeded', output: { note: 'PRIVATE_RESULT_BODY' } }, finishedAt: t.f.createdAt })
   const row = { id: record.id, workspace_id: record.workspaceId, workflow_id: record.workflowId,
     workflow_version_id: record.workflowVersionId, record, terminal: true,
@@ -20,7 +20,8 @@ function fixture() {
 }
 function sqlReturning(rows: unknown[]) {
   // The fixture Run has no executions, so the canonical native-settlement page is empty.
-  const query = async (text: string) => text.startsWith('select e.id,e.run_id,')
+  // The native-settlement page binds only the Run id and a cursor; the Run scope reads bind more.
+  const query = async (_text: string, values: unknown[] = []) => values.length === 2
     ? { rows: [], rowCount: 0 } : { rows: structuredClone(rows), rowCount: rows.length }
   return { client: { query } as unknown as pg.PoolClient }
 }
@@ -105,9 +106,10 @@ describe('ENG04 shared meaningful-save admission (SQL-shaped unit tests, not Pos
       const t = currentSaveAdmissionFixture('save-closure')
       const native = saveNativeProtocolFixture(fault === 'generation' ? 'recovered' : 'closed',
         { ...t.f, run: t.record })
-      const query = async (text: string, values?: unknown[]) => {
-        if (text.startsWith('select r.id from runs')) return { rows: [{ id: t.row.id }], rowCount: 1 }
-        if (text.startsWith('select r.id,r.workspace_id')) {
+      // The affected Run set binds the scope's Agent list third; the Run facts add the settled outcomes fourth.
+      const query = async (text: string, values: unknown[] = []) => {
+        if (values.length === 3 && Array.isArray(values[2])) return { rows: [{ id: t.row.id }], rowCount: 1 }
+        if (values.length === 4 && Array.isArray(values[2]) && Array.isArray(values[3])) {
           return { rows: [structuredClone(t.row)], rowCount: 1 }
         }
         return native.sql.query(text, values)

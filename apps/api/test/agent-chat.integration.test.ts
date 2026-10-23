@@ -18,7 +18,7 @@ import {
 } from '@foreman-code/contracts'
 import { AgentChatControlsStateSchema, AgentChatHistoryPageSchema, AgentChatStateSchema, type AgentChatState, type SendAgentChatMessageRequest } from '@foreman-code/contracts/agent-chat'
 import { ManagementActionSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 
 import { buildApp } from '../src/app.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
@@ -34,7 +34,7 @@ import { DomainError } from '../src/modules/errors.js'
 import type { NativeCompactInput, NativeHarnessSessionManager, NativeHistory, NativeInitialTurnInput, NativeSessionStart, NativeSteerInput, NativeTurnInput } from '../src/modules/harnesses/port.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
 import { ApprovedRootAllowlistSchema, WorkspaceRootPolicySchema } from '@foreman-code/contracts/workspace-root-policies'
 import { SavedNodePlacementSchema } from '@foreman-code/contracts/node-placement'
 import { workspaceRootHostScope } from '../src/modules/sources/rootPolicies.js'
@@ -211,7 +211,7 @@ beforeAll(async () => {
   fixture.configurations = fixture.configurations.map((configuration, index) => AgentConfigurationVersionSchema.parse({ ...configuration,
     ...(index === 1 ? { harness: { ...claudeConfiguration, model: 'fixture-model' } } : {}),
     prompt: { system: `SYSTEM-${index}` } }))
-  fixture = await seedAgent3(pool, root, fixture, { run: false })
+  fixture = await seedWorkflowFixture(pool, root, fixture, { run: false })
   codexNode = fixture.version.definition.nodes[0]!
   claudeNode = fixture.version.definition.nodes[1]!
   access = new PostgresAccessService(pool)
@@ -271,7 +271,7 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
 
   it.each(['reconnect', 'restart'] as const)(
     'settles a Run-derived Claude replacement after a lost initial response and %s without resend', async recovery => {
-      const seeded = await seedAgent3(pool, root, makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential'))
+      const seeded = await seedWorkflowFixture(pool, root, makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential'))
       seeded.run = { ...seeded.run, executionState: 'completed', outcome: 'succeeded', finishedAt: seeded.createdAt }
       await pool.query('update runs set execution_state=$2,record=$3::jsonb where id=$1',
         [seeded.run.id, 'completed', JSON.stringify(seeded.run)])
@@ -373,7 +373,7 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
 
   it.each(['resident', 'unloaded'] as const)(
     'recovers dispatched compaction on the applied profile after a settings save with a %s session', async residency => {
-      const seeded = await seedAgent3(pool, root,
+      const seeded = await seedWorkflowFixture(pool, root,
         makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential'), { run: false })
       const node = seeded.version.definition.nodes[0]!
       const workspaceId = seeded.scope.workspaceId
@@ -483,7 +483,7 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
 
   it.each(['model and effort', 'account', 'harness'] as const)(
     'applies a saved %s change on the next turn of the same conversation', async change => {
-      const seeded = await seedAgent3(pool, root,
+      const seeded = await seedWorkflowFixture(pool, root,
         makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential'), { run: false })
       const node = seeded.version.definition.nodes[0]!
       const workspaceId = seeded.scope.workspaceId
@@ -535,7 +535,7 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
   )
 
   it('updates and reads back Agent configuration through authenticated chat controls and denies a reader', async () => {
-    const seeded = await seedAgent3(pool, root,
+    const seeded = await seedWorkflowFixture(pool, root,
       makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential'), { run: false })
     const node = seeded.version.definition.nodes[0]!
     const workspaceId = seeded.scope.workspaceId
@@ -741,7 +741,7 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
     const controlFixture = makeCurrentWorkflowFixture(randomUUID(), 'single')
     controlFixture.configurations = controlFixture.configurations.map(value =>
       AgentConfigurationVersionSchema.parse({ ...value, harness: configuration }))
-    const seeded = await seedAgent3(pool, root, controlFixture, { run: false })
+    const seeded = await seedWorkflowFixture(pool, root, controlFixture, { run: false })
     let { service } = makeService()
     const node = seeded.version.definition.nodes[0]!
     const workspaceId = seeded.scope.workspaceId
@@ -880,7 +880,7 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
       cwdPolicy: 'project-subdirectory', relativeCwd: 'src', instanceId, instanceRevision: '1',
       harnessInstallationId: 'recorded-installation' })
     nativeFixture.version.definition.nodes[0]!.placement = placement
-    const seeded = await seedAgent3(pool, root, nativeFixture, { run: false })
+    const seeded = await seedWorkflowFixture(pool, root, nativeFixture, { run: false })
     const approved = ApprovedRootAllowlistSchema.parse({ schemaVersion: 1, hostRef,
       applicationInstallationId: installationId, configurationRevision: '1',
       bases: [{ baseId, canonicalPath: '/worker', filesystem, accessModes: ['read-only'] }],
@@ -951,7 +951,7 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
         applicationInstallationId: installationId, harnessInstallationId: 'recorded-installation', installationFingerprint: 'recorded-bytes' } } })
     nativeFixture.configurations = [configuration]
     expect(nativeFixture.version.definition.nodes[0]!.placement).toBeUndefined()
-    const seeded = await seedAgent3(pool, root, nativeFixture, { run: false })
+    const seeded = await seedWorkflowFixture(pool, root, nativeFixture, { run: false })
     const approved = ApprovedRootAllowlistSchema.parse({ schemaVersion: 1, hostRef,
       applicationInstallationId: installationId, configurationRevision: '1',
       bases: [{ baseId, canonicalPath: '/worker', filesystem, accessModes: ['read-only'] }],
@@ -1069,7 +1069,7 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
     secondNode.agentId = firstNode.agentId
     twin.configurations = twin.configurations.filter(configuration => configuration.agentId === firstNode.agentId)
     twin.version.agentConfigurationVersionIds = { [firstNode.agentId]: twin.configurations[0]!.id }
-    const seeded = await seedAgent3(pool, root, twin, { run: false })
+    const seeded = await seedWorkflowFixture(pool, root, twin, { run: false })
     const { service, managers } = makeService()
     const context = (nodeId: string) => ({ workflowId: seeded.scope.workflowId, workflowNodeId: nodeId, agentId: firstNode.agentId })
     const read = (nodeId: string) => service.read(writer, seeded.scope.workspaceId, context(nodeId))
@@ -1248,7 +1248,7 @@ describe('selected-Agent chat service', { timeout: 60_000 }, () => {
   it('blocks chat for an active Run and forks a finished Run session without writing the Run', async () => {
     const { service } = makeService()
     // Real Run and execution rows of the chat's own workflow (the conversation references them); reads still go through the fake read port.
-    const runFixture = await seedAgent3(pool, root, makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential'))
+    const runFixture = await seedWorkflowFixture(pool, root, makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential'))
     runSourceFixture = runFixture
     const workspace = runFixture.scope.workspaceId
     const node = runFixture.version.definition.nodes[0]!
@@ -1544,7 +1544,7 @@ describe('F4 authenticated transport / persistence regressions', { timeout: 60_0
       let scopedWorkspaceId = fixture.scope.workspaceId
       let scopedWorkflowId = fixture.scope.workflowId
       if (dimension === 'runIds') {
-        const origin = await seedAgent3(pool, root, makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential'))
+        const origin = await seedWorkflowFixture(pool, root, makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential'))
         runSourceFixture = origin
         runId = origin.run.id
         scopedNode = origin.version.definition.nodes[0]!

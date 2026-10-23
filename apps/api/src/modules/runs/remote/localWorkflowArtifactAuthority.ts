@@ -2,7 +2,7 @@ import { isDeepStrictEqual as same } from 'node:util'
 import type pg from 'pg'
 import { AgentConfigurationVersionSchema, HarnessExecutionSchema } from '@foreman-code/contracts'
 import { ArtifactAttemptSchema, type ArtifactAttempt } from '@foreman-code/contracts/artifact-edges'
-import { SavedRunVersionSnapshotSchema, AcceptedWorkflowRunV3Schema, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { SavedRunVersionSnapshotSchema, AcceptedWorkflowRunCurrentSchema, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { readLiveManagementPrincipal } from '../../access/liveManagementPrincipal.js'
 import { requireAuthorization } from '../../access/policy.js'
 import { DomainError } from '../../errors.js'
@@ -45,8 +45,8 @@ export class LocalWorkflowArtifactAuthority {
        where e.id=$1 for share of e,v,c`, [executionId])).rows[0]
     if (!row) return denied()
     const snapshot = SavedRunVersionSnapshotSchema.parse({ run: row.run, version: row.version })
-    const run = AcceptedWorkflowRunV3Schema.parse(snapshot.run)
-    const version = WorkflowVersionV3Schema.parse(snapshot.version)
+    const run = AcceptedWorkflowRunCurrentSchema.parse(snapshot.run)
+    const version = WorkflowVersionCurrentSchema.parse(snapshot.version)
     const execution = HarnessExecutionSchema.parse(row.execution)
     const configuration = AgentConfigurationVersionSchema.parse(row.configuration)
     const node = version.definition.nodes.find(item => item.id === execution.workflowNodeId)

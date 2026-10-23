@@ -1,5 +1,6 @@
 import { HarnessNativeEventSchema, type HarnessNativeEvent } from '@foreman-code/contracts'
-import { assertGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
+import { assertGraphTransaction } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { normalizeNativeProducerEvent, NATIVE_PRODUCER_REJECTION_TYPE, NATIVE_PRODUCER_REJECTION_VERSION,
   type NormalizedNativeProducerEvent } from '../run-graph/nativeProducerNormalization.js'
 import { DomainError } from '../errors.js'
@@ -57,7 +58,7 @@ function allocateEvents(input: readonly NormalizedNativeProducerEvent[], allocat
 }
 
 /** Lock each allocator once; validate all replays before allocating or inserting any rows. */
-export async function appendNormalizedNativeEvents(sql: GraphTransactionSql,
+export async function appendNormalizedNativeEvents(sql: SqlTransaction,
   input: readonly NormalizedNativeProducerEvent[]): Promise<NativeEventAppendResult[]> {
   assertGraphTransaction(sql)
   if (!input.length) return []

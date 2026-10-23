@@ -1,7 +1,6 @@
 import { useRef, type PointerEvent } from 'react'
 import { useReactFlow, useStore, useViewport } from '@xyflow/react'
-import type { GraphGeometryChange } from './geometry'
-import { GRAPH_NODE_MIN_WIDTH, GRAPH_NODE_MIN_HEIGHT } from './mapper'
+import { type GraphGeometryChange, GRAPH_NODE_MIN_WIDTH, GRAPH_NODE_MIN_HEIGHT } from '../board-core'
 
 const minimum = Math.max(GRAPH_NODE_MIN_WIDTH, GRAPH_NODE_MIN_HEIGHT)
 // No upper bound: how big a node gets is up to the person.

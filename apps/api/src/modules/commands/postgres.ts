@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
-import { beginTransaction, commitTransaction, rollbackTransaction } from '../../infrastructure/transaction.js'
+import { TransactionSession, type SqlQuery } from '../../infrastructure/transaction.js'
 import { lifecycleSessionPool } from '../../infrastructure/pool.js'
 export { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 
@@ -9,8 +9,7 @@ import pg from 'pg'
 import { setTimeout as delay } from 'node:timers/promises'
 
 import { DomainError } from '../errors.js'
-import type { GraphSqlClient } from '../run-graph/connection.js'
-import { ignoreError } from '../diagnostics/ignoredError.js'
+import { ignoreError } from '../diagnostics/index.js'
 import { commandIdentity, commandReceiptPrincipals } from './identity.js'
 import { expiredCommandResult } from './receiptRetention.js'
 export { pruneCompletedCommandReceipts } from './receiptRetention.js'
@@ -126,7 +125,9 @@ export class PostgresCommandCoordinator {
     const dedicatedConnection = input.dedicatedConnection || input.prepare !== undefined
     const client = await (dedicatedConnection ? lifecycleSessionPool(this.pool) : this.pool).connect()
     let releaseError: Error | undefined
-    let inTransaction = false
+    // The one long-lived transaction session: several transactions interleave with session advisory locks, callbacks
+    // and receipts, so withTransaction cannot express it (see TransactionSession).
+    const transaction = new TransactionSession(client)
     let lifecycleLock = false
     let resourceLockRequested = false
     let committing = false
@@ -145,8 +146,7 @@ export class PostgresCommandCoordinator {
         resourceLockRequested = true
         await acquireSessionLock(client, input.resourceLock)
       }
-      await beginTransaction(client)
-      inTransaction = true
+      await transaction.begin()
       if (!lifecycleLock) {
         await client.query('select pg_advisory_xact_lock(hashtext($1))', [commandLock])
       }
@@ -172,9 +172,8 @@ export class PostgresCommandCoordinator {
         if (!resumingReceipt) {
           const value = input.replayResult ? input.replayResult(receipt.result) : receipt.result as T
           committing = true
-          await commitTransaction(client)
+          await transaction.commit()
           committing = false
-          inTransaction = false
           return { value, replayed: true }
         }
       }
@@ -192,16 +191,14 @@ export class PostgresCommandCoordinator {
       // do not retain row locks while the idempotent callback runs.
       if (dedicatedConnection) {
         committing = true
-        await commitTransaction(client)
+        await transaction.commit()
         committing = false
-        inTransaction = false
       }
       if (input.preparedMutation?.releaseDuringPreparation) {
         if (!options.prepared) throw new PreparationRequired()
         resourceLockRequested = true
         await acquireSessionLock(client, input.preparedMutation.resourceLock)
-        await beginTransaction(client)
-        inTransaction = true
+        await transaction.begin()
         await input.authorize?.(client)
         if (!await input.preparedMutation.validate(client)) throw new PreparationRequired()
       } else if (input.prepare) {
@@ -211,12 +208,10 @@ export class PostgresCommandCoordinator {
             resourceLockRequested = true
             await acquireSessionLock(client, input.preparedMutation.resourceLock)
           }
-          await beginTransaction(client)
-          inTransaction = true
+          await transaction.begin()
           await input.authorize?.(client)
           if (!input.preparedMutation || await input.preparedMutation.validate(client)) break
-          await rollbackTransaction(client)
-          inTransaction = false
+          await transaction.rollback()
           await client.query('select pg_advisory_unlock(hashtext($1))', [resourceLock])
           resourceLockRequested = false
         }
@@ -224,8 +219,7 @@ export class PostgresCommandCoordinator {
       performing = true
       const value = await input.perform(client)
       if (dedicatedConnection && !input.prepare) {
-        await beginTransaction(client)
-        inTransaction = true
+        await transaction.begin()
       }
       if (resumingReceipt) {
         await client.query(
@@ -247,17 +241,15 @@ export class PostgresCommandCoordinator {
         [input.principal.id, input.source, input.operation, input.targetKey, JSON.stringify({ commandId })],
       )
       committing = true
-      await commitTransaction(client)
-      inTransaction = false
+      await transaction.commit()
       return { value, replayed: false }
     } catch (error) {
       let failure = commandDatabaseFailure(error)
       let cleanupFailed = false
       let rolledBack = false
-      if (inTransaction) {
+      if (transaction.open) {
         try {
-          await rollbackTransaction(client)
-          inTransaction = false
+          await transaction.rollback()
           rolledBack = true
         } catch (rollbackError) {
           // A failed rollback leaves connection state unknown. Evict it, and
@@ -276,7 +268,7 @@ export class PostgresCommandCoordinator {
           cleanupFailed = true
           failure = new AggregateError([error, cleanupError], 'The command and rollback cleanup failed.')
           try {
-            await rollbackTransaction(client)
+            await transaction.rollback()
           } catch (rollbackError) {
             releaseError = rollbackError instanceof Error ? rollbackError : new Error('Command cleanup rollback failed.')
           }
@@ -329,7 +321,7 @@ export class PostgresCommandCoordinator {
     targetKey: string,
     outcome: 'succeeded' | 'failed' | 'uncertain',
     details: Record<string, unknown> = {},
-    client?: GraphSqlClient,
+    client?: SqlQuery,
   ): Promise<void> {
     await (client ?? this.pool).query(
       `insert into management_audit (principal_id, source, action, target_key, outcome, details)

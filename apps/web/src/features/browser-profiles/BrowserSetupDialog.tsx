@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Dialog, Select, TextField } from '../../shared/ui/nocturne'
-import { BrowserSessionPanel } from '../agent-browser/AgentBrowserPanel'
-import { browserAccessDenied, browserErrorMessage, browserRequestUncertain } from '../agent-browser/errors'
-import type { BrowserFilesPort } from '../agent-browser/transferTypes'
-import { validateBrowserRead } from '../agent-browser/queries'
-import type { BrowserSession, BrowserUiPort } from '../agent-browser/types'
+import {
+  BrowserSessionPanel, browserAccessDenied, browserErrorMessage, browserRequestUncertain, type BrowserFilesPort,
+  validateBrowserRead, type BrowserSession, type BrowserUiPort,
+} from '../agent-browser'
 import type { BrowserProfilesPort } from './types'
 
 export interface BrowserSetupDialogProps {

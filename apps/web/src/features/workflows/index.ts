@@ -1,3 +1,5 @@
 export { WorkflowDirectory } from './WorkflowDirectory'
 export { WorkflowNavigation } from './WorkflowNavigation'
 export type { WorkflowNavigationProps } from './WorkflowNavigation'
+export { NewWorkflowAction } from './NewWorkflowAction'
+export { RemoveWorkflowButton } from './RemoveWorkflowButton'

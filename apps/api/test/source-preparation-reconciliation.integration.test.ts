@@ -40,7 +40,7 @@ import { SourceOperationWorkerService } from '../src/modules/sources/operationWo
 import { CarrierRemoteSourceMaterializationHost } from '../src/modules/sources/operationCarrier.js'
 import { RemoteOperationJournal } from '../src/modules/runs/remote/operationJournal.js'
 import { DomainError } from '../src/modules/errors.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { verificationFixture } from './helpers/jobVerificationFixture.js'
 import { jobPolicyRequirementsRecord, ResolvedJobDefinitionSpecRecordSchema, type ResolvedJobDefinitionSpecRecord } from '@foreman-code/contracts/job-verification'
@@ -64,7 +64,7 @@ import type { SourceMaterializationRecord } from '@foreman-code/contracts/source
 /** Actual SQL/HTTP/MCP, protected local filesystem and worker source service.
  * The paired W07 carrier is an in-memory boundary; no laptop/container proof. */
 describe.skipIf(!postgresEnabled)('failed Job source preparation reconciliation', () => {
-  let database: Awaited<ReturnType<typeof agent3Database>>, app: ReturnType<typeof buildApp>, address: string, directory: string
+  let database: Awaited<ReturnType<typeof migratedDatabase>>, app: ReturnType<typeof buildApp>, address: string, directory: string
   let verificationQuota: SourceQuotaPool | undefined
   let access: PostgresAccessService, sources: PostgresSourceService, journal: RemoteOperationJournal
   let jobs: JobService
@@ -89,7 +89,7 @@ describe.skipIf(!postgresEnabled)('failed Job source preparation reconciliation'
     allowPreparationClosure = true
     sourceQuotaConfiguration = undefined
     pause = null
-    database = await agent3Database(); directory = await mkdtemp(`${process.env.FOREMAN_CODE_TEST_ROOT}/jobprep-reconcile-sql-`)
+    database = await migratedDatabase(); directory = await mkdtemp(`${process.env.FOREMAN_CODE_TEST_ROOT}/jobprep-reconcile-sql-`)
     const runtime = join(directory, 'runtime'), project = join(directory, 'project'), policyId = randomUUID()
     await mkdir(runtime, { mode: 0o700 }); await mkdir(project, { mode: 0o700 }); await mkdir(join(runtime, 'source-materializations'), { mode: 0o700 })
     const namespace = join(runtime, 'source-materializations', policyId); await mkdir(namespace, { mode: 0o700 })

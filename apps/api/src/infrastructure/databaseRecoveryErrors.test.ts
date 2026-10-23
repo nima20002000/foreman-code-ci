@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { retryDatabaseOperation } from './databaseRetry.js'
-import { readOperationalFailures } from '../modules/diagnostics/logger.js'
+import { readOperationalFailures } from './logger.js'
 import pg from 'pg'
 import { EventEmitter } from 'node:events'
 import { queryForReadiness } from './pool.js'

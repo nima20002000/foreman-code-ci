@@ -18,13 +18,13 @@ import {
   type AgentConfigurationVersion, type ExecutionResult, type HarnessConfiguration, type HarnessExecution, type HarnessNativeEvent, type NativeSessionReference,
 } from '@foreman-code/contracts'
 import {
-  ExecutableWorkflowV3Schema, makeCurrentWorkflowFixture,
-} from '@foreman-code/contracts/wave25'
+  ExecutableWorkflowCurrentSchema, makeCurrentWorkflowFixture,
+} from '@foreman-code/contracts/current'
 import { applyApplicationMigrations } from '../../src/infrastructure/migrations.js'
 import { createCheckpointStore } from '../../src/infrastructure/checkpoints.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
-import { Wave25WorkerCredentialService as WorkerCredentialService } from '../../src/modules/interactions/wave25/credentials.js'
+import { Wave25WorkerCredentialService as WorkerCredentialService } from '../../src/modules/interactions/current/credentials.js'
 import { CodexAppServerSessionManager } from '../../src/modules/harnesses/codexAppServer.js'
 import { HarnessExecutionError } from '../../src/modules/harnesses/errors.js'
 import { NativeProcessRegistry } from '../../src/modules/harnesses/recovery/processRegistry.js'
@@ -32,7 +32,7 @@ import { McpDetectionService, WorkerLaunchCredentialService, type ExecutionCrede
 import { codexMcpInspectorAdapter } from '../../src/modules/harnesses/codexMcpInspectorAdapter.js'
 import { PostgresApprovalBudgetRepository } from '../../src/modules/interactions/budget.js'
 import { ApprovalExecutionCoordinator } from '../../src/modules/interactions/execution.js'
-import { Wave25InteractionRepository } from '../../src/modules/interactions/wave25/repository.js'
+import { Wave25InteractionRepository } from '../../src/modules/interactions/current/repository.js'
 import { ExecutionScopedNativeSessionManagerResolver } from '../../src/modules/interactions/runtimePorts.js'
 import { buildApp } from '../../src/app.js'
 import { PostgresAppInteractionService } from '../../src/modules/interactions/app.js'
@@ -57,7 +57,7 @@ import type { NativeHarnessSessionManager } from '../../src/modules/harnesses/po
 import type { AuthorizeWorkflowStop } from '../../src/modules/runs/repeatLifecycle.js'
 import { PostgresWorkflowRepository } from '../../src/modules/workflows/postgres.js'
 import { WorkspaceLocationService } from '../../src/modules/workspaces/location.js'
-import { seedAgent3 } from './workflowDatabase.js'
+import { seedWorkflowFixture } from './workflowDatabase.js'
 import { configureNativeWorkflowMcp } from './nativeWorkflowMcp.js'
 import { harnessBinaries } from '../../src/modules/harnesses/binaries.js'
 import { configureNativeAcceptanceMcp } from './nativeAcceptanceMcp.js'
@@ -80,7 +80,7 @@ export function nativeAcceptanceBinaries(environment: NodeJS.ProcessEnv = proces
   return { codexBinary }
 }
 
-export interface Eng03NativeRuntime {
+export interface NativeAcceptanceRuntime {
   engine: LangGraphWorkflowEngine
   runs: PostgresRunRepository
   approvals: ApprovalExecutionCoordinator
@@ -89,7 +89,7 @@ export interface Eng03NativeRuntime {
   registry: NativeProcessRegistry
 }
 
-export interface Eng03NativeControl extends Eng03NativeRuntime {
+export interface NativeAcceptanceControl extends NativeAcceptanceRuntime {
   pool: pg.Pool
   runId: string
   nodeIds: readonly string[]
@@ -99,18 +99,18 @@ export interface Eng03NativeControl extends Eng03NativeRuntime {
   startTask: Promise<void>
   publicationChanged(): Promise<void>
   stop(): Promise<boolean>
-  restartWaitingRuntime(): Promise<Eng03NativeRuntime>
-  restartRecoverableRuntime(): Promise<Eng03NativeRuntime>
+  restartWaitingRuntime(): Promise<NativeAcceptanceRuntime>
+  restartRecoverableRuntime(): Promise<NativeAcceptanceRuntime>
 }
 
-export interface Eng03NativeOptions {
+export interface NativeAcceptanceOptions {
   prompts?: Partial<Record<'Entry' | 'A' | 'B' | 'Reviewer', string>>
   harnessOverrides?: Partial<Record<'A' | 'B', HarnessConfiguration>>
   queryTimeoutMs?: number
-  control?: (context: Eng03NativeControl) => Promise<void>
+  control?: (context: NativeAcceptanceControl) => Promise<void>
 }
 
-interface RuntimeInstance extends Eng03NativeRuntime {
+interface RuntimeInstance extends NativeAcceptanceRuntime {
   managers: ExecutionScopedNativeSessionManagerResolver
   factories: NativeHarnessFactories
 }
@@ -171,8 +171,8 @@ async function version(binary: string, directory: string, registry: NativeProces
 }
 
 /** Opt-in live-provider qualification through current V3 admission and native proof composition. */
-export async function runEng03NativeScenario(scenario: Scenario, first: Harness, second: Harness,
-  options: Eng03NativeOptions = {}) {
+export async function runNativeAcceptanceScenario(scenario: Scenario, first: Harness, second: Harness,
+  options: NativeAcceptanceOptions = {}) {
   if (options.queryTimeoutMs !== undefined
     && (!Number.isSafeInteger(options.queryTimeoutMs) || options.queryTimeoutMs < 1 || options.queryTimeoutMs > 60_000)) {
     throw new Error('queryTimeoutMs must be a positive integer at most 60000.')
@@ -181,14 +181,14 @@ export async function runEng03NativeScenario(scenario: Scenario, first: Harness,
   const scenarioBegan = performance.now()
   const timing = { startedAt: new Date().toISOString(), setupMs: 0, engineMs: 0, totalMs: 0 }
   const { codexBinary } = nativeAcceptanceBinaries()
-  const baseUrl = ownedTestDatabaseUrl('ENG03_A_TEST_DATABASE_URL')
-  if (!baseUrl) throw new Error('ENG03_A_TEST_DATABASE_URL must name a task-owned loopback test database.')
+  const baseUrl = ownedTestDatabaseUrl()
+  if (!baseUrl) throw new Error('TEST_DATABASE_URL must name a task-owned loopback test database.')
   const parsed = new URL(baseUrl)
   if (!['postgres:', 'postgresql:'].includes(parsed.protocol)
     || !['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname)
     || !/(?:^|[_-])test(?:db)?(?:$|[_-])/i.test(decodeURIComponent(parsed.pathname.slice(1)))
     || parsed.search || parsed.hash) {
-    throw new Error('ENG03_A_TEST_DATABASE_URL must use a loopback database named for tests.')
+    throw new Error('TEST_DATABASE_URL must use a loopback database named for tests.')
   }
   const suffix = randomUUID().replaceAll('-', '')
   const schema = `eng03_a_${suffix}`
@@ -276,7 +276,7 @@ export async function runEng03NativeScenario(scenario: Scenario, first: Harness,
     const edges = ([[0, 1], [0, 2], [1, 3], [2, 3]] as const).map(([source, target], index) => ({
       id: `edge-${suffix}-${index}`, kind: 'execution' as const, source: nodes[source]!.id, target: nodes[target]!.id,
     }))
-    const { version: workflowVersion } = ExecutableWorkflowV3Schema.parse({
+    const { version: workflowVersion } = ExecutableWorkflowCurrentSchema.parse({
       version: { ...fixture.version, entryNodeId: nodes[0]!.id,
         agentConfigurationVersionIds: Object.fromEntries(configurations.map((item) => [item.agentId, item.id])),
         definition: { ...fixture.version.definition, entryNodeId: nodes[0]!.id, nodes, edges,
@@ -285,7 +285,7 @@ export async function runEng03NativeScenario(scenario: Scenario, first: Harness,
     })
     fixture.configurations = configurations
     fixture.version = agentWorkflowVersion(workflowVersion)
-    await seedAgent3(pool, projectDirectory, fixture, { run: false })
+    await seedWorkflowFixture(pool, projectDirectory, fixture, { run: false })
     const access = new PostgresAccessService(pool)
     const authority = await access.issue({ name: 'Current native acceptance authority', audience: 'operator',
       expiresAt: new Date(Date.now() + 600_000), grants: [
@@ -508,7 +508,7 @@ export async function runEng03NativeScenario(scenario: Scenario, first: Harness,
       evidence.startTaskState = 'rejected'
       evidence.startError = describeNativeFailure(error, nativeSecrets)
     })
-    const restartRuntime = async (kind: 'waiting' | 'terminal_unaccepted'): Promise<Eng03NativeRuntime> => {
+    const restartRuntime = async (kind: 'waiting' | 'terminal_unaccepted'): Promise<NativeAcceptanceRuntime> => {
       if (kind === 'waiting') await startTask
       else await startTask.catch(() => {
         // ignore: The failed startup is retained in evidence while recovery starts a replacement runtime.

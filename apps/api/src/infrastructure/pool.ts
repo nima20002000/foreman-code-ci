@@ -1,7 +1,7 @@
 import pg from 'pg'
 import { componentLogger } from './logger.js'
 import { acquireDatabaseConnection } from './databaseRetry.js'
-import { ignoreError } from '../modules/diagnostics/ignoredError.js'
+import { ignoreError } from './ignoredError.js'
 import { ciDatabaseDeadline, ciDatabasePriority } from './ciDatabasePriority.js'
 
 type ConnectCallback = Parameters<pg.Pool['connect']>[0]

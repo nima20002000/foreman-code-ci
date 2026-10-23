@@ -1,19 +1,16 @@
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
-import { AgentDefaultsSettings } from '../features/settings/AgentDefaultsSettings'
+import {
+  AgentDefaultsSettings, BrowserProfilesSettings, HarnessDefaultsSettings, WorkspaceDefaultsSettings,
+  AppearanceSettings, PromptSettings,
+} from '../features/settings'
 import { ComputerSettings } from '../features/settings/ComputerSettings'
-import { BrowserProfilesSettings } from '../features/settings/BrowserProfilesSettings'
 import { DeviceRegistrationSchema } from '@foreman-code/contracts/device-identity'
 import { Alert } from '../shared/ui/nocturne'
-import { HarnessDefaultsSettings } from '../features/settings/HarnessDefaultsSettings'
-import { WorkspaceDefaultsSettings } from '../features/settings/WorkspaceDefaultsSettings'
 import { GeneralSettings } from '../features/settings/GeneralSettings'
-import { AppearanceSettings } from '../features/settings/AppearanceSettings'
-import { BugsSettings } from '../features/bug-reports/BugsSettings'
-import { PromptSettings } from '../features/settings/PromptSettings'
+import { BugsSettings } from '../features/bug-reports'
 import { WorkspaceShell } from '../shared/ui/WorkspaceShell'
-import { SkillsLibrary } from '../features/skills/SkillsLibrary'
-import { NewSkillPage, SkillDetailPage } from '../features/skills/SkillPages'
+import { SkillsLibrary, NewSkillPage, SkillDetailPage } from '../features/skills'
 import '../features/settings/settingsExperience.css'
 
 function SettingsShell({ children }: { children: ReactNode }) {

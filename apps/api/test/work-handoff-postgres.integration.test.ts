@@ -7,7 +7,7 @@ import { workHandoffMigration } from '../src/infrastructure/workHandoffMigration
 import { RunActivitySchema } from '@foreman-code/contracts'
 import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveInputSchema, CurrentWorkflowSaveResultSchema,
   CurrentWorkflowReadResultSchema, WorkActivationInputSchema, WorkNoticeSchema,
-  makeCurrentWorkflowFixture, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+  makeCurrentWorkflowFixture, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
 import { RepeatRunRepository, type RepeatRepositoryHost } from '../src/modules/runs/repeatPostgres.js'
 import { readRepeatGraphExecutionsLocked } from '../src/modules/run-graph/repeatProjectionRows.js'
@@ -23,7 +23,7 @@ import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { writerFixture } from './writer-fixtures.js'
 import { graphFixture, graphHeaders, graphRpcValue, graphUrl } from './graph-composition-fixture.js'
 import type { currentDatabase } from './helpers/database.js'
-import { nim2691TaskDatabase as taskDatabase } from './helpers/taskDatabase.js'
+import { withTaskDatabase as taskDatabase } from './helpers/taskDatabase.js'
 import { digest, seedRun, text, transaction, type JsonObject } from './repeat-migration-fixtures.js'
 import { postgresEnabled } from './helpers/database.js'
 
@@ -268,7 +268,7 @@ postgresDescribe('NIM-2691 durable handoff migration', () => {
       const base = fixture.version
       const [requester, destination] = base.definition.nodes
       const savedEdge = base.definition.edges[0]!
-      const version = WorkflowVersionV3Schema.parse({ ...base, definition: {
+      const version = WorkflowVersionCurrentSchema.parse({ ...base, definition: {
         ...base.definition, handoffs: { contractVersion: 1 },
         executionPolicy: { maxParallelism: 2, maxNodeExecutions: 20 },
         nodes: [{ ...requester!, choice: { outcomes: [
@@ -571,7 +571,7 @@ postgresDescribe('NIM-2691 durable handoff migration', () => {
       await applyApplicationMigrations(pool)
       const fixture = makeCurrentWorkflowFixture('nim2691-unbounded')
       const source = fixture.version.definition.nodes[0]!, edge = fixture.version.definition.edges[0]!
-      const version = WorkflowVersionV3Schema.parse({ ...fixture.version, definition: {
+      const version = WorkflowVersionCurrentSchema.parse({ ...fixture.version, definition: {
         ...fixture.version.definition, handoffs: { contractVersion: 1 },
         executionPolicy: { maxParallelism: 2, maxNodeExecutions: 11 },
         nodes: [{ ...source, choice: { outcomes: [
@@ -666,7 +666,7 @@ postgresDescribe('NIM-2691 durable handoff migration', () => {
     await taskDatabase(async (pool) => {
       await applyApplicationMigrations(pool)
       const fixture = makeCurrentWorkflowFixture('nim2691-join', 'parallel')
-      const version = WorkflowVersionV3Schema.parse({ ...fixture.version, definition: {
+      const version = WorkflowVersionCurrentSchema.parse({ ...fixture.version, definition: {
         ...fixture.version.definition, handoffs: { contractVersion: 1 },
         executionPolicy: { maxParallelism: 2, maxNodeExecutions: 20 },
         edges: fixture.version.definition.edges.map((edge) => ({ ...edge, maxWorkHandoffsPerRun: 3 })),

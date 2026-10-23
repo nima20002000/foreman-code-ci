@@ -3,8 +3,8 @@ import type { HarnessConfiguration } from '@foreman-code/contracts'
 import { AcceptedProviderAccountBindingSchema, type AcceptedProviderAccountBinding,
   type ProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
-import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import { canonicalGraphJson } from '@foreman-code/contracts/current'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { DomainError } from '../errors.js'
 import type { ProviderAccountResolver } from './ports.js'
 
@@ -30,7 +30,7 @@ export function legacyProviderAccountBinding(configuration: HarnessConfiguration
   ...(configuration.accountId ? { accountId: configuration.accountId } : {}) }
 }
 
-export async function readProviderAccountBinding(sql: GraphSqlClient, kind: AccountBindingOwner,
+export async function readProviderAccountBinding(sql: SqlQuery, kind: AccountBindingOwner,
   id: string): Promise<AcceptedProviderAccountBinding | undefined> {
   const row = (await sql.query<{ binding: unknown }>(
     'select binding from provider_account_accepted_bindings where owner_kind=$1 and owner_id=$2',
@@ -38,7 +38,7 @@ export async function readProviderAccountBinding(sql: GraphSqlClient, kind: Acco
   return row ? AcceptedProviderAccountBindingSchema.parse(row.binding) : undefined
 }
 
-export async function saveProviderAccountBinding(sql: GraphSqlClient, kind: AccountBindingOwner,
+export async function saveProviderAccountBinding(sql: SqlQuery, kind: AccountBindingOwner,
   id: string, binding: AcceptedProviderAccountBinding): Promise<AcceptedProviderAccountBinding> {
   const parsed = AcceptedProviderAccountBindingSchema.parse(binding)
   await sql.query(`insert into provider_account_accepted_bindings(owner_kind,owner_id,binding,account_id)
@@ -93,7 +93,7 @@ export class AcceptedProviderAccountBindings {
     return selected.binding
   }
 
-  async accept(sql: GraphSqlClient, kind: AccountBindingOwner, id: string,
+  async accept(sql: SqlQuery, kind: AccountBindingOwner, id: string,
     configuration: HarnessConfiguration, selection?: HarnessProfileSelection,
     options: AcceptanceOptions = {}): Promise<AcceptedProviderAccountBinding | undefined> {
     const prior = await readProviderAccountBinding(sql, kind, id)
@@ -102,7 +102,7 @@ export class AcceptedProviderAccountBindings {
     return binding ? saveProviderAccountBinding(sql, kind, id, binding) : undefined
   }
 
-  async acceptMany(sql: GraphSqlClient, kind: AccountBindingOwner,
+  async acceptMany(sql: SqlQuery, kind: AccountBindingOwner,
     entries: readonly AccountBindingAcceptance[]): Promise<Map<string, AcceptedProviderAccountBinding>> {
     const read = async () => {
       const rows = await sql.query<{ owner_id: string; binding: unknown }>(
@@ -143,7 +143,7 @@ export class AcceptedProviderAccountBindings {
     return bindings
   }
 
-  private async resolveAccepted(sql: GraphSqlClient, configuration: HarnessConfiguration,
+  private async resolveAccepted(sql: SqlQuery, configuration: HarnessConfiguration,
     selection?: HarnessProfileSelection, { source, prepared }: AcceptanceOptions = {}) {
     if (configuration.harness === 'opencode') return undefined
     if (source) {

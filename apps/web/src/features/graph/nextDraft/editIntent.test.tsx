@@ -1,24 +1,22 @@
 import { nativeNode } from '../../../shared/mocks/nativeFixtureTypes'
 import { HarnessConfigurationSchema } from '@foreman-code/contracts'
 import { journalIntent, savedJournal } from './nim2644Journal.fixture'
-import { boardStartClient } from '../../workflow-board/startClient'
+import { boardStartClient } from '../../workflow-board'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createStore } from 'zustand/vanilla'
 import { ManagedWorkspaceSchema, type ManagedWorkspace } from '@foreman-code/contracts/management'
-import { CURRENT_WORKFLOW_CAPABILITIES, GraphEditReadResultV3Schema, sameExecutableWorkflow,
-  type GraphEditReadResultV3, type GraphEditStageInputV3 } from '@foreman-code/contracts/wave25'
+import { CURRENT_WORKFLOW_CAPABILITIES, GraphEditReadResultCurrentSchema, sameExecutableWorkflow,
+  type GraphEditReadResultCurrent, type GraphEditStageInputCurrent } from '@foreman-code/contracts/current'
 import { ApiError } from '../../../shared/api/client'
 import { queryKeys } from '../../../shared/api/query'
 import { useGraphDraftStore } from '../store'
 import { NextDraftEditor } from './NextDraftEditor'
 import { nextDraftApi } from './transport'
-import { nextDraftDirty, nextDraftKey } from './state'
-import { changeDraftAgent, editorAgents } from './agentEdits'
-import { defaultAgentForHarness } from '../../agents/agentSettings'
-import { removeNode } from './model'
+import { nextDraftDirty, nextDraftKey, changeDraftAgent, editorAgents, removeNode } from '../../board-core'
+import { defaultAgentForHarness } from '../../agents'
 import { acknowledgeEditOutbox, readEditOutbox, readEditSnapshot, storeEditSnapshot } from './editIntentStorage'
 import { acknowledgeEditIntentSnapshot } from './useGraphEditIntent'
 import { inFollowupTab } from './nim2644Followup.cases'
@@ -37,7 +35,10 @@ async function reloadSavedDraft(user: ReturnType<typeof userEvent.setup>) {
 
 // Mounted Query/Zustand/form regressions with the existing transport boundary
 // mocked. Not authenticated HTTP/MCP, a real browser/canvas, or native Stop evidence.
-vi.mock('../../workflow-board/context', () => ({ useWorkflowBoard: () => ({ activeRuns: 1 }) }))
+vi.mock('../../board-core/context', async (original) => ({
+  ...await original<typeof import('../../board-core/context')>(),
+  useWorkflowBoard: () => ({ activeRuns: 1 }),
+}))
 vi.mock('../../../shared/api/settingsExperience', () => ({ useLocalHumanAccessQuery: () => ({ data: {
   principal: { expiresAt: '2099-01-01T00:00:00Z', grants: [{ actions: ['runs:start'], scope: {} }] },
 } }) }))
@@ -64,7 +65,7 @@ vi.mock('../../../shared/api/query', async (original) => {
   }
 })
 const key = nextDraftKey('workspace', 'workflow'), clients: QueryClient[] = []
-const empty: GraphEditReadResultV3 = { intent: null, current: [], canStop: false, affectedSetChanged: false }
+const empty: GraphEditReadResultCurrent = { intent: null, current: [], canStop: false, affectedSetChanged: false }
 const now = '2026-09-24T00:00:00Z'
 let startWorkspace: ManagedWorkspace
 const edit = () => useGraphDraftStore.getState().nextDrafts[key]!
@@ -136,24 +137,24 @@ function reopen(first: ReturnType<typeof mount>) {
   act(() => useGraphDraftStore.setState({ nextDrafts: {} }))
   return mount()
 }
-function stageValue(request: GraphEditStageInputV3): GraphEditReadResultV3 {
+function stageValue(request: GraphEditStageInputCurrent): GraphEditReadResultCurrent {
   const retained = readEditOutbox(key)!, context = edit().context
   expect(retained.request).toEqual(request)
   const pin = { workspaceId: 'workspace', workflowId: 'workflow', runId: 'run-fixture',
     workflowVersionId: 'version-1', executionSemanticsVersion: 3 as const,
     agentConfigurationVersionIds: { 'agent-0': 'configuration-agent-0' } }
   const intent = journalIntent(request, context, [pin])
-  return GraphEditReadResultV3Schema.parse({ intent, canStop: true, affectedSetChanged: false,
+  return GraphEditReadResultCurrentSchema.parse({ intent, canStop: true, affectedSetChanged: false,
     current: [{ pin, terminal: false, settled: false, outcome: 'pending', cleanupPending: false,
       nativePending: true, interactionPending: false, reviewPending: false }] })
 }
-function published(value: GraphEditReadResultV3): GraphEditReadResultV3 {
-  return GraphEditReadResultV3Schema.parse({ ...value,
+function published(value: GraphEditReadResultCurrent): GraphEditReadResultCurrent {
+  return GraphEditReadResultCurrentSchema.parse({ ...value,
     current: value.current.map((item) => ({ ...item, terminal: true, settled: true, outcome: 'canceled', nativePending: false })),
     intent: savedJournal(value.intent!) })
 }
 
-function waiting(value: GraphEditReadResultV3): GraphEditReadResultV3 {
+function waiting(value: GraphEditReadResultCurrent): GraphEditReadResultCurrent {
   return { ...value, intent: { ...value.intent!, state: 'waiting' } }
 }
 /** A Worker created locally and not yet saved, the way the editor stages one: the Board panel only adds saved Agents. */
@@ -337,13 +338,13 @@ describe('NIM-2644 mounted frontend recovery through the real edit-intent hook',
     let staged = empty
     const stage = vi.spyOn(nextDraftApi, 'editStage').mockImplementation(async (request) => {
       const intent = journalIntent(request, original)
-      staged = GraphEditReadResultV3Schema.parse({ ...empty, intent: { ...intent,
+      staged = GraphEditReadResultCurrentSchema.parse({ ...empty, intent: { ...intent,
         stagedDraft: { ...intent.stagedDraft, presentationOnly: true } } })
       return staged
     })
     vi.spyOn(nextDraftApi, 'editAdvance').mockImplementation(async () => {
       const graph = original.draft.graph
-      return GraphEditReadResultV3Schema.parse({ ...staged, intent: { ...staged.intent!, state: 'saved',
+      return GraphEditReadResultCurrentSchema.parse({ ...staged, intent: { ...staged.intent!, state: 'saved',
         saveAttempted: true, result: { workspaceId: graph.workspaceId, workflowId: graph.id,
           revision: original.draft.revision, currentVersionId: original.draft.baseWorkflowVersionId,
           presentation: staged.intent!.stagedDraft.graph,
@@ -371,10 +372,10 @@ describe('NIM-2644 mounted frontend recovery through the real edit-intent hook',
     const original = structuredClone(edit().context)
     let staged = empty
     vi.spyOn(nextDraftApi, 'editStage').mockImplementation(async (request) => {
-      staged = GraphEditReadResultV3Schema.parse({ ...empty, intent: journalIntent(request, original) })
+      staged = GraphEditReadResultCurrentSchema.parse({ ...empty, intent: journalIntent(request, original) })
       return staged
     })
-    let finish!: (value: GraphEditReadResultV3) => void
+    let finish!: (value: GraphEditReadResultCurrent) => void
     const advance = vi.spyOn(nextDraftApi, 'editAdvance').mockImplementation(() => new Promise(resolve => { finish = resolve }))
     typeMeaning()
     await requestSave(user)
@@ -521,7 +522,7 @@ describe('NIM-2644 mounted frontend recovery through the real edit-intent hook',
     expect(advance).toHaveBeenCalledOnce(); expect(boardStartClient.start).not.toHaveBeenCalled()
   })
   it('FE-002 publication retains independent newer Agent typing and installs saved metadata without enabling Start', async () => {
-    let persisted = empty, release!: (value: GraphEditReadResultV3) => void
+    let persisted = empty, release!: (value: GraphEditReadResultCurrent) => void
     vi.mocked(nextDraftApi.editRead).mockImplementation(async () => persisted)
     vi.spyOn(nextDraftApi, 'editStage').mockImplementation(async (input) => (persisted = stageValue(input)))
     const advance = vi.spyOn(nextDraftApi, 'editAdvance').mockImplementation(async () => new Promise((resolve) => { release = resolve }))
@@ -591,7 +592,7 @@ describe('NIM-2644 mounted frontend recovery through the real edit-intent hook',
 
 // The mounted board retains the real module store; the sibling has a separate
 // Zustand store and protected snapshot ID but shares the same localStorage.
-function siblingConsumes(value: GraphEditReadResultV3) {
+function siblingConsumes(value: GraphEditReadResultCurrent) {
   const sibling = createStore<{ edit: ReturnType<typeof edit> }>(() => ({ edit: structuredClone(edit()) }))
   inFollowupTab('independent-sibling', () => {
     storeEditSnapshot(key, sibling.getState().edit)

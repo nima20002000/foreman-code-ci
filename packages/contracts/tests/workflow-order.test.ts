@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { WorkflowReorderInputSchema, WorkflowReorderResultSchema } from '../src/management/index.js'
-import { SavedManagedWorkflowPageSchema } from '../src/wave25/saved.js'
-import { CurrentManagedWorkflowPageSchema } from '../src/wave25/currentRead.js'
+import { SavedManagedWorkflowPageSchema } from '../src/current/saved.js'
+import { CurrentManagedWorkflowPageSchema } from '../src/current/currentRead.js'
 import { WorkflowSummaryPageSchema } from '../src/operatorMcp.js'
 
 describe('workflow order contracts', () => {

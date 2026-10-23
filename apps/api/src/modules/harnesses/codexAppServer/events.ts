@@ -1,4 +1,4 @@
-import { logIgnoredError } from '../../diagnostics/ignoredError.js'
+import { logIgnoredError } from '../../diagnostics/index.js'
 /** Native callbacks and notifications: staging, translation, interactions and turn resources. */
 import { codexCompactionNotification, codexContextSnapshot } from '../codexSessionControls.js'
 import type { ExecutionResult } from '@foreman-code/contracts'

@@ -1,4 +1,4 @@
-import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint'
+import type { BaseCheckpointSaver } from './langgraph.js'
 import { ApprovalPostgresSaver } from './approvalCheckpointSaver.js'
 
 import { createPool, queryForReadiness, type DatabaseOptions } from './pool.js'

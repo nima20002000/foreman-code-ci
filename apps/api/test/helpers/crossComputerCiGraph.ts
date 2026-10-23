@@ -1,7 +1,7 @@
 import { AgentSchema, DEFAULT_CODEX_ADVANCED_CONFIGURATION, type Agent } from '@foreman-code/contracts'
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
 import type { SavedNodePlacement } from '@foreman-code/contracts/node-placement'
-import { WorkflowDefinitionV3Schema, type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import { WorkflowDefinitionCurrentSchema, type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 
 export const ciHarness = {
   harness: 'codex' as const,
@@ -130,9 +130,9 @@ function agentPrompt({ suite, task }: ScenarioAgent): string {
 }
 
 export function buildCrossComputerCiGraph(
-  base: WorkflowDefinitionV3,
+  base: WorkflowDefinitionCurrent,
   assignments: readonly ScenarioAgent[],
-): { graph: WorkflowDefinitionV3; agents: Agent[] } {
+): { graph: WorkflowDefinitionCurrent; agents: Agent[] } {
   const coordinator = assignments[0]
   if (!coordinator || coordinator.suite !== null || assignments.length < 2) {
     throw new Error('A CI workflow needs one entry coordinator followed by suite Agents.')
@@ -157,7 +157,7 @@ export function buildCrossComputerCiGraph(
     graphqlTools: ['context_get', 'ci_computers_list', 'ci_run', 'ci_get', 'ci_cancel',
       'ci_logs_read'],
   }))
-  const graph = WorkflowDefinitionV3Schema.parse({
+  const graph = WorkflowDefinitionCurrentSchema.parse({
     ...base,
     entryNodeId: coordinator.nodeId,
     requiredAgentCount: assignments.length,

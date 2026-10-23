@@ -1,8 +1,9 @@
 import type { AccountProvider } from '@foreman-code/contracts/provider-accounts'
+import { hostEnvironment } from '../../shared/process.js'
 
 export function providerAccountEnvironment(
   provider: AccountProvider, homePath: string, userHome: string,
-  inherited: NodeJS.ProcessEnv = process.env,
+  inherited: NodeJS.ProcessEnv = hostEnvironment(),
 ): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = { ...inherited }
   if (provider === 'codex') {

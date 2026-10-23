@@ -184,32 +184,6 @@ export const ComputerMaintenanceListInputSchema = z.object({
   refresh: z.boolean().optional(), target: DeviceProvisioningTargetSchema.optional(),
   taskLimit: MaintenanceTaskLimitSchema.optional(),
 }).strict()
-/** Operator summaries omit diagnostic output; full reads use the same history selection with diagnostic output. */
-const MaintenanceTaskSummarySchema = MaintenanceTaskSchema.omit({ outputTail: true }).extend({
-  summary: z.string().max(300),
-})
-const CompactMaintenanceStatusSchema = MaintenanceStatusSchema.extend({
-  tasks: z.array(MaintenanceTaskSummarySchema).max(20),
-})
-export const ComputerMaintenanceOperatorListSchema = z.object({
-  computers: z.array(z.object({
-    target: DeviceProvisioningTargetSchema,
-    status: z.union([MaintenanceStatusSchema, CompactMaintenanceStatusSchema]).nullable(),
-    observation: ReadObservationSchema.optional(),
-    workerPublication: WorkerReleasePublicationSchema.optional(),
-    workerReadiness: WorkerBundleReadinessSchema.optional(),
-    connections: ComputerConnectionsSchema.optional(),
-    tasksOmitted: z.number().int().nonnegative().default(0),
-  }).strict()).max(101),
-}).strict()
-export type ComputerMaintenanceOperatorList = z.infer<typeof ComputerMaintenanceOperatorListSchema>
-export const ComputerMaintenanceOperatorListInputSchema = ComputerMaintenanceListInputSchema.extend({
-  detail: z.enum(['compact', 'full']).optional(),
-  taskId: z.uuid().optional(),
-}).refine(input => input.taskId === undefined || input.detail === 'full', {
-  message: 'taskId requires detail: "full".', path: ['taskId'],
-})
-export type ComputerMaintenanceOperatorListInput = z.infer<typeof ComputerMaintenanceOperatorListInputSchema>
 
 export const ComputerMaintenanceReadInputSchema = z.object({
   target: DeviceProvisioningTargetSchema, refresh: z.boolean().optional(),

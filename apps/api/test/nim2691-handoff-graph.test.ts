@@ -1,13 +1,13 @@
 import { MemorySaver } from '@langchain/langgraph'
 import { describe, expect, it } from 'vitest'
-import { makeCurrentWorkflowFixture, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { buildWorkHandoffGraph } from '../src/modules/runs/workHandoffGraph.js'
 import { readWorkflowCheckpoint } from '../src/modules/runs/repeatGraph.js'
 
 describe('NIM-2691 activation graph', () => {
   it('fans out one entry and runs only the successors returned by durable activation decisions', async () => {
     const fixture = makeCurrentWorkflowFixture('handoff-graph', 'parallel')
-    const version = WorkflowVersionV3Schema.parse({ ...fixture.version, definition: {
+    const version = WorkflowVersionCurrentSchema.parse({ ...fixture.version, definition: {
       ...fixture.version.definition, handoffs: { contractVersion: 1 },
       executionPolicy: { maxParallelism: 2, maxNodeExecutions: 20 },
     } })

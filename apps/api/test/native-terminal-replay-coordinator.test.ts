@@ -2,25 +2,25 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 import { HarnessExecutionRequestSchema, ScopedMcpDetectionSchema } from '@foreman-code/contracts'
 import { DomainError } from '../src/modules/errors.js'
-import { native2Fixture } from './native-reviewer-fixtures.js'
+import { nativeReviewerFixture } from './native-reviewer-fixtures.js'
 import { nativeEventBatches } from '../src/modules/interactions/nativeEventBatches.js'
 
 const pending = (error: unknown) => Boolean(error && typeof error === 'object' && 'code' in error && error.code === 'REPEAT_CLEANUP_PENDING')
 
 test('NATIVE-2 terminal SQL-only replay has zero physical or allocation calls', async () => {
-  const f = native2Fixture(); f.settled()
+  const f = nativeReviewerFixture(); f.settled()
   assert.equal((await f.observe()).state, 'completed')
   assert.deepEqual(f.calls, [`read:${f.get().id}`, `settle:${f.get().id}`])
 })
 
 test('NATIVE-2 missing closure is not permission to resolve/start a cleanup process', async () => {
-  const f = native2Fixture()
+  const f = nativeReviewerFixture()
   await assert.rejects(f.observe(), pending)
   assert.ok(!f.calls.some((call) => /resolve|startTurn|createSession|attachSession|capabilities|revoke/.test(call)))
 })
 
 test('NATIVE-2 captured close, durable receipt and principal revocation precede settlement', async () => {
-  const f = native2Fixture(); f.installResident()
+  const f = nativeReviewerFixture(); f.installResident()
   assert.equal((await f.observe()).state, 'completed')
   const close = f.calls.indexOf(`close:${f.session.nativeSessionId}`)
   assert.ok(close >= 0)
@@ -31,7 +31,7 @@ test('NATIVE-2 captured close, durable receipt and principal revocation precede 
 })
 
 test('NATIVE-2 lost revocation reply retries the captured principal without another close', async () => {
-  const f = native2Fixture(); f.installResident()
+  const f = nativeReviewerFixture(); f.installResident()
   const revoke = f.credentials.revoke
   let first = true
   f.credentials.revoke = async (identity) => {
@@ -45,7 +45,7 @@ test('NATIVE-2 lost revocation reply retries the captured principal without anot
 })
 
 test('NATIVE-2 close/receipt gap never manufactures closure and retries only the same close', async () => {
-  const f = native2Fixture(); f.installResident()
+  const f = nativeReviewerFixture(); f.installResident()
   const record = f.closures.record
   let first = true
   f.closures.record = async (...args) => {
@@ -60,14 +60,14 @@ test('NATIVE-2 close/receipt gap never manufactures closure and retries only the
 })
 
 test('NATIVE-2 owner loss after physical close cannot revoke or release replacement authority', async () => {
-  const f = native2Fixture(); f.installResident()
+  const f = nativeReviewerFixture(); f.installResident()
   f.manager.close = async () => { f.loseOwner() }
   await assert.rejects(f.observe())
   assert.ok(!f.calls.some((call) => call.startsWith('revoke') || call === 'release-manager'))
 })
 
 test('NATIVE-2 manager generation replacement rejects late close publication', async () => {
-  const f = native2Fixture(); f.installResident()
+  const f = nativeReviewerFixture(); f.installResident()
   f.manager.close = async () => { f.resident.generation++ }
   await assert.rejects(f.observe())
   assert.equal(f.getProof(), undefined)
@@ -75,26 +75,26 @@ test('NATIVE-2 manager generation replacement rejects late close publication', a
 })
 
 test('NATIVE-2 durable close and prior revocation repair a budget/finalization gap after crash', async () => {
-  const f = native2Fixture(); f.closed(); f.revoked()
+  const f = nativeReviewerFixture(); f.closed(); f.revoked()
   await f.observe()
   assert.ok(f.calls.includes(`budget:${f.get().id}`))
   assert.ok(!f.calls.some((call) => /resolve|startTurn|createSession|attachSession|close:|revoke/.test(call)))
 })
 
 test('NATIVE-2 cold unfinalized credential gap cannot broadly revoke a replacement lifetime', async () => {
-  const f = native2Fixture(); f.closed()
+  const f = nativeReviewerFixture(); f.closed()
   await assert.rejects(f.observe(), pending)
   assert.ok(!f.calls.some((call) => call.startsWith('revoke')))
 })
 
 test('NATIVE-2 finalized reviewer credential is never broadly revoked by requester replay', async () => {
-  const f = native2Fixture(); f.closed()
+  const f = nativeReviewerFixture(); f.closed()
   f.interactions.coordination.workflowSession = async () => ({ session: f.session, finalized: true, reviewerActive: true })
   await assert.rejects(f.observe(), pending)
   assert.ok(!f.calls.some((call) => call.startsWith('revoke')))
 })
 
-function liveRequest(f: ReturnType<typeof native2Fixture>) {
+function liveRequest(f: ReturnType<typeof nativeReviewerFixture>) {
   return HarnessExecutionRequestSchema.parse({ executionId: f.get().id, runId: f.run.id,
     workspaceId: f.run.workspaceId, workflowNodeId: f.get().workflowNodeId,
     workingDirectory: f.get().workingDirectory, runtimeDirectory: f.get().runtimeDirectory,
@@ -102,7 +102,7 @@ function liveRequest(f: ReturnType<typeof native2Fixture>) {
 }
 
 test('NATIVE-2 nonterminal missing permit cannot prepare credentials or start native work', async () => {
-  const f = native2Fixture(false); f.set({ ...f.get(), nativeSessionId: undefined })
+  const f = nativeReviewerFixture(false); f.set({ ...f.get(), nativeSessionId: undefined })
   f.internals.resolveManager = () => ({ manager: f.manager, processState: 'needs_start' })
   f.store.authorizeNativeSubmission = async () => { throw new DomainError('NATIVE_ENTRY_CONFLICT', 'Missing committed entry permit', 409) }
   await assert.rejects(f.coordinator.observeExact({ execution: f.get(), request: liveRequest(f), approval: f.run.approval, store: f.store,
@@ -113,7 +113,7 @@ test('NATIVE-2 nonterminal missing permit cannot prepare credentials or start na
 })
 
 test('NATIVE-2 recovery rejects a wrong exact native session before manager resolution', async () => {
-  const f = native2Fixture(false)
+  const f = nativeReviewerFixture(false)
   f.store.exactSession = async () => ({ ...f.session, nativeSessionId: 'session-other-occurrence' })
   await assert.rejects(f.coordinator.observeExact({ execution: f.get(), request: liveRequest(f), approval: f.run.approval, store: f.store,
     owner: f.owner as never, workflowId: f.run.workflowId, graphThreadId: f.run.id, signal: new AbortController().signal }),
@@ -123,7 +123,7 @@ test('NATIVE-2 recovery rejects a wrong exact native session before manager reso
 })
 
 test('NATIVE-2 resident recovery observes the same turn, records terminal, closes and settles', async () => {
-  const f = native2Fixture(false); f.installResident()
+  const f = nativeReviewerFixture(false); f.installResident()
   f.internals.resolveManager = () => ({ manager: f.manager, processState: 'resident' })
   f.internals.prepareEnvironment = async () => undefined
   const observed = await f.coordinator.observeExact({ execution: f.get(), request: liveRequest(f), approval: f.run.approval, store: f.store,
@@ -134,7 +134,7 @@ test('NATIVE-2 resident recovery observes the same turn, records terminal, close
 })
 
 test('NATIVE-2 approval receipt wait preserves native lifetime and pauses active budget', async () => {
-  const f = native2Fixture(false); f.installResident()
+  const f = nativeReviewerFixture(false); f.installResident()
   f.internals.resolveManager = () => ({ manager: f.manager, processState: 'resident' })
   f.internals.prepareEnvironment = async () => undefined
   f.runs.updateExecution = async () => { throw new DomainError('APPROVAL_SETTLEMENT_PENDING', 'graph.resume or qualified acknowledgement pending', 409) }
@@ -146,7 +146,7 @@ test('NATIVE-2 approval receipt wait preserves native lifetime and pauses active
 })
 
 test('NATIVE-2 raw provider payload keeps exact source tuple, session and continuation evidence', async () => {
-  const f = native2Fixture(false); f.installResident()
+  const f = nativeReviewerFixture(false); f.installResident()
   f.internals.resolveManager = () => ({ manager: f.manager, processState: 'resident' })
   f.internals.prepareEnvironment = async () => undefined
   const raw = { executionId: f.get().id, connectionId: 'connection-occurrence-1', sequence: 17,
@@ -166,7 +166,7 @@ test('NATIVE-2 raw provider payload keeps exact source tuple, session and contin
 })
 
 test('NATIVE-2 first launch and terminal replay use one exact session and one turn', async () => {
-  const f = native2Fixture(false)
+  const f = nativeReviewerFixture(false)
   f.set({ ...f.get(), nativeSessionId: undefined })
   let creates = 0, turns = 0, permits = 0
   f.store.consumeLaunch = () => ++permits === 1
@@ -216,7 +216,7 @@ test('NATIVE-2 first launch and terminal replay use one exact session and one tu
 
 for (const replacement of ['owner', 'generation', 'session', 'copy'] as const) {
   test(`NATIVE-2 original boundary capture rejects ${replacement} replacement`, async () => {
-    const f = native2Fixture(false); f.installResident()
+    const f = nativeReviewerFixture(false); f.installResident()
     const evidence = await f.coordinator.nativeBoundaryEvidence(f.get().id, f.owner as never)
     const original = f.captureChannel.verify.read(evidence)
     assert.equal(original.owner, f.owner)

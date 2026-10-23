@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson } from '@foreman-code/contracts/current'
 import { JobQualificationCandidateSchema, JOB_RUNTIME_PROVISIONING_SUITE, type JobQualificationCandidate }
   from '@foreman-code/contracts/job-runtime'
 import { JobVerificationRuntimeMeasurementSchema, JOB_VERIFICATION_BASE_CHECKS }

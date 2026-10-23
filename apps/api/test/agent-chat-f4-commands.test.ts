@@ -5,30 +5,16 @@ import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 
 import { AgentChatCommands } from '../src/modules/conversations/agentChatCommands.js'
 import { DomainError } from '../src/modules/errors.js'
+import { commandReceiptLedger } from './helpers/commandReceiptLedger.js'
 
 const principal: ManagementPrincipal = { id: 'f4-principal', name: 'F4', audience: 'operator', revokedAt: null,
   expiresAt: '2099-01-01T00:00:00Z', grants: [{ actions: ['agent_chat:read', 'agent_chat:cancel', 'agent_chat:respond'], scope: {} }] }
 
 /** SQL substitute for unit fault injection only, not PostgreSQL/native proof. */
 function store() {
-  const receipts = new Map<string, { target_key: unknown; input_hash: unknown; result: unknown }>()
-  let failSettlement = false
-  const query = vi.fn(async (sql: string, values: unknown[]) => {
-    const key = JSON.stringify(values.slice(0, 3))
-    if (sql.includes('with claimed as')) {
-      if (receipts.has(key)) return { rowCount: 0, rows: [] }
-      receipts.set(key, { target_key: values[3], input_hash: values[4], result: JSON.parse(String(values[6] ?? '{"status":"pending"}')) })
-      return { rowCount: 1, rows: [] }
-    }
-    if (sql.includes('with settled as')) {
-      if (failSettlement) throw new Error('connection lost after native effect')
-      receipts.get(key)!.result = JSON.parse(String(values[3]))
-      return { rowCount: 1, rows: [] }
-    }
-    if (sql.includes('select target_key,input_hash,result')) return { rows: [receipts.get(key)], rowCount: 1 }
-    throw new Error(`Unexpected SQL: ${sql}`)
-  })
-  return { pool: { query } as unknown as pg.Pool, receipts, query, failSettlement: () => { failSettlement = true } }
+  const ledger = commandReceiptLedger()
+  return { pool: { query: ledger.query } as unknown as pg.Pool, receipts: ledger.records, query: ledger.query,
+    failSettlement: ledger.failSettlement }
 }
 
 describe('F4 A-R12 durable control identity', () => {

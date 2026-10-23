@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { RUN_INSPECTION_TOOLS, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { RUN_INSPECTION_TOOLS, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { postgresEnabled } from './helpers/database.js'
 import { path, reader, pairedDenial, terminal } from './helpers/runInspectionBounds.js'

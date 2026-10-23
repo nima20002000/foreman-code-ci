@@ -15,6 +15,7 @@ import { DomainError } from '../errors.js'
 import { nativeProcessExit, spawnNativeProcess, type NativeProcessRecovery, type NativeProcessRegistry } from '../harnesses/recovery/processRegistry.js'
 import { stopProcess } from '../harnesses/process.js'
 import { providerAccountEnvironment } from './environment.js'
+import { parseClaudeAuthStatus, parseCodexLoginStatus } from './accountStatus.js'
 
 export interface ProviderAccountNativeInput {
   account: ProviderAccount
@@ -241,18 +242,14 @@ export class NativeProviderAccountCommands implements ProviderAccountNativePort 
     }
     if (!result || result.timedOut || result.code === null) return { status: 'unavailable', identity: null }
     if (input.account.provider === 'codex') {
-      if (result.code === 0 && /logged in using chatgpt/i.test(result.stdout)) return { status: 'signed-in', identity: null }
-      if (/^\s*not logged in\s*$/i.test(result.stdout)) return { status: 'signed-out', identity: null }
-      return { status: 'unavailable', identity: null }
+      const login = parseCodexLoginStatus(result)
+      return login === 'unknown' ? { status: 'unavailable', identity: null } : { status: login, identity: null }
     }
-    let data: unknown
-    try { data = JSON.parse(result.stdout) } catch { return { status: 'unavailable', identity: null } }
-    if (!data || typeof data !== 'object' || Array.isArray(data) || result.code !== 0) {
-      return { status: 'unavailable', identity: null }
-    }
-    const observation = data as Record<string, unknown>
-    if (observation.loggedIn === false) return { status: 'signed-out', identity: null }
-    if (observation.loggedIn !== true || ['api_key', 'api-key'].includes(String(observation.authMethod))) {
+    const claude = parseClaudeAuthStatus(result)
+    if (claude.kind !== 'status' || result.code !== 0) return { status: 'unavailable', identity: null }
+    const observation = claude.fields
+    if (!claude.loggedIn) return { status: 'signed-out', identity: null }
+    if (['api_key', 'api-key'].includes(String(observation.authMethod))) {
       return { status: 'unavailable', identity: null }
     }
     let subject: z.infer<typeof ProviderAccountSubjectSchema> | null = null

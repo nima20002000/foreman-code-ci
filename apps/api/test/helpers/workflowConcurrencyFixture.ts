@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll } from 'vitest'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { migratedDatabase } from './migratedDatabase.js'
 import { checkpointRuntimeFixture } from './checkpointRuntime.js'
 

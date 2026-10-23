@@ -1,8 +1,8 @@
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import type { SourceReservation } from './reservations.js'
 
 /** Published files and snapshots have independent retention; this selects only disposable execution copies. */
-export async function oldestRetainedMaterialization(sql: GraphSqlClient, scopeId: string,
+export async function oldestRetainedMaterialization(sql: SqlQuery, scopeId: string,
   reservationId?: string, excludedIds: readonly string[] = []) {
   return (await sql.query<{ reservation_id: string; owner_id: string; retry: SourceReservation['cleanupRetry'] }>(`
     select s.reservation_id,s.owner_id,s.record->'cleanupRetry' as retry

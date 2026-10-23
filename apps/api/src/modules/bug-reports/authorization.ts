@@ -3,10 +3,10 @@ import {
   type BugReportCreateInput,
   type ManagementPrincipal,
 } from '@foreman-code/contracts/management'
-import type { GraphSqlClient } from '../run-graph/connection.js'
-import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
-import { requireAuthorization } from '../access/policy.js'
-import { assertWave25WorkerBinding } from '../interactions/wave25/credentialAuthority.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
+import { readLiveManagementPrincipal } from '../access/index.js'
+import { requireAuthorization } from '../access/index.js'
+import { assertWave25WorkerBinding } from '../interactions/index.js'
 import { DomainError } from '../errors.js'
 import { redactBugReportText } from './redaction.js'
 
@@ -19,7 +19,7 @@ export interface ReportContext {
 }
 
 export async function liveBugReportPrincipal(
-  sql: GraphSqlClient,
+  sql: SqlQuery,
   snapshot: ManagementPrincipal,
 ): Promise<ManagementPrincipal> {
   if (snapshot.audience === 'operator') {
@@ -65,7 +65,7 @@ function requireMatchingContext(input: BugReportCreateInput, context: ReportCont
 }
 
 export async function reportingContext(
-  sql: GraphSqlClient,
+  sql: SqlQuery,
   principal: ManagementPrincipal,
   source: 'http' | 'mcp',
   input: BugReportCreateInput,
@@ -116,7 +116,7 @@ export async function reportingContext(
 }
 
 async function operatorReportScope(
-  sql: GraphSqlClient,
+  sql: SqlQuery,
   principal: ManagementPrincipal,
   input: BugReportCreateInput,
 ): Promise<Omit<ReportContext, 'reporter' | 'harness'>> {

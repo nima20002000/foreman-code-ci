@@ -1,15 +1,15 @@
 import { readPublicProjectionLocked } from '../run-graph/compactSnapshot.js'
 import { bootIdentity } from '../harnesses/recovery/linuxIdentity.js'
 import { withTransaction } from '../../infrastructure/transaction.js'
-import { componentLogger } from '../diagnostics/logger.js'
+import { componentLogger } from '../diagnostics/index.js'
 import { createMainJobExecutionHost } from './mainExecution.js'
 import { createQualificationReportPublisher } from './qualificationReports.js'
 import { createVerificationSystemInput } from './verificationSystemInput.js'
 import { openMainJobJournal } from './mainJobJournal.js'
-import { createMainCiRuntime } from '../ci/mainCiRuntime.js'
+import { createMainCiRuntime, type CiEnrollment, type CiRuntimeProvisioner } from '../ci/index.js'
 import { jobCleanupOptions } from './lifecycle.js'
 import { JobExecutionRecordSchema } from '@foreman-code/contracts/job-verification'
-import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
+import { sameWorkflowValue } from '@foreman-code/contracts/current'
 import { constants } from 'node:fs'
 import { lstat, open, realpath } from 'node:fs/promises'
 import type { NativeProcessRegistry } from '../harnesses/recovery/processRegistry.js'
@@ -19,10 +19,10 @@ import { reserveInstalledJobQualification, recoverInstalledJobRuntimeQualificati
 import { createJobQualificationCarrier } from './qualificationCarrier.js'
 import { SourceRootRecordSchema, SourceMaterializationRecordSchema } from '@foreman-code/contracts/source-admission'
 import type pg from 'pg'
-import type { DeviceEndpoint } from '../devices/deviceEndpoint.js'
-import type { PostgresCommandCoordinator } from '../commands/postgres.js'
-import type { WorkspaceLocationService } from '../workspaces/location.js'
-import { assertDeviceHostInstallation } from '../devices/hostAuthorization.js'
+import type { DeviceEndpoint } from '../devices/index.js'
+import type { PostgresCommandCoordinator } from '../commands/index.js'
+import type { WorkspaceLocationService } from '../workspaces/index.js'
+import { assertDeviceHostInstallation } from '../devices/index.js'
 import { DomainError } from '../errors.js'
 import { createProductionSources } from '../sources/production.js'
 import { createInstalledJobRuntimeHost, type InstalledRuntimeHostDependencies } from './installedRuntimeHost.js'
@@ -36,11 +36,11 @@ import { JobPublicationAuthority } from './authority.js'
 import { createCanonicalJobInputPorts } from '../files/jobInputs/factory.js'
 import { createMainJobInputRsyncExtension, type MainJobInputRsyncPorts } from '../files/jobInputs/rsyncProduction.js'
 import { createAdmittedJobOutputs } from '../files/jobs/admittedFactory.js'
-import type { ResumableByteTransferService } from '../byte-transfer/service.js'
+import type { ResumableByteTransferService } from '../byte-transfer/index.js'
 import type { MainJobOutputRsyncPorts } from '../files/jobs/rsyncProduction.js'
 import type { TrustedJobOutputReader } from '../files/jobs/port.js'
 import { JobService, jobDigest } from './service.js'
-import { WorkerExecutionPolicy } from '../settings/workerExecution.js'
+import { WorkerExecutionPolicy } from '../settings/index.js'
 import { JobWorkerService } from './worker.js'
 import { projectJobReceiptLocked } from './receiptProjection.js'
 import { publishWorkflowJobReceiptLocked } from './workflowReceiptPublication.js'
@@ -52,7 +52,7 @@ import { JobApplicationBridge } from '../runs/remote/jobApplicationBridge.js'
 import { dirname, join } from 'node:path'
 import { PostgresJobCancellationRecovery } from './cancellationRecovery.js'
 import { assertBuildComputerTarget, BuildComputerSettings, buildComputerTarget } from '../settings/buildComputers.js'
-import { buildComputerReadiness } from '../settings/buildComputerReadiness.js'
+import { buildComputerReadiness } from '../settings/index.js'
 import { JobComputerSelection, releaseClosedJobComputers, type VerificationMemoryReader } from './computerSelection.js'
 import { JobBuildQueueConfigurationSchema, type JobBuildQueueConfiguration } from '@foreman-code/contracts/job-admission'
 import { isAutoJobSpec } from '@foreman-code/contracts/jobs'
@@ -157,6 +157,14 @@ interface ProductionJobsInput { pool: pg.Pool; commands: PostgresCommandCoordina
   transferPreparationClosed?: NonNullable<Parameters<typeof createProductionSources>[0]['transferPreparationClosed']>;
   transferMaterializationClosed?: NonNullable<Parameters<typeof createProductionSources>[0]['transferMaterializationClosed']>;
   outputRsync?:MainJobOutputRsyncPorts; inputRsync?:MainJobInputRsyncPorts; transferReceiver?:ResumableByteTransferService
+  /**
+   * Main's CI enrollment and runtime provisioner. They are built from these Job services, so they exist only after
+   * this factory returns; the Jobs reach them through these accessors, which return undefined until then.
+   */
+  ci?: {
+    enrollment(): Pick<CiEnrollment, 'profileSaved' | 'request'> | undefined
+    runtime(): Pick<CiRuntimeProvisioner, 'prepareForTicket' | 'recover' | 'close'> | undefined
+  }
 }
 
 function createProductionQualificationHost(
@@ -389,6 +397,16 @@ export async function createProductionJobs(input: ProductionJobsInput) {
     ...(queue ? { queue } : {}),
     ...(input.workerExecution ? { workerExecution: input.workerExecution } : {}),
   })
+  if (input.ci) {
+    const { enrollment, runtime } = input.ci
+    profiles.enrollment = { profileSaved: async (principal, workspaceId) => { await enrollment()?.profileSaved(principal, workspaceId) } }
+    buildComputers.enrollment = { request: () => { enrollment()?.request() } }
+    jobs.runtimePreparation = {
+      prepareForTicket: async ticket => { await runtime()?.prepareForTicket(ticket) },
+      recover: async () => { await runtime()?.recover() },
+      close: async () => { await runtime()?.close() },
+    }
+  }
   const workers = new JobWorkerService(input.pool, { require: dispatch.require.bind(dispatch),
     verifyPublication: (sql, execution) => artifacts.verifyRequiredOutputs(sql, execution) })
   const application = new JobApplicationBridge(input.pool, dispatch, workers, publication)

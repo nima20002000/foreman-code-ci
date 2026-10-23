@@ -24,7 +24,7 @@ export function approval(session: NativeSessionReference, nativeTurnId: string, 
 }
 
 /** Deterministic native-port substitute. It does not launch a provider or prove provider behavior. */
-export class AgentChatF5Native implements NativeHarnessSessionManager {
+export class ScriptedChatNative implements NativeHarnessSessionManager {
   readonly harness = 'codex' as const
   readonly session: NativeSessionReference = { harness: 'codex', providerVersion: 'f5-fixture', nativeSessionId: 'native-f5' }
   readonly started = deferred()

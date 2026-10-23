@@ -5,7 +5,7 @@ import { DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
 import { AgentMutationResultSchema, AgentVersionResultSchema, ManagedAgentPageSchema } from '@foreman-code/contracts/management'
 import { CurrentManagedWorkflowSchema, CurrentManagedWorkflowPageSchema, CurrentWorkflowReadResultSchema,
   CurrentWorkflowSaveInputSchema, CurrentWorkflowSaveResultSchema, CurrentWorkflowValidationSchema,
-  CurrentWorkflowCapabilitiesSchema, GraphEditReadResultV3Schema, GraphEditStageInputV3Schema } from '@foreman-code/contracts/wave25'
+  CurrentWorkflowCapabilitiesSchema, GraphEditReadResultCurrentSchema, GraphEditStageInputCurrentSchema } from '@foreman-code/contracts/current'
 import { resetTestFixtures } from './handlers'
 import { setMockScenario } from './scenarios'
 
@@ -62,18 +62,18 @@ describe('current Board endpoints in the shared MSW stack', () => {
   it('stages and discards the full local document through one definition journal without a server draft', async () => {
     const input = await savedInput('journal-roundtrip')
     const draftId = `board-${workflowId}`, path = `${workflowPath}/definition/edits`
-    const empty = GraphEditReadResultV3Schema.parse(await request(`${path}?draftId=${draftId}`))
+    const empty = GraphEditReadResultCurrentSchema.parse(await request(`${path}?draftId=${draftId}`))
     expect(empty.intent).toBeNull()
-    const stage = GraphEditStageInputV3Schema.parse({ ...input, draftId, action: 'stage_edits' })
-    const staged = GraphEditReadResultV3Schema.parse(await request(path, 'POST', stage))
+    const stage = GraphEditStageInputCurrentSchema.parse({ ...input, draftId, action: 'stage_edits' })
+    const staged = GraphEditReadResultCurrentSchema.parse(await request(path, 'POST', stage))
     expect(staged.intent!.stagedDraft.graph).toEqual(stage.graph)
     expect(staged.intent!.saveInput).toMatchObject({ graph: stage.graph,
       expectedRevision: stage.expectedRevision, expectedWorkflowVersionId: stage.expectedWorkflowVersionId,
       expectedAgentConfigurationVersionIds: stage.expectedAgentConfigurationVersionIds,
     })
-    const replay = GraphEditReadResultV3Schema.parse(await request(path, 'POST', stage))
+    const replay = GraphEditReadResultCurrentSchema.parse(await request(path, 'POST', stage))
     expect(replay.intent!.id).toBe(staged.intent!.id)
-    const discarded = GraphEditReadResultV3Schema.parse(await request(path, 'POST', {
+    const discarded = GraphEditReadResultCurrentSchema.parse(await request(path, 'POST', {
       workspaceId, workflowId, draftId, intentId: staged.intent!.id,
       commandId: staged.intent!.discardCommandId, action: 'discard_edits',
     }))

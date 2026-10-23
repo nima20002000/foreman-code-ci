@@ -1,7 +1,8 @@
 import { BoardResultSchema, type MemoryBoardMutation } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import type { MemoryBoardPort } from '../collaboration/ports.js'
-import { assertGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
+import type { MemoryBoardPort } from '../collaboration/index.js'
+import { assertGraphTransaction } from '../run-graph/index.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { DomainError } from '../errors.js'
 import type { BoardRow, ChangesRequest, MemoryBoardDependencies, MutationReceipt, Operation, ReadRequest } from './types.js'
 import { authorizeCaller } from './authorization.js'
@@ -79,20 +80,20 @@ export class MemoryBoardService implements MemoryBoardPort {
       return undefined
     })
   }
-  ensureAgentCardLocked(tx: GraphTransactionSql, input: Parameters<typeof ensureAgentCard>[2]) {
+  ensureAgentCardLocked(tx: SqlTransaction, input: Parameters<typeof ensureAgentCard>[2]) {
     return ensureAgentCard(tx, this.dependencies.authority, input, this.now())
   }
   readDigest(input: Parameters<MemoryBoardPort['readDigest']>[0]) {
     return this.dependencies.readTransaction(tx => readDigest(tx,this.dependencies.authority,input))
   }
-  readDigestLocked(tx: GraphTransactionSql, input: Parameters<MemoryBoardPort['readDigest']>[0]) {
+  readDigestLocked(tx: SqlTransaction, input: Parameters<MemoryBoardPort['readDigest']>[0]) {
     assertGraphTransaction(tx)
     return readDigest(tx, this.dependencies.authority, input)
   }
-  applyLifecycleLocked(tx: GraphTransactionSql, fact: Parameters<MemoryBoardPort['applyLifecycleLocked']>[1]) {
+  applyLifecycleLocked(tx: SqlTransaction, fact: Parameters<MemoryBoardPort['applyLifecycleLocked']>[1]) {
     return applyLifecycle(tx,this.dependencies.authority,fact,this.now())
   }
-  async applyResultLocked(tx: GraphTransactionSql, input: Parameters<MemoryBoardPort['applyResultLocked']>[1]) {
+  async applyResultLocked(tx: SqlTransaction, input: Parameters<MemoryBoardPort['applyResultLocked']>[1]) {
     assertGraphTransaction(tx)
     const result = BoardResultSchema.parse(input.result)
     if (Buffer.byteLength(JSON.stringify(result))>65536) invalid('Board effects exceed 64 KiB.')

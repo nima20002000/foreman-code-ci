@@ -4,7 +4,7 @@ import { projectInteractionActivity, projectInteractionSummary, type Interaction
 
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { InteractionService } from '../src/modules/interactions/service.js'
-import { Wave25InteractionRepository } from '../src/modules/interactions/wave25/repository.js'
+import { Wave25InteractionRepository } from '../src/modules/interactions/current/repository.js'
 import type { PostgresApprovalBudgetRepository } from '../src/modules/interactions/budget.js'
 import type { InteractionNativeRuntime } from '../src/modules/interactions/runtimePorts.js'
 

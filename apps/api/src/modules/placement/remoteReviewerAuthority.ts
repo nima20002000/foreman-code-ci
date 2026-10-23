@@ -1,9 +1,9 @@
 import { AgentConfigurationVersionSchema, HarnessExecutionSchema, NativeSessionReferenceSchema,
   DurableInteractionSchema, ReviewJobSchema } from '@foreman-code/contracts'
-import { WorkflowRunV3Schema, WorkflowVersionV3Schema, sameWorkflowValue } from '@foreman-code/contracts/wave25'
+import { WorkflowRunCurrentSchema, WorkflowVersionCurrentSchema, sameWorkflowValue } from '@foreman-code/contracts/current'
 import type { DispatchIntent } from '@foreman-code/contracts/node-placement'
 import type { RemoteOperationReceipt, RemoteReviewerRequest } from '@foreman-code/contracts/remote-execution'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { PostgresRepeatReviewerBindings } from '../interactions/repeatReviewer.js'
 import { DomainError } from '../errors.js'
 
@@ -11,7 +11,7 @@ function denied(): never {
   throw new DomainError('REMOTE_REVIEWER_DENIED', 'The original reviewer assignment is unavailable.', 403)
 }
 
-export async function remoteReviewerPolicy(sql: GraphSqlClient, intent: DispatchIntent) {
+export async function remoteReviewerPolicy(sql: SqlQuery, intent: DispatchIntent) {
   const row = (await sql.query<{ run: unknown; version: unknown; execution: unknown;
     configuration: unknown; reference: unknown; finalized: boolean }>(`select r.record as run,v.record as version,
       e.record as execution,c.record as configuration,s.reference,s.workflow_finalized_at is not null as finalized
@@ -21,8 +21,8 @@ export async function remoteReviewerPolicy(sql: GraphSqlClient, intent: Dispatch
     left join execution_native_sessions s on s.execution_id=e.id where r.id=$1`,
   [intent.runId, intent.executionId])).rows[0]
   if (!row) return undefined
-  const run = WorkflowRunV3Schema.parse(row.run)
-  const version = WorkflowVersionV3Schema.parse(row.version)
+  const run = WorkflowRunCurrentSchema.parse(row.run)
+  const version = WorkflowVersionCurrentSchema.parse(row.version)
   const execution = HarnessExecutionSchema.parse(row.execution)
   const configuration = AgentConfigurationVersionSchema.parse(row.configuration)
   if (run.approval?.handler !== 'orchestrator' || run.approval.designatedOrchestratorAgentId !== execution.agentId
@@ -42,7 +42,7 @@ export async function remoteReviewerPolicy(sql: GraphSqlClient, intent: Dispatch
     session: row.reference ? NativeSessionReferenceSchema.parse(row.reference) : undefined, finalized: row.finalized }
 }
 
-export async function assertRemoteReviewAssignment(sql: GraphSqlClient, intent: DispatchIntent,
+export async function assertRemoteReviewAssignment(sql: SqlQuery, intent: DispatchIntent,
   review: RemoteReviewerRequest): Promise<void> {
   const policy = await remoteReviewerPolicy(sql, intent)
   if (!policy || policy.execution.state !== 'completed' || policy.execution.result?.outcome !== 'succeeded'
@@ -69,7 +69,7 @@ export async function assertRemoteReviewAssignment(sql: GraphSqlClient, intent: 
   if (lane.rowCount !== 1) denied()
 }
 
-export async function assertRemoteReviewerReceipt(sql: GraphSqlClient, receipt: RemoteOperationReceipt): Promise<void> {
+export async function assertRemoteReviewerReceipt(sql: SqlQuery, receipt: RemoteOperationReceipt): Promise<void> {
   if (!receipt.retainedReviewer) return
   const policy = await remoteReviewerPolicy(sql, receipt.intent)
   if (!policy || policy.execution.agentId !== receipt.retainedReviewer.agentId
@@ -87,7 +87,7 @@ export async function assertRemoteReviewerReceipt(sql: GraphSqlClient, receipt: 
 }
 
 /** Closing the completed reviewer only releases its retained process; the Run continues. */
-export async function canCloseRetainedRemoteReviewer(sql: GraphSqlClient, receipt: RemoteOperationReceipt): Promise<boolean> {
+export async function canCloseRetainedRemoteReviewer(sql: SqlQuery, receipt: RemoteOperationReceipt): Promise<boolean> {
   const retained = receipt.retainedReviewer
   if (!retained || !receipt.native) return false
   const policy = await remoteReviewerPolicy(sql, receipt.intent)

@@ -5,7 +5,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { AgentConfigurationVersionSchema, AgentSchema, type Agent } from '@foreman-code/contracts'
 import * as c from '@foreman-code/contracts/management'
-import * as current from '@foreman-code/contracts/wave25'
+import * as current from '@foreman-code/contracts/current'
 import type { FastifyInstance } from 'fastify'
 import type { z } from 'zod'
 import { afterAll, beforeAll, expect } from 'vitest'
@@ -148,7 +148,7 @@ export function skillConsumerFixture() {
       const agent = AgentSchema.parse({ ...f.consumer.agent, id: agentId, name: `Consumer ${index}`,
         configurationVersionId: configuration.id })
       const workflowId = randomUUID()
-      const version = current.WorkflowVersionV3Schema.parse({ ...f.workflow.version, id: randomUUID(), workflowId,
+      const version = current.WorkflowVersionCurrentSchema.parse({ ...f.workflow.version, id: randomUUID(), workflowId,
         agentConfigurationVersionIds: { [agentId]: configuration.id },
         definition: { ...f.workflow.version.definition, id: workflowId,
           nodes: [{ ...f.workflow.version.definition.nodes[0]!, agentId, name: agent.name }] } })

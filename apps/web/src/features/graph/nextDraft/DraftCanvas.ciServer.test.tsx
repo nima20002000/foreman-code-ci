@@ -5,7 +5,7 @@ import { GraphPresentationProvider } from '../GraphPresentation'
 import { useGraphDraftStore } from '../store'
 import { fixture } from './core.cases'
 import { DraftCanvas } from './DraftCanvas'
-import { nextDraftKey } from './state'
+import { nextDraftKey } from '../../board-core'
 
 const key = nextDraftKey('workspace', 'workflow')
 const context = fixture()

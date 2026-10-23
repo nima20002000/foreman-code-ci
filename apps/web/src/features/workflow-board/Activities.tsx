@@ -2,12 +2,10 @@ import { InfoHint } from '../../shared/ui/InfoHint'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { defaultStringifySearch, useLocation, useRouter } from '@tanstack/react-router'
-import type { RepeatGraphScopeV3, RunActivityPublic, RunDirectionWait } from '@foreman-code/contracts/wave25'
+import type { RepeatGraphScopeCurrent, RunActivityPublic, RunDirectionWait } from '@foreman-code/contracts/current'
 import { Alert, Button, Icon, IconButton, Select } from '../../shared/ui/nocturne'
 import { ApiError } from '../../shared/api/client'
-import type { SelectedRunState } from '../runs-selector/useSelectedRun'
-import { RunsSelectorSearchSchema } from '../runs-selector/search'
-import { runReadErrorLabel, useSelectedRunSnapshot } from '../runs-selector/query'
+import { type SelectedRunState, RunsSelectorSearchSchema, runReadErrorLabel, useSelectedRunSnapshot } from '../runs-selector'
 import { createChatVisit } from '../conversations/agentChat/selectedRunChatModel'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
 import { readRunActivities, readRunActivityFeed, mergeOlderRunActivities, isTransientRunActivityError,
@@ -17,7 +15,7 @@ import { useRunDirectionWait } from './actions/directionWaitModel'
 import './activities.css'
 
 /** focusAgentId pins the feed to one Agent: its filter controls and per-row Agent names are dropped. */
-type ActivitiesProps = { scope: RepeatGraphScopeV3; focusAgentId?: string; selection?: never }
+type ActivitiesProps = { scope: RepeatGraphScopeCurrent; focusAgentId?: string; selection?: never }
   | { scope?: never; selection: SelectedRunState }
 
 type OlderActivityRequest = {

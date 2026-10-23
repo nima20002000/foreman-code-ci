@@ -1,6 +1,6 @@
 import type pg from 'pg'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { RunStartV3InputSchema, canonicalGraphJson, type RunStartV3Input } from '@foreman-code/contracts/wave25'
+import { RunStartCurrentInputSchema, canonicalGraphJson, type RunStartCurrentInput } from '@foreman-code/contracts/current'
 import { commandInputHash } from '../commands/postgres.js'
 import { withExclusiveGraphConnection } from '../run-graph/connection.js'
 import { readStartReceipt } from './repeatStartAdmission.js'
@@ -8,8 +8,8 @@ import { authorizeRunStart, lockRunStartCommand } from './startCommand.js'
 
 /** The command lock closes absence atomically with respect to every Start submission. */
 export async function resolveRunStart(pool: pg.Pool, principal: ManagementPrincipal,
-  source: 'http' | 'mcp', raw: RunStartV3Input) {
-  const input = RunStartV3InputSchema.parse(raw)
+  source: 'http' | 'mcp', raw: RunStartCurrentInput) {
+  const input = RunStartCurrentInputSchema.parse(raw)
   authorizeRunStart(principal, input)
   const hash = commandInputHash(input)
   const target = `workflow:${input.workflowId}:version:${input.workflowVersionId}`

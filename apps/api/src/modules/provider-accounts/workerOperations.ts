@@ -6,7 +6,7 @@ import {
   type ProviderAccount, type AcceptedProviderAccountBinding, type ProviderAccountBinding, type ProviderAccountWorkerRequest,
 } from '@foreman-code/contracts/provider-accounts'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
-import type { DeviceExtensionContext, DeviceExtensionRegistration } from '../devices/deviceApplicationChannel.js'
+import type { DeviceExtensionContext, DeviceExtensionRegistration } from '../devices/index.js'
 import type { ProviderAccountResolver, ProviderAccountOperationNativePort, ResolvedProviderAccount } from './service.js'
 import type { ProviderAccountNativeInput } from './nativeCommands.js'
 import { DomainError } from '../errors.js'

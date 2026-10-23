@@ -5,10 +5,10 @@ import { SourceRootRecordSchema, type SourceRootRecord } from '@foreman-code/con
 import type { WorkspaceRootPolicy } from '@foreman-code/contracts/workspace-root-policies'
 import type { SourceRootReference } from '@foreman-code/contracts/worktree-settings'
 import { HostHarnessOverrideSchema, type HostHarnessOverride } from '@foreman-code/contracts/harness-registry'
-import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import { sameWorkflowValue } from '@foreman-code/contracts/current'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import type { WorkspaceRootPolicyPort } from '../sources/rootPolicyPorts.js'
-import type { HarnessInstallationRegistry } from '../harnesses/installationRegistry.js'
+import type { HarnessInstallationRegistry } from '../harnesses/index.js'
 import { DomainError } from '../errors.js'
 import type { SourceAdmissionPort } from '../sources/admissionPorts.js'
 import { readPlacementHarnessFacts } from './harnessFacts.js'
@@ -21,7 +21,7 @@ const unavailable = (reason: string): never => {
 /** Resolve only existing authorized Main choices. Admission still validates their source,
  * root, installation and qualification through the same services as explicit placements. */
 export async function resolveLocalMainPlacement(input: {
-  sql: GraphSqlClient
+  sql: SqlQuery
   principal: ManagementPrincipal
   mainId: string
   workspaceId: string
@@ -37,7 +37,7 @@ export async function resolveLocalMainPlacement(input: {
 }
 
 export async function readLocalMainRoot(input: {
-  sql: GraphSqlClient; principal: ManagementPrincipal; mainId: string; workspaceId: string
+  sql: SqlQuery; principal: ManagementPrincipal; mainId: string; workspaceId: string
   roots: WorkspaceRootPolicyPort
 }): Promise<SourceRootRecord> {
   const { sql, mainId, workspaceId } = input
@@ -61,7 +61,7 @@ export async function readLocalMainRoot(input: {
 }
 
 export async function resolveWorkflowRootBinding(input: {
-  sql: GraphSqlClient
+  sql: SqlQuery
   principal: ManagementPrincipal
   workspaceId: string
   reference: SourceRootReference
@@ -79,7 +79,7 @@ export async function resolveWorkflowRootBinding(input: {
 }
 
 export async function readPlacementRootBinding(input: {
-  sql: GraphSqlClient; principal: ManagementPrincipal; workspaceId: string
+  sql: SqlQuery; principal: ManagementPrincipal; workspaceId: string
   placement: Pick<SavedNodePlacement, 'hostRef' | 'rootPolicyId'>; sources: SourceAdmissionPort
 }): Promise<SourceRootRecord> {
   const { sql, principal, workspaceId, placement } = input
@@ -95,7 +95,7 @@ export async function readPlacementRootBinding(input: {
 }
 
 export async function resolvePlacementRootPolicy(input: {
-  sql: GraphSqlClient; principal: ManagementPrincipal; workspaceId: string
+  sql: SqlQuery; principal: ManagementPrincipal; workspaceId: string
   selection: SourceRootRecord['selection']; roots: WorkspaceRootPolicyPort
 }): Promise<WorkspaceRootPolicy> {
   const { sql, principal, workspaceId, selection } = input
@@ -108,7 +108,7 @@ export async function resolvePlacementRootPolicy(input: {
 }
 
 export async function resolveBoundRootPlacement(input: {
-  sql: GraphSqlClient
+  sql: SqlQuery
   principal: ManagementPrincipal
   mainId: string
   workspaceId: string

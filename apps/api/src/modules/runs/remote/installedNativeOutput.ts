@@ -6,7 +6,7 @@ import type { TemporaryFileScope } from '@foreman-code/contracts/files'
 import { TemporaryFileScopeSchema } from '@foreman-code/contracts/files'
 import type { WorkerNativeOutputCommand } from '@foreman-code/contracts/worker-native-output'
 import type { ByteTransferPort } from '@foreman-code/contracts/byte-transfer'
-import type { TransferSenderConnection } from '../../byte-transfer/sender.js'
+import type { TransferSenderConnection } from '../../byte-transfer/index.js'
 import { WorkerNativeOutputRegistry } from './workerNativeOutputRegistry.js'
 import { WorkerNativeArtifactSender, type WorkerNativeArtifactBinding,
   type WorkerNativeArtifactApplication } from './workerNativeArtifactSender.js'

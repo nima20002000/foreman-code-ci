@@ -4,7 +4,7 @@ import { boundedConversationMessages } from './snapshotMessages.js'
 import type { TextTruncation } from '@foreman-code/contracts/activity-text'
 import { withTransaction, type TransactionSql } from '../../infrastructure/transaction.js'
 import type { AcceptedChatInput } from './nativeChatInput.js'
-import type { StoredDelivery } from '../workflow-chat/model.js'
+import type { StoredDelivery } from '../workflow-chat/index.js'
 import type { ChatDeliveryReceipt } from '@foreman-code/contracts'
 import { admitSessionMessage } from './sessionControls/messageAdmission.js'
 import { SessionControlStore } from './sessionControls/store.js'
@@ -40,19 +40,19 @@ import type { ActivityMutationFence } from './operatorActivityRepository.js'
 import { OperatorChatCommands } from './operatorChatCommands.js'
 import { readOperatorActivitySnapshot } from './operatorActivitySnapshot.js'
 import { PostgresOperatorActivityRepository } from './operatorActivityRepository.js'
-import { PostgresFoundationSettingsRepository } from '../settings/foundation.js'
+import { PostgresFoundationSettingsRepository } from '../settings/index.js'
 import { DomainError } from '../errors.js'
 import { harnessSessionChanged, type ProviderAccountConfigurationService } from '../harnesses/providerAccountConfiguration.js'
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
-import { PostgresCommandCoordinator } from '../commands/postgres.js'
+import { PostgresCommandCoordinator } from '../commands/index.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { requireAuthorization } from '../access/policy.js'
-import { authorizeOperatorConfigurationRead } from '../operators/configurationRead.js'
+import { authorizeOperatorConfigurationRead } from '../operators/index.js'
 import { acceptOperatorConfiguration } from './operatorAcceptedConfiguration.js'
 import { ConversationRepositoryCore } from './conversationRepositoryCore.js'
 import { OperatorConversationRecordSchema, publicOperatorConversation } from './operatorConversationRecord.js'
 import { legacyProviderAccountBinding, readProviderAccountBinding, saveProviderAccountBinding }
-  from '../provider-accounts/acceptedBindings.js'
+  from '../provider-accounts/index.js'
 import { sha256Hex } from '../../shared/hash.js'
 
 export type TurnPhase = 'accepted' | 'creating' | 'ready' | 'submitting' | 'submitted'
@@ -817,6 +817,27 @@ export class PostgresOperatorConversationRepository extends ConversationReposito
     await this.pool.query(`update operator_conversation_turns set delivery=$3,native_turn_id=coalesce(native_turn_id,$4),
       delivery_error=$5::jsonb,updated_at=now() where conversation_id=$1 and request_id=$2 and delivery in ('submitting','unknown')`,
     [id, requestId, delivery, nativeTurnId ?? null, error ? JSON.stringify(error) : null])
+  }
+
+  /** Operator conversations holding a steer whose delivery the provider has not confirmed. */
+  async conversationIdsWithUnconfirmedSteers(): Promise<string[]> {
+    return (await this.pool.query<{ conversation_id: string }>(`select distinct t.conversation_id
+      from operator_conversation_turns t join operator_conversations c on c.id=t.conversation_id
+      where c.kind='operator' and t.intent='steer' and t.delivery in ('submitting','unknown')`)).rows
+      .map(row => row.conversation_id)
+  }
+
+  /** Records provider evidence for an original steer: accepted binds its target turn; anything else stays unconfirmed.
+   * Returns whether the stored delivery changed. */
+  async settleUnconfirmedSteer(id: string, requestId: string, accepted: boolean): Promise<boolean> {
+    const changed = await this.pool.query(`update operator_conversation_turns set delivery=$3,
+            native_turn_id=case when $4 then target_native_turn_id else native_turn_id end,
+            delivery_error=case when $4 then null else '{"code":"CHAT_STEER_UNCONFIRMED","message":"The original steer is unconfirmed and will not be resent."}'::jsonb end,
+            updated_at=now() where conversation_id=$1 and request_id=$2 and delivery in ('submitting','unknown')
+              and (delivery is distinct from $3::text or ($4 and native_turn_id is distinct from target_native_turn_id)
+                or (not $4 and delivery_error->>'code' is distinct from 'CHAT_STEER_UNCONFIRMED'))`,
+    [id, requestId, accepted ? 'accepted' : 'unknown', accepted])
+    return Boolean(changed.rowCount)
   }
 
   async queuedConversationIds(): Promise<string[]> {

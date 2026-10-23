@@ -1,10 +1,10 @@
 import type pg from 'pg'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { componentLogger } from '../modules/diagnostics/logger.js'
+import { componentLogger } from './logger.js'
 import { ExclusiveGraphConnection, beforeGraphCommit } from '../modules/run-graph/connection.js'
 import { beginTransaction, commitTransaction, withTransaction } from './transaction.js'
 
-vi.mock('../modules/diagnostics/logger.js', () => {
+vi.mock('./logger.js', () => {
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
   return { componentLogger: () => log }
 })

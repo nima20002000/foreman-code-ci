@@ -10,7 +10,7 @@ import {
 import { HttpResponse, http } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { server } from '../../mocks/server'
-import { clearRevisionedFormPersistence } from '../settings/revisionedForm'
+import { clearRevisionedFormPersistence } from '../settings'
 import { ChatRetentionSettings } from './ChatRetentionSettings'
 import { retentionQueryKey } from './retentionQueries'
 import { clearRetentionCommandMemory, retentionCommandKey } from './retentionCommand'

@@ -1,8 +1,13 @@
 import type { HarnessExecution } from '@foreman-code/contracts'
-import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson } from '@foreman-code/contracts/current'
 import { DomainError } from '../errors.js'
-import { assertGraphTransaction, beforeGraphCommit, didGraphTransactionCommit, poisonGraphTransaction,
-  type GraphSqlClient, type GraphTransactionSql } from '../run-graph/connection.js'
+import {
+  assertGraphTransaction,
+  beforeGraphCommit,
+  didGraphTransactionCommit,
+  poisonGraphTransaction
+} from '../run-graph/connection.js'
+import type { SqlQuery, SqlTransaction } from '../../infrastructure/transaction.js'
 import { requireRepeatCanonicalReceiptBeforeCommit, assertRepeatCanonicalReceiptLocked, assertRepeatCanonicalReceipt,
   type RepeatCanonicalReceipt } from '../run-graph/repeatReceipts.js'
 import type { RunOwnership } from './ownership.js'
@@ -34,7 +39,7 @@ export interface WorkflowNativeEntryRecord {
 export interface WorkflowNativeEntryPermit { readonly executionId: string }
 type Owner = Pick<RunOwnership, 'runId' | 'assertOwned' | 'oneShotConnection' | 'readOneShotFence'>
 interface Issuance { owner: Owner; record: WorkflowNativeEntryRecord; receipt: RepeatCanonicalReceipt }
-const pending = new WeakMap<GraphTransactionSql, Map<string, Issuance>>()
+const pending = new WeakMap<SqlTransaction, Map<string, Issuance>>()
 const issued = new WeakMap<object, Issuance>()
 function conflict(): never {
   throw new DomainError('NATIVE_ENTRY_CONFLICT', 'The exact native entry reservation has no matching committed permission.', 409)
@@ -45,7 +50,7 @@ export function workflowNativeReservation(scope: RepeatScope, ref: RepeatNodeRef
     || !/^sha256:[0-9a-f]{64}$/.test(inputDigest)) return conflict()
   return structuredClone({ scope, ref, execution: repeatExecutionIdentity(execution), inputDigest, createdAt: execution.createdAt })
 }
-export async function reserveWorkflowNativeEntryLocked(sql: GraphTransactionSql, reservation: WorkflowNativeReservation): Promise<void> {
+export async function reserveWorkflowNativeEntryLocked(sql: SqlTransaction, reservation: WorkflowNativeReservation): Promise<void> {
   assertGraphTransaction(sql)
   const reservationJson = canonicalGraphJson(reservation)
   const result = await sql.query(`insert into workflow_native_entries
@@ -53,14 +58,14 @@ export async function reserveWorkflowNativeEntryLocked(sql: GraphTransactionSql,
   [reservation.execution.executionId, reservation.scope.runId, reservationJson, reservationJson, repeatDigest(reservation)])
   if (result.rowCount !== 1) return conflict()
 }
-export async function readWorkflowNativeEntryLocked(sql: GraphTransactionSql, reservation: WorkflowNativeReservation) {
+export async function readWorkflowNativeEntryLocked(sql: SqlTransaction, reservation: WorkflowNativeReservation) {
   assertGraphTransaction(sql)
   return readNativeEntry(sql, reservation, true)
 }
 
 /** Readback is not an entry permit. In particular reserved/prepared and a
  * missing row are NOT no-submission proof; only an exact canonical seal is. */
-export async function readWorkflowNativeEntry(sql: GraphSqlClient, reservation: WorkflowNativeReservation) {
+export async function readWorkflowNativeEntry(sql: SqlQuery, reservation: WorkflowNativeReservation) {
   return readNativeEntry(sql, reservation, false)
 }
 export interface NativeEntryRow {
@@ -71,7 +76,7 @@ export interface NativeEntryRow {
   source_id: string | null
   source_digest: string | null
 }
-async function readNativeEntry(sql: GraphSqlClient, reservation: WorkflowNativeReservation, locked: boolean) {
+async function readNativeEntry(sql: SqlQuery, reservation: WorkflowNativeReservation, locked: boolean) {
   const row = (await sql.query<NativeEntryRow>(
     `select phase,reservation,reservation_digest,transition,source_id,source_digest
      from workflow_native_entries where execution_id=$1 and run_id=$2${locked ? ' for update' : ''}`,
@@ -87,7 +92,7 @@ export function assertWorkflowNativeEntryRow(row: NativeEntryRow | null | undefi
 
 /** Called inside the canonical mutation callback. The private pending map is
  * intentionally not recoverable from a row, a command receipt or a JSON token. */
-export async function enterWorkflowNativeLocked(sql: GraphTransactionSql, owner: Owner,
+export async function enterWorkflowNativeLocked(sql: SqlTransaction, owner: Owner,
   record: WorkflowNativeEntryRecord, receipt: RepeatCanonicalReceipt, prepared?: WorkflowNativeEntryPermit): Promise<void> {
   assertGraphTransaction(sql); owner.assertOwned()
   if (!['prepared', 'entered'].includes(record.phase) || owner.runId !== record.reservation.scope.runId || !record.launchDigest) return conflict()
@@ -131,7 +136,7 @@ export async function enterWorkflowNativeLocked(sql: GraphTransactionSql, owner:
 
 /** Only the successful transaction acknowledgement can release this capability.
  * A failed/ambiguous COMMIT or cold receipt read cannot recreate it. */
-export function releaseWorkflowNativeEntryPermit(sql: GraphTransactionSql, owner: Owner,
+export function releaseWorkflowNativeEntryPermit(sql: SqlTransaction, owner: Owner,
   executionId: string): WorkflowNativeEntryPermit {
   owner.assertOwned()
   const item = pending.get(sql)?.get(executionId)
@@ -141,7 +146,7 @@ export function releaseWorkflowNativeEntryPermit(sql: GraphTransactionSql, owner
   issued.set(permit, item)
   return permit
 }
-export async function assertWorkflowNativeEntryPermitLocked(sql: GraphTransactionSql, owner: Owner,
+export async function assertWorkflowNativeEntryPermitLocked(sql: SqlTransaction, owner: Owner,
   permit: WorkflowNativeEntryPermit, reservation: WorkflowNativeReservation): Promise<void> {
   assertGraphTransaction(sql); owner.assertOwned()
   const item = issued.get(permit)
@@ -167,7 +172,7 @@ export function nativeEntrySourceId(record: WorkflowNativeEntryRecord): string {
 /** Seal an allocated reservation before the native submission boundary. The
  * Run lock and monotonic phase CAS arbitrate against the one-use entered grant.
  * There is deliberately no entered -> not_submitted transition. */
-export async function sealWorkflowNativeEntryLocked(sql: GraphTransactionSql, owner: Owner,
+export async function sealWorkflowNativeEntryLocked(sql: SqlTransaction, owner: Owner,
   record: WorkflowNativeEntryRecord, receipt: RepeatCanonicalReceipt): Promise<void> {
   assertGraphTransaction(sql); owner.assertOwned()
   if (record.phase !== 'not_submitted' || record.reservation.scope.runId !== owner.runId) return conflict()
@@ -182,7 +187,7 @@ export async function sealWorkflowNativeEntryLocked(sql: GraphTransactionSql, ow
 }
 
 /** A failed preparation can close only the still-reserved entry, before launch. */
-export async function sealWorkflowPreparationFailureLocked(sql: GraphTransactionSql, owner: Owner,
+export async function sealWorkflowPreparationFailureLocked(sql: SqlTransaction, owner: Owner,
   record: WorkflowNativeEntryRecord, receipt: RepeatCanonicalReceipt): Promise<void> {
   assertGraphTransaction(sql)
   owner.assertOwned()
@@ -191,7 +196,7 @@ export async function sealWorkflowPreparationFailureLocked(sql: GraphTransaction
   await sealNativeEntryLocked(sql, owner, record, receipt)
 }
 
-async function sealNativeEntryLocked(sql: GraphTransactionSql, owner: Owner,
+async function sealNativeEntryLocked(sql: SqlTransaction, owner: Owner,
   record: WorkflowNativeEntryRecord, receipt: RepeatCanonicalReceipt): Promise<void> {
   assertGraphTransaction(sql)
   owner.assertOwned()
@@ -227,7 +232,7 @@ async function sealNativeEntryLocked(sql: GraphTransactionSql, owner: Owner,
 /** Read a positive seal, not the absence of submission records. Its immutable
  * reservation includes occurrence, configuration and input identity; the
  * canonical receipt proves the negative transition committed with its effect. */
-export async function assertWorkflowNativeNotSubmittedLocked(sql: GraphTransactionSql,
+export async function assertWorkflowNativeNotSubmittedLocked(sql: SqlTransaction,
   reservation: WorkflowNativeReservation): Promise<WorkflowNativeEntryRecord> {
   const row = await readWorkflowNativeEntryLocked(sql, reservation)
   await assertRepeatCanonicalReceiptLocked(sql, notSubmittedReceipt(row, reservation))
@@ -236,7 +241,7 @@ export async function assertWorkflowNativeNotSubmittedLocked(sql: GraphTransacti
 
 /** Read-only counterpart for Save admission. It cannot seal an entry, finalize
  * a session, or reconstruct the one-use launch capability from persisted data. */
-export async function readWorkflowNativeNotSubmitted(sql: GraphSqlClient,
+export async function readWorkflowNativeNotSubmitted(sql: SqlQuery,
   reservation: WorkflowNativeReservation): Promise<WorkflowNativeEntryRecord> {
   const row = await readWorkflowNativeEntry(sql, reservation)
   await assertRepeatCanonicalReceipt(sql, notSubmittedReceipt(row, reservation))

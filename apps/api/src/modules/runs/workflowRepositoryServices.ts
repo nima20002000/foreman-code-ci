@@ -1,18 +1,19 @@
 import { assertOriginalWorkflowTerminal } from '../interactions/workflowTerminalSource.js'
-import { closeRunControlInputsLocked } from '../collaboration/workflowControlQueue.js'
+import { closeRunControlInputsLocked } from '../collaboration/index.js'
 import { assertRepeatCanonicalReceiptLocked, requireRepeatCanonicalReceiptBeforeCommit } from '../run-graph/repeatReceipts.js'
 import type { WorkflowNativeProofRecord } from './workflowNativeProof.js'
 import {
   ExecutionResultSchema, HarnessExecutionSchema, type DurableInteraction, type ExecutionResult, type HarnessExecution,
 } from '@foreman-code/contracts'
 import {
-  AcceptedWorkflowRunV3Schema, AcceptedCurrentNodeResultSchema, canonicalGraphJson, RUN_GRAPH_LIMITS,
-  type AcceptedWorkflowRunV3, type WorkflowVersionV3,
-} from '@foreman-code/contracts/wave25'
+  AcceptedWorkflowRunCurrentSchema, AcceptedCurrentNodeResultSchema, canonicalGraphJson, RUN_GRAPH_LIMITS,
+  type AcceptedWorkflowRunCurrent, type WorkflowVersionCurrent,
+} from '@foreman-code/contracts/current'
 import { DomainError } from '../errors.js'
-import { assertGraphTransaction, beforeGraphCommit, poisonGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
+import { assertGraphTransaction, beforeGraphCommit, poisonGraphTransaction } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { openRepeatCanonicalPublicationLocked } from '../run-graph/repeatPublication.js'
-import { assertApprovalTerminalSettlement } from '../interactions/wave25/resume.js'
+import { assertApprovalTerminalSettlement } from '../interactions/current/resume.js'
 import type { WorkflowNativeVerificationPort } from '../interactions/workflowNativeCapture.js'
 import { WorkflowNativeProofServices } from './workflowNativeProof.js'
 import { assertSettlementLocked } from './repeatSettlementServices.js'
@@ -27,7 +28,7 @@ import { hasWorkflowExecutionCapacityLocked } from './workflowExecutionBudget.js
 import { assertRestartAttemptsLocked } from './workflowRestartSettlement.js'
 import { hasExecutionRetryBudget, isTransientExecutionResult } from './executionRetryPolicy.js'
 import type { ApprovalPostgresSaver } from '../../infrastructure/approvalCheckpointSaver.js'
-import { lockInteraction } from '../interactions/wave25/context.js'
+import { lockInteraction } from '../interactions/current/context.js'
 import { assertSavedPendingApprovalOriginalLocked } from '../interactions/nativeApprovalProof.js'
 import { readRetainedRemoteReviewers } from '../interactions/retainedRemoteReviewer.js'
 import { isRunInProgress, writeRunStateLocked } from './runState.js'
@@ -37,7 +38,7 @@ export interface WorkflowRestartApprovals {
   interactions: readonly DurableInteraction[]
 }
 
-async function assertRestartApprovalsLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
+async function assertRestartApprovalsLocked(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent,
   approval: WorkflowRestartApprovals): Promise<string[]> {
   const expected = structuredClone(approval.interactions)
   if (!expected.length || expected.length > 1000 || new Set(expected.map(item => item.id)).size !== expected.length) {
@@ -91,8 +92,8 @@ export function createWorkflowRepositoryServices(captures: WorkflowNativeVerific
  * the shared policy classifies its cause as infrastructure. The repository has
  * already settled the attempt. A canceled/invalid result is not retryable.
  * A retry keeps the same slot, business occurrence and byte-identical input. */
-export async function allowTechnicalRetryLocked(sql: GraphTransactionSql, run: AcceptedWorkflowRunV3,
-  version: WorkflowVersionV3, supplied: HarnessExecution): Promise<boolean> {
+export async function allowTechnicalRetryLocked(sql: SqlTransaction, run: AcceptedWorkflowRunCurrent,
+  version: WorkflowVersionCurrent, supplied: HarnessExecution): Promise<boolean> {
   assertGraphTransaction(sql)
   try {
     const execution = HarnessExecutionSchema.parse(structuredClone(supplied))
@@ -147,8 +148,8 @@ export async function allowTechnicalRetryLocked(sql: GraphTransactionSql, run: A
 
 /** Cleanup requires native closure for every attempt. Restart can also retain
  * waiting executions verified against their original approval checkpoint. */
-export async function assertWorkflowRunSettlementLocked(sql: GraphTransactionSql,
-  run: AcceptedWorkflowRunV3, owner: RunOwnership, intent: 'success' | 'cleanup' | 'restart' = 'success',
+export async function assertWorkflowRunSettlementLocked(sql: SqlTransaction,
+  run: AcceptedWorkflowRunCurrent, owner: RunOwnership, intent: 'success' | 'cleanup' | 'restart' = 'success',
   approvals?: WorkflowRestartApprovals): Promise<void> {
   assertGraphTransaction(sql); owner.assertOwned()
   if (owner.runId !== run.id) return conflict('RUN_OWNERSHIP_LOST')
@@ -199,8 +200,8 @@ export async function assertWorkflowRunSettlementLocked(sql: GraphTransactionSql
  * is an output view only: exact source identities and full accepted envelopes
  * remain immutable in run_repeat_results and canonical acceptance receipts.
  * Every terminal handoff activation is retained, including earlier revisions. */
-export async function completeRunLocked(sql: GraphTransactionSql, suppliedRun: AcceptedWorkflowRunV3,
-  suppliedVersion: WorkflowVersionV3, suppliedTerminals: readonly RepeatSource[], owner: RunOwnership): Promise<void> {
+export async function completeRunLocked(sql: SqlTransaction, suppliedRun: AcceptedWorkflowRunCurrent,
+  suppliedVersion: WorkflowVersionCurrent, suppliedTerminals: readonly RepeatSource[], owner: RunOwnership): Promise<void> {
   assertGraphTransaction(sql)
   try {
     owner.assertOwned()
@@ -249,7 +250,7 @@ export async function completeRunLocked(sql: GraphTransactionSql, suppliedRun: A
     }
     await assertWorkflowRunSettlementLocked(sql, run, owner)
     const result: ExecutionResult = { outcome: 'succeeded', output: outputs.length === 1 ? outputs[0]!.result : { outputs } }
-    const next = AcceptedWorkflowRunV3Schema.parse({ ...run, executionState: 'completed', outcome: 'succeeded',
+    const next = AcceptedWorkflowRunCurrentSchema.parse({ ...run, executionState: 'completed', outcome: 'succeeded',
       result, finishedAt: new Date().toISOString() })
     try { canonicalGraphJson(next, RUN_GRAPH_LIMITS.transactionBytes) } catch { return conflict('WORKFLOW_RESULT_TOO_LARGE') }
     const fence = await owner.readOneShotFence(sql)

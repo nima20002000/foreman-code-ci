@@ -1,7 +1,7 @@
 import { lstat, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ApprovedRootAllowlistSchema } from '../../../packages/contracts/src/workspaceRootPolicies.ts';
-import { verifyApprovedRootAllowlist } from '../../../apps/api/src/modules/sources/rootAttestation.ts';
+import { verifyApprovedRootAllowlist } from '@foreman-code/api/worker/sources';
 import { hostFacts, requirePrivateDirectory, WorkerError } from './diagnostics.mjs';
 
 // Pairing installs managed roots. Arbitrary bases still require local human approval.

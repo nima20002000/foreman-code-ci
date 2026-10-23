@@ -1,11 +1,12 @@
 import { pathExists } from './pathExists.js'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { PreparedCiRuntimeSchema, type PreparedCiRuntime } from '@foreman-code/contracts'
 import { anchored, type CiContext } from './environment.js'
 import { readProtectedRuntimeFile } from '@foreman-code/contracts/installed-runtime-node'
+import { sha256Hex } from '@foreman-code/contracts/server-kit'
 
 const DigestSchema = z.string().regex(/^[a-f0-9]{64}$/u)
 const ImageSchema = PreparedCiRuntimeSchema.omit({ commit: true, qualificationSource: true, reusedImage: true, cache: true })
@@ -32,7 +33,7 @@ function ownsArtifacts(installer: string, prepared: CachedCiRuntimeImage): boole
 
 async function receiptDigest(path: string): Promise<string> {
   const bytes = await readProtectedRuntimeFile({ path, ownerUid: process.getuid!() }, 16 * 1024 * 1024)
-  return createHash('sha256').update(bytes).digest('hex')
+  return sha256Hex(bytes)
 }
 
 export async function readCiRuntimeCache(context: CiContext, input: {

@@ -7,7 +7,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { ManagementActionSchema, ManagedWorkspaceCommandResultSchema, WorkspaceStorageFoldersPageSchema }
   from '@foreman-code/contracts/management'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
@@ -20,7 +20,8 @@ import { WorkspaceManagementService } from '../src/modules/workspaces/management
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { currentDatabase } from './helpers/database.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
-import { seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { workspaceStorageFoldersHttp } from './support/workspaceStorageFoldersHttp.js'
 
 const execute = promisify(execFile)
 async function git(path: string, ...args: string[]) {
@@ -76,7 +77,9 @@ async function fixture(options: { repository?: 'unregistered' } = {}) {
     'commit', '-m', 'Initial content')
   const linked = join(db.directory, 'linked')
   await git(repository, 'worktree', 'add', '--detach', linked, 'HEAD')
-  return { db, client, denied, create, parent, repository, workspace, linked, async close() {
+  const folders = workspaceStorageFoldersHttp(app, owner.token)
+  const deniedFolders = workspaceStorageFoldersHttp(app, reader.token)
+  return { db, client, denied, folders, deniedFolders, create, parent, repository, workspace, linked, async close() {
     await Promise.allSettled(clients.map(client => client.close()))
     await app.close()
     await db.close()
@@ -91,7 +94,7 @@ it.each([
   try {
     const registered = join(f.db.directory, 'registered')
     await mkdir(registered)
-    const seed = await seedAgent3(f.db.pool, registered, makeCurrentWorkflowFixture(randomUUID(), 'single'), { run: false })
+    const seed = await seedWorkflowFixture(f.db.pool, registered, makeCurrentWorkflowFixture(randomUUID(), 'single'), { run: false })
     const node = agentWorkflowNode(seed.version.definition.nodes[0])
     const context = { workspaceId: seed.run.workspaceId, workflowId: seed.run.workflowId,
       workflowNodeId: node.id, agentId: node.agentId }
@@ -114,12 +117,12 @@ it.each([
     expect(await git(f.linked, 'show', 'HEAD:retained.txt')).toBe('Retained Git objects')
     const readback = await f.client.callTool({ name: 'workspace_get', arguments: { workspaceId: workspace.id } })
     expect(decodeMcpToolResult(readback)).toMatchObject({ archivedAt: expect.any(String) })
-    const listing = await f.client.callTool({ name: 'workspace_storage_folders_list', arguments: {} })
-    expect(listing.isError).not.toBe(true)
-    const folder = WorkspaceStorageFoldersPageSchema.parse(decodeMcpToolResult(listing)).items
+    const listing = await f.folders.list()
+    expect(listing.ok).toBe(true)
+    const folder = WorkspaceStorageFoldersPageSchema.parse(listing.body).items
       .find(item => item.path === f.repository)!
     const deletion = { path: folder.path, expectedIdentity: folder.identity }
-    expect((await f.client.callTool({ name: 'workspace_storage_folder_delete', arguments: deletion })).isError).toBe(true)
+    expect((await f.folders.remove(deletion)).ok).toBe(false)
     if (state === 'active') {
       expect(await chats.finish(admitted.conversationId, requestId, { outcome: 'canceled' })).toBe(true)
     } else {
@@ -134,7 +137,7 @@ it.each(['missing worktree metadata', 'missing object store'])(
   'keeps unrelated archive and storage operations available with %s', async damage => {
     const f = await fixture()
     try {
-      await seedAgent3(f.db.pool, f.linked, makeCurrentWorkflowFixture(randomUUID(), 'single'))
+      await seedWorkflowFixture(f.db.pool, f.linked, makeCurrentWorkflowFixture(randomUUID(), 'single'))
       if (damage === 'missing worktree metadata') {
         await rm(join(f.repository, '.git', 'worktrees', 'linked'), { recursive: true })
         await writeFile(join(f.linked, '.git'),
@@ -153,14 +156,14 @@ it.each(['missing worktree metadata', 'missing object store'])(
       expect(decodeMcpToolResult(readback)).toMatchObject({ archivedAt: expect.any(String) })
       const unused = join(f.parent, 'Unused')
       await mkdir(unused)
-      const listed = await f.client.callTool({ name: 'workspace_storage_folders_list', arguments: {} })
-      expect(listed.isError, JSON.stringify(listed)).not.toBe(true)
-      const page = WorkspaceStorageFoldersPageSchema.parse(decodeMcpToolResult(listed))
+      const listed = await f.folders.list()
+      expect(listed.ok, JSON.stringify(listed.body)).toBe(true)
+      const page = WorkspaceStorageFoldersPageSchema.parse(listed.body)
       const folder = page.items.find(item => item.path === unused)!
       expect(folder.deletion).toEqual({ status: 'available' })
       const deletion = { path: unused, expectedIdentity: folder.identity }
-      await expectMcpAccessDenied(f.denied.callTool({ name: 'workspace_storage_folder_delete', arguments: deletion }))
-      expect((await f.client.callTool({ name: 'workspace_storage_folder_delete', arguments: deletion })).isError).not.toBe(true)
+      expect((await f.deniedFolders.remove(deletion)).statusCode).toBe(403)
+      expect((await f.folders.remove(deletion)).ok).toBe(true)
       await expect(lstat(unused)).rejects.toMatchObject({ code: 'ENOENT' })
       const retained = await f.client.callTool({ name: 'workspace_archive', arguments: {
         workspaceId: f.workspace!.workspace.id, expectedRevision: f.workspace!.revision,
@@ -174,17 +177,17 @@ it.each(['missing worktree metadata', 'missing object store'])(
 it('protects unregistered Git storage required by an idle workspace', async () => {
   const f = await fixture({ repository: 'unregistered' })
   try {
-    await seedAgent3(f.db.pool, f.linked, makeCurrentWorkflowFixture(randomUUID(), 'single'), { run: false })
-    const listed = await f.client.callTool({ name: 'workspace_storage_folders_list', arguments: {} })
-    expect(listed.isError).not.toBe(true)
-    const folder = WorkspaceStorageFoldersPageSchema.parse(decodeMcpToolResult(listed)).items
+    await seedWorkflowFixture(f.db.pool, f.linked, makeCurrentWorkflowFixture(randomUUID(), 'single'), { run: false })
+    const listed = await f.folders.list()
+    expect(listed.ok).toBe(true)
+    const folder = WorkspaceStorageFoldersPageSchema.parse(listed.body).items
       .find(item => item.path === f.repository)!
     expect(folder.deletion).toMatchObject({ status: 'protected', reason: 'workspace' })
     const input = { path: folder.path, expectedIdentity: folder.identity }
-    await expectMcpAccessDenied(f.denied.callTool({ name: 'workspace_storage_folder_delete', arguments: input }))
-    const deleted = await f.client.callTool({ name: 'workspace_storage_folder_delete', arguments: input })
-    expect(deleted.isError).toBe(true)
-    expect(deleted.content).toEqual([{ type: 'text', text: expect.stringContaining('DIRECTORY_IN_USE') }])
+    expect((await f.deniedFolders.remove(input)).statusCode).toBe(403)
+    const deleted = await f.folders.remove(input)
+    expect(deleted.ok).toBe(false)
+    expect(JSON.stringify(deleted.body)).toContain('DIRECTORY_IN_USE')
     expect(await git(f.linked, 'show', 'HEAD:retained.txt')).toBe('Retained Git objects')
   } finally { await f.close() }
 }, 120_000)
@@ -193,12 +196,12 @@ it.each(['malformed gitdir', 'empty commondir', 'unreadable commondir'])(
   'isolates an idle workspace with %s while retaining known Git dependencies', async damage => {
     const f = await fixture({ repository: 'unregistered' })
     try {
-      await seedAgent3(f.db.pool, f.linked, makeCurrentWorkflowFixture(randomUUID(), 'single'), { run: false })
+      await seedWorkflowFixture(f.db.pool, f.linked, makeCurrentWorkflowFixture(randomUUID(), 'single'), { run: false })
       const commonFile = join(f.repository, '.git', 'worktrees', 'linked', 'commondir')
       if (damage === 'malformed gitdir') {
         const healthy = join(f.db.directory, 'healthy-linked')
         await git(f.repository, 'worktree', 'add', '--detach', healthy, 'HEAD')
-        await seedAgent3(f.db.pool, healthy, makeCurrentWorkflowFixture(randomUUID(), 'single'), { run: false })
+        await seedWorkflowFixture(f.db.pool, healthy, makeCurrentWorkflowFixture(randomUUID(), 'single'), { run: false })
         await writeFile(join(f.linked, '.git'), 'gitdir:')
       } else if (damage === 'empty commondir') {
         await writeFile(commonFile, '\n')
@@ -206,16 +209,16 @@ it.each(['malformed gitdir', 'empty commondir', 'unreadable commondir'])(
         await rm(commonFile)
         await mkdir(commonFile)
       }
-      const listed = await f.client.callTool({ name: 'workspace_storage_folders_list', arguments: {} })
-      expect(listed.isError, JSON.stringify(listed)).not.toBe(true)
-      const page = WorkspaceStorageFoldersPageSchema.parse(decodeMcpToolResult(listed))
+      const listed = await f.folders.list()
+      expect(listed.ok, JSON.stringify(listed.body)).toBe(true)
+      const page = WorkspaceStorageFoldersPageSchema.parse(listed.body)
       const repository = page.items.find(item => item.path === f.repository)!
       expect(repository.deletion).toMatchObject({ status: 'protected', reason: 'workspace' })
       const deletion = { path: repository.path, expectedIdentity: repository.identity }
-      await expectMcpAccessDenied(f.denied.callTool({ name: 'workspace_storage_folder_delete', arguments: deletion }))
-      const removed = await f.client.callTool({ name: 'workspace_storage_folder_delete', arguments: deletion })
-      expect(removed.isError).toBe(true)
-      expect(removed.content).toEqual([{ type: 'text', text: expect.stringContaining('DIRECTORY_IN_USE') }])
+      expect((await f.deniedFolders.remove(deletion)).statusCode).toBe(403)
+      const removed = await f.folders.remove(deletion)
+      expect(removed.ok).toBe(false)
+      expect(JSON.stringify(removed.body)).toContain('DIRECTORY_IN_USE')
       const unrelated = await f.create('Unrelated')
       const input = { workspaceId: unrelated.workspace.id, expectedRevision: unrelated.revision, commandId: randomUUID() }
       await expectMcpAccessDenied(f.denied.callTool({ name: 'workspace_archive', arguments: input }))

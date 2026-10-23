@@ -3,7 +3,7 @@ import { access, lstat, open, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import { spawnProcess } from '../../shared/process.js'
 import { inventoryPayloadFingerprints, type PayloadFingerprintCache } from './payloadFingerprintCache.js'
-import { logIgnoredError } from '../diagnostics/ignoredError.js'
+import { logIgnoredError } from '../diagnostics/index.js'
 import { sha256Hex } from '../../shared/hash.js'
 
 export interface TargetEnvironment {

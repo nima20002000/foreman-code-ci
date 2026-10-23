@@ -45,6 +45,13 @@
   --on-harness: #0b1020;
   --signal-task: #3ee6bd;
   --signal-return: #ffb55c;
+  /* Kanban column colours, one per card status. */
+  --kanban-todo: #6b8afd;
+  --kanban-doing: #f0a640;
+  --kanban-waiting: #b57cf2;
+  --kanban-blocked: #e5596b;
+  --kanban-done: #3fbf7f;
+  --kanban-shadow: 0 8px 24px #0000002e;
   --shadow-popover: 0 8px 24px #00000066;
   --shadow-dialog: 0 20px 60px #00000080, 0 0 0 1px #0000004d;
   --space-0-5: 2px;
@@ -116,6 +123,12 @@
   --on-harness: #ffffff;
   --signal-task: #0b8f74;
   --signal-return: #8a5a14;
+  --kanban-todo: #3b5bdb;
+  --kanban-doing: #a35f00;
+  --kanban-waiting: #7a3fc4;
+  --kanban-blocked: #c4283f;
+  --kanban-done: #1b8a58;
+  --kanban-shadow: 0 8px 24px #0000001f;
   --shadow-popover: 0 8px 24px #0000001f;
   --shadow-dialog: 0 20px 60px #00000029, 0 0 0 1px #0000000f;
 }

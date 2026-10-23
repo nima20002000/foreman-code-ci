@@ -1,7 +1,7 @@
 import { requireHarnessOptionsAccountAccess } from '../../../modules/harnesses/harnessOptionsAccess.js'
 import { requireAuthorization } from '../../../modules/access/policy.js'
 import * as contracts from '@foreman-code/contracts/management'
-import { SavedWorkflowVersionPageSchema, SavedWorkflowVersionDetailSchema } from '@foreman-code/contracts/wave25'
+import { SavedWorkflowVersionPageSchema, SavedWorkflowVersionDetailSchema } from '@foreman-code/contracts/current'
 import { defineOperatorTool } from '../definition.js'
 
 // Skill tools stay listed for every Operator credential: the service checks grants and

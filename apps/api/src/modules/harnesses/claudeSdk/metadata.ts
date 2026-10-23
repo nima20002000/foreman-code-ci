@@ -8,6 +8,7 @@ import { loadOfficialClaudeSdk } from './official.js'
 import { runCommand } from '../process.js'
 import { HarnessExecutionError } from '../errors.js'
 import { createClaudeSdkRunner } from './runner.js'
+import { hostEnvironment } from '../../../shared/process.js'
 
 
 /** Owns a zero-input SDK control query. No prompt, native model request or
@@ -23,14 +24,14 @@ export async function discoverClaudeMetadata(input: {
   const runner = createClaudeSdkRunner({ loadClient: () => loadOfficialClaudeSdk(input.profilePath, input.recovery, input.binary, input.sdkEntrypoint) })
   try {
     const version = await runCommand(input.binary, ['--version'], input.workingDirectory, input.signal,
-      claudeEnvironment(configuration, process.env, input.apiKey), { recovery: input.recovery })
+      claudeEnvironment(configuration, hostEnvironment(), input.apiKey), { recovery: input.recovery })
     const providerVersion = /^(\d+\.\d+\.\d+)(?:\s+\(Claude Code\))?$/.exec((version.stdout || version.stderr).trim())?.[1]
     if (version.exitCode !== 0 || !providerVersion) throw new HarnessExecutionError('CLAUDE_CONTRACT_UNSUPPORTED',
       'Claude Code unknown version does not satisfy the --version response contract.')
     const session = await runner.open({ scope: { deviceId: 'owned-discovery', profilePath: input.profilePath,
       configRevision: 'metadata-only', cwd: input.workingDirectory }, signal: input.signal,
       options: { model: input.model, tools: [], settingSources: [], strictMcpConfig: true, mcpServers: {}, systemPrompt: '',
-        permissionMode: 'default', env: claudeEnvironment(configuration, process.env, input.apiKey) } })
+        permissionMode: 'default', env: claudeEnvironment(configuration, hostEnvironment(), input.apiKey) } })
     const initialized = asRecord(await session.initializationResult?.())
     const nativeModels = initialized.models
     if (!Array.isArray(nativeModels) || nativeModels.length > 100) throw new DomainError('CLAUDE_CONTRACT_UNSUPPORTED',

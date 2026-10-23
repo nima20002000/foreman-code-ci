@@ -3,8 +3,8 @@ import {
   type NativeGraphProjectionKey, type NativeGraphActivityRecord,
   type NativeGraphCorrelationRecord, type RunGraphScope, type NativeGraphProjectionFence,
   type NativeGraphProjectionAccessState,
-} from '@foreman-code/contracts/wave25'
-import type { GraphTransactionSql } from './connection.js'
+} from '@foreman-code/contracts/current'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { assertGraphTransaction } from './connection.js'
 import { RunGraphError } from './errors.js'
 import { activeNativeBatch, memoizeNativeRead } from './nativeBatch.js'
@@ -16,7 +16,7 @@ export function stagedNativeRecordId(kind: 'activity' | 'correlation' | 'checkpo
 
 export interface NativeCheckpointRow { key: NativeGraphProjectionKey; revision: string; checkpoint: unknown }
 /** Latest checkpoint of one work item: staged batch state first, then one memoized database read. */
-export async function readNativeCheckpoint(sql: GraphTransactionSql, scope: RunGraphScope,
+export async function readNativeCheckpoint(sql: SqlTransaction, scope: RunGraphScope,
   input: NativeGraphProjectionKey): Promise<NativeCheckpointRow | undefined> {
   assertGraphTransaction(sql)
   const key = NativeGraphProjectionKeySchema.parse(input)
@@ -34,7 +34,7 @@ export async function readNativeCheckpoint(sql: GraphTransactionSql, scope: RunG
 }
 
 export async function readNativeGraphActivity(
-  sql: GraphTransactionSql, scope: RunGraphScope, input: NativeGraphProjectionKey,
+  sql: SqlTransaction, scope: RunGraphScope, input: NativeGraphProjectionKey,
 ): Promise<NativeGraphActivityRecord | undefined> {
   assertGraphTransaction(sql)
   const key = NativeGraphProjectionKeySchema.parse(input)
@@ -59,7 +59,7 @@ export async function readNativeGraphActivity(
   })
 }
 export async function readNativeGraphCorrelation(
-  sql: GraphTransactionSql, scope: RunGraphScope, input: NativeGraphProjectionKey, correlationKey: string,
+  sql: SqlTransaction, scope: RunGraphScope, input: NativeGraphProjectionKey, correlationKey: string,
 ): Promise<NativeGraphCorrelationRecord | undefined> {
   assertGraphTransaction(sql)
   const key = NativeGraphProjectionKeySchema.parse(input)
@@ -94,14 +94,14 @@ export async function readNativeGraphCorrelation(
 /** Read actual locked authority in the publication transaction; never return an echo of expected. */
 export interface NativeGraphProjectionGuard {
   expected: NativeGraphProjectionFence
-  readCurrentLocked(sql: GraphTransactionSql, scope: RunGraphScope, key: NativeGraphProjectionKey): Promise<NativeGraphProjectionAccessState>
+  readCurrentLocked(sql: SqlTransaction, scope: RunGraphScope, key: NativeGraphProjectionKey): Promise<NativeGraphProjectionAccessState>
 }
 
-async function assertNativeProjectionHost(sql: GraphTransactionSql, scope: RunGraphScope, key: NativeGraphProjectionKey): Promise<void> {
+async function assertNativeProjectionHost(sql: SqlTransaction, scope: RunGraphScope, key: NativeGraphProjectionKey): Promise<void> {
   await memoizeNativeRead(sql, `host:${canonicalGraphJson(scope)}:${canonicalGraphJson(key)}`, () => assertHostRow(sql, scope, key))
 }
 
-async function assertHostRow(sql: GraphTransactionSql, scope: RunGraphScope, key: NativeGraphProjectionKey): Promise<void> {
+async function assertHostRow(sql: SqlTransaction, scope: RunGraphScope, key: NativeGraphProjectionKey): Promise<void> {
   const found = await sql.query(
     `select 1 from harness_executions e join runs r on r.id=e.run_id
      join workflow_versions v on v.id=r.workflow_version_id

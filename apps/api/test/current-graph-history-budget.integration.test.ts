@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
-import { RepeatGraphCurrentV3Schema } from '@foreman-code/contracts/wave25'
+import { RepeatGraphCurrentStateSchema } from '@foreman-code/contracts/current'
 import { withExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 import { repeatStartPublication } from '../src/modules/run-graph/repeatStartPublication.js'
 import { insertRepeatRun } from '../src/modules/runs/repeatStartAdmission.js'
@@ -15,7 +15,7 @@ it.skipIf(!postgresEnabled)('keeps the real current HTTP response bounded as per
       headers: graphHeaders(t.writer.token) })
     const before = await read()
     expect(before.statusCode, before.body).toBe(200)
-    const initial = RepeatGraphCurrentV3Schema.parse(before.json())
+    const initial = RepeatGraphCurrentStateSchema.parse(before.json())
     expect(Buffer.byteLength(before.body)).toBeLessThan(16 * 1024)
     const initialActivityCount = (await db.pool.query(
       'select count(*)::integer as count from run_activity where run_id=$1', [t.run.id])).rows[0].count
@@ -36,7 +36,7 @@ it.skipIf(!postgresEnabled)('keeps the real current HTTP response bounded as per
       [t.scope.workflowId])).rows[0].count).toBe(62)
     const after = await read()
     expect(after.statusCode, after.body).toBe(200)
-    expect(RepeatGraphCurrentV3Schema.parse(after.json())).toEqual(initial)
+    expect(RepeatGraphCurrentStateSchema.parse(after.json())).toEqual(initial)
     expect(Buffer.byteLength(after.body)).toBe(Buffer.byteLength(before.body))
     const remote = await graphRpc(t.app, t.writer.token, 'tools/call', {
       name: 'run_graph_current_v1', arguments: t.readRequest,

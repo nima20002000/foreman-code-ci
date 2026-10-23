@@ -3,14 +3,14 @@ import { JOB_RUNTIME_QUALIFICATION_EXTENSION } from '@foreman-code/contracts/job
 import { JobRuntimeQualificationRpcRequestRecordSchema, JobRuntimeQualificationRpcResponseRecordSchema, JobVerificationQualificationCandidateSchema,
   type JobRuntimeNativeAdmissionRecord, type JobQualificationCandidateRecord }
   from '@foreman-code/contracts/job-verification-runtime'
-import type { DeviceExtensionRegistration } from '../devices/deviceApplicationChannel.js'
+import type { DeviceExtensionRegistration } from '../devices/index.js'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
 import type { WorkerPairingConfiguration } from '@foreman-code/contracts/device-identity'
 import { inspectInstalledJobRuntime, type InstalledRuntimeConfigurationLocation } from './installedRuntimeHost.js'
 import { runInstalledJobRuntimeQualification, reconcileInstalledJobRuntimeQualification } from './installedRuntimeQualification.js'
 import type { NativeProcessRegistry } from '../harnesses/recovery/processRegistry.js'
 import type { RemoteOperationJournal } from '../runs/remote/operationJournal.js'
-import { componentLogger } from '../diagnostics/logger.js'
+import { componentLogger } from '../diagnostics/index.js'
 import { DomainError } from '../errors.js'
 
 /** All diagnostic processes and OCI objects stay on this original installed

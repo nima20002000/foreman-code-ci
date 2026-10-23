@@ -1,11 +1,11 @@
 import { vi } from 'vitest'
-import type { Br1002Runtime } from './continuationCuts.js'
+import type { ContinuationRuntime } from './continuationCuts.js'
 import { rejectableDeferred } from './deferred.js'
 
-type ReviewNativeArgs = Parameters<Br1002Runtime['repository']['coordination']['appendReviewNativeEvent']>
+type ReviewNativeArgs = Parameters<ContinuationRuntime['repository']['coordination']['appendReviewNativeEvent']>
 
 /** Pause live source publication and leave terminal settlement to the original native history read. */
-export function approvalReviewCuts(f: Br1002Runtime) {
+export function approvalReviewCuts(f: ContinuationRuntime) {
   const started = rejectableDeferred<ReviewNativeArgs>()
   const assistant = rejectableDeferred<ReviewNativeArgs>()
   const continueStart = rejectableDeferred()

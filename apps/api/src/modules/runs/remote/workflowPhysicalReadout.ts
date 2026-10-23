@@ -1,9 +1,9 @@
-import { sourceWorkingTreeComponents, sourceWorkingTreePath } from '../../sources/sourceTreePaths.js'
+import { sourceWorkingTreeComponents, sourceWorkingTreePath } from '../../sources/index.js'
 import { isDeepStrictEqual } from 'node:util'
 import { constants } from 'node:fs'
 import { open,realpath } from 'node:fs/promises'
 import { join } from 'node:path'
-import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson } from '@foreman-code/contracts/current'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import type { DispatchIntent, AcceptedNodePlacement } from '@foreman-code/contracts/node-placement'
 import type { RemoteOperationReceipt } from '@foreman-code/contracts/remote-execution'
@@ -19,14 +19,15 @@ import { DomainError } from '../../errors.js'
 import { DeviceApplicationError, deviceApplicationFailure } from '../../devices/deviceApplicationError.js'
 import { DeviceConnectionError } from '../../devices/deviceWire.js'
 import type { ApprovedRootAllowlist } from '@foreman-code/contracts/workspace-root-policies'
-import { anchored,identity,openChildDirectory,openPrivateRoot } from '../../sources/privateFilesystem.js'
-import { sourcePath } from '../../sources/manifest.js'
-import { sourceCwdAttestationDigest } from '../../sources/workingDirectory.js'
+import { anchored,identity,openChildDirectory,openPrivateRoot } from '../../sources/index.js'
+import { sourcePath } from '../../sources/index.js'
+import { sourceCwdAttestationDigest } from '../../sources/index.js'
 import { RuntimeLeafAttestationSchema,assertRuntimeLeafPath } from './runtimeLeaf.js'
 import type { NativeHistory } from '../../harnesses/port.js'
 import { encodeResultCopies, decodeResultCopies, physicalResultPaths, historyResultPaths } from './executionResultCodec.js'
 import { WorkflowPhysicalReadoutSnapshots, type PhysicalReadoutSelector } from './workflowPhysicalReadoutSnapshots.js'
 import { sha256Hex } from '../../../shared/hash.js'
+import { deepFreeze } from '../../../shared/deepFreeze.js'
 
 const unavailable = (options?: ErrorOptions): never => {
   throw new DomainError('REMOTE_NATIVE_PHYSICAL_UNAVAILABLE',
@@ -65,10 +66,6 @@ export function hasNativeClosure(observation: NativeLaunchObservation): boolean 
     || observation.closureEvidence === 'cgroup_v2_removed'
     || observation.closureEvidence === 'linux_boot_changed'
     || observation.closureEvidence === 'native_exit_removed_cgroup')
-}
-function freezeTree<T>(value:T):T {
-  if(value!==null&&typeof value==='object') {Object.freeze(value);for(const child of Object.values(value))freezeTree(child)}
-  return value
 }
 export function remoteWorkflowSourceDigest(source: WorkflowOriginalNativeSource): string {
   return sha256Hex(canonicalGraphJson(source, REMOTE_NATIVE_SOURCE_LIMIT))
@@ -286,10 +283,10 @@ export class InstalledWorkflowPhysicalReadouts {
     const decoded = decodeResultCopies(dictionary) as {
       readout: RemoteWorkflowPhysicalReadout; source: WorkflowOriginalNativeSource; placement: AcceptedNodePlacement
     }
-    const readout = freezeTree(RemoteWorkflowPhysicalReadoutSchema.parse(decoded.readout)), receipt = readout.receipt
+    const readout = deepFreeze(RemoteWorkflowPhysicalReadoutSchema.parse(decoded.readout)), receipt = readout.receipt
     if (!receipt.native || readout.session.nativeSessionId !== receipt.native.sessionId) return unavailable()
-    const source = freezeTree(decoded.source)
-    const placement=freezeTree(decoded.placement)
+    const source = deepFreeze(decoded.source)
+    const placement=deepFreeze(decoded.placement)
     const readoutExpiresAt = Math.min(Date.parse(readout.expiresAt), Date.parse(input.leaseExpiresAt),
       this.now() + physicalReadoutLifetimeMs)
     if (!Number.isFinite(readoutExpiresAt) || readoutExpiresAt <= this.now()) return unavailable()
@@ -303,7 +300,7 @@ export class InstalledWorkflowPhysicalReadouts {
         ||!isDeepStrictEqual(previous.placement,placement))return unavailable()
     }
     const aliases=source.type==='history'?(readout.history?.events??[]).map(event=>{
-      const source:WorkflowOriginalNativeSource=freezeTree({type:'event',event:{...event,executionId:receipt.intent.executionId}})
+      const source:WorkflowOriginalNativeSource=deepFreeze({type:'event',event:{...event,executionId:receipt.intent.executionId}})
       return {key:this.key(receipt.sequence,remoteWorkflowSourceDigest(source)),source}
     }):[]
     const resultDigests = payloads.map(payload => payload.digest)
@@ -332,7 +329,7 @@ export class InstalledWorkflowPhysicalReadouts {
       const original = this.results.get(payload.digest)
       if (original) original.references++
       else {
-        this.results.set(payload.digest, { value: freezeTree(payload.value), bytes: payload.bytes, references: 1 })
+        this.results.set(payload.digest, { value: deepFreeze(payload.value), bytes: payload.bytes, references: 1 })
         this.byteSize += payload.bytes
       }
     }
@@ -397,7 +394,7 @@ export class InstalledWorkflowPhysicalReadouts {
       readout.expiresAt = new Date(retained.readoutExpiresAt).toISOString()
       retained.protectedUntil = Math.max(retained.protectedUntil, retained.readoutExpiresAt + physicalReadoutLifetimeMs)
     }
-    freezeTree(readout)
+    deepFreeze(readout)
     const page = pagePhysicalReadout(readout)
     if ('kind' in page) this.snapshots.remember(input, readout, page.metadata,
       { cleanup: retained.cleanup, original: retained.selector })

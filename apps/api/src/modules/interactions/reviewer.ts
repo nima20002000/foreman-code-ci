@@ -2,7 +2,7 @@ import { errorMessage } from '@foreman-code/contracts/server-kit'
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 
-import { RETIRED_OPENCODE_MESSAGE, ReviewJobSchema, type DurableInteraction, type PendingNativeInteraction, type NativeSessionReference, type ReviewJob } from '@foreman-code/contracts'
+import { ReviewJobSchema, type DurableInteraction, type PendingNativeInteraction, type NativeSessionReference, type ReviewJob } from '@foreman-code/contracts'
 
 import { DomainError } from '../errors.js'
 import { HarnessExecutionError } from '../harnesses/errors.js'
@@ -16,6 +16,7 @@ import type { NativeManagerResolutionContext } from './runtimePorts.js'
 import { coordinateSessionManager, isLeaseLost, LeaseGuard, ownedEvents, type SessionWriteLease, type SingleWriterSessionManager } from './sessionWriter.js'
 import type { NativeHarnessSessionManager, NativeHistory } from '../harnesses/port.js'
 import { normalizeNativeProducerEvent } from '../run-graph/nativeProducerNormalization.js'
+import { retiredHarnessError } from '../harnesses/retiredHarness.js'
 
 export class ReviewerDispatcher {
   private readonly workerId = `review-worker-${randomUUID()}`
@@ -100,7 +101,7 @@ export class ReviewerDispatcher {
     const available = await this.coordination.nextReviewJob(reviewerAgentId)
     if (!available) return undefined
     if (available.provider === 'opencode') {
-      throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
+      throw retiredHarnessError()
     }
     // Old queued jobs are not grandfathered in. Cleanup may only stop existing work.
     if (!available.cleanup) await this.coordination.assertReviewConnection(available)
@@ -116,7 +117,7 @@ export class ReviewerDispatcher {
       throw error
     }
     if (job.provider === 'opencode') {
-      throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
+      throw retiredHarnessError()
     }
     return { available, job, jobToken, provider: job.provider }
   }
@@ -517,7 +518,7 @@ class ReviewTurn {
   /** Persists a business failure with its cleanup duties, then settles native and credential cleanup. */
   private async failReview(failure: NonNullable<ReviewJob['error']>, pending?: PendingNativeInteraction,
     pendingRequests: readonly PendingNativeInteraction[] = pending ? [pending] : []): Promise<ReviewJob> {
-    const { coordination, nativeRuntime, safe, recovering, leaseMs } = this.review
+    const { nativeRuntime, safe, recovering, leaseMs } = this.review
     await this.maintenance?.stop()
     const evidence = this.tracker.snapshot()
     const identity = pendingRequests.length ? ` Native requests: ${JSON.stringify(pendingRequests.map((request) => ({

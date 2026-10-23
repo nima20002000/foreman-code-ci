@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type pg from 'pg'
-import { makeCurrentWorkflowFixture, type RunWorktree } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, type RunWorktree } from '@foreman-code/contracts/current'
 import { candidateFor } from './helpers/workflowDatabase.js'
 import { continuationValidator } from '../src/modules/runs/continuation.js'
 import { requiredLocationAccess, type WorkspaceLocationService } from '../src/modules/workspaces/location.js'
@@ -12,10 +12,11 @@ function fixture(worktree?: RunWorktree) {
   const row = { run, execution: { ...candidateFor(f), state: 'running', workingDirectory: worktree?.workingDirectory ?? '/synthetic/project' },
     configuration: structuredClone(f.configurations[0]!), stopped: false, cleanup_pending: false,
     workflow_version_id: f.version.id, location_revision: '1', runner_id: 'local', root: '/synthetic/project' }
-  const query = vi.fn(async (sql: string) => {
-    if (sql.includes('from run_worktrees')) return { rows: worktree ? [{ record: worktree }] : [] }
-    if (sql.includes('from harness_executions')) return { rows: [row] }
-    throw new Error(`Unexpected query: ${sql}`)
+  // The execution read binds the execution id; the worktree read binds the Run id and the execution id.
+  const query = vi.fn(async (_sql: string, values: unknown[] = []) => {
+    if (values.length === 2) return { rows: worktree ? [{ record: worktree }] : [] }
+    if (values.length === 1) return { rows: [row] }
+    throw new Error(`Unexpected query binding ${values.length} values`)
   })
   const authorization = vi.fn(async () => undefined), location = vi.fn(async () => undefined)
   const pool = { query } as unknown as pg.Pool

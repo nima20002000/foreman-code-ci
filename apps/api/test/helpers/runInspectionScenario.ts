@@ -5,9 +5,9 @@ import { expect } from 'vitest'
 import {
   CURRENT_WORKFLOW_TOOLS, RUN_INSPECTION_TOOLS, RUN_INSPECTION_LIMITS,
   CurrentWorkflowSaveResultSchema, RunExecutionDetailSchema, RunExecutionBindingsPageSchema,
-  RunExecutionsPageSchema, RunVersionDetailSchema, WorkflowVersionV3Schema,
+  RunExecutionsPageSchema, RunVersionDetailSchema, WorkflowVersionCurrentSchema,
   makeCurrentWorkflowFixture, type RunExecutionSummary,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import { RunEventsListInputSchema, RunEventsPageSchema } from '@foreman-code/contracts/management'
 import { answerForRun } from './coordinationEnvelope.js'
 import { currentOperatorIntegration } from './currentOperatorIntegration.js'
@@ -67,7 +67,7 @@ export async function inspectRepeatRun({ exit, maxOccurrences, expectedOccurrenc
   expectedOccurrences: number
 }) {
   const fixture = makeCurrentWorkflowFixture(randomUUID(), 'repeat')
-  fixture.version = agentWorkflowVersion(WorkflowVersionV3Schema.parse({ ...fixture.version, definition: { ...fixture.version.definition,
+  fixture.version = agentWorkflowVersion(WorkflowVersionCurrentSchema.parse({ ...fixture.version, definition: { ...fixture.version.definition,
     executionPolicy: { maxParallelism: 1, maxNodeExecutions: maxOccurrences * 2 },
     repeat: { ...fixture.version.definition.repeat!, blocks: fixture.version.definition.repeat!.blocks.map((block) => ({ ...block, maxOccurrences })) },
   } }))

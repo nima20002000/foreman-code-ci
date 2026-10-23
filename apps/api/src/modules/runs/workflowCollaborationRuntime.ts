@@ -1,15 +1,15 @@
 import type { HarnessExecution, WorkflowControlContinuation } from '@foreman-code/contracts'
-import { WorkActivationInputSchema, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
-import type { WorkflowLifecycleInput } from '../collaboration/workflowHooks.js'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import { WorkActivationInputSchema, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
+import type { WorkflowLifecycleInput } from '../collaboration/index.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import type { RepeatLockedHooks } from './repeatPostgres.js'
 import type { RepeatNativeChange } from './repeatNativeRepository.js'
 import { repeatConflict, repeatDigest, repeatTickIndex } from './repeatResolution.js'
 import { parseWorkflowCoordinationResult } from './workflowCoordinationResult.js'
 import { readWorkResultContextLocked } from './workReturnValidation.js'
-import { readWorkflowControlDispositionLocked } from '../collaboration/workflowControlDisposition.js'
+import { readWorkflowControlDispositionLocked } from '../collaboration/index.js'
 
-type Context = { sql: GraphTransactionSql; version: WorkflowVersionV3; hooks: RepeatLockedHooks }
+type Context = { sql: SqlTransaction; version: WorkflowVersionCurrent; hooks: RepeatLockedHooks }
 
 export async function workflowLifecycleLocked(context: Context, execution: HarnessExecution,
   phase: WorkflowLifecycleInput['phase'], sourceEventKey: string,

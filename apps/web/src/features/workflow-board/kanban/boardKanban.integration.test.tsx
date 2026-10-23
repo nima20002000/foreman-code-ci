@@ -9,7 +9,7 @@ import { createCurrentBoardMock } from '../../../shared/mocks/currentBoard'
 import { fixture } from '../../graph/nextDraft/core.cases'
 import { createMemoryBoardHandlers } from '../../memory-boards/mocks'
 import { createMemoryTestPort, memoryTestCard, memoryTestIds, memoryTestTime } from '../../memory-boards/testing'
-import type { MemoryChange } from '../../memory-boards/ports'
+import type { MemoryChange } from '../../memory-boards'
 import { installFlowLayout } from '../../run-board/testFlowLayout'
 import { installBoardTestLifecycle, mountMeasuredBoard } from '../eng05D.testSupport'
 

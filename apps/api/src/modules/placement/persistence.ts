@@ -1,6 +1,7 @@
 import { DispatchIntentSchema, type AcceptedNodePlacement, type DispatchIntent, type NativeExecutionPlacement } from '@foreman-code/contracts/node-placement'
-import { canonicalGraphJson, sameWorkflowValue } from '@foreman-code/contracts/wave25'
-import { assertGraphTransaction, beforeGraphCommit, type GraphTransactionSql } from '../run-graph/connection.js'
+import { canonicalGraphJson, sameWorkflowValue } from '@foreman-code/contracts/current'
+import { assertGraphTransaction, beforeGraphCommit } from '../run-graph/index.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import type { RunOwnership } from '../runs/ownership.js'
 import { DomainError } from '../errors.js'
 import type { PlacementCommitFence } from './admission.js'
@@ -12,7 +13,7 @@ import { readPlacement } from './binding.js'
 const conflict = (): never => { throw new DomainError('PLACEMENT_BINDING_CONFLICT', 'Immutable placement or dispatch evidence conflicts.', 409) }
 /** Start calls this on the SAME transaction as Run, canonical receipt and command
  * receipt. It returns no native-entry capability and publishes no wakeup. */
-export async function insertAcceptedPlacements(sql: GraphTransactionSql, runId: string,
+export async function insertAcceptedPlacements(sql: SqlTransaction, runId: string,
   nodes: readonly { id: string; agentId: string }[], configurationIds: Readonly<Record<string, string>>,
   placements: readonly AcceptedNodePlacement[], fence: PlacementCommitFence): Promise<void> {
   assertGraphTransaction(sql)
@@ -41,7 +42,7 @@ export async function insertAcceptedPlacements(sql: GraphTransactionSql, runId: 
     if (!sameWorkflowValue(rows.rows.map((r) => readPlacement(r.record)), [...pins].sort((a, b) => a.nodeId < b.nodeId ? -1 : a.nodeId > b.nodeId ? 1 : 0))) conflict()
   })
 }
-export async function readAcceptedPlacement(sql: Pick<GraphTransactionSql, 'query'>, runId: string, nodeId: string): Promise<AcceptedNodePlacement | undefined> {
+export async function readAcceptedPlacement(sql: Pick<SqlTransaction, 'query'>, runId: string, nodeId: string): Promise<AcceptedNodePlacement | undefined> {
   const rows = await sql.query<{ record: unknown }>('select record from run_node_placements where run_id=$1 and node_id=$2', [runId, nodeId])
   const row = rows.rows[0]
   if (!row) return undefined
@@ -51,7 +52,7 @@ export async function readAcceptedPlacement(sql: Pick<GraphTransactionSql, 'quer
 }
 
 /** Read only the selected nodes; unrelated placements cannot affect this batch. */
-export async function readAcceptedPlacements(sql: Pick<GraphTransactionSql, 'query'>,
+export async function readAcceptedPlacements(sql: Pick<SqlTransaction, 'query'>,
   runId: string, nodeIds: readonly string[]): Promise<Map<string, AcceptedNodePlacement>> {
   const rows = await sql.query<{ node_id: string; binding_hash: string; record: unknown }>(
     'select node_id,binding_hash,record from run_node_placements where run_id=$1 and node_id=any($2::text[])',
@@ -66,7 +67,7 @@ export async function readAcceptedPlacements(sql: Pick<GraphTransactionSql, 'que
   return result
 }
 
-export async function readRunAcceptedPlacements(sql: Pick<GraphTransactionSql, 'query'>,
+export async function readRunAcceptedPlacements(sql: Pick<SqlTransaction, 'query'>,
   runId: string): Promise<AcceptedNodePlacement[]> {
   const rows = await sql.query<{ node_id: string; binding_hash: string; record: unknown }>(
     'select node_id,binding_hash,record from run_node_placements where run_id=$1 order by node_id', [runId])
@@ -79,7 +80,7 @@ export async function readRunAcceptedPlacements(sql: Pick<GraphTransactionSql, '
 /** Called with execution admission on the existing Run owner transaction. Intent
  * membership is NOT the one-use native launch permission; existing launch guards
  * and live destination revalidation are still required before submission. */
-export async function insertDispatchIntent(sql: GraphTransactionSql, owner: RunOwnership,
+export async function insertDispatchIntent(sql: SqlTransaction, owner: RunOwnership,
   raw: DispatchIntent, fence: PlacementCommitFence): Promise<DispatchIntent> {
   assertGraphTransaction(sql)
   owner.assertOwned()
@@ -112,7 +113,7 @@ export async function insertDispatchIntent(sql: GraphTransactionSql, owner: RunO
 
 /** Immutable evidence read only. Callers still authorize the live owner/grant
  * before publishing artifacts or control; a receipt is not a delegation. */
-export async function readDispatchIntent(sql: Pick<GraphTransactionSql, 'query'>, executionId: string): Promise<DispatchIntent | undefined> {
+export async function readDispatchIntent(sql: Pick<SqlTransaction, 'query'>, executionId: string): Promise<DispatchIntent | undefined> {
   const rows = await sql.query<{ operation_id: string; execution_id: string; run_id: string; node_id: string;
     binding_hash: string; attempt_id: string; record: unknown }>(`select operation_id,execution_id,run_id,node_id,
       binding_hash,attempt_id,record from execution_dispatch_intents where execution_id=$1`, [executionId])
@@ -129,12 +130,12 @@ export async function readDispatchIntent(sql: Pick<GraphTransactionSql, 'query'>
 
 /** Accepted root/source envelope for an exact admitted execution. Native
  * materialization is read separately and may not exist for an unstarted node. */
-export async function readExecutionPlacement(sql: Pick<GraphTransactionSql, 'query'>, executionId: string): Promise<AcceptedNodePlacement | undefined> {
+export async function readExecutionPlacement(sql: Pick<SqlTransaction, 'query'>, executionId: string): Promise<AcceptedNodePlacement | undefined> {
   const intent = await readDispatchIntent(sql, executionId)
   return intent ? readAcceptedPlacement(sql, intent.runId, intent.nodeId) : undefined
 }
 
-export async function readExecutionPlacements(sql: Pick<GraphTransactionSql, 'query'>,
+export async function readExecutionPlacements(sql: Pick<SqlTransaction, 'query'>,
   executionIds: readonly string[]): Promise<Map<string, AcceptedNodePlacement>> {
   const rows = await sql.query<{ operation_id: string; execution_id: string; run_id: string; node_id: string;
     binding_hash: string; attempt_id: string; record: unknown; placement: unknown }>(`
@@ -154,7 +155,7 @@ export async function readExecutionPlacements(sql: Pick<GraphTransactionSql, 'qu
   return result
 }
 
-export async function readNativePlacement(sql: Pick<GraphTransactionSql, 'query'>, executionId: string) {
+export async function readNativePlacement(sql: Pick<SqlTransaction, 'query'>, executionId: string) {
   const row = (await sql.query<{ record: unknown }>('select record from execution_native_placements where execution_id=$1', [executionId])).rows[0]
   if (!row) return undefined
   const intent = await readDispatchIntent(sql, executionId)
@@ -169,7 +170,7 @@ export async function readNativePlacement(sql: Pick<GraphTransactionSql, 'query'
   if (source.finalDispatchBindingHash !== binding.bindingHash || sourceMaterializationDigest(source) !== sourceMaterializationDigest(binding.materialization)) conflict()
   return { ...binding, materialization: source }
 }
-export async function insertNativePlacement(sql: GraphTransactionSql, owner: RunOwnership, binding: NativeExecutionPlacement): Promise<void> {
+export async function insertNativePlacement(sql: SqlTransaction, owner: RunOwnership, binding: NativeExecutionPlacement): Promise<void> {
   assertGraphTransaction(sql); owner.assertOwned()
   const intent = await readDispatchIntent(sql, binding.executionId)
   const parent = intent && await readAcceptedPlacement(sql, intent.runId, intent.nodeId)

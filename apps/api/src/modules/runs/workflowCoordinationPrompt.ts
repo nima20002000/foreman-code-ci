@@ -1,5 +1,5 @@
 import type { CoordinationResultContext } from '@foreman-code/contracts'
-import { OUTPUT_REFERENCE_KEYWORD } from '@foreman-code/contracts/wave25'
+import { OUTPUT_REFERENCE_KEYWORD } from '@foreman-code/contracts/current'
 import { hierarchyChildRoutesPrompt } from './hierarchyWorkPrompt.js'
 
 /** Request-only contract for marked Runs. Historical producers retain their

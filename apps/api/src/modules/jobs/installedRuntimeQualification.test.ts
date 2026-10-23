@@ -33,6 +33,9 @@ import { JOB_INPUT_DIRECTORY } from '@foreman-code/contracts/job-inputs'
 const id = '00000000-0000-4000-8000-000000000001', digest = 'a'.repeat(64)
 const roots: string[] = [], journals: RemoteOperationJournal[] = []
 afterEach(async () => { vi.restoreAllMocks(); await Promise.all(journals.splice(0).map(value => value.close())); await Promise.all(roots.splice(0).map(value => rm(value, { recursive: true, force: true }))) })
+// The Node binary is large and identical for every case; hash it once per file instead of once per fixture.
+let executableDigest: Promise<string> | undefined
+const executableSha256 = () => executableDigest ??= readFile(process.execPath).then(bytes => createHash('sha256').update(bytes).digest('hex'))
 async function fixture() {
   const bootId = bootIdentity()
   const root = { version: 1, source: { approvedSourceId: id, snapshotId: id, manifestDigest: digest },
@@ -43,7 +46,7 @@ async function fixture() {
     registration: null, attestationId: id, attestationDigest: digest, boundAt: '2026-10-01T00:00:00Z' }
   const candidate = JobQualificationCandidateSchema.parse({ qualificationId: id, operationId: id, approvalId: id,
     fingerprint: { schemaVersion: 1, profileId: id, profileRevision: 1, specDigest: digest, hostRef: { kind: 'main', mainId: id },
-      registration: null, mainInstallationId: id, bootId, root, runtimeExecutable: process.execPath, runtimeBinarySha256: createHash('sha256').update(await readFile(process.execPath)).digest('hex'),
+      registration: null, mainInstallationId: id, bootId, root, runtimeExecutable: process.execPath, runtimeBinarySha256: await executableSha256(),
       ociExecutable: '/usr/bin/crun', ociBinarySha256: digest, imageDigest: `sha256:${digest}`, toolchainDigest: digest, configurationDigest: digest,
       limits: { cpuLimit: 1, memoryBytes: 67108864, pidsLimit: 64, diskBytes: 2097152 } },
     backingFile: '/approved/ci-volume.ext4', backingBytes: 2097152, findmntBinary: '/usr/bin/findmnt', findmntBinarySha256: digest,

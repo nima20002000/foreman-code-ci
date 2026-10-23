@@ -10,12 +10,12 @@ import {
 } from 'react'
 import { SidebarNavigationButton } from './SidebarNavigationButton'
 
-import { SidebarComputers } from '../../features/computers/SidebarComputers'
+import { SidebarComputers } from '../../features/computers'
 import { HarnessStatusMenu } from '../../features/settings/HarnessStatusMenu'
 import { useWorkspacePages } from '../api/query'
 import { EmptyState } from './nocturne'
 import { AppNavigationTrail } from './AppNavigationTrail'
-import { COLLAPSED_NAVIGATION_WIDTH } from '../../features/workspaces/navigationUiStore'
+import { COLLAPSED_NAVIGATION_WIDTH } from '../../features/workspaces'
 import {
   DEFAULT_NAVIGATION_WIDTH,
   MAX_NAVIGATION_WIDTH,

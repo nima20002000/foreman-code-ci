@@ -1,0 +1,4 @@
+export { sourceBindingHash, sourceMaterializationDigest } from '../modules/sources/bindingHash.js'
+export { preparationChildrenClosed, releaseMaterializationClaimForCancellation } from '../modules/sources/materialization.js'
+export { anchored, identity, openChildDirectory, openPrivateRoot } from '../modules/sources/privateFilesystem.js'
+export { createWorkspaceRootWorkerHandler, qualifyApprovedRootAllowlist, verifyApprovedRootAllowlist } from '../modules/sources/rootAttestation.js'

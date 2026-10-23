@@ -5,7 +5,7 @@ import type { AcceptedExecutionBinding } from './nativeComposition.js'
 import type { RemoteCommitFacts, RemoteResultTransaction } from '../runs/remote/resultBridge.js'
 import type { RemoteReceiptDomain } from './remoteReceiptCommit.js'
 import type { RunOwnership } from '../runs/ownership.js'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { remoteStopChannel } from '../../../test/helpers/remoteStopChannel.js'
 import { WorkerExecutionPolicy } from '../settings/workerExecution.js'
 
@@ -34,7 +34,7 @@ vi.mock('./remoteReceiptCommit.js', () => ({
       private domain: RemoteReceiptDomain) {}
     transaction<T>(_id: string, work: (transaction: RemoteResultTransaction) => Promise<T>): Promise<T> {
       const publish: RemoteResultTransaction['accept'] = async evidence => {
-        await this.domain.publishNative({} as GraphTransactionSql, this.owner, evidence)
+        await this.domain.publishNative({} as SqlTransaction, this.owner, evidence)
         ports.facts!.lastSequence = evidence.receipt.sequence
         ports.facts!.lastReceipt = evidence.receipt
         ports.facts!.native = evidence.receipt.native ?? null
@@ -68,7 +68,7 @@ it('refreshes the receipt and history together when physical prefetch changes th
       return { ...f.main.captureRequest('execution-v1'), binding: ports.connection! }
     } }
   const owner = { runId: 'run', assertOwned() {}, oneShotConnection: () => ({
-    transaction: async (work: (sql: GraphTransactionSql) => Promise<void>) => work({} as GraphTransactionSql),
+    transaction: async (work: (sql: SqlTransaction) => Promise<void>) => work({} as SqlTransaction),
   }) } as unknown as RunOwnership
   const composition = createProductionRemoteWorkflow({ pool: {} as pg.Pool,
     locations: {} as Parameters<typeof createProductionRemoteWorkflow>[0]['locations'],

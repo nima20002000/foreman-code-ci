@@ -7,7 +7,7 @@ import { APP_MCP_TOKEN_NAMES } from '@foreman-code/contracts/product'
 import { readProductEnvironment } from '@foreman-code/contracts/product-environment'
 import { appMcpServerName } from '../appMcpLauncher.js'
 import { appMcpTokenEnvironment, isDatabaseCredentialVariable } from '../secrets.js'
-import { agentInstructionBundle } from '../../skills/instructions.js'
+import { agentInstructionBundle } from '../../skills/index.js'
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import type { NativeSessionStart } from '../port.js'
@@ -16,6 +16,7 @@ import { ClaudeBoundedQueue } from './queue.js'
 import { claudePromptUuid, type ClaudeMessageTurnInput, type ClaudeNativeSessionManagerOptions,
   type ClaudeManagerContext, type Turn, type Runtime } from './sessionTypes.js'
 import { sha256Hex } from '../../../shared/hash.js'
+import { hostEnvironment } from '../../../shared/process.js'
 
 /** A caller's signal bounds native startup only; it never owns the resident query afterwards. */
 export function startupSignal(signal?: AbortSignal): { signal?: AbortSignal; release(): void } {
@@ -74,7 +75,7 @@ export function queryOptions(ctx: ClaudeManagerContext, start: NativeSessionStar
     throw new HarnessExecutionError('CLAUDE_ENVIRONMENT_INVALID',
       'The Claude environment cannot contain database credentials.')
   }
-  const scoped = claudeSessionEnvironment(appMcpTokenEnvironment(environment, process.env), preferences)
+  const scoped = claudeSessionEnvironment(appMcpTokenEnvironment(environment, hostEnvironment()), preferences)
   const instructions = agentInstructionBundle(configuration)
   const systemPrompt = sessionStartSystemPrompt(start)?.value.text
   if (!instructions && !systemPrompt) return { ...sdkOptions, env: scoped }

@@ -1,7 +1,7 @@
 import { open, statfs } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { normalize } from 'node:path'
-import type { NativeCgroupBoundary } from '../../harnesses/recovery/cgroupBoundary.js'
+import type { NativeCgroupBoundary } from '../../harnesses/index.js'
 import { counter, readBounded, safeBytes, sourceFailure } from './linuxProcfs.js'
 
 export interface AccountingResult { cpu: bigint | null; memory: number | null; cpuFailure: string | null; memoryFailure: string | null }

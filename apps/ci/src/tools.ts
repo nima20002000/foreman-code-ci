@@ -12,7 +12,7 @@ import {
 } from '@foreman-code/contracts/management'
 import { z } from 'zod'
 import { CI_GET_ACTIONS, CI_RUN_ACTIONS } from './authority.js'
-import type { HostCiService } from './service.js'
+import type { CiTicketClient } from './client.js'
 import type { CircleAccountsManagementService } from './circleAccountsManagement.js'
 import { CI_ENROLLMENT_ACTIONS, type CiEnrollment } from './ciEnrollment.js'
 import { BUILD_COMPUTER_PREPARE_ACTIONS, type CiRuntimeProvisioner } from './ciRuntimeProvisioner.js'
@@ -152,7 +152,7 @@ export const CI_TOOL_DESCRIPTIONS = {
 const read = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
 const operator = (audience: CiToolAudience) => audience === 'operator'
 /** Host CI tools, in registration order. Agents see every tool but ci_list, with their own input schemas. */
-export const CI_TOOL_SPECS: readonly CiToolSpec<HostCiService>[] = [
+export const CI_TOOL_SPECS: readonly CiToolSpec<CiTicketClient>[] = [
   tool({
     name: 'ci_run', requires: CI_RUN_ACTIONS, scope: 'workspace',
     description: CI_TOOL_DESCRIPTIONS.ci_run, detail: CI_TOOL_DESCRIPTIONS.ci_run,

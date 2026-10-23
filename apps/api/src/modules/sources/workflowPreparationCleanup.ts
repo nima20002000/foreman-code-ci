@@ -6,14 +6,14 @@ import { hasPositiveRemoteEntryClosure, hasPositiveRemoteNonEntryClosure } from 
 import { SourceMaterializationRecordSchema, SourcePreparationClosureSchema, SourceRootRecordSchema } from '@foreman-code/contracts/source-admission'
 import { SourceOperationOwnerSchema } from '@foreman-code/contracts/source-operations'
 import { DomainError } from '../errors.js'
-import { readUnboundWorkflowClosure } from '../interactions/workflowClosure.js'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import { readUnboundWorkflowClosure } from '../interactions/index.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { repeatExecutionIdentity } from '../runs/repeatResolution.js'
 import { readReconciledDispatchIntent } from '../runs/remote/persistence.js'
 import { sourceBindingHash } from './bindingHash.js'
 import type { SourceReservation } from './reservations.js'
 
-export async function loadWorkflowPreparation(sql: GraphSqlClient, workspaceId: string, operationId: string) {
+export async function loadWorkflowPreparation(sql: SqlQuery, workspaceId: string, operationId: string) {
   const row = (await sql.query<{
     intent: unknown; execution: unknown; placement: unknown; principal_id: string;
     execution_state: string; stop_requested: boolean; cleanup_pending: boolean; session_bound: boolean; session_reference: unknown | null;
@@ -84,7 +84,7 @@ export async function loadWorkflowPreparation(sql: GraphSqlClient, workspaceId: 
 }
 
 export async function assertWorkflowPreparationClosed(
-  sql: GraphSqlClient,
+  sql: SqlQuery,
   state: Awaited<ReturnType<typeof loadWorkflowPreparation>>,
 ): Promise<void> {
   const execution = state.execution
@@ -105,7 +105,7 @@ export async function assertWorkflowPreparationClosed(
 }
 
 /** A completed worker reconciliation is physical closure; a pending Stop alone is not. */
-export async function remoteWorkflowPreparationClosed(sql: GraphSqlClient, executionId: string): Promise<boolean> {
+export async function remoteWorkflowPreparationClosed(sql: SqlQuery, executionId: string): Promise<boolean> {
   const allocation = (await sql.query<{ operation_id: string; workspace_id: string }>(`select i.operation_id,r.workspace_id
     from execution_dispatch_intents i join runs r on r.id=i.run_id where i.execution_id=$1`, [executionId])).rows[0]
   if (!allocation) return false
@@ -144,7 +144,7 @@ export async function remoteWorkflowPreparationClosed(sql: GraphSqlClient, execu
 }
 
 export async function localWorkflowPreparationClosed(
-  sql: GraphSqlClient, owner: ReturnType<typeof SourceOperationOwnerSchema.parse>,
+  sql: SqlQuery, owner: ReturnType<typeof SourceOperationOwnerSchema.parse>,
 ): Promise<boolean> {
   const state = await loadWorkflowPreparation(sql, owner.root.binding.workspaceId, owner.identity.operationId)
   await assertWorkflowPreparationClosed(sql, state)

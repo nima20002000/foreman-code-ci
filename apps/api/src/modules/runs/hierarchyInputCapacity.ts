@@ -1,5 +1,5 @@
 import { canonicalGraphJson, WORK_RETURN_MAX_BYTES, type HierarchyWorkGroup, type WorkActivationInput,
-  type WorkRequest } from '@foreman-code/contracts/wave25'
+  type WorkRequest } from '@foreman-code/contracts/current'
 
 const INPUT_BYTES = 4 * 1024 * 1024
 const encoder = new TextEncoder()

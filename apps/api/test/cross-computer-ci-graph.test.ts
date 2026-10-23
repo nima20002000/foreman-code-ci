@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { CiRunInputSchema } from '@foreman-code/contracts'
 import * as scenario from './helpers/crossComputerCiGraph.js'
-import type { WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import type { WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 import { buildCrossComputerCiGraph, projectSuites, type ScenarioAgent } from './helpers/crossComputerCiGraph.js'
 
 const mainId = '11111111-1111-4111-8111-111111111111'
-const base: WorkflowDefinitionV3 = {
+const base: WorkflowDefinitionCurrent = {
   id: 'workflow', workspaceId: 'workspace', name: 'CI', executionSemanticsVersion: 3,
   entryNodeId: null, executionCondition: { kind: 'manual' }, nodes: [], edges: [],
 }

@@ -1,7 +1,7 @@
-import type { RepeatGraphCurrentV3, WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import type { RepeatGraphCurrentState, WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 
-type ExecutionFact = RepeatGraphCurrentV3['state']['executions'][number]
-type ResolutionFact = RepeatGraphCurrentV3['state']['resolutions'][number]
+type ExecutionFact = RepeatGraphCurrentState['state']['executions'][number]
+type ResolutionFact = RepeatGraphCurrentState['state']['resolutions'][number]
 /** Display-only input. The current query validates the complete canonical cut. */
 export type PinnedNodeDisplayCut = { state: {
   executions: readonly (Pick<ExecutionFact, 'identity' | 'state' | 'resultOutcome'> & Partial<Pick<ExecutionFact, 'tickIndex'>>)[]
@@ -46,7 +46,7 @@ export function runningIntervalChecks(record?: PinnedNodeDisplayCut) {
 /** How a node looks while an interval check is unfinished. */
 export const checkingView = (check: number, queued = false) => queued
   ? { state: 'queued' as const, label: `Loop ${check} queued` } : { state: 'running' as const, label: `Looping · loop ${check}` }
-export function pinnedTopology(version: WorkflowVersionV3) {
+export function pinnedTopology(version: WorkflowVersionCurrent) {
   const blocks = new Map(version.definition.repeat?.blocks.flatMap((block) =>
     block.nodeIds.map((nodeId) => [nodeId, block.id] as const)) ?? [])
   return {

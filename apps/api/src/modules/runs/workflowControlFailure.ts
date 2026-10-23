@@ -1,5 +1,5 @@
 import type { ExecutionResult } from '@foreman-code/contracts'
-import type { WorkflowControlDisposition } from '../collaboration/workflowControlTypes.js'
+import type { WorkflowControlDisposition } from '../collaboration/index.js'
 import { DomainError } from '../errors.js'
 
 /** A logical control failure never rewrites the provider's immutable result. */

@@ -1,17 +1,17 @@
 import { parseCoordinationResult,
   parseHierarchyExecutionResult, type HierarchyExecutionResult, type ResultProtocol } from '@foreman-code/contracts'
 import { ExecutionResultSchema } from '@foreman-code/contracts'
-import type { WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import type { WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 import { DomainError } from '../errors.js'
 
 export type HierarchyWorkResult = HierarchyExecutionResult
 
-export function isHierarchyWorkflow(version: WorkflowVersionV3): boolean {
+export function isHierarchyWorkflow(version: WorkflowVersionCurrent): boolean {
   return version.definition.hierarchy !== undefined
 }
 
 /** Saved hierarchy selects work routing; only marked Runs use the coordinated result parser. */
-export function parseHierarchyWorkResult(result: unknown, version: WorkflowVersionV3,
+export function parseHierarchyWorkResult(result: unknown, version: WorkflowVersionCurrent,
   workflowNodeId: string, resultProtocol: ResultProtocol | undefined,
   outstandingRequestIds?: readonly string[]): HierarchyWorkResult {
   if (!version.definition.hierarchy || !version.definition.handoffs) {

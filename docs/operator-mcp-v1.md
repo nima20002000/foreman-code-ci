@@ -107,7 +107,7 @@ MCP tool input schemas accept and strip unknown fields at every typed object
 level before invoking domain services. Known fields, grants, scope, revisions
 and command conflicts are still validated. Open record/map payloads keep their
 keys; HTTP, output and persisted schemas retain their existing validation.
-`tools/list` and `operator_tool_schema_get` advertise this input behavior.
+`tools/list` and `tool_schema` advertise this input behavior.
 
 ## Workflow Agent approval defaults
 
@@ -130,7 +130,7 @@ Operator implementation and are not advertised as tools. There is no `devices:pr
 grant or once-per-device runtime approval requirement. Existing device pairing, connection,
 and build-computer tools retain their supported contracts and scope checks.
 
-`computers_maintenance_start` with `sync-mcp` uses the same fleet service as
+The `sync-mcp` maintenance task (`POST /api/management/computers/maintenance/start`) uses the same fleet service as
 Settings and requires global `settings:update`. It copies supported user-level
 definitions without inline secrets. Disabled servers, native tool allow/deny
 lists, and stdio environment-name references are unsupported because this sync
@@ -138,7 +138,7 @@ path does not restore those settings. Such definitions are skipped with a task
 warning; their existing Worker entries are preserved. Configure these settings
 on each computer separately. Only fleet-managed entries genuinely absent from
 an available Main catalog are removed. Read persisted task outcomes through
-`computers_maintenance_status` with global `settings:read`.
+`GET /api/management/computers/maintenance` with global `settings:read`.
 
 Maintenance uses device namespace `computer-maintenance-v2`, version 2. Main
 refuses requests to a computer advertising only the previous namespace before
@@ -163,7 +163,7 @@ saved directory identity before inspecting native configuration.
 - Context: `operator_get_capabilities`
 - Harnesses: `harness_list`, `harness_get`, `harness_defaults_update`
 - Workspaces: `workspace_list`, `workspace_get`, `workspace_create`, `workspace_update`, `workspace_archive`, `workspace_batch_archive`, `workspace_location_validate`, `workspace_location_set`
-- Workflows: `workflow_list`, `workflow_get`, `workflow_create`, `workflow_update`, `workflow_reorder`, `workflow_archive`, `workflow_batch_archive`
+- Workflows: `workflow_list`, `workflow_get`, `workflow_create`, `workflow_update`, `workflow_archive`, `workflow_batch_archive`
 - Agents: `agent_list`, `agent_get`
 - Graph: `graph_draft_open`, `graph_draft_get`, `graph_draft_apply`, `graph_validate`, `graph_save`, `graph_draft_discard`
 - Runs: `run_list`, `run_get`, `run_events_list`, `run_start`, `run_stop`
@@ -190,7 +190,7 @@ Workspace detail returns the newest 2,000 eligible Run summaries (unfinished Run
 
 `workflow_list` returns workflows in their saved workspace order and includes `orderRevision` in compact and full pages. New workflows append to that order. Workflow creation, archive, restore, deletion and reorder change the order revision; metadata and graph edits retain it. Workflow cursors are bound to the workspace, archive filter, access scope and order revision. A changed revision returns `REVISION_CONFLICT`; restart pagination without a cursor.
 
-`workflow_reorder` accepts `{ workspaceId, commandId, expectedRevision, workflowIds }` for at least two unique active workflows. Use `workflow_list.orderRevision` as `expectedRevision`; this revision is separate from each workflow's metadata or graph revision. The submitted IDs replace only their existing positions in the requested order, preserving omitted workflows' slots, including hidden and unloaded items. Every submitted workflow requires both `workflows:read` and `workflows:update`. Archived, missing, cross-workspace or stale selections reject the entire command. The result is `{ value: { workspaceId, workflowIds, orderRevision }, replayed }` and contains only the submitted IDs. Read back with `workflow_list`, starting a fresh page sequence. Retry an uncertain reply with the same command ID and input. The HTTP equivalent is `PUT /api/management/workspaces/:workspaceId/workflows/order`.
+Reordering has no Operator tool; it is the HTTP command `PUT /api/management/workspaces/:workspaceId/workflows/order`, which accepts `{ workspaceId, commandId, expectedRevision, workflowIds }` for at least two unique active workflows. Use `workflow_list.orderRevision` as `expectedRevision`; this revision is separate from each workflow's metadata or graph revision. The submitted IDs replace only their existing positions in the requested order, preserving omitted workflows' slots, including hidden and unloaded items. Every submitted workflow requires both `workflows:read` and `workflows:update`. Archived, missing, cross-workspace or stale selections reject the entire command. The result is `{ value: { workspaceId, workflowIds, orderRevision }, replayed }` and contains only the submitted IDs. Read back with `workflow_list`, starting a fresh page sequence. Retry an uncertain reply with the same command ID and input.
 
 `workflow_batch_archive` accepts `{ workspaceId, commandId, workflows: [{ workflowId, expectedRevision }] }` for 1–100 unique workflows. It requires `workflows:archive` for every selected workflow and removes the whole selection atomically. Missing workflows, stale revisions, or active runs reject the entire batch. Reuse the same command ID and input after an uncertain response; read back with `workflow_get` or `workflow_list`. The UI labels this operation “Delete selected” and explains history retention in its confirmation. The HTTP equivalent is `POST /api/management/workspaces/:workspaceId/workflows/batch-archive`.
 

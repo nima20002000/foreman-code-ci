@@ -3,8 +3,8 @@ import type {
   CoordinatorConsultationBinding, DeliveryTarget, EngineChatMessage, EngineChatReadback,
   ExecutionRef, HarnessExecution, LogicalWorkRef, WorkflowControlContinuation,
 } from '@foreman-code/contracts'
-import type { WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import type { WorkflowVersionCurrent } from '@foreman-code/contracts/current'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import type { RepeatRuntimeRun } from '../runs/repeatPostgres.js'
 import type { Principal } from './ports.js'
 
@@ -27,9 +27,9 @@ export interface WorkflowChatNativeTarget {
 /** The existing Run owner supplies this after locking Run, graph head and exact work.
  * A transaction here must not acquire another owner or perform native/network I/O. */
 export interface WorkflowChatLockedTarget {
-  sql: GraphTransactionSql
+  sql: SqlTransaction
   run: RepeatRuntimeRun
-  version: WorkflowVersionV3
+  version: WorkflowVersionCurrent
   target: WorkflowChatTarget
   agent: AgentIdentity
   state: EngineChatReadback['state']

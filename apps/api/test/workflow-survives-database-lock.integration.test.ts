@@ -4,15 +4,15 @@ import { faultWorkflowFixture, expectSuccessfulFaultRecovery } from './helpers/f
 import { readOperationalFailures } from '../src/modules/diagnostics/operationalFailures.js'
 import { deferred } from './helpers/deferred.js'
 import { readUntil } from './helpers/observableCondition.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { createTestPool } from './helpers/testPool.mjs'
 
 describe.runIf(postgresEnabled)('workflow reporting under database contention', () => {
   let fixture: Awaited<ReturnType<typeof faultWorkflowFixture>>
-  let database: Awaited<ReturnType<typeof agent3Database>>
+  let database: Awaited<ReturnType<typeof migratedDatabase>>
   beforeAll(async () => {
-    database = await agent3Database()
+    database = await migratedDatabase()
     // A competing transaction must not consume the pool capacity needed to report its timeout.
     database.pool.options.max = 1
     fixture = await faultWorkflowFixture({ database })

@@ -1,6 +1,6 @@
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { RunSubagent, SubagentAvailableActions } from '@foreman-code/contracts/subagents'
-import { isAuthorized } from '../access/policy.js'
+import { isAuthorized } from '../access/index.js'
 import type { SubagentControlLease } from './types.js'
 
 export function subagentAvailableActions(child: RunSubagent, principal: ManagementPrincipal, stopped: boolean, lease?: SubagentControlLease): SubagentAvailableActions {

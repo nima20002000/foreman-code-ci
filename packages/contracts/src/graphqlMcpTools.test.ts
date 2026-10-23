@@ -2,7 +2,7 @@ import { OperatorToolNameSchema } from './management/index.js'
 import { describe, expect, it } from 'vitest'
 import { AgentSchema } from './index.js'
 import { effectiveGraphqlTools, graphqlRoleTools, graphqlToolRoles, GraphqlToolOverrideSchema, GRAPHQL_OPERATOR_TOOLS } from './graphqlMcpTools.js'
-import { CurrentWorkflowNodeSchema } from './wave25/workflowShape.js'
+import { CurrentWorkflowNodeSchema } from './current/workflowShape.js'
 import { WORKER_NATIVE_OUTPUT_TOOL_NAMES } from './workerNativeOutput.js'
 
 describe('Foreman Code MCP tools per Agent', () => {

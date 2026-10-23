@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { SavedRunDetailsSchema } from '@foreman-code/contracts/wave25'
+import { SavedRunDetailsSchema } from '@foreman-code/contracts/current'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
 import { startWhenReady } from './helpers/harnessInstallationUpdate.js'
 import { readUntil } from './helpers/observableCondition.js'

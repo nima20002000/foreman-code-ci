@@ -3,7 +3,8 @@ import pg from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { repeatRuntimeDirectory } from '../src/modules/runs/repeatRepositoryHost.js'
 import { RunOwnership } from '../src/modules/runs/ownership.js'
-import { agent3Database, candidateFor, graphHead } from './helpers/workflowDatabase.js'
+import { candidateFor, graphHead } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { currentRepositoryFixture } from './helpers/currentRepository.js'
 import { rejectableDeferred } from './helpers/deferred.js'
@@ -11,10 +12,10 @@ import { rejectableDeferred } from './helpers/deferred.js'
 /** Real current Save/Start, independent SQL owners and canonical transactions.
  * No provider is connected; these assertions stop at the native entry boundary. */
 describe.skipIf(!postgresEnabled)('Current workflow admission crash and owner races', () => {
-  let db: Awaited<ReturnType<typeof agent3Database>>
+  let db: Awaited<ReturnType<typeof migratedDatabase>>
   const owners: RunOwnership[] = []
   const faultTables = ['harness_executions', 'run_repeat_slots', 'run_graph_batches'] as const
-  beforeAll(async () => { db = await agent3Database() }, 60000)
+  beforeAll(async () => { db = await migratedDatabase() }, 60000)
   afterEach(async () => {
     vi.restoreAllMocks()
     while (owners.length) await owners.pop()!.release()

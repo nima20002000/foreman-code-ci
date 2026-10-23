@@ -4,9 +4,9 @@ import type { ReactNode } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { apiClient } from '../../shared/api/client'
 import { queryKeys } from '../../shared/api/query'
-import { nextDraftApi } from '../graph/nextDraft/transport'
+import { nextDraftApi } from '../graph'
 import { runsSelectorApi, runsSelectorKeys } from '../runs-selector'
-import { boardDraftContextKey, boardLiveRunSnapshotKey } from './keys'
+import { boardDraftContextKey, boardLiveRunSnapshotKey } from '../board-core'
 import { usePrefetchWorkflowBoard } from './prefetch'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })

@@ -1,4 +1,4 @@
-import type { CurrentRunDetails, CurrentWorkspaceDetails } from '@foreman-code/contracts/wave25'
+import type { CurrentRunDetails, CurrentWorkspaceDetails } from '@foreman-code/contracts/current'
 import { useEffect } from 'react'
 import {
   useMutation,

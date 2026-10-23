@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { SelectedRunState } from '../runs-selector/useSelectedRun'
+import type { SelectedRunState } from '../runs-selector'
 import { RunBoard } from './RunBoard'
 import { useRunBoardShown } from './useRunBoardShown'
 import './runBoard.css'

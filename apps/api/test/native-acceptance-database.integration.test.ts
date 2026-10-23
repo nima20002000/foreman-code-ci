@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import pg from 'pg'
 import { expect, it } from 'vitest'
-import { nim2691TaskDatabase } from './helpers/taskDatabase.js'
+import { withTaskDatabase } from './helpers/taskDatabase.js'
 import { privateFixtureDirectory } from './helpers/privateFixtureDirectory.js'
 import { completeTestResourceCleanup, dropFixtureDatabase, ownedTestDatabaseUrl,
   registerTestResourceCleanup, createTestDatabase, provisionTestResources,
@@ -128,7 +128,7 @@ it.each([false, true])('reports leaked workflow callers and removes owned resour
   let client: pg.Client | undefined
   let ownedName = ''
   try {
-    const work = nim2691TaskDatabase(async (_pool, directory, databaseUrl) => {
+    const work = withTaskDatabase(async (_pool, directory, databaseUrl) => {
       directories.push(directory, await privateFixtureDirectory('native-cleanup-'))
       ownedName = decodeURIComponent(new URL(databaseUrl).pathname.slice(1))
       client = new pg.Client({ connectionString: databaseUrl })

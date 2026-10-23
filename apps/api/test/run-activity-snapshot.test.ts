@@ -1,13 +1,13 @@
 import type pg from 'pg'
 import { describe, expect, it } from 'vitest'
-import type { WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import type { WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 import { readRunActivitySnapshot } from '../src/modules/runs/activitySnapshot.js'
 import { projectNativeActivityFacts } from '../src/modules/runs/nativeActivitySnapshot.js'
 import type { ActivityReadRow } from '../src/modules/runs/activityProjection.js'
 import { CiRunRecordSchema, ciActivityFromRecord } from '@foreman-code/contracts'
 
 const scope = { workspaceId: 'ws', workflowId: 'wf', runId: 'run', workflowVersionId: 'version' }
-const version = { id: 'version', workspaceId: 'ws', workflowId: 'wf', definition: { nodes: [], edges: [] } } as unknown as WorkflowVersionV3
+const version = { id: 'version', workspaceId: 'ws', workflowId: 'wf', definition: { nodes: [], edges: [] } } as unknown as WorkflowVersionCurrent
 function fixture(moving = false, jobs: Record<string, unknown>[] = [], movingJob = false,
   cis: Record<string, unknown>[] = [], movingCi = false, activities: ActivityReadRow[] = []) {
   const executions = [
@@ -46,7 +46,7 @@ describe('Run activity snapshot', () => {
     const ci = { id: record.id, revision: '3', execution_id: 'A', agent_id: 'agent', node_id: 'node',
       pinned: true, record }
     const ownedVersion = { ...version, definition: { ...version.definition,
-      nodes: [{ id: 'node', kind: 'agent' as const, agentId: 'agent' }] } } as WorkflowVersionV3
+      nodes: [{ id: 'node', kind: 'agent' as const, agentId: 'agent' }] } } as WorkflowVersionCurrent
     const queued = await readRunActivitySnapshot(fixture(false, [], false, [ci]), scope, ownedVersion)
     expect(queued.queued).toContainEqual(expect.objectContaining({ kind: 'ci', executionId: 'A', ticketId: record.id }))
     expect(queued.active).toContainEqual(expect.objectContaining({ phase: 'waiting',
@@ -76,7 +76,7 @@ describe('Run activity snapshot', () => {
       initiator: { principalId: 'worker', executionId: 'A' } })
     const requesters = ['A', 'C']
     const nodes = requesters.map(id => ({ id: `node-${id}`, kind: 'agent' as const, agentId: `agent-${id}` }))
-    const ownedVersion = { ...version, definition: { ...version.definition, nodes } } as WorkflowVersionV3
+    const ownedVersion = { ...version, definition: { ...version.definition, nodes } } as WorkflowVersionCurrent
     const cis = requesters.map((id, index) => ({ id: record.id, revision: '3', execution_id: id,
       agent_id: nodes[index]!.agentId, node_id: nodes[index]!.id, pinned: true, record }))
     const activities: ActivityReadRow[] = requesters.map((id, index) => ({ sequence: String(index + 1),

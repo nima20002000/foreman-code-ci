@@ -1,13 +1,13 @@
 import type { HarnessExecution, HarnessExecutionContext, ResultProtocol } from '@foreman-code/contracts'
-import { WorkActivationInputSchema, WorkRequestSchema, parseWorkHandoffResult, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import { WorkActivationInputSchema, WorkRequestSchema, parseWorkHandoffResult, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { repeatConflict, sameRepeatValue, type RepeatScope } from './repeatResolution.js'
 import { parseWorkResultForInput, resolveWorkResultForInput } from './workHandoffResult.js'
 import { isHierarchyWorkflow, parseHierarchyWorkResult } from './hierarchyResults.js'
 import type { RepeatLockedHooks } from './repeatPostgres.js'
 import { parseWorkflowWorkResult } from './workflowCoordinationResult.js'
 
-export async function readParentWorkRequestLocked(context: { sql: GraphTransactionSql; scope: RepeatScope },
+export async function readParentWorkRequestLocked(context: { sql: SqlTransaction; scope: RepeatScope },
   activationId: string) {
   const row = (await context.sql.query<{ record: unknown }>(
     `select record from run_work_requests where run_id=$1
@@ -20,7 +20,7 @@ export async function readParentWorkRequestLocked(context: { sql: GraphTransacti
 }
 
 /** Frozen continuation inputs can predate the saved parent-request field. */
-export async function readWorkResultContextLocked(context: { sql: GraphTransactionSql; scope: RepeatScope },
+export async function readWorkResultContextLocked(context: { sql: SqlTransaction; scope: RepeatScope },
   activationId: string, value: unknown, resultProtocol?: ResultProtocol): Promise<HarnessExecutionContext | undefined> {
   const input = WorkActivationInputSchema.parse(value)
   if (resultProtocol) {
@@ -39,8 +39,8 @@ export async function readWorkResultContextLocked(context: { sql: GraphTransacti
   return { parentRequest: request ? { requestId: request.requestId, requesterNodeId: request.requesterNodeId } : null }
 }
 
-export async function parseWorkResultLocked(context: { sql: GraphTransactionSql; scope: RepeatScope;
-  version?: WorkflowVersionV3; hooks?: Pick<RepeatLockedHooks, 'run'> },
+export async function parseWorkResultLocked(context: { sql: SqlTransaction; scope: RepeatScope;
+  version?: WorkflowVersionCurrent; hooks?: Pick<RepeatLockedHooks, 'run'> },
   execution: HarnessExecution, activationId: string) {
   if (context.version && isHierarchyWorkflow(context.version)) {
     const result = parseHierarchyWorkResult(execution.result, context.version, execution.workflowNodeId,
@@ -68,7 +68,7 @@ export async function parseWorkResultLocked(context: { sql: GraphTransactionSql;
 }
 
 /** Recheck the resolved request against persisted activation ancestry. */
-export async function readWorkReturnRequestLocked(context: { sql: GraphTransactionSql; scope: RepeatScope },
+export async function readWorkReturnRequestLocked(context: { sql: SqlTransaction; scope: RepeatScope },
   activationId: string, requestId: string | undefined) {
   if (requestId === undefined) return repeatConflict('WORK_RETURN_REQUEST_MISSING')
   const row = (await context.sql.query<{ record: unknown; parent_id: string | null }>(

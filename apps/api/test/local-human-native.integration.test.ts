@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, it } from 'vitest'
 import { runCommand } from '../src/modules/harnesses/process.js'
 import { nativeHttpIsolation } from './helpers/nativeHttpIsolation.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('native process local-human isolation', { timeout: 60_000 }, () => {
-  let database: Awaited<ReturnType<typeof agent3Database>>
-  beforeAll(async () => { database = await agent3Database() }, 60_000)
+  let database: Awaited<ReturnType<typeof migratedDatabase>>
+  beforeAll(async () => { database = await migratedDatabase() }, 60_000)
   afterAll(async () => { await database?.close() }, 60_000)
 
   // The cases share migrated tables and retain separate workflows, servers and native owners.

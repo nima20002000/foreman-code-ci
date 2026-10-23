@@ -1,11 +1,11 @@
 import { useMutation } from '@tanstack/react-query'
-import type { RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
+import type { RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
 import { reserveBoardStop, sendBoardStop, recordBoardStopReceipt, useBoardStopOutbox } from '../stopOutbox'
 import { runActionsClient } from './client'
 import { useActionLifetime } from './state'
 
 /** The Board's one Stop command: reserve the stop journal, send it, record its receipt. A retry resends the same stop. */
-export function useRunStop(scope: RepeatGraphScopeV3, refresh: () => void) {
+export function useRunStop(scope: RepeatGraphScopeCurrent, refresh: () => void) {
   const outbox = useBoardStopOutbox(scope), life = useActionLifetime()
   const stop = useMutation({ retry: false, gcTime: 0, mutationFn: async () => {
     life.assertCurrent()

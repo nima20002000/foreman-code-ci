@@ -1,18 +1,9 @@
-import { RECORDED_CODEX_VERSION } from './codex-version.js'
 import type { NativeSessionStart } from '../../src/modules/harnesses/port.js'
 import { input } from './codex-test-helpers.js'
 
 /** Deterministic source fixtures for the shared production factory. The caller
  * still allocates/authenticates each real application owner and persists facts.
  * These synthetic inputs do not constitute a provider recording or qualification. */
-export const codexResponseSurfaceEvidence = {
-  origin: 'synthetic' as const,
-  redacted: true as const,
-  protocolRevision: RECORDED_CODEX_VERSION,
-  stableSchemaGitBlob: 'synthetic-stable-schema',
-  referenceManifestSha256: 'synthetic-schema-manifest',
-}
-
 export function codexResponseSurfaceFixtures(directory: string) {
   const workflow = input(directory, 'workflow-fixture-agent')
   workflow.correlationId = 'workflow-fixture-execution'

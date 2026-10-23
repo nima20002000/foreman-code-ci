@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import pg from 'pg'
 import { expect, it, vi } from 'vitest'
-import { makeCurrentWorkflowFixture, WorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
 import { buildApp } from '../src/app.js'
 import { DomainError } from '../src/modules/errors.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
@@ -57,7 +57,7 @@ it('stops an orphan through authenticated MCP while preserving other Runs of the
   })
   try {
     for (let index = 0; index < 3; index += 1) {
-      const run = WorkflowRunV3Schema.parse({ ...f.f.run, id: `run-${randomUUID()}` })
+      const run = WorkflowRunCurrentSchema.parse({ ...f.f.run, id: `run-${randomUUID()}` })
       await insertProviderRun(f.db.pool, { ...f.f, run })
       others.push(run.id)
     }

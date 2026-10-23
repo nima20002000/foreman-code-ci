@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
-import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema, CurrentWorkflowSaveResultSchema } from '@foreman-code/contracts/wave25'
+import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema, CurrentWorkflowSaveResultSchema } from '@foreman-code/contracts/current'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { remoteReviewProduction, waitForRemoteReview } from './helpers/remoteReviewProduction.js'
 

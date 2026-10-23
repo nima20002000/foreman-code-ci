@@ -2,12 +2,12 @@ import { createHash } from 'node:crypto'
 import { expect } from 'vitest'
 import { HarnessExecutionSchema } from '@foreman-code/contracts'
 import {
-  canonicalGraphJson, reduceRepeatGraphPageV3, RepeatGraphSnapshotV3Schema, RepeatGraphPageV3Schema,
-  RepeatGraphCurrentV3Schema, RunRecordDetailSchema, RunExecutionsPageSchema, RunExecutionDetailSchema,
-  RunExecutionBindingsPageSchema, RunVersionDetailSchema, WorkflowRunV3Schema, RUN_INSPECTION_TOOLS,
-  type RepeatGraphSnapshotV3, type RepeatGraphEventV3, type RunExecutionSummary, type RunExecutionDetail,
+  canonicalGraphJson, reduceRepeatGraphPageCurrent, RepeatGraphSnapshotCurrentSchema, RepeatGraphPageCurrentSchema,
+  RepeatGraphCurrentStateSchema, RunRecordDetailSchema, RunExecutionsPageSchema, RunExecutionDetailSchema,
+  RunExecutionBindingsPageSchema, RunVersionDetailSchema, WorkflowRunCurrentSchema, RUN_INSPECTION_TOOLS,
+  type RepeatGraphSnapshotCurrent, type RepeatGraphEventCurrent, type RunExecutionSummary, type RunExecutionDetail,
   type RunExecutionBinding, type RepeatOccurrenceV1,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import { runPath, type Harness, type Started } from './scenarioHarness.js'
 import type { Scenario } from './scenarioFixtures.js'
 
@@ -65,14 +65,14 @@ async function bindings(f: Harness, started: Started, detail: RunExecutionDetail
   throw new Error('ENG07 binding history exceeded its fixture bound')
 }
 
-export async function assertScenarioEvidence(f: Harness, started: Started, initial: RepeatGraphSnapshotV3,
+export async function assertScenarioEvidence(f: Harness, started: Started, initial: RepeatGraphSnapshotCurrent,
   expected: Scenario = f.scenario) {
   const scope = started.scope, version = started.saved.version
   const record = RunRecordDetailSchema.parse(await f.readParity(`${runPath(scope)}/record`, RUN_INSPECTION_TOOLS.record, request(started)))
   expect(record).toMatchObject({ run: { id: scope.runId, workflowVersionId: version.id, executionSemanticsVersion: 3,
     agentConfigurationVersionIds: version.agentConfigurationVersionIds, input: expected.runInput,
     executionState: 'completed', outcome: 'succeeded' }, stopRequested: false, cleanupPending: false })
-  const durableRun = WorkflowRunV3Schema.parse((await f.base.db.pool.query<{ record: unknown }>(
+  const durableRun = WorkflowRunCurrentSchema.parse((await f.base.db.pool.query<{ record: unknown }>(
     'select record from runs where id=$1', [scope.runId])).rows[0]!.record)
   delete durableRun.authorizationPrincipalId
   expect(record.run).toEqual(durableRun)
@@ -80,22 +80,22 @@ export async function assertScenarioEvidence(f: Harness, started: Started, initi
   expect(record.run.executionLocation).toEqual(started.accepted.run.executionLocation)
   expect(RunVersionDetailSchema.parse(await f.readParity(`${runPath(scope)}/version`, RUN_INSPECTION_TOOLS.version, request(started))))
     .toEqual({ scope, version })
-  const events: RepeatGraphEventV3[] = []
+  const events: RepeatGraphEventCurrent[] = []
   let replayed = initial, pages = 0
   for (;;) {
     if (++pages > 100) throw new Error('ENG07 graph replay exceeded its bounded fixture')
-    const page = RepeatGraphPageV3Schema.parse(await f.graph(scope, 'events', replayed.asOfSequence))
+    const page = RepeatGraphPageCurrentSchema.parse(await f.graph(scope, 'events', replayed.asOfSequence))
     expect(page.baseSequence).toBe(replayed.asOfSequence)
     events.push(...page.batches.flatMap((batch) => batch.events))
-    replayed = reduceRepeatGraphPageV3(replayed, page)
+    replayed = reduceRepeatGraphPageCurrent(replayed, page)
     if (!page.hasMore) break
   }
-  const snapshot = RepeatGraphSnapshotV3Schema.parse(await f.graph(scope, 'snapshot'))
+  const snapshot = RepeatGraphSnapshotCurrentSchema.parse(await f.graph(scope, 'snapshot'))
   expect(replayed).toEqual(snapshot) // COMPLETE consumer; never filter facts.
   expect(BigInt(snapshot.asOfSequence)).toBeGreaterThan(BigInt(initial.asOfSequence))
-  const empty = RepeatGraphPageV3Schema.parse(await f.graph(scope, 'events', snapshot.asOfSequence))
+  const empty = RepeatGraphPageCurrentSchema.parse(await f.graph(scope, 'events', snapshot.asOfSequence))
   expect(empty.batches).toEqual([]); expect(empty.hasMore).toBe(false)
-  const current = RepeatGraphCurrentV3Schema.parse(await f.graph(scope, 'current'))
+  const current = RepeatGraphCurrentStateSchema.parse(await f.graph(scope, 'current'))
   expect(current.scope).toEqual(scope); expect(current.topology).toEqual(snapshot.topology)
   expect(current.state.run).toEqual(snapshot.state.run)
   expect(current.asOfSequence).toBe(snapshot.asOfSequence)

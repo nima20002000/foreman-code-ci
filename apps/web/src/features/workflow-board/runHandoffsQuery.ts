@@ -1,15 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
-import { RepeatGraphScopeV3Schema, RunHandoffsReadSchema,
-  type RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
+import { RepeatGraphScopeCurrentSchema, RunHandoffsReadSchema,
+  type RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
 import { ApiError, apiClient, type RequestOptions } from '../../shared/api/client'
 import { assertSession, sessionGeneration } from '../../shared/api/sessionBoundary'
 
-export const runHandoffsKey = (scope: RepeatGraphScopeV3, generation = sessionGeneration()) =>
+export const runHandoffsKey = (scope: RepeatGraphScopeCurrent, generation = sessionGeneration()) =>
   ['workbench', 'run-handoffs', generation, scope.workspaceId, scope.workflowId,
     scope.runId, scope.workflowVersionId, 3] as const
 
-export async function readRunHandoffs(scope: RepeatGraphScopeV3, options?: RequestOptions) {
-  RepeatGraphScopeV3Schema.parse(scope)
+export async function readRunHandoffs(scope: RepeatGraphScopeCurrent, options?: RequestOptions) {
+  RepeatGraphScopeCurrentSchema.parse(scope)
   const generation = sessionGeneration()
   const result = await apiClient.request(`/api/management/workspaces/${encodeURIComponent(scope.workspaceId)}`
     + `/runs/${encodeURIComponent(scope.runId)}/handoffs`, RunHandoffsReadSchema, options)
@@ -21,7 +21,7 @@ export async function readRunHandoffs(scope: RepeatGraphScopeV3, options?: Reque
   return result
 }
 
-export function useRunHandoffsQuery(scope: RepeatGraphScopeV3, enabled: boolean) {
+export function useRunHandoffsQuery(scope: RepeatGraphScopeCurrent, enabled: boolean) {
   return useQuery({ queryKey: runHandoffsKey(scope), enabled,
     queryFn: ({ signal }) => readRunHandoffs(scope, { signal }),
     staleTime: 1000, gcTime: 60_000, refetchOnWindowFocus: enabled,

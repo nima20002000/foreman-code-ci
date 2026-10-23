@@ -4,11 +4,9 @@ import {
   type GraphqlAgentTool, type GraphqlToolOverride, type HarnessConfiguration, type WorkflowAgentProductRole,
 } from '@foreman-code/contracts'
 import { Combobox, Select, Switch } from '../../shared/ui/nocturne'
-import { useProviderHarnessModels } from '../provider-accounts/useProviderHarnessModels'
-import { selectNativeModel, supportedEfforts } from '../settings/harnessModelSelection'
-import { claudeAccessOptions } from '../settings/claudeAccess'
-import { fieldMessage, type FieldIssue } from '../settings/fieldValidation'
-import { memoryAccess, memoryToolNames, replaceMemoryAccess } from '../memory-boards/access'
+import { useProviderHarnessModels } from '../provider-accounts'
+import { selectNativeModel, supportedEfforts, claudeAccessOptions, fieldMessage, type FieldIssue } from '../settings'
+import { memoryAccess, memoryToolNames, replaceMemoryAccess } from '../memory-boards'
 import type { DeviceProvisioningTarget } from '@foreman-code/contracts/device-resources'
 
 /** One compact settings row: a plain label on the left, its control on the right, an optional note below. */

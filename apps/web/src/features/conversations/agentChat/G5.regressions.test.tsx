@@ -5,13 +5,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { AgentChatStateSchema, agentChatFixtures, type AgentChatState, type AgentChatTurn, type SendAgentChatMessageRequest } from '@foreman-code/contracts/agent-chat'
 import { server } from '../../../mocks/server'
-import { AgentChatPanel } from '../../graph/AgentPanels'
+import { AgentChatPanel } from '../../graph'
 import { useConversationDraftStore } from '../conversationDraftStore'
 import { agentChatStateKey } from './useAgentChat'
 import { claimDraftReadback, receiptForCommand } from './receiptReadback'
-import { AGENT_CHAT_ACKNOWLEDGEMENT_LIMIT, agentChatReadbacksKey, compactAgentChatResult, confirmedCommandReceipt,
-  isRetirableAcknowledgement, rememberAgentChatReadback, retireAgentChatAcknowledgements,
-  type AgentChatCommand, type AgentChatCommandRecord, type AgentChatReadbacks } from './commandRecords'
+import { AGENT_CHAT_ACKNOWLEDGEMENT_LIMIT, compactAgentChatResult, confirmedCommandReceipt,
+  isRetirableAcknowledgement, readAgentChatReadbacks, rememberAgentChatReadback, retireAgentChatAcknowledgements,
+  type AgentChatCommand, type AgentChatCommandRecord } from './commandRecords'
 import { AgentChatTestSource, chatTooltip, installChatSource, mountChat } from './testSupport'
 
 const messagePath = '/api/workspaces/:workspaceId/agent-chat/messages'
@@ -49,7 +49,7 @@ function laterWindow(initial: AgentChatState): AgentChatState {
   state.activeTurn = null; state.activities = []; state.sessionState = 'idle'; state.hasEarlierMessages = true; state.revision += 100
   return AgentChatStateSchema.parse(state)
 }
-const proofFor = (client: QueryClient, id: number) => client.getQueryData<AgentChatReadbacks>(agentChatReadbacksKey)?.[id]
+const proofFor = (client: QueryClient, id: number) => readAgentChatReadbacks(client)[id]
 afterEach(() => {
   clients.splice(0).forEach((client) => client.clear())
   useConversationDraftStore.getState().clearAllDrafts()
@@ -243,7 +243,7 @@ describe('G5 B2-PF-02 / B-R07 compact recovered-command retirement', () => {
       expect(retained).toContain(unresolved); expect(retained).toContain(unknown); expect(retained).toContain(pending)
       expect(unresolved.state.variables).toMatchObject({ input: { content: 'Input still-unconfirmed' } })
       expect(pending.state.status).toBe('pending')
-      const proofs = client.getQueryData<AgentChatReadbacks>(agentChatReadbacksKey)!
+      const proofs = readAgentChatReadbacks(client)
       expect(Object.keys(proofs)).toHaveLength(AGENT_CHAT_ACKNOWLEDGEMENT_LIMIT)
       expect(proofFor(client, unresolved.mutationId)).toBeUndefined()
       expect(proofFor(client, unknown.mutationId)).toBeUndefined()
@@ -260,7 +260,7 @@ describe('G5 B2-PF-02 / B-R07 compact recovered-command retirement', () => {
       // Removing the owning commands also retires the compact proof, not just the full result.
       retained.filter((entry) => proofs[entry.mutationId]).forEach((entry) => client.getMutationCache().remove(entry))
       retireAgentChatAcknowledgements(client)
-      expect(client.getQueryData(agentChatReadbacksKey)).toEqual({})
+      expect(readAgentChatReadbacks(client)).toEqual({})
     } finally { pendingGate.release(); await pendingResult }
   })
 
@@ -278,7 +278,7 @@ describe('G5 B2-PF-02 / B-R07 compact recovered-command retirement', () => {
     rememberAgentChatReadback(client, key, { ...terminal, turns: terminal.turns.filter((turn) => turn.requestId !== command.input.requestId) })
     expect(proofFor(client, mutation.mutationId)).toBeUndefined()
     rememberAgentChatReadback(client, key, terminal)
-    expect(otherClient.getQueryData(agentChatReadbacksKey)).toBeUndefined()
+    expect(readAgentChatReadbacks(otherClient)).toEqual({})
     const record: AgentChatCommandRecord = { command, status: 'error', error: new Error('lost'), result: undefined,
       submittedAt: 1, readback: proofFor(client, mutation.mutationId) }
     expect(confirmedCommandReceipt(record, laterWindow(terminal))?.delivery).toBe('completed')

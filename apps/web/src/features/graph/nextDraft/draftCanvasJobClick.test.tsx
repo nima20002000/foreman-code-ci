@@ -1,4 +1,4 @@
-import { WorkflowDefinitionV3Schema } from '@foreman-code/contracts/wave25'
+import { WorkflowDefinitionCurrentSchema } from '@foreman-code/contracts/current'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -8,8 +8,7 @@ import { GraphPresentationProvider } from '../GraphPresentation'
 import { useGraphDraftStore } from '../store'
 import { fixture } from './core.cases'
 import { DraftCanvas } from './DraftCanvas'
-import { attachJob } from './model'
-import { nextDraftKey } from './state'
+import { attachJob, nextDraftKey } from '../../board-core'
 
 // Real React Flow node-wrapper bubbling: DraftCanvas is not stubbed.
 const key = nextDraftKey('workspace', 'workflow')
@@ -73,7 +72,7 @@ it('keeps a contract-valid ci-server Agent distinct from the presentation CI ser
   const authored = { ...graph, entryNodeId: 'ci-server',
     nodes: graph.nodes.map((node) => node.id === 'node-0' ? { ...node, id: 'ci-server' } : node),
     edges: graph.edges.map((edge) => ({ ...edge, source: edge.source === 'node-0' ? 'ci-server' : edge.source })) }
-  expect(WorkflowDefinitionV3Schema.parse(authored).nodes[0]!.id).toBe('ci-server')
+  expect(WorkflowDefinitionCurrentSchema.parse(authored).nodes[0]!.id).toBe('ci-server')
   const { agent, change } = mount(authored)
   const owner = await screen.findByRole('button', { name: /^Node 0, / })
   fireEvent.click(owner)

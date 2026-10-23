@@ -1,7 +1,7 @@
 import pg from 'pg'
 import { expect, it, vi } from 'vitest'
 import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { ChatManager } from '../../../test/helpers/operatorChatFixture.js'
 import { ConversationCredentials } from '../access/conversationCredentialIssuer.js'
 import type { ConversationFeatureContext } from '../conversations/conversationFeatureSubject.js'

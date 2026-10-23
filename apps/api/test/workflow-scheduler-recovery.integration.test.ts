@@ -5,20 +5,20 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { WorkflowScheduleDispatcher } from '../src/modules/schedules/dispatcher.js'
 import { PostgresScheduleDispatcher } from '../src/modules/schedules/postgresDispatcher.js'
 import type { ScheduleDispatchContext } from '../src/modules/schedules/dispatchErrors.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
-import { sch11ClockCases, sch11Minute, sch11Once, sch11Settings } from './helpers/scheduleClockCases.js'
-import { sch11DomainState, sch11Fixture, sch11Pool, type Sch11Database, type Sch11Fixture } from './helpers/scheduleFixture.js'
-import { sch11Child } from './helpers/scheduleProcess.js'
+import { scheduleClockCases, minuteSchedule, onceSchedule, utcScheduleSettings } from './helpers/scheduleClockCases.js'
+import { scheduleDomainState, scheduleDispatchFixture, scheduleSecondSession, type ScheduleDatabase, type ScheduleDispatchFixture } from './helpers/scheduleFixture.js'
+import { scheduleDispatcherProcess } from './helpers/scheduleProcess.js'
 import { rejectableDeferred } from './helpers/deferred.js'
 
 /** No `.fails`/skip markers hide product regressions. Except for the established
  * TEST_DATABASE_URL gate, every assertion is a normal failing regression test.
  * OS children use the repo's existing node --import tsx runtime, not a new tool. */
 describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL clock parity / crash recovery', () => {
-  let database: Sch11Database
-  let f: Sch11Fixture
-  beforeAll(async () => { database = await agent3Database() }, 60_000)
+  let database: ScheduleDatabase
+  let f: ScheduleDispatchFixture
+  beforeAll(async () => { database = await migratedDatabase() }, 60_000)
   afterAll(async () => { await database?.close() })
   beforeEach(async () => {
     if (f) {
@@ -27,13 +27,13 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL clock parity / crash recove
         await f.service.disable(f.writer.principal, 'http', f.command(previous.revision))
       }
     }
-    f = await sch11Fixture(database)
+    f = await scheduleDispatchFixture(database)
   }, 60_000)
 
   it('a fresh schedule service reads the fixture database and rechecks revoked readers', async () => {
     const saved = await f.save()
     const reader = await f.issue(['workflows:read'])
-    const other = sch11Pool(database)
+    const other = scheduleSecondSession(database)
     try {
       const service = new WorkflowScheduleService(other.pool, new PostgresCommandCoordinator(other.pool), f.clock)
       expect(await service.get(reader.principal, f.scope)).toEqual({ schedule: saved })
@@ -48,7 +48,7 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL clock parity / crash recove
   it('a child dispatcher accepts the schedule in the fixture database', async () => {
     const saved = await f.save()
     f.time.now = saved.nextOccurrenceAt!
-    const child = sch11Child(f, saved, 'prepared')
+    const child = scheduleDispatcherProcess(f, saved, 'prepared')
     try {
       await child.waitFor('prepared')
       await child.release()
@@ -66,7 +66,7 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL clock parity / crash recove
     }
   }, 60_000)
 
-  it.each(sch11ClockCases)('$name: preview equals the persisted acceptance and cursor', async ({ schedule, from, expected }) => {
+  it.each(scheduleClockCases)('$name: preview equals the persisted acceptance and cursor', async ({ schedule, from, expected }) => {
     f.time.now = from
     const saved = await f.save(schedule)
     expect(saved.nextOccurrenceAt).toBe(expected[0])
@@ -82,29 +82,29 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL clock parity / crash recove
     expect(await f.countRuns()).toBe(1)
     expect((await f.current())?.nextOccurrenceAt).toBe(nextOccurrences(schedule, expected[0]!, 1)[0] ?? null)
     // An unchanged stale candidate and a fresh dispatcher never re-admit.
-    const state = await sch11DomainState(f)
+    const state = await scheduleDomainState(f)
     await f.dispatcher().dispatch(saved)
-    expect(await sch11DomainState(f)).toEqual(state)
+    expect(await scheduleDomainState(f)).toEqual(state)
     if (schedule.mode !== 'interval' && schedule.timezone === 'America/New_York' && schedule.time === '01:30') {
       f.time.now = '2024-11-03T06:30:00.000Z' // second fold instance, NOT another wall-time occurrence
       await f.dispatcher().dispatch(saved)
-      expect(await sch11DomainState(f)).toEqual(state)
+      expect(await scheduleDomainState(f)).toEqual(state)
     }
   }, 60_000)
 
   it.each([{ every: 1, unit: 'minute' as const }, { every: 7, unit: 'hour' as const }])(
     'retains the $every-$unit anchor through a fresh service and restarted dispatcher process', async ({ every, unit }) => {
-      const configuration = { ...sch11Settings, mode: 'interval' as const, every, unit,
+      const configuration = { ...utcScheduleSettings, mode: 'interval' as const, every, unit,
         anchorAt: '2030-01-07T08:59:17.250Z', timezone: 'America/New_York' }
       const saved = await f.save(configuration)
-      const other = sch11Pool(database)
+      const other = scheduleSecondSession(database)
       try {
         const restarted = new WorkflowScheduleService(other.pool, new PostgresCommandCoordinator(other.pool), f.clock)
         const readback = (await restarted.get(f.reader.principal, f.scope)).schedule!
         expect(readback).toEqual(saved)
         expect(readback).toMatchObject({ anchorAt: configuration.anchorAt })
         f.time.now = saved.nextOccurrenceAt!
-        const child = sch11Child(f, readback, 'prepared')
+        const child = scheduleDispatcherProcess(f, readback, 'prepared')
         try {
           await child.waitFor('prepared'); await child.release(); await child.waitFor('done')
           expect(await child.exited).toEqual({ code: 0, signal: null })
@@ -120,20 +120,20 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL clock parity / crash recove
   )
 
   it('replays an elapsed Once and preserves its pending cursor while rejecting past recurrence edits', async () => {
-    const input = { ...f.command(0), schedule: sch11Once }
+    const input = { ...f.command(0), schedule: onceSchedule }
     const saved = await f.service.save(f.writer.principal, 'http', input)
     f.time.now = '2030-01-07T10:00:00.000Z'
     expect(await f.service.save(f.writer.principal, 'mcp', input)).toEqual({ value: saved.value, replayed: true })
-    const unchanged = await f.service.save(f.writer.principal, 'http', { ...f.command(1), schedule: sch11Once })
+    const unchanged = await f.service.save(f.writer.principal, 'http', { ...f.command(1), schedule: onceSchedule })
     expect(unchanged).toEqual({ value: { ...saved.value, revision: 2 }, replayed: false })
-    const before = await sch11DomainState(f)
+    const before = await scheduleDomainState(f)
     for (const enabled of [true, false]) {
       await expect(f.service.save(f.writer.principal, 'http', {
-        ...f.command(2), schedule: { ...sch11Once, time: '08:59', enabled },
+        ...f.command(2), schedule: { ...onceSchedule, time: '08:59', enabled },
       }))
         .rejects.toMatchObject({ code: 'INVALID_REQUEST' })
     }
-    expect(await sch11DomainState(f)).toEqual(before)
+    expect(await scheduleDomainState(f)).toEqual(before)
     expect(await f.current()).toEqual(unchanged.value)
     expect(await f.history()).toEqual([])
     expect(await f.countRuns()).toBe(0)
@@ -141,14 +141,14 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL clock parity / crash recove
 
   it('two real dispatcher processes race the same prepared occurrence; one durable Run and receipt win', async () => {
     const saved = await f.save(); f.time.now = saved.nextOccurrenceAt!
-    const first = sch11Child(f, saved, 'prepared'), second = sch11Child(f, saved, 'prepared')
+    const first = scheduleDispatcherProcess(f, saved, 'prepared'), second = scheduleDispatcherProcess(f, saved, 'prepared')
     try {
       await Promise.all([first.waitFor('prepared'), second.waitFor('prepared')])
       await Promise.all([first.release(), second.release()])
       await Promise.all([first.waitFor('done'), second.waitFor('done')])
       expect(await first.exited).toEqual({ code: 0, signal: null })
       expect(await second.exited).toEqual({ code: 0, signal: null })
-      const state = await sch11DomainState(f)
+      const state = await scheduleDomainState(f)
       for (const key of ['runs', 'snapshots', 'occurrences', 'runAuthority', 'graphHeads'] as const) expect(state[key]).toHaveLength(1)
       const receipts = await database.pool.query(`select result from management_command_receipts
         where operation='run.start' and result->>'workflowId'=$1`, [f.scope.workflowId])
@@ -159,8 +159,8 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL clock parity / crash recove
 
   it('SIGKILL mid-claim releases DB locks and rolls back every speculative artifact before restart', async () => {
     const saved = await f.save(); f.time.now = saved.nextOccurrenceAt!
-    const before = await sch11DomainState(f)
-    const child = sch11Child(f, saved, 'mid-claim')
+    const before = await scheduleDomainState(f)
+    const child = scheduleDispatcherProcess(f, saved, 'mid-claim')
     let stagedRunId: string, stagedAuthorityId: string
     try {
       const staged = await child.waitFor('mid-claim')
@@ -168,11 +168,11 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL clock parity / crash recove
       stagedRunId = staged.runId!; stagedAuthorityId = staged.authorityId!
       expect(stagedRunId).toBeTruthy(); expect(stagedAuthorityId).toBeTruthy()
       // Independent session cannot see uncommitted Run/receipt/cursor changes.
-      expect(await sch11DomainState(f)).toEqual(before)
+      expect(await scheduleDomainState(f)).toEqual(before)
       expect(await child.kill()).toEqual({ code: null, signal: 'SIGKILL' })
     } finally { await child.close() }
-    expect(await sch11DomainState(f)).toEqual(before)
-    const restarted = sch11Child(f, saved, 'prepared')
+    expect(await scheduleDomainState(f)).toEqual(before)
+    const restarted = scheduleDispatcherProcess(f, saved, 'prepared')
     try {
       await restarted.waitFor('prepared'); await restarted.release(); await restarted.waitFor('done')
       expect(await restarted.exited).toEqual({ code: 0, signal: null })
@@ -192,28 +192,28 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL clock parity / crash recove
 
   it('kills the caller after Start COMMIT but before its acknowledgement; restart does not create or republish', async () => {
     const saved = await f.save(); f.time.now = saved.nextOccurrenceAt!
-    const child = sch11Child(f, saved, 'lost-start-ack')
+    const child = scheduleDispatcherProcess(f, saved, 'lost-start-ack')
     try {
       const committed = await child.waitFor('committed')
       const facts = await f.history()
       expect(facts).toHaveLength(1)
       expect(facts[0]).toMatchObject({ status: 'accepted', runId: committed.runId })
-      const committedState = await sch11DomainState(f)
+      const committedState = await scheduleDomainState(f)
       expect(await child.kill()).toEqual({ code: null, signal: 'SIGKILL' })
       // The recovered process receives only the stale scan candidate, not a
       // successful Start result. It must consult durable state, not retry a launch.
-      const restarted = sch11Child(f, saved, 'prepared')
+      const restarted = scheduleDispatcherProcess(f, saved, 'prepared')
       try {
         await restarted.waitFor('done')
         expect(await restarted.exited).toEqual({ code: 0, signal: null })
       } finally { await restarted.close() }
-      expect(await sch11DomainState(f)).toEqual(committedState)
+      expect(await scheduleDomainState(f)).toEqual(committedState)
       expect(await f.countRuns()).toBe(1)
     } finally { await child.close() }
   }, 60_000)
 
   it('catches up after 25 hours in one dispatch, never backfills an earlier Run', async () => {
-    await f.save(sch11Minute)
+    await f.save(minuteSchedule)
     f.time.now = '2030-01-08T10:01:30.000Z' // 1,501 due instants; well beyond one 100-row batch.
     await f.dispatcher().dispatch((await f.current())!)
     const facts = await f.history()
@@ -224,12 +224,12 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL clock parity / crash recove
     expect(facts.filter((fact) => fact.reason === 'superseded')).toHaveLength(4)
     expect(facts.filter((fact) => fact.reason === 'outside_grace')).toHaveLength(1_496)
     expect(await f.countRuns()).toBe(1)
-    expect(await f.current()).toMatchObject({ revision: 1, anchorAt: sch11Minute.anchorAt,
+    expect(await f.current()).toMatchObject({ revision: 1, anchorAt: minuteSchedule.anchorAt,
       nextOccurrenceAt: '2030-01-08T10:02:00.000Z' })
   }, 90_000)
 
   it('considers a day-old seconds cursor during the first poll while the clock advances', async () => {
-    const saved = await f.save({ ...sch11Minute, unit: 'second' })
+    const saved = await f.save({ ...minuteSchedule, unit: 'second' })
     const resumedAt = Date.parse(saved.nextOccurrenceAt!) + 86_400_000
     let clockReads = 0
     const clock = () => new Date(resumedAt + clockReads++ * 2)
@@ -272,7 +272,7 @@ describe.skipIf(!postgresEnabled)('SCH-11 PostgreSQL clock parity / crash recove
 
   it('clean shutdown drains an open real Start transaction and never admits the next queued candidate', async () => {
     const saved = await f.save(); f.time.now = saved.nextOccurrenceAt!
-    const others = await Promise.all(Array.from({ length: 4 }, () => sch11Fixture(database)))
+    const others = await Promise.all(Array.from({ length: 4 }, () => scheduleDispatchFixture(database)))
     const otherSaved = await Promise.all(others.map(async (fixture) => {
       const schedule = await fixture.save()
       fixture.time.now = f.time.now

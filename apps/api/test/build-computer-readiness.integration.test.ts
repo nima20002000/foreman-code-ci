@@ -18,16 +18,16 @@ import { BuildComputerSettings, buildComputerTarget } from '../src/modules/setti
 import { buildComputerReadiness } from '../src/modules/settings/buildComputerReadiness.js'
 import { WorkerExecutionPolicy } from '../src/modules/settings/workerExecution.js'
 import { jobComputerCapacityDecision } from '../src/modules/jobs/computerSelection.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { verificationCapacityFixture } from './helpers/verificationCapacityFixture.js'
 
 // Qualification I/O is supplied; settings, authorization and capacity use PostgreSQL and authenticated transports.
 describe.skipIf(!postgresEnabled)('build readiness matches admission through HTTP and Operator MCP', () => {
-  let database: Awaited<ReturnType<typeof agent3Database>>
+  let database: Awaited<ReturnType<typeof migratedDatabase>>
   const apps: ReturnType<typeof buildApp>[] = []
   const clients: Client[] = []
-  beforeAll(async () => { database = await agent3Database() }, 60000)
+  beforeAll(async () => { database = await migratedDatabase() }, 60000)
   afterAll(async () => {
     await Promise.allSettled(clients.map(client => client.close()))
     await Promise.allSettled(apps.map(app => app.close()))

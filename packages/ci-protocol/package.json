@@ -1,0 +1,9 @@
+{
+  "name": "@foreman-code/ci-protocol",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    "./test-results": { "types": "./src/testResults.d.mts", "import": "./src/testResults.mjs" }
+  }
+}

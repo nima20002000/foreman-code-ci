@@ -3,9 +3,9 @@ import { RunEventsPageSchema } from '@foreman-code/contracts/management'
 import {
   CurrentRunVersionSnapshotSchema, RunExecutionBindingsListInputSchema, RunExecutionBindingsPageSchema,
   RunExecutionDetailSchema, RunExecutionsListInputSchema, RunExecutionsPageSchema, RunVersionDetailSchema,
-  sameWorkflowValue, type CurrentRunDetails, type RepeatGraphScopeV3, type RunExecutionBinding,
-  type RunExecutionDetail, type WorkflowVersionV3,
-} from '@foreman-code/contracts/wave25'
+  sameWorkflowValue, type CurrentRunDetails, type RepeatGraphScopeCurrent, type RunExecutionBinding,
+  type RunExecutionDetail, type WorkflowVersionCurrent,
+} from '@foreman-code/contracts/current'
 
 /** Test-owned accepted facts, never inferred from native terminal reports or from
  * a node's attempt number. Ordinary fixture executions omit occurrence. */
@@ -34,7 +34,7 @@ export function inspectionFixturePage<T>(items: readonly T[], id: (item: T) => s
     ? JSON.stringify(['inspection-msw', key, id(page.at(-1)!)]) : null } }
 }
 
-export function inspectionScopeForRun({ run }: CurrentRunDetails): RepeatGraphScopeV3 {
+export function inspectionScopeForRun({ run }: CurrentRunDetails): RepeatGraphScopeCurrent {
   return { workspaceId: run.workspaceId, workflowId: run.workflowId, runId: run.id,
     workflowVersionId: run.workflowVersionId, executionSemanticsVersion: 3 }
 }
@@ -43,7 +43,7 @@ const missing = () => HttpResponse.json({ error: { code: 'NOT_FOUND', message: '
 /** Shared by createCurrentBoardMock's registered HTTP handlers and focused tests.
  * All four lane A routes use their actual shared schemas. */
 export function runInspectionFixtureResponse(url: URL, tail: string, detail: CurrentRunDetails,
-  version: WorkflowVersionV3 | undefined, fixtures: readonly RunInspectionFixture[]) {
+  version: WorkflowVersionCurrent | undefined, fixtures: readonly RunInspectionFixture[]) {
   const scope = inspectionScopeForRun(detail)
   if (tail === '/version') {
     if (!version) return missing()

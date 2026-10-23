@@ -1,4 +1,4 @@
-import { assertWorkerProviderAccountBinding } from '../provider-accounts/workerOperations.js'
+import { assertWorkerProviderAccountBinding } from '../provider-accounts/index.js'
 import { isDeepStrictEqual } from 'node:util'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'

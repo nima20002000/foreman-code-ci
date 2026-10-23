@@ -7,7 +7,7 @@ import { CodexRuntimeNativeOutputTurn, codexNativeOutputDeclarations, type Codex
   type CodexNativeOutputCallback, type CodexNativeOutputTurnPin } from '../src/modules/harnesses/codexNativeOutput.js'
 import { ActivityProductionReplay } from './helpers/activityProductionReplay.js'
 import { input } from './fixtures/codex-test-helpers.js'
-import { canonicalGraphJson } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson } from '@foreman-code/contracts/current'
 import { assertOriginalWorkflowTerminal } from '../src/modules/interactions/workflowTerminalSource.js'
 import { graphSourceDigest } from '../src/modules/run-graph/publication.js'
 

@@ -2,7 +2,7 @@ import type { AgentSubject, MemoryBoardScope } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { requireAuthorization } from '../access/policy.js'
 import { DomainError } from '../errors.js'
-import type { GraphTransactionSql } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import type { MemoryBoardAuthority, MemoryTool, MutationContext, SubjectAccess } from './types.js'
 import { memoryWriteTools } from './types.js'
 import { same, scopeContains } from './identity.js'
@@ -13,7 +13,7 @@ export function requireSubjectTool(access: SubjectAccess, scope: MemoryBoardScop
     throw new DomainError('ACCESS_DENIED', 'This agent cannot use that memory tool in this board.', 403)
   }
 }
-export async function authorizeCaller(tx: GraphTransactionSql, authority: MemoryBoardAuthority,
+export async function authorizeCaller(tx: SqlTransaction, authority: MemoryBoardAuthority,
   principal: ManagementPrincipal, scope: MemoryBoardScope, tool: MemoryTool): Promise<MutationContext> {
   const access = await authority.caller(tx,principal)
   if (access) {
@@ -30,7 +30,7 @@ export async function authorizeCaller(tx: GraphTransactionSql, authority: Memory
   return { actor: { kind: 'operator', id: principal.id, displayName: principal.name },
     principalId: principal.id, caller: principal, tool }
 }
-export async function authorizeSubject(tx: GraphTransactionSql, authority: MemoryBoardAuthority,
+export async function authorizeSubject(tx: SqlTransaction, authority: MemoryBoardAuthority,
   subject: AgentSubject, scope: MemoryBoardScope, tool: MemoryTool): Promise<MutationContext> {
   const access = await authority.subject(tx,subject)
   if (!same(access.subject,subject)) throw new DomainError('ACCESS_DENIED','The saved agent identity has changed.',403)

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { CURRENT_WORKFLOW_TOOLS, CurrentEditIntentSchema, CurrentEditReadResultSchema,
   CurrentEditStageInputSchema, CurrentWorkflowReadResultSchema, CurrentWorkflowSaveResultSchema,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { buildApp } from '../src/app.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'

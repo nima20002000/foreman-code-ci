@@ -2,7 +2,7 @@ import { optionalCommandId } from './commands.js'
 import { AgentProductRoleSchema } from '../agentIdentity.js';
 import { z } from "zod";
 import { DeviceProvisioningHostReferenceSchema } from "../deviceResources.js";
-import { WorkflowVersionV3Schema } from "../wave25/workflowSchemas.js";
+import { WorkflowVersionCurrentSchema } from "../current/workflowSchemas.js";
 import {
   AgentSchema, AgentConfigurationVersionSchema,
   HarnessConfigurationSchema, SupportedHarnessConfigurationSchema, HarnessQualificationSchema, ScopedMcpDetectionSchema,
@@ -73,9 +73,9 @@ export const NativeConfigurationCheckResultSchema = z.object({
 export const WorkflowVersionListInputSchema = z.object({ ...Workflow, ...Page }).strict();
 export const WorkflowVersionGetInputSchema = z.object({ ...Workflow, versionId: IdSchema }).strict();
 export const WorkflowVersionPageSchema = z.object({
-  items: z.array(WorkflowVersionV3Schema), pageInfo: z.object({ nextCursor: z.string().nullable() }).strict(),
+  items: z.array(WorkflowVersionCurrentSchema), pageInfo: z.object({ nextCursor: z.string().nullable() }).strict(),
 }).strict();
-export const WorkflowVersionResultSchema = z.object({ version: WorkflowVersionV3Schema }).strict();
+export const WorkflowVersionResultSchema = z.object({ version: WorkflowVersionCurrentSchema }).strict();
 export const AgentVersionListInputSchema = z.object({ ...Workspace, agentId: IdSchema, ...Page }).strict();
 export const AgentVersionGetInputSchema = z.object({ ...Workspace, agentId: IdSchema, versionId: IdSchema }).strict();
 export const AgentVersionPageSchema = z.object({

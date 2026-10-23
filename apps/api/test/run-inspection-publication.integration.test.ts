@@ -6,7 +6,7 @@ import { readLiveManagementPrincipal } from '../src/modules/access/liveManagemen
 import { requireAuthorization } from '../src/modules/access/policy.js'
 import {
   RUN_INSPECTION_TOOLS, RunRecordDetailSchema, makeCurrentWorkflowFixture,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { postgresEnabled } from './helpers/database.js'
 import {

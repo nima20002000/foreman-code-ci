@@ -1,8 +1,8 @@
 import { coordinationBusinessOutput, type CoordinationResultContext } from './coordinationResult.js'
 import { z } from 'zod'
 import { ExecutionResultSchema } from './index.js'
-import { ChoiceOutcomeSchema, WorkflowChoiceSchema, type WorkflowChoice } from './wave25/choice.js'
-import { canonicalGraphJson } from './wave25/json.js'
+import { ChoiceOutcomeSchema, WorkflowChoiceSchema, type WorkflowChoice } from './current/choice.js'
+import { canonicalGraphJson } from './current/json.js'
 import { WorkflowArtifactOutputsV1Schema, WorkflowArtifactResultV1Schema, type WorkflowArtifactOutputsV1 } from './workflowArtifactDeclarations.js'
 export * from './workflowArtifactDeclarations.js'
 

@@ -3,6 +3,7 @@ import { readProductEnvironment } from '@foreman-code/contracts/product-environm
 import { appMcpDirectory } from '@foreman-code/contracts/product-environment-node'
 import { accessSync, constants } from 'node:fs'
 import { delimiter, dirname, resolve } from 'node:path'
+import { hostEnvironment } from '../../shared/process.js'
 
 export function isDatabaseCredentialVariable(key: string): boolean {
   return key === 'DATABASE_URL' || key.endsWith('_DATABASE_URL') || key === 'PGPASSWORD'
@@ -17,7 +18,7 @@ export function isControllerEnvironmentVariable(key: string): boolean {
 }
 
 /** Deliberate application-secret delivery boundary, not a host sandbox. */
-export function inheritedAgentEnvironment(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+export function inheritedAgentEnvironment(source: NodeJS.ProcessEnv = hostEnvironment()): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = { ...source, NO_COLOR: '1' }
   for (const key of Object.keys(environment)) {
     if (isControllerEnvironmentVariable(key)) delete environment[key]

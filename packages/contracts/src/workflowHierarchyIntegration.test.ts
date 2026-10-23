@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { WorkflowHierarchyCoordinationSchema, WorkflowHierarchyReadInputSchema, WorkflowHierarchyReadResultSchema,
   WorkflowHierarchyUpdateInputSchema, WorkflowReportsReadInputSchema, isHierarchyReportingRoute } from './workflowHierarchy.js'
-import { ExecutableWorkflowV3Schema, WorkflowHierarchyUpdateResultSchema,
-  makeCurrentWorkflowFixture, type WorkflowDefinitionV3 } from './wave25/index.js'
+import { ExecutableWorkflowCurrentSchema, WorkflowHierarchyUpdateResultSchema,
+  makeCurrentWorkflowFixture, type WorkflowDefinitionCurrent } from './current/index.js'
 
 function hierarchy() {
   const original = makeCurrentWorkflowFixture('hierarchy-public-contract', 'parallel')
@@ -12,7 +12,7 @@ function hierarchy() {
   const ids = original.version.definition.nodes.map(node => node.id)
   const edges = [[0, 1], [1, 2], [1, 3]].map(([from, to], i) => ({ id: `route-${i}`, kind: 'execution' as const,
     source: ids[from!]!, target: ids[to!]! }))
-  const definition: WorkflowDefinitionV3 = { ...original.version.definition, handoffs: { contractVersion: 1 },
+  const definition: WorkflowDefinitionCurrent = { ...original.version.definition, handoffs: { contractVersion: 1 },
     hierarchy: { version: 1, masterNodeId: ids[0]!, parents: [
       { workflowNodeId: ids[1]!, parentNodeId: ids[0]! },
       ...ids.slice(2).map(workflowNodeId => ({ workflowNodeId, parentNodeId: ids[1]! })),
@@ -29,17 +29,17 @@ function hierarchy() {
 describe('hierarchy uses the shared executable boundary', () => {
   it('accepts one directed route for every direct child and multiple aliases to that child', () => {
     const saved = hierarchy()
-    expect(ExecutableWorkflowV3Schema.safeParse(saved).success).toBe(true)
+    expect(ExecutableWorkflowCurrentSchema.safeParse(saved).success).toBe(true)
     const first = saved.version.definition.nodes[0]!
     first.choice!.outcomes.push({ outcome: 'review_again', target: { ...first.choice!.outcomes[0]!.target } })
-    expect(ExecutableWorkflowV3Schema.safeParse(saved).success).toBe(true)
+    expect(ExecutableWorkflowCurrentSchema.safeParse(saved).success).toBe(true)
   })
   it('reports hierarchy-only join and interval failures at the exact authored node', () => {
     const saved = hierarchy(), graph = saved.version.definition
     const worker = graph.nodes[2]!
     if (worker.kind === 'job') throw new Error('Expected an Agent fixture')
     graph.nodes[2] = { ...worker, join: { mode: 'all' }, interval: { everySeconds: 300 } }
-    const result = ExecutableWorkflowV3Schema.safeParse(saved)
+    const result = ExecutableWorkflowCurrentSchema.safeParse(saved)
     expect(result.success).toBe(false)
     if (result.success) return
     expect(result.error.issues).toEqual(expect.arrayContaining([
@@ -47,28 +47,28 @@ describe('hierarchy uses the shared executable boundary', () => {
       expect.objectContaining({ path: ['version', 'definition', 'nodes', 2, 'interval'] }),
     ]))
     const ordinary = makeCurrentWorkflowFixture('ordinary-join-still-supported', 'parallel')
-    expect(ExecutableWorkflowV3Schema.safeParse({ version: ordinary.version, configurations: ordinary.configurations }).success).toBe(true)
+    expect(ExecutableWorkflowCurrentSchema.safeParse({ version: ordinary.version, configurations: ordinary.configurations }).success).toBe(true)
   })
   it('rejects missing direct-child routes, reversed links and mismatched pinned Master roles', () => {
     const missing = hierarchy()
     missing.version.definition.nodes[0]!.choice = { outcomes: [{ outcome: 'done', target: { kind: 'branch_end' } }] }
-    expect(ExecutableWorkflowV3Schema.safeParse(missing).success).toBe(false)
+    expect(ExecutableWorkflowCurrentSchema.safeParse(missing).success).toBe(false)
     const reversed = hierarchy(), first = reversed.version.definition.edges[0]!
     reversed.version.definition.edges[0] = { ...first, source: first.target, target: first.source, workRequestDirection: 'both' }
-    expect(ExecutableWorkflowV3Schema.safeParse(reversed).success).toBe(false)
+    expect(ExecutableWorkflowCurrentSchema.safeParse(reversed).success).toBe(false)
     const role = hierarchy()
     role.configurations[0]!.productRole = 'orchestrator'
-    expect(ExecutableWorkflowV3Schema.safeParse(role).success).toBe(false)
+    expect(ExecutableWorkflowCurrentSchema.safeParse(role).success).toBe(false)
   })
   it('accepts explicit review routes that return to the entry only for hierarchy handoffs, while the reporting tree remains acyclic', () => {
     const saved = hierarchy(), graph = saved.version.definition
     const master = graph.nodes[0]!, team = graph.nodes[1]!
     graph.edges.push({ id: 'ordinary-review-return', kind: 'execution', source: team.id, target: master.id })
     team.choice!.outcomes.push({ outcome: 'review_return', target: { kind: 'edge', relationshipId: 'ordinary-review-return' } })
-    expect(ExecutableWorkflowV3Schema.safeParse(saved).success).toBe(true)
+    expect(ExecutableWorkflowCurrentSchema.safeParse(saved).success).toBe(true)
     const ambiguous = structuredClone(saved)
     ambiguous.version.definition.edges[0]!.workRequestDirection = 'both'
-    const overlap = ExecutableWorkflowV3Schema.safeParse(ambiguous)
+    const overlap = ExecutableWorkflowCurrentSchema.safeParse(ambiguous)
     expect(overlap.success).toBe(false)
     if (!overlap.success) expect(overlap.error.issues).toEqual(expect.arrayContaining([
       expect.objectContaining({ message: 'HANDOFF_DUPLICATE_CONNECTION' }),
@@ -83,14 +83,14 @@ describe('hierarchy uses the shared executable boundary', () => {
       { id: 'ordinary-c', kind: 'execution', source: worker.id, target: master.id },
     ]
     ordinary.version.definition.nodes = ordinary.version.definition.nodes.map(node => { const next = { ...node }; delete next.choice; return next })
-    const result = ExecutableWorkflowV3Schema.safeParse(ordinary)
+    const result = ExecutableWorkflowCurrentSchema.safeParse(ordinary)
     expect(result.success).toBe(false)
     if (!result.success) expect(result.error.issues).toEqual(expect.arrayContaining([
       expect.objectContaining({ message: 'entry cannot have an incoming execution dependency' }),
       expect.objectContaining({ message: 'execution relationships must form an acyclic graph' }),
     ]))
     graph.hierarchy!.parents[0] = { workflowNodeId: team.id, parentNodeId: team.id }
-    expect(ExecutableWorkflowV3Schema.safeParse(saved).success).toBe(false)
+    expect(ExecutableWorkflowCurrentSchema.safeParse(saved).success).toBe(false)
   })
 })
 

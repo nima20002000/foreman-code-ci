@@ -1,14 +1,14 @@
 import { isDeepStrictEqual } from 'node:util'
-import { withTransaction } from '../../infrastructure/transaction.js'
+import { withTransaction, type SqlQuery, type SqlTransaction } from '../../infrastructure/transaction.js'
 import { HarnessExecutionSchema, NativeSessionReferenceSchema,
   type HarnessExecution, type NativeSessionReference } from '@foreman-code/contracts'
 import type pg from 'pg'
-import { beforeGraphCommit, type GraphSqlClient, type GraphTransactionSql } from '../run-graph/connection.js'
+import { beforeGraphCommit } from '../run-graph/connection.js'
 import type { RunOwnership } from '../runs/ownership.js'
 import { DomainError } from '../errors.js'
 import { RemoteOperationReceiptSchema, remoteWorkflowTurnId } from '@foreman-code/contracts/remote-execution'
 import type { WorkflowNativeProofRecord } from '../runs/workflowNativeProof.js'
-import { readExecutionPlacement } from '../placement/persistence.js'
+import { readExecutionPlacement } from '../placement/index.js'
 import { assertReviewerCheckoutAvailable } from '../runs/worktreeReviewers.js'
 import { IN_PROGRESS_RUN_STATES_SQL } from '../runs/runState.js'
 
@@ -71,7 +71,7 @@ export interface ClosureRow {
   closed_without_session: boolean
 }
 
-type Sql = GraphSqlClient
+type Sql = SqlQuery
 async function latest(sql: Sql, executionId: string): Promise<ClosureRow | undefined> {
   const result = await sql.query<ClosureRow>(`select generation::text,execution_identity,
     expected_reference,closed_reference,closed_at is not null as closed,detached_at is not null as detached,detached_reference,closed_without_session,
@@ -474,7 +474,7 @@ async function readRecoveredWorkflowClosure(sql: Sql, execution: HarnessExecutio
 
 type WorkflowRecoveryPurpose = 'cleanup' | 'terminal' | 'failed_attempt'
 
-async function recoveryTarget(sql: GraphTransactionSql, owner: RunOwnership, execution: HarnessExecution,
+async function recoveryTarget(sql: SqlTransaction, owner: RunOwnership, execution: HarnessExecution,
   purpose: WorkflowRecoveryPurpose) {
   owner.assertOwned()
   if (execution.runId !== owner.runId) return conflict()

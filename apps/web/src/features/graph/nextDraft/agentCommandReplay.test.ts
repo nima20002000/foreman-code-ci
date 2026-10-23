@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { ApiClient } from '../../../shared/api/client'
 import { fixture } from './core.cases'
 import { createNextDraftApi } from './transport'
-import type { DraftRequest } from './state'
+import type { DraftRequest } from '../../board-core'
 
 const response = (body: unknown) => new Response(JSON.stringify(body), {
   status: 200, headers: { 'Content-Type': 'application/json' },

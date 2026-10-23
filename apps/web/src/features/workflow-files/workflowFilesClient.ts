@@ -9,7 +9,7 @@ import { ByteLengthError, readExactBytes, readUploadBytes, sha256Hex } from '../
 import {
   apiErrorFromResponse, apiUrl, beginFencedOperation, installationHeaders, sendRaw, type FencedOperation,
 } from '../../shared/api/transport'
-import { inspectAttachment } from '../attachments/attachmentFiles'
+import { inspectAttachment } from '../attachments'
 import { referenceFilesRoot, referenceScopeKey } from './workflowFilesModel'
 
 export interface ReferenceUpload {

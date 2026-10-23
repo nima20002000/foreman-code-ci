@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, expect, it } from 'vitest'
 import { HarnessExecutionContextSchema, HarnessExecutionRequestSchema, HarnessExecutionSchema } from '@foreman-code/contracts'
-import { WorkActivationIdentitySchema, WorkActivationInputSchema, WorkReturnSchema } from '@foreman-code/contracts/wave25'
+import { WorkActivationIdentitySchema, WorkActivationInputSchema, WorkReturnSchema } from '@foreman-code/contracts/current'
 import type pg from 'pg'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { workParentRequestMigration } from '../src/infrastructure/workParentRequestMigration.js'

@@ -1,18 +1,16 @@
 import { createContext, useEffect, useMemo, useState } from 'react'
 import type { CiActivity } from '@foreman-code/contracts'
 import type { RunBoardEdgeSnapshot } from '@foreman-code/contracts/run-snapshots'
-import type { RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
+import type { RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
 import type { AgentNodeState, AgentNodeTransition } from '../../shared/ui/nocturne'
-import { relationshipLines } from '../graph/signalEdge'
-import type { EdgePulse } from '../graph/SignalEdgeShape'
+import { relationshipLines } from '../board-core'
+import type { EdgePulse } from '../graph'
 import { useInteractionsQuery } from '../../shared/api/query'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
-import { useCurrentRunQuery } from '../workflow-board/currentRunQuery'
-import { useRunHandoffsQuery } from '../workflow-board/runHandoffsQuery'
-import { useRunChoreography } from '../workflow-board/inspect/runChoreography'
-import { runningIntervalChecks } from '../workflow-board/inspect/pinnedTopology'
-import { interactionWaits, isActiveCi, liveNodeView } from '../workflow-board/inspect/runLiveStatus'
-import { useRunDirectionWait, withDirectionWait } from '../workflow-board/actions/directionWaitModel'
+import {
+  useCurrentRunQuery, useRunHandoffsQuery, useRunChoreography, runningIntervalChecks, interactionWaits,
+  isActiveCi, liveNodeView, useRunDirectionWait, withDirectionWait,
+} from '../workflow-board'
 import { ciNodePresentation } from './ciPresentation'
 
 export type RunLiveNodeView = { state: AgentNodeState; label: string; transition?: AgentNodeTransition; transitionKey?: number }
@@ -23,7 +21,7 @@ export const RunLivePulses = createContext<ReadonlyMap<string, readonly EdgePuls
 
 /** Each node's turn, queue, CI and pending-decision state from the Run's canonical current cut.
  * Reads only while the Board is shown; a denied or failed read leaves the saved presentation. */
-export function useRunLiveNodes(scope: RepeatGraphScopeV3, names: ReadonlyMap<string, string>,
+export function useRunLiveNodes(scope: RepeatGraphScopeCurrent, names: ReadonlyMap<string, string>,
   cis: ReadonlyMap<string, CiActivity>, visible: boolean, edges: readonly RunBoardEdgeSnapshot[]) {
   const current = useCurrentRunQuery(visible ? scope : undefined, visible)
   const denied = useProtectedAccessError(current)

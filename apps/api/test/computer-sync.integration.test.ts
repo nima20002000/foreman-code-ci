@@ -12,14 +12,14 @@ import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { ComputerSyncService } from '../src/modules/computers/sync.js'
 import { SyncthingComputer, sharedFolderId } from '../src/modules/computers/syncthingComputer.js'
 import { fakeSyncthing, mainSyncId, workerSyncId } from './helpers/syncthing.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('Syncthing through authenticated Operator MCP', () => {
-  let database: Awaited<ReturnType<typeof agent3Database>>
+  let database: Awaited<ReturnType<typeof migratedDatabase>>
   let mainId: string
   beforeEach(async () => {
-    database = await agent3Database()
+    database = await migratedDatabase()
     mainId = (await database.pool.query<{ id: string }>('select id from application_installation')).rows[0]!.id
   }, 60_000)
   afterEach(async () => { await database?.close() })

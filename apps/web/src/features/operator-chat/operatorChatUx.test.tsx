@@ -18,7 +18,7 @@ import { askOperator, useOperatorChatStore } from './operatorChatStore'
 import { operatorState } from './pr17-test-fixtures'
 import { summarizeOperatorConversation } from './operatorChatStatus'
 import { parseChatPreferences } from '../../shared/api/protectedChatStorage'
-import { clearRevisionedFormPersistence, useRevisionedForm } from '../settings/revisionedForm'
+import { clearRevisionedFormPersistence, useRevisionedForm } from '../settings'
 import { useConversationDraftStore } from '../conversations'
 
 type AgentDefaultsUpdateInput = ReturnType<typeof AgentDefaultsUpdateInputSchema.parse>

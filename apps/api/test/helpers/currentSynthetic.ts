@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { HarnessExecutionSchema, type HarnessExecution } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture, ExecutableWorkflowV3Schema, type NodeResolution, type WorkflowChoice } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, ExecutableWorkflowCurrentSchema, type NodeResolution, type WorkflowChoice } from '@foreman-code/contracts/current'
 import { normalizeRepeatTerminal, inactiveRepeatResolution, repeatTerminalResolution, type RepeatNodeStore } from '../../src/modules/runs/repeatNode.js'
 import { bindRepeatNodeInput, type RepeatInputBinding, type RepeatNodeRef } from '../../src/modules/runs/repeatResolution.js'
 import { compileExecutionTopology, decideExecutionAdmission } from '../../src/modules/runs/topology.js'
@@ -12,7 +12,7 @@ import type { RepeatGraphStore } from '../../src/modules/runs/repeatGraph.js'
 export function syntheticCurrentWorkflow(names: string[], edges: Array<[string, string]>, choices: Record<string, WorkflowChoice> = {}) {
   const f = makeCurrentWorkflowFixture(randomUUID())
   const configurations = names.map((name) => ({ ...f.configurations[0]!, id: `cfg-${name}`, agentId: `agent-${name}` }))
-  const version = ExecutableWorkflowV3Schema.parse({ configurations, version: {
+  const version = ExecutableWorkflowCurrentSchema.parse({ configurations, version: {
     ...f.version, entryNodeId: names[0],
     agentConfigurationVersionIds: Object.fromEntries(configurations.map((item) => [item.agentId, item.id])),
     definition: { ...f.version.definition, entryNodeId: names[0],

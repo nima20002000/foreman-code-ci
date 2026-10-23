@@ -2,6 +2,7 @@
 import type { cloudCis } from '@foreman-code/ci/cloud'
 
 export type { HostCiService } from '@foreman-code/ci/service'
+export type { CiTicketClient, HttpCiClientOptions } from '@foreman-code/ci/client'
 export type { CircleAccountRegistry, CircleAccountRegistryChanged, CircleAccountStatusReader } from '@foreman-code/ci/circleAccounts'
 export type { CircleCreditsReader, CircleCreditUsage } from '@foreman-code/ci/circleCredits'
 export type { CircleSchedulingReading, CircleStandby } from '@foreman-code/ci/circleStandby'

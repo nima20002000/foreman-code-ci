@@ -1,14 +1,15 @@
 import { settleMemoryRunLocked } from './memoryRunSettlement.js'
-import { closeRunControlInputsLocked } from '../collaboration/workflowControlQueue.js'
-import type { MemoryBoardPort } from '../collaboration/ports.js'
+import { closeRunControlInputsLocked } from '../collaboration/index.js'
+import type { MemoryBoardPort } from '../collaboration/index.js'
 import { readPublicRunStateLocked } from '../run-graph/publicRunState.js'
 import { publicAttentionTotals, readPublicAttentionCounts } from '../run-graph/currentAttention.js'
 import type pg from 'pg'
-import { AcceptedWorkflowRunV3Schema, canonicalGraphJson, type AcceptedWorkflowRunV3 } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema, canonicalGraphJson, type AcceptedWorkflowRunCurrent } from '@foreman-code/contracts/current'
 import { DurableInteractionSchema, ExecutionResultSchema,
   type DurableInteraction, type ExecutionResult, type HarnessExecution } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
-import { beforeGraphCommit, poisonGraphTransaction, withExclusiveGraphConnection, type GraphTransactionSql } from '../run-graph/connection.js'
+import { beforeGraphCommit, poisonGraphTransaction, withExclusiveGraphConnection } from '../run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { graphSourceDigest } from '../run-graph/publication.js'
 import { requireRepeatCanonicalReceiptBeforeCommit } from '../run-graph/repeatReceipts.js'
 import { readAcceptedRepeatRunLocked } from './repeatStartRead.js'
@@ -16,13 +17,13 @@ import { openWorkflowLifecycleLocked } from './repeatLifecycle.js'
 import { sameRepeatValue, compileRepeatLayout, repeatTickIndex } from './repeatResolution.js'
 import { assertWorkflowRunSettlementLocked, type WorkflowRestartApprovals } from './workflowRepositoryServices.js'
 import type { RunOwnership } from './ownership.js'
-import type { WorkspaceLocationService } from '../workspaces/location.js'
+import type { WorkspaceLocationService } from '../workspaces/index.js'
 import type { RepeatCheckpoint } from './repeatGraph.js'
 import { readRepeatExecutionLocked } from './repeatPostgres.js'
 import { isAtomicApprovalCheckpointSaver } from '../../infrastructure/approvalCheckpointSaver.js'
-import type { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint'
-import { lockInteraction, readContext } from '../interactions/wave25/context.js'
-import { decisionDigest, nextInteraction, publishInteraction } from '../interactions/wave25/publication.js'
+import type { BaseCheckpointSaver } from '../../infrastructure/langgraph.js'
+import { lockInteraction, readContext } from '../interactions/current/context.js'
+import { decisionDigest, nextInteraction, publishInteraction } from '../interactions/current/publication.js'
 import { assertSavedPendingApprovalOriginalLocked } from '../interactions/nativeApprovalProof.js'
 import { isSettlementPendingCheckpointError } from '../interactions/repeatNativeEvidence.js'
 import { ensureWorkDirectionInteraction } from './workDirectionInteraction.js'
@@ -31,7 +32,7 @@ import { isOpenRunState, isRunInProgress, writeRunStateLocked } from './runState
 function fail(code: string): never {
   throw new DomainError(code, 'The workflow lifecycle requires its exact persisted owner, checkpoint and settlement evidence.', 409)
 }
-async function retainOwner(sql: GraphTransactionSql, owner: RunOwnership): Promise<void> {
+async function retainOwner(sql: SqlTransaction, owner: RunOwnership): Promise<void> {
   const fence = await owner.readOneShotFence(sql)
   beforeGraphCommit(sql, async () => {
     owner.assertOwned()
@@ -206,7 +207,7 @@ export async function persistWorkflowApprovalWait(owner: RunOwnership, saver: Ba
       }
       if (!current.length) return fail('GRAPH_INTERRUPT_INVALID')
       if (run.executionState !== 'waiting') {
-        const next = AcceptedWorkflowRunV3Schema.parse({ ...run, executionState: 'waiting' })
+        const next = AcceptedWorkflowRunCurrentSchema.parse({ ...run, executionState: 'waiting' })
         // A Run can re-enter the same wait after a sibling branch resumed; the
         // locked graph head distinguishes that new transition from a replay.
         const head = (await sql.query<{ sequence: string }>('select head_sequence::text as sequence from run_graph_heads where run_id=$1',
@@ -235,7 +236,7 @@ async function lifecycleSource(publication: Awaited<ReturnType<typeof openWorkfl
   const sourceDigest = graphSourceDigest(source)
   const evidence = { sourceKind: 'run' as const, sourceId: `lifecycle:${sourceDigest.slice(7)}`, sourceRevision: '1' }
   const state = await readPublicRunStateLocked(publication.sql, publication.scope)
-  const change = source as { kind: string; failed?: boolean; next?: AcceptedWorkflowRunV3 }
+  const change = source as { kind: string; failed?: boolean; next?: AcceptedWorkflowRunCurrent }
   if (change.next) {
     state.executionState = change.next.executionState
     state.outcome = change.next.outcome
@@ -281,7 +282,7 @@ export async function persistWorkDirectionWait(owner: RunOwnership,
     await authorize()
     beforeGraphCommit(sql, authorize)
     await assertWorkflowRunSettlementLocked(sql, run, owner)
-    const next = AcceptedWorkflowRunV3Schema.parse({ ...run, executionState: 'waiting', outcome: 'pending' })
+    const next = AcceptedWorkflowRunCurrentSchema.parse({ ...run, executionState: 'waiting', outcome: 'pending' })
     await lifecycleSource(publication, { kind: 'work_direction_wait', next, unresolvedIds }, async () => {
       if (await writeRunStateLocked(sql, run.executionState, next, canonicalGraphJson(next)) !== 1) return fail('RUN_PIN_CONFLICT')
       await sql.query(`insert into run_work_direction_waits(run_id,workflow_version_id,unresolved_ids,created_at)
@@ -348,7 +349,7 @@ export async function requestWorkflowCleanup(pool: pg.Pool, runId: string, owner
   if (owner && owner.runId !== runId) return fail('RUN_OWNERSHIP_LOST')
   const result = failure ? ExecutionResultSchema.parse(failure) : null
   if (result && (!owner || result.outcome !== 'failed')) return fail('RUN_FAILURE_CAUSE_INVALID')
-  const work = async (sql: GraphTransactionSql) => {
+  const work = async (sql: SqlTransaction) => {
     const { publication, snapshot } = await openWorkflowLifecycleLocked(sql, runId)
     if (owner) await retainOwner(sql, owner)
     else if (!snapshot.stopRequested && snapshot.run.executionState !== 'completed') return fail('RUN_OWNERSHIP_REQUIRED')
@@ -444,7 +445,7 @@ export async function settleWorkflowRun(owner: RunOwnership, interrupted = false
       message: interrupted ? 'The owned execution was interrupted and physically settled; native work was not replayed.'
         : 'A selected execution did not complete successfully.', retryable: false,
     } }
-    const next = AcceptedWorkflowRunV3Schema.parse({ ...run, executionState: 'completed', outcome: result.outcome,
+    const next = AcceptedWorkflowRunCurrentSchema.parse({ ...run, executionState: 'completed', outcome: result.outcome,
       result, finishedAt: new Date().toISOString() })
     await lifecycleSource(publication, { kind: 'negative_terminal', previous: run, next, stopped: snapshot.stopRequested }, async () => {
       await writeRunStateLocked(sql, run.executionState, next, canonicalGraphJson(next))

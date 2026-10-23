@@ -10,14 +10,14 @@ import { FileByteStorage } from '../src/modules/files/storage.js'
 import { readFileRetentionSnapshot } from '../src/modules/files/retentionSnapshot.js'
 import { fileFixtures, fileMetadata } from './helpers/fileFixtures.js'
 import { postgresEnabled } from './helpers/database.js'
-import { allocate, anotherChat, base, contentUrl, fil14Database, finalize, headers, markdown, owner, ready, reread, upload, type Fil14Database, type Runtime } from './helpers/fil14Lifecycle.js'
+import { allocate, anotherChat, base, contentUrl, fileLifecycleDatabase, finalize, headers, markdown, owner, ready, reread, upload, type FileLifecycleDatabase, type Runtime } from './helpers/fileLifecycleFixtures.js'
 import { deferred } from './helpers/deferred.js'
 
 /** Real authenticated HTTP, PostgreSQL receipts and real disk. No product edits.
  * Missing TEST_DATABASE_URL skips this suite; that is not passed verification. */
 describe.skipIf(!postgresEnabled)('FIL-14 storage, isolation and restart verification', () => {
-  let database: Fil14Database, runtime: Runtime
-  beforeAll(async () => { database = await fil14Database(); runtime = await database.open() }, 60_000)
+  let database: FileLifecycleDatabase, runtime: Runtime
+  beforeAll(async () => { database = await fileLifecycleDatabase(); runtime = await database.open() }, 60_000)
   afterAll(async () => { await database?.close() })
 
   for (const fixture of fileFixtures) {

@@ -1,14 +1,15 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll } from 'vitest'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
 import { WorkflowManagementService } from '../../src/modules/workflows/management.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
-import { agent3Database, seedAgent3 } from './workflowDatabase.js'
+import { seedWorkflowFixture } from './workflowDatabase.js'
+import { migratedDatabase } from './migratedDatabase.js'
 
 export async function executionRegressionDatabase() {
-  const database = await agent3Database()
+  const database = await migratedDatabase()
   const close = database.close
   let closing: Promise<void> | undefined
   database.close = () => closing ??= close()
@@ -25,7 +26,7 @@ export function regressionAuthoringFixture() {
   return async (form: 'single' | 'parallel' = 'single') => {
     const db = database
     const f = makeCurrentWorkflowFixture(randomUUID(), form)
-    await seedAgent3(db.pool, db.directory, f, { run: false })
+    await seedWorkflowFixture(db.pool, db.directory, f, { run: false })
     const commands = new PostgresCommandCoordinator(db.pool)
     const access = new PostgresAccessService(db.pool)
     const writer = await access.issue({

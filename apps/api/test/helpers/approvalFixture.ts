@@ -1,5 +1,5 @@
 import type { AgentConfigurationVersion, HarnessExecution, WorkflowRun } from '@foreman-code/contracts'
-import type { WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import type { WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 
 /** Synthetic accepted identities only. Never starts a native session. */
 export function approvalFixture() {
@@ -19,7 +19,7 @@ export function approvalFixture() {
     prompt: {}, assignedSkills: [], contentHash: 'sha256:' + '0'.repeat(64), createdAt,
   }))
   const approval = { handler: 'orchestrator' as const, designatedOrchestratorAgentId: 'agent-reviewer' }
-  const version: WorkflowVersionV3 = {
+  const version: WorkflowVersionCurrent = {
     id: 'version-approval', workspaceId: 'workspace-approval', workflowId: 'workflow-approval', version: 1,
     executionSemanticsVersion: 3, entryNodeId: 'node-reviewer', approval,
     agentConfigurationVersionIds: { 'agent-reviewer': 'cfg-reviewer', 'agent-worker': 'cfg-worker' },
@@ -53,7 +53,7 @@ export function approvalFixture() {
   return { version, configurations, run, executions, createdAt }
 }
 
-export const routeDenialCases: ReadonlyArray<readonly [string, (version: WorkflowVersionV3) => void]> = [
+export const routeDenialCases: ReadonlyArray<readonly [string, (version: WorkflowVersionCurrent) => void]> = [
   ['execution adjacency only', (v) => { v.definition.edges = v.definition.edges.filter((e) => e.kind === 'execution') }],
   ['reversed approval', (v) => { Object.assign(v.definition.edges[1]!, { source: 'node-worker', target: 'node-reviewer' }) }],
   ['duplicate identical assignment', (v) => { v.definition.edges.push({ ...v.definition.edges[1]!, id: 'duplicate' }) }],

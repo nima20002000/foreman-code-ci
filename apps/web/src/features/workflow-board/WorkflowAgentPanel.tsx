@@ -1,6 +1,6 @@
 import { createPortal } from 'react-dom'
-import type { AgentPanelRenderer, PinnedPanelNode } from '../graph/nextDraft/DraftCanvas'
-import { useWorkflowBoard } from './context'
+import type { AgentPanelRenderer, PinnedPanelNode } from '../graph'
+import { useWorkflowBoard } from '../board-core'
 
 /** Existing Agent components retain their stores; only their frame changes. */
 export function WorkflowAgentPanel({ panels, findNode, active = true }: {

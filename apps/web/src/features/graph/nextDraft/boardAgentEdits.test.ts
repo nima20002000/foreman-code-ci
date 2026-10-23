@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
-import { GraphDraftOperationV3Schema } from '@foreman-code/contracts/wave25'
+import { GraphDraftOperationCurrentSchema } from '@foreman-code/contracts/current'
 import { fixture } from './core.cases'
-import { draftOperations } from './model'
-import { newNextDraft, editNextDraft, undoNextDraft, redoNextDraft, nextDraftDirty } from './state'
-import { acknowledgeAgentEdits, changeDraftAgent, configureAgentOperations, hasAgentEdits, referencedAgentEdits } from './agentEdits'
+import {
+  draftOperations, newNextDraft, editNextDraft, undoNextDraft, redoNextDraft, nextDraftDirty,
+  acknowledgeAgentEdits, changeDraftAgent, configureAgentOperations, hasAgentEdits, referencedAgentEdits,
+} from '../../board-core'
 
 function context() {
   const result = fixture()
@@ -50,7 +51,7 @@ describe('board Agent edits use the existing typed serial writer', () => {
     const operations = draftOperations(c, graph, { [agent.id]: agent })
     expect(operations.some((op) => op.type === 'agent.add')).toBe(true)
     expect(operations.some((op) => op.type === 'agent.attach')).toBe(false)
-    for (const operation of operations) expect(GraphDraftOperationV3Schema.safeParse(operation).success).toBe(true)
+    for (const operation of operations) expect(GraphDraftOperationCurrentSchema.safeParse(operation).success).toBe(true)
     expect(c.draft.sourceAgentPins).toBeUndefined()
   })
   it('keeps exact source pins for attaching an existing Agent', () => {

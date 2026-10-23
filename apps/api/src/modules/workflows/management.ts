@@ -1,12 +1,12 @@
 import { workflowCreationWorktree, validateWorkflowWorktrees, requireWorkflowWorktreeReads } from './worktreeSettings.js'
 import { randomUUID } from 'node:crypto'
 
-import { WorkflowDefinitionV3Schema as WorkflowDefinitionSchema, CurrentWorkflowCreateInputSchema, DEFAULT_WORKFLOW_EXECUTION_POLICY, type CurrentWorkflowCreateInput } from '@foreman-code/contracts/wave25'
+import { WorkflowDefinitionCurrentSchema as WorkflowDefinitionSchema, CurrentWorkflowCreateInputSchema, DEFAULT_WORKFLOW_EXECUTION_POLICY, type CurrentWorkflowCreateInput } from '@foreman-code/contracts/current'
 import { requireCurrentWorkflowAccess } from './currentWorkflowPolicy.js'
 import { CurrentWorkflowAuthoring, type WorkflowAuthoringOptions } from './currentAuthoring.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { SavedWorkflowDefinitionSchema as CurrentDefinitionSchema, SavedManagedWorkflowSchema as ManagedWorkflowSchema,
-  type SavedManagedWorkflow as ManagedWorkflow } from '@foreman-code/contracts/wave25'
+  type SavedManagedWorkflow as ManagedWorkflow } from '@foreman-code/contracts/current'
 import {
   WorkflowUpdateInputSchema, WorkflowArchiveInputSchema, type ManagementPrincipal,
   WorkflowBatchArchiveInputSchema, type WorkflowBatchArchiveInput, type WorkflowReorderInput,
@@ -14,13 +14,13 @@ import {
 import type pg from 'pg'
 
 import { hasAction, requireAuthorization } from '../access/policy.js'
-import { PostgresCommandCoordinator } from '../commands/postgres.js'
+import { PostgresCommandCoordinator } from '../commands/index.js'
 import { DomainError } from '../errors.js'
-import { WorkflowScheduleService } from '../schedules/service.js'
-import { PostgresFoundationSettingsRepository } from '../settings/foundation.js'
-import { lockActiveWorkspace } from '../workspaces/admission.js'
+import { WorkflowScheduleService } from '../schedules/index.js'
+import { PostgresFoundationSettingsRepository } from '../settings/index.js'
+import { lockActiveWorkspace } from '../workspaces/index.js'
 import { readSavedWorkflowDefinition } from './immutableRead.js'
-import { assertMeaningfulSaveAdmitted } from '../graph-drafts/saveAdmission.js'
+import { assertMeaningfulSaveAdmitted } from '../graph-drafts/index.js'
 import { WorkflowOrderService } from './order.js'
 import { WorkflowKanbanLayoutService } from './kanbanLayout.js'
 import { decodeWorkflowOrderCursor, encodeWorkflowOrderCursor } from './orderCursor.js'

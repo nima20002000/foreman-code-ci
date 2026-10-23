@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { conversationDeliveryFixture } from '../src/modules/conversations/conversationDelivery.test-support.js'
-import { seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 
 describe.skipIf(!postgresEnabled)('Agent chat startup recovery isolation', () => {
@@ -13,7 +13,7 @@ describe.skipIf(!postgresEnabled)('Agent chat startup recovery isolation', () =>
         const definition = makeCurrentWorkflowFixture(`recovery-${randomUUID()}`, 'single')
         definition.configurations = definition.configurations.map(configuration => ({ ...configuration,
           harness: f.saved.configurations[0]!.harness }))
-        const second = await seedAgent3(f.database.pool, f.database.directory, definition, { run: false })
+        const second = await seedWorkflowFixture(f.database.pool, f.database.directory, definition, { run: false })
         const node = second.version.definition.nodes[0]!
         const contexts = [{ workspaceId: f.scope.workspaceId, ...f.query },
           { workspaceId: second.scope.workspaceId, workflowId: second.scope.workflowId,

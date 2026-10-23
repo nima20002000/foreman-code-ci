@@ -1,11 +1,11 @@
 import { ZodError } from 'zod'
 import { HarnessExecutionSchema, NativeSessionReferenceSchema } from '@foreman-code/contracts'
-import { RepeatOccurrenceV1Schema, type WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
+import { RepeatOccurrenceV1Schema, type WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 import { DomainError } from '../errors.js'
-import { readExecutionPlacement, readNativePlacement } from '../placement/persistence.js'
-import type { GraphSqlClient } from '../run-graph/connection.js'
-import { readWorkflowClosure, readUnboundWorkflowClosure } from '../interactions/workflowClosure.js'
-import { assertRepeatNativeClosure } from '../interactions/repeatNativeEvidence.js'
+import { readExecutionPlacement, readNativePlacement } from '../placement/index.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
+import { readWorkflowClosure, readUnboundWorkflowClosure } from '../interactions/index.js'
+import { assertRepeatNativeClosure } from '../interactions/index.js'
 import { readWorkflowNativeEntry, readWorkflowNativeNotSubmitted, workflowNativeReservation } from '../runs/workflowNativeEntry.js'
 import { assertRepeatExecution, assertRepeatScope, repeatDigest, type RepeatNodeRef, type RepeatScope } from '../runs/repeatResolution.js'
 
@@ -23,8 +23,8 @@ interface ExecutionRow {
  * This performs no recovery, disposal, seal, acknowledgement or native I/O.
  * A launch reservation alone, terminal enum, or absent registry is never proof.
  */
-export async function hasSaveNativeSettlement(sql: GraphSqlClient, scope: RepeatScope,
-  version: WorkflowVersionV3): Promise<boolean> {
+export async function hasSaveNativeSettlement(sql: SqlQuery, scope: RepeatScope,
+  version: WorkflowVersionCurrent): Promise<boolean> {
   try {
     assertRepeatScope(version, scope)
     let after = ''

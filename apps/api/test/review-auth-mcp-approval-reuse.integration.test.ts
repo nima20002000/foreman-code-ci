@@ -5,9 +5,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { expect, it } from 'vitest'
-import { makeCurrentWorkflowFixture, WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { resolveImmutableApprovalRoute } from '../src/modules/workflows/approvalRoutes.js'
-import { seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
 
 it('saves and reads exact approval routes for two nodes sharing a Worker Agent', async () => {
   const database = await migratedDatabase()
@@ -22,8 +22,8 @@ it('saves and reads exact approval routes for two nodes sharing a Worker Agent',
       { id: 'second-approval', kind: 'approval', source: reviewer, target: 'second-worker' },
     )
     fixture.version.definition.executionPolicy!.maxNodeExecutions = 3
-    const saved = await seedAgent3(pool, directory, fixture, { run: false })
-    const version = WorkflowVersionV3Schema.parse((await pool.query('select record from workflow_versions where id=$1', [saved.version.id])).rows[0].record)
+    const saved = await seedWorkflowFixture(pool, directory, fixture, { run: false })
+    const version = WorkflowVersionCurrentSchema.parse((await pool.query('select record from workflow_versions where id=$1', [saved.version.id])).rows[0].record)
     for (const nodeId of [worker.id, 'second-worker']) {
       expect(resolveImmutableApprovalRoute(version, nodeId, worker.agentId)).toMatchObject({
         requestingNodeId: nodeId, requestingConfigurationVersionId: saved.version.agentConfigurationVersionIds[worker.agentId],

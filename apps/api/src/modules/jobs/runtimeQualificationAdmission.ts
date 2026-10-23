@@ -4,14 +4,14 @@ import { JobRuntimeApprovalRecordSchema, JobRuntimeProfileRecordSchema, JobRunti
   type JobRuntimeNativeAdmissionRecord, type JobRuntimeFingerprintRecord, type JobRuntimeProfileRecord, type JobRuntimeApprovalRecord,
   type JobQualificationCandidateRecord, jobRuntimeQualificationAnchorAt } from '@foreman-code/contracts/job-verification-runtime'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
-import { assertDeviceHostInstallation } from '../devices/hostAuthorization.js'
+import { assertDeviceHostInstallation } from '../devices/index.js'
 import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
 import { requireAuthorization } from '../access/policy.js'
 import { DomainError } from '../errors.js'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import type { JobSql } from './repository.js'
 import { jobQualificationFingerprint } from './qualification.js'
-import { lockActiveWorkspace } from '../workspaces/admission.js'
+import { lockActiveWorkspace } from '../workspaces/index.js'
 
 export interface JobRuntimeNativeAdmissionInput {
   candidate: JobQualificationCandidateRecord

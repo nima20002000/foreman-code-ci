@@ -1,20 +1,20 @@
 import { readPublicRunStateLocked } from './publicRunState.js'
 import {
   GraphExecutionIdentitySchema, RepeatOccurrenceV1Schema, RepeatDecisionMetadataV1Schema,
-  RepeatGraphExecutionV3Schema, RepeatGraphBindingV3Schema, RepeatGraphResolutionV3Schema,
-  RepeatGraphScopeV3Schema, WorkflowVersionV3Schema,
-  CurrentRunVersionSnapshotSchema, AcceptedWorkflowRunV3Schema, ExecutableWorkflowV3Schema, REPEAT_GRAPH_LIMITS,
+  RepeatGraphExecutionCurrentSchema, RepeatGraphBindingCurrentSchema, RepeatGraphResolutionCurrentSchema,
+  RepeatGraphScopeCurrentSchema, WorkflowVersionCurrentSchema,
+  CurrentRunVersionSnapshotSchema, AcceptedWorkflowRunCurrentSchema, ExecutableWorkflowCurrentSchema, REPEAT_GRAPH_LIMITS,
   sameCanonicalGraphScope, canonicalGraphJson, qualifyRepeatGraphExecution,
-  type RepeatGraphScopeV3, type RepeatGraphExecutionV3, type RepeatGraphBindingV3,
-  type RepeatGraphResolutionV3, type RepeatGraphFactV3, type WorkflowVersionV3,
-} from '@foreman-code/contracts/wave25'
-import type { GraphTransactionSql } from './connection.js'
+  type RepeatGraphScopeCurrent, type RepeatGraphExecutionCurrent, type RepeatGraphBindingCurrent,
+  type RepeatGraphResolutionCurrent, type RepeatGraphFactCurrent, type WorkflowVersionCurrent,
+} from '@foreman-code/contracts/current'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { assertGraphTransaction } from './connection.js'
 import { RunGraphError } from './errors.js'
 import { repeatSlotId, tickSlotId, workActivationSlotId } from '../runs/repeatResolution.js'
 import { readWorkflowJobGraphExecutionsLocked } from './workflowJobProjection.js'
 import { readImmutableWorkflowVersion, readPinnedAgentConfigurations,
-  type ImmutableAgentConfigurationRow } from '../workflows/immutableRead.js'
+  type ImmutableAgentConfigurationRow } from '../workflows/index.js'
 
 const conflict = (): never => { throw new RunGraphError('GRAPH_INVARIANT_VIOLATION') }
 const equal = (a: unknown, b: unknown) => canonicalGraphJson(a) === canonicalGraphJson(b)
@@ -25,7 +25,7 @@ export function boundedRepeatRows<T>(rows: T[], limit: number): T[] {
 
 /** Private pins remain local. Only the caller's explicit whitelist reaches wire
  * schemas. This is a same-transaction read, not Start admission/authorization. */
-export function readRepeatGraphPinsLocked(sql: GraphTransactionSql, input: RepeatGraphScopeV3,
+export function readRepeatGraphPinsLocked(sql: SqlTransaction, input: RepeatGraphScopeCurrent,
   prefetched?: RepeatGraphPinsRow[]) {
   return readRepeatGraphPins(sql, input, 'executable', prefetched)
 }
@@ -45,22 +45,22 @@ export const REPEAT_GRAPH_PINS_SQL = `select r.workspace_id,r.workflow_id,r.work
       ) p),'[]'::json) as configurations
      from runs r join workflow_versions v on v.id=r.workflow_version_id where r.id=$1`
 
-export function readRecordedRepeatGraphPinsLocked(sql: GraphTransactionSql, input: RepeatGraphScopeV3) {
+export function readRecordedRepeatGraphPinsLocked(sql: SqlTransaction, input: RepeatGraphScopeCurrent) {
   return readRepeatGraphPins(sql, input, 'recorded')
 }
 
-async function readRepeatGraphPins(sql: GraphTransactionSql, input: RepeatGraphScopeV3,
+async function readRepeatGraphPins(sql: SqlTransaction, input: RepeatGraphScopeCurrent,
   configurationPolicy: 'executable' | 'recorded', prefetched?: RepeatGraphPinsRow[]) {
   assertGraphTransaction(sql)
-  const scope = RepeatGraphScopeV3Schema.parse(input)
+  const scope = RepeatGraphScopeCurrentSchema.parse(input)
   const rows = prefetched ? { rows: prefetched } : await sql.query<RepeatGraphPinsRow>(
     REPEAT_GRAPH_PINS_SQL, [scope.runId])
   const row = rows.rows[0]
   if (rows.rows.length !== 1 || !row || row.workspace_id !== scope.workspaceId || row.workflow_id !== scope.workflowId
     || row.workflow_version_id !== scope.workflowVersionId || row.execution_semantics_version !== 3
     || row.version_workspace_id !== scope.workspaceId || row.version_workflow_id !== scope.workflowId) return conflict()
-  const run = AcceptedWorkflowRunV3Schema.parse(row.run_record)
-  const version = WorkflowVersionV3Schema.parse(readImmutableWorkflowVersion({
+  const run = AcceptedWorkflowRunCurrentSchema.parse(row.run_record)
+  const version = WorkflowVersionCurrentSchema.parse(readImmutableWorkflowVersion({
     id: row.version_id, workspace_id: row.version_workspace_id, workflow_id: row.version_workflow_id,
     version: row.version_number, entry_node_id: row.entry_node_id, execution_semantics_version: row.execution_semantics_version,
     record: row.version_record,
@@ -69,7 +69,7 @@ async function readRepeatGraphPins(sql: GraphTransactionSql, input: RepeatGraphS
   if (run.id !== scope.runId || run.workspaceId !== scope.workspaceId || run.workflowId !== scope.workflowId
     || run.workflowVersionId !== scope.workflowVersionId || run.executionState !== row.execution_state) return conflict()
   const configurations = readPinnedAgentConfigurations(version, row.configurations)
-  if (configurationPolicy === 'executable') ExecutableWorkflowV3Schema.parse({ version, configurations })
+  if (configurationPolicy === 'executable') ExecutableWorkflowCurrentSchema.parse({ version, configurations })
   return { scope, run, version, configurations }
 }
 export const readRepeatRunStateLocked = readPublicRunStateLocked
@@ -88,8 +88,8 @@ interface ExecutionRow {
 }
 /** Whitelisted SQL expressions: never select input_json, result_json, an entire
  * harness record, prompt, path, session, credential, or raw native payload. */
-export async function readRepeatGraphExecutionsLocked(sql: GraphTransactionSql, scope: RepeatGraphScopeV3,
-  options: { executionIds?: readonly string[]; version?: WorkflowVersionV3 } = {}): Promise<RepeatGraphExecutionV3[]> {
+export async function readRepeatGraphExecutionsLocked(sql: SqlTransaction, scope: RepeatGraphScopeCurrent,
+  options: { executionIds?: readonly string[]; version?: WorkflowVersionCurrent } = {}): Promise<RepeatGraphExecutionCurrent[]> {
   const { executionIds } = options
   if (executionIds && executionIds.length > REPEAT_GRAPH_LIMITS.executions) throw new RunGraphError('GRAPH_SNAPSHOT_TOO_LARGE')
   const rows = await sql.query<ExecutionRow>(`select x.execution_id,x.run_id,x.slot_id,x.occurrence_id,x.technical_attempt,
@@ -128,7 +128,7 @@ export async function readRepeatGraphExecutionsLocked(sql: GraphTransactionSql, 
       || row.slot_id !== (row.tick_index ? tickSlotId(scope.runId, identity.workflowNodeId, row.tick_index)
         : row.work_activation_id ? workActivationSlotId(scope.runId, row.work_activation_id)
           : repeatSlotId(scope.runId, { nodeId: identity.workflowNodeId, occurrence }))) return conflict()
-    return RepeatGraphExecutionV3Schema.parse({ identity, inputDigest: row.input_digest,
+    return RepeatGraphExecutionCurrentSchema.parse({ identity, inputDigest: row.input_digest,
       ...(row.continued_from_execution_id ? { continuedFromExecutionId: row.continued_from_execution_id } : {}),
       ...(row.work_activation_id ? { workActivationId: row.work_activation_id } : {}),
       ...(row.tick_index ? { tickIndex: row.tick_index } : {}),
@@ -136,7 +136,7 @@ export async function readRepeatGraphExecutionsLocked(sql: GraphTransactionSql, 
   })
   const agentIds = new Set(parsed.map(execution => execution.identity.executionId))
   const jobIds = executionIds?.filter(id => !agentIds.has(id))
-  let jobs: RepeatGraphExecutionV3[] = []
+  let jobs: RepeatGraphExecutionCurrent[] = []
   if (!jobIds || jobIds.length) {
     const version = options.version ?? (await readRecordedRepeatGraphPinsLocked(sql, scope)).version
     if (version.definition.nodes.some(node => node.kind === 'job')) {
@@ -154,8 +154,8 @@ interface BindingRow {
   binding_id: string; recipient_execution_id: string; source_execution_id: string; source_result_digest: string;
   input_digest: string; ordinal: number; kind: string; relationship_id: string | null; decision_id: string | null;
 }
-export async function readRepeatGraphBindingsLocked(sql: GraphTransactionSql, scope: RepeatGraphScopeV3,
-  recipientIds?: readonly string[], suppliedExecutions?: readonly RepeatGraphExecutionV3[]): Promise<RepeatGraphBindingV3[]> {
+export async function readRepeatGraphBindingsLocked(sql: SqlTransaction, scope: RepeatGraphScopeCurrent,
+  recipientIds?: readonly string[], suppliedExecutions?: readonly RepeatGraphExecutionCurrent[]): Promise<RepeatGraphBindingCurrent[]> {
   const rows = boundedRepeatRows((await sql.query<BindingRow>(`select binding_id,recipient_execution_id,source_execution_id,
       source_result_digest,input_digest,ordinal,record->>'kind' as kind,
       record #>> '{source,relationshipId}' as relationship_id,record #>> '{source,decisionId}' as decision_id
@@ -169,12 +169,12 @@ export async function readRepeatGraphBindingsLocked(sql: GraphTransactionSql, sc
   return rows.map((row) => {
     const recipient = byId.get(row.recipient_execution_id), sender = byId.get(row.source_execution_id)
     if (!recipient || !sender || recipient.inputDigest !== row.input_digest) return conflict()
-    return RepeatGraphBindingV3Schema.parse({ bindingId: row.binding_id, recipient: recipient.identity, sender: sender.identity,
+    return RepeatGraphBindingCurrentSchema.parse({ bindingId: row.binding_id, recipient: recipient.identity, sender: sender.identity,
       acceptedResultDigest: row.source_result_digest, inputDigest: row.input_digest, ordinal: row.ordinal,
       kind: row.kind, relationshipId: row.relationship_id, decisionId: row.decision_id })
   })
 }
-export async function readRepeatGraphOccurrencesLocked(sql: GraphTransactionSql, scope: RepeatGraphScopeV3) {
+export async function readRepeatGraphOccurrencesLocked(sql: SqlTransaction, scope: RepeatGraphScopeCurrent) {
   const rows = boundedRepeatRows((await sql.query<{ occurrence_id: string; workspace_id: string; workflow_id: string;
     workflow_version_id: string; block_id: string; occurrence_index: number; binding_id: string; input_digest: string; record: unknown }>(
     `select occurrence_id,workspace_id,workflow_id,workflow_version_id,block_id,occurrence_index,binding_id,input_digest,record
@@ -189,21 +189,21 @@ export async function readRepeatGraphOccurrencesLocked(sql: GraphTransactionSql,
     return value
   })
 }
-export async function readRepeatGraphResolutionsLocked(sql: GraphTransactionSql, scope: RepeatGraphScopeV3): Promise<RepeatGraphResolutionV3[]> {
+export async function readRepeatGraphResolutionsLocked(sql: SqlTransaction, scope: RepeatGraphScopeCurrent): Promise<RepeatGraphResolutionCurrent[]> {
   const rows = boundedRepeatRows((await sql.query<{ occurrence_key: string; workflow_node_id: string;
     source_occurrence_id: string | null; execution_id: string | null; record: Record<string, unknown> }>(
     `select occurrence_key,workflow_node_id,source_occurrence_id,execution_id,record from run_repeat_resolutions
      where run_id=$1 order by occurrence_key,workflow_node_id limit $2`,
     [scope.runId, REPEAT_GRAPH_LIMITS.resolutions + 1])).rows, REPEAT_GRAPH_LIMITS.resolutions)
   return rows.map((row) => {
-    const value = RepeatGraphResolutionV3Schema.parse({ ...row.record, outside: row.occurrence_key === '' })
+    const value = RepeatGraphResolutionCurrentSchema.parse({ ...row.record, outside: row.occurrence_key === '' })
     if (value.ref.nodeId !== row.workflow_node_id || row.source_occurrence_id !== (value.ref.occurrence?.occurrenceId ?? null)
       || row.execution_id !== (value.value.execution?.executionId ?? null)
       || row.occurrence_key !== (value.outside ? '' : value.ref.occurrence?.occurrenceId)) return conflict()
     return value
   })
 }
-export async function readRepeatGraphDecisionsLocked(sql: GraphTransactionSql, scope: RepeatGraphScopeV3) {
+export async function readRepeatGraphDecisionsLocked(sql: SqlTransaction, scope: RepeatGraphScopeCurrent) {
   // resultData is private. Do not even load it into this reader.
   const rows = boundedRepeatRows((await sql.query<{ decision_id: string; occurrence_id: string; exit_execution_id: string;
     result_digest: string; metadata: unknown }>(`select decision_id,occurrence_id,exit_execution_id,result_digest,record-'resultData' as metadata
@@ -216,8 +216,8 @@ export async function readRepeatGraphDecisionsLocked(sql: GraphTransactionSql, s
     return value
   })
 }
-export async function readRepeatGraphResultsLocked(sql: GraphTransactionSql, scope: RepeatGraphScopeV3,
-  executions: readonly RepeatGraphExecutionV3[]): Promise<Extract<RepeatGraphFactV3, { type: 'repeat.result.accepted' }>['result'][]> {
+export async function readRepeatGraphResultsLocked(sql: SqlTransaction, scope: RepeatGraphScopeCurrent,
+  executions: readonly RepeatGraphExecutionCurrent[]): Promise<Extract<RepeatGraphFactCurrent, { type: 'repeat.result.accepted' }>['result'][]> {
   const byId = new Map(executions.map((execution) => [execution.identity.executionId, execution]))
   const rows = boundedRepeatRows((await sql.query<{ execution_id: string; occurrence_id: string | null; result_digest: string }>(
     'select execution_id,occurrence_id,result_digest from run_repeat_results where run_id=$1 order by execution_id limit $2',

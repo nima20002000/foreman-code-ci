@@ -6,6 +6,7 @@ import { OperatorConversationStateSchema } from '@foreman-code/contracts'
 import { OperatorChatCommands } from '../src/modules/conversations/operatorChatCommands.js'
 import type pg from 'pg'
 import { memoryConversation } from './fixtures/operatorChatMemory.js'
+import { commandReceiptLedger } from './helpers/commandReceiptLedger.js'
 import { ActivitySnapshotV1Schema } from '@foreman-code/contracts/activity'
 
 function fixture() {
@@ -25,17 +26,7 @@ function fixture() {
     harness: 'codex', provider_version: 'test', native_session_id: 'session', active_request_id: 'request',
     active_native_turn_id: 'turn', active_phase: 'submitted', cancel_requested: false, revision: 1,
     pending_interaction: pending })
-  const records = new Map<string, { target_key: unknown; input_hash: unknown; result: unknown }>()
-  const commands = new OperatorChatCommands({ query: async (sql: string, values: unknown[]) => {
-    const key = JSON.stringify(values.slice(0, 3))
-    if (sql.includes('with claimed as')) {
-      if (records.has(key)) return { rows: [], rowCount: 0 }
-      records.set(key, { target_key: values[3], input_hash: values[4], result: JSON.parse(String(values[6])) }); return { rows: [], rowCount: 1 }
-    }
-    if (sql.includes('with settled as')) { records.get(key)!.result = JSON.parse(String(values[3])); return { rows: [], rowCount: 1 } }
-    if (sql.includes('select target_key,input_hash,result')) return { rows: [records.get(key)], rowCount: 1 }
-    throw new Error(`Unexpected receipt SQL: ${sql}`)
-  } } as unknown as Pick<pg.Pool, 'query'>)
+  const commands = new OperatorChatCommands({ query: commandReceiptLedger().query } as unknown as Pick<pg.Pool, 'query'>)
   const repository = { ...lifecycle.repository, createControlCommands: () => commands, active: vi.fn(async () => row), configuration: vi.fn(async () => configuration),
     claimResponse: vi.fn(async () => true), pending: vi.fn(async (_id, _requestId, pending) => { Object.assign(row, { pending_interaction: pending ?? null }) }), submitted: vi.fn(async () => true),
     finish: vi.fn(async () => true), uncertain: vi.fn(async () => {}), unfinished: vi.fn(async () => [row]),

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { postgresEnabled } from './helpers/database.js'
 import { CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveResultSchema,
-  ExecutableWorkflowV3Schema } from '@foreman-code/contracts/wave25'
+  ExecutableWorkflowCurrentSchema } from '@foreman-code/contracts/current'
 import { supportedReviewerScopes } from './helpers/reviewerScope.testSupport.js'
 import { definitionUrl, rpc, saveThrough, transports } from './helpers/saveAdmission.testSupport.js'
 import { candidate, counts } from './helpers/reviewerScopeAdmission.js'
@@ -25,7 +25,7 @@ for (const transport of transports) describe.skipIf(!postgresEnabled)(`ENG07 rev
       }
       const saved = CurrentWorkflowSaveResultSchema.parse(await saveThrough(f, transport, input))
       expect(saved.value.currentVersionId).not.toBe(input.expectedWorkflowVersionId)
-      expect(ExecutableWorkflowV3Schema.parse({ version: saved.value.version, configurations: target.configurations }).version).toEqual(saved.value.version)
+      expect(ExecutableWorkflowCurrentSchema.parse({ version: saved.value.version, configurations: target.configurations }).version).toEqual(saved.value.version)
       expect(Object.hasOwn(saved.value.version.definition, 'repeat')).toBe(kind !== 'ordinary')
       expect(await counts(f, input.workflowId)).toEqual({ versions: 2, runs: 0 })
       expect(f.provider.counts.starts).toBe(0)

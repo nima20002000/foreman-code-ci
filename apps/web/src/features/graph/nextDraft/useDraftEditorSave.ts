@@ -1,14 +1,13 @@
 import { useMutation } from '@tanstack/react-query'
-import { GraphDraftV3Schema } from '@foreman-code/contracts/wave25'
+import { GraphDraftCurrentSchema } from '@foreman-code/contracts/current'
 import { useGraphDraftStore } from '../store'
-import { discardMeaningfulChanges } from './model'
+import { discardMeaningfulChanges, newNextDraft, nextDraftDirty, type NextDraftEdit } from '../../board-core'
 import { readEditOutbox, retainConflictRecovery, readConflictRecoveries, storeEditSnapshot } from './editIntentStorage'
-import { newNextDraft, nextDraftDirty, type NextDraftEdit } from './state'
 import { nextDraftApi } from './transport'
-import { readBoardStart } from '../../workflow-board/startOutbox'
+import { readBoardStart } from '../../workflow-board'
 import type { DraftEditorCore } from './useDraftEditorCore'
 import type { useGraphEditIntent } from './useGraphEditIntent'
-import { hierarchyNodes, repairHierarchyRoutes } from '../../workflow-hierarchy/authoring'
+import { hierarchyNodes, repairHierarchyRoutes } from '../../workflow-hierarchy'
 
 /** Save (including Stop-and-save), discard and reload of the shared draft. */
 export function useDraftEditorSave({ draftKey, edit, editIntent, core, pendingStart }: {
@@ -91,7 +90,7 @@ export function useDraftEditorSave({ draftKey, edit, editIntent, core, pendingSt
       if (before.startRejectedVersionId && fresh.draft.baseWorkflowVersionId === before.startRejectedVersionId) {
         throw new Error('The saved draft still points to the rejected version. Reload after a newer version is available.')
       }
-      useGraphDraftStore.getState().installNextDraft(draftKey, { draft: GraphDraftV3Schema.parse(fresh.draft), agents: fresh.agents, savedDraft: fresh.savedDraft }, true)
+      useGraphDraftStore.getState().installNextDraft(draftKey, { draft: GraphDraftCurrentSchema.parse(fresh.draft), agents: fresh.agents, savedDraft: fresh.savedDraft }, true)
       setLocalError(undefined); setMessage(pendingStart ? 'Loaded the saved draft. Confirm the earlier start before starting again.' : 'Loaded the saved draft.')
     } catch (error) { report(error) }
   }

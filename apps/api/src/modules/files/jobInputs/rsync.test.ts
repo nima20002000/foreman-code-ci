@@ -17,10 +17,12 @@ function fixture() {
   const transfer=admission.transfers[0]!,accepted={execution,admission,transfer}
   const receipt:JobInputDeliveryReceipt={version:1,recipient:recipient(execution),bindingId:manifest.bindingId,inputSnapshotDigest:manifest.inputSnapshotDigest,manifestSha256:manifest.manifestSha256,manifestByteSize:manifest.manifestByteSize,directory:{relativePath:'.graphql-job-inputs',device:'1',inode:'2',mountId:'3'},files:[{relativePath:'manifest.json',sha256:manifest.manifestSha256,byteSize:manifest.manifestByteSize},{relativePath:'workflow-input.json',sha256:createHash('sha256').update('null').digest('hex'),byteSize:4}],readonlyMountRequired:true}
   const commands=new Map<string,{principal_id:string;input_hash:string;target_key:string;result:unknown}>()
-  const query=vi.fn(async(text:string,args:unknown[]=[])=>{
-    if(text.includes('insert into management_command_receipts'))commands.set(String(args[2]),{principal_id:String(args[0]),input_hash:String(args[4]),target_key:String(args[3]),result:JSON.parse(String(args[5]))})
-    if(text.includes('where principal_id = any'))return {rows:commands.has(String(args[2]))?[commands.get(String(args[2]))!]:[]}
-    if(text.includes("operation='job.inputs.delivery.ack'"))return {rows:commands.has(String(args[1]))?[{result:commands.get(String(args[1]))!.result}]:[]}
+  const query=vi.fn(async(_text:string,args:unknown[]=[])=>{
+    // Statements are told apart by their bound values: the receipt insert binds six, the coordinator's receipt read an
+    // array of principals first, and the delivery ACK read only the principal and the command id.
+    if(args.length===6)commands.set(String(args[2]),{principal_id:String(args[0]),input_hash:String(args[4]),target_key:String(args[3]),result:JSON.parse(String(args[5]))})
+    if(args.length===3&&Array.isArray(args[0]))return {rows:commands.has(String(args[2]))?[commands.get(String(args[2]))!]:[]}
+    if(args.length===2)return {rows:commands.has(String(args[1]))?[{result:commands.get(String(args[1]))!.result}]:[]}
     return {rows:[]}
   })
   const pool={query,connect:async()=>({query,release:()=>{}})} as unknown as pg.Pool

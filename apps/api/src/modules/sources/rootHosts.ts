@@ -1,11 +1,11 @@
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import {
   ApprovedRootAllowlistSchema, WorkspaceRootAttestationSchema, WorkspaceRootBrowseResultSchema,
   type ApprovedRootAllowlist, type WorkspaceRootPolicy, type WorkspaceRootWorkerRequest,
 } from '@foreman-code/contracts/workspace-root-policies'
 import { DomainError } from '../errors.js'
-import { DeviceApplicationError } from '../devices/deviceApplicationError.js'
+import { DeviceApplicationError } from '../devices/index.js'
 import { SourceError } from './manifest.js'
 import { attestWorkspaceRoot, browseApprovedRoot, attestSourceNamespace, prepareManagedWorkspaceRoot } from './rootAttestation.js'
 import type { AuthorizedWorkspaceRoot, WorkspaceRootHostPort } from './rootPolicyPorts.js'
@@ -52,13 +52,13 @@ async function publicRootFailure<T>(work: () => Promise<T>): Promise<T> {
 }
 export class InstalledWorkspaceRootHosts implements WorkspaceRootHostPort {
   constructor(private readonly main: ApprovedRootAllowlist,
-    private readonly authorizeInstallation: (sql: GraphSqlClient, principal: ManagementPrincipal,
+    private readonly authorizeInstallation: (sql: SqlQuery, principal: ManagementPrincipal,
       host: ApprovedRootAllowlist['hostRef'], installationId: string) => Promise<WorkspaceRootPolicy['registration']>,
     private readonly remote: RootWorkerClient) { this.main = ApprovedRootAllowlistSchema.parse(structuredClone(main)) }
-  authorize(sql: GraphSqlClient, principal: ManagementPrincipal, host: ApprovedRootAllowlist['hostRef'], installationId: string) {
+  authorize(sql: SqlQuery, principal: ManagementPrincipal, host: ApprovedRootAllowlist['hostRef'], installationId: string) {
     return this.authorizeInstallation(sql, principal, host, installationId)
   }
-  async configurations(sql: GraphSqlClient, _workspaceId: string): Promise<ApprovedRootAllowlist[]> {
+  async configurations(sql: SqlQuery, _workspaceId: string): Promise<ApprovedRootAllowlist[]> {
     void _workspaceId
     const rows = await sql.query<{ record: unknown }>(`select c.record from workspace_root_host_configuration_heads h
       join workspace_root_host_configurations c on c.host_scope=h.host_scope and c.configuration_revision=h.configuration_revision

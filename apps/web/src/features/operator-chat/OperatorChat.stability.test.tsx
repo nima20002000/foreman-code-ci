@@ -9,7 +9,7 @@ import { operatorChatSettings, DEFAULT_HARNESS_DEFAULTS, type OperatorConversati
 import { server } from '../../mocks/server'
 import { ApiError } from '../../shared/api/client'
 import { protectedKey } from '../../shared/api/protectedChatStorage'
-import { clearRevisionedFormPersistence } from '../settings/revisionedForm'
+import { clearRevisionedFormPersistence } from '../settings'
 import { useConversationDraftStore } from '../conversations'
 import { OperatorChat } from './OperatorChat'
 import { findOperatorComposer, installCanonicalOperatorFixture } from './canonicalOperator.test-support'

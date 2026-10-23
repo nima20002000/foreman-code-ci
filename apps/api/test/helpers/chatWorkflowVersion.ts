@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { canonicalGraphJson, makeCurrentWorkflowFixture, type SavedWorkflowVersion } from '@foreman-code/contracts/wave25'
+import { canonicalGraphJson, makeCurrentWorkflowFixture, type SavedWorkflowVersion } from '@foreman-code/contracts/current'
 
 export interface ChatVersionIds { workspaceId: string; workflowId: string; workflowNodeId: string; agentId: string; configurationId: string }
 

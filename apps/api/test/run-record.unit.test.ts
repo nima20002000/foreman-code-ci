@@ -4,15 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import {
-  AcceptedWorkflowRunV3Schema, CurrentOperatorToolNameSchema, RUN_INSPECTION_LIMITS, RUN_INSPECTION_TOOLS,
+  AcceptedWorkflowRunCurrentSchema, CurrentOperatorToolNameSchema, RUN_INSPECTION_LIMITS, RUN_INSPECTION_TOOLS,
   RunRecordDetailSchema, RunRecordGetInputSchema, makeCurrentWorkflowFixture,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import type { OperatorRequestContext } from '../src/mcp/operator/types.js'
 import {
   runInspectionRequirements, runInspectionToolAvailable, unavailableRunInspectionToolCall,
 } from '../src/mcp/operator/tools/runInspection.js'
 import { DomainError } from '../src/modules/errors.js'
-import type { GraphTransactionSql } from '../src/modules/run-graph/connection.js'
+import type { SqlTransaction } from '../src/infrastructure/transaction.js'
 import { withCurrentRunRead } from '../src/modules/runs/currentRead.js'
 import { RunInspectionService } from '../src/modules/runs/inspection.js'
 import type { AcceptedRepeatRunSnapshot } from '../src/modules/runs/repeatStartRead.js'
@@ -39,13 +39,13 @@ const caller = principal([{ actions: ['runs:read', 'workspace_locations:read'], 
 let live: ManagementPrincipal
 let snapshot: AcceptedRepeatRunSnapshot
 const query = vi.fn(() => { throw new Error('A Run-only read must not query history or activity') })
-const sql = { query } as unknown as GraphTransactionSql
+const sql = { query } as unknown as SqlTransaction
 const pool = {} as pg.Pool
 const service = new RunInspectionService(pool)
 beforeEach(() => {
   vi.clearAllMocks()
   live = principal([{ actions: ['runs:read'], scope: { runIds: [f.run.id] } }])
-  snapshot = { run: AcceptedWorkflowRunV3Schema.parse({ ...f.run,
+  snapshot = { run: AcceptedWorkflowRunCurrentSchema.parse({ ...f.run,
     authorizationPrincipalId: 'private-run-owner', executionLocation: location,
     input: { instruction: 'exact original input', nested: [false, 0, null, { text: 'keep me' }] },
     executionState: 'completed', outcome: 'failed', finishedAt: f.createdAt,
@@ -91,7 +91,7 @@ describe('bounded private Run record service', () => {
   })
 
   it('retains an absent result on a nonterminal Run without inventing a result or execution rows', async () => {
-    snapshot.run = AcceptedWorkflowRunV3Schema.parse({ ...f.run,
+    snapshot.run = AcceptedWorkflowRunCurrentSchema.parse({ ...f.run,
       authorizationPrincipalId: 'private-run-owner', executionLocation: location })
     snapshot.stopRequested = false; snapshot.cleanupPending = false
     const result = await service.record(caller, input)

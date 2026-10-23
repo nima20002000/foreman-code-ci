@@ -3,8 +3,8 @@ import { open, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
-import { CurrentWorkflowSaveResultSchema, RunStartV3ResultSchema, SavedRunDetailsSchema,
-  SavedManagedWorkflowCommandResultSchema } from '@foreman-code/contracts/wave25'
+import { CurrentWorkflowSaveResultSchema, RunStartCurrentResultSchema, SavedRunDetailsSchema,
+  SavedManagedWorkflowCommandResultSchema } from '@foreman-code/contracts/current'
 import type { SourceMaterializationRecord } from '@foreman-code/contracts/source-admission'
 import type { SourceReservation } from '../src/modules/sources/reservations.js'
 import { closeCompletedWorkflowSources } from '../src/modules/sources/workflowCleanup.js'
@@ -29,7 +29,7 @@ async function retainedFixture() {
     const start = async (input = f.input) => {
       const reply = await f.client.callTool({ name: 'run_start', arguments: { ...input, commandId: randomUUID() } })
       expect(reply.isError, JSON.stringify(reply)).not.toBe(true)
-      return RunStartV3ResultSchema.parse(decodeMcpToolResult(reply)).run.id
+      return RunStartCurrentResultSchema.parse(decodeMcpToolResult(reply)).run.id
     }
     const firstRunId = await start()
     const first = await readUntil(() => read(firstRunId), value => value.run.executionState === 'completed' && !value.cleanupPending,

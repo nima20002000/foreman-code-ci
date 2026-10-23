@@ -4,6 +4,7 @@ import { AgentNodeRefSchema, ExecutionRefSchema, LogicalWorkRefSchema } from './
 import { executionMatchesWork, type ExecutionRef } from './agentIdentity.js';
 import { MessageAttachmentFields } from './files.js';
 import { canonicalJson } from './canonicalJson.js';
+import { refineChatPrompt } from './chatInput.js';
 
 export const ChatDeliveryIntentSchema = z.enum([
   'auto', 'steer', 'next_turn', 'interrupt_and_send',
@@ -45,12 +46,7 @@ export const ChatSendRequestSchema = z.object({
   sessionMode: z.enum(['regular','plan']).optional(),
   expectedNativeTurnId: IdSchema.optional(), sourcePostId: IdSchema.optional(),
 }).strict().superRefine((request, context) => {
-  if (!request.content.trim() && request.attachments.length === 0) {
-    context.addIssue({ code: 'custom', path: ['content'], message: 'Provide text or at least one attachment.' });
-  }
-  if (request.intent === 'steer' && request.attachments.length) {
-    context.addIssue({ code: 'custom', path: ['attachments'], message: 'Steering accepts text only; queue attachments in a new turn.' });
-  }
+  refineChatPrompt(request, context, { size: false });
   if (new TextEncoder().encode(canonicalJson(request)).byteLength > CHAT_SEND_MAX_BYTES) {
     context.addIssue({ code: 'custom', message: 'Chat input exceeds the 960 KiB serialized request limit.' });
   }

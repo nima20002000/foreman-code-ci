@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { CiActivity, DurableInteraction } from '@foreman-code/contracts'
-import type { RepeatGraphCurrentV3 } from '@foreman-code/contracts/wave25'
+import type { RepeatGraphCurrentState } from '@foreman-code/contracts/current'
 import { ciComputerLabel, ciJobLabel, interactionWaits, liveNodeView } from './runLiveStatus'
 
 const id = (node: string) => ({ workflowNodeId: node, executionId: `x-${node}`, agentId: `agent-${node}`, agentConfigurationVersionId: `cfg-${node}`, attempt: 1 })
 function record(executionState = 'waiting') {
   return { scope: { runId: 'run-1' }, topology: { nodes: ['a', 'b', 'c'].map((node) => ({ workflowNodeId: node, kind: 'agent', agentId: `agent-${node}` })) },
     state: { run: { executionState }, executions: ['a', 'b'].map((node) => ({ identity: { ...id(node), occurrence: null } })),
-      interactions: [{ interactionId: 'i-b', requester: id('b'), reviewer: id('c') }] } } as unknown as RepeatGraphCurrentV3
+      interactions: [{ interactionId: 'i-b', requester: id('b'), reviewer: id('c') }] } } as unknown as RepeatGraphCurrentState
 }
 const request = (node: string, fields: Partial<DurableInteraction>) => ({ id: `i-${node}`, runId: 'run-1', executionId: `x-${node}`,
   requestingAgentId: `agent-${node}`, status: 'pending', createdAt: '2026-10-01T00:00:00.000Z', approval: { handler: 'user' }, ...fields }) as DurableInteraction

@@ -1,11 +1,11 @@
 import { expect, it, vi } from 'vitest'
 import { DEFAULT_CODEX_ADVANCED_CONFIGURATION, HarnessExecutionSchema, type HarnessExecution } from '@foreman-code/contracts'
-import { IntervalCheckAcceptedInputSchema } from '@foreman-code/contracts/wave25'
+import { IntervalCheckAcceptedInputSchema } from '@foreman-code/contracts/current'
 import { DomainError } from '../src/modules/errors.js'
 import { nextIntervalCheckAt } from '../src/modules/runs/intervalChecks.js'
 import { executeRepeatRuntime, type RepeatRuntimeLifecycle } from '../src/modules/runs/repeatRuntime.js'
 import type { RepeatTickAdmission } from '../src/modules/runs/repeatPostgres.js'
-import { a1Scenario, graphHarness } from './helpers/graphScenarioHarness.js'
+import { graphScenario, graphHarness } from './helpers/graphScenarioHarness.js'
 
 it('continues checks past the former history limit', () => {
   const facts = { openId: null, openTick: null, graphOpen: false,
@@ -18,7 +18,7 @@ it('continues checks past the former history limit', () => {
 })
 
 it('keeps checking a settled graph, recovers its idle checkpoint, and ends only on Stop', async () => {
-  const f = a1Scenario('single', 'interval-idle')
+  const f = graphScenario('single', 'interval-idle')
   const configuration = f.configurations[0]!
   if (configuration.harness.harness !== 'codex') throw new Error('Expected Codex')
   configuration.harness.advanced = { ...DEFAULT_CODEX_ADVANCED_CONFIGURATION, approvalPolicy: 'never' }

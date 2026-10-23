@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { makeCurrentWorkflowFixture, RunStartV3ResultSchema } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, RunStartCurrentResultSchema } from '@foreman-code/contracts/current'
 import { afterEach, expect, vi } from 'vitest'
 import { graphRpc, graphRpcValue } from '../graph-composition-fixture.js'
 import { streamingOperator } from './streamingRunOperator.js'
@@ -51,7 +51,7 @@ export async function approvalWithActiveSibling() {
     name: 'run_start', arguments: operator.input,
   })
   expect(started.result?.isError).not.toBe(true)
-  const { run } = RunStartV3ResultSchema.parse(graphRpcValue(started.result))
+  const { run } = RunStartCurrentResultSchema.parse(graphRpcValue(started.result))
   await entered.promise
   await expect.poll(async () => (await f.repository.list({ runId: run.id, limit: 10 }))[0]?.graphInterruptId,
     { timeout: 5_000 }).toBeTruthy()

@@ -1,7 +1,7 @@
 import { constants } from 'node:fs'
 import { lstat, open, opendir, realpath, type FileHandle } from 'node:fs/promises'
 import { isAbsolute, relative as relativePath, resolve, sep } from 'node:path'
-import { ignoreError } from '../diagnostics/ignoredError.js'
+import { ignoreError } from '../diagnostics/index.js'
 
 export const PLUGIN_FILE_LIMIT = 65_536
 export const PLUGIN_DIRECTORY_LIMIT = 256

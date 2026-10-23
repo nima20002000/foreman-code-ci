@@ -1,34 +1,34 @@
 import type pg from 'pg'
 import { DeviceConnectionIdentitySchema, type DeviceConnectionIdentity } from '@foreman-code/contracts/device-identity'
-import { WorkflowVersionV3Schema, sameWorkflowValue } from '@foreman-code/contracts/wave25'
+import { WorkflowVersionCurrentSchema, sameWorkflowValue } from '@foreman-code/contracts/current'
 import { ExecutionFactsRequestSchema, ExecutionFactsResultSchema, ExecutionAuthorityRequestSchema, ExecutionAuthorityResultSchema, EXECUTION_AUTHORITY_EXTENSION } from '@foreman-code/contracts/execution-authority'
 import { readPlacement } from './binding.js'
 import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
-import { configurationWithNodeSkills } from '../skills/nodeSkills.js'
+import { configurationWithNodeSkills } from '../skills/index.js'
 import { readExecutionAuthoritySnapshot } from './executionAuthorityRead.js'
 import { readExecutionPlacement, readNativePlacement } from './persistence.js'
 import { readReconciledDispatchIntent } from '../runs/remote/persistence.js'
-import { assertDeviceHostInstallation } from '../devices/hostAuthorization.js'
-import { withExclusiveGraphConnection, beforeGraphCommit } from '../run-graph/connection.js'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import { assertDeviceHostInstallation } from '../devices/index.js'
+import { withExclusiveGraphConnection, beforeGraphCommit } from '../run-graph/index.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 export interface ExecutionRunAuthorityPort {
-  revalidateRunAuthorization(principalId: string, workspaceId: string, workflowId: string, client: GraphSqlClient, atCommit: boolean): Promise<void>
+  revalidateRunAuthorization(principalId: string, workspaceId: string, workflowId: string, client: SqlQuery, atCommit: boolean): Promise<void>
 }
-import type { DeviceExtensionRegistration } from '../devices/deviceApplicationChannel.js'
-import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
-import { withAuthorizationReadSnapshot } from '../access/authorizationReadSnapshot.js'
+import type { DeviceExtensionRegistration } from '../devices/index.js'
+import { readLiveManagementPrincipal } from '../access/index.js'
+import { withAuthorizationReadSnapshot } from '../access/index.js'
 import type { AgentPlacementProducer } from './agentProducer.js'
 import { DomainError, databaseReadFailure } from '../errors.js'
 import { assertRemoteReviewAssignment, canCloseRetainedRemoteReviewer, remoteReviewerPolicy } from './remoteReviewerAuthority.js'
 import { RemoteOperationReceiptSchema } from '@foreman-code/contracts/remote-execution'
-import { readWorkflowControlDispositionLocked } from '../collaboration/workflowControlDisposition.js'
-import { assertWorkflowRemoteControl } from '../collaboration/workflowRemoteControl.js'
+import { readWorkflowControlDispositionLocked } from '../collaboration/index.js'
+import { assertWorkflowRemoteControl } from '../collaboration/index.js'
 import { remoteActiveNative } from '@foreman-code/contracts/remote-execution'
 
 const denied = (): never => { throw new DomainError('REMOTE_AUTHORITY_DENIED', 'Exact original execution authority is unavailable or revoked.', 403) }
 /** Read-only admission fence. This NEVER issues an entry capability, command,
  * new grant, allocation or lease; main and worker entry guards remain mandatory. */
-export async function assertRemoteExecutionAuthority(sql: GraphSqlClient,
+export async function assertRemoteExecutionAuthority(sql: SqlQuery,
   locations: ExecutionRunAuthorityPort,
   raw: unknown, authenticated: Readonly<DeviceConnectionIdentity>, producer: AgentPlacementProducer,
   lock = true): Promise<{ cleanupOnly: true } | undefined> {
@@ -38,7 +38,7 @@ export async function assertRemoteExecutionAuthority(sql: GraphSqlClient,
     () => checkRemoteExecutionAuthority(sql, locations, input, authenticated, producer, lock))
 }
 
-async function checkRemoteExecutionAuthority(sql: GraphSqlClient,
+async function checkRemoteExecutionAuthority(sql: SqlQuery,
   locations: ExecutionRunAuthorityPort,
   raw: unknown, authenticated: Readonly<DeviceConnectionIdentity>, producer: AgentPlacementProducer,
   lock: boolean): Promise<{ cleanupOnly: true } | undefined> {
@@ -147,7 +147,7 @@ export function createExecutionAuthorityExtension(pool: pg.Pool,
           join workflow_versions v on v.id=r.workflow_version_id where c.id=$1 and c.agent_id=$2`,
         [placement.payload.agentConfigurationVersionId, placement.payload.agentId, input.intent.runId])).rows[0]
         const pinned = AgentConfigurationVersionSchema.parse(row?.record)
-        const version = WorkflowVersionV3Schema.parse(row?.version)
+        const version = WorkflowVersionCurrentSchema.parse(row?.version)
         const node = version.definition.nodes.find(item => item.id === input.intent.nodeId)
         if (!node || node.kind === 'job' || node.agentId !== pinned.agentId
           || version.agentConfigurationVersionIds[node.agentId] !== pinned.id) return denied()

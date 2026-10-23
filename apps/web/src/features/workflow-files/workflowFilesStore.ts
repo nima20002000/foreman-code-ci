@@ -1,6 +1,6 @@
 import { createStore } from 'zustand/vanilla'
 import type { FileWithRevision } from '@foreman-code/contracts/files'
-import type { SelectionIssue } from '../attachments/attachmentFiles'
+import type { SelectionIssue } from '../attachments'
 
 interface RemovalSelection { row: FileWithRevision; commandId: string }
 interface WorkflowFilesPresentation {

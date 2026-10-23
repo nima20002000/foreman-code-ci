@@ -1,6 +1,6 @@
 import { RunLiveActivitySchema, RunNodeLiveActivitySchema } from '@foreman-code/contracts'
 import { type RunNodeLiveActivity } from '@foreman-code/contracts'
-import { type CurrentRunDetails as GetRunResponse } from '@foreman-code/contracts/wave25'
+import { type CurrentRunDetails as GetRunResponse } from '@foreman-code/contracts/current'
 
 type LiveActivity = NonNullable<GetRunResponse['liveActivity']>
 const indexes = new WeakMap<LiveActivity, ReadonlyMap<string, RunNodeLiveActivity>>()

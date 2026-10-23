@@ -1,42 +1,37 @@
 import { beginRuntimeTiming, runtimeTimingChannel, timeRuntimeOperation } from '../../infrastructure/runtimeTiming.js'
-import { beginTransaction, commitTransaction, finishTransactionTiming } from '../../infrastructure/transaction.js'
-import { recoverGraphRollback } from './rollbackRecovery.js'
-import { ignoreError } from '../diagnostics/ignoredError.js'
+import { rollbackWithRecovery, withTransaction, type SqlQuery, type SqlTransaction, type TransactionOptions } from '../../infrastructure/transaction.js'
+import { ignoreError } from '../diagnostics/index.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type pg from 'pg'
 import { RunGraphError } from './errors.js'
 import { isDatabaseTimeout } from '../../infrastructure/databaseRetry.js'
 import { sha256Hex } from '../../shared/hash.js'
 
-export interface GraphSqlClient {
-  query<R extends pg.QueryResultRow = pg.QueryResultRow>(text: string, values?: unknown[]): Promise<pg.QueryResult<R>>
-}
-export interface GraphTransactionSql extends GraphSqlClient { readonly transaction: true }
 interface GraphConnectionClient extends pg.ClientBase {
   end?: () => Promise<void>
 }
 const adoptedClients = new WeakSet<pg.ClientBase>()
 const pooledReadPlans = new WeakMap<pg.ClientBase, Map<string, string>>()
-const leases = new WeakMap<GraphSqlClient, {
+const leases = new WeakMap<SqlQuery, {
   live: boolean; failed: boolean; committed: boolean; finalizing: boolean; readOnly: boolean; finalizers: (() => Promise<void>)[]
 }>()
-export function isReadOnlyGraphTransaction(sql: GraphSqlClient): boolean {
+export function isReadOnlyGraphTransaction(sql: SqlQuery): boolean {
   return leases.get(sql)?.readOnly === true
 }
-export function didGraphTransactionCommit(sql: GraphTransactionSql): boolean {
+export function didGraphTransactionCommit(sql: SqlTransaction): boolean {
   return leases.get(sql)?.committed === true
 }
 /** True while the COMMIT checks run: the transaction's own writes are done, so a check here is its final check. */
-export function isGraphTransactionFinalizing(sql: GraphTransactionSql): boolean {
+export function isGraphTransactionFinalizing(sql: SqlTransaction): boolean {
   return leases.get(sql)?.finalizing === true
 }
 
-export function poisonGraphTransaction(sql: GraphTransactionSql): void {
+export function poisonGraphTransaction(sql: SqlTransaction): void {
   const state = leases.get(sql)
   if (state) state.failed = true
 }
 
-export function beforeGraphCommit(sql: GraphTransactionSql, finalize: () => Promise<void>): void {
+export function beforeGraphCommit(sql: SqlTransaction, finalize: () => Promise<void>): void {
   assertGraphTransaction(sql)
   leases.get(sql)!.finalizers.push(finalize)
 }
@@ -46,7 +41,7 @@ const commitCheckBatches = new WeakMap<() => Promise<void>, CommitCheckBatch>()
 
 /** Adjacent read-only checks share one live read, while every captured expectation
  * is verified. An intervening finalizer always starts a separate check batch. */
-export function beforeGraphCommitChecks<T>(sql: GraphTransactionSql, key: object, expected: T,
+export function beforeGraphCommitChecks<T>(sql: SqlTransaction, key: object, expected: T,
   verify: (expected: readonly T[]) => Promise<void>): void {
   assertGraphTransaction(sql)
   const finalizers = leases.get(sql)!.finalizers
@@ -71,7 +66,7 @@ function queryTimingFields(text: string) {
 }
 
 /** Runtime check as well as a TypeScript port: a plain Pool/Client cannot impersonate a transaction. */
-export function assertGraphTransaction(sql: GraphSqlClient): asserts sql is GraphTransactionSql {
+export function assertGraphTransaction(sql: SqlQuery): asserts sql is SqlTransaction {
   const state = leases.get(sql)
   if (!state?.live) throw new RunGraphError('GRAPH_TRANSACTION_CLOSED')
   if (state.failed) throw new RunGraphError('GRAPH_TRANSACTION_FAILED')
@@ -84,7 +79,7 @@ export function assertGraphTransaction(sql: GraphSqlClient): asserts sql is Grap
  * leaked transaction clients from being used after the callback has finished.
  * Construction does NOT acquire RunOwnership or confer workflow authority.
  */
-export class ExclusiveGraphConnection implements GraphSqlClient {
+export class ExclusiveGraphConnection implements SqlQuery {
   readonly #client: GraphConnectionClient
   readonly #assertOwner: () => void
   #tail: Promise<void> = Promise.resolve()
@@ -135,14 +130,14 @@ export class ExclusiveGraphConnection implements GraphSqlClient {
         queryTimingFields(text))
     }, 'query')
   }
-  transaction<T>(work: (sql: GraphTransactionSql) => Promise<T>, readOnly = false): Promise<T> {
+  transaction<T>(work: (sql: SqlTransaction) => Promise<T>, readOnly = false): Promise<T> {
     const origin = new Error('transaction caller')
     return this.enqueue(async () => {
       const state = {
         live: true, failed: false, committed: false, finalizing: false, readOnly, finalizers: [] as (() => Promise<void>)[],
       }
       let pending: Promise<unknown> | undefined
-      const sql: GraphTransactionSql = {
+      const sql: SqlTransaction = {
         transaction: true,
         query: <R extends pg.QueryResultRow = pg.QueryResultRow>(text: string, values?: unknown[]) => {
           try {
@@ -163,46 +158,48 @@ export class ExclusiveGraphConnection implements GraphSqlClient {
       leases.set(sql, state)
       const status = (this.#client as pg.ClientBase & { getTransactionStatus?: () => string | null }).getTransactionStatus?.()
       if (status && status !== 'I') { state.live = false; throw new RunGraphError('GRAPH_TRANSACTION_NESTED') }
-      let committing = false
+      const control: TransactionOptions = readOnly
+        ? { isolation: 'repeatable read', readOnly: true, operation: 'graph.read' }
+        : { isolation: 'read committed', operation: 'graph.write' }
       try {
-        await timeRuntimeOperation('db', 'sql.begin', () => beginTransaction(this.#client,
-          readOnly ? { isolation: 'repeatable read', readOnly: true, operation: 'graph.read' }
-            : { isolation: 'read committed', operation: 'graph.write' }, origin))
-        const result = await work(sql)
-        state.finalizing = true
-        for (const finalize of state.finalizers) { assertGraphTransaction(sql); await finalize() }
-        if (pending) { state.failed = true; await pending.catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ }) }
-        assertGraphTransaction(sql)
-        this.#assertOwner()
-        committing = true
-        await timeRuntimeOperation('db', 'sql.commit', () => commitTransaction(this.#client))
+        const result = await withTransaction({ client: this.#client }, async () => {
+          const value = await work(sql)
+          state.finalizing = true
+          for (const finalize of state.finalizers) { assertGraphTransaction(sql); await finalize() }
+          if (pending) { state.failed = true; await pending.catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ }) }
+          assertGraphTransaction(sql)
+          this.#assertOwner()
+          return value
+        }, {
+          ...control, origin, runtimeTiming: true,
+          rollback: async (client, { error, phase }) => {
+            if (pending) await pending.catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
+            if (phase === 'commit' && !isDatabaseTimeout(error)) {
+              // COMMIT outcome can be unknown: do not retry the callback.
+              this.#unusable = true
+              this.#unusableCause = error
+            }
+            // A confirmed rollback restores the session after a query deadline. The
+            // caller still receives the error and must reconcile an uncertain COMMIT.
+            try {
+              // Rollback only undoes this connection's uncommitted work, including after ownership loss.
+              await rollbackWithRecovery(client, this.#closingSignal.signal)
+              return undefined
+            } catch (rollbackError) {
+              if (!this.#unusable) this.#unusableCause = rollbackError
+              this.#unusable = true
+              // Dedicated sessions end here; the pool owner discards unusable leases during cleanup.
+              if (this.#client.end) {
+                void this.#client.end().catch(ignoreError('db', 'discard stalled graph connection'))
+              }
+              return rollbackError instanceof Error ? rollbackError : new Error('Graph rollback failed.')
+            }
+          },
+        })
         state.committed = true
         return result
-      } catch (error) {
-        if (pending) await pending.catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
-        if (committing && !isDatabaseTimeout(error)) {
-          // COMMIT outcome can be unknown: do not retry the callback.
-          this.#unusable = true
-          this.#unusableCause = error
-        }
-        // A confirmed rollback restores the session after a query deadline. The
-        // caller still receives the error and must reconcile an uncertain COMMIT.
-        try {
-          // Rollback only undoes this connection's uncommitted work, including after ownership loss.
-          await recoverGraphRollback(this.#client, this.#closingSignal.signal)
-        }
-        catch (rollbackError) {
-          if (!this.#unusable) this.#unusableCause = rollbackError
-          this.#unusable = true
-          // Dedicated sessions end here; the pool owner discards unusable leases during cleanup.
-          if (this.#client.end) {
-            void this.#client.end().catch(ignoreError('db', 'discard stalled graph connection'))
-          }
-        }
-        throw error
       } finally {
         state.live = false
-        finishTransactionTiming(this.#client, 'failed')
       }
     }, 'transaction')
   }

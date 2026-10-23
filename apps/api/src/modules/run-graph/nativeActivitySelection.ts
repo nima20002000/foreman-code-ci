@@ -1,4 +1,4 @@
-import type { GraphActivity, NativeGraphProjectionKey } from '@foreman-code/contracts/wave25'
+import type { GraphActivity, NativeGraphProjectionKey } from '@foreman-code/contracts/current'
 
 export interface CurrentNativeActivity {
   key: NativeGraphProjectionKey

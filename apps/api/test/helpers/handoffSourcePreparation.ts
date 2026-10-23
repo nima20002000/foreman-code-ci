@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { HarnessExecution } from '@foreman-code/contracts'
-import type { AcceptedWorkflowRunV3 } from '@foreman-code/contracts/wave25'
+import type { AcceptedWorkflowRunCurrent } from '@foreman-code/contracts/current'
 import { SourceMaterializationRecordSchema } from '@foreman-code/contracts/source-admission'
 import { readLiveManagementPrincipal } from '../../src/modules/access/liveManagementPrincipal.js'
 import { bindNativeExecution } from '../../src/modules/placement/executionBinding.js'
@@ -16,7 +16,7 @@ import { sourceStorageCapacityFixture } from './sourceStorageCapacityFixture.js'
 
 /** Synthetic host filesystem receipts feed the real native binding and launch
  * gates. Live profile and source authorization remain the production services. */
-export async function prepareHandoffSource(owner: RunOwnership, run: AcceptedWorkflowRunV3,
+export async function prepareHandoffSource(owner: RunOwnership, run: AcceptedWorkflowRunCurrent,
   execution: HarnessExecution, placement: Awaited<ReturnType<typeof mixedComputerPlacement>>) {
   const prepared = await owner.oneShotConnection().transaction(async sql => {
     const pin = await readAcceptedPlacement(sql, run.id, execution.workflowNodeId)

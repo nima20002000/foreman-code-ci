@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import type { AgentSubject, ChatSendRequest, DeliveryTarget, WorkflowChatPost } from '@foreman-code/contracts'
 import type { ManagementAction, ManagementPrincipal } from '@foreman-code/contracts/management'
-import type { ExecutionChatPort } from '../collaboration/ports.js'
+import type { ExecutionChatPort } from '../collaboration/index.js'
 import type { TransactionSql } from '../../infrastructure/transaction.js'
 import type { AgentChatService } from '../conversations/agentChat.js'
 import type { PostgresAgentChatRepository } from '../conversations/agentChatRepository.js'
@@ -13,7 +13,7 @@ import { PostgresWorkflowChatRepository } from './repository.js'
 import { WorkflowChatService } from './service.js'
 import { WorkflowChatProjector, type CommittedReplySource } from './projection.js'
 import { conversationReplySource, installConversationReplyProjection } from './conversationProjection.js'
-import { LegacyChatDeliveryBridge, type LegacyTargetResolver } from './legacyBridge.js'
+import { ChatDeliveryBridge, type ChatTargetResolver } from './deliveryBridge.js'
 import type { ChannelScope, DeliveryQualification, WorkflowChatAuthority } from './model.js'
 import { assertTargetScope } from './validation.js'
 import { workflowChatNativeContext } from './nativeContext.js'
@@ -37,7 +37,7 @@ export interface WorkflowChatFeatureDependencies {
   /** A's authoritative board store verifies every card is in this workflow or its containing workspace. */
   assertCardLinksLocked(tx: TransactionSql, principal: ManagementPrincipal, scope: ChannelScope, cardIds: readonly string[]): Promise<void>
   runReplies: CommittedReplySource
-  targets: LegacyTargetResolver
+  targets: ChatTargetResolver
   /** Exact retained execution/consultation read authority; does not require the target to remain runnable. */
   authorizeExecutionTarget(principal: ManagementPrincipal, target: Exclude<DeliveryTarget,
     { kind: 'agent_conversation' | 'operator_conversation' }>, action: 'read' | 'write' | 'cancel', tx?: TransactionSql): Promise<void>
@@ -114,7 +114,7 @@ export function createWorkflowChatFeature(dependencies: WorkflowChatFeatureDepen
   const projector = new WorkflowChatProjector(repository, (id, event) => service!.events.publish(id, event),
     conversationReplySource(repository.deliveries, dependencies.runReplies))
   installConversationReplyProjection(dependencies.agentRepository, repository.deliveries, projector)
-  const bridge = new LegacyChatDeliveryBridge(router, dependencies.agent, dependencies.operator, dependencies.targets)
+  const bridge = new ChatDeliveryBridge(router, dependencies.agent, dependencies.operator, dependencies.targets)
   dependencies.agent.installDeliveryBridge(bridge)
   dependencies.operator.installDeliveryBridge(bridge)
   return { repository, router, service, projector, bridge, targetAuthority,

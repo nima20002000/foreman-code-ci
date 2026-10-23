@@ -7,7 +7,7 @@ import {
   RunRecordGetInputSchema, RunRecordDetailSchema,
   RunExecutionsListInputSchema, RunExecutionsPageSchema, RunExecutionGetInputSchema, RunExecutionDetailSchema,
   RunExecutionBindingsListInputSchema, RunExecutionBindingsPageSchema, RunVersionGetInputSchema, RunVersionDetailSchema,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import { hasAction, isAuthorized, type AuthorizedResource } from '../../../modules/access/policy.js'
 import { DomainError } from '../../../modules/errors.js'
 import { toolFailure } from '../../shared/results.js'

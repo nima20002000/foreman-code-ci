@@ -6,19 +6,17 @@ import type { ReactNode } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
 import { LocalHumanAccessSchema, ManagedWorkspaceSchema } from '@foreman-code/contracts/management'
-import { CurrentManagedWorkflowSchema, GraphEditReadResultV3Schema, makeCurrentWorkflowFixture,
-  type GraphEditReadResultV3 } from '@foreman-code/contracts/wave25'
+import { CurrentManagedWorkflowSchema, GraphEditReadResultCurrentSchema, makeCurrentWorkflowFixture,
+  type GraphEditReadResultCurrent } from '@foreman-code/contracts/current'
 import { PersistedWorkflowBoundary } from './PersistedWorkflowBoundary'
 import { fixture } from './nextDraft/core.cases'
 import { journalIntent, savedJournal } from './nextDraft/nim2644Journal.fixture'
 import { nextDraftApi, type AuthoringContext } from './nextDraft/transport'
-import { nextDraftKey } from './nextDraft/state'
+import { nextDraftKey, boardDraftContextKey } from '../board-core'
 import { clearEditIntentStorage } from './nextDraft/editIntentStorage'
 import { graphEditIntentKey } from './nextDraft/useGraphEditIntent'
 import { useGraphDraftStore } from './store'
-import { boardDraftContextKey } from '../workflow-board/keys'
-import { boardStartClient } from '../workflow-board/startClient'
-import { useBoardStartPreflight, readBoardStartPreflight, type BoardStartPreflight } from '../workflow-board/startPreflight'
+import { boardStartClient, useBoardStartPreflight, readBoardStartPreflight, type BoardStartPreflight } from '../workflow-board'
 import { createCurrentBoardMock } from '../../shared/mocks/currentBoard'
 import { bindMockInstallation } from '../../shared/mocks/handlers'
 import { server } from '../../mocks/server'
@@ -38,10 +36,10 @@ vi.mock('../workflow-board/startPreflight', async (original) => ({
 
 const key = nextDraftKey('workspace', 'workflow')
 const clients: QueryClient[] = []
-const empty: GraphEditReadResultV3 = { intent: null, current: [], canStop: false, affectedSetChanged: false }
+const empty: GraphEditReadResultCurrent = { intent: null, current: [], canStop: false, affectedSetChanged: false }
 const warning = /The shared draft changed elsewhere|You made more edits after saving started|Draft updates unavailable/
 
-function startFacts(context: AuthoringContext, read: GraphEditReadResultV3): BoardStartPreflight {
+function startFacts(context: AuthoringContext, read: GraphEditReadResultCurrent): BoardStartPreflight {
   const draft = context.draft
   return {
     workflow: CurrentManagedWorkflowSchema.parse({ workflow: draft.graph, revision: draft.revision,
@@ -131,7 +129,7 @@ it.each(['Agent settings Save', 'Agent settings Save and run', 'Save inside Agen
         [agent.id, agent.configurationVersionId!])), agents: source.agents,
     }))
     vi.spyOn(nextDraftApi, 'editStage').mockImplementation(async (input) => {
-      journal = GraphEditReadResultV3Schema.parse({ ...empty, intent: journalIntent(input, source) })
+      journal = GraphEditReadResultCurrentSchema.parse({ ...empty, intent: journalIntent(input, source) })
       return journal
     })
     vi.spyOn(nextDraftApi, 'editAdvance').mockImplementation(async () => {

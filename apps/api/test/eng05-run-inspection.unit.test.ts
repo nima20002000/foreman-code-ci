@@ -5,7 +5,7 @@ import {
   RunExecutionSummarySchema, RunAcceptedInputValueSchema, RunVersionDetailSchema,
   RunExecutionsPageSchema, RunExecutionDetailSchema, RunExecutionBindingsPageSchema,
   CurrentOperatorToolNameSchema, makeCurrentWorkflowFixture,
-} from '@foreman-code/contracts/wave25'
+} from '@foreman-code/contracts/current'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import type { OperatorRequestContext } from '../src/mcp/operator/types.js'
 import {

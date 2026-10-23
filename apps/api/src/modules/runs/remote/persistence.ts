@@ -1,13 +1,14 @@
 import { RemoteOperationReceiptSchema, RemoteOwnerReconciliationSchema, type RemoteOwnerReconciliation, type RemoteOperationReceipt } from '@foreman-code/contracts/remote-execution'
 import { WorkerObservationSchema, DispatchIntentSchema, type WorkerObservation } from '@foreman-code/contracts/node-placement'
-import { canonicalGraphJson, sameWorkflowValue } from '@foreman-code/contracts/wave25'
-import { assertGraphTransaction, beforeGraphCommit, type GraphTransactionSql } from '../../run-graph/connection.js'
+import { canonicalGraphJson, sameWorkflowValue } from '@foreman-code/contracts/current'
+import { assertGraphTransaction, beforeGraphCommit } from '../../run-graph/connection.js'
+import type { SqlTransaction } from '../../../infrastructure/transaction.js'
 import type { RunOwnership } from '../ownership.js'
 import { VerifiedRemoteEvidence } from './resultBridge.js'
 import { sha256Hex } from '../../../shared/hash.js'
 
 /** Accepted dispatch is immutable; current native grant renewal is a separate audited fact. */
-export async function readReconciledDispatchIntent(sql: Pick<GraphTransactionSql, 'query'>, operationId: string, lock = false) {
+export async function readReconciledDispatchIntent(sql: Pick<SqlTransaction, 'query'>, operationId: string, lock = false) {
   if (lock) {
     // Match execution writers: Run, execution, then dispatch.
     await sql.query(`select r.id from runs r join execution_dispatch_intents i on i.run_id=r.id
@@ -22,7 +23,7 @@ export async function readReconciledDispatchIntent(sql: Pick<GraphTransactionSql
   const transition = transitions.rows[0] ? RemoteOwnerReconciliationSchema.parse(transitions.rows[0].transition) : undefined
   return transition ? DispatchIntentSchema.parse({ ...original, owner: transition.nextOwner }) : original
 }
-export async function persistRemoteOwnerReconciliation(sql: GraphTransactionSql, owner: RunOwnership, raw: RemoteOwnerReconciliation,
+export async function persistRemoteOwnerReconciliation(sql: SqlTransaction, owner: RunOwnership, raw: RemoteOwnerReconciliation,
   verifyOriginalNativeAndLiveGrant: () => Promise<void>) {
   assertGraphTransaction(sql); owner.assertOwned()
   const transition = RemoteOwnerReconciliationSchema.parse(raw)
@@ -45,7 +46,7 @@ export async function persistRemoteOwnerReconciliation(sql: GraphTransactionSql,
 }
 
 /** Called from the bridge's canonical acceptance transaction, never from a worker. */
-export async function persistVerifiedRemoteReceipt(sql: GraphTransactionSql, owner: RunOwnership, verified: VerifiedRemoteEvidence,
+export async function persistVerifiedRemoteReceipt(sql: SqlTransaction, owner: RunOwnership, verified: VerifiedRemoteEvidence,
   assertLiveAuthority: () => Promise<void>): Promise<void> {
   assertGraphTransaction(sql); owner.assertOwned()
   if (!(verified instanceof VerifiedRemoteEvidence) || owner.runId !== verified.receipt.intent.runId) throw new Error('Verified remote Run ownership required')
@@ -72,7 +73,7 @@ export async function persistVerifiedRemoteReceipt(sql: GraphTransactionSql, own
     on conflict(operation_id) do update set sequence=excluded.sequence,receipt=excluded.receipt`, [receipt.intent.operationId, receipt.sequence, canonicalGraphJson(receipt)])
   beforeGraphCommit(sql, verify)
 }
-export async function auditRejectedRemoteReceipt(sql: GraphTransactionSql, receipt: RemoteOperationReceipt, reason: string) {
+export async function auditRejectedRemoteReceipt(sql: SqlTransaction, receipt: RemoteOperationReceipt, reason: string) {
   assertGraphTransaction(sql)
   // Hash only: rejected reports cannot persist arbitrary credential-bearing payloads.
   const digest = sha256Hex(canonicalGraphJson(receipt))
@@ -82,7 +83,13 @@ export async function auditRejectedRemoteReceipt(sql: GraphTransactionSql, recei
   await sql.query(`delete from remote_execution_recovery_audit where operation_id=$1 and ordinal not in
     (select ordinal from remote_execution_recovery_audit where operation_id=$1 order by ordinal desc limit 32)`, [receipt.intent.operationId])
 }
-export async function readRemoteReceipts(sql: Pick<GraphTransactionSql, 'query'>, runId: string, nodeId: string): Promise<RemoteOperationReceipt[]> {
+/** The stored receipt of one remote operation, if any. */
+export async function readStoredRemoteReceipt(sql: Pick<SqlTransaction, 'query'>, operationId: string): Promise<RemoteOperationReceipt | undefined> {
+  const row = (await sql.query<{ receipt: unknown }>(
+    'select receipt from remote_execution_receipts where operation_id=$1', [operationId])).rows[0]
+  return row && RemoteOperationReceiptSchema.parse(row.receipt)
+}
+export async function readRemoteReceipts(sql: Pick<SqlTransaction, 'query'>, runId: string, nodeId: string): Promise<RemoteOperationReceipt[]> {
   const rows = await sql.query<{ receipt: unknown }>(`select r.receipt from remote_execution_receipts r join execution_dispatch_intents i using(operation_id)
     where i.run_id=$1 and i.node_id=$2 order by i.execution_id`, [runId, nodeId])
   return rows.rows.map(row => {
@@ -92,7 +99,7 @@ export async function readRemoteReceipts(sql: Pick<GraphTransactionSql, 'query'>
   })
 }
 /** Physical milestone only; detailed Stop/uncertainty remains in readRemoteReceipts. */
-export async function readRemoteObservations(sql: Pick<GraphTransactionSql, 'query'>, runId: string, nodeId: string): Promise<WorkerObservation[]> {
+export async function readRemoteObservations(sql: Pick<SqlTransaction, 'query'>, runId: string, nodeId: string): Promise<WorkerObservation[]> {
   return (await readRemoteReceipts(sql, runId, nodeId)).map(receipt => WorkerObservationSchema.parse({
     schemaVersion: 1, protocolVersion: 1, operationId: receipt.intent.operationId, attemptId: receipt.intent.attemptId,
     executionId: receipt.intent.executionId, bindingHash: receipt.intent.bindingHash, connection: receipt.connection,

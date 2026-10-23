@@ -3,7 +3,7 @@ import type { DurableInteraction } from '@foreman-code/contracts'
 import { DomainError } from '../src/modules/errors.js'
 import type { GraphResumeClaim } from '../src/modules/interactions/deliveryPostgres.js'
 import { INTERACTION_DELIVERY_LEASE_MS } from '../src/modules/interactions/delivery.js'
-import { resumeApproval, type ApprovalRuntimeDependencies } from '../src/modules/interactions/wave25/service.js'
+import { resumeApproval, type ApprovalRuntimeDependencies } from '../src/modules/interactions/current/service.js'
 
 afterEach(() => { vi.useRealTimers() })
 

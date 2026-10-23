@@ -8,13 +8,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import {
   CurrentRunDetailsSchema, RunExecutionDetailSchema, RunExecutionBindingSchema,
-  WorkflowVersionV3Schema, type RunExecutionDetail, type RunInputSourceSchema,
-} from '@foreman-code/contracts/wave25'
+  WorkflowVersionCurrentSchema, type RunExecutionDetail, type RunInputSourceSchema,
+} from '@foreman-code/contracts/current'
 import { server } from '../../../mocks/server'
 import { digestCurrentValue, readRunExecution } from '../runDetailsClient'
 import { currentRunKey, useCurrentRunQuery } from '../currentRunQuery'
 import { useSelectedRunRecord } from '../runFacts'
-import { WorkflowBoardProvider } from '../context'
+import { WorkflowBoardProvider } from '../../board-core'
 import { inspectionBoardFixture } from './inspectionFixtures'
 import { executionPagesKey, bindingsPagesKey, useExecutionPages, useBindingPages, refreshFirstInspectionPage } from './queries'
 
@@ -57,7 +57,7 @@ async function joinWithBindingPages(): Promise<RunExecutionDetail> {
   }))
   const pins = { ...owner.version.agentConfigurationVersionIds,
     ...Object.fromEntries(additions.map((node, i) => [node.agentId, `source-config-${i}`])) }
-  const version = WorkflowVersionV3Schema.parse({ ...owner.version, agentConfigurationVersionIds: pins,
+  const version = WorkflowVersionCurrentSchema.parse({ ...owner.version, agentConfigurationVersionIds: pins,
     definition: { ...owner.version.definition,
       nodes: [first, { ...join, join: { mode: 'all' } }, ...additions],
       edges: [...owner.version.definition.edges, ...additions.flatMap((node, i) => [

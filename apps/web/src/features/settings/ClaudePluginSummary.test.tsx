@@ -6,7 +6,7 @@ import { http, HttpResponse } from 'msw'
 import { afterEach, expect, it } from 'vitest'
 import { routeTree } from '../../app/router'
 import { server } from '../../mocks/server'
-import { useOperatorChatStore } from '../operator-chat/operatorChatStore'
+import { useOperatorChatStore } from '../operator-chat'
 
 const clients: QueryClient[] = []
 afterEach(() => {

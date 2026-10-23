@@ -1,7 +1,7 @@
 import { nativeNode } from '../../shared/mocks/nativeFixtureTypes'
 import { describe, expect, it, vi } from 'vitest'
 import { createGraphTopologyProjector } from './topology'
-import { workflowToGraph } from './mapper'
+import { workflowToGraph } from '../board-core'
 import { makeScaleGraph } from './fixtures/scaleData'
 
 describe('stable graph topology (reference assertions, not a renderer benchmark)', () => {

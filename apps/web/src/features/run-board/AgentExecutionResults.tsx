@@ -4,22 +4,19 @@ import { createStore, useStore } from 'zustand'
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
 import type { JobInitiatingAgent } from '@foreman-code/contracts/jobs'
 import { jobQueueHasExecution, type JobQueueTicket } from '@foreman-code/contracts/job-admission'
-import type { RepeatGraphScopeV3, RunExecutionSummary, RunExecutionDetail } from '@foreman-code/contracts/wave25'
+import type { RepeatGraphScopeCurrent, RunExecutionSummary, RunExecutionDetail } from '@foreman-code/contracts/current'
 import { useHarnessSessionEpoch } from '../../shared/api/harnessSettings'
 import { sessionIsSwitching } from '../../shared/api/sessionBoundary'
 import { ApiError } from '../../shared/api/client'
 import { Button } from '../../shared/ui/nocturne'
-import type { SelectedRunState } from '../runs-selector/useSelectedRun'
-import { isRunAccessError, runReadErrorLabel } from '../runs-selector/query'
-import { JsonValue } from '../workflow-board/inspect/JsonValue'
-import { jobsClient } from '../jobs/client'
-import { JobResult } from '../jobs/JobResult'
-import { JobQueueFacts } from '../jobs/JobSpecFacts'
+import { type SelectedRunState, isRunAccessError, runReadErrorLabel } from '../runs-selector'
+import { JsonValue } from '../workflow-board'
+import { jobsClient, JobResult, JobQueueFacts } from '../jobs'
 import { readForRunVisit, runNodeInspectionKey } from './inspectionQuery'
 import { AgentHostCiResults } from './AgentHostCiResults'
 
 export function AgentExecutionResults({ selection, scope, execution, name, acceptedResult }: {
-  selection: SelectedRunState; scope: RepeatGraphScopeV3;
+  selection: SelectedRunState; scope: RepeatGraphScopeCurrent;
   execution: Exclude<RunExecutionSummary, { kind: 'job' }>; name: string
   acceptedResult: RunExecutionDetail['acceptedResult']
 }) {

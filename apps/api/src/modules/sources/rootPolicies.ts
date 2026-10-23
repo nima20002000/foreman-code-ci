@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { ApprovedRootAllowlistSchema, WorkspaceRootPolicySchema, WorkspaceRootSelectionSchema, WorkspaceRootAttestationSchema,
   type ApprovedRootAllowlist, type WorkspaceRootSelection, type WorkspaceRootPolicy, type WorkspaceRootAttestation } from '@foreman-code/contracts/workspace-root-policies'
@@ -12,7 +12,7 @@ import { rootSelectionDigest, rootAttestationDigest } from './rootAttestation.js
 import type { AuthorizedWorkspaceRoot, WorkspaceRootHostPort, WorkspaceRootPolicyPort } from './rootPolicyPorts.js'
 import { authorizationReadSnapshot } from '../access/authorizationReadSnapshot.js'
 
-type Sql = GraphSqlClient
+type Sql = SqlQuery
 type RootBindingKind = 'location' | 'managed'
 export function workspaceRootHostScope(host: ApprovedRootAllowlist['hostRef']): string { return host.kind === 'main' ? `main:${host.mainId}` : `main:${host.mainId}:device:${host.deviceId}` }
 function policyScope(host: ApprovedRootAllowlist['hostRef'], kind: RootBindingKind): string {

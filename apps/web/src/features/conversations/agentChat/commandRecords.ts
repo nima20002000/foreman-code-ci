@@ -1,6 +1,7 @@
 import type { Mutation, QueryClient } from '@tanstack/react-query'
 import type { ChatDeliveryReceipt, InteractionResponseValue } from '@foreman-code/contracts'
 import type { AgentChatState, AgentChatTurn, SendAgentChatMessageRequest, AgentChatSendResponse } from '@foreman-code/contracts/agent-chat'
+import { createClientScopedStore } from '../../../shared/api/clientScopedStore'
 import type { ChatAttachmentAttempt } from '../chatAttachmentAttempt'
 import { receiptForCommand } from './receiptReadback'
 
@@ -15,7 +16,11 @@ export type AgentChatCommand =
 export type AgentChatCommandResult = { conversationId?: string; turn?: AgentChatTurn; receipt?: ChatDeliveryReceipt; replayed?: boolean }
 export type AgentChatCommandReadback = { conversationId: string; turn: AgentChatTurn }
 export type AgentChatReadbacks = Record<number, AgentChatCommandReadback>
-export const agentChatReadbacksKey = ['agent-chat', 'command-readbacks'] as const
+const readbackStore = createClientScopedStore<{ readbacks: AgentChatReadbacks }>(() => ({ readbacks: {} }))
+/** Local proof per QueryClient, keyed by the owning mutation id. It is not server state. */
+export const readAgentChatReadbacks = (client: QueryClient): AgentChatReadbacks => readbackStore.read(client).readbacks
+export const writeAgentChatReadbacks = (client: QueryClient, readbacks: AgentChatReadbacks): void => readbackStore.write(client, () => ({ readbacks }))
+export const useAgentChatReadbacks = (client: QueryClient): AgentChatReadbacks => readbackStore.use(client, (state) => state.readbacks)
 export type AgentChatCommandRecord = {
   command: AgentChatCommand | undefined; result: AgentChatCommandResult | undefined; error: unknown
   status: 'idle' | 'pending' | 'success' | 'error'; submittedAt: number; readback?: AgentChatCommandReadback
@@ -42,12 +47,12 @@ export function currentCommandReceipt(result: AgentChatCommandResult | undefined
 }
 
 /** Terminal proof is separate from the initial HTTP acknowledgement. A bounded state window is
- * lossy, so Query retains only a detached receipt, keyed by its owning mutation id (not a snapshot).
+ * lossy, so a local store retains only a detached receipt, keyed by its owning mutation id (not a snapshot).
  * Capture at state acceptance, before batched renders or a later window can evict the receipt. */
 export function rememberAgentChatReadback(client: QueryClient, stateKey: readonly unknown[], state: AgentChatState): void {
   if (!state.conversation) return
   const mutations = client.getMutationCache().findAll({ mutationKey: [...stateKey.slice(0, 3), 'command'], exact: true })
-  const previous = client.getQueryData<AgentChatReadbacks>(agentChatReadbacksKey) ?? {}
+  const previous = readAgentChatReadbacks(client)
   let next = previous
   for (const mutation of mutations) {
     if (previous[mutation.mutationId]) continue
@@ -57,7 +62,7 @@ export function rememberAgentChatReadback(client: QueryClient, stateKey: readonl
     if (!receipt || !['completed', 'failed', 'canceled'].includes(receipt.delivery)) continue
     next = { ...next, [mutation.mutationId]: { conversationId: state.conversation.id, turn: structuredClone(receipt) } }
   }
-  if (next !== previous) client.setQueryData(agentChatReadbacksKey, next)
+  if (next !== previous) writeAgentChatReadbacks(client, next)
 }
 
 /** Readback can suppress an unresolved warning only for this exact conversation and request. */
@@ -83,7 +88,7 @@ export function isRetirableAcknowledgement(record: Pick<AgentChatCommandRecord, 
  * Pending and genuinely unresolved identities are never aged out or replayed. */
 export function retireAgentChatAcknowledgements(client: QueryClient): void {
   const cache = client.getMutationCache()
-  const readbacks = client.getQueryData<AgentChatReadbacks>(agentChatReadbacksKey) ?? {}
+  const readbacks = readAgentChatReadbacks(client)
   const acknowledged = cache.getAll().filter((mutation) => {
     const key = mutation.options.mutationKey
     if (key?.length !== 4 || key[0] !== 'agent-chat' || key[3] !== 'command') return false
@@ -95,5 +100,5 @@ export function retireAgentChatAcknowledgements(client: QueryClient): void {
   // Proof has exactly the mutation's lifetime; retirement cannot leave a second unbounded cache.
   const retained = new Set(cache.getAll().map((mutation) => mutation.mutationId))
   const entries = Object.entries(readbacks).filter(([id]) => retained.has(Number(id)))
-  if (entries.length !== Object.keys(readbacks).length) client.setQueryData(agentChatReadbacksKey, Object.fromEntries(entries))
+  if (entries.length !== Object.keys(readbacks).length) writeAgentChatReadbacks(client, Object.fromEntries(entries))
 }

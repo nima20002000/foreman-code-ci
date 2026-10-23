@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { OperatorToolSchemaResultSchema } from '@foreman-code/contracts/operator-mcp'
 import { AgentChatHistoryPageSchema, AgentChatTurnPageSchema, SendAgentChatMessageResponseSchema } from '@foreman-code/contracts/agent-chat'
 import { ReadSelectedRunChatResponseSchema } from '@foreman-code/contracts/selected-run-chat'
-import { RunStartV3ResultSchema } from '@foreman-code/contracts/wave25'
+import { RunStartCurrentResultSchema } from '@foreman-code/contracts/current'
 import { eventually } from './helpers/agentChatF5.js'
 import { body, executions, oldRunRows, path, read, setup, terminal } from './agent-chat-schedule.helpers.js'
 
@@ -23,7 +23,7 @@ describe.skipIf(!postgresEnabled)('Selected historical Run chat PostgreSQL / HTT
         expectedLocationRevision: 1, runnerId: f.locations.runnerId, rootPath: f.db.directory })
       const revision = Number((await f.db.pool.query<{ revision: string }>('select revision::text from workflows where id=$1', [workflowId])).rows[0]!.revision)
       const dispatch = vi.spyOn(f.engine, 'start')
-      const started = RunStartV3ResultSchema.parse(body(await f.client.callTool({ name: 'run_start', arguments: {
+      const started = RunStartCurrentResultSchema.parse(body(await f.client.callTool({ name: 'run_start', arguments: {
         workspaceId, workflowId, workflowVersionId: f.f.version.id, executionSemanticsVersion: 3,
         commandId: randomUUID(), expectedWorkflowRevision: revision, expectedLocationRevision: location.value.locationRevision,
         expectedAgentConfigurationVersionIds: f.f.version.agentConfigurationVersionIds, input: {},
@@ -73,7 +73,7 @@ describe.skipIf(!postgresEnabled)('Selected historical Run chat PostgreSQL / HTT
       expect(discovery.name).toBe('agent_chat_read')
       expect(discovery).not.toHaveProperty('outputSchema')
       const schema = OperatorToolSchemaResultSchema.parse(body(await test.mcp.callTool({
-        name: 'operator_tool_schema_get', arguments: { name: 'agent_chat_read', includeOutputSchema: true },
+        name: 'tool_schema', arguments: { name: 'agent_chat_read', includeOutputSchema: true },
       })))
       expect(schema.name).toBe('agent_chat_read')
       expect(compactJsonSchema(schema.inputSchema)).toEqual(discovery.inputSchema)

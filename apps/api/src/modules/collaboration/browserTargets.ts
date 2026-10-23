@@ -2,8 +2,8 @@ import type pg from 'pg'
 import { AgentSubjectSchema, BrowserTargetResultSchema,
   BrowserTargetSelectionSchema, type AgentSubject, type BrowserTargetResult } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { readChatPrincipal } from '../access/conversationCredentials.js'
-import { PostgresAgentChatRepository, agentChatKey } from '../conversations/agentChatRepository.js'
+import { readChatPrincipal } from '../access/index.js'
+import { PostgresAgentChatRepository, agentChatKey } from '../conversations/index.js'
 import { resolveWorkflowChatTarget } from './workflowChatResolver.js'
 import type { BrowserAuthority } from './browserAuthority.js'
 

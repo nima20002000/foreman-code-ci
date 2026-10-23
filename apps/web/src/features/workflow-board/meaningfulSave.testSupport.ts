@@ -1,12 +1,12 @@
 import { AgentConfigurationVersionSchema, DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
 import { HttpResponse } from 'msw'
-import { GraphEditStageInputV3Schema, GraphEditAdvanceInputV3Schema, GraphEditDiscardInputV3Schema,
-  GraphEditReadResultV3Schema, RunStartV3InputSchema, ExecutableWorkflowV3Schema, sameWorkflowValue,
-  type GraphEditIntentV3, type GraphEditStageInputV3, type GraphEditAdvanceInputV3 } from '@foreman-code/contracts/wave25'
+import { GraphEditStageInputCurrentSchema, GraphEditAdvanceInputCurrentSchema, GraphEditDiscardInputCurrentSchema,
+  GraphEditReadResultCurrentSchema, RunStartCurrentInputSchema, ExecutableWorkflowCurrentSchema, sameWorkflowValue,
+  type GraphEditIntentCurrent, type GraphEditStageInputCurrent, type GraphEditAdvanceInputCurrent } from '@foreman-code/contracts/current'
 import { createCurrentBoardMock } from '../../shared/mocks/currentBoard'
 import { fixture } from '../graph/nextDraft/core.cases'
 import { journalIntent, savedJournal } from '../graph/nextDraft/nim2644Journal.fixture'
-import { nextDraftKey } from '../graph/nextDraft/state'
+import { nextDraftKey } from '../board-core'
 
 const copy = <T,>(value: T): T => structuredClone(value)
 const failure = (code: string, status = 409) => HttpResponse.json({ error: { code, message: code } }, { status })
@@ -25,7 +25,7 @@ export async function meaningfulSaveFixture(otherActive = false, source = fixtur
   const other = mock.install({ ...graph, id: 'shared-workflow', name: 'Other workflow sharing the Agent' }, true)
   if (otherActive) {
     const version = mock.versions.get(other.currentVersionId!)!
-    const input = RunStartV3InputSchema.parse({ workspaceId, workflowId: other.workflow.id,
+    const input = RunStartCurrentInputSchema.parse({ workspaceId, workflowId: other.workflow.id,
       executionSemanticsVersion: 3, commandId: 'fixture-start-other', workflowVersionId: version.id,
       expectedWorkflowRevision: other.revision, expectedAgentConfigurationVersionIds: version.agentConfigurationVersionIds,
       expectedLocationRevision: 1, input: {} })
@@ -41,11 +41,11 @@ export async function meaningfulSaveFixture(otherActive = false, source = fixtur
   const path = `/api/management/workspaces/${workspaceId}/workflows/${workflowId}`
   const initial = mock.managed(workflowId), initialVersion = mock.versions.get(initial.currentVersionId!)!
   const controls = { rejectPublish: false, loseSaveReply: false, holdSaveReply: undefined as Promise<void> | undefined }
-  const requests = { stages: [] as GraphEditStageInputV3[], advances: [] as GraphEditAdvanceInputV3[], publications: 0 }
+  const requests = { stages: [] as GraphEditStageInputCurrent[], advances: [] as GraphEditAdvanceInputCurrent[], publications: 0 }
   const stops = new Set<string>()
-  let intent: GraphEditIntentV3 | null = null, submitted: GraphEditStageInputV3 | undefined
-  let saved: NonNullable<GraphEditIntentV3['result']> | undefined
-  const read = () => GraphEditReadResultV3Schema.parse({ intent, canStop: !mock.controls.deniedStop,
+  let intent: GraphEditIntentCurrent | null = null, submitted: GraphEditStageInputCurrent | undefined
+  let saved: NonNullable<GraphEditIntentCurrent['result']> | undefined
+  const read = () => GraphEditReadResultCurrentSchema.parse({ intent, canStop: !mock.controls.deniedStop,
     affectedSetChanged: mock.controls.affectedSetChanged,
     current: (intent?.affected ?? []).map((pin) => {
       const detail = mock.runs.get(pin.runId)!, terminal = detail.run.executionState === 'completed'
@@ -78,7 +78,7 @@ export async function meaningfulSaveFixture(otherActive = false, source = fixtur
     const body: unknown = await request.json()
     const action = (body as { action?: string }).action
     if (action === 'stage_edits') {
-      const input = GraphEditStageInputV3Schema.parse(body)
+      const input = GraphEditStageInputCurrentSchema.parse(body)
       requests.stages.push(copy(input))
       if (submitted) {
         if (!sameWorkflowValue(submitted, input)) return failure('COMMAND_CONFLICT')
@@ -98,13 +98,13 @@ export async function meaningfulSaveFixture(otherActive = false, source = fixtur
       return HttpResponse.json(read())
     }
     if (action === 'discard_edits') {
-      const input = GraphEditDiscardInputV3Schema.parse(body)
+      const input = GraphEditDiscardInputCurrentSchema.parse(body)
       if (!intent || input.intentId !== intent.id || input.commandId !== intent.discardCommandId) return failure('INTENT_CONFLICT')
       if (intent.state === 'saved') return failure('ALREADY_SAVED')
       intent.state = 'discarded'; return HttpResponse.json(read())
     }
     if (action !== 'stop_and_save') return failure('INVALID_INPUT', 400)
-    const input = GraphEditAdvanceInputV3Schema.parse(body)
+    const input = GraphEditAdvanceInputCurrentSchema.parse(body)
     requests.advances.push(copy(input))
     if (!intent || input.intentId !== intent.id || input.commandId !== intent.advanceCommandId) return failure('INTENT_CONFLICT')
     if (intent.state === 'saved') return HttpResponse.json(read())
@@ -132,7 +132,7 @@ export async function meaningfulSaveFixture(otherActive = false, source = fixtur
       productRole: agent.productRole, harness: agent.harnessConfiguration, prompt: agent.prompt ?? {},
       assignedSkills: agent.assignedSkills ?? [], contentHash: publication.version.contentHash, createdAt: publication.version.createdAt,
     }))
-    ExecutableWorkflowV3Schema.parse({ version: publication.version, configurations: [...mock.configurations, ...configurations]
+    ExecutableWorkflowCurrentSchema.parse({ version: publication.version, configurations: [...mock.configurations, ...configurations]
       .filter((item) => publication.version.agentConfigurationVersionIds[item.agentId] === item.id) })
     for (const item of publication.agents ?? []) {
       const index = mock.catalog.findIndex(({ agent }) => agent.id === item.agent.id)

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { AcceptedWorkflowRunV3Schema, canonicalGraphJson, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { AcceptedWorkflowRunCurrentSchema, canonicalGraphJson, makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 
 /** Synthetic rows for query-boundary tests only. The production reader still
  * validates exact physical columns, V3 snapshots and the immutable hash. These
@@ -9,7 +9,7 @@ export function currentSaveAdmissionFixture(suffix: string) {
   f.version.contentHash = `sha256:${createHash('sha256').update(canonicalGraphJson({
     definition: f.version.definition, configurations: f.version.agentConfigurationVersionIds, entryNodeId: f.version.entryNodeId,
   })).digest('hex')}`
-  const record = AcceptedWorkflowRunV3Schema.parse({ ...f.run, executionState: 'completed', outcome: 'succeeded',
+  const record = AcceptedWorkflowRunCurrentSchema.parse({ ...f.run, executionState: 'completed', outcome: 'succeeded',
     result: { outcome: 'succeeded', output: {} }, finishedAt: f.createdAt, authorizationPrincipalId: 'save-authority',
     executionLocation: { runnerId: 'runner-local', rootPath: '/fixture', locationRevision: 1, identityHash: `sha256:${'1'.repeat(64)}` } })
   const row = { id: record.id, workspace_id: record.workspaceId, workflow_id: record.workflowId,

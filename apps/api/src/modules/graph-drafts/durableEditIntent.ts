@@ -12,15 +12,15 @@ import {
   type CurrentJournalDiscardInput as GraphEditDiscardInput,
   type CurrentJournal as GraphEditIntent, type CurrentJournalReadInput as GraphEditReadInput,
   type CurrentJournalRunState as GraphEditRunState,
-} from '@foreman-code/contracts/wave25'
-import { isAuthorized, requireAuthorization } from '../access/policy.js'
-import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.js'
+} from '@foreman-code/contracts/current'
+import { isAuthorized, requireAuthorization } from '../access/index.js'
+import { readLiveManagementPrincipal } from '../access/index.js'
 import { commandInputHash, type PostgresCommandCoordinator } from '../commands/postgres.js'
 import { DomainError } from '../errors.js'
 import type { RunManagementService } from '../runs/management.js'
-import { lockActiveWorkspace } from '../workspaces/admission.js'
+import { lockActiveWorkspace } from '../workspaces/index.js'
 import { readAffectedGraphRuns } from './saveAdmission.js'
-import { ignoreError } from '../diagnostics/ignoredError.js'
+import { ignoreError } from '../diagnostics/index.js'
 
 export type EditIntentSource = 'http' | 'mcp'
 type Source = EditIntentSource

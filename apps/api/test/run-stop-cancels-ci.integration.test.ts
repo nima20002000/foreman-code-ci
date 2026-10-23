@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 import { CiGetOutputSchema, CiRunOutputSchema, CiRunRecordSchema,
   type CiHostReply, type CiHostRun, type CiRunRecord } from '@foreman-code/contracts'
-import { makeCurrentWorkflowFixture, WorkflowRunV3Schema } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
 import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { acceptRunAuthority, currentOperatorAuthority } from '../src/modules/access/runAuthority.js'
@@ -11,7 +11,7 @@ import { withExclusiveGraphConnection } from '../src/modules/run-graph/connectio
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { PostgresAppInteractionService } from '../src/modules/interactions/app.js'
-import { Wave25WorkerCredentialService } from '../src/modules/interactions/wave25/credentials.js'
+import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
 import { RunCiAuthority, CI_GET_ACTIONS, CI_RUN_ACTIONS } from '../src/modules/jobs/ciAuthority.js'
 import { HostCiService, type HostCiComputer, type HostCiEndpoint } from '@foreman-code/ci/service'
 import { RunManagementService } from '../src/modules/runs/management.js'
@@ -43,7 +43,7 @@ async function fixture() {
       const root = await currentOperatorAuthority(sql, f.authorizationPrincipalId)
       return acceptRunAuthority(sql, root.principal)
     }))
-    const run = WorkflowRunV3Schema.parse({ ...f.f.run, id: runId,
+    const run = WorkflowRunCurrentSchema.parse({ ...f.f.run, id: runId,
       authorizationPrincipalId: authority.principal.id })
     await insertProviderRun(pool, { ...f.f, run }, authority)
     return run

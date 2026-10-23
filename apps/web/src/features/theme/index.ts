@@ -8,3 +8,4 @@ export {
   useTheme,
 } from './themeStore'
 export type { Theme } from './themeStore'
+export { useSyncedTheme } from './useSyncedTheme'

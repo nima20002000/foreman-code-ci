@@ -1,21 +1,21 @@
 import { browserOwnerIsActive, readConversationBrowserOwner } from './browserLiveOwner.js'
 import type pg from 'pg'
-import { AgentConfigurationVersionSchema, AgentSubjectSchema, canonicalJson, effectiveGraphqlTools,
+import { isReadOnlyHarnessConfiguration, AgentConfigurationVersionSchema, AgentSubjectSchema, canonicalJson, effectiveGraphqlTools,
   type AgentSubject, type AgentConfigurationVersion, type NodeBrowserSettings } from '@foreman-code/contracts'
 import { WorkerConversationBindingSchema } from '@foreman-code/contracts/remote-execution-rpc'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { readChatPrincipal, readConversationCredential } from '../access/conversationCredentials.js'
-import { readConsultationCredentialSubject, readCoordinatorCredentialAuthority } from '../access/consultationAuthority.js'
-import { requireActiveWorkerBinding } from '../access/workerLifecycle.js'
-import { requireAuthorization } from '../access/policy.js'
-import { PostgresAgentChatRepository } from '../conversations/agentChatRepository.js'
-import { conversationFeatureContext } from '../conversations/conversationFeatureSubject.js'
-import { readExecutionPlacement } from '../placement/persistence.js'
+import { readChatPrincipal, readConversationCredential } from '../access/index.js'
+import { readConsultationCredentialSubject, readCoordinatorCredentialAuthority } from '../access/index.js'
+import { requireActiveWorkerBinding } from '../access/index.js'
+import { requireAuthorization } from '../access/index.js'
+import { PostgresAgentChatRepository } from '../conversations/index.js'
+import { conversationFeatureContext } from '../conversations/index.js'
+import { readExecutionPlacement } from '../placement/index.js'
 import { readWorkflowChatIdentity } from './workflowChatIdentity.js'
 import { DomainError } from '../errors.js'
 import type { BrowserSessionAuthority } from '../browser-runtime/service.js'
 import type { BrowserSubjectAuthority, BrowserSession } from '../browser-runtime/types.js'
-import type { BrowserProfileRepository } from '../browser-profiles/types.js'
+import type { BrowserProfileRepository } from '../browser-profiles/index.js'
 import { browserAgentTools, chatToolOverride } from './browserTools.js'
 import { isOpenRunState } from '../runs/runState.js'
 
@@ -167,7 +167,7 @@ export class BrowserAuthority implements BrowserSubjectAuthority, BrowserSession
         Boolean(node.interval), browserAgentTools)
     }
     return { subject, configuration, browser: browser ?? { enabled: false }, computerId, workflowVersionId, active, tools,
-      readOnly: configuration.harness.harness === 'opencode' || configuration.harness.sandbox === 'read-only' }
+      readOnly: isReadOnlyHarnessConfiguration(configuration.harness) }
   }
 
   async resolve(subject: AgentSubject, host?: { readyComputerId: string }) {

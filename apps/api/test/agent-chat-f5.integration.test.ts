@@ -7,7 +7,7 @@ import type pg from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest'
 import { AgentChatStateSchema, type SendAgentChatMessageRequest } from '@foreman-code/contracts/agent-chat'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture } from '@foreman-code/contracts/current'
 import { buildApp } from '../src/app.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
@@ -16,14 +16,15 @@ import { agentChatKey, PostgresAgentChatRepository } from '../src/modules/conver
 import { PostgresOperatorConversationRepository } from '../src/modules/conversations/operatorChatRepository.js'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { AgentChatF5Native, eventually } from './helpers/agentChatF5.js'
-import { agent3Database, seedAgent3 } from './helpers/workflowDatabase.js'
+import { ScriptedChatNative, eventually } from './helpers/agentChatF5.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { deferred } from './helpers/deferred.js'
 
 /** Opt-in real SQL/authenticated transports; native I/O remains a deterministic substitute. */
 describe.skipIf(!postgresEnabled)('F5 approval and receipt PostgreSQL / HTTP / MCP regressions', { timeout: 60_000 }, () => {
-  let database: Awaited<ReturnType<typeof agent3Database>>
+  let database: Awaited<ReturnType<typeof migratedDatabase>>
   let pool: pg.Pool
   let root: string
   let fixture: ReturnType<typeof makeCurrentWorkflowFixture>
@@ -33,9 +34,9 @@ describe.skipIf(!postgresEnabled)('F5 approval and receipt PostgreSQL / HTTP / M
   let readerToken: string
 
   beforeAll(async () => {
-    database = await agent3Database() // Loopback test DB, task-owned random schema, scoped teardown.
+    database = await migratedDatabase() // Loopback test DB, task-owned random schema, scoped teardown.
     pool = database.pool; root = database.directory
-    fixture = await seedAgent3(pool, root, makeCurrentWorkflowFixture(`f5-${randomUUID()}`, 'single'), { run: false })
+    fixture = await seedWorkflowFixture(pool, root, makeCurrentWorkflowFixture(`f5-${randomUUID()}`, 'single'), { run: false })
     access = new PostgresAccessService(pool)
     const issued = await access.issue({ name: 'F5 writer', audience: 'operator', expiresAt: new Date(Date.now() + 600_000),
       grants: [{ actions: ['agent_chat:read', 'agent_chat:write', 'agent_chat:cancel', 'agent_chat:respond'], scope: {} }] })
@@ -53,10 +54,10 @@ describe.skipIf(!postgresEnabled)('F5 approval and receipt PostgreSQL / HTTP / M
     const context = { workspaceId: fixture.scope.workspaceId, workflowId: fixture.scope.workflowId, workflowNodeId: node.id, agentId: node.agentId }
     const { workspaceId, ...query } = context
     const repository = new PostgresAgentChatRepository(pool)
-    const managers = new Map<string, AgentChatF5Native>()
+    const managers = new Map<string, ScriptedChatNative>()
     const service = new AgentChatService(pool, repository, new PostgresOperatorConversationRepository(pool), new PostgresWorkflowRepository(pool),
       { getForWorkspace: async () => { throw new Error('F5 fixture must not access a Run.') }, getExecution: async () => { throw new Error('This fixture must not read a Run execution.') }, async *executionPages() { yield [] } },
-      (id) => { const manager = new AgentChatF5Native(); managers.set(id, manager); return manager }, root)
+      (id) => { const manager = new ScriptedChatNative(); managers.set(id, manager); return manager }, root)
     const app = buildApp({ readiness: { database: { ping: async () => undefined }, checkpoints: { ping: async () => undefined } },
       operator: { access, services: { agentChat: service, commands: new PostgresCommandCoordinator(pool) } as unknown as OperatorServices } })
     const clients: Client[] = []

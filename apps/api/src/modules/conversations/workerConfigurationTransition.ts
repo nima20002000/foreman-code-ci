@@ -4,12 +4,12 @@ import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import type { WorkerConversationBinding, WorkerConversationConfiguration }
   from '@foreman-code/contracts/remote-execution-rpc'
-import { WorkflowVersionV3Schema } from '@foreman-code/contracts/wave25'
-import { configurationWithNodeSkills } from '../skills/nodeSkills.js'
+import { WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
+import { configurationWithNodeSkills } from '../skills/index.js'
 import { definedProperties } from '../definedProperties.js'
 import { validRunChatSkillsTransition } from './workerRunChatBinding.js'
 import { harnessSessionChanged } from '../harnesses/providerAccountConfiguration.js'
-import { verifiedSkills } from '../skills/instructions.js'
+import { verifiedSkills } from '../skills/index.js'
 
 /** Run lineage and the working folder outlive changes to the selected native session. */
 function validAgentConfigurationChange(previous: WorkerConversationBinding, next: WorkerConversationBinding,
@@ -79,7 +79,7 @@ export async function readAgentConfigurationTransition(pool: pg.Pool, previous: 
     const saved = (await pool.query<{ record: unknown }>(`select v.record from workflow_versions v
       join runs r on r.workflow_version_id=v.id where r.id=$1 and r.workspace_id=$2`,
     [previous.sourceExecution.placement.runId, base.workspaceId])).rows[0]
-    const version = WorkflowVersionV3Schema.parse(saved?.record)
+    const version = WorkflowVersionCurrentSchema.parse(saved?.record)
     const node = version.definition.nodes.find(item => item.id === nodeId)
     if (node && node.kind !== 'job' && node.agentId === base.agentId && (node.skills || node.browser?.enabled)) {
       base = configurationWithNodeSkills(base, node.skills, version.nodeSkillSnapshots?.[node.id], node.browser)

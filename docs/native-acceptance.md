@@ -6,7 +6,7 @@ job queue, builds shared contracts, and runs the existing
 `native-lifecycle.acceptance.test.ts` file with native execution enabled.
 
 The runner creates a unique loopback PostgreSQL database for each invocation and
-supplies it as `ENG03_A_TEST_DATABASE_URL`. It closes the owned test process group
+supplies it as `TEST_DATABASE_URL`. It closes the owned test process group
 and removes its closed database after success or failure. Active database callers
 retain the owned database and fail the run. The shared application database and
 PostgreSQL container remain running. The child does not receive `TEST_DATABASE_URL`.

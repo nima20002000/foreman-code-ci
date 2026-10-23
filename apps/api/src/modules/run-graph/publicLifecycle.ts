@@ -1,4 +1,4 @@
-import type { GraphActivity, GraphExecutionIdentity, GraphFact, NodeResolution } from '@foreman-code/contracts/wave25'
+import type { GraphActivity, GraphExecutionIdentity, GraphFact, NodeResolution } from '@foreman-code/contracts/current'
 import type { DurableInteraction, ReviewJob } from '@foreman-code/contracts'
 import type { CurrentNativeActivity } from './nativeActivitySelection.js'
 

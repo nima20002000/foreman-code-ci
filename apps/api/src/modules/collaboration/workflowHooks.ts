@@ -6,19 +6,20 @@ import {
   type AgentIdentity, type BoardApplicationReceipt, type BoardLifecycleFact, type BoardResult,
   type ExecutionRef, type HarnessExecution, type LogicalWorkRef,
 } from '@foreman-code/contracts'
-import type { WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
-import { sameWorkflowValue } from '@foreman-code/contracts/wave25'
+import type { WorkflowVersionCurrent } from '@foreman-code/contracts/current'
+import { sameWorkflowValue } from '@foreman-code/contracts/current'
 import { DomainError } from '../errors.js'
-import { assertGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
+import { assertGraphTransaction } from '../run-graph/index.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import type { RepeatRuntimeRun } from '../runs/repeatPostgres.js'
 import { repeatTickIndex } from '../runs/repeatResolution.js'
 import { workflowResultEffectConflict } from '../runs/workflowResultEffectFailure.js'
-import { appendHierarchyReportLocked } from '../workflow-hierarchy/reports.js'
+import { appendHierarchyReportLocked } from '../workflow-hierarchy/index.js'
 import type { MemoryBoardPort } from './ports.js'
 
 export interface WorkflowCollaborationInput {
   run: RepeatRuntimeRun
-  version: WorkflowVersionV3
+  version: WorkflowVersionCurrent
   execution: HarnessExecution
   sourceEventKey: string
 }
@@ -34,8 +35,8 @@ export interface WorkflowLifecycleInput extends WorkflowCollaborationInput {
 }
 export interface WorkflowResultInput extends WorkflowCollaborationInput { result: BoardResult; summary: string }
 export interface WorkflowCollaborationHooks {
-  lifecycleLocked(sql: GraphTransactionSql, input: WorkflowLifecycleInput): Promise<void>
-  resultLocked(sql: GraphTransactionSql, input: WorkflowResultInput): Promise<void>
+  lifecycleLocked(sql: SqlTransaction, input: WorkflowLifecycleInput): Promise<void>
+  resultLocked(sql: SqlTransaction, input: WorkflowResultInput): Promise<void>
 }
 export type WorkflowCollaborationBinding = { agent: AgentIdentity; work: LogicalWorkRef; execution: ExecutionRef }
 
@@ -107,7 +108,7 @@ function assertReceipt(receipt: BoardApplicationReceipt | undefined | false, sou
   if (receipt && receipt.sourceEventKey !== sourceEventKey) conflict('The board receipt belongs to another source event.')
 }
 
-export async function readWorkflowCollaborationBindingLocked(sql: GraphTransactionSql,
+export async function readWorkflowCollaborationBindingLocked(sql: SqlTransaction,
   input: WorkflowCollaborationInput): Promise<WorkflowCollaborationBinding | undefined> {
   const { run, version, execution } = input
   if (run.id !== execution.runId || run.workflowVersionId !== version.id || run.workspaceId !== version.workspaceId
@@ -153,7 +154,7 @@ function summaryFor(input: WorkflowLifecycleInput): string {
   return Array.from(summary).slice(0, 600).join('')
 }
 
-async function projectLifecycleLocked(sql: GraphTransactionSql, input: WorkflowLifecycleInput,
+async function projectLifecycleLocked(sql: SqlTransaction, input: WorkflowLifecycleInput,
   fact: BoardLifecycleFact, receipt?: BoardApplicationReceipt | false) {
   const summary = summaryFor(input)
   const reportIds: string[] = []

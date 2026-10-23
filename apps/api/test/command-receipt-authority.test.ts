@@ -10,9 +10,13 @@ describe('NIM-2642 exact command authority before replay', () => {
   const payload = { commandId: 'command', expectedRevision: 7 }
   function fixture() {
     const order: string[] = []
-    const query = vi.fn(async (sql: string) => {
-      order.push(sql)
-      return { rows: sql.trimStart().startsWith('select') && sql.includes('from management_command_receipts')
+    // Statements are named by what they bind: the command lock only its key, the receipt read the principal ids, operation
+    // and command id, and the receipt write six values. Transaction control binds nothing and keeps its own word.
+    const kind = (sql: string, values: unknown[]) => values.length === 0 ? sql : values.length === 1 ? 'lock'
+      : values.length === 3 && Array.isArray(values[0]) ? 'receipt-read' : values.length === 6 ? 'receipt-write' : 'other'
+    const query = vi.fn(async (sql: string, values: unknown[] = []) => {
+      order.push(kind(sql, values))
+      return { rows: kind(sql, values) === 'receipt-read'
         ? [{ principal_id: principal.id, input_hash: commandInputHash(payload), target_key: 'draft:draft', result: { saved: 'version-1' } }] : [], rowCount: 1 }
     })
     const release = vi.fn()
@@ -27,8 +31,8 @@ describe('NIM-2642 exact command authority before replay', () => {
       authorize: async () => { f.order.push('authorize') } })
     expect(result).toEqual({ value: { saved: 'version-1' }, replayed: true })
     expect(perform).not.toHaveBeenCalled()
-    const authorized = f.order.indexOf('authorize'), receipt = f.order.findIndex((sql) => sql.includes('from management_command_receipts'))
-    expect(f.order.findIndex((sql) => sql.includes('pg_advisory_xact_lock'))).toBeLessThan(authorized)
+    const authorized = f.order.indexOf('authorize'), receipt = f.order.indexOf('receipt-read')
+    expect(f.order.indexOf('lock')).toBeLessThan(authorized)
     expect(authorized).toBeLessThan(receipt)
     expect(f.release).toHaveBeenCalledTimes(1)
   })
@@ -36,8 +40,8 @@ describe('NIM-2642 exact command authority before replay', () => {
     const f = fixture(), perform = vi.fn(async () => ({ saved: 'new-version' }))
     await expect(f.coordinator.execute({ ...command, perform,
       authorize: async () => { throw new Error('authority lost') } })).rejects.toThrow('authority lost')
-    expect(f.order.some((sql) => sql.includes('from management_command_receipts'))).toBe(false)
-    expect(f.order.some((sql) => sql.includes('insert into management_command_receipts'))).toBe(false)
+    expect(f.order).not.toContain('receipt-read')
+    expect(f.order).not.toContain('receipt-write')
     expect(f.order).toContain('rollback')
     expect(perform).not.toHaveBeenCalled()
     expect(f.release).toHaveBeenCalledTimes(1)

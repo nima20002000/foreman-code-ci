@@ -37,7 +37,7 @@
   transition: border-color 140ms ease, background-color 140ms ease;
 }
 .mcp-connection-card:hover, .mcp-connection-card:focus-within {
-  border-color: color-mix(in srgb, var(--n-accent, currentColor) 42%, transparent);
+  border-color: color-mix(in srgb, var(--n-accent) 42%, transparent);
 }
 .mcp-provider-heading { display: flex; align-items: center; gap: var(--space-3); }
 .mcp-provider-heading h3 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.015em; }
@@ -77,7 +77,7 @@
 .mcp-connection-details[open] > summary > svg:last-child { transform: rotate(180deg); }
 .mcp-connection-details > summary:hover { background: color-mix(in srgb, currentColor 4%, transparent); }
 .mcp-connections summary:focus-visible, .mcp-connections a:focus-visible {
-  outline: 2px solid var(--n-accent, currentColor);
+  outline: 2px solid var(--n-accent);
   outline-offset: 3px;
   border-radius: var(--radius-md);
 }

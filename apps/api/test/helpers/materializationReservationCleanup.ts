@@ -23,10 +23,10 @@ import { createSourceManifest, sourceSha256 } from '../../src/modules/sources/ma
 import { identity, openPrivateRoot } from '../../src/modules/sources/privateFilesystem.js'
 import { qualifyApprovedRootAllowlist } from '../../src/modules/sources/rootAttestation.js'
 import { buildQueueFixture } from './buildComputerFixture.js'
-import { agent3Database } from './workflowDatabase.js'
+import { migratedDatabase } from './migratedDatabase.js'
 
 export async function setupMaterializationReservationCleanup(storageCapacity: Partial<SourceStorageCapacity> = {}) {
-  const database = await agent3Database()
+  const database = await migratedDatabase()
   const pool = database.pool
   const access = new PostgresAccessService(pool)
   const writer = await access.issue({ name: 'Reservation cleanup fixture', audience: 'operator',

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
-import { WorkflowDefinitionV3Schema } from '@foreman-code/contracts/wave25'
+import { WorkflowDefinitionCurrentSchema } from '@foreman-code/contracts/current'
 import { expect, it } from 'vitest'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { workflowOrderMigration } from '../src/infrastructure/workflowOrderMigration.js'
@@ -12,7 +12,7 @@ import { OperatorLifecycleService } from '../src/modules/workspaces/operatorLife
 import { currentDatabase } from './helpers/database.js'
 
 function workflowRecord(workspaceId: string, id: string) {
-  return WorkflowDefinitionV3Schema.parse({
+  return WorkflowDefinitionCurrentSchema.parse({
     id, workspaceId, name: id, approval: { handler: 'user' },
     executionSemanticsVersion: 3, entryNodeId: null, handoffs: { contractVersion: 1 },
     executionCondition: { kind: 'manual' }, nodes: [], edges: [],

@@ -6,7 +6,7 @@ import { detectStuckExecutions } from '../src/modules/bug-reports/stuckExecution
 import { readNativeActivityFacts, projectNativeActivityFacts } from '../src/modules/runs/nativeActivitySnapshot.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { currentDatabase, postgresEnabled } from './helpers/database.js'
-import { seedAgent3 } from './helpers/workflowDatabase.js'
+import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
 
 interface Plan {
   'Actual Rows': number
@@ -23,14 +23,14 @@ function visitedRows(plan: Plan): number {
 describe.skipIf(!postgresEnabled)('native activity reads with retained PostgreSQL history', () => {
   let database: Awaited<ReturnType<typeof currentDatabase>>
   let pool: pg.Pool
-  let fixture: Awaited<ReturnType<typeof seedAgent3>>
+  let fixture: Awaited<ReturnType<typeof seedWorkflowFixture>>
   const reads: number[] = []
   const executionId = 'activity-execution'
   const occurredAt = '2026-10-01T00:00:00.000Z'
 
   beforeEach(async () => {
     database = await currentDatabase()
-    fixture = await seedAgent3(database.pool, database.directory)
+    fixture = await seedWorkflowFixture(database.pool, database.directory)
     const node = agentWorkflowNode(fixture.version.definition.nodes[0])
     const execution = HarnessExecutionSchema.parse({
       id: executionId, runId: fixture.run.id, workflowNodeId: node.id, agentId: node.agentId,

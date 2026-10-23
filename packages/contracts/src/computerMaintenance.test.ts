@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { COMPUTER_MAINTENANCE_NAMESPACE, COMPUTER_MAINTENANCE_VERSION,
-  ComputerMaintenanceStartInputSchema, ComputerMaintenanceOperatorListInputSchema,
+  ComputerMaintenanceStartInputSchema,
   ComputerMaintenanceListInputSchema, ComputerMaintenanceReadInputSchema,
   MaintenanceRequestSchema, MaintenanceTaskStartSchema, MaintenanceStatusSchema,
   MaintenanceTaskSchema, SyncedMarketplaceSchema,
@@ -163,7 +163,7 @@ describe('Worker updates', () => {
 })
 
 
-describe('Operator maintenance detail selection', () => {
+describe('Maintenance task limit selection', () => {
   const target = {
     hostRef: { kind: 'main', mainId: '11111111-1111-4111-8111-111111111111' },
     applicationInstallationId: '22222222-2222-4222-8222-222222222222',
@@ -172,27 +172,14 @@ describe('Operator maintenance detail selection', () => {
   }
 
   it.each(Array.from({ length: 50 }, (_, index) => index + 1))(
-    'accepts taskLimit %i at HTTP and MCP boundaries', taskLimit => {
+    'accepts taskLimit %i at the HTTP boundary', taskLimit => {
       expect(ComputerMaintenanceListInputSchema.parse({ taskLimit })).toEqual({ taskLimit })
-      expect(ComputerMaintenanceOperatorListInputSchema.parse({ taskLimit })).toEqual({ taskLimit })
       expect(ComputerMaintenanceListInputSchema.parse({ target, taskLimit })).toEqual({ target, taskLimit })
-      expect(ComputerMaintenanceOperatorListInputSchema.parse({ target, taskLimit })).toEqual({ target, taskLimit })
       expect(ComputerMaintenanceReadInputSchema.parse({ target, taskLimit })).toEqual({ target, taskLimit })
     })
 
-  it.each([0, 51, 1.5, '5', null])('rejects invalid taskLimit %j at HTTP and MCP boundaries', taskLimit => {
+  it.each([0, 51, 1.5, '5', null])('rejects invalid taskLimit %j at the HTTP boundary', taskLimit => {
     expect(ComputerMaintenanceListInputSchema.safeParse({ taskLimit }).success).toBe(false)
-    expect(ComputerMaintenanceOperatorListInputSchema.safeParse({ taskLimit }).success).toBe(false)
     expect(ComputerMaintenanceReadInputSchema.safeParse({ target, taskLimit }).success).toBe(false)
-  })
-
-  it('allows full task selection and rejects task selection without full detail', () => {
-    const taskId = '77777777-7777-4777-8777-777777777777'
-    expect(ComputerMaintenanceOperatorListInputSchema.parse({})).toEqual({})
-    expect(ComputerMaintenanceOperatorListInputSchema.parse({ detail: 'full', taskId }))
-      .toEqual({ detail: 'full', taskId })
-    expect(ComputerMaintenanceOperatorListInputSchema.safeParse({ taskId }).success).toBe(false)
-    expect(ComputerMaintenanceOperatorListInputSchema.safeParse({ detail: 'compact', taskId }).success).toBe(false)
-    expect(ComputerMaintenanceOperatorListInputSchema.safeParse({ detail: 'full', taskId: 'invalid' }).success).toBe(false)
   })
 })

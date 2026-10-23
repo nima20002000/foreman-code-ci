@@ -1,36 +1,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { GraphEditStageInputV3Schema, preserveWorkflowGeometry, sameAuthoredWorkflow, sameWorkflowValue,
-  type GraphEditIntentV3, type GraphEditReadResultV3 } from '@foreman-code/contracts/wave25'
+import { GraphEditStageInputCurrentSchema, preserveWorkflowGeometry, sameAuthoredWorkflow, sameWorkflowValue,
+  type GraphEditIntentCurrent, type GraphEditReadResultCurrent } from '@foreman-code/contracts/current'
 import { assertSession, sessionGeneration } from '../../../shared/api/sessionBoundary'
 import { queryKeys } from '../../../shared/api/query'
 import { useGraphDraftStore } from '../store'
-import { boardDraftContextKey } from '../../workflow-board/keys'
-import { hierarchyKey } from '../../workflow-hierarchy/queries'
-import { acknowledgeAgentEdits, hasAgentEdits, stageAgentEdits, referencedAgentEdits } from './agentEdits'
-import { draftOperations, hasLocalChanges, mergeAcknowledgement } from './model'
+import {
+  boardDraftContextKey, acknowledgeAgentEdits, hasAgentEdits, stageAgentEdits, referencedAgentEdits,
+  draftOperations, hasLocalChanges, mergeAcknowledgement, nextDraftDirty, type NextDraftEdit,
+} from '../../board-core'
+import { hierarchyKey } from '../../workflow-hierarchy'
 import { readBoardStart } from '../../workflow-board/startOutbox'
-import { nextDraftDirty, type NextDraftEdit } from './state'
 import { assertDraftSubmission, nextDraftApi } from './transport'
 import { changedAgentIds, readBoardStartPreflight } from '../../workflow-board/startPreflight'
 import { acknowledgeEditOutbox, acknowledgeEditSubmission, editSnapshotAcknowledged, editSnapshotSubmitted, matchesEditIntent, readEditOutbox, readEditSubmission,
   rejectEditOutbox, reserveEditOutbox, storeEditSnapshot, withEditIntentLock, type EditIntentOutbox } from './editIntentStorage'
 
-export const activeEditIntent = (intent: GraphEditIntentV3 | null | undefined) => !!intent && !['saved', 'discarded'].includes(intent.state)
+export const activeEditIntent = (intent: GraphEditIntentCurrent | null | undefined) => !!intent && !['saved', 'discarded'].includes(intent.state)
 /** Shared by every Start surface: a Save/Advance/Discard command is in flight from its first request. */
 export const editIntentCommandKey = (draftKey: string) => ['graph-edit-intent-command', draftKey] as const
 export const graphEditIntentKey = (workspaceId: string, workflowId: string, draftId: string, generation = sessionGeneration()) =>
   ['graph-edit-intent', generation, workspaceId, workflowId, draftId] as const
 const readInput = (edit: NextDraftEdit) => ({ action: 'read_edits' as const, workspaceId: edit.context.draft.workspaceId,
   workflowId: edit.context.draft.workflowId, draftId: edit.context.draft.id })
-const commandInput = (intent: GraphEditIntentV3) => ({ workspaceId: intent.workspaceId, workflowId: intent.workflowId,
+const commandInput = (intent: GraphEditIntentCurrent) => ({ workspaceId: intent.workspaceId, workflowId: intent.workflowId,
   draftId: intent.draftId, intentId: intent.id })
 
-const remoteLineage = (intent: GraphEditIntentV3) => ({ id: intent.id, ownerPrincipalId: intent.ownerPrincipalId,
+const remoteLineage = (intent: GraphEditIntentCurrent) => ({ id: intent.id, ownerPrincipalId: intent.ownerPrincipalId,
   stageCommandId: intent.stageCommandId, stageInputHash: intent.stageInputHash })
-const remoteAgents = (intent: GraphEditIntentV3) =>
+const remoteAgents = (intent: GraphEditIntentCurrent) =>
   Object.fromEntries((intent.stagedDraft.stagedAgents ?? []).map((item) => [item.agent.id, item.agent]))
-function remoteBaseMatches(current: NextDraftEdit, intent: GraphEditIntentV3) {
+function remoteBaseMatches(current: NextDraftEdit, intent: GraphEditIntentCurrent) {
   const draft = current.context.draft
   return draft.workspaceId === intent.workspaceId && draft.workflowId === intent.workflowId && draft.id === intent.draftId
     && draft.publishedRevision === intent.expectedRevision && draft.baseWorkflowVersionId === intent.expectedWorkflowVersionId
@@ -43,7 +43,7 @@ function remoteBaseMatches(current: NextDraftEdit, intent: GraphEditIntentV3) {
 /** Reconcile only authenticated terminal readback for this exact form base.
  * Persist consumption with the resulting form before exposing it to new typing;
  * the shared outbox is not a per-tab acknowledgement marker. */
-export function acknowledgeEditIntentSnapshot(draftKey: string, current: NextDraftEdit, intent: GraphEditIntentV3): NextDraftEdit {
+export function acknowledgeEditIntentSnapshot(draftKey: string, current: NextDraftEdit, intent: GraphEditIntentCurrent): NextDraftEdit {
   const draft = current.context.draft
   if (current.busy || current.pending || !['saved', 'discarded'].includes(intent.state)
     || draft.workspaceId !== intent.workspaceId || draft.workflowId !== intent.workflowId || draft.id !== intent.draftId
@@ -138,7 +138,7 @@ export function useGraphEditIntent(draftKey: string, edit: NextDraftEdit) {
     return () => { unsubscribe(); window.removeEventListener('storage', changed) }
   }, [draftKey, queryClient, queryKey])
 
-  const accept = useCallback((data: GraphEditReadResultV3) => {
+  const accept = useCallback((data: GraphEditReadResultCurrent) => {
     queryClient.setQueryData(queryKey, data)
     const intent = data.intent
     if (!intent) return
@@ -181,7 +181,7 @@ export function useGraphEditIntent(draftKey: string, edit: NextDraftEdit) {
   }, [draftKey, queryClient, queryKey, workspaceId, workflowId])
   // Reconcile persisted results after refresh, independently of the HTTP reply
   // that first caused them. The query itself performs no Stop or publication.
-  const seen = useRef<GraphEditReadResultV3 | undefined>(undefined)
+  const seen = useRef<GraphEditReadResultCurrent | undefined>(undefined)
   useEffect(() => {
     if (!query.data || seen.current === query.data) return
     seen.current = query.data
@@ -229,7 +229,7 @@ export function useGraphEditIntent(draftKey: string, edit: NextDraftEdit) {
       assertDraftSubmission(current.graph, operations)
       const stagedAgents = stageAgentEdits(current)
       const pins = await nextDraftApi.pins(current.context.draft.workspaceId, current.graph, stagedAgents, current.context.agents)
-      const request = GraphEditStageInputV3Schema.parse({ workspaceId: current.context.draft.workspaceId,
+      const request = GraphEditStageInputCurrentSchema.parse({ workspaceId: current.context.draft.workspaceId,
         workflowId: current.context.draft.workflowId, draftId: current.context.draft.id, action: 'stage_edits',
         commandId: crypto.randomUUID(), expectedRevision: current.context.draft.publishedRevision,
         expectedWorkflowVersionId: current.context.draft.baseWorkflowVersionId, executionSemanticsVersion: 3,

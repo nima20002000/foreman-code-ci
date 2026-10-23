@@ -15,14 +15,14 @@ export default tseslint.config(
   },
   ...foremanLint(import.meta.dirname),
   {
-    // Graph protocol primitives have one definition, in src/wave25/graphPrimitives.ts.
+    // Graph protocol primitives have one definition, in src/current/graphPrimitives.ts.
     // protocol.ts only holds the event/snapshot envelopes built on them.
     files: ['**/*.ts'],
     // The package entry re-exports protocol.ts wholesale (`export *`), which names no primitive.
-    ignores: ['src/wave25/index.ts'],
+    ignores: ['src/current/index.ts'],
     rules: {
       'no-restricted-imports': ['error', { patterns: [{
-        regex: '(^|/)wave25/protocol(\\.js)?$|^\\./protocol(\\.js)?$',
+        regex: '(^|/)current/protocol(\\.js)?$|^\\./protocol(\\.js)?$',
         importNames: [
           'RUN_GRAPH_PROTOCOL_VERSION', 'RUN_GRAPH_LIMITS', 'GraphIdSchema', 'GraphDigestSchema',
           'GraphSequenceSchema', 'GraphSequence', 'RunGraphScopeSchema', 'RunGraphScope', 'GraphEvidenceSchema',
@@ -39,7 +39,7 @@ export default tseslint.config(
           'GraphEffectIdentitySchema', 'GraphEffectIdentity', 'GraphEffectSchema', 'GraphEffect',
           'PublicGraphDeltaSchema', 'PublicGraphDelta',
         ],
-        message: 'Import graph primitives from wave25/graphPrimitives.js; protocol.ts must not redefine them.',
+        message: 'Import graph primitives from current/graphPrimitives.js; protocol.ts must not redefine them.',
       }] }],
     },
   },

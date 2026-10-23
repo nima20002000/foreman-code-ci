@@ -1,6 +1,6 @@
 import { InfoHint } from '../../shared/ui/InfoHint'
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
-import type { RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
+import type { RepeatGraphScopeCurrent } from '@foreman-code/contracts/current'
 import { sessionGeneration } from '../../shared/api/sessionBoundary'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
 import { readBoardHistory } from './client'
@@ -10,7 +10,7 @@ import { useInspectionPresentation } from './inspect/presentation'
 import { JsonDisclosure } from './inspect/JsonValue'
 
 /** Deliberate authenticated history reads; not part of live graph refresh. */
-export function RunHistory({ scope }: { scope: RepeatGraphScopeV3 }) {
+export function RunHistory({ scope }: { scope: RepeatGraphScopeCurrent }) {
   const cache = useQueryClient()
   const key = ['workbench', 'board-history', sessionGeneration(), scope.workspaceId, scope.workflowId, scope.runId, scope.workflowVersionId]
   const disclosure = JSON.stringify(key)

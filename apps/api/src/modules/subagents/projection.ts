@@ -1,6 +1,6 @@
 import { HarnessNativeEventSchema, NativeSessionReferenceSchema } from '@foreman-code/contracts'
 import type { RunSubagent } from '@foreman-code/contracts/subagents'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { normalizeSubagentEvent, isChildCandidate } from './normalization.js'
 import { applySubagentChanges, readChildren } from './repository.js'
 import type { SubagentProjectionContext } from './types.js'
@@ -9,7 +9,7 @@ interface ContextRow { workspace_id: string; workflow_id: string; workflow_versi
   id: string; workflow_node_id: string; agent_id: string; attempt: number; reference: unknown;
   placement: { hostRef?: { deviceId?: string; mainId?: string }; payload?: { instanceId?: string } } | null;
   configuration_id: string; main_id: string }
-export async function readProjectionContext(sql: GraphSqlClient, executionId: string): Promise<SubagentProjectionContext | undefined> {
+export async function readProjectionContext(sql: SqlQuery, executionId: string): Promise<SubagentProjectionContext | undefined> {
   const row = (await sql.query<ContextRow>(`select r.workspace_id,r.workflow_id,r.workflow_version_id,e.run_id,e.id,e.workflow_node_id,e.agent_id,e.attempt,
     s.reference,p.record as placement,e.record->>'agentConfigurationVersionId' as configuration_id,m.id as main_id
     from harness_executions e join runs r on r.id=e.run_id join execution_native_sessions s on s.execution_id=e.id
@@ -25,7 +25,7 @@ export async function readProjectionContext(sql: GraphSqlClient, executionId: st
     profile: { deviceId: row.placement?.hostRef?.deviceId ?? row.placement?.hostRef?.mainId ?? row.main_id,
       harnessInstanceId: row.placement?.payload?.instanceId ?? row.configuration_id, providerVersion: session.data.providerVersion } }
 }
-export async function projectSubagentEvent(sql: GraphSqlClient, context: SubagentProjectionContext, input: unknown, pending = false) {
+export async function projectSubagentEvent(sql: SqlQuery, context: SubagentProjectionContext, input: unknown, pending = false) {
   const event = HarnessNativeEventSchema.parse(input)
   if (context.provider === 'opencode') return
   const payload = event.payload
@@ -56,7 +56,7 @@ export async function projectSubagentEvent(sql: GraphSqlClient, context: Subagen
   }
 }
 /** Caller holds the Run projection lock. Rows and the watermark commit together; raw append queues work in its own transaction. */
-export async function reconcileRunSubagents(sql: GraphSqlClient, runId: string): Promise<'caught-up' | 'catching-up'> {
+export async function reconcileRunSubagents(sql: SqlQuery, runId: string): Promise<'caught-up' | 'catching-up'> {
   const queue = (await sql.query<{ execution_id: string; projected_sequence: number; latest_sequence: number }>(`select q.* from run_subagent_projection_queue q
     join harness_executions e on e.id=q.execution_id where e.run_id=$1 and q.projected_sequence<q.latest_sequence order by q.execution_id limit 32`, [runId])).rows
   let budget = 500
@@ -84,7 +84,7 @@ export async function reconcileRunSubagents(sql: GraphSqlClient, runId: string):
     where e.run_id=$1 and q.projected_sequence<q.latest_sequence) as pending`, [runId])).rows[0]!.pending
   return remaining ? 'catching-up' : 'caught-up'
 }
-export async function markSubagentCoverage(sql: GraphSqlClient, child: RunSubagent, coverage: RunSubagent['coverage']) {
+export async function markSubagentCoverage(sql: SqlQuery, child: RunSubagent, coverage: RunSubagent['coverage']) {
   const truncated = (await sql.query<{ truncated: boolean }>(`select exists(select 1 from run_subagent_items where subagent_id=$1
     and record#>>'{truncation,truncated}'='true') as truncated`, [child.id])).rows[0]!.truncated
   const next = { ...child, revision: String(BigInt(child.revision) + 1n), coverage: truncated

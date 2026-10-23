@@ -3,23 +3,23 @@ import { render, screen, waitFor, act, cleanup } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, describe, expect, it } from 'vitest'
-import { RepeatRunReadbackSchema } from '@foreman-code/contracts/wave25'
+import { RepeatRunReadbackSchema } from '@foreman-code/contracts/current'
 import { server } from '../../mocks/server'
-import { boardV3Fixture } from '../workflow-board/v3Fixture.testSupport'
+import { boardCurrentFixture } from '../workflow-board/v3Fixture.testSupport'
 import { RepeatStatus } from './RepeatStatus'
 import { repeatCurrentPath } from './canonicalClient'
 
 const clients: QueryClient[] = []
 afterEach(() => { cleanup(); clients.forEach((client) => client.clear()); clients.length = 0; onlineManager.setOnline(true) })
-const path = (fixture: ReturnType<typeof boardV3Fixture>) => repeatCurrentPath(fixture.scope).split('?')[0]!
-function mount(fixture: ReturnType<typeof boardV3Fixture>, live = false) {
+const path = (fixture: ReturnType<typeof boardCurrentFixture>) => repeatCurrentPath(fixture.scope).split('?')[0]!
+function mount(fixture: ReturnType<typeof boardCurrentFixture>, live = false) {
   const query = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }); clients.push(query)
   return { query, ...render(<QueryClientProvider client={query}><RepeatStatus scope={fixture.scope} live={live} /></QueryClientProvider>) }
 }
 
 describe('canonical repeat status in the existing selected Run context', () => {
   it.each(['early_exit', 'limit_exit'] as const)('shows durable %s and technical attempts without following workflow head', async (reason) => {
-    const fixture = boardV3Fixture(reason)
+    const fixture = boardCurrentFixture(reason)
     let headReads = 0
     server.use(http.get(path(fixture), () => HttpResponse.json(fixture.current)),
       http.get(`/api/management/workspaces/${fixture.scope.workspaceId}/workflows/${fixture.scope.workflowId}`, () => {
@@ -35,7 +35,7 @@ describe('canonical repeat status in the existing selected Run context', () => {
     expect(headReads).toBe(0)
   })
   it('does not turn a repeat decision into activation of its successor', async () => {
-    const fixture = boardV3Fixture('repeat')
+    const fixture = boardCurrentFixture('repeat')
     server.use(http.get(path(fixture), () => HttpResponse.json(fixture.current)))
     mount(fixture)
     expect(await screen.findByText('Repeat decided')).toBeInTheDocument()
@@ -43,7 +43,7 @@ describe('canonical repeat status in the existing selected Run context', () => {
     expect(screen.queryByText('review · business occurrence 2 of 2')).not.toBeInTheDocument()
   })
   it('hides earlier facts on an unqualified or denied refresh instead of presenting success', async () => {
-    const fixture = boardV3Fixture(), user = userEvent.setup()
+    const fixture = boardCurrentFixture(), user = userEvent.setup()
     server.use(http.get(path(fixture), () => HttpResponse.json(fixture.current)))
     mount(fixture)
     await screen.findByText('Limit exit')
@@ -54,7 +54,7 @@ describe('canonical repeat status in the existing selected Run context', () => {
     expect(screen.queryByRole('button', { name: 'Read accepted results' })).not.toBeInTheDocument()
   })
   it('refetches the exact selected pins on reconnect', async () => {
-    const fixture = boardV3Fixture()
+    const fixture = boardCurrentFixture()
     const requests: string[] = []
     server.use(http.get(path(fixture), ({ request }) => { requests.push(request.url); return HttpResponse.json(fixture.current) }))
     mount(fixture)
@@ -64,7 +64,7 @@ describe('canonical repeat status in the existing selected Run context', () => {
     expect(requests.every((url) => new URL(url).searchParams.get('workflowVersionId') === fixture.scope.workflowVersionId)).toBe(true)
   })
   it('never replaces a newer selection with a late old-Run response', async () => {
-    const old = boardV3Fixture('limit_exit', 'run-old', 'version-old'), next = boardV3Fixture('early_exit', 'run-new', 'version-new')
+    const old = boardCurrentFixture('limit_exit', 'run-old', 'version-old'), next = boardCurrentFixture('early_exit', 'run-new', 'version-new')
     let release: (() => void) | undefined
     const delayed = new Promise<void>((resolve) => { release = resolve })
     server.use(http.get(path(old), async () => { await delayed; return HttpResponse.json(old.current) }),
@@ -76,7 +76,7 @@ describe('canonical repeat status in the existing selected Run context', () => {
     expect(screen.queryByText('version-old')).not.toBeInTheDocument()
   })
   it('reads private deliverables only on demand and matches the canonical accepted decision', async () => {
-    const fixture = boardV3Fixture(), user = userEvent.setup()
+    const fixture = boardCurrentFixture(), user = userEvent.setup()
     let detailReads = 0
     const details = RepeatRunReadbackSchema.parse({ contractVersion: 1, workspaceId: fixture.scope.workspaceId, workflowId: fixture.scope.workflowId,
       runId: fixture.scope.runId, executionSemanticsVersion: 3,

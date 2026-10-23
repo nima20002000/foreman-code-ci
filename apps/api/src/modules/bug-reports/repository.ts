@@ -8,12 +8,12 @@ import {
 } from '@foreman-code/contracts/management'
 import { IdSchema, TimestampSchema } from '@foreman-code/contracts'
 import { z } from 'zod'
-import type { GraphSqlClient } from '../run-graph/connection.js'
+import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { DomainError } from '../errors.js'
 
 const CursorSchema = z.object({ createdAt: TimestampSchema, id: IdSchema }).strict()
 
-export async function readBugReport(sql: GraphSqlClient, id: string, lock?: 'update'): Promise<BugReport> {
+export async function readBugReport(sql: SqlQuery, id: string, lock?: 'update'): Promise<BugReport> {
   const row = (await sql.query<{ record: unknown }>(
     `select record from bug_reports where id=$1${lock === 'update' ? ' for update' : ''}`, [id],
   )).rows[0]
@@ -21,7 +21,7 @@ export async function readBugReport(sql: GraphSqlClient, id: string, lock?: 'upd
   return BugReportSchema.parse(row.record)
 }
 
-export async function saveBugReport(sql: GraphSqlClient, report: BugReport): Promise<void> {
+export async function saveBugReport(sql: SqlQuery, report: BugReport): Promise<void> {
   await sql.query(
     'update bug_reports set record=$2::jsonb,status=$3,revision=$4 where id=$1',
     [report.id, JSON.stringify(report), report.status, report.revision],
@@ -35,7 +35,7 @@ export function bugReportTitleKey(title: string): string {
   return title.trim().replace(/\s+/g, ' ').toLowerCase()
 }
 
-async function lockBugReport(sql: GraphSqlClient, where: string, parameters: unknown[]): Promise<BugReport | undefined> {
+async function lockBugReport(sql: SqlQuery, where: string, parameters: unknown[]): Promise<BugReport | undefined> {
   const row = (await sql.query<{ record: unknown }>(
     `select record from bug_reports where ${where} for update`, parameters,
   )).rows[0]
@@ -47,7 +47,7 @@ async function lockBugReport(sql: GraphSqlClient, where: string, parameters: unk
  * duplicate to the report it names. A repeat of a fixed report reopens it. Otherwise insert the new report.
  */
 export async function recordBugReport(
-  sql: GraphSqlClient,
+  sql: SqlQuery,
   report: BugReport,
 ): Promise<{ report: BugReport; outcome: BugReportOutcome }> {
   const titleKey = bugReportTitleKey(report.title)
@@ -84,7 +84,7 @@ export async function recordBugReport(
 }
 
 export async function listBugReports(
-  sql: GraphSqlClient,
+  sql: SqlQuery,
   input: BugReportListInput,
   grantFilter: string,
   parameters: unknown[],

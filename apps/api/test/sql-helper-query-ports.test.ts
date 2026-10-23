@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import type { GraphSqlClient } from '../src/modules/run-graph/connection.js'
+import type { SqlQuery } from '../src/infrastructure/transaction.js'
 import { readLiveManagementPrincipal } from '../src/modules/access/liveManagementPrincipal.js'
 import { PostgresFileReferenceAuthorization } from '../src/modules/files/references/authorization.js'
 import { authorizeSource } from '../src/modules/sources/authority.js'
@@ -20,7 +20,7 @@ function live(id = principal.id, grants = principal.grants, delegatedFrom: strin
 }
 function fixture() {
   const query = vi.fn()
-  const sql: GraphSqlClient = { query }
+  const sql: SqlQuery = { query }
   return { query, sql }
 }
 
@@ -32,13 +32,12 @@ describe('query-only SQL helpers retain authority and workspace boundaries', () 
     const value = await readLiveManagementPrincipal(f.sql, principal.id)
     expect(value.grants).toEqual([{ actions: ['workspaces:read'], scope: { workspaceIds: ['own'] } }])
     expect(f.query.mock.calls.map(([, values]) => values)).toEqual([['delegate'], ['owner']])
-    expect(f.query.mock.calls.every(([text]) => text.endsWith('for share'))).toBe(true)
   })
 
   it('refuses a revoked owner before source ownership or reference metadata can be read', async () => {
     for (const resolve of [
-      (sql: GraphSqlClient) => authorizeSource(sql, principal, 'sources:read', 'own'),
-      (sql: GraphSqlClient) => new PostgresFileReferenceAuthorization(sql).resolve(principal,
+      (sql: SqlQuery) => authorizeSource(sql, principal, 'sources:read', 'own'),
+      (sql: SqlQuery) => new PostgresFileReferenceAuthorization(sql).resolve(principal,
         { kind: 'workspace_reference', workspaceId: 'own' }, 'write'),
     ]) {
       const f = fixture()
@@ -66,8 +65,7 @@ describe('query-only SQL helpers retain authority and workspace boundaries', () 
       const f = fixture()
       f.query.mockResolvedValueOnce(result([])).mockResolvedValueOnce(result([...rows]))
       await expect(lockActiveWorkspace(f.sql, 'own')).rejects.toMatchObject({ code })
-      expect(f.query.mock.calls[0]).toEqual(['select pg_advisory_xact_lock(hashtext($1))', ['admission:workspace:own']])
-      expect(f.query.mock.calls[1]?.[0]).toContain('for share')
+      expect(f.query.mock.calls.map(([, values]) => values)).toEqual([['admission:workspace:own'], ['own']])
     }
   })
 

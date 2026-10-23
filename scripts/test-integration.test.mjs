@@ -703,7 +703,7 @@ test('database gates and storage paths use the current owned slot, overriding in
   const slot = { ...resource, databaseUrl }
   const inherited = { TEST_DATABASE_URL: 'postgresql://remote/live', DATABASE_URL: 'postgresql://remote/live',
     JOB_DISPATCH_DATABASE_URL: 'postgresql://remote/live', SUBAGENT_CORE_ADMIN_DATABASE_URL: 'postgresql://remote/live',
-    HRT_F03_DATABASE_URL: 'postgresql://remote/live', ENG03_A_TEST_DATABASE_URL: 'postgresql://remote/live',
+    HRT_F03_DATABASE_URL: 'postgresql://remote/live',
     NIM2691_ADMIN_DATABASE_URL: 'postgresql://remote/live', HRT_F14_ADMIN_DATABASE_URL: 'postgresql://remote/live',
     HOME: '/real/home', CODEX_HOME: '/real/codex', TMPDIR: '/inherited' }
   try {

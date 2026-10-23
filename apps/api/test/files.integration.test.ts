@@ -21,21 +21,21 @@ import type { AllocationSession, AllocationState } from '../src/modules/files/re
 import { TemporaryFileService } from '../src/modules/files/service.js'
 import { FileByteStorage } from '../src/modules/files/storage.js'
 import { registerFileRoutes } from '../src/routes/files.js'
-import { agent3Database } from './helpers/workflowDatabase.js'
+import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
 import { fileFixtures, fileMetadata } from './helpers/fileFixtures.js'
 import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 /** Real authenticated HTTP, PostgreSQL allocations and disk bytes; no native sessions or paid models. */
 describe.skipIf(!postgresEnabled)('FIL-03 temporary file HTTP and repository integration', () => {
-  let database: Awaited<ReturnType<typeof agent3Database>>, app: FastifyInstance, root: string
+  let database: Awaited<ReturnType<typeof migratedDatabase>>, app: FastifyInstance, root: string
   let access: PostgresAccessService, owner: Awaited<ReturnType<PostgresAccessService['issue']>>
   let other: Awaited<ReturnType<PostgresAccessService['issue']>>, first: string, second: string
   let repository: PostgresFileRepository, service: TemporaryFileService
   const base = (conversationId: string) => `/api/operator/conversations/${conversationId}/files`
   const headers = () => ({ authorization: `Bearer ${owner.token}`, host: 'localhost' })
   beforeAll(async () => {
-    database = await agent3Database()
+    database = await migratedDatabase()
     // Explicit lane registration for this isolated schema; production migrations.ts is untouched.
     const applied = await database.pool.query('select 1 from application_migrations where version=$1', [fileStorageMigration.version])
     if (!applied.rowCount) {

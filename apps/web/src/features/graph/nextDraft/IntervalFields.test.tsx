@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { makeCurrentWorkflowFixture, WorkflowDefinitionV3Schema, type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
+import { makeCurrentWorkflowFixture, WorkflowDefinitionCurrentSchema, type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
 import userEvent from '@testing-library/user-event'
 import { IntervalFields } from './IntervalFields'
 import { intervalLabel } from './intervalLabel'
@@ -10,14 +10,14 @@ import { intervalLabel } from './intervalLabel'
 afterEach(cleanup)
 
 function mount() {
-  const graphs: WorkflowDefinitionV3[] = []
+  const graphs: WorkflowDefinitionCurrent[] = []
   function Harness() {
-    const [graph, setGraph] = useState<WorkflowDefinitionV3>(() => makeCurrentWorkflowFixture('interval-ui').version.definition)
+    const [graph, setGraph] = useState<WorkflowDefinitionCurrent>(() => makeCurrentWorkflowFixture('interval-ui').version.definition)
     graphs.push(graph)
     return <IntervalFields node={graph.nodes[0]!} change={(update) => setGraph(update)} />
   }
   render(<Harness />)
-  return { saved: () => WorkflowDefinitionV3Schema.parse(graphs.at(-1)).nodes[0]! }
+  return { saved: () => WorkflowDefinitionCurrentSchema.parse(graphs.at(-1)).nodes[0]! }
 }
 
 describe('Agent loops in node settings', () => {
