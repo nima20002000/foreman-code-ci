@@ -190,6 +190,7 @@ const rules = {
 export const plugin = { meta: { name: 'eslint-plugin-foreman' }, rules }
 
 const tests = ['**/*.test.*', '**/*.spec.*', '**/test/**', '**/tests/**', '**/__tests__/**']
+const size = { skipBlankLines: true, skipComments: true }
 
 /** Config objects for one package directory: every rule is an error, minus that package's allowlisted files. */
 export function foremanLint(directory) {
@@ -211,7 +212,7 @@ export function foremanLint(directory) {
     },
     // The shared transaction helper is the one module that sends BEGIN/COMMIT/ROLLBACK.
     { files: ['src/infrastructure/transaction.ts'], rules: { 'foreman/no-raw-transactions': 'off' } },
-    { ignores: tests, rules: { 'foreman/no-error-rewrap-without-cause': 'error' } },
+    { ignores: tests, rules: { 'max-lines-per-function': ['error', { max: 200, ...size }], 'foreman/no-error-rewrap-without-cause': 'error' } },
     { files: tests, rules: { 'foreman/no-source-text-tests': 'error' } },
     { files: ['src/**/*.test.*'], rules: { 'foreman/test-timeout-limit': 'error' } },
     ...exemptions,

@@ -46,7 +46,7 @@ import { captureRepeatNativeEvidence, repeatLaunchClaim, repeatPossibleSubmissio
   type RepeatLaunchPaths, type RepeatNativeBoundaryEvidence, type RepeatNativeChange,
   type RepeatNativeEvidence, type RepeatNativeLockedHooks } from './repeatNativeRepository.js'
 import { inactiveRepeatResolution, prepareRepeatNativeUpdate, repeatTerminalResolution, type RepeatAcceptance, type RepeatAdmission } from './repeatNode.js'
-import { admitWorkHandoffLocked, ensureWorkEntryLocked, readWorkActivationInputLocked,
+import { admitWorkHandoffLocked, ensureWorkEntryLocked, readWorkActivationInputLocked, readWorkCallerReportLocked,
   recordUnresolvedWorkLocked, returnWorkHandoffLocked, resolveWaitingWorkJoinsLocked,
   type WorkRequestAdmission, type WorkReturnReceipt } from './workHandoffAdmission.js'
 import { markWorkNoticeDeliveredLocked, markWorkNoticePendingLocked,
@@ -322,6 +322,11 @@ export class RepeatRunRepository {
     return this.transaction(context => admitHierarchyGroupLocked({ ...context,
       assertActive: () => this.active(context) }, sourceExecutionId))
   }
+  /** The connection on which a finished Worker reports back to the Orchestrator that asked for its work. */
+  readWorkCallerReport(sourceExecutionId: string): Promise<string | undefined> {
+    return this.transaction(context => readWorkCallerReportLocked({ ...context,
+      assertActive: () => this.active(context) }, sourceExecutionId))
+  }
   /** One business request on the already-owned Run; replay returns its first receipt. */
   admitWorkRequest(sourceExecutionId: string, selectedRelationshipId?: string): Promise<WorkRequestAdmission> {
     return this.transaction(async context => {
@@ -536,7 +541,7 @@ export class RepeatRunRepository {
             stored.workActivationId, resultJson, resultDigest, context.now])
           await context.sql.query('update harness_executions set accepted=true where id=$1 and run_id=$2',
             [executionId, context.scope.runId])
-          await closeWorkflowControlInputLocked(context.sql, { runId: context.scope.runId, executionId, now: context.now })
+          // Input still queued for this finished turn waits for the Agent's next turn; the Run's end closes the rest.
           await context.sql.query(`update run_work_activations set state='completed'
             where run_id=$1 and activation_id=$2`, [context.scope.runId, stored.workActivationId])
           await markWorkNoticeDeliveredLocked(context, stored.workActivationId!, executionId)
@@ -1691,7 +1696,13 @@ export class RepeatRunRepository {
         || terminals.length > context.version.definition.executionPolicy!.maxNodeExecutions) {
         return repeatConflict('WORKFLOW_UNRESOLVED')
       }
-      if (unresolved.some((item) => !item.resolved)) {
+      const open = unresolved.filter((item) => !item.resolved)
+      // Only a Master waits for the owner's direction; any other Agent's unresolved work fails the Run with its reason.
+      // A Run that already waits keeps its recorded direction interaction.
+      const failure = open.length && context.hooks.run.executionState !== 'waiting'
+        ? await this.unresolvedWorkFailure(context, open) : undefined
+      if (failure) throw new WorkExecutionFailure(failure)
+      if (open.length) {
         this.active(context)
         await this.settleAttempts(context, { kind: 'run' })
         return 'needs_direction'
@@ -1708,6 +1719,26 @@ export class RepeatRunRepository {
         () => context.hooks.completeRunLocked(context.sql, terminals))
       return 'completed'
     })
+  }
+
+  private async unresolvedWorkFailure(context: Context, items: ReadonlyArray<{ execution_id: string;
+    reason: 'finish_with_findings' | 'repeated_exhausted_route' }>): Promise<ExecutionResult | undefined> {
+    for (const item of items) {
+      const row = (await context.sql.query<{ record: unknown; activation_id: string }>(
+        'select record,work_activation_id as activation_id from harness_executions where id=$1 and run_id=$2',
+        [item.execution_id, context.scope.runId])).rows[0]
+      if (!row) continue
+      const execution = HarnessExecutionSchema.parse(row.record)
+      const node = context.version.definition.nodes.find((candidate) => candidate.id === execution.workflowNodeId)
+      const name = node && node.kind !== 'job' ? node.name ?? node.label ?? node.id : execution.workflowNodeId
+      const findings = (await parseWorkResultLocked(context, execution, row.activation_id)).data.remainingFindings
+      const detail = findings.map((finding) => typeof finding === 'string' ? finding : JSON.stringify(finding)).join('; ')
+      const message = item.reason === 'finish_with_findings' ? `${name} finished with unresolved findings: ${detail}`
+        : `${name} could not hand off more work: its connection reached its handoff limit. Findings: ${detail || 'none'}`
+      return { outcome: 'failed', error: { code: 'WORK_FINISHED_WITH_FINDINGS',
+        message: message.length > 1000 ? `${message.slice(0, 999)}…` : message, retryable: false } }
+    }
+    return undefined
   }
 
   private async workFailures(context: Context): Promise<Array<{ activationId: string; result: ExecutionResult }>> {

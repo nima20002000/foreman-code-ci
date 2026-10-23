@@ -163,16 +163,6 @@ jobs:
       - store_artifacts:
           path: .logs/ci-durations
           destination: durations
-      # Keep summaries and failing files' logs; the per-slot copies and the archive of them are successful-file noise.
-      - run:
-          name: Trim integration logs
-          when: always
-          command: |
-            find .logs/test-integration -type d -name slots -prune -exec rm -rf {} + 2>/dev/null || true
-            find .logs/test-integration -name logs.tar.gz -delete 2>/dev/null || true
-      - store_artifacts:
-          path: .logs/test-integration
-          destination: integration-logs
       - when:
           condition:
             not:
@@ -188,6 +178,16 @@ jobs:
                   - apps/web/node_modules/.tmp
                   - apps/worker/node_modules/.cache
                   - packages/contracts/node_modules/.cache
+      # Keep summaries and failing files' logs; the per-slot copies and the archive of them are successful-file noise.
+      - run:
+          name: Trim integration logs
+          when: always
+          command: |
+            find .logs/test-integration -type d -name slots -prune -exec rm -rf {} + 2>/dev/null || true
+            find .logs/test-integration -name logs.tar.gz -delete 2>/dev/null || true
+      - store_artifacts:
+          path: .logs/test-integration
+          destination: integration-logs
       - when:
           condition:
             matches:

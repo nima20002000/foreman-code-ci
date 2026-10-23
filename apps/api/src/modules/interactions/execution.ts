@@ -91,6 +91,7 @@ import { finishRecoveredWorkflowCredentials } from './workflowTerminalRecovery.j
 import { assertSavedPendingApprovalOriginalLocked } from './nativeApprovalProof.js'
 import { openWorkflowLifecycleLocked } from '../runs/repeatLifecycle.js'
 import { workflowExecutionRequest } from '../runs/workflowExecutionRequest.js'
+import { readWorkflowTeam } from '../runs/workflowTeamPrompt.js'
 import { repeatTickIndex } from '../runs/repeatResolution.js'
 import { readRecoverableRemoteReviewer, readRetainedRemoteReviewer,
   retainRemoteReviewerCredential } from './retainedRemoteReviewer.js'
@@ -1430,7 +1431,8 @@ export class ApprovalExecutionCoordinator {
       queuedInput = await (await this.runs.repeat(currentOwner)).claimWorkflowInput(execution.id)
     }
     finally { await retained?.release() }
-    return appendWorkflowChatInput(workflowExecutionRequest({ execution, version, configuration, workspaceId: run.workspaceId, executionContext, collaborationPrompt,
+    const team = await readWorkflowTeam(version, execution.workflowNodeId, id => this.runs.getExecutionConfiguration(id))
+    return appendWorkflowChatInput(workflowExecutionRequest({ execution, version, configuration, workspaceId: run.workspaceId, executionContext, collaborationPrompt, team,
       ...(run.resultProtocol ? { resultProtocol: run.resultProtocol } : {}) }), queuedInput)
   }
 

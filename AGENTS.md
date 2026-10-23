@@ -118,6 +118,8 @@ Every package lint enforces these as errors (local rules live in
 code instead. Exemptions use content IDs so unchanged renames keep their exemptions, including in the cloud mirror.
 Editing an exempt file requires fixing its violations. `node scripts/lint-baseline.mjs` prunes entries that pass.
 
+- `max-lines-per-function` 200 outside tests: oversized functions hide unrelated
+  responsibilities.
 - `foreman/no-source-text-tests`: tests may not read repository source files
   or `?raw` imports, or assert on SQL/query/statement text. See above.
 - `foreman/no-local-canonical-json`: one shared canonical JSON module

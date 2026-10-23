@@ -34,11 +34,13 @@ export async function releasesRevisedJoinAfterExhaustion({ restart }: { restart:
     return finished(revision)
   })
   try {
-    const runtime = await runWorkHandoffWithRestart(f, restart, (execution) => {
+    // The denied requester reports the exhausted review as its finding, so the Run fails with it as the reason.
+    await expect(runWorkHandoffWithRestart(f, restart, (execution) => {
       const { work } = WorkActivationInputSchema.parse(execution.input)
       return work.kind === 'limit_denial'
-    })
-    expect(await runtime.runs.get(f.f.run.id)).toMatchObject({ executionState: 'waiting', outcome: 'pending' })
+    })).rejects.toMatchObject({ code: 'WORK_SELECTED_EXECUTION_FAILED' })
+    expect(await f.runs.get(f.f.run.id)).toMatchObject({ executionState: 'completed', outcome: 'failed',
+      result: { error: { code: 'WORK_FINISHED_WITH_FINDINGS', message: expect.stringContaining('incoming review exhausted') } } })
     const joins = (await f.db.pool.query<{ record: unknown }>(
       `select e.record from harness_executions e join run_work_activations a
        on a.activation_id=e.work_activation_id where e.run_id=$1 and a.workflow_node_id=$2
@@ -52,10 +54,7 @@ export async function releasesRevisedJoinAfterExhaustion({ restart }: { restart:
     expect(revised.work.sources).toHaveLength(1)
     expect(revised.work.sources[0]!.request.relationshipId).toBe(definition.version.definition.edges[2]!.id)
     expect(revised.work.activation.activationId).not.toBe(first.work.activation.activationId)
-    const before = { ...f.provider.counts }
-    await runtime.engine.start(f.f.run.id)
-    expect(f.provider.counts).toEqual(before)
     expect((await f.db.pool.query('select run_id from run_work_direction_waits where run_id=$1',
-      [f.f.run.id])).rowCount).toBe(1)
+      [f.f.run.id])).rowCount).toBe(0)
   } finally { await f.close() }
 }

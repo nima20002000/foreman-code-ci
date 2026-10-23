@@ -19,6 +19,8 @@ export interface WorkflowChatExecutionRow {
 export interface WorkflowChatIdentity {
   run: WorkflowChatRunRow; version: WorkflowVersionV3; agent: AgentIdentity
   state: EngineChatReadback['state']; execution?: HarnessExecution; reference?: ExecutionRef
+  /** A finished turn in a live Run: a new message waits for this Agent's next turn in the same Run. */
+  nextTurn?: boolean
 }
 
 export async function readWorkflowChatVersion(sql: GraphSqlClient, scope: {
@@ -92,7 +94,9 @@ export async function readWorkflowChatIdentity(sql: GraphSqlClient, target: Work
     const pending = disposition.continuation_state && ['reserved','waiting_settlement','unknown'].includes(disposition.continuation_state)
     const state = run.execution_state === 'completed' ? 'idle' : run.stopped || pending || disposition.stopping ? 'settling'
       : disposition.continuation_state || disposition.direction_source ? 'idle' : workflowChatState(execution, row.accepted)
-    return { run, version, agent, execution, reference, state }
+    const nextTurn = state === 'idle' && row.accepted && !disposition.continuation_state && !disposition.direction_source
+      && ['queued', 'running', 'waiting'].includes(run.execution_state)
+    return { run, version, agent, execution, reference, state, ...(nextTurn ? { nextTurn } : {}) }
   }
   const group = (await sql.query<{ state: string }>(`select state from run_hierarchy_groups where run_id=$1
     and parent_activation_id=$2 and parent_node_id=$3`, [run.id, target.waitingActivationId, agent.workflowNodeId])).rows[0]

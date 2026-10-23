@@ -16,6 +16,8 @@ export class ControlledWorkflowProvider {
   readonly steers: string[] = []
   readonly cancellations: string[] = []
   readonly consultations: string[] = []
+  /** Each workflow turn's native prompt, in start order. */
+  readonly prompts: Array<{ nodeId: string; prompt: string }> = []
   readonly credentials = new Map<string, string>()
   active = 0
   maximumActive = 0
@@ -72,7 +74,7 @@ export class ControlledWorkflowProvider {
       } : start, signal)
       return native
     }
-    const { gates, consultations } = this
+    const { gates, consultations, prompts } = this
     const produce = (current: HarnessExecutionRequest) => this.output(current.workflowNodeId, current)
     const enter = () => { this.active++; this.maximumActive = Math.max(this.maximumActive, this.active) }
     const leave = () => { this.active-- }
@@ -81,6 +83,7 @@ export class ControlledWorkflowProvider {
       const consultation = context.purpose === 'consultation'
       const gate = consultation ? undefined : gates.get(request.workflowNodeId)
       if (!consultation && !gate) { yield* startTurn(session, input, signal); return }
+      if (!consultation) prompts.push({ nodeId: request.workflowNodeId, prompt: input.prompt })
       const correlationId = input.clientCorrelationId
       const providerId = `turn-${correlationId}`
       currentCorrelation = correlationId
