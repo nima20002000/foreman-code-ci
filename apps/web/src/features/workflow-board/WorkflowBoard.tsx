@@ -25,7 +25,7 @@ import { createWorkflowExecutionChatSlot } from '../workflow-hierarchy/execution
 import { SelectedRunControls } from './actions/SelectedRunControls'
 import { GroupChatPanel } from './GroupChatPanel'
 import { DirectionWaitNotice } from './actions/directionWait'
-import { mentionInGroupChat, useRunDirectionWait } from './actions/directionWaitModel'
+import { acceptFindingsDirection, mentionInGroupChat, useRunDirectionWait } from './actions/directionWaitModel'
 import './workflowBoard.css'
 
 /** This component is keyed by workspace/workflow only, NEVER by selected Run. */
@@ -167,6 +167,9 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
         style={{ position: 'relative', inset: 'auto', zIndex: 10, flex: '0 0 auto', flexWrap: 'wrap', justifyContent: 'flex-end', padding: 'var(--space-2)', boxSizing: 'border-box', minWidth: 0 }}>
         {direction && !side.memoryOpen ? <DirectionWaitNotice direction={direction} onAnswer={() => {
           mentionInGroupChat({ workspaceId, workflowId }, direction)
+          side.selectPanel({ kind: 'group_chat' })
+        }} onAccept={() => {
+          mentionInGroupChat({ workspaceId, workflowId }, direction, acceptFindingsDirection)
           side.selectPanel({ kind: 'group_chat' })
         }} /> : null}
         <BoardNavigationControls workspaceId={workspaceId} workflowId={workflowId} selection={navigationSelection}

@@ -24,11 +24,20 @@ export function withDirectionWait(waits: Map<string, InteractionWait>, direction
   return next
 }
 
-/** Puts "@Master " at the start of the group chat draft, unless that draft already mentions the Master. */
-export function mentionInGroupChat(scope: { workspaceId: string; workflowId: string }, direction: RunDirectionWait) {
-  const key = workflowDraftKey(scope), current = readWorkflowDraft(key)
-  if (current.mentions.some(mention => mention.workflowNodeId === direction.workflowNodeId)) return
-  const added = insertMention(current.body, current.mentions,
-    { displayName: direction.agentName, workflowNodeId: direction.workflowNodeId }, 0)
-  useWorkflowDraftStore.getState().save(key, { ...current, body: added.body, mentions: added.mentions })
+/** The reply that ends the Run with the Master's remaining findings accepted as they are. */
+export const acceptFindingsDirection = 'Accept the remaining findings as they are and finish the Run now: '
+  + 'return finish with remainingFindings [] and keep those findings in latestDeliverable.'
+
+/** Puts "@Master " at the start of the group chat draft, unless that draft already mentions the Master,
+ * then adds `text` at the end unless the draft already holds it. */
+export function mentionInGroupChat(scope: { workspaceId: string; workflowId: string }, direction: RunDirectionWait, text?: string) {
+  const key = workflowDraftKey(scope)
+  let current = readWorkflowDraft(key)
+  if (!current.mentions.some(mention => mention.workflowNodeId === direction.workflowNodeId)) {
+    const added = insertMention(current.body, current.mentions,
+      { displayName: direction.agentName, workflowNodeId: direction.workflowNodeId }, 0)
+    current = { ...current, body: added.body, mentions: added.mentions }
+  }
+  if (text && !current.body.includes(text)) current = { ...current, body: `${current.body.trimEnd()} ${text}` }
+  useWorkflowDraftStore.getState().save(key, current)
 }
