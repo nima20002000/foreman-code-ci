@@ -197,17 +197,16 @@ it('retains a Move Workers destination across refresh, cancels without changes a
   const changed = useGraphDraftStore.getState().nextDrafts[draftKey]!
   expect(changed.graph.nodes.some(node => node.id === 'node-1')).toBe(false)
   // Removing a team pins every remaining node where the Board shows it, so only the position may differ.
-  const { position: moved, ...worker } = changed.graph.nodes.find(node => node.id === 'node-3')!
-  const { position: _before, ...originalWorker } = original.nodes.find(node => node.id === 'node-3')!
-  expect(worker).toEqual(originalWorker)
-  expect(moved).toMatchObject({ manual: true })
+  const unpinned = (graph: typeof original) => ({ ...graph, nodes: graph.nodes.map(node => ({ ...node, position: undefined })) })
+  const worker = changed.graph.nodes.find(node => node.id === 'node-3')!
+  expect({ ...worker, position: undefined }).toEqual({ ...original.nodes.find(node => node.id === 'node-3')!, position: undefined })
+  expect(worker.position).toMatchObject({ manual: true })
   expect(changed.graph.hierarchy?.parents).toContainEqual({ workflowNodeId: 'node-3', parentNodeId: 'node-2' })
   expect(changed.graph.edges).toContainEqual(expect.objectContaining({ source: 'node-2', target: 'node-3', kind: 'execution' }))
   expect(changed.graph.edges.some(edge => edge.source === 'node-1' || edge.target === 'node-1')).toBe(false)
   expect(changed.history).toHaveLength(1)
   await userEvent.click(screen.getByRole('button', { name: 'Undo' }))
   // Undo restores the team; the nodes stay pinned where the Board showed them.
-  const unpinned = (graph: typeof original) => ({ ...graph, nodes: graph.nodes.map(({ position: _position, ...node }) => node) })
   expect(unpinned(useGraphDraftStore.getState().nextDrafts[draftKey]!.graph)).toEqual(unpinned(original))
   expect(report).not.toHaveBeenCalled()
 })

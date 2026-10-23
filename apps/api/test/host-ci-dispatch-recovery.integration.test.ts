@@ -109,10 +109,14 @@ it('preserves MCP cancellation when an in-flight refresh returns an unstarted ti
     const tickets = CiRunOutputSchema.parse(await f.value(f.operator, 'ci_run', {
       suite: 'integration', scope: 'full', partitions: 2, commandId: 'cancel-unstarted',
     }))
-    await f.ci.dispatch()
-    const running = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: tickets.ticketId }))
+    // A dispatch pass may leave the first part starting; later passes start it.
+    let running = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: tickets.ticketId }))
+    for (let pass = 0; pass < 20 && !running.partitions!.some(run => run.state === 'running'); pass++) {
+      await f.ci.dispatch()
+      running = CiGetOutputSchema.parse(await f.value(f.operator, 'ci_get', { ticketId: tickets.ticketId }))
+    }
     const active = running.partitions!.find(run => run.state === 'running')
-    expect(active).toBeDefined()
+    expect(active, JSON.stringify(running.partitions!.map(run => run.state))).toBeDefined()
     const started = { ticketId: active!.id }
     const queued = running.partitions!.filter(run => run.state === 'queued')
     expect(queued).toHaveLength(1)

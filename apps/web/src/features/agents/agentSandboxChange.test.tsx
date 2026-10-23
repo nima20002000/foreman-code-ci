@@ -16,7 +16,7 @@ function renderWithQueryClient(ui: ReactElement) {
   return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
 }
 
-describe('PR8 exact native settings in the actual form', () => {
+describe('exact native sandbox settings in the actual form', () => {
 
 
   it.each(['read-only', 'danger-full-access'] as const)('explains and removes incompatible controls when changing to %s', async (sandbox) => {
