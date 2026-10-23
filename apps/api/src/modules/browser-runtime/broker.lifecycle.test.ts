@@ -517,3 +517,25 @@ it('defaults an agent to three open tabs when its settings name no limit', async
   await expect(f.broker.createTab({ sessionId: session.id, actor: agent(session), commandId: 'fourth' }))
     .rejects.toMatchObject({ code: 'BROWSER_TAB_LIMIT' })
 })
+
+it('updates a chat browser tab limit when its existing preparation command is reused', async () => {
+  const f = fixture(), subject: AgentSubject = { kind: 'conversation', agent: execution().agent, conversationId: 'chat' }
+  const request = f.request(subject, 'chat-browser'), browser = { ...request.browser, maxTabs: 1 }
+  f.assignment(subject, browser)
+  const { session } = ready(await f.broker.prepare({ ...request, browser }))
+  await expect(f.broker.createTab({ sessionId: session.id, actor: agent(session), commandId: 'at-limit' }))
+    .rejects.toMatchObject({ code: 'BROWSER_TAB_LIMIT' })
+
+  const raised = { ...browser, maxTabs: 2 }
+  f.assignment(subject, raised)
+  expect(ready(await f.broker.prepare({ ...request, browser: raised })).session.id).toBe(session.id)
+  await f.broker.createTab({ sessionId: session.id, actor: agent(session), commandId: 'second' })
+  expect(f.broker.read(session.id).tabs).toHaveLength(2)
+
+  f.assignment(subject, browser)
+  expect(ready(await f.broker.prepare({ ...request, browser })).session.id).toBe(session.id)
+  await f.broker.closeTab({ sessionId: session.id, tabId: session.selectedTabId!, actor: agent(session), commandId: 'close-first' })
+  await expect(f.broker.createTab({ sessionId: session.id, actor: agent(session), commandId: 'over-lowered-limit' }))
+    .rejects.toMatchObject({ code: 'BROWSER_TAB_LIMIT' })
+  expect(f.broker.read(session.id).tabs).toHaveLength(1)
+})
