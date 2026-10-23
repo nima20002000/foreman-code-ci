@@ -224,11 +224,14 @@ export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
   const lost = snapshot.stale && snapshot.notice === 'paused' && snapshot.error !== null
   const reconnect = useRef(props.onReconnect)
   reconnect.current = props.onReconnect
+  const reconnectBlocked = useRef(pending)
+  reconnectBlocked.current = pending
   const reconnectAttempts = props.reconnectAttempts
   useEffect(() => { if (!snapshot.stale) reconnectAttempts.current = 0 }, [snapshot.stale, reconnectAttempts])
   useEffect(() => {
     if (!lost) return
     const timer = window.setInterval(() => {
+      if (reconnectBlocked.current) return
       if (reconnectAttempts.current >= 40) { window.clearInterval(timer); return }
       reconnectAttempts.current += 1
       retiringForTab.current = true; reconnect.current()
@@ -264,7 +267,8 @@ export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
     {unresolved ? <Button size="sm" disabled={mutation.isPending} onClick={() => {
       if (mutation.variables) mutation.mutate(mutation.variables)
     }}>Check original browser action</Button> : null}
-    {snapshot.stale && snapshot.notice !== 'denied' ? <Button size="sm" onClick={() => { retiringForTab.current = true; props.onReconnect() }}>Reconnect</Button> : null}
+    {snapshot.stale && snapshot.notice !== 'denied' ? <Button size="sm" disabled={pending}
+      onClick={() => { retiringForTab.current = true; props.onReconnect() }}>Reconnect</Button> : null}
     <BrowserViewer controller={controller} snapshot={snapshot} readOnly={props.readOnly}
       onLeavePage={() => surface.current?.querySelector<HTMLButtonElement>('[data-browser-control]')?.focus()} />
     <small id="browser-page-help" className="agent-browser-help">{snapshot.notice === 'user' ? 'You have control. Click elsewhere to give it back to the agent.'
