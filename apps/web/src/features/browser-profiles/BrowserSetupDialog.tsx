@@ -25,6 +25,7 @@ function SetupBrowser(props: BrowserSetupDialogProps) {
   const [closeId] = useState(() => crypto.randomUUID())
   const [tabId, setTabId] = useState<string | null>(null)
   const [connection, setConnection] = useState(0)
+  const reconnectAttempts = useRef(0)
   const [denied, setDenied] = useState(false)
   const active = useRef(true)
   const mounted = useRef(false)
@@ -104,7 +105,7 @@ function SetupBrowser(props: BrowserSetupDialogProps) {
             onRefresh={() => { if (mounted.current) void read.refetch() }}
             onCleanupError={message => { if (active.current) props.onCleanupError(message) }}
             onDenied={() => { setDenied(true); queryClient.removeQueries({ queryKey: key }) }}
-            onReconnect={reconnect} /> : <p className="browser-profile-note">No browser tab is open.</p>}
+            onReconnect={reconnect} reconnectAttempts={reconnectAttempts} /> : <p className="browser-profile-note">No browser tab is open.</p>}
     {read.data && !accessDenied ? <OriginConfirmation profileId={props.session.profileId} computerId={props.session.computerId}
       profiles={props.profiles} /> : null}
     {cleanupError || close.error ? <p role="alert">{cleanupError ?? browserErrorMessage(close.error)}</p> : null}
