@@ -196,6 +196,10 @@ async function executeCommand(ports: HostCiPorts, label: string, file: string, a
     }
     const lookup = file === 'circleci' && args[1] === 'get' && (args[0] === 'run' || args[0] === 'job')
     const denied = /permission denied|not authorized|unauthori[sz]ed|forbidden|authentication|invalid (?:api )?token|\b40[13]\b/i
+    if (file === 'circleci' && args[0] === 'run' && args[1] === 'cancel' && denied.test(result.stderr)) {
+      throw new DomainError('CI_CLOUD_CANCEL_DENIED', 'CircleCI refused the cancel (account suspended or denied): '
+        + result.stderr.trim().slice(0, 300), 502)
+    }
     if (lookup && denied.test(result.stderr)) {
       throw new DomainError('CI_CLOUD_RUN_UNREADABLE', `${label} execution is not readable: `
         + result.stderr.trim().slice(0, 300), 502)

@@ -1533,8 +1533,23 @@ export class CloudCi {
         run = await this.save({ ...run, dispatchHistory: [...run.dispatchHistory ?? [],
           { at: this.ports.now().toISOString(), providerRunId }] })
       }
+      // A canceled attempt already recorded as ended needs no further provider reads.
+      if (canceled.has(providerRunId) && !run.emptyPipelineCancellations?.[providerRunId]
+        && run.dispatchHistory?.some(attempt => attempt.providerRunId === providerRunId && attempt.terminated)) continue
       if (!canceled.has(providerRunId) || run.emptyPipelineCancellations?.[providerRunId]) {
-        const cancellation = await this.requestCancellation(run, providerRunId)
+        let cancellation: Awaited<ReturnType<CloudCi['requestCancellation']>>
+        try {
+          cancellation = await this.requestCancellation(run, providerRunId)
+        } catch (error) {
+          if (!(error instanceof DomainError && error.code === 'CI_CLOUD_CANCEL_DENIED')) throw error
+          // A suspended or denied account answers neither cancel nor status again; asking on every read only fills the log.
+          log.warn({ err: error, runId: run.runId, providerRunId }, 'Cloud CI cancellation refused; the attempt ends here')
+          canceled.add(providerRunId)
+          run = await this.save({ ...run, cancellation: { ...run.cancellation!, canceledIds: [...canceled] } })
+          run = await this.recordTerminatedAttempt(run, providerRunId,
+            { done: true, conclusion: 'cancelled', finishedAt: this.ports.now().toISOString() })
+          continue
+        }
         run = cancellation.run
         if (cancellation.accepted) canceled.add(providerRunId)
         else canceled.delete(providerRunId)
