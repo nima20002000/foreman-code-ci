@@ -24,7 +24,7 @@ async function fixture(t) {
     ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
   };
   execFileSync('git', ['clone', '--quiet', '--shared', repository, root], { env: environment });
-  for (const path of ['node_modules', 'apps/worker/node_modules', 'apps/api/node_modules',
+  for (const path of ['node_modules', 'apps/worker/node_modules', 'apps/api/node_modules', 'apps/ci/node_modules',
     'packages/contracts/node_modules']) {
     await symlink(join(repository, path), join(root, path));
   }

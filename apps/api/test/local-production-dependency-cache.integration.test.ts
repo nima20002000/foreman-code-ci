@@ -17,6 +17,7 @@ it('reuses installed dependencies across contracts rebuilds while keeping rollba
   const source = join(directory, 'workspace')
   const api = join(source, 'apps/api')
   const contracts = join(source, 'packages/contracts')
+  const ci = join(source, 'apps/ci')
   const valuePackage = join(source, 'packages/value')
   const environment = { ...process.env, npm_config_offline: 'true', npm_config_update_notifier: 'false',
     COREPACK_ENABLE_NETWORK: '0' }
@@ -35,6 +36,7 @@ it('reuses installed dependencies across contracts rebuilds while keeping rollba
   try {
     await mkdir(join(api, 'dist'), { recursive: true })
     await mkdir(join(contracts, 'dist'), { recursive: true })
+    await mkdir(join(ci, 'dist'), { recursive: true })
     await mkdir(valuePackage, { recursive: true })
     await writeFile(join(valuePackage, 'package.json'), JSON.stringify({
       name: 'cache-value', version: '1.0.0', type: 'module', main: 'index.js', files: ['index.js'],
@@ -49,18 +51,25 @@ it('reuses installed dependencies across contracts rebuilds while keeping rollba
     ].join('\n') + '\n')
     await writeFile(join(api, 'package.json'), JSON.stringify({
       name: '@foreman-code/api', private: true, version: '1.0.0', type: 'module', files: ['dist'],
-      dependencies: { '@foreman-code/contracts': 'workspace:*', 'cache-value': 'workspace:*' },
+      dependencies: { '@foreman-code/contracts': 'workspace:*', '@foreman-code/ci': 'workspace:*', 'cache-value': 'workspace:*' },
     }))
     await writeFile(join(contracts, 'package.json'), JSON.stringify({
       name: '@foreman-code/contracts', private: true, version: '1.0.0', type: 'module',
       main: 'dist/index.js', files: ['dist'], dependencies: { 'cache-value': 'workspace:*' },
+    }))
+    await writeFile(join(ci, 'package.json'), JSON.stringify({
+      name: '@foreman-code/ci', private: true, version: '1.0.0', type: 'module',
+      main: 'dist/index.js', files: ['dist'], dependencies: { '@foreman-code/contracts': 'workspace:*' },
     }))
     // Strict age verification visits every registry entry, even unused entries in an offline install.
     await writeFile(join(source, 'pnpm-lock.yaml'), JSON.stringify({
       lockfileVersion: '9.0', settings: { autoInstallPeers: false, excludeLinksFromLockfile: false }, importers: {
         '.': {}, 'apps/api': { dependencies: {
           '@foreman-code/contracts': { specifier: 'workspace:*', version: 'link:../../packages/contracts' },
+          '@foreman-code/ci': { specifier: 'workspace:*', version: 'link:../ci' },
           'cache-value': { specifier: 'workspace:*', version: 'link:../../packages/value' },
+        } }, 'apps/ci': { dependencies: {
+          '@foreman-code/contracts': { specifier: 'workspace:*', version: 'link:../../packages/contracts' },
         } }, 'packages/contracts': { dependencies: {
           'cache-value': { specifier: 'workspace:*', version: 'link:../value' },
         } }, 'packages/value': {},
@@ -68,29 +77,34 @@ it('reuses installed dependencies across contracts rebuilds while keeping rollba
     }))
     const buildContracts = async (value: string) => writeFile(join(contracts, 'dist/index.js'),
       `import { identity } from 'cache-value'; export const value = () => identity(${JSON.stringify(value)});\n`)
+    const buildCi = async (value: string) => writeFile(join(ci, 'dist/index.js'),
+      `import { value } from '@foreman-code/contracts'; export const result = () => value() + ${JSON.stringify(value)};\n`)
     await buildContracts('first contracts')
+    await buildCi(' first CI')
     await writeFile(join(api, 'dist/index.js'),
-      "export { value } from '@foreman-code/contracts';\n")
+      "export { result as value } from '@foreman-code/ci';\n")
     await installProductionDependencies(run)
     const dependencies = { root: join(directory, 'api-dependencies'), source }
     const first = join(directory, 'releases/first/apps/api')
     await deployProductionApi(run, first, { dependencies })
-    expect(await callRelease(first)).toBe('first contracts')
+    expect(await callRelease(first)).toBe('first contracts first CI')
     await buildContracts('second contracts')
+    await buildCi(' second CI')
     const second = join(directory, 'releases/second/apps/api')
     await deployProductionApi(run, second, { dependencies })
     expect(deploys).toBe(1)
-    expect(await callRelease(second)).toBe('second contracts')
-    expect(await callRelease(first)).toBe('first contracts')
+    expect(await callRelease(second)).toBe('second contracts second CI')
+    expect(await callRelease(first)).toBe('first contracts first CI')
     expect(await realpath(join(first, 'node_modules/cache-value')))
       .toBe(await realpath(join(second, 'node_modules/cache-value')))
     await buildContracts('mutable source')
-    expect(await callRelease(second)).toBe('second contracts')
+    await buildCi(' mutable CI')
+    expect(await callRelease(second)).toBe('second contracts second CI')
     const removed: string[] = []
     await pruneApiDependencies(dependencies.root, [join(directory, 'releases/second')],
       { removeInBackground: (path: string) => removed.push(path) })
     expect(removed).toEqual([])
-    expect(await callRelease(second)).toBe('second contracts')
+    expect(await callRelease(second)).toBe('second contracts second CI')
   } finally {
     await removeFixtureDirectory(directory)
   }
