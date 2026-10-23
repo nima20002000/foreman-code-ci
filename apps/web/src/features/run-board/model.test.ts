@@ -2,8 +2,6 @@ import { nativeNode } from '../../shared/mocks/nativeFixtureTypes'
 import { describe, expect, it } from 'vitest'
 import { Position } from '@xyflow/react'
 import { projectRunBoard, READ_ONLY_FLOW_PROPS } from './model'
-import { WorkflowHierarchyReadResultSchema } from '@foreman-code/contracts'
-import { WORKER_NODE_SIZE } from '../graph/mapper'
 import { savedEdgeCurve } from './curve'
 import { runA, runB } from './testFixtures'
 
@@ -24,17 +22,6 @@ describe('saved board projection', () => {
     expect(x!.y).toBeLessThan(y!.y)
     expect(y!.y).toBeLessThan(z!.y)
     expect(projectRunBoard(runB).nodes.map((node) => node.id)).not.toContain('node-y')
-  })
-  it('sizes a Run node by the Run\'s saved role, not an unsaved role change in the draft', () => {
-    const hierarchy = WorkflowHierarchyReadResultSchema.parse({ workspaceId: runA.workspaceId, workflowId: runA.workflowId,
-      workflowVersionId: runA.workflowVersionId, revision: 1, hierarchy: null, run: { runId: runA.runId, state: 'running' },
-      agents: runA.nodes.map(node => ({ workspaceId: runA.workspaceId, workflowId: runA.workflowId, workflowNodeId: node.id,
-        agentId: nativeNode(node).agentId, displayName: node.name, configurationVersionId: nativeNode(node).agentConfigurationVersionId,
-        productRole: 'coder' })) })
-    const draft = [{ id: 'agent-x', name: 'X today', productRole: 'orchestrator' as const }]
-    const x = projectRunBoard(runA, undefined, hierarchy, { agents: draft }).nodes.find(node => node.id === 'node-x')!
-    expect(x.style).toEqual({ width: WORKER_NODE_SIZE, height: WORKER_NODE_SIZE })
-    expect(x.data.role).toBe('Worker')
   })
   it('never installs mutable canvas geometry into the frozen snapshot', () => {
     const before = JSON.stringify(runA)

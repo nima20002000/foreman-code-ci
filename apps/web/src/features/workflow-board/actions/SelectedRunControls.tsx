@@ -55,13 +55,12 @@ function StopButton({ scope, run, reason, ready, refresh }: {
 }) {
   const { stop, outbox } = useRunStop(scope, refresh)
   const receipt = outbox.journal?.receipt ?? stop.data
-  // Accepted while the Run still runs: say it is stopping and let the same button resend the same retained stop.
-  const accepted = !!receipt && receipt.status !== 'not_owner' && !stop.isPending
+  // Sent and accepted: the Run is shutting down; the button waits for it instead of offering a second stop.
+  const stopping = stop.isPending || !!receipt && receipt.status !== 'not_owner'
   const why = reason ?? outbox.error ?? (receipt?.status === 'not_owner' ? 'Another app instance runs this, so the stop isn’t confirmed.' : undefined)
   return <>
-    {accepted ? <span role="status" className="selected-run-stop-status">Stopping…</span> : null}
-    <Button size="sm" variant="danger" disabled={!!reason || !!outbox.error || !ready || stop.isPending} title={why}
-      onClick={() => stop.mutate()}>{stop.isPending ? 'Stopping…' : receipt ? 'Stop again' : 'Stop'}</Button>
+    <Button size="sm" variant="danger" disabled={!!reason || !!outbox.error || !ready || stopping} title={why}
+      onClick={() => stop.mutate()}>{stopping ? 'Stopping…' : 'Stop'}</Button>
     {stop.isError ? <span role="alert" className="selected-run-stop-error">Stop is not confirmed: {stop.error.message} Press Stop to resend it.</span> : null}
     {run.cleanupPending ? <span role="status" className="selected-run-stop-error">Cleaning up…</span> : null}
   </>

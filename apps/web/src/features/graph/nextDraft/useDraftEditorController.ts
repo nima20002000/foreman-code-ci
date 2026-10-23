@@ -31,16 +31,12 @@ export function useDraftEditorController(draftKey: string, edit: NextDraftEdit) 
   const core = useDraftEditorCore({ draftKey, edit, editIntent, board })
   const openPanel = useRef(core.openPanel)
   openPanel.current = core.openPanel
-  const geometry = useRef(core.geometry)
-  geometry.current = core.geometry
   const registerAuthoringActions = board?.registerAuthoringActions
   useLayoutEffect(() => {
     registerAuthoringActions?.({ openWorkflowSettings: () => openPanel.current('workflow'),
       draftNodeAgentId: nodeId => draftNodeAgent(draftKey, nodeId)?.agentId,
       draftNodeBrowser: nodeId => { const node = draftNodeAgent(draftKey, nodeId); return node ? node.browser ?? null : undefined },
-      saveChatAgent: nodeId => saveChatAgent(draftKey, nodeId),
-      // A shown Run's canvas moves agents through this same layout change.
-      moveNodes: changes => geometry.current(changes) })
+      saveChatAgent: nodeId => saveChatAgent(draftKey, nodeId) })
     return () => registerAuthoringActions?.()
   }, [registerAuthoringActions, draftKey])
   const startState = useDraftStartState({ draftKey, edit, board })

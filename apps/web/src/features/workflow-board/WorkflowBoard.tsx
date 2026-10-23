@@ -62,7 +62,6 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   const [sidePanelHost, setSidePanelHost] = useState<HTMLDivElement | null>(null)
   const [panelHeaderSlot, setPanelHeaderSlot] = useState<HTMLDivElement | null>(null)
   const [panelFooterSlot, setPanelFooterSlot] = useState<HTMLDivElement | null>(null)
-  const [runCaptionHost, setRunCaptionHost] = useState<HTMLDivElement | null>(null)
   const [authoringActions, setAuthoringActions] = useState<WorkflowAuthoringActions>()
   const registerAuthoringActions = useCallback((actions?: WorkflowAuthoringActions) => setAuthoringActions(actions), [])
   const selection = useRef({ location: router.history.location, generation: 0 })
@@ -130,9 +129,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   // History is rendered only by RunBoardSlot. Do not feed legacy Run pins to the
   // hidden editor/SelectedRunCanvas, or fabricate missing version/semantics pins.
   const value = useMemo(() => ({ workspaceId, workflowId, selectRun: chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent,
-    sidePanel: side.panel, selectedPanelNodeId: side.agentSelection?.nodeId, selectSidePanel: selectPanel, sidePanelHost, runCaptionHost, memoryOpen: side.memoryOpen,
-    // A shown Run moves agents exactly as the draft Board does (owner rule: one Board, the same rules).
-    moveDraftNodes: authoringActions?.moveNodes,
+    sidePanel: side.panel, selectedPanelNodeId: side.agentSelection?.nodeId, selectSidePanel: selectPanel, sidePanelHost, memoryOpen: side.memoryOpen,
     openMemoryCard: (cardId: string) => setMemoryOpen(true, cardId),
     executionChatMounted: !!collaborationSlots?.executionChat,
     canvasVisible: side.view === 'graph', teamNodeId: side.teamNodeId, selectTeam: side.selectTeam,
@@ -140,7 +137,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
     openLocation: () => setLocationOpen(true), openRuns: () => setRunsOpen(true), activeRuns, liveRunId, authoringActive: current, registerAuthoringActions,
     ...(current && authoringActions ? { saveChatAgent: authoringActions.saveChatAgent, draftNodeAgentId: authoringActions.draftNodeAgentId, draftNodeBrowser: authoringActions.draftNodeBrowser } : {}),
     navigationControls: current && side.view === 'graph' ? <BoardNavigationControls workspaceId={workspaceId} workflowId={workflowId} selection={navigationSelection} /> : undefined,
-  }), [workspaceId, workflowId, chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent, activeRuns, liveRunId, setRunsOpen, setLocationOpen, navigationSelection, current, side.view, side.panel, side.agentSelection?.nodeId, selectPanel, sidePanelHost, runCaptionHost, side.memoryOpen, setMemoryOpen, side.teamNodeId, side.selectTeam, collaborationSlots, registerAuthoringActions, authoringActions])
+  }), [workspaceId, workflowId, chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent, activeRuns, liveRunId, setRunsOpen, setLocationOpen, navigationSelection, current, side.view, side.panel, side.agentSelection?.nodeId, selectPanel, sidePanelHost, side.memoryOpen, setMemoryOpen, side.teamNodeId, side.selectTeam, collaborationSlots, registerAuthoringActions, authoringActions])
   const detailsValue = useMemo(() => detailsScope ? { ...value, run: detailsScope } : value, [value, detailsScope])
   const authoringEvent = (event: SyntheticEvent) => {
     if (event.target instanceof Element && event.target.closest('.workflow-floating-panel')) return
@@ -161,7 +158,6 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   const boardToolbar = shownBoard === 'run' || side.view === 'overview' ? <header className="board-topbar" aria-label="Board toolbar"
         style={side.view === 'graph' ? { flexWrap: 'wrap', justifyContent: 'flex-end', boxSizing: 'border-box', minWidth: 0 }
           : { position: 'relative', inset: 'auto', zIndex: 10, flex: '0 0 auto', flexWrap: 'wrap', justifyContent: 'flex-end', padding: 'var(--space-2)', boxSizing: 'border-box', minWidth: 0 }}>
-        {side.view === 'graph' ? <div className="board-run-caption" ref={setRunCaptionHost} /> : null}
         {direction && !side.memoryOpen ? <DirectionWaitNotice direction={direction} onAnswer={() => {
           mentionInGroupChat({ workspaceId, workflowId }, direction)
           side.selectPanel({ kind: 'group_chat' })

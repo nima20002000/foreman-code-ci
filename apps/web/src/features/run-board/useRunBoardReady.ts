@@ -11,7 +11,6 @@ export function useRunBoardReady(selection: SelectedRunState) {
     workflowVersionId: snapshot?.kind === 'available' ? snapshot.workflowVersionId : '', executionSemanticsVersion: 3 },
   snapshot?.kind === 'available')
   if (!selection.active || selection.invalid || selection.identity.runId === null) return true
-  // An offline (paused) read says so on the Run board itself rather than leaving the draft up.
-  if (!snapshot) return query.isError || query.isPaused
+  if (!snapshot) return query.isError
   return snapshot.kind !== 'available' || !!version.data || version.isError
 }

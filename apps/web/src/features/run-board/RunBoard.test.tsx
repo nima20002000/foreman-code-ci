@@ -173,8 +173,7 @@ describe('selected saved Run board (real Router, Query, HTTP/MSW and canvas)', (
     // As on the draft Board, the approval beside the X -> Y handoff rides on the handoff's one line.
     await waitFor(() => expect(container.querySelectorAll('.react-flow__edge')).toHaveLength(2))
     const handoff = container.querySelector('.react-flow__edge[data-id="edge-xy"]')!
-    expect(handoff).toHaveAttribute('aria-label',
-      'Handoff · approval from X before rename to Y: Old handoff; approval from X before rename to Y: Old approval, read only')
+    expect(handoff).toHaveAttribute('aria-label', 'Handoff · approval from X before rename to Y: Old handoff, read only')
     expect(container.querySelector('.react-flow__edge[data-id="approval-xy"]')).not.toBeInTheDocument()
     expect(container.querySelector('.react-flow__edge[data-id="edge-yz"]')).toHaveAttribute('aria-label', 'Handoff from Y to Z, read only')
     await select('run-b')

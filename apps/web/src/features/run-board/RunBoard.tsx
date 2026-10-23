@@ -74,14 +74,12 @@ function RunBoardContents({ selection, snapshot, inspection, activitySnapshot }:
   const settings = panel?.kind === 'agent' && panel.tab === 'settings' && !board?.memoryOpen
     ? <section aria-label="Saved Agent settings"><h3>{snapshot.nodes.find(node => node.id === panel.nodeId)?.name ?? panel.nodeId}</h3>
       <p>This Run keeps its saved Agent configuration. Return to the draft to edit settings for future Runs.</p></section> : null
-  // Inside the Board the caption sits in its floating toolbar, so the two never cover each other.
-  const caption = <>
-    <RunDefaultWorktree selection={selection} workflowVersionId={snapshot.workflowVersionId} />
-    {visible ? <SelectedRunComputers key={`placement:${selection.generation.id}`} selection={selection} nodes={snapshot.nodes} /> : null}
-    <span className="run-board-label">Read only</span>
-  </>
   return <>
-    {board?.runCaptionHost ? createPortal(caption, board.runCaptionHost) : <header className="run-board-header">{caption}</header>}
+    <header className="run-board-header">
+      <RunDefaultWorktree selection={selection} workflowVersionId={snapshot.workflowVersionId} />
+      {visible ? <SelectedRunComputers key={`placement:${selection.generation.id}`} selection={selection} nodes={snapshot.nodes} /> : null}
+      <span className="run-board-label">Read only</span>
+    </header>
     {/* Drawn once the saved version is read, so nodes appear at their saved places and never jump there. */}
     {!snapshot.nodes.length ? <p role="status">No nodes</p> : definition || version.isError
       ? <RunBoardCanvas key={selection.generation.id} snapshot={snapshot} visible={visible} definition={definition}

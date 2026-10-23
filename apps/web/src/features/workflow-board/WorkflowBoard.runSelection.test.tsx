@@ -181,9 +181,7 @@ it.each(['job-only', 'early-failed', 'mixed'] as const)('opens a %s Run chosen i
     snapshot: { ...saved, nodes },
   }))), http.get(activitiesRoute, activityReads))
   await mountBoard()
-  await screen.findByRole('region', { name: 'Selected Run board' })
-  // The Run's caption sits in the Board's floating toolbar.
-  expect(within(await screen.findByRole('banner', { name: 'Board toolbar' })).getByText('Read only')).toBeVisible()
+  expect(await screen.findByRole('region', { name: 'Selected Run board' })).toHaveTextContent('Read only')
   expect(screen.queryByRole('button', { name: 'Edit workflow' })).not.toBeInTheDocument()
   expect(screen.queryByRole('complementary', { name: 'Agent chat' })).not.toBeInTheDocument()
   expect(screen.queryByRole('region', { name: 'Run-wide Activities' })).not.toBeInTheDocument()

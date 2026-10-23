@@ -55,24 +55,20 @@ export function projectRunBoard(snapshot: AvailableRunBoardSnapshot, activity?: 
     const edge = byId.get(line.id)!
     const work = isHierarchyReportingRoute(saved?.hierarchy ?? undefined, edge) ? 'Orchestrates' : 'Handoff'
     const kind = members.length > 1 ? `${work} · approval` : edge.kind === 'approval' ? 'Approval' : work
-    // A folded approval keeps its own direction and label on the shared line.
-    const folded = members.filter(member => member.id !== edge.id).map(member => byId.get(member.id)!)
-      .map(item => `; approval from ${names.get(item.source)} to ${names.get(item.target)}${item.label ? `: ${item.label}` : ''}`).join('')
     return {
       id: edge.id, type: 'savedBoardEdge', source: edge.source, target: edge.target,
       sourceHandle: edge.sourceHandle ?? 'right', targetHandle: edge.targetHandle ?? 'left',
       data: { snapshot: edge, members: members.map(member => byId.get(member.id)!), bend: edgeBend(count, edge.source < edge.target) },
       selectable: false, deletable: false, reconnectable: false, focusable: true,
       ariaRole: 'img',
-      ariaLabel: `${kind} from ${names.get(edge.source)} to ${names.get(edge.target)}${edge.label ? `: ${edge.label}` : ''}${folded}, read only`,
+      ariaLabel: `${kind} from ${names.get(edge.source)} to ${names.get(edge.target)}${edge.label ? `: ${edge.label}` : ''}, read only`,
     }
   })
   return { nodes, edges }
 }
 
-/** The Run's saved version, the mounted draft and the Board's Agents: with them a Run is drawn exactly where the
- * draft Board draws it. The draft wins for every node it has, so moving an agent on either view moves it on both. */
-export type RunBoardLayout = { definition?: WorkflowDefinitionV3; draft?: WorkflowDefinitionV3; agents?: readonly Agent[] }
+/** The Run's saved version and the Board's Agents: with them a Run is drawn exactly where the draft Board draws it. */
+export type RunBoardLayout = { definition?: WorkflowDefinitionV3; agents?: readonly Agent[] }
 
 /** Same places and sizes as the draft Board: its mapper keeps manual places and saved sizes and lays out the rest.
  * A node the saved version lacks (or a Run read without it) falls back to the hierarchy layout at role size. */
@@ -82,9 +78,8 @@ function runBoardGeometry(snapshot: AvailableRunBoardSnapshot, saved: WorkflowHi
     if (!known.has(agent.agentId)) known.set(agent.agentId, { id: agent.agentId, name: agent.displayName, productRole: agent.productRole })
   }
   const definition = layout?.definition
-  const draw = (workflow?: WorkflowDefinitionV3) => workflow ? workflowToGraph({ workflow, agents: [...known.values()] }).nodes
-    .map(node => [node.id, { position: node.position, width: node.width!, height: node.height! }] as const) : []
-  const drawn = new Map([...draw(definition), ...draw(layout?.draft)])
+  const drawn = definition ? new Map(workflowToGraph({ workflow: definition, agents: [...known.values()] }).nodes
+    .map(node => [node.id, { position: node.position, width: node.width!, height: node.height! }])) : new Map()
   const masterNodeId = definition?.hierarchy?.masterNodeId ?? saved?.hierarchy?.masterNodeId
   const sizes = new Map(snapshot.nodes.map((node) => {
     const role = node.kind === 'job' ? undefined : known.get(node.agentId)?.productRole

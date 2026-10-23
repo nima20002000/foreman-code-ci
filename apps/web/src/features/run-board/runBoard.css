@@ -5,12 +5,9 @@
 .run-board { position: relative; overflow: hidden; color: var(--text); }
 .run-board > p { margin: 0; padding: 1rem; font: var(--type-caption); }
 .run-board > .n-empty, .run-board > .n-error-state { padding-block: var(--space-8, 48px); }
-/* One quiet line above a standalone Run canvas; inside the Board the same caption sits in the floating toolbar. */
-.run-board-header { position: relative; z-index: 6; display: flex; align-items: center; gap: var(--space-3); min-height: 28px; padding: 0 var(--space-4); }
-.run-board-header .run-board-label { margin-left: auto; }
-.board-run-caption { display: flex; align-items: center; gap: var(--space-3); min-width: 0; margin-inline-end: auto; }
-.board-run-caption:empty { display: none; }
-.board-run-caption .saved-workflow-worktree.is-compact { margin: 0; min-width: 0; overflow: hidden; color: var(--text-muted); font: var(--type-caption); text-overflow: ellipsis; white-space: nowrap; }
+/* One quiet line over the canvas's top-left, like the draft Board's "Worktree:" caption; it takes no room, so the
+   Run's canvas has exactly the draft canvas's box and nothing shifts when a Run starts or finishes. */
+.run-board-header { position: absolute; z-index: 6; top: var(--space-4); left: var(--space-4); display: flex; align-items: center; gap: var(--space-3); min-height: 28px; max-width: calc(50% - var(--space-4)); }
 .run-board-header .saved-workflow-worktree.is-compact { margin: 0; min-width: 0; overflow: hidden; color: var(--text-muted); font: var(--type-caption); text-overflow: ellipsis; white-space: nowrap; }
 .run-board-header .saved-workflow-worktree.is-compact > span { color: var(--text); }
 .run-board-header .saved-workflow-worktree.is-compact > em { font-style: normal; color: var(--warning); }

@@ -143,8 +143,7 @@ it.each(['graph', 'overview'])('stops an ordinary selected Run from %s and keeps
   // The same Stop button resends the retained command, not a new one.
   await waitFor(() => expect(controls.getByRole('button', { name: 'Stop' })).toBeEnabled())
   fireEvent.click(controls.getByRole('button', { name: 'Stop' }))
-  await waitFor(() => expect(controls.getByRole('button', { name: 'Stop again' })).toBeEnabled())
-  expect(controls.getByText('Stopping…')).toBeVisible()
+  await waitFor(() => expect(controls.getByRole('button', { name: 'Stopping…' })).toBeDisabled())
   expect(stops).toHaveLength(2)
   expect(stops[1]).toEqual(stops[0])
 })

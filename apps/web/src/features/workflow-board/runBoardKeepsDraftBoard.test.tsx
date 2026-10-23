@@ -195,63 +195,6 @@ describe('the running Run has one plain Stop button', () => {
   })
 })
 
-function stopHandlers(stops: unknown[]) {
-  const run = { ...scope, runId: 'run-b', workflowVersionId: 'version-b', executionSemanticsVersion: 3,
-    executionState: 'running', outcome: 'pending', createdAt: '2026-10-01T00:00:00Z', cleanupPending: false }
-  return { run, handlers: [
-    http.get('*/api/management/workflows/capabilities/v3', () => HttpResponse.json(CurrentWorkflowCapabilitiesSchema.parse({
-      ...CURRENT_WORKFLOW_CAPABILITIES, runtimeAdmission: true, meaningfulEdit: true, stopAvailable: true, reasons: [],
-      editIntents: { ...CURRENT_WORKFLOW_CAPABILITIES.editIntents, stopUnsettled: true },
-    }))),
-    http.post('*/api/management/workspaces/:workspaceId/runs/run-b/stop', async ({ request }) => {
-      stops.push(await request.json())
-      return HttpResponse.json({ runId: 'run-b', status: 'accepted', processStopped: false, replayed: false })
-    }),
-  ] }
-}
-const access = () => HttpResponse.json(LocalHumanAccessSchema.parse({ principal: {
-  id: 'operator-test', name: 'Test Operator', expiresAt: '2099-01-01T00:00:00Z',
-  grants: [{ actions: ['runs:read', 'runs:stop'], scope: { workspaceIds: [scope.workspaceId] } }],
-} }))
-
-describe('the Stop button keeps working through refresh failures and view changes', () => {
-  it('offers a retry in place when the Run status read fails, then stops the Run', async () => {
-    const stops: unknown[] = []
-    const { run, handlers } = stopHandlers(stops)
-    let failing = true
-    server.use(...handlers, http.get('*/api/local-human', access),
-      http.get('*/api/management/workspaces/:workspaceId/runs/run-b/executions', () => failing
-        ? HttpResponse.json({ error: { code: 'RUN_INSPECTION_UNAVAILABLE', message: 'Database read timed out' } }, { status: 503 })
-        : HttpResponse.json({ run, items: [], pageInfo: { nextCursor: null } })))
-    await mount(runsUrl('run-b'))
-    const controls = within(await screen.findByRole('region', { name: 'Selected Run controls' }))
-    const retry = await controls.findByRole('button', { name: 'Retry' })
-    failing = false
-    fireEvent.click(retry)
-    await waitFor(() => expect(controls.getByRole('button', { name: 'Stop' })).toBeEnabled())
-    fireEvent.click(controls.getByRole('button', { name: 'Stop' }))
-    await waitFor(() => expect(stops).toHaveLength(1))
-  })
-
-  it('still sends a Stop pressed just before switching to Overview', async () => {
-    const stops: unknown[] = []
-    const { run, handlers } = stopHandlers(stops)
-    const held = deferred<void>()
-    let reads = 0
-    server.use(...handlers,
-      http.get('*/api/local-human', async () => { if (++reads > 1) await held.promise; return access() }),
-      http.get('*/api/management/workspaces/:workspaceId/runs/run-b/executions', () =>
-        HttpResponse.json({ run, items: [], pageInfo: { nextCursor: null } })))
-    await mount(runsUrl('run-b'))
-    const controls = within(await screen.findByRole('region', { name: 'Selected Run controls' }))
-    await waitFor(() => expect(controls.getByRole('button', { name: 'Stop' })).toBeEnabled())
-    fireEvent.click(controls.getByRole('button', { name: 'Stop' }))
-    fireEvent.click(within(screen.getByRole('navigation', { name: 'Workflow views' })).getByRole('button', { name: 'Overview' }))
-    await act(async () => { held.resolve() })
-    await waitFor(() => expect(stops).toHaveLength(1))
-  })
-})
-
 describe('the Run board never strands the person', () => {
   it('shows the Run board with its own loading state when the Run read hangs, instead of an inert draft', async () => {
     server.use(http.get(snapshotPath, () => new Promise<never>(() => { /* ignore: the read never answers */ })))
