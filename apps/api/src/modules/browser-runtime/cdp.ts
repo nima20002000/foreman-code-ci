@@ -13,7 +13,7 @@ export class BrowserCdpConnection {
   private constructor(private readonly socket: WebSocket) {
     socket.on('message', bytes => {
       let value: { id?: number; result?: unknown; error?: unknown; method?: string; params?: Record<string, unknown>; sessionId?: string }
-      try { value = JSON.parse(bytes.toString()) as typeof value } catch { this.fail(); return }
+      try { value = JSON.parse(bytes.toString()) as typeof value } catch { this.close(); return }
       if (value.id !== undefined) {
         const pending = this.pending.get(value.id)
         if (!pending) return
