@@ -85,7 +85,6 @@ describe.skipIf(!postgresEnabled)('hierarchy expanded feedback reservation', () 
         }
         return run.outcome
       }, { timeout: 150_000 }).toBe('succeeded')
-      throw new Error('HIER16-PROGRESS ' + JSON.stringify(progress) + ' total ' + Math.round(performance.now() - startedAt))
       expect(await drive).not.toBeInstanceOf(Error)
       expect(await f.runs.get(f.f.run.id)).toMatchObject({ executionState: 'completed', outcome: 'succeeded' })
       expect(feedback).toHaveLength(1)
