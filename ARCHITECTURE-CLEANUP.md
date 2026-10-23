@@ -100,7 +100,7 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
 ## Findings by planned PR
 
 ### CI part 2 (#71, #72)
-- [~] #1 CI system embedded in the product.
+- [~] #1 CI system embedded in the product. A01 implements the HTTP ticket/lifecycle boundary and remaining CI read moves; Foreman CI verification pending.
   - Moved to `apps/ci`: `ci-host` (#69), plus `jobs/ci*` and the Circle accounts service (#71).
   - CI owns its routes and MCP tool specs (#71).
   - PR 12a: the 25 `ci*` migrations plus `hostCiRuns`, `hostCiActivity` and `agentCiActivity` live in
@@ -114,8 +114,9 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
     `ci_state_changed` activity in the same transaction and deletes the row.
   - PR 12a: `runs/agentCiSnapshot` and the `computers/activity` CI reads, plus the `runs/history`, `runs/agentRunStatus`
     and `runs/workflowDeliverable` ticket reads, go through `@foreman-code/ci/ciReadApi` (adapter `modules/ci/reads.ts`).
-  - Still in the product: two SQL reads of CI tables (`runs/activitiesSql` ticket join, `bug-reports/stuckExecutions`);
-    FKs from CI tables to product tables; the move into a `ci` schema; contracts CI tooling.
+  - A01: `runs/activitiesSql` ticket evidence and `bug-reports/stuckExecutions` ticket aggregates now come from the
+    CI read API, preserving the same transaction snapshot, indexed lookups and detector locks.
+  - Still open: FKs from CI tables to product tables; the move into a `ci` schema; contracts CI tooling.
 - [x] #30 (CI part): the worker declares `@foreman-code/ci` and imports CI by package name (#71); it builds its own CI
   context (#72). The rest of #30 is open: about 40 other `apps/api` modules are imported by the worker.
   - Still in the product: 25 CI migrations (PR 12); non-CI SQL reading CI tables (`runs/agentCiSnapshot`, the
@@ -317,18 +318,19 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
 ### PR 7: Database (#70)
 - [-] #24 Migrations: registry overrides removed, version-order guard for new migrations (#70). Squash and down
   migrations won't be done (owner decision).
-- [~] #25 PL/pgSQL: implemented; CI verification blocked. One SQL rule → `DomainError` mapper at the owning `withTransaction` boundary
-  maps the 25 inventoried codes only with their exact SQLSTATE/message, retaining the original cause and safe 409
-  messages. Unknown failures and existing domain errors retain their identity; retries and rollback/recovery stay
-  ahead of mapping. Removed the write path's redundant repeat decision/successor validators; deferred SQL checks
-  remain canonical. Kept parsing/computation, read-side checks and recoverable in-transaction pre-checks, which the
-  substring-based inventory had also counted. No migration or saved/deployed name changed.
-  - Verification: tests committed before the mapper (`3ed374e4cf`, corrected fixture/ownership coverage
-    `79c6e6b346`); Foreman rejected both pre-fix unit/integration submissions with `INTERNAL_ERROR` and final focused
-    submissions with `DATABASE_BUSY`, so neither red/green regression evidence nor clean changed-file checks is
-    established. Baseline full typecheck ticket `39a0f485-5450-471c-ba45-1463a51fb0b2` and lint ticket
-    `686d250c-16dd-4c0a-bccf-042cb1bb7bfd` were issued; final full typecheck/lint admission is pending.
-    No tests, compiler, lint or builds ran locally. Rerun affected tests and full typecheck/lint when CI recovers.
+- [~] #25 PL/pgSQL: `docs/architecture/database-functions.md` maps the current definitions and the duplicated
+  rules (7c, written without running the generator, compiler or tests).
+  - The generator now lists a code only when a current function raises it (`raise exception 'CODE'`). That drops
+    `CONTROL_CONTINUATION_CLOSED`, `INTERACTION_CANCELED` and `WORK_EXECUTION_FAILED`, which SQL only uses as a
+    default value in a record, so they duplicate no rule. 25 rules remain. The doc was edited by hand to match; run
+    the generator once to confirm it produces the same file.
+  - Decision recorded in the doc: the SQL function is the canonical home of each of the 25 rules, because a trigger
+    holds for every writer. The TypeScript checks are typed pre-checks (stable 409 code, no aborted transaction) and
+    must not grow beyond the SQL rule. No mapping from database errors to `DomainError` was found, so a raw
+    trigger failure would probably surface as a 500.
+  - Not done: removing the TypeScript pre-checks. That needs one mapping from raised code to `DomainError` and the
+    database tests, because several callers (`repeatRuntime.ts`, `schedules/postgresDispatcher.ts`) classify by those
+    codes and continue after catching them. No migration was added, since the SQL did not change.
 - [~] #26 Transactions: one `withTransaction`, and the delivery ALS is now private. 7d (written without running the
   typecheck, lint or tests):
   - `ExclusiveGraphConnection.transaction` now calls `withTransaction` for BEGIN, COMMIT and rollback. The helper
@@ -540,12 +542,11 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
 - [~] CI owns its schema (12a: migrations moved, activity events, read API; the `ci` schema move is open), an HTTP
   client replaces the in-process ports, and a protocol package holds the `ci-*.mjs` tooling.
   - 12b: `CiTicketClient` (`@foreman-code/ci/client`) is the product's view of CI's ticket operations. `HostCiService`
-    is the in-process transport and stays the only one wired in production; `HttpCiClient` calls the CI routes and is
-    covered by a test against the real routes. The MCP CI tools, the CI routes and the tool specs depend on the
-    interface. The routes now accept the `ci_get` wait/test-status options and a cancel `commandId`. Not done: wiring
-    `HttpCiClient` in production (it needs a service credential that makes the routes authenticate the calling
-    principal), HTTP routes for `dispatch`, `cancelStoppedRun` and `expireOverdueRuns` (production still calls them
-    in process), and the Circle accounts, enrollment and runtime-preparation clients.
+    remains the CI implementation; A01 wires `HttpCiClient` in production through a private loopback listener with
+    an ephemeral service credential, carrying the original caller and audit source (including workspace inference). The MCP CI tools, the CI routes and the tool specs depend on the
+    interface. The routes now accept the `ci_get` wait/test-status options and a cancel `commandId`. Not done:
+    the Circle accounts, enrollment and runtime-preparation clients. A01 adds authenticated service routes for
+    `dispatch`, `cancelStoppedRun` and `expireOverdueRuns`, used by the product; CI owns its own start/close lifecycle.
   - 12b: `packages/ci-protocol` holds the test-result message (`CI_TEST_RESULT_LIMITS`, `ciTestResults`) that
     `scripts/ci-test-results.mjs` writes and Main reads; the script imports it by relative path and keeps its path.
     A script test guards it against `CiTestResultsSchema`. Not done: `apps/ci` does not import the package yet, because
