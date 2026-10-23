@@ -4,11 +4,11 @@ import { randomUUID } from 'node:crypto'
 import { CiRunRecordSchema } from '@foreman-code/contracts'
 import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
 import { deferred } from './helpers/deferred.js'
-import { withCiTicketLock } from '../src/modules/ci-host/dispatch.js'
+import { withCiTicketLock } from '@foreman-code/ci/dispatch'
 import { withTransaction, type SqlQuery } from '../src/infrastructure/transaction.js'
-import { sendCiDispatch, type CiDispatchState } from '../src/modules/ci-host/dispatchRecovery.js'
+import { sendCiDispatch, type CiDispatchState } from '@foreman-code/ci/dispatchRecovery'
 import type { CiRunRecord } from '@foreman-code/contracts'
-import type { HostCiComputer, HostCiEndpoint } from '../src/modules/ci-host/serviceTypes.js'
+import type { HostCiComputer, HostCiEndpoint } from '@foreman-code/ci/serviceTypes'
 
 let db: Awaited<ReturnType<typeof currentDatabase>>
 beforeAll(async () => {

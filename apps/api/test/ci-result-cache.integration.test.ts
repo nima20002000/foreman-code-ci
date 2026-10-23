@@ -7,7 +7,7 @@ import { buildApp } from '../src/app.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { HostCiService, type CiCommits, type HostCiComputer } from '../src/modules/ci-host/service.js'
+import { HostCiService, type CiCommits, type HostCiComputer } from '@foreman-code/ci/service'
 import { CI_GET_ACTIONS, CI_RUN_ACTIONS, RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 

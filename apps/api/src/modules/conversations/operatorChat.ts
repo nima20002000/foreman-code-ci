@@ -14,7 +14,7 @@ import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.j
 import { validateMessageAttachments } from './messageAttachments.js'
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import type { ReadObservation } from '@foreman-code/contracts'
-import { errorMessage } from '../../shared/errorMessage.js'
+import { errorMessage } from '@foreman-code/contracts/server-kit'
 import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
 import type { ChatResponseAcknowledgment } from '@foreman-code/contracts/interaction-activity'
 import { withInteractionResponse, isSessionNativeInteraction } from '@foreman-code/contracts'

@@ -11,7 +11,7 @@ import { readFileRetentionSnapshot } from '../../src/modules/files/retentionSnap
 import { FileByteStorage } from '../../src/modules/files/storage.js'
 import type { Pool } from 'pg'
 import { BugReportService } from '../../src/modules/bug-reports/service.js'
-import { HostCiService } from '../../src/modules/ci-host/service.js'
+import { HostCiService } from '@foreman-code/ci/service'
 import type { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
 import { RunCiAuthority } from '../../src/modules/jobs/ciAuthority.js'
 

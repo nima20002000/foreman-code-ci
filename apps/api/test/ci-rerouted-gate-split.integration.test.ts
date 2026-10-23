@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { CiGetOutputSchema, CiRunRecordSchema, type CiHostRun } from '@foreman-code/contracts'
 import { afterEach, expect, it, vi } from 'vitest'
-import type { HostCiService, HostCiComputer, HostCiEndpoint } from '../src/modules/ci-host/service.js'
+import type { HostCiService, HostCiComputer, HostCiEndpoint } from '@foreman-code/ci/service'
 import { DeviceApplicationError } from '../src/modules/devices/deviceApplicationError.js'
-import { ciExecutionRunId } from '../src/modules/ci-host/executionAttempt.js'
+import { ciExecutionRunId } from '@foreman-code/ci/executionAttempt'
 import { fixture } from './helpers/hostCiMcpFixture.js'
 
 afterEach(() => vi.useRealTimers())

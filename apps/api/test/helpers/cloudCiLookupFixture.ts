@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { CloudCi } from '../../src/modules/ci-host/cloud.js'
-import { CircleCiProvider, type CloudRun } from '../../src/modules/ci-host/cloudProviders.js'
-import type { HostCiPorts } from '../../src/modules/ci-host/runner.js'
+import { CloudCi } from '@foreman-code/ci/cloud'
+import { CircleCiProvider, type CloudRun } from '@foreman-code/ci/cloudProviders'
+import type { HostCiPorts } from '@foreman-code/ci/runner'
 import type { GitWorktreePorts } from '../../src/modules/sources/gitWorktree.js'
 import { privateFixtureDirectory } from './privateFixtureDirectory.js'
 
