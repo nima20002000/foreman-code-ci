@@ -1,4 +1,4 @@
-import { createContext, useEffect, useMemo } from 'react'
+import { createContext, useEffect, useMemo, useState } from 'react'
 import type { CiActivity } from '@foreman-code/contracts'
 import type { RunBoardEdgeSnapshot } from '@foreman-code/contracts/run-snapshots'
 import type { RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
@@ -35,12 +35,20 @@ export function useRunLiveNodes(scope: RepeatGraphScopeV3, names: ReadonlyMap<st
   const waits = useMemo(() => withDirectionWait(interactionWaits(record, pending.isError ? [] : pending.data?.items ?? [], names), direction),
     [record, pending.data, pending.isError, names, direction])
   const checking = useMemo(() => live ? runningIntervalChecks(record) : new Map<string, { check: number; queued: boolean }>(), [record, live])
-  // Work hand-offs are read beside the cut and refreshed with it, so a light leaves as its receiver's work appears.
+  // Work hand-offs are read beside the cut. A new cut is shown once the hand-offs read has caught up with it,
+  // so a receiver never starts its work before the light carrying that work has left.
   const working = Boolean(visible && record?.state.executions.some((execution) => execution.workActivationId))
   const handoffs = useRunHandoffsQuery(scope, working)
-  const { refetch } = handoffs, sequence = record?.asOfSequence
-  useEffect(() => { if (working && sequence) void refetch() }, [working, sequence, refetch])
-  const choreography = useRunChoreography(record, edges, working ? handoffs.data?.transfers : undefined)
+  const { refetch } = handoffs
+  const [caughtUp, setCaughtUp] = useState(record)
+  useEffect(() => {
+    if (!working) return
+    let current = true
+    void refetch().then(() => { if (current) setCaughtUp(record) })
+    return () => { current = false }
+  }, [working, record, refetch])
+  const shown = working ? caughtUp : record
+  const choreography = useRunChoreography(shown, edges, working ? handoffs.data?.transfers : undefined)
   // One line per agent pair: an approval beside a handoff travels on the handoff's line.
   const lines = useMemo(() => relationshipLines(edges), [edges])
   const flights: [string, EdgePulse[]][] = []
@@ -59,7 +67,7 @@ export function useRunLiveNodes(scope: RepeatGraphScopeV3, names: ReadonlyMap<st
   const views: [string, RunLiveNodeView][] = []
   for (const nodeId of names.keys()) {
     const ci = cis.get(nodeId)
-    const base = record ? choreography.nodes.get(nodeId) ?? { state: 'idle' as const, label: 'Not started' } : undefined
+    const base = shown ? choreography.nodes.get(nodeId) ?? { state: 'idle' as const, label: 'Not started' } : undefined
     // Without the current cut a node still says it waits on its CI, or shows that CI's result.
     if (!base) { if (ci) views.push([nodeId, isActiveCi(ci) ? liveNodeView(ciNodePresentation(ci), undefined, ci) : ciNodePresentation(ci)]); continue }
     const view = liveNodeView(base, waits.get(nodeId), ci, undefined, checking.get(nodeId))

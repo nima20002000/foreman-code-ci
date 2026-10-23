@@ -59,24 +59,21 @@ it.each(['update-ref', 'worktree'] as const)(
     const writing = ports.git(['-c', `core.hooksPath=${hooks}`, ...args], { cwd: clone, signal })
     let socket: Socket | undefined
     let fetching: Promise<string> | undefined
-    const probe = await openPrivateRoot(join(clone, '.git'), false)
     try {
       ;[socket] = await connected as [Socket]
       await once(socket, 'data')
       fetching = ensureCommit(ports, 'fixture/project', successor, signal)
-      const cache = join(home, '.local', 'share', 'foreman-code', 'git')
       await vi.waitFor(async () => {
-        const storage = JSON.parse(await readFile(join(cache, 'storage.json'), 'utf8')) as { reservedBytes: number }
-        expect(storage.reservedBytes).toBeGreaterThan(0)
+        const probe = await openPrivateRoot(join(clone, '.git'), false)
+        try { expect(await lockOpenFile(probe, { nonBlocking: true })).toBe(false) }
+        finally { await probe.close() }
       }, { timeout: 10_000 })
-      expect(await lockOpenFile(probe, { nonBlocking: true })).toBe(false)
       expect(await readFile(join(clone, '.git', `${ref}.lock`), 'utf8')).toBe(`${first}\n`)
       socket.write('continue')
       expect(await writing).toMatchObject({ code: 0 })
       await expect(fetching).resolves.toBe(clone)
       expect(execFileSync('git', ['rev-parse', ref], { cwd: clone, encoding: 'utf8' }).trim()).toBe(first)
     } finally {
-      await probe.close()
       socket?.write('continue')
       await Promise.allSettled([writing, fetching])
       socket?.destroy()
