@@ -222,7 +222,7 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
 - [ ] #42 Config: ~90 direct `process.env` reads outside `config.ts`.
 
 ### PR 6: Module boundaries (not started, except CI and web groundwork)
-- [~] #29 No module boundaries. Web follow-up: shared chat core merged onto the combined architecture base, preserving the shared conversation/composer lane; current pending imports reduced from 97 to 51 (Foreman CI pending).
+- [~] #29 No module boundaries. Web follow-up: shared chat core merged onto the combined architecture base, preserving the shared conversation/composer lane; current pending imports reduced from 97 to 51 (implementation complete; Foreman verification pending).
   - The CI↔API boundary is enforced (#69).
   - Web (6a): cross-feature imports go through the feature's index (759 imports rewritten; 13 features gained an
     index). The shared graph/Board leaves live in the neutral `features/board-core` (geometry, collaborationFields,
@@ -240,6 +240,11 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
     `91bcc33c-76dd-4c94-8b4b-5e4b4a99256e`, full lint `cbc51510-d6b4-47d6-abdc-476639b28795`.
     Those earlier checks did not execute: frozen-lockfile installation rejected the existing worker dependency
     `@foreman-code/api@workspace:*`, missing from `pnpm-lock.yaml`. Both manifests and lockfile are unchanged here.
+    Re-merge `8e661772d2` preserves the newer shared conversation/composer lane. Its Foreman full typecheck
+    `9771f96e-51b3-4581-b365-b88b83ca416f` and full lint `cd20eb7a-5445-48de-8119-a1523d784d1f`
+    were admitted after delays and queued behind occupied CI slots. Affected-unit admission returned
+    `DATABASE_BUSY`; the selected 39 files were resubmitted on `d7ea6e4982`, which also explains the touched
+    G5 test’s deliberate transport rejections without changing assertions. No local checks ran.
   - Web, still open: 51 imports in `scripts/web-feature-boundary-pending.mjs` (a list that may only shrink), including
     graph/draft hooks ↔ Board start/stop outboxes, Agent/settings/schedule dependencies, shared delivery hooks and
     Operator composer settings/approval UI. The route/WorkspaceShell layering inversions remain separate work.
