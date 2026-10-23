@@ -10,7 +10,7 @@ import type { NativeResponseDeliveryEvidence } from '../src/modules/interactions
 import { ApprovalExecutionCoordinator } from '../src/modules/interactions/execution.js'
 import type { RepeatNativeObservationStore } from '../src/modules/interactions/repeatObservation.js'
 import type { PostgresRunRepository } from '../src/modules/runs/postgres.js'
-import { Wave25InteractionRepository } from '../src/modules/interactions/current/repository.js'
+import { CurrentInteractionRepository } from '../src/modules/interactions/current/repository.js'
 import type pg from 'pg'
 import type { PostgresApprovalBudgetRepository } from '../src/modules/interactions/budget.js'
 import type { NativeSessionManagerResolver } from '../src/modules/interactions/runtimePorts.js'
@@ -100,7 +100,7 @@ it('uncertain approval recovery cannot start native work without its exact admit
   const updateExecution = vi.fn(async () => undefined), resolve = vi.fn()
   const runs = { updateExecution } as unknown as PostgresRunRepository
   const coordinator = new ApprovalExecutionCoordinator({ runs,
-    interactions: new Wave25InteractionRepository({} as pg.Pool), budgets: {} as PostgresApprovalBudgetRepository,
+    interactions: new CurrentInteractionRepository({} as pg.Pool), budgets: {} as PostgresApprovalBudgetRepository,
     managers: { resolve } as unknown as NativeSessionManagerResolver, activeTimeoutMs: 60_000 })
   const owner = { runId: execution.runId, assertOwned() {}, client: {} } as unknown as RunOwnership
   const store = { readExecution: async () => ({ execution }) } as unknown as RepeatNativeObservationStore
