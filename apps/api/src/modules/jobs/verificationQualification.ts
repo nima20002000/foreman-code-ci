@@ -1,4 +1,4 @@
-import { errorMessage } from '@foreman-code/contracts-node/server-kit'
+import { errorMessage } from '@foreman-code/contracts/server-kit'
 import { captureVerificationInventory } from '../../../../../scripts/verification-runner.mjs'
 import { constants } from 'node:fs'
 import { mkdir, open, readFile, readlink, rm, statfs, writeFile } from 'node:fs/promises'
@@ -18,7 +18,7 @@ import { JobVerificationQualificationCandidateSchema, JobVerificationRepositoryC
   from '@foreman-code/contracts/job-verification-runtime'
 import { readInstalledVerificationConfiguration } from './installedVerificationRuntime.js'
 import { readProtectedRuntimeFile,
-  type InstalledRuntimeConfigurationLocation } from '@foreman-code/contracts-node/installed-runtime-node'
+  type InstalledRuntimeConfigurationLocation } from '@foreman-code/contracts/installed-runtime-node'
 import { podmanIsolationCreateArgv, ensureEmptyPodmanHooks, type PodmanIsolationInput } from './executorPodman.js'
 import { assertJobRuntimeEntryContext, jobQualificationFingerprint, runQualificationCommand,
   validateVerificationIsolationObservation, type JobQualificationAuthority, type QualificationNativeOwner }

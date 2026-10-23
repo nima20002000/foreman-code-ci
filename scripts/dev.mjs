@@ -106,7 +106,6 @@ async function main() {
   const database = new URL(process.env.DATABASE_URL)
   const apiUrl = `http://127.0.0.1:${port}`
   await run('Contracts build', ['--filter', '@foreman-code/contracts', 'build'])
-  await run('Node contracts build', ['--filter', '@foreman-code/contracts-node', 'build'])
   await run('CI build', ['--filter', '@foreman-code/ci', 'build'])
   const { resolveLocalBrowserOrigin } = await import('../packages/contracts/dist/browserOrigin.js')
   const { createRuntimeIdentity } = await import('../packages/contracts/dist/runtimeIdentityNode.js')

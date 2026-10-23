@@ -8,8 +8,8 @@ import test from 'node:test'
 
 const script = fileURLToPath(new URL('./check-package-boundaries.mjs', import.meta.url))
 
-function fixture(t, { ciDependencies = { '@foreman-code/contracts-node': 'workspace:*', '@foreman-code/contracts': 'workspace:*', zod: '4.6.3' },
-  apiDependencies = { '@foreman-code/contracts-node': 'workspace:*', '@foreman-code/ci': 'workspace:*', '@foreman-code/contracts': 'workspace:*', pg: '8.23.0', zod: '4.6.3' } } = {}) {
+function fixture(t, { ciDependencies = { '@foreman-code/contracts': 'workspace:*', zod: '4.6.3' },
+  apiDependencies = { '@foreman-code/ci': 'workspace:*', '@foreman-code/contracts': 'workspace:*', pg: '8.23.0', zod: '4.6.3' } } = {}) {
   const cache = join(homedir(), '.cache', 'foreman-tmp')
   mkdirSync(cache, { recursive: true })
   const root = mkdtempSync(join(cache, 'package-boundaries-'))
@@ -23,7 +23,7 @@ function fixture(t, { ciDependencies = { '@foreman-code/contracts-node': 'worksp
   write('apps/ci/src/runner.ts', [
     "import { readFile } from 'node:fs/promises'",
     "import type { Pool } from 'pg'",
-    "import { DomainError } from '@foreman-code/contracts-node/server-kit'",
+    "import { DomainError } from '@foreman-code/contracts/server-kit'",
     "import { z } from 'zod'",
     "import { status } from './status.js'",
     'export { readFile, DomainError, z, status }',
@@ -61,11 +61,11 @@ for (const [name, text] of [
 test('accepts CI tests that import CI files, repository scripts, contracts and CI dev dependencies', t => {
   const f = fixture(t)
   f.write('apps/ci/package.json', JSON.stringify({ name: '@foreman-code/ci',
-    dependencies: { '@foreman-code/contracts-node': 'workspace:*', '@foreman-code/contracts': 'workspace:*', zod: '4.6.3' }, devDependencies: { vitest: '5.0.5' } }))
+    dependencies: { '@foreman-code/contracts': 'workspace:*', zod: '4.6.3' }, devDependencies: { vitest: '5.0.5' } }))
   f.write('apps/ci/test/runner.test.ts', [
     "import { expect, it } from 'vitest'",
     "import { join } from 'node:path'",
-    "import { DomainError } from '@foreman-code/contracts-node/server-kit'",
+    "import { DomainError } from '@foreman-code/contracts/server-kit'",
     "import { status } from '../src/status.js'",
     "import { context } from './helpers/context.js'",
     "import { ownedTestPath } from '../../../scripts/test-resources.mjs'",

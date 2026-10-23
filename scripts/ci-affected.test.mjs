@@ -142,7 +142,6 @@ for (const progress of ['', 'parent-progress.jsonl']) {
     const calls = result.stdout.trim().split('\n').map(line => JSON.parse(line))
     assert.deepEqual(calls, [
       ['pnpm', '--filter', '@foreman-code/contracts', 'build'],
-      ['pnpm', '--filter', '@foreman-code/contracts-node', 'build'],
       ['pnpm', '--filter', '@foreman-code/ci', 'build'],
       ['pnpm', '--dir', 'apps/web', 'exec', 'vitest', 'run', 'src/view.test.tsx'],
     ])

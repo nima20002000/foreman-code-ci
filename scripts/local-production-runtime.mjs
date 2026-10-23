@@ -48,7 +48,7 @@ export async function recordStartupConfiguration(stateFile) {
 
 // Compiled output whose source file no longer exists; tsc --incremental never removes it.
 const typeScriptOutputs = [['apps/api/dist', 'apps/api/src'], ['packages/contracts/dist', 'packages/contracts/src'],
-  ['apps/ci/dist', 'apps/ci/src'], ['packages/contracts-node/dist', 'packages/contracts-node/src']]
+  ['apps/ci/dist', 'apps/ci/src']]
 const outputSuffix = /(\.d)?\.(?:m?js|ts|mts)(\.map)?$/
 
 async function pruneStaleTypeScriptOutput(source, trackedSources) {
@@ -125,7 +125,6 @@ export async function measureProductionStep(step, action, log = console.log) {
 // The full API check overlaps emission, browser bundling and staging, and gates activation.
 export async function buildProductionSource(run, { stage = async () => undefined } = {}) {
   await run('corepack', ['pnpm', '--filter', '@foreman-code/contracts', 'build'])
-  await run('corepack', ['pnpm', '--filter', '@foreman-code/contracts-node', 'build'])
   // The CI package compiles against the contracts output; the API check and emit read its declarations.
   await run('corepack', ['pnpm', '--filter', '@foreman-code/ci', 'build'])
   const results = await Promise.allSettled([
@@ -442,11 +441,11 @@ export function localProductionEnvironment(desktopHome, password) {
   }
 }
 
-// Installed dependencies are immutable; both contracts packages and CI build output belong to each release.
+// Installed dependencies are immutable; contracts and CI package build output belongs to each release.
 async function apiDependencyKey(source) {
   const hash = createHash('sha256')
   hash.update(`${process.platform}\0${process.arch}\0${process.versions.modules}\0`)
-  const inputs = ['pnpm-lock.yaml', 'apps/api/package.json', 'packages/contracts/package.json', 'apps/ci/package.json', 'packages/contracts-node/package.json',
+  const inputs = ['pnpm-lock.yaml', 'apps/api/package.json', 'packages/contracts/package.json', 'apps/ci/package.json',
     'pnpm-workspace.yaml', '.npmrc']
   for (const path of inputs) {
     hash.update(`${path}\0`)
@@ -454,7 +453,7 @@ async function apiDependencyKey(source) {
       const bytes = await readFile(join(source, path))
       hash.update(`${bytes.length}\0`).update(bytes)
     } catch (error) {
-      if (error.code !== 'ENOENT' || inputs.indexOf(path) < 5) throw error
+      if (error.code !== 'ENOENT' || inputs.indexOf(path) < 4) throw error
       hash.update('absent\0')
     }
   }
@@ -470,7 +469,7 @@ async function linkReleaseDependencies(shared, destination, source) {
     await symlink(join(installed, name), join(modules, name))
   }
   for (const name of await readdir(join(installed, '@foreman-code'))) {
-    if (name === 'contracts' || name === 'contracts-node' || name === 'ci') continue
+    if (name === 'contracts' || name === 'ci') continue
     await symlink(join(installed, '@foreman-code', name), join(modules, '@foreman-code', name))
   }
   const contracts = await realpath(join(installed, '@foreman-code/contracts'))
@@ -483,10 +482,6 @@ async function linkReleaseDependencies(shared, destination, source) {
   const nested = join(contracts, 'node_modules')
   const dependencies = existsSync(nested) ? nested : dirname(dirname(contracts))
   await symlink(dependencies, join(releaseContracts, 'node_modules'))
-  const releaseNodeContracts = join(modules, '@foreman-code/contracts-node')
-  await mkdir(releaseNodeContracts)
-  await copyFile(join(source, 'packages/contracts-node/package.json'), join(releaseNodeContracts, 'package.json'))
-  await cp(join(source, 'packages/contracts-node/dist'), join(releaseNodeContracts, 'dist'), { recursive: true })
   // The CI package is a real directory without node_modules: its contracts, yaml and zod imports resolve through the
   // API's node_modules, so it loads this release's contracts copy and shares one DomainError with the API.
   const releaseCi = join(modules, '@foreman-code/ci')
@@ -589,8 +584,7 @@ async function deployApiPackage(run, destination) {
     }
     // Freeze mutable workspace files; pnpm already isolates installed dependencies.
     const contracts = await realpath(join(destination, 'node_modules/@foreman-code/contracts'))
-    const nodeContracts = await realpath(join(destination, 'node_modules/@foreman-code/contracts-node'))
-    for (const packageDirectory of [destination, contracts, nodeContracts]) {
+    for (const packageDirectory of [destination, contracts]) {
       const temporary = await mkdtemp(join(dirname(packageDirectory), '.production-package-copy-'))
       try {
         const snapshot = join(temporary, 'package')

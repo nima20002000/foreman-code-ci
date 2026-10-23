@@ -18,7 +18,7 @@ const { openPrivateRoot } = await tsImport('../../api/src/modules/sources/privat
 const { qualifyApprovedRootAllowlist } = await tsImport('../../api/src/modules/sources/rootAttestation.ts', import.meta.url);
 const { encodeWorkerEnrollmentCode } = await tsImport('../../../packages/contracts/src/deviceSetup.ts', import.meta.url);
 const { loadOrCreateWorkerIdentity, persistWorkerPairing, loadWorkerPairing, publicKeyFingerprint,
-  mainEnrollmentProofMessage } = await tsImport('../../../packages/contracts-node/src/deviceIdentityNode.ts', import.meta.url);
+  mainEnrollmentProofMessage } = await tsImport('../../../packages/contracts/src/deviceIdentityNode.ts', import.meta.url);
 
 async function fixture(t, { aliasedHome = false } = {}) {
   t.after(mockHostMounts(t.mock, persistentHostMounts));

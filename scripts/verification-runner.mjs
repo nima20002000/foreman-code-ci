@@ -127,12 +127,10 @@ export function expectedPortions(root, suite) {
   }
   if (suite === 'integration') return [bootstrap,
     { key: portionKey('packages/contracts', 'build'), kind: 'command' },
-    { key: portionKey('packages/contracts-node', 'build'), kind: 'command' },
     { key: portionKey('', 'test:integration'), kind: 'integration' },
   ]
   if (suite === 'unit') return [bootstrap, { key: 'root:worker-artifact', kind: 'bootstrap' },
     { key: portionKey('packages/contracts', 'test'), kind: 'vitest' },
-    { key: portionKey('packages/contracts-node', 'test'), kind: 'vitest' },
     { key: portionKey('apps/api', 'test'), kind: 'vitest' },
     { key: portionKey('apps/web', 'test:unit'), kind: 'vitest' },
     { key: portionKey('apps/web', 'test:run-graph-smoke'), kind: 'node' },
@@ -140,10 +138,7 @@ export function expectedPortions(root, suite) {
     { key: portionKey('', 'test:scripts'), kind: 'node' },
   ]
   const portions = [bootstrap]
-  if (suite !== 'build') portions.push(
-    { key: portionKey('packages/contracts', 'build'), kind: 'command' },
-    { key: portionKey('packages/contracts-node', 'build'), kind: 'command' },
-  )
+  if (suite !== 'build') portions.push({ key: portionKey('packages/contracts', 'build'), kind: 'command' })
   for (const base of ['apps', 'packages']) for (const name of readdirSync(join(root, base)).sort()) {
     const directory = `${base}/${name}`
     const path = join(root, directory, 'package.json')

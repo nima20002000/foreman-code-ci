@@ -1,4 +1,4 @@
-import { errorMessage } from '@foreman-code/contracts-node/server-kit'
+import { errorMessage } from '@foreman-code/contracts/server-kit'
 import { readOperationalFailures } from '../diagnostics/logger.js'
 import { readServiceHealth } from '../diagnostics/index.js'
 import { readClaudePlugins, claudeCliResult } from './claudePlugins.js'
