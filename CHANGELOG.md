@@ -7,6 +7,23 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.0.117] - 2026-10-23
+
+### UI
+- Agent browser: taking control shows an accent outline and "You have control…"; clicking elsewhere gives it back. Browser tabs look like Chrome tabs and shrink to fit; blank allocation tabs read "New tab". The Agent panel opens the browser from a globe icon.
+- Kanban toggle is on the Run toolbar too; the workflow Kanban moves cards Todo → Doing → Done/Blocked as each Agent finishes.
+- Claude Agent settings no longer repeat Account, Model and Effort under More settings.
+- Text and source files (.txt, .csv, .json, code) can be attached to Agent and Operator chats.
+
+### Fixes
+- The app recovers by itself after an API restart without a request storm: the reconnect probe runs about once a second instead of as fast as requests answer, and the first-load reconnect screen no longer flashes "Connecting…".
+- A definite server error on first access shows "Cannot reach the server" again instead of reconnecting forever.
+- An API restart right after a loop check finishes cleans the Run up instead of failing shutdown.
+- Worker source cleanup gives exiting harness processes a short grace before treating them as live owners.
+- Hierarchy prompts: a return starts no children; results go in latestDeliverable and remainingFindings lists only unresolved problems, so the Master no longer waits for direction after a finished task.
+- Claude permission-callback failures are logged with their cause.
+- A retained chat input is a named group for assistive tech again.
+
 ## [0.0.116] - 2026-10-21
 
 ### UI
