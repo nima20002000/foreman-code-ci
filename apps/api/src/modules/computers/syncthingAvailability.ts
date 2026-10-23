@@ -1,8 +1,9 @@
-import type { SyncthingPorts, SyncthingProcessPorts } from './syncthingSystem.js'
+import type { AccountProbePorts } from './accountProbe.js'
+import type { SyncthingPorts } from './syncthingSystem.js'
 
 const AVAILABILITY_CACHE_MS = 5000
 
-export function createSyncthingAvailability(ports: SyncthingProcessPorts, unit: string) {
+export function createSyncthingAvailability(ports: Pick<AccountProbePorts, 'find' | 'run'>, unit: string) {
   let availability: { binary: string; at: number; pending: boolean; value: Promise<boolean> } | undefined
   const readRunning = async (signal?: AbortSignal): Promise<boolean> => {
     const timeout = AbortSignal.timeout(10_000)

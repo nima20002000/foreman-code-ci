@@ -6,8 +6,3 @@ export { assertRemoteReviewerReceipt, remoteReviewerPolicy } from './remoteRevie
 export { readPlacement } from './binding.js'
 export { readNativeExecutionBinding } from './executionBinding.js'
 export type { MainWorkerCarrier } from './workerCarrier.js'
-export type { AgentPlacementProducer } from './agentProducer.js'
-export type { ExecutionRunAuthorityPort } from './executionAuthority.js'
-export type { AcceptedExecutionBinding } from './nativeComposition.js'
-export type { RemoteNativeBatchPhysicalVerification, VerifiedRemoteOriginalSource } from './remoteNativeSource.js'
-export type { PreparedRunPlacementAdmission, RunPlacementAdmissionPort } from './startPort.js'

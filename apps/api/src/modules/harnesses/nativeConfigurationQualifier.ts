@@ -3,7 +3,7 @@ import type { HarnessConfigurationQualifier } from './port.js'
 import { NativeHarnessFactories } from './runtimeFactory.js'
 import { requireClaudeProductionCredentialDelivery } from './claudeSdk/productionCredentials.js'
 import type { ClaudeNativeConfigurationPort } from './claudeSdk/nativeConfiguration.js'
-import type { ProviderAccountResolver } from '../provider-accounts/index.js'
+import type { ProviderAccountResolver } from '../provider-accounts/service.js'
 
 /** Model-free native qualification is separate from passive installation discovery. */
 export class NativeHarnessConfigurationQualifier implements HarnessConfigurationQualifier {

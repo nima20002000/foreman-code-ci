@@ -9,7 +9,7 @@ import {
 } from '@foreman-code/contracts/computer-maintenance'
 import { DeviceApplicationError } from '../devices/deviceApplicationError.js'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
-import type { DeviceExtensionRegistration } from '../devices/index.js'
+import type { DeviceExtensionRegistration } from '../devices/deviceApplicationChannel.js'
 import { DomainError } from '../errors.js'
 import { sha256Hex } from '../../shared/hash.js'
 

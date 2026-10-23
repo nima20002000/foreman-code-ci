@@ -11,8 +11,7 @@ import { ensureAcceptanceSeed } from '../src/infrastructure/seed.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { WorkerCredentialService, type IssuedWorkerCredential } from '../src/modules/access/workerCredentials.js'
 import { postgresEnabled } from './helpers/database.js'
-import { withTransaction } from '../src/infrastructure/transaction.js'
-import { deferred } from './helpers/deferred.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 const connectionString = process.env.TEST_DATABASE_URL
 const token = (credential: IssuedWorkerCredential) => credential.environment.variables.GRAPHQL_MCP_TOKEN!
@@ -78,25 +77,16 @@ describe.skipIf(!postgresEnabled)('PR #11 real PostgreSQL lifecycle and decision
       const f = await identities(pool)
       await f.credentials.issueForExecution(f.coder.id)
       const blocker = await pool.connect()
-      const entered = deferred()
-      const release = deferred()
-      let holding: Promise<void> | undefined
-      let attempts: Promise<PromiseSettledResult<unknown>[]> | undefined
       try {
-        holding = withTransaction({ client: blocker }, async transaction => {
-          await transaction.query('select id from runs where id=$1 for update', [f.run.id])
-          attempts = Promise.allSettled([
-            f.credentials.issueForExecution(f.coder.id), f.credentials.revokeForRun(f.run.id),
-            f.credentials.issueForExecution(f.otherExecution.id),
-          ])
-          entered.resolve()
-          await release.promise
-        })
-        await entered.promise
-        release.resolve()
-        await holding
+        await beginTransaction(blocker)
+        await blocker.query('select id from runs where id=$1 for update', [f.run.id])
+        const attempts = Promise.allSettled([
+          f.credentials.issueForExecution(f.coder.id), f.credentials.revokeForRun(f.run.id),
+          f.credentials.issueForExecution(f.otherExecution.id),
+        ])
+        await commitTransaction(blocker)
         await attempts
-      } finally { release.resolve(); if (holding) await holding; blocker.release() }
+      } finally { await rollbackTransaction(blocker).catch(() => /* ignore: best-effort cleanup; the test outcome is already decided */ undefined); blocker.release() }
       await assertNoActiveCredentials(pool, f.run.id)
       await assert.rejects(f.credentials.issueForExecution(f.coder.id), { code: 'WORKER_EXECUTION_INACTIVE' })
     })

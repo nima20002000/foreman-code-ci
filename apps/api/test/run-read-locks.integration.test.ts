@@ -13,7 +13,7 @@ import { WorkspaceLocationService } from '../src/modules/workspaces/location.js'
 import { currentDatabase } from './helpers/database.js'
 import { agentWorkflowNode } from './helpers/agentWorkflowFixture.js'
 import { graphFixture, graphHeaders, graphRpc, graphRpcValue } from './graph-composition-fixture.js'
-import { withTransaction } from '../src/infrastructure/transaction.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 async function fixture() {
   const db = await currentDatabase()
@@ -73,39 +73,40 @@ describe('authenticated Run reads during concurrent writes', () => {
       }))
       if (admitted.kind !== 'admitted') throw new Error('The fixture execution was not admitted')
       const baseline = await f.runs.get(caller.principal, run.workspaceId, run.id)
-      await withTransaction({ client: blocker }, async transaction => {
-        await transaction.query('update runs set stop_requested_at=clock_timestamp() where id=$1', [run.id])
-        await transaction.query('select run_id from run_graph_heads where run_id=$1 for update', [run.id])
-        await transaction.query('select id from harness_executions where id=$1 for update', [admitted.execution.id])
-        await transaction.query('select id from workflow_versions where id=$1 for update', [version.id])
-        await transaction.query('select id from agent_configuration_versions where id=any($1::text[]) for update',
-          [Object.values(version.agentConfigurationVersionIds)])
-        await transaction.query('select id from management_principals where id=$1 for update', [caller.principal.id])
-        const detail = await promptly(graphRpc(f.app, caller.token, 'tools/call', {
-          name: 'run_get', arguments: { ...args, detail: 'full' },
+      await beginTransaction(blocker)
+      await blocker.query('update runs set stop_requested_at=clock_timestamp() where id=$1', [run.id])
+      await blocker.query('select run_id from run_graph_heads where run_id=$1 for update', [run.id])
+      await blocker.query('select id from harness_executions where id=$1 for update', [admitted.execution.id])
+      await blocker.query('select id from workflow_versions where id=$1 for update', [version.id])
+      await blocker.query('select id from agent_configuration_versions where id=any($1::text[]) for update',
+        [Object.values(version.agentConfigurationVersionIds)])
+      await blocker.query('select id from management_principals where id=$1 for update', [caller.principal.id])
+
+      const detail = await promptly(graphRpc(f.app, caller.token, 'tools/call', {
+        name: 'run_get', arguments: { ...args, detail: 'full' },
+      }))
+      expect(detail.result?.isError, JSON.stringify(detail)).not.toBe(true)
+      expect(graphRpcValue(detail.result)).toEqual(baseline)
+      for (const name of ['run_events_list', 'run_activities_get_v1'] as const) {
+        const read = await promptly(graphRpc(f.app, caller.token, 'tools/call', {
+          name, arguments: { ...args, limit: 10 },
         }))
-        expect(detail.result?.isError, JSON.stringify(detail)).not.toBe(true)
-        expect(graphRpcValue(detail.result)).toEqual(baseline)
-        for (const name of ['run_events_list', 'run_activities_get_v1'] as const) {
-          const read = await promptly(graphRpc(f.app, caller.token, 'tools/call', {
-            name, arguments: { ...args, limit: 10 },
-          }))
-          expect(read.result?.isError, JSON.stringify(read)).not.toBe(true)
-          expect(graphRpcValue(read.result)).toHaveProperty('items')
-        }
-        const http = await promptly(f.app.inject({ method: 'GET',
-          url: `/api/management/workspaces/${run.workspaceId}/runs/${run.id}`, headers: graphHeaders(caller.token) }))
-        expect(http.statusCode, http.body).toBe(200)
-        expect(http.json()).toEqual(baseline)
-        const forbidden = await promptly(graphRpc(f.app, denied.token, 'tools/call', {
-          name: 'run_get', arguments: args,
-        }))
-        expect(graphRpcValue(forbidden.result)).toMatchObject({ error: { code: 'ACCESS_DENIED' } })
-        expect((await f.app.inject({ method: 'GET',
-          url: `/api/management/workspaces/${run.workspaceId}/runs/${run.id}`,
-          headers: graphHeaders(denied.token) })).statusCode).toBe(403)
-        expect((await promptly(store.readExecution(admitted.execution.id))).execution).toEqual(admitted.execution)
-      })
+        expect(read.result?.isError, JSON.stringify(read)).not.toBe(true)
+        expect(graphRpcValue(read.result)).toHaveProperty('items')
+      }
+      const http = await promptly(f.app.inject({ method: 'GET',
+        url: `/api/management/workspaces/${run.workspaceId}/runs/${run.id}`, headers: graphHeaders(caller.token) }))
+      expect(http.statusCode, http.body).toBe(200)
+      expect(http.json()).toEqual(baseline)
+      const forbidden = await promptly(graphRpc(f.app, denied.token, 'tools/call', {
+        name: 'run_get', arguments: args,
+      }))
+      expect(graphRpcValue(forbidden.result)).toMatchObject({ error: { code: 'ACCESS_DENIED' } })
+      expect((await f.app.inject({ method: 'GET',
+        url: `/api/management/workspaces/${run.workspaceId}/runs/${run.id}`,
+        headers: graphHeaders(denied.token) })).statusCode).toBe(403)
+      expect((await promptly(store.readExecution(admitted.execution.id))).execution).toEqual(admitted.execution)
+      await commitTransaction(blocker)
       const persisted = await graphRpc(f.app, caller.token, 'tools/call', {
         name: RUN_INSPECTION_TOOLS.record, arguments: args,
       })
@@ -113,6 +114,7 @@ describe('authenticated Run reads during concurrent writes', () => {
       await f.graph.access.revoke(caller.principal.id)
       await expect(f.runs.get(caller.principal, run.workspaceId, run.id)).rejects.toMatchObject({ code: 'AUTH_REVOKED' })
     } finally {
+      await rollbackTransaction(blocker)
       blocker.release()
       await owner.release()
       await f.close()
@@ -125,33 +127,33 @@ describe('authenticated Run reads during concurrent writes', () => {
     const args = { workspaceId: run.workspaceId, runId: run.id }
     const blocker = await f.db.pool.connect()
     try {
-      await withTransaction({ client: blocker }, async transaction => {
-        await transaction.query('lock table runs in access exclusive mode')
-        for (const name of ['run_get', 'run_events_list', 'run_activities_get_v1'] as const) {
-          const result = await graphRpc(f.app, f.graph.writer.token, 'tools/call', {
-            name, arguments: { ...args, ...(name === 'run_get' ? {} : { limit: 10 }) },
-          })
-          expect(result.result?.isError).toBe(true)
-          expect(graphRpcValue(result.result)).toMatchObject({ error: {
-            code: 'DATABASE_READ_TIMEOUT', details: { retryable: true, sqlState: '57014' },
-          } })
-        }
-        const inspection = await graphRpc(f.app, f.graph.writer.token, 'tools/call', {
-          name: RUN_INSPECTION_TOOLS.record, arguments: args,
+      await beginTransaction(blocker)
+      await blocker.query('lock table runs in access exclusive mode')
+      for (const name of ['run_get', 'run_events_list', 'run_activities_get_v1'] as const) {
+        const result = await graphRpc(f.app, f.graph.writer.token, 'tools/call', {
+          name, arguments: { ...args, ...(name === 'run_get' ? {} : { limit: 10 }) },
         })
-        expect(inspection.result?.isError).toBe(true)
-        expect(graphRpcValue(inspection.result)).toMatchObject({ error: {
-          code: 'RUN_INSPECTION_UNAVAILABLE', details: { retryable: true, sqlState: '57014' },
-        } })
-        const response = await f.app.inject({ method: 'GET',
-          url: `/api/management/workspaces/${run.workspaceId}/runs/${run.id}`,
-          headers: graphHeaders(f.graph.writer.token) })
-        expect(response.statusCode).toBe(503)
-        expect(response.json()).toMatchObject({ error: {
+        expect(result.result?.isError).toBe(true)
+        expect(graphRpcValue(result.result)).toMatchObject({ error: {
           code: 'DATABASE_READ_TIMEOUT', details: { retryable: true, sqlState: '57014' },
         } })
+      }
+      const inspection = await graphRpc(f.app, f.graph.writer.token, 'tools/call', {
+        name: RUN_INSPECTION_TOOLS.record, arguments: args,
       })
+      expect(inspection.result?.isError).toBe(true)
+      expect(graphRpcValue(inspection.result)).toMatchObject({ error: {
+        code: 'RUN_INSPECTION_UNAVAILABLE', details: { retryable: true, sqlState: '57014' },
+      } })
+      const response = await f.app.inject({ method: 'GET',
+        url: `/api/management/workspaces/${run.workspaceId}/runs/${run.id}`,
+        headers: graphHeaders(f.graph.writer.token) })
+      expect(response.statusCode).toBe(503)
+      expect(response.json()).toMatchObject({ error: {
+        code: 'DATABASE_READ_TIMEOUT', details: { retryable: true, sqlState: '57014' },
+      } })
     } finally {
+      await rollbackTransaction(blocker)
       blocker.release()
       await f.close()
     }

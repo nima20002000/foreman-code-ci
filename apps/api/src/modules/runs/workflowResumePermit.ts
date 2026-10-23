@@ -1,6 +1,6 @@
 import type { DurableInteraction } from '@foreman-code/contracts'
 import type { WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
-import type { ApprovalPostgresSaver } from './approvalCheckpointSaver.js'
+import type { ApprovalPostgresSaver } from '../../infrastructure/approvalCheckpointSaver.js'
 import { DomainError } from '../errors.js'
 import { currentRunGraphPublication } from '../run-graph/publication.js'
 import type { SqlTransaction } from '../../infrastructure/transaction.js'

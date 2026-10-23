@@ -23,7 +23,7 @@ import { AgentHarnessSchema, ApiErrorResponseSchema, RuntimeIdentitySchema, type
 import { logger } from '../../src/infrastructure/logger.js'
 import { loadConfig } from '../../src/config.js'
 import { createDatabase } from '../../src/infrastructure/database.js'
-import { createCheckpointStore } from '../../src/composition/checkpoints.js'
+import { createCheckpointStore } from '../../src/infrastructure/checkpoints.js'
 import { buildProductionApp } from '../../src/production.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { qualifyApprovedRootAllowlist } from '../../src/modules/sources/rootAttestation.js'
