@@ -1,4 +1,3 @@
-import { verificationRuntimeFiles } from '../packages/verification-runner/runtime-files.mjs'
 import { createHash, randomBytes } from 'node:crypto'
 import { execFile, spawn } from 'node:child_process'
 import { chmod, copyFile, cp, lstat, mkdir, mkdtemp, open, readFile, readdir, readlink, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises'
@@ -942,8 +941,13 @@ async function pollProductionReady({ origin, expected, timeoutMs = 90_000, signa
 }
 
 export async function copyVerificationRuntime(source, release) {
-
-  for (const path of verificationRuntimeFiles) {
+  const paths = ['scripts/ci-watchdog.mjs', 'scripts/ci-progress-reporter.mjs',
+    'scripts/ci-test-results.mjs', 'scripts/dense-resources.mjs',
+    'scripts/verification-runner.mjs', 'scripts/verification-reports.mjs',
+    'scripts/integration-process.mjs', 'scripts/integration-capabilities.mjs',
+    'apps/worker/src/diagnostics.mjs', 'packages/contracts/src/verificationEnvironment.mjs',
+    'packages/contracts/src/integrationScheduling.mjs', 'packages/ci-protocol/src/testResults.mjs']
+  for (const path of paths) {
     const destination = join(release, path)
     await mkdir(dirname(destination), { recursive: true })
     await copyFile(join(source, path), destination)

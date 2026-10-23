@@ -10,8 +10,3 @@ export { isDeviceLinkDrop, sameDeviceInstallation, waitForDeviceReconnect } from
 export { deviceRequestTimeoutMs, retryDeviceRequest } from './deviceRequestRetry.js'
 export { DeviceConnectionError } from './deviceWire.js'
 export { readMainInstallationId } from './mainIdentity.js'
-export type { PostgresDeviceAccessService } from './access.js'
-export type { DeviceApplicationRequestOptions } from './deviceApplicationChannel.js'
-export type { DeviceListenerConfig } from './productionConfig.js'
-export type { DeviceDomainComposition, ProductionDeviceRuntime } from './productionRuntime.js'
-export type { PostgresTrustedConnectionSetup } from './trustedConnectionSetup.js'
