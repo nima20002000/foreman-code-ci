@@ -477,3 +477,20 @@ it('tells an agent at once that a person controls the browser instead of holding
   }
   expect(vi.mocked(f.driver.action)).not.toHaveBeenCalled()
 })
+
+it('logs who closed each agent browser tab, including a tab that disappears outside Foreman', async () => {
+  const f = fixture(), log = vi.fn()
+  const broker = new BrowserBroker({ computerId: 'main', driver: f.driver, journal: f.journal, authority: f.authority, log })
+  const { session } = ready(await broker.prepare(f.request()))
+  const second = await broker.createTab({ sessionId: session.id, actor: agent(session), commandId: 'second' })
+  await broker.closeTab({ sessionId: session.id, tabId: second.createdTabId!, actor: agent(session), commandId: 'close-second' })
+  expect(log).toHaveBeenCalledWith('Agent browser tab closed by the agent',
+    expect.objectContaining({ sessionId: session.id, tabId: second.createdTabId }))
+  const targetId = vi.mocked(f.driver.createTab).mock.results[0]!.value instanceof Promise
+    ? (await vi.mocked(f.driver.createTab).mock.results[0]!.value).targetId : ''
+  const tabClosed = vi.mocked(f.driver.onTabClosed).mock.calls.at(-1)![0]
+  tabClosed('profile', session.browserGeneration, targetId)
+  expect(log).toHaveBeenCalledWith('Agent browser tab closed outside Foreman (by the page or Chromium itself)',
+    expect.objectContaining({ sessionId: session.id, tabId: session.selectedTabId, targetId, remainingTabs: 0 }))
+  expect(broker.read(session.id).tabs).toEqual([])
+})

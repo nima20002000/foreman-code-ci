@@ -24,6 +24,8 @@ export interface BrowserBrokerOptions {
   computerId: string; driver: BrowserNativeDriver; journal: BrowserRuntimeJournal; authority: BrowserSubjectAuthority
   closeSessionResources?(sessionId: string): Promise<void>
   id?: () => string
+  /** Records who or what closed an agent's browser tabs, so a vanished tab can be explained from the logs. */
+  log?(message: string, fields: Record<string, unknown>): void
 }
 
 /** One instance is the authoritative browser owner for one computer. D composes the existing host lock. */
@@ -47,6 +49,9 @@ export class BrowserBroker implements BrowserLifecyclePort {
       const owner = this.ownerForTarget(profileId, generation, targetId)
       if (!owner) return
       const live = this.requireSession(owner.sessionId)
+      const closed = live.record.leases.find(value => value.targetId === targetId)
+      this.options.log?.('Agent browser tab closed outside Foreman (by the page or Chromium itself)', { sessionId: owner.sessionId,
+        tabId: owner.tabId, profileId, generation, targetId, url: closed?.lease.url, remainingTabs: live.record.leases.length - 1 })
       live.record.leases = live.record.leases.filter(value => value.targetId !== targetId)
       if (live.record.session.selectedTabId === owner.tabId) live.record.session.selectedTabId = live.record.leases[0]?.lease.tabId ?? null
       void this.persist(live).catch(() => { live.gate.fence(); live.record.session.state = 'recovering' })
@@ -100,6 +105,8 @@ export class BrowserBroker implements BrowserLifecyclePort {
       const native = await this.options.driver.reconnectProfile(record.session.profileId)
       if (!native || native.generation !== record.session.browserGeneration) {
         // A verified new process proves the old generation's leases are gone. Never adopt restored/global tabs.
+        this.options.log?.('Agent browser session closed: its browser process ended', { sessionId: record.session.id,
+          profileId: record.session.profileId, generation: record.session.browserGeneration, lostTabs: record.leases.length })
         record.leases = []; record.session.state = 'closed'; record.session.selectedTabId = null
         record.control.controllingViewerId = null; record.control.reason = 'The previous browser process ended. Open a new browser session.'
         live.gate.close(); return
@@ -109,6 +116,9 @@ export class BrowserBroker implements BrowserLifecyclePort {
         const nativeTab = await this.options.driver.restoreTab(record.session.profileId, native.generation, owned.targetId)
         if (nativeTab) restored.push({ ...owned, lease: { ...owned.lease, title: nativeTab.title, url: nativeTab.url } })
       }
+      if (restored.length < record.leases.length) this.options.log?.('Agent browser tabs missing after reconnecting to the browser process', {
+        sessionId: record.session.id, profileId: record.session.profileId, generation: native.generation,
+        lostTabs: record.leases.filter(value => !restored.some(kept => kept.lease.tabId === value.lease.tabId)).map(value => ({ tabId: value.lease.tabId, url: value.lease.url })) })
       record.leases = restored
       if (!restored.some(value => value.lease.tabId === record.session.selectedTabId)) record.session.selectedTabId = restored[0]?.lease.tabId ?? null
       record.session.state = restored.length ? 'paused' : 'closed'
@@ -727,6 +737,8 @@ export class BrowserBroker implements BrowserLifecyclePort {
       const owned = this.lease(live, input.tabId, input.actor.browserGeneration)
       await live.gate.dispatch(input.actor.kind === 'agent', () => this.assertActor(live, input.actor),
         () => { markEffect(); return this.options.driver.closeTab(live.record.session.profileId, input.actor.browserGeneration, owned.targetId) })
+      this.options.log?.(`Agent browser tab closed by the ${input.actor.kind === 'agent' ? 'agent' : 'person viewing it'}`, {
+        sessionId: input.sessionId, tabId: input.tabId, url: owned.lease.url, commandId: input.commandId })
       live.record.leases = live.record.leases.filter(value => value.lease.tabId !== input.tabId)
       if (live.record.session.selectedTabId === input.tabId) live.record.session.selectedTabId = live.record.leases[0]?.lease.tabId ?? null
       await this.persist(live); return { state: 'closed' }
@@ -789,12 +801,14 @@ export class BrowserBroker implements BrowserLifecyclePort {
     if (!live.record.session.subject || browserInputHash(live.record.session.subject) !== browserInputHash(input.subject)) {
       throw new DomainError('BROWSER_SCOPE_MISMATCH', 'This browser belongs to another agent subject.', 403)
     }
+    this.options.log?.('Agent browser session closing', { sessionId: input.sessionId, reason: input.reason, tabs: live.record.leases.length })
     return this.closeOwned(live)
   }
 
   closeSetup(sessionId: string): Promise<BrowserReleaseResult> {
     const live = this.requireSession(sessionId)
     if (!live.record.session.setupForProfileId) throw new DomainError('BROWSER_SCOPE_MISMATCH', 'This is not a profile setup session.', 403)
+    this.options.log?.('Agent browser session closing', { sessionId, reason: 'profile_setup_closed', tabs: live.record.leases.length })
     return this.closeOwned(live)
   }
 

@@ -38,6 +38,8 @@ export interface BrowserNativeDriverOptions {
   onDisconnected(profileId: string, generation: number): void
   downloadDirectory?(profileId: string): string
   onDownload?(event: BrowserNativeDownload): Promise<void>
+  /** Records native browser events worth explaining later, such as a tab whose renderer crashed. */
+  log?(message: string, fields: Record<string, unknown>): void
 }
 
 const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' ? value as Record<string, unknown> : {}
@@ -260,6 +262,12 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
       return
     }
     if (event.method.startsWith('Browser.download')) { this.downloadEvent(profileId, profile, event); return }
+    if (event.method === 'Target.targetCrashed') {
+      const crashed = profile.tabs.get(text(event.params.targetId))
+      if (crashed) this.options.log?.('Agent browser tab crashed', { profileId, generation: profile.generation, targetId: crashed.id,
+        url: crashed.url, status: text(event.params.status), errorCode: event.params.errorCode })
+      return
+    }
     if (event.method === 'Target.targetCreated') {
       const info = object(event.params.targetInfo), openerId = text(info.openerId), targetId = text(info.targetId)
       if (info.type !== 'page' || !openerId || !profile.tabs.has(openerId) || !targetId) return

@@ -8,6 +8,7 @@ import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connec
 import { requireAuthorization } from '../access/policy.js'
 import { readChatPrincipal } from '../access/conversationCredentials.js'
 import { DomainError } from '../errors.js'
+import { componentLogger } from '../diagnostics/logger.js'
 import { createBrowserProfiles } from '../browser-profiles/factory.js'
 import type { BrowserProfileEndpoint, BrowserProfileTransport } from '../browser-profiles/host.js'
 import type { BrowserInstallationBinding } from '../browser-profiles/keys.js'
@@ -62,7 +63,8 @@ export function createProductionBrowser(options: BrowserCompositionOptions) {
     runtimeRoot: options.runtimeRoot, subjectAuthority: authority, pairing,
     keys: { exportKey: (binding, input) => profiles.keyService.exportKey(binding, input),
       snapshotKey: (binding, transfer, jobId) => profiles.keyService.snapshotKey(binding, transfer, jobId) },
-    assertHostOwnership: options.assertHostOwnership, reportFailure: options.reportFailure })
+    assertHostOwnership: options.assertHostOwnership, reportFailure: options.reportFailure,
+    log: (message, fields) => componentLogger('lifecycle').info({ operation: 'agent browser', ...fields }, message) })
   const localEndpoint = new Proxy({} as BrowserProfileEndpoint, {
     get: (_target, name: string | symbol) => {
       // Promise.resolve(localEndpoint) probes `then`: the proxy is not a thenable, and unknown members stay undefined.
