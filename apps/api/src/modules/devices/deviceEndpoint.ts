@@ -119,13 +119,12 @@ export class DeviceEndpoint {
       if (!this.tickets.has(principal)) throw new DeviceConnectionError('authentication')
       if (principal.authorizationRevision <= (this.revoked.get(principal.deviceId) ?? 0)) throw new DeviceConnectionError('revoked')
       const previous = this.sessions.get(principal.deviceId)
+      previous?.abort.abort(); previous?.socket.close()
+      if (previous?.presence) this.options.presence(Object.freeze({ ...previous.presence, phase: 'offline', dispatch: false, transfer: false }))
       const epoch = randomUUID()
-      session = { epoch, authorizationRevision: principal.authorizationRevision, socket, abort }
-      this.pending.add(abort)
+      this.sessions.set(principal.deviceId, { epoch, authorizationRevision: principal.authorizationRevision, socket, abort })
       const current = () => !abort.signal.aborted && (!this.admissionStopped || session?.ready)
-        && principal.authorizationRevision > (this.revoked.get(principal.deviceId) ?? 0)
-        && (this.sessions.get(principal.deviceId) === session || this.sessions.get(principal.deviceId) === previous
-          || !this.sessions.has(principal.deviceId))
+        && this.sessions.get(principal!.deviceId)?.epoch === epoch
       const iterator = socket.messages[Symbol.asyncIterator]()
       const first = await nextFrame(iterator, abort.signal, this.options.handshakeMs ?? 10_000)
       if (first.done || !current()) throw new DeviceConnectionError('transport')
@@ -138,8 +137,11 @@ export class DeviceEndpoint {
       if (hello.type !== 'hello' || typeof hello.bootId !== 'string' || !hello.bootId || typeof hello.connectionEpoch !== 'string' || !hello.connectionEpoch || typeof hello.appVersion !== 'string' || !hello.appVersion || hello.appVersion.length > 128 || typeof hello.nonce !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(hello.nonce) || !Number.isSafeInteger(hello.connectionGeneration) || Number(hello.connectionGeneration) < 1) throw new DeviceConnectionError('malformed-frame')
       for (const key of ['mainId', 'deviceId', 'workerInstallationId', 'keyRevision', 'authorizationRevision'] as const) if (hello[key] !== principal[key]) throw new DeviceConnectionError('authentication')
       try { binding = Object.freeze(DeviceSessionBindingSchema.parse({ mainId: principal.mainId, deviceId: principal.deviceId, workerInstallationId: principal.workerInstallationId, keyRevision: principal.keyRevision, authorizationRevision: principal.authorizationRevision, bootId: hello.bootId, connectionEpoch: epoch, connectionGeneration: Number(hello.connectionGeneration) })) } catch { throw new DeviceConnectionError('malformed-frame') }
+      session = this.sessions.get(principal.deviceId)
       if (session?.abort === abort) {
         session.binding = binding
+        const original = binding
+        abort.signal.addEventListener('abort', () => this.bindingLost(original), { once: true })
         session.presence = Object.freeze({ binding, phase: 'offline', dispatch: false, transfer: false,
           appVersion: hello.appVersion, protocolVersion: hello.protocolVersion, lastSeenAt: helloSeenAt,
           clockSkewMs, clockReason })
@@ -162,12 +164,6 @@ export class DeviceEndpoint {
       try { await withDeviceDeadline(this.track(this.options.auth.revalidateDevice(principal, 'heartbeat')), abort.signal, this.options.handshakeMs ?? 10_000) } catch (error) { throw authorizationFailure(error) }
       if (!current()) throw new DeviceConnectionError('transport')
       if (session?.presence) session.presence = Object.freeze({ ...session.presence, lastSeenAt: readySeenAt })
-      previous?.abort.abort(); previous?.socket.close()
-      if (previous?.presence) this.options.presence(Object.freeze({ ...previous.presence, phase: 'offline', dispatch: false, transfer: false }))
-      this.sessions.set(principal.deviceId, session)
-      this.pending.delete(abort)
-      const original = binding
-      abort.signal.addEventListener('abort', () => this.bindingLost(original), { once: true })
       const channel = new DeviceApplicationChannel({ side: 'main', binding, socket, signal: abort.signal, extensions,
         beforeRequest: async (namespace, payload) => {
           if (this.options.workerArtifacts && requiresWorkerBundle(namespace, payload)) {
@@ -203,7 +199,6 @@ export class DeviceEndpoint {
     } catch (error) {
       try { sendFrame(socket, { type: 'blocked', code: error instanceof DeviceConnectionError ? error.code : 'transport' }) } catch { /* ignore: socket already unavailable */ }
     } finally {
-      this.pending.delete(abort)
       abort.abort(); socket.close()
       if (principal && this.sessions.get(principal.deviceId)?.abort === abort) {
         this.channels.get(principal.deviceId)?.close(); this.channels.delete(principal.deviceId)

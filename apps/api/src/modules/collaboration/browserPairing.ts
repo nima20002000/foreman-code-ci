@@ -35,8 +35,11 @@ export class MainBrowserPairing implements BrowserPairingAuthority {
   }
   async assertCurrent(binding: BrowserInstallationBinding) {
     const current = await this.current(binding.computerId)
-    if (current.installationId !== binding.installationId || current.connectionId !== binding.connectionId) {
-      throw new DomainError('BROWSER_PAIRING_CHANGED', 'The browser computer connection changed.', 409)
+    if (current.installationId !== binding.installationId) {
+      throw new DomainError('BROWSER_PAIRING_CHANGED', 'The browser computer installation changed.', 409)
+    }
+    if (current.connectionId !== binding.connectionId) {
+      throw new DomainError('BROWSER_COMPUTER_OFFLINE', 'The browser computer connection changed. Reconnect to retry.', 503)
     }
   }
   async assertInstallation(computerId: string, installationId: string) {
