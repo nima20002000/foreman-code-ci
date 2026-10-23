@@ -116,35 +116,6 @@ describe('common conversation delivery through authenticated public services', (
     expect(manager.steers).toHaveLength(1)
   })
 
-  it('settles a steer as failed, not unconfirmed, when its target turn ends before the steer is submitted', async () => {
-    const selected = await target('agent'), manager = f.native(selected.conversationId)
-    manager.autoFinish = false
-    const first = await send(selected, 'steer-guard-first', 'Keep this turn active')
-    await waitState(selected, first.id, 'accepted')
-    const admit = f.agentRepository.admit.bind(f.agentRepository)
-    vi.spyOn(f.agentRepository, 'admit').mockImplementation(async (...args) => {
-      const admitted = await admit(...args)
-      // The target turn ends between admission and dispatch.
-      await f.database.pool.query('update operator_conversations set active_native_turn_id=$2 where id=$1', [selected.conversationId, 'ended-turn'])
-      return admitted
-    })
-    const steer = await f.feature.router.send(f.owner, { target: selected, commandId: 'steer-guard', intent: 'steer',
-      content: 'Too late', expectedNativeTurnId: 'turn-1' })
-    expect(manager.steers).toHaveLength(0)
-    expect(['failed', 'canceled']).toContain((await retained(selected, steer.id)).state)
-  })
-
-  it('still dispatches an admitted Agent message when its first dispatch fails transiently', async () => {
-    const selected = await target('agent'), manager = f.native(selected.conversationId)
-    vi.spyOn(f.agent, 'dispatchAdmittedDelivery').mockRejectedValueOnce(new Error('transient dispatch failure'))
-    const sent = await send(selected, 'transient-dispatch', 'Deliver me anyway')
-    await vi.waitFor(async () => {
-      await f.feature.router.read(f.owner, { target: selected })
-      expect((await retained(selected, sent.id)).state).toBe('accepted')
-    }, { timeout: 10_000, interval: 250 })
-    expect(manager.inputs).toHaveLength(1)
-  }, 20_000)
-
   it.each(['agent', 'operator'] as const)('%s preserves its queue on active-only Stop and replays the original control without stopping the next input', async kind => {
     const selected = await target(kind), manager = f.native(selected.conversationId)
     manager.autoFinish = false

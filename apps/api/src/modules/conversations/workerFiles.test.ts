@@ -15,7 +15,7 @@ import { filePorts, fileScope, sourceRef, publishedRef } from '../../../test/fix
 import { privateFixtureDirectory } from '../../../test/helpers/privateFixtureDirectory.js'
 
 // The runner owns cancellation; real filesystem latency is not a deadline in these behavior tests.
-async function fixture(signal: AbortSignal, options: { repeatCopies?: boolean; scopedOperator?: boolean; flakyMaterialize?: boolean } = {}) {
+async function fixture(signal: AbortSignal, options: { repeatCopies?: boolean; scopedOperator?: boolean } = {}) {
   const repeatCopies = options.repeatCopies
   const directory = await privateFixtureDirectory('worker-attachments-')
   const f = workerConversationFixture(options.scopedOperator ? 'operator' : 'agent')
@@ -37,11 +37,7 @@ async function fixture(signal: AbortSignal, options: { repeatCopies?: boolean; s
       if (request.method === 'conversation.file-copy') {
         sentCopies.push(request.copy)
         const copySignal = options?.signal ?? signal
-        let result
-        if (options.flakyMaterialize && request.copy.phase === 'finish') {
-          // The frame is retried after the first materialization failed, as the transport may resend it.
-          result = await worker.copy(request, copySignal).catch(() => worker.copy(request, copySignal))
-        } else result = await worker.copy(request, copySignal)
+        const result = await worker.copy(request, copySignal)
         if (repeatCopies && ['begin', 'chunk', 'finish'].includes(request.copy.phase)) {
           expect(await worker.copy(request, copySignal)).toEqual(result)
         }
@@ -69,19 +65,7 @@ async function fixture(signal: AbortSignal, options: { repeatCopies?: boolean; s
   const adapter = worker.adapter({ source: () => {
     if (!source) throw new Error('Missing original request')
     return source
-  }, host: async () => {
-    const host = await localCodexChatHost(join(directory, 'storage'))
-    if (!options.flakyMaterialize) return host
-    let failed = false
-    return new Proxy(host, { get(target, property) {
-      if (property === 'materialize') return async (input: Parameters<typeof host.materialize>[0]) => {
-        if (!failed) { failed = true; throw new Error('ENOSPC: no space left on device') }
-        return target.materialize(input)
-      }
-      const value: unknown = Reflect.get(target, property)
-      return typeof value === 'function' ? value.bind(target) : value
-    } })
-  },
+  }, host: () => localCodexChatHost(join(directory, 'storage')),
   assertCurrent: physical, signal })
   const invoke = (payload: Record<string, unknown>, connection = f.connection) => bridge.handle({ ...payload,
     binding: f.binding, admissionId: lease.admissionId }, connection, signal)
@@ -184,19 +168,6 @@ it('acknowledges repeated transfer frames without duplicating bytes or replacing
     ]))
     await turn!.close()
     await expect(readFile(path)).rejects.toMatchObject({ code: 'ENOENT' })
-  } finally { await f.close() }
-})
-
-it('materializes an attachment on a retried finish frame after a transient failure', async ({ signal }) => {
-  const f = await fixture(signal, { flakyMaterialize: true })
-  try {
-    const turn = await f.prepare()
-    const input = await turn!.nativeInput('Read the attached notes.')
-    const text = input[0]
-    if (text?.type !== 'text') throw new Error('Expected native text input')
-    const attachment = text.text.split('\n').find(line => line.startsWith('{"filename"'))!
-    expect(await readFile((JSON.parse(attachment) as { path: string }).path, 'utf8')).toBe('# Attached document\n')
-    await turn!.close()
   } finally { await f.close() }
 })
 

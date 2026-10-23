@@ -36,8 +36,6 @@ export interface BrowserNativeDriverOptions {
   allocateGeneration(profileId: string): Promise<number>
   onOrigin(profileId: string, origin: string): Promise<void>
   onDisconnected(profileId: string, generation: number): void
-  /** Surfaces a bookkeeping failure (profile storage, download adoption) of a browser that is still connected. */
-  reportFailure(error: unknown): void
   downloadDirectory?(profileId: string): string
   onDownload?(event: BrowserNativeDownload): Promise<void>
   /** Records native browser events worth explaining later, such as a tab whose renderer crashed. */
@@ -263,7 +261,7 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
     if (event.method === 'Target.targetDestroyed') {
       const targetId = text(event.params.targetId)
       if (profile.tabs.delete(targetId)) for (const listener of this.tabClosed) listener(profileId, profile.generation, targetId)
-      void this.savePressed(profile, targetId).catch(this.options.reportFailure)
+      void this.savePressed(profile, targetId).catch(() => this.options.onDisconnected(profileId, profile.generation))
       return
     }
     if (event.method.startsWith('Browser.download')) { this.downloadEvent(profileId, profile, event); return }
@@ -305,7 +303,8 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
       tab.url = text(frame.url)
       try {
         const url = new URL(tab.url)
-        if (['http:', 'https:'].includes(url.protocol)) void this.options.onOrigin(profileId, url.origin).catch(this.options.reportFailure)
+        if (['http:', 'https:'].includes(url.protocol)) void this.options.onOrigin(profileId, url.origin)
+          .catch(() => this.options.onDisconnected(profileId, profile.generation))
       } catch { /* ignore: about:blank and browser-internal targets are not portable snapshot origins. */ }
     }
   }
@@ -316,7 +315,8 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
     if (event.method === 'Browser.downloadWillBegin') {
       const target = [...profile.tabs.values()].find(tab => tab.frameIds.has(text(event.params.frameId)))
       if (!target) {
-        void profile.connection.send('Browser.cancelDownload', { guid: nativeId }).catch(this.options.reportFailure)
+        void profile.connection.send('Browser.cancelDownload', { guid: nativeId })
+          .catch(() => this.options.onDisconnected(profileId, profile.generation))
         return
       }
       this.downloads.set(nativeId, { profileId, generation: profile.generation, targetId: target.id,
@@ -328,7 +328,8 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
       download.byteLength = Number(event.params.totalBytes) || 0; download.receivedBytes = Number(event.params.receivedBytes) || 0
       download.state = event.params.state === 'completed' ? 'completed' : event.params.state === 'canceled' ? 'canceled' : 'inProgress'
     }
-    if (this.options.onDownload) void this.options.onDownload({ ...download }).catch(this.options.reportFailure)
+    if (this.options.onDownload) void this.options.onDownload({ ...download })
+      .catch(() => this.options.onDisconnected(profileId, profile.generation))
     if (download.state !== 'inProgress') this.downloads.delete(nativeId)
   }
 

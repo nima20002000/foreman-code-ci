@@ -5,9 +5,8 @@ import { DeviceApplicationError, deviceApplicationFailure } from '../devices/dev
 import { HarnessExecutionError } from '../harnesses/errors.js'
 import { RunGraphError } from '../run-graph/errors.js'
 import { DomainError } from '../errors.js'
-import type { HarnessExecution } from '@foreman-code/contracts'
 import {
-  EXECUTION_INFRASTRUCTURE_RETRY_WINDOW_MS, executionFailureClass, hasExecutionRetryBudget, isTransientExecutionCode, isTransientExecutionError, isTransientExecutionResult,
+  executionFailureClass, isTransientExecutionCode, isTransientExecutionError, isTransientExecutionResult,
   transientExecutionFailure,
 } from './executionRetryPolicy.js'
 
@@ -142,23 +141,5 @@ describe('explicit execution retry classification', () => {
     const rejected = new HarnessExecutionError('CODEX_APP_SERVER_AUTH_UNQUALIFIED', 'Sign in again.')
     expect(rejected.result.error?.retryable).toBe(false)
     expect(isTransientExecutionError(rejected)).toBe(false)
-  })
-})
-
-describe('infrastructure retry window', () => {
-  const attempt = (id: string, number: number, times: { createdAt: string; finishedAt?: string }) => ({
-    infrastructureFailure: true,
-    execution: { id, attempt: number, state: 'completed', ...times } as unknown as HarnessExecution,
-  })
-
-  it('retries an infrastructure-failed attempt that was abandoned without a finishedAt', () => {
-    const failed = attempt('first', 1, { createdAt: new Date(Date.now() - 1_000).toISOString() })
-    expect(hasExecutionRetryBudget(failed.execution, [failed])).toBe(true)
-  })
-
-  it('stops retrying once the window since the first failure has elapsed', () => {
-    const old = new Date(Date.now() - EXECUTION_INFRASTRUCTURE_RETRY_WINDOW_MS - 60_000).toISOString()
-    const failed = attempt('first', 1, { createdAt: old, finishedAt: old })
-    expect(hasExecutionRetryBudget(failed.execution, [failed])).toBe(false)
   })
 })

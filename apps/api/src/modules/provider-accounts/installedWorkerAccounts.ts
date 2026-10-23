@@ -195,13 +195,7 @@ export function createInstalledWorkerAccounts(input: {
           writeRecord(path(account.id), removed)
           return removed
         }
-        // The record is written before the native step, so a failed first attempt is finished here.
-        if (previous.binding?.profileRef === previous.id) {
-          await credentials.assertAvailable(previous.id).catch(async error => {
-            if (!(error instanceof DomainError && error.code === 'PROVIDER_ACCOUNT_UNAVAILABLE')) throw error
-            await credentials.create(previous)
-          })
-        } else if (!previous.removedAt) await native.resolveProfile(previous)
+        if (previous.binding?.profileRef === previous.id) await credentials.assertAvailable(previous.id)
         return previous
       }
       if (account.removedAt) {

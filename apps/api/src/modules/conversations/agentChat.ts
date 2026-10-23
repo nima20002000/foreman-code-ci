@@ -1243,9 +1243,7 @@ export class AgentChatService {
       journalLocked: (tx, principal, command) => this.journalDelivery(tx, principal, command),
       dispatch: (principal, target, commandId) => {
         if (target.kind !== 'agent_conversation') throw new DomainError('CHAT_TARGET_INVALID', 'An Agent owner requires its Agent target.', 422)
-        // The receipt is already admitted and queued: a failed dispatch must not strand it until the next send or restart.
         return this.dispatchAdmittedDelivery(principal, target.agent.workspaceId, target.conversationId, commandId)
-          .catch((error: unknown) => { this.scheduleReconcile(target.conversationId); throw error })
       },
       dispatchStop: async (_principal, target, binding) => {
         if (binding.requestId) await this.interruptActive(target.conversationId, false,
@@ -1426,9 +1424,7 @@ export class AgentChatService {
           || !original?.ownerRequestId || original.ownerRequestId !== row.active_request_id
           || original.nativeSessionId !== row.native_session_id || original.nativeTurnId !== expected
           || runtime?.session?.nativeSessionId !== row.native_session_id || !runtime?.manager.steerTurn) {
-          // Nothing was submitted, so the steer ends here like the legacy path's 409 instead of staying unconfirmed.
-          await this.repository.failSteer(id, requestId, 'The selected native turn is no longer available to take this steer.')
-          this.events.publish(id, 'turn', { requestId })
+          await this.repository.unknown(id, requestId, 'The selected native turn is no longer available to confirm this steer.')
           return
         }
         const content = await this.repository.turnContent(id, requestId)

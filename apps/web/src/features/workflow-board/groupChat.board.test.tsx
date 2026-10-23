@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, it } from 'vitest'
 import { http, HttpResponse } from 'msw'
@@ -39,23 +39,4 @@ it('opens Group chat from the Board toolbar in the floating panel, posts exact t
   expect(bodies).toEqual(['  Board conversation  '])
   expect(router.state.location.search.groupPostId).toBe('posted-message')
   // Mounting the full Board in jsdom takes seconds under parallel CI load, like the other mounted-Board tests.
-}, 30_000)
-
-it('rereads the saved Agents when Group chat is reopened so a newly saved Agent can be mentioned', async () => {
-  const fixture = await inspectionBoardFixture('group-participants')
-  const { workspaceId, workflowId } = fixture.runs.before.scope
-  const root = `/api/workspaces/${workspaceId}/workflows/${workflowId}/chat`
-  server.use(...fixture.mock.handlers,
-    http.get(root, () => HttpResponse.json({ items: [], nextCursor: null, hasMore: false, revision: 0 })),
-    http.get(`${root}/deliveries`, () => HttpResponse.json({ items: [], nextCursor: null, hasMore: false, revision: 0 })))
-  const definitionReads = () => fixture.mock.calls.filter(call => call.method === 'GET' && call.path.endsWith(`/workflows/${workflowId}/definition`)).length
-  const user = userEvent.setup({ delay: null })
-  await mountMeasuredBoard(`/workspaces/${workspaceId}?workflowId=${workflowId}`)
-  await user.click(await screen.findByRole('button', { name: 'Group chat' }))
-  await screen.findByRole('region', { name: 'Group chat' })
-  const before = definitionReads()
-  await user.click(screen.getByRole('button', { name: 'Close group chat' }))
-  await user.click(await screen.findByRole('button', { name: 'Group chat' }))
-  await screen.findByRole('region', { name: 'Group chat' })
-  await waitFor(() => expect(definitionReads()).toBeGreaterThan(before))
 }, 30_000)

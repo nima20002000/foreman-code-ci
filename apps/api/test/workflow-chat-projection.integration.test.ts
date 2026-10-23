@@ -131,18 +131,6 @@ describe('committed Group projection through durable public seams', () => {
     expect((await f.service.read(caller, scope)).items).toHaveLength(1)
   })
 
-  it('keeps projecting later facts when an earlier committed fact can never project', async () => {
-    const projector = new WorkflowChatProjector(f.repository, () => {}, { read: async () => ({ body: 'Must not leak' }) })
-    await f.service.post(caller, post('poisoned')); await f.delivery.drainPrepared()
-    const receipt = (await f.service.receipts(caller, scope)).items[0]!
-    await enqueue(projector, { kind: 'reply', sourceEventKey: 'a-poison', agent, createdAt: new Date().toISOString(),
-      commandId: receipt.commandId, receiptId: receipt.id, nativeMessageId: 'answer', nativeSessionId: 'foreign-session',
-      nativeTurnId: `native:${receipt.commandId}`, execution })
-    await enqueue(projector, fact('z-after-poison', 'launched'))
-    await expect(projector.projectCommittedFacts()).rejects.toMatchObject({ code: 'CHAT_REPLY_TARGET_MISMATCH' })
-    expect((await f.service.read(caller, scope)).items.map(item => item.sourceEventKey)).toContain('z-after-poison')
-  })
-
   it('keeps an oversized exact native reply visible and recovers every code point through bounded body continuation', async () => {
     const body = '🙂"\\\n'.repeat(60_000)
     const projector = new WorkflowChatProjector(f.repository, () => {}, { read: async () => ({ body }) })

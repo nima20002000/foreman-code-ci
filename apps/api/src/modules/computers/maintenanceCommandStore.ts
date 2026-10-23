@@ -16,10 +16,8 @@ export class MaintenanceCommandStore {
   async save(commandId: string, requestHash: string, task: MaintenanceTask): Promise<void> {
     const record = MaintenanceCommandRecordSchema.parse({ requestHash, task })
     const text = `${JSON.stringify(record)}\n`
-    const write = this.writes.then(() => this.ports.writePrivateText(join(this.directory, `${commandId}.json`), text))
-    // The failure belongs to this caller; later saves and reads must not inherit it.
-    this.writes = write.catch(() => undefined)
-    await write
+    this.writes = this.writes.then(() => this.ports.writePrivateText(join(this.directory, `${commandId}.json`), text))
+    await this.writes
   }
 
   flushed(): Promise<void> { return this.writes }
