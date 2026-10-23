@@ -27,7 +27,7 @@ import { PostgresReferenceReadRepository } from '../src/modules/files/references
 import { PostgresFileRepository } from '../src/modules/files/postgres.js'
 import { FileByteStorage } from '../src/modules/files/storage.js'
 import { BugReportService } from '../src/modules/bug-reports/service.js'
-import { CurrentWorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
+import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
 import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { measuredCiPages } from './helpers/measuredCiPages.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
@@ -135,7 +135,7 @@ async function fixture(options: { deferMigration?: number | number[]; form?: Cur
   }, endpoint)
   const locations = new WorkspaceLocationService(database.pool, graph.commands)
   const runs = new RunManagementService(database.pool, graph.commands, {} as never, {} as never, locations)
-  const credentials = new CurrentWorkerCredentialService(database.pool, graph.access)
+  const credentials = new Wave25WorkerCredentialService(database.pool, graph.access)
   const worker = await credentials.issueForExecution(executionId)
   const bugReports = new BugReportService(database.pool, graph.commands)
   const app = buildApp({ readiness: { database: { ping: async () => {} }, checkpoints: { ping: async () => {} } },

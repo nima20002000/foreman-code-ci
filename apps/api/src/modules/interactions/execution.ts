@@ -73,7 +73,7 @@ import type { SessionWriteLease } from './sessionWriter.js'
 import type { WorkflowNativeLease } from '../runs/workflowNativeGraph.js'
 import { normalizeNativeProducerEvent } from '../run-graph/nativeProducerNormalization.js'
 import type { PostgresApprovalBudgetRepository } from './budget.js'
-import type { CurrentInteractionRepository as PostgresInteractionRepository } from './current/repository.js'
+import type { Wave25InteractionRepository as PostgresInteractionRepository } from './current/repository.js'
 import type {
   AttachedInteractionSession,
   NativeManagerResolutionContext,
