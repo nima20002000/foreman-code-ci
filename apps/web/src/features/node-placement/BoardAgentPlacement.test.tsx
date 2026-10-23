@@ -29,18 +29,9 @@ it('Board Apply changes the exact node draft while keeping saved placement and o
   const before = useGraphDraftStore.getState().nextDrafts[key]!
   expect(nativeNode(before.graph.nodes[0])?.placement).toBeUndefined()
   expect(before.agentForms?.['node-0']?.placement).toEqual(placement)
-  expect(screen.getByText(/Editing computer choice/)).toBeInTheDocument()
   await userEvent.click(screen.getByRole('button', { name: 'Apply agent settings to draft' }))
   const applied = useGraphDraftStore.getState().nextDrafts[key]!
   expect(nativeNode(applied.graph.nodes[0])?.placement).toEqual(placement)
-  expect(screen.getByText('Applied to draft')).toBeInTheDocument()
-  const user = userEvent.setup()
-  const computerHint = screen.getByRole('button', { name: 'About Computer' })
-  await user.hover(computerHint)
-  expect(screen.getByRole('tooltip')).toHaveTextContent(
-    'Apply changes this node’s draft. Save graph persists it for a later Run. An accepted Run keeps its original placement.',
-  )
-  await user.unhover(computerHint)
   expect(nativeNode(applied.graph.nodes[1])?.placement).toBeUndefined()
   expect(nativeNode(applied.context.draft.graph.nodes[0])?.placement).toBeUndefined()
   expect(applied.agentForms?.['node-0']).toBeUndefined()
@@ -126,9 +117,10 @@ it('inherits a workflow worktree and applies a branch-only override to the selec
   const view = render(<QueryClientProvider client={query}><Board /></QueryClientProvider>)
   const user = userEvent.setup()
   try {
-    await screen.findByText(/Inherited from workflow: Main · octo-owner\/website/)
-    expect(screen.getByRole('textbox', { name: 'Agent branch prefix' })).toHaveValue('')
-    await user.type(screen.getByRole('textbox', { name: 'Agent branch prefix' }), 'foreman/reviewer')
+    expect(await screen.findByRole('combobox', { name: 'Computer' })).toHaveDisplayValue('Workflow default')
+    expect(screen.getByRole('textbox', { name: 'Branch prefix' })).toHaveValue('')
+    expect(screen.getByRole('textbox', { name: 'Branch prefix' })).toHaveAttribute('placeholder', 'foreman/workflow')
+    await user.type(screen.getByRole('textbox', { name: 'Branch prefix' }), 'foreman/reviewer')
     expect(nativeNode(useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes[0]).worktree).toBeUndefined()
     await user.click(screen.getByRole('button', { name: 'Apply agent settings to draft' }))
     const applied = useGraphDraftStore.getState().nextDrafts[key]!
@@ -136,11 +128,7 @@ it('inherits a workflow worktree and applies a branch-only override to the selec
     expect(applied.graph.nodes[0]).not.toHaveProperty('placement')
     expect(applied.graph.nodes[1]).not.toHaveProperty('worktree')
     expect(applied.context.draft.graph.nodes[0]).not.toHaveProperty('worktree')
-    expect(screen.getByRole('textbox', { name: 'Agent branch prefix' })).toHaveValue('foreman/reviewer')
-    const prefixHint = screen.getByRole('button', { name: 'About Agent branch prefix' })
-    await user.hover(prefixHint)
-    expect(screen.getByRole('tooltip')).toHaveTextContent('Optional override. Each execution adds a unique suffix.')
-    await user.unhover(prefixHint)
+    expect(screen.getByRole('textbox', { name: 'Branch prefix' })).toHaveValue('foreman/reviewer')
   } finally {
     view.unmount()
     query.clear()
@@ -149,7 +137,7 @@ it('inherits a workflow worktree and applies a branch-only override to the selec
   }
 })
 
-it('Use workflow default clears both placement and prefix while retaining other node fields', async () => {
+it('choosing the default computer and clearing the prefix removes both overrides while retaining other node fields', async () => {
   const context = fixture()
   const key = 'clear-node-worktree-test'
   context.draft.graph.nodes = context.draft.graph.nodes.map(node => ({ ...node, placement,
@@ -164,8 +152,9 @@ it('Use workflow default clears both placement and prefix while retaining other 
   const query = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const view = render(<QueryClientProvider client={query}><Board /></QueryClientProvider>)
   try {
-    await userEvent.click(screen.getByRole('button', { name: 'Use workflow default' }))
-    expect(screen.getByRole('textbox', { name: 'Agent branch prefix' })).toHaveValue('')
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Computer' }), 'inherited')
+    await userEvent.clear(screen.getByRole('textbox', { name: 'Branch prefix' }))
+    expect(screen.getByRole('textbox', { name: 'Branch prefix' })).toHaveValue('')
     expect(nativeNode(useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes[0]).placement).toEqual(placement)
     await userEvent.click(screen.getByRole('button', { name: 'Apply agent settings to draft' }))
     const applied = useGraphDraftStore.getState().nextDrafts[key]!
@@ -226,7 +215,7 @@ it.each([403, 404, 503])('retains and clears a saved placement after choices dis
     await screen.findByText('Computers can’t be checked right now. Try again shortly.')
     const computer = screen.getByRole('combobox', { name: 'Computer' })
     expect(computer).toHaveValue('retained')
-    expect(screen.getByText(placement.projectRoot)).toBeInTheDocument()
+    expect(computer).toHaveDisplayValue('Saved computer')
     expect(screen.getByRole('button', { name: 'Apply agent settings to draft' })).toBeDisabled()
     await userEvent.selectOptions(computer, 'inherited')
     expect(nativeNode(useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes[0]).placement).toEqual(placement)
