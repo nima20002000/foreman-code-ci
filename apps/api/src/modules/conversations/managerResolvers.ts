@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import type { FastifyInstance } from 'fastify'
 import type pg from 'pg'
 import { RETIRED_OPENCODE_MESSAGE, type AgentConfigurationVersion } from '@foreman-code/contracts'
@@ -136,7 +135,7 @@ export function createAgentChatManagerResolver(dependencies: ConversationManager
       const manager = workerChats.create({ configuration, conversationId, workingDirectory, appMcpAccess, fileInputs: true,
         profileSelection: selector, sourceExecution: selected.sourceExecution,
         applicationAccess: start => {
-          const token = start.environment?.variables[INSTALLATION_NAMES.environment.MCP_TOKEN]
+          const token = start.environment?.variables.FOREMAN_CODE_MCP_TOKEN ?? start.environment?.variables.GRAPHQL_MCP_TOKEN
           return token ? { kind: 'agent-chat-mcp', token } : undefined
         } })
       if (featureContext) await conversationNativeAccess.bind(manager, featureContext)

@@ -101,7 +101,7 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
 ## Findings by planned PR
 
 ### CI part 2 (#71, #72)
-- [~] #1 CI system embedded in the product. A01 implements the HTTP ticket/lifecycle boundary and remaining CI read moves; Foreman CI verification is blocked by the inherited worker lockfile mismatch.
+- [~] #1 CI system embedded in the product.
   - Moved to `apps/ci`: `ci-host` (#69), plus `jobs/ci*` and the Circle accounts service (#71).
   - CI owns its routes and MCP tool specs (#71).
   - PR 12a: the 25 `ci*` migrations plus `hostCiRuns`, `hostCiActivity` and `agentCiActivity` live in
@@ -115,9 +115,8 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
     `ci_state_changed` activity in the same transaction and deletes the row.
   - PR 12a: `runs/agentCiSnapshot` and the `computers/activity` CI reads, plus the `runs/history`, `runs/agentRunStatus`
     and `runs/workflowDeliverable` ticket reads, go through `@foreman-code/ci/ciReadApi` (adapter `modules/ci/reads.ts`).
-  - A01: `runs/activitiesSql` ticket evidence and `bug-reports/stuckExecutions` ticket aggregates now come from the
-    CI read API, preserving the same transaction snapshot, indexed lookups and detector locks.
-  - Still open: FKs from CI tables to product tables; the move into a `ci` schema; contracts CI tooling.
+  - Still in the product: two SQL reads of CI tables (`runs/activitiesSql` ticket join, `bug-reports/stuckExecutions`);
+    FKs from CI tables to product tables; the move into a `ci` schema; contracts CI tooling.
 - [x] #30 (CI part): the worker declares `@foreman-code/ci` and imports CI by package name (#71); it builds its own CI
   context (#72). The rest of #30 is open: about 40 other `apps/api` modules are imported by the worker.
   - Still in the product: 25 CI migrations (PR 12); non-CI SQL reading CI tables (`runs/agentCiSnapshot`, the
@@ -176,11 +175,8 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   (2,824 occurrences; no name collided, so none was skipped). `RepeatGraphCurrentV3` became
   `RepeatGraphCurrentCurrent`, which the owner should review. Left alone: `wave25_*` SQL,
   migration file names, `wave25*` test file names, string literals, JSON keys, prose, docs and history.
-- [~] #35 Code rename integrated on `fix/re-a35-graphql`; MCP symbols and source modules use Foreman names.
-  Frozen installation and saved names are centralized in contracts `installationNames.mjs`; no environment alias layer.
-  Preserved the newer chat-manager extraction, qualification split and verification-runner package while merging.
-  Deployed manifests, migration SQL and historical evidence stay unchanged; standalone artifacts embed frozen names.
-  Foreman CI verification pending on the merged branch; deployed cutover remains owner-only.
+- [ ] #35 Unfinished graphql → foreman-code rename (646 files; compose/DB names, rsync path, env compat layer).
+  Deployed names need a migration plan.
 - [~] #36 Retired `opencode` harness (156 refs), `LegacyChatDeliveryBridge`, 24 semantics-version guards.
   - Done: one `isReadOnlyHarnessConfiguration` (contracts) replaces 8 copies of the "retired or read-only" check, and one
     `retiredHarnessError()` (`harnesses/retiredHarness.ts`) replaces 20 `HARNESS_RETIRED` throws. The unused
@@ -370,12 +366,29 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   and new publications already require 3 through a trigger.
 
 ### PR 8: Execution core (#78 is part 1, draft)
-- [~] #13 `ApprovalExecutionCoordinator`: a typed dependencies object; `RunExecutionCapacity` and
-  `NativeCredentialLedger` extracted. The session lifecycle (`executionSessionLifecycle.ts`), consultations
-  (`executionConsultations.ts`), reviewer sessions (`executionReviewerSessions.ts`) and Stop/restart cancellation
-  (`executionCancellation.ts`) are now collaborators that share the coordinator through `ExecutionSessionHost`; the
-  coordinator keeps one-line delegates for its public methods. Still in the coordinator (about 2.3k lines): workflow
-  observation, attach/restore, run-owner sharing and the workflow-chat owner.
+- [~] #13 `ApprovalExecutionCoordinator`: split reapplied on `fix/re-a13-coord`; full verification blocked by base failures.
+  Session lifecycle and Run ownership, attachment/restoration and credential preparation, workflow
+  observation/settlement, consultations, reviewer sessions and cancellation now live in collaborators.
+  Workflow-chat capture/reconciliation has its own collaborator. An explicit internal `ExecutionSessionHost`
+  replaces the coordinator `Pick`; implementation state and collaborators are private, while the consumed
+  reviewer dispatcher and coordinator API remain public. Native calls and durable-write order are preserved.
+  Added public-API tests for shared Run-owner retention/release and successor ownership during chat transactions.
+  The merge preserves #34's `CurrentInteractionRepository` rename in both the coordinator and extracted host.
+  Startup/terminal observation fixtures now configure the injected manager resolver instead of replacing
+  coordinator methods moved by the split; their startup, credential and terminal assertions are retained.
+  Foreman CI on merge `ab1cd253d4`: affected unit `79925517-2380-41c4-84f0-cbd69b158f0c`,
+  startup/engine unit `c65985b2-8b78-4888-8b65-9c4e593cbae3`, affected integration
+  `bccf7114-1a62-499a-9a01-979a6435ab4d`, full typecheck `64ebbe75-32da-4f01-bce7-b891c303420c`,
+  full lint `97250c91-2c4a-4114-be60-226dac6f3ab0`. The startup fixture overrides caused two additional
+  failures and were corrected; targeted lint `e35f7b47-4ba2-4174-9bfe-6cbbbe9e7256` found one
+  `no-this-alias` error, corrected with a lexical accessor. No tests or assertions were removed.
+  Base `40a4cdbf03` comparisons: affected unit `0220b6d8-4802-4b76-b650-ae8e3e345fb4`, affected
+  integration `543a671c-aa2c-438d-8f01-91adf34d2ea4`, full typecheck
+  `4797eef0-5d55-46a3-a467-a56bb7b26b01`, full lint `e06a0312-f8b4-4572-a1c0-6bee2d1c4838`.
+  They reproduce the credential import cycle, seven remote-recovery fixture failures, MCP string parse errors,
+  worker artifact build failure, web mock typing errors and contracts unused-variable lint failure.
+  API typechecking stops at the base syntax errors; full lint stops at the base cycle before ESLint.
+  Re-run after the integration work repairs these base blockers. No local checks were run.
 - [~] #14 "repeat" is the universal run engine despite AGENTS.md. `runs/workflowRunMode.ts` names the three modes
   (`graph`, `handoff`, `hierarchy`; only explicit repeat blocks declare repeat). `executeRepeatRuntime` now takes a
   `WorkflowGraphMode` (`handoffGraphMode` or `workflowGraphMode`) instead of branching on `work`/`repeat`, the native
@@ -534,14 +547,6 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   base typecheck `8e01b77e-0a1d-4eba-905d-9105f4938904` and lint `2c9ca564-2d04-40cf-bc2b-0783fa33dd16`.
   The lint rule now catches SQL-text tests regardless of variable name. The remaining violations are
   listed in `pendingSqlTextTests.mjs` (209 files, a list that may only shrink). 11b (#79) cleared 20 files with two
-- [~] #51 SQL-text tests: the lint rule now catches them regardless of variable name. The remaining violations are
-  listed in `pendingSqlTextTests.mjs` (130 files, a list that may only shrink). Part 1 owns the original first
-  45 entries (`computers/sync.test.ts` through `agent-chat-f2-recovery.test.ts`). Five replacements are implemented
-  on `fix/a51-sql1`: sync repository membership, Claude publication receipts (extending the existing integration
-  suite), failed-capture cleanup/locks, Git worktree identity, and node-skill authoring. Foreman verification is
-  pending; baseline ticket `0b58461b-c665-4c38-a7c5-0311fab228b0` already reports a cached-store install setup
-  failure. The other 40 entries and earlier bound-value/call-order fakes in this range remain open.
-  11b (#79) cleared 20 files with two
   shared seams, `livePrincipal` (the live principal read) and `commandReceiptLedger` (conversation control receipts),
   which recognise statements by their bound values instead of SQL text, plus bound-value checks in a few fakes. The rest
   route several tables on SQL text; they need real-Postgres integration tests or a fake at a port.
@@ -619,11 +624,12 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
 - [~] CI owns its schema (12a: migrations moved, activity events, read API; the `ci` schema move is open), an HTTP
   client replaces the in-process ports, and a protocol package holds the `ci-*.mjs` tooling.
   - 12b: `CiTicketClient` (`@foreman-code/ci/client`) is the product's view of CI's ticket operations. `HostCiService`
-    remains the CI implementation; A01 wires `HttpCiClient` in production through a private loopback listener with
-    an ephemeral service credential, carrying the original caller and audit source (including workspace inference).
-    The MCP CI tools, the CI routes and the tool specs depend on the interface. The routes now accept the `ci_get` wait/test-status options and a cancel `commandId`. Not done:
-    the Circle accounts, enrollment and runtime-preparation clients. A01 adds authenticated service routes for
-    `dispatch`, `cancelStoppedRun` and `expireOverdueRuns`, used by the product; CI owns its own start/close lifecycle.
+    is the in-process transport and stays the only one wired in production; `HttpCiClient` calls the CI routes and is
+    covered by a test against the real routes. The MCP CI tools, the CI routes and the tool specs depend on the
+    interface. The routes now accept the `ci_get` wait/test-status options and a cancel `commandId`. Not done: wiring
+    `HttpCiClient` in production (it needs a service credential that makes the routes authenticate the calling
+    principal), HTTP routes for `dispatch`, `cancelStoppedRun` and `expireOverdueRuns` (production still calls them
+    in process), and the Circle accounts, enrollment and runtime-preparation clients.
   - 12b: `packages/ci-protocol` holds the test-result message (`CI_TEST_RESULT_LIMITS`, `ciTestResults`) that
     `scripts/ci-test-results.mjs` writes and Main reads; the script imports it by relative path and keeps its path.
     A script test guards it against `CiTestResultsSchema`. Not done: `apps/ci` does not import the package yet, because

@@ -8,7 +8,7 @@ import { remoteReviewEnvironment } from './helpers/remoteReviewEnvironment.js'
 
 const execute = promisify(execFile)
 const storageKeys = ['HOME', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME',
-  'XDG_CACHE_HOME', 'XDG_STATE_HOME', 'XDG_RUNTIME_DIR', 'GRAPHQL_APP_MCP_DIRECTORY']
+  'XDG_CACHE_HOME', 'XDG_STATE_HOME', 'XDG_RUNTIME_DIR', 'FOREMAN_CODE_APP_MCP_DIRECTORY']
 
 it('keeps native fixture writes and session discovery separate from an installed Worker', async () => {
   const directory = await privateFixtureDirectory('remote-review-environment-')

@@ -35,7 +35,7 @@ describe('App MCP detection normalization', () => {
   }
   it.each(['codex'] as const)('accepts old and canonical %s names and token references without changing tool filters', async (harness) => {
     for (const name of ['graphql', 'foreman-code']) {
-      for (const credentialEnvironmentVariable of ['GRAPHQL_MCP_TOKEN']) {
+      for (const credentialEnvironmentVariable of ['GRAPHQL_MCP_TOKEN', 'FOREMAN_CODE_MCP_TOKEN']) {
         const evidence = { ...base, harness, entry: { ...matching, name, credentialEnvironmentVariable,
           disabledTools: ['interaction_respond'] } }
         const detection = await service(evidence).preflight({ harness, runnerId: 'runner-a', workingDirectory: '/workspace' })

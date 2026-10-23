@@ -101,8 +101,7 @@ function coordinatorFixture() {
   const f = nativeReviewerFixture(false)
   f.set({ ...f.get(), state: 'waiting' })
   f.installResident()
-  f.internals.resolveManager = () => ({ manager: f.manager, processState: 'resident' })
-  f.internals.prepareEnvironment = async () => undefined
+  f.managers.resolve = () => ({ manager: f.manager, processState: 'resident' })
   const update = vi.fn(async () => { throw pending() })
   f.runs.updateExecution = update
   const pause = vi.spyOn(f.budgets, 'beginWait')
