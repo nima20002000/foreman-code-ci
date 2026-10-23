@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
-import type { ClaudeNativeSessionManager } from '../../harnesses/claudeSdk/sessionManager.js'
+import type { ClaudeNativeSessionManager } from '../../harnesses/index.js'
 import type { ClaudeFileCallResolver } from './server.js'
 
 const NativeMetadata = z.object({

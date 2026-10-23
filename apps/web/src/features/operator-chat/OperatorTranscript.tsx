@@ -7,7 +7,9 @@ import { getOperatorActivity, mergeOperatorActivity } from '../../shared/api/ope
 import { useNativeHarnessOptions } from '../../shared/api/harnessSettings'
 import { OperatorMessages } from './OperatorMessages'
 import { OperatorHistory } from './OperatorHistory'
-import { HistoryWindowNotice, useChatTurnCompleted, useRememberedChatScroll } from '../chat-core'
+import { HistoryWindowNotice } from '../conversations/HistoryWindowNotice'
+import { useChatTurnCompleted } from '../conversations/chatTurnCompletion'
+import { useRememberedChatScroll } from '../conversations/chatScrollStore'
 import type { OperatorTextProjection } from './operatorTextProjection'
 
 function AcceptedModelMessages(props: ComponentProps<typeof OperatorMessages>) {

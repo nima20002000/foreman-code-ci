@@ -26,7 +26,7 @@ import type { ChatResponseIdentity } from '@foreman-code/contracts/interaction-a
 import type { HarnessCapabilityDescriptors } from './capabilities.js'
 import type { ResponseAvailabilityInspector } from './responseAvailability.js'
 import type { RunSubagent } from '@foreman-code/contracts/subagents'
-import type { SubagentControlLease } from '../subagents/types.js'
+import type { SubagentControlLease } from '../subagents/index.js'
 
 /**
  * Only a qualified adapter may produce these receipts from provider acknowledgements

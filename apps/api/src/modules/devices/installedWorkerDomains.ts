@@ -38,7 +38,7 @@ import type { RemoteJobExecutionHost, RemoteJobExecutionHostPorts } from '../run
 import { RemoteOperationJournal } from '../runs/index.js'
 import { NativeProcessRegistry } from '../harnesses/recovery/processRegistry.js'
 import { createWorkerQualificationExtension } from '../jobs/index.js'
-import type { InstalledRuntimeConfigurationLocation } from '../jobs/installedRuntimeHost.js'
+import type { InstalledRuntimeConfigurationLocation } from '../jobs/index.js'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { selectInstalledClaude } from '../computers/installedClaudeSelection.js'

@@ -2,7 +2,7 @@ import type { JobExecutionRecord, PreparedJobSpecRecord } from '@foreman-code/co
 import type { RepeatNodeRef, RepeatResolution } from '../runs/repeatResolution.js'
 import type { RepeatGraphState } from '../runs/repeatNode.js'
 import { repeatConflict } from '../runs/repeatResolution.js'
-import type { ExecutionLimiter } from '../runs/limiter.js'
+import type { ExecutionLimiter } from '../runs/index.js'
 import type { WorkflowJobAdmission, WorkflowJobDriver } from './workflowRuntimePorts.js'
 import type { WorkflowJobPreparation } from './workflowPreparation.js'
 export interface WorkflowJobNodeStore {

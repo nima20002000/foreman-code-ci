@@ -3,7 +3,7 @@ import { useFloatingSurface } from '../../../shared/ui/nocturne/useFloatingSurfa
 import { useDismissableSurface } from '../../../shared/ui/useDismissableSurface'
 import { useEffect, useId, useRef, useState } from 'react'
 import { compactionBlocksSend, type SessionPreferences } from '@foreman-code/contracts'
-import { Button, TextField, Select } from '../../../shared/ui/nocturne/index'
+import { Button, TextField, Select } from '../../../shared/ui/nocturne'
 import type { ComposerSessionControls } from './useSessionControls'
 import './sessionControls.css'
 

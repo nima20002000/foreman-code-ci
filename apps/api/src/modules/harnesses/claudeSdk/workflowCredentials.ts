@@ -6,7 +6,7 @@ import { componentLogger } from '../../diagnostics/index.js'
 import { appMcpServerName } from '../appMcpLauncher.js'
 import { hasWorkflowRequest } from '../sessionStart.js'
 import type { ExecutionCredentialPrepareInput, McpDetectionService, NativeMcpInspector } from '../mcpDetection.js'
-import type { CurrentWorkerCredentialService } from '../../interactions/current/credentials.js'
+import type { CurrentWorkerCredentialService } from '../../interactions/index.js'
 import type { productionClaudeManager } from './production.js'
 import { assertClaudeCredentialEndpoint } from './mcpInspection.js'
 

@@ -1,7 +1,7 @@
 import type { HarnessConfiguration } from '@foreman-code/contracts'
 import { isDeepStrictEqual } from 'node:util'
 import { DomainError } from '../../errors.js'
-import type { ProviderAccountResolver } from '../../provider-accounts/service.js'
+import type { ProviderAccountResolver } from '../../provider-accounts/index.js'
 import type { CanonicalMachineReference } from '@foreman-code/contracts/device-identity'
 
 export function requireClaudeApiKey(configuration: HarnessConfiguration, apiKey?: string): string | undefined {

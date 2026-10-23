@@ -1,7 +1,7 @@
 import { parseSessionCommand, type SessionMode } from '@foreman-code/contracts'
 import { useComposerDraft } from './useComposerDraft'
 import { useSessionCommandSubmit } from './sessionControls/useSessionCommandSubmit'
-import type { ComposerSessionControls } from '../chat-core'
+import type { ComposerSessionControls } from './sessionControls/useSessionControls'
 import { useRef, type ReactNode, type RefObject } from 'react'
 import { MessageComposer } from '../../shared/ui/nocturne'
 

@@ -23,7 +23,7 @@ import { anchored,identity,openChildDirectory,openPrivateRoot } from '../../sour
 import { sourcePath } from '../../sources/index.js'
 import { sourceCwdAttestationDigest } from '../../sources/index.js'
 import { RuntimeLeafAttestationSchema,assertRuntimeLeafPath } from './runtimeLeaf.js'
-import type { NativeHistory } from '../../harnesses/port.js'
+import type { NativeHistory } from '../../harnesses/index.js'
 import { encodeResultCopies, decodeResultCopies, physicalResultPaths, historyResultPaths } from './executionResultCodec.js'
 import { WorkflowPhysicalReadoutSnapshots, type PhysicalReadoutSelector } from './workflowPhysicalReadoutSnapshots.js'
 import { sha256Hex } from '../../../shared/hash.js'

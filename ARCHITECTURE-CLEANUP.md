@@ -222,37 +222,29 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
 - [ ] #42 Config: ~90 direct `process.env` reads outside `config.ts`.
 
 ### PR 6: Module boundaries (not started, except CI and web groundwork)
-- [~] #29 No module boundaries. Web follow-up: shared chat core merged onto the combined architecture base, preserving the shared conversation/composer lane; current pending imports reduced from 97 to 51 (implementation complete; inherited CI failures under verification).
+- [~] #29 Module boundaries: API type-only entry-point cleanup merged onto arch2; verification blocked by base failures.
   - The CI↔API boundary is enforced (#69).
+  - API (6c): route 317 type-only imports through module entry points with explicit type re-exports; add a
+    type-only `browser-runtime/index.ts`. Reconciled with arch2 module exports and `Current…` renames;
+    removed 158 pending internal-import entries from the merged base (mutual-pair entries unchanged).
+    Runtime imports, worker runtime closure, behavior, persisted names and SQL are unchanged. Remaining runtime
+    imports and mutual pairs need cycle/composition work. Verification uses affected Foreman CI tests and full
+    typecheck/lint on the pushed reconciliation commit. Four API unit files (20 cases), 15 boundary/worker-import
+    script cases and checkpoint restart (2 integration cases) pass. Full checks stop at the base runtime import
+    cycle, MCP tool parse errors, and untouched contracts/web test errors; remaining checks await integration fixes.
   - Web (6a): cross-feature imports go through the feature's index (759 imports rewritten; 13 features gained an
     index). The shared graph/Board leaves live in the neutral `features/board-core` (geometry, collaborationFields,
     signalEdge, graph types/mapper/layout, draft state/model/agentEdits/agentForm, Board context and keys).
     `scripts/check-web-feature-boundaries.mjs` (web lint) fails on any new import of another feature's internals; test
     files and test support modules (fixtures, testSupport, mocks) may import each other. The runtime import graph still
     has only the 2 earlier cycles (one moved with `agentEdits`/`model` into `board-core`).
-  - Web follow-up: moved shared chat presentation, draft/scroll state, attachment helpers, session controls,
-    activity/message reconciliation and committed-message buffering into the neutral `features/chat-core`.
-    Consumers use its public index; existing behavior tests stay in place and exercise the same implementations.
-    The original branch removed 47 of 98 imports. On the combined architecture base, the composer lane had already
-    removed one; this merge removes the remaining 46 of 97, leaving 51. The shared conversation content and composer
-    hooks retain their implementations and now consume the chat-core index.
-    Earlier-branch Foreman verification on `b49fc2cae2`: affected unit `48a8dfd4-50a0-4c0d-ae11-8955a07ca9e1`, full typecheck
-    `91bcc33c-76dd-4c94-8b4b-5e4b4a99256e`, full lint `cbc51510-d6b4-47d6-abdc-476639b28795`.
-    Those earlier checks did not execute: frozen-lockfile installation rejected the existing worker dependency
-    `@foreman-code/api@workspace:*`, missing from `pnpm-lock.yaml`. Both manifests and lockfile are unchanged here.
-    Re-merge `8e661772d2` preserves the newer shared conversation/composer lane. Its Foreman full typecheck
-    `9771f96e-51b3-4581-b365-b88b83ca416f` and full lint `cd20eb7a-5445-48de-8119-a1523d784d1f`
-    were admitted after delays and queued behind occupied CI slots. Affected-unit admission returned
-    `DATABASE_BUSY`; the selected 39 files were resubmitted on `d7ea6e4982`, which also explains the touched
-    G5 test’s deliberate transport rejections without changing assertions. No local checks ran.
-    The 39-file affected-unit group is `411fde00-42f3-46f3-8e5c-e87e4997aa10`. On `79ddaf3845`, full
-    typecheck `23e5a3bc-50d7-41be-9afa-0f4702d752b5` exposed the inherited callable/constructable mock
-    type in the touched `composerDrafts.test.tsx`; its callback now uses the existing composer prop contract.
-    Full lint `cea36fa4-415f-42f5-b47f-811701a4109b` stops before web lint on the unchanged contracts
-    `chatPromptRules.test.ts` unused `workspaceId`; API typecheck also fails in unchanged Operator tool files.
-  - Web, still open: 51 imports in `scripts/web-feature-boundary-pending.mjs` (a list that may only shrink), including
-    graph/draft hooks ↔ Board start/stop outboxes, Agent/settings/schedule dependencies, shared delivery hooks and
-    Operator composer settings/approval UI. The route/WorkspaceShell layering inversions remain separate work.
+  - Web, still open: 97 imports in `scripts/web-feature-boundary-pending.mjs` (a list that may only shrink). About 49 sit on
+    real feature cycles: `graph/store` and the draft hooks ↔ `workflow-board` start/stop outboxes, `AgentControls` ↔
+    `AgentSettingsForm`, `agents/agentSettings`, `schedules/queries`. about 48 are `operator-chat` ↔ `conversations` chat
+    pieces that tests reach through a mocked `conversations` or `operator-chat` index; move the shared chat pieces
+    (`ChatNotice`, `chatTimeline`, `chatAttachmentAttempt`, `sessionControls`, …) into a neutral feature, then re-point
+    the mocks. `routes/WorkspaceRouteEntry` → `WorkflowBoard` and `shared/ui/WorkspaceShell` → `HarnessStatusMenu` are
+    layering inversions to fix on their own.
   - Open: 75 bidirectional API module pairs.
 - [ ] #32 Layering inversions: infrastructure→modules (24 imports), MCP builds services that HTTP uses, `collaboration`
   duplicates `workflow-chat`.
