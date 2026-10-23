@@ -1,3 +1,4 @@
+import { DomainError } from '../errors.js'
 import type { BrowserSnapshotArchive } from './archive.js'
 import type { BrowserSnapshotKeyStore } from './keys.js'
 import type { BrowserProfileHost, BrowserProfileRepository } from './types.js'
@@ -13,9 +14,17 @@ export class BrowserProfileRetention {
     const snapshots = [...new Map([...references.snapshots, ...retainedKeys].map(value => [value.sha256, value])).values()]
     await this.archive.prune(profileId, snapshots)
     // Offline recipients keep their own bounded current/prior generation. A later paired wake retries this receipt.
+    // One computer must not starve the rest: an unpaired/unregistered computer (403/404) can never be pruned, so it is
+    // dropped; any other failure is retried later (the receipt stays) after every computer was attempted.
+    let retry: unknown
     for (const computerId of references.computers) {
-      await this.host.prune({ profileId, computerId, snapshots, operations: references.operations })
+      try {
+        await this.host.prune({ profileId, computerId, snapshots, operations: references.operations })
+      } catch (error) {
+        if (!(error instanceof DomainError && (error.status === 403 || error.status === 404))) retry ??= error
+      }
     }
+    if (retry) throw retry
     await this.repository.transaction([`profile:${profileId}`], tx => tx.clearRetention(profileId, references.revision))
   }
 }

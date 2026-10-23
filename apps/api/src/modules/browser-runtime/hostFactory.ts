@@ -69,6 +69,7 @@ export async function createBrowserHost(options: BrowserHostOptions) {
     actionDirectory: root, profileDirectory: profileId => storage.directory(profileId),
     allocateGeneration: profileId => storage.allocateProcessGeneration(profileId), ...(options.log ? { log: options.log } : {}), onOrigin: (profileId, origin) => storage.noteOrigin(profileId, origin),
     onDisconnected: (profileId, generation) => { void broker.disconnected(profileId, generation).catch(options.reportFailure) },
+    reportFailure: options.reportFailure,
     downloadDirectory: profileId => join(root, 'native-downloads', browserInputHash(profileId)),
     onDownload: async event => {
       const owner = downloadOwners.get(event.nativeId) ?? broker.ownerForTarget(event.profileId, event.generation, event.targetId)
@@ -146,7 +147,10 @@ export async function createBrowserHost(options: BrowserHostOptions) {
   const closeOwnedProfiles = async () => {
     const profiles = new Set(driver.ownedProfileIds())
     for await (const profileId of storage.profileIds()) profiles.add(profileId)
-    for (const profileId of profiles) await driver.closeProfile(profileId)
+    // One profile that will not close must not leave the others running; report the first failure afterwards.
+    const results = await Promise.allSettled([...profiles].map(profileId => driver.closeProfile(profileId)))
+    const failed = results.find(result => result.status === 'rejected')
+    if (failed) throw failed.reason
   }
   const closeIdleProfiles = async () => {
     if (broker.activeSessionCount()) throw new DomainError('BROWSER_RUNTIME_BUSY', 'Browser sessions are still active.', 409)
@@ -166,8 +170,7 @@ export async function createBrowserHost(options: BrowserHostOptions) {
       if (result.state === 'pending') throw new DomainError('BROWSER_RUNTIME_BUSY', result.reason ?? 'Browser cleanup is pending.', 409)
     }
     if (broker.activeSessionCount()) throw new DomainError('BROWSER_RUNTIME_BUSY', 'Browser preparation is still settling.', 409)
-    await closeOwnedProfiles()
-    await driver.closeVirtualDisplay()
+    try { await closeOwnedProfiles() } finally { await driver.closeVirtualDisplay() }
     await runtimeControl.close()
   }
   return { broker, driver, storage, files, media, profileEndpoint, profileStateRoot,

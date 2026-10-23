@@ -31,7 +31,6 @@ let epoch = 0
 /** An unconfirmed save is resent quietly: 1, 2, 4, 8, then every 10 s for up to 10 minutes (an app restart). */
 const CHECK_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 10_000]
 const CHECK_WINDOW_MS = 10 * 60_000
-const sending = new Set<string>()
 const checks = new Map<string, ReturnType<typeof setTimeout>>()
 function same(left: unknown, right: unknown): boolean { return JSON.stringify(left) === JSON.stringify(right) }
 
@@ -98,8 +97,6 @@ export async function saveRevisionedForm<T>(
 ): Promise<boolean> {
   const generation = sessionGeneration()
   const startedEpoch = epoch
-  const sendingKey = `${startedEpoch}:${key}`
-  if (sending.has(sendingKey)) return false
   const current = useForms.getState().forms[key] as Form<T> | undefined
   if (!current || current.pending?.state === 'sending') return false
   if (check > 0 && current.pending?.state !== 'uncertain') return false
@@ -118,7 +115,6 @@ export async function saveRevisionedForm<T>(
       pending = { submitted, request, attempt, state: 'sending' }
     }
     const active = pending
-    sending.add(sendingKey)
     if (check === 0) update<T>(key, (form) => form && ({ ...form, pending: active, error: undefined, issues: undefined, savedRevision: undefined }))
     const response = await perform(active.request)
     if (generation !== sessionGeneration() || startedEpoch !== epoch) return false
@@ -143,8 +139,6 @@ export async function saveRevisionedForm<T>(
     }))
     if (retained) scheduleCheck(key, perform, prepare, 0)
     return false
-  } finally {
-    sending.delete(sendingKey)
   }
 }
 
