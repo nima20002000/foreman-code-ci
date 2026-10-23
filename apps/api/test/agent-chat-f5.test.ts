@@ -48,9 +48,6 @@ function approvalFixture() {
   const writes: Array<string | undefined> = []
   const dispatchAttempts: string[] = []
   const repository = {
-    workflowIsActive: async () => true,
-    activeAgentConfigurationId: async () => configuration.id,
-    turnPrincipalId: async () => undefined,
     get: async () => structuredClone(current), byKey: async () => structuredClone(current),
     state: async (): Promise<NonNullable<Awaited<ReturnType<PostgresAgentChatRepository['state']>>>> => ({
       row: structuredClone(current), turns: [], messages: [], hasEarlierMessages: false,

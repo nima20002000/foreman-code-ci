@@ -58,7 +58,7 @@ it('reads sign-in and Foreman MCP state per computer through authenticated HTTP,
   const list = vi.fn(async (_principal: ManagementPrincipal, harness: 'codex' | 'claude') =>
     ({ presets: { graphql: harness === 'codex' ? 'installed' as const : 'missing' as const, linear: 'missing' as const } }))
   const connections = computerConnectionsReader({ read: async () => accounts }, { list })
-  const recordDenied = vi.fn(async () => undefined)
+  const recordDenied = vi.fn()
   const commands = { recordDenied } as unknown as PostgresCommandCoordinator
   const mainId = randomUUID()
   const computerMaintenance = new FleetMaintenanceService(pool, mainId, () => undefined, commands,

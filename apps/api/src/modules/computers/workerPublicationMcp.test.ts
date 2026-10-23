@@ -31,7 +31,7 @@ it('reads persisted Worker publication errors through authenticated HTTP and den
   vi.spyOn(pool, 'connect').mockImplementation(async () => ({ query, release: vi.fn() }) as unknown as pg.PoolClient)
   const access = new PostgresAccessService(pool)
   vi.spyOn(access, 'authenticate').mockImplementation(async token => token === 'reader' ? principal : denied)
-  const recordDenied = vi.fn(async () => undefined)
+  const recordDenied = vi.fn()
   const commands = { recordDenied } as unknown as PostgresCommandCoordinator
   const local = { status: async () => ({ harnesses: [], tasks: [], observedAt: new Date().toISOString(),
     system: { packageUpdates: null, rebootRequired: false, sudo: false, disk: null } }) } as unknown as ComputerMaintenance
