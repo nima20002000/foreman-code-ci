@@ -12,10 +12,9 @@ import { rolePresentation } from './settingsPresentation'
 import './settingsExperience.css'
 
 type Template = AgentDefaults['operator'] | NonNullable<AgentDefaults['master']> | AgentDefaults['orchestrator'] | AgentDefaults['coder']
-type Memory = 'none' | 'write'
+type Memory = 'none' | 'read' | 'write'
 const harnessOptions = [{ value: 'codex', label: 'Codex' }, { value: 'claude', label: 'Claude' }] as const
-// Agent memory on is read and write; a workflow node or read-only access narrows it to read.
-const memoryOptions = [{ value: 'none', label: 'Off' }, { value: 'write', label: 'Read and write' }] as const
+const memoryOptions = [{ value: 'none', label: 'Off' }, { value: 'read', label: 'Read' }, { value: 'write', label: 'Read and write' }] as const
 
 function templateFor(value: AgentDefaults, role: SettingsAgentRole): Template {
   return role === 'operator' ? value.operator : agentTemplateForRole(value, role)
@@ -24,7 +23,9 @@ function withTemplate(value: AgentDefaults, role: SettingsAgentRole, template: T
   return { ...value, [role]: template }
 }
 function memoryOf(tools: readonly string[]): Memory {
-  return memoryBoardTools('write').some(tool => tools.includes(tool)) ? 'write' : 'none'
+  const granted = memoryBoardTools('write').filter(tool => tools.includes(tool))
+  if (!granted.length) return 'none'
+  return granted.length === memoryBoardTools('write').length ? 'write' : 'read'
 }
 
 /** One role's defaults, edited in place and saved with the same revision-checked mutation the Operator uses. */

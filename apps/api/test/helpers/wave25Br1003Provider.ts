@@ -24,7 +24,6 @@ export class CheckpointTestProvider implements NativeHarnessSessionManager {
   private readonly continuationEvents = new Map<string, NativeHarnessEvent>()
   private readonly receipts = new Map<string, NativeResponseDeliveryEvidence[]>()
   private readonly histories = new Map<string, NativeHistory>()
-  private readonly correctiveHistories = new Map<string, NativeHistory>()
   /** Fault/timing observation only; receives no SQL or authority capability. */
   beforeRespond?: () => Promise<void>
   beforeClose?: () => Promise<void>
@@ -105,7 +104,6 @@ export class CheckpointTestProvider implements NativeHarnessSessionManager {
       this.closedSessions.delete(session.nativeSessionId)
       this.terminals.delete(session.nativeSessionId)
       this.continuationEvents.delete(session.nativeSessionId)
-      this.correctiveHistories.delete(session.nativeSessionId)
       this.waits.delete(session.nativeSessionId)
       this.receipts.delete(session.nativeSessionId)
     } else {
@@ -126,10 +124,6 @@ export class CheckpointTestProvider implements NativeHarnessSessionManager {
   async *startTurn(session: NativeSessionReference, input: Parameters<NativeHarnessSessionManager['startTurn']>[1]): AsyncIterable<NativeHarnessEvent> {
     const request = this.requests.get(session.nativeSessionId)
     if (!request) throw new Error('Missing accepted provider request')
-    if (input.clientCorrelationId?.includes(':result-repair:')) {
-      yield* this.correctiveTurn(session, input)
-      return
-    }
     // A repeat occurrence/new Run/technical attempt legitimately reuses a node.
     // Replaying the SAME accepted execution remains forbidden.
     if (this.startedExecutions.includes(request.executionId)) throw new Error('A predecessor/native turn was replayed')
@@ -159,26 +153,6 @@ export class CheckpointTestProvider implements NativeHarnessSessionManager {
       payload: { turnId, threadId: session.nativeSessionId, clientCorrelationId: input.clientCorrelationId,
         turn: { id: turnId, status: 'completed' } } })
     this.continuationEvents.set(session.nativeSessionId, terminal)
-    yield terminal
-  }
-  /** Like a model asked to correct its result, this one answers with its previous result unchanged. */
-  private async *correctiveTurn(session: NativeSessionReference, input: Parameters<NativeHarnessSessionManager['startTurn']>[1]): AsyncIterable<NativeHarnessEvent> {
-    const correlationId = input.clientCorrelationId!
-    const result = this.terminals.get(session.nativeSessionId)
-    if (!result || this.histories.has(correlationId)) throw new Error('Unexpected corrective turn')
-    const providerId = `turn-${correlationId}`
-    await input.onSubmitted?.(providerId)
-    const sequence = 2 * Number(correlationId.split(':').at(-1))
-    const event = (offset: number, type: 'turn.started' | 'turn.completed') => NativeHarnessEventSchema.parse({
-      sequence: sequence + offset, type, occurredAt: new Date().toISOString(), payload: { turnId: providerId,
-        threadId: session.nativeSessionId, clientCorrelationId: correlationId,
-        turn: { id: providerId, status: type === 'turn.completed' ? 'completed' : 'inProgress' } } })
-    const terminal = event(1, 'turn.completed')
-    const history: NativeHistory = { correlationId, events: [terminal], pendingInteractions: [], responseDeliveries: [],
-      nativeTurnId: providerId, terminalResult: result, terminalTurn: { correlationId, providerId, result } }
-    this.histories.set(correlationId, history)
-    this.correctiveHistories.set(session.nativeSessionId, history)
-    yield event(0, 'turn.started')
     yield terminal
   }
   private modelOutput(request: HarnessExecutionRequest, data: Record<string, string | boolean>) {
@@ -235,8 +209,6 @@ export class CheckpointTestProvider implements NativeHarnessSessionManager {
     }
   }
   async history(session: NativeSessionReference): Promise<NativeHistory> {
-    const corrective = this.correctiveHistories.get(session.nativeSessionId)
-    if (corrective) return structuredClone(corrective)
     const pendingInteractions = this.waits.get(session.nativeSessionId) ?? []
     const pendingInteraction = pendingInteractions[0]
     const terminalResult = this.terminals.get(session.nativeSessionId)

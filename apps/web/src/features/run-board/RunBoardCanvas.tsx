@@ -25,7 +25,7 @@ import { boardViewportKey } from '../graph/boardViewport'
 import { isRunAccessError } from '../runs-selector/query'
 import { RunSubagentsOverlay } from '../run-subagents/RunSubagentsOverlay'
 import { savedEdgeCurve } from './curve'
-import { RunLiveNodes, useRunLiveNodes } from './useRunLiveNodes'
+import { RunLiveNodes, RunLivePulses, useRunLiveNodes } from './useRunLiveNodes'
 import { projectRunBoard, runBoardCi, READ_ONLY_FLOW_PROPS, type AvailableRunBoardSnapshot, type SavedBoardEdge, type SavedBoardNode } from './model'
 import '@xyflow/react/dist/style.css'
 import './runBoard.css'
@@ -59,13 +59,14 @@ const SavedConnection = memo(function SavedConnection(props: EdgeProps<SavedBoar
   const edge = props.data?.snapshot
   const bend = props.data?.bend ?? 0, loop = props.source === props.target
   const floating = useFloatingCurve(props.source, props.target, bend)
+  const pulses = useContext(RunLivePulses).get(props.id)
   if (!edge) return null
   // Same lines as the Board: straight when aligned, leaning toward the target otherwise; only a self-loop keeps its own loop.
   const curve = !loop && floating ? floating : savedEdgeCurve({ ...props, lane: bend / 44, loop })
   return <g>
     <title>{[edge.label || (props.data!.members.length > 1 ? 'Handoff · approval' : edge.kind === 'approval' ? 'Approval' : 'Handoff'),
       ...props.data!.members.filter(member => member.id !== edge.id).map(member => member.label)].filter(Boolean).join(' · ')}</title>
-    <SignalEdgeShape id={props.id} curve={curve} kind={edge.kind} />
+    <SignalEdgeShape id={props.id} curve={curve} kind={edge.kind} pulses={pulses} />
   </g>
 })
 const nodeTypes = { savedBoardNode: SavedAgent, ciServer: CiServerNode, boardKanban: BoardKanbanNode }
@@ -164,7 +165,7 @@ export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hier
   const cis = useMemo(() => new Map([...runBoardCi(snapshot, activitySnapshot), ...ciNodeActivities(ciJobs ?? [])]),
     [snapshot, activitySnapshot, ciJobs])
   // Live node words belong to the mounted Board; a standalone saved Run Board reads only its saved Run.
-  const liveNodes = useRunLiveNodes(scope, names, cis, visible && !!board)
+  const live = useRunLiveNodes(scope, names, cis, visible && !!board, snapshot.edges)
   // A light per Agent while its CI request or result travels; no lasting line to the server.
   const transfers = useCiTransfers(ciJobs, useReducedMotion())
   const ciEdges = useMemo<(SavedBoardEdge | CiTransferFlowEdge)[]>(() => ci.node && transfers.size ? [...edges,
@@ -181,7 +182,7 @@ export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hier
     if ((!editing && (event.key === 'Delete' || event.key === 'Backspace'))
       || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's')) event.preventDefault()
   }}>
-    <ReactFlowProvider><RunLiveNodes.Provider value={liveNodes}>
+    <ReactFlowProvider><RunLiveNodes.Provider value={live.nodes}><RunLivePulses.Provider value={live.pulses}>
       <ReactFlow<SavedBoardNode | CiServerFlowNode | KanbanFlowNode, SavedBoardEdge | CiTransferFlowEdge | KanbanActivityFlowEdge> nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
         {...READ_ONLY_FLOW_PROPS} onNodesChange={(changes) => {
           kanban.applyChanges(changes); ci.place.applyChanges(changes)
@@ -201,7 +202,7 @@ export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hier
         <Controls showInteractive={false} fitViewOptions={fitViewOptions} aria-label="Run view controls"
           onZoomIn={onManualMove} onZoomOut={onManualMove} />
       </ReactFlow>
-    </RunLiveNodes.Provider></ReactFlowProvider>
+    </RunLivePulses.Provider></RunLiveNodes.Provider></ReactFlowProvider>
     {visible ? ci.dialog : null}
     <BoardDock kanban={kanban.dock} ci={ci.node ? undefined : { summary: ci.summary, restore: ci.place.restore }} />
   </div>

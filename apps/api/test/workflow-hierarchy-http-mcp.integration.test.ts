@@ -350,7 +350,8 @@ describe.skipIf(!postgresEnabled)('Master hierarchy authenticated HTTP/MCP parit
       const before = ManagedAgentDefaultsSchema.parse(await call('agent_defaults_get', {}))
       const existing = AgentMutationResultSchema.parse(await call('agent_create', { workspaceId,
         commandId: randomUUID(), agentId: `existing-${randomUUID()}`, name: 'Existing Worker', productRole: 'coder' }))
-      expect(existing.value.agent.graphqlTools).toEqual(expect.arrayContaining(memoryBoardTools('write')))
+      expect(existing.value.agent.graphqlTools).toEqual(expect.arrayContaining(memoryBoardTools('read')))
+      expect(existing.value.agent.graphqlTools).not.toContain('memory_card_update')
       const value = { ...before.value, master: { ...before.value.orchestrator, role: 'master' as const, graphqlTools: [] },
         coder: { ...before.value.coder, graphqlTools: memoryBoardTools('write') } }
       const input = { commandId: randomUUID(), expectedRevision: before.revision, value }

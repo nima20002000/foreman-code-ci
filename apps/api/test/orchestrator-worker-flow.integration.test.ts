@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { ExecutionResult } from '@foreman-code/contracts'
 import { WorkActivationInputSchema, type WorkActivationInput, type WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 import { hasWorkDirectionWait } from '../src/modules/runs/workflowLifecycle.js'
+import { RunHandoffReadService } from '../src/modules/runs/handoffRead.js'
 import { handoffs, runtime, timeout, useSettlementFixtures } from './helpers/workflowSettlementTestSupport.js'
 
 // Native terminals are scripted per execution; typed Save, the engine, routing, SQL constraints and settlement execute.
@@ -53,6 +54,15 @@ describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('Orchestrator and Worker w
       expect(rework.returned).toMatchObject({ outcome: 'needs_changes', latestDeliverable: { fix: 'Capture the full page' } })
       expect(final.acceptedSourceResult).toMatchObject({ output: { data: { latestDeliverable: { screenshot: 'full-page.png' } } } })
       expect(await f.readRun()).toMatchObject({ executionState: 'completed', outcome: 'succeeded' })
+      // The Run's hand-offs, in order, so the Board can show each one crossing the line between the two Agents.
+      const read = await new RunHandoffReadService(f.db.pool).read(f.writer.principal, { workspaceId: f.scope.workspaceId, runId: f.run.id })
+      expect(read.transfers.map((item) => [item.kind, item.fromNodeId, item.toNodeId, item.outcome ?? null])).toEqual([
+        ['request', orchestrator, worker, null], ['request', worker, orchestrator, null],
+        ['return', orchestrator, worker, 'needs_changes'], ['request', worker, orchestrator, null],
+        ['return', orchestrator, worker, 'accepted'],
+      ])
+      expect(read.transfers.every((item) => item.relationshipId === f.version.definition.edges[0]!.id)).toBe(true)
+      expect(read.transfers.slice(0, 4).every((item) => item.toActivationId)).toBe(true)
     }, 'sequential', { roles: ['orchestrator', 'coder'] })
   }, timeout)
 

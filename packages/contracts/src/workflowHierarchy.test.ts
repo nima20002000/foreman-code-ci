@@ -69,5 +69,7 @@ it('keeps future tools dormant and preserves legacy absent defaults after handle
   }
   expect(effectiveGraphqlTools('master', ['interaction_respond'])).toEqual(['bug_report', 'interaction_respond']);
   expect(effectiveGraphqlTools('coder', ['interaction_respond'])).toEqual(['bug_report']);
-  expect(newAgentMemoryBoardAccess()).toBe('write');
+  expect(newAgentMemoryBoardAccess('master')).toBe('write');
+  expect(newAgentMemoryBoardAccess('orchestrator')).toBe('write');
+  expect(newAgentMemoryBoardAccess('coder')).toBe('read');
 });

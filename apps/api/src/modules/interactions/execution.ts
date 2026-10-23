@@ -55,7 +55,6 @@ import { deliverableRepairPrompt, deliverableVerdict, nativeOutputSchema, type D
 import { NATIVE_EVENT_BATCH_SIZE } from './nativeEventBatches.js'
 import { assertOriginalWorkflowTerminal } from './workflowTerminalSource.js'
 import { workResultRepairCorrelation } from '../runs/workResultRepair.js'
-import { KANBAN_FOLLOW_UP } from '../runs/kanbanRecord.js'
 import { isWorkflowResultEffectFailure } from '../runs/workflowResultEffectFailure.js'
 import { reviewTurnEvidence } from './reviewerEvidence.js'
 import type { ReviewCleanupSession, ReviewCredentialMaintenance } from './reviewerRuntime.js'
@@ -3691,12 +3690,7 @@ export class ApprovalExecutionCoordinator {
             'Return the complete corrected result. Preserve the deliverable and already committed tool changes.',
             'Correct only the remaining board changes. Do not repeat the task or external work.',
           ].join('\n') : undefined
-          const formatPrompt = handoffPrompt ?? (verdict ? deliverableRepairPrompt(verdict, input.deliverable!.outputSchema) : boardPrompt)
-          // A writable Agent that left no card on its workflow's Kanban is asked once, with the first correction.
-          const kanbanPrompt = observation.workResultRepairs === 0 && await observation.bookkeeping(() =>
-            this.runs.kanbanRecordMissing(observation.execution.id, observed.terminalTurn!.result, input.owner))
-            ? KANBAN_FOLLOW_UP : undefined
-          const repairPrompt = formatPrompt && kanbanPrompt ? `${formatPrompt}\n\n${kanbanPrompt}` : formatPrompt ?? kanbanPrompt
+          const repairPrompt = handoffPrompt ?? (verdict ? deliverableRepairPrompt(verdict, input.deliverable!.outputSchema) : boardPrompt)
           if (repairPrompt) {
             const repaired = await this.correctWorkflowResult(observation, nativeManager, lane, observed, captured, repairPrompt)
             if (repaired.kind === 'waiting') return { waiting: repaired.observation }
