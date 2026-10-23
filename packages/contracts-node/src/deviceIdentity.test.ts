@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { authorizeDevice, revokeDevice, type DevicePrincipal, type DeviceRegistration } from './deviceIdentity.js'
+import { authorizeDevice, revokeDevice, type DevicePrincipal, type DeviceRegistration } from '@foreman-code/contracts/device-identity'
 import { loadOrCreateWorkerIdentity, mainIdentityProofMessage, verifyMainIdentityProof, publicKeyFingerprint, loadWorkerPairing, persistWorkerPairing, updateWorkerEndpoint } from './deviceIdentityNode.js'
 
 describe('device authority and durable local identity', () => {
