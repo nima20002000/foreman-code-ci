@@ -188,8 +188,6 @@ describe('WorkspaceRouteEntry integration', () => {
   })
 
   it('opens an unselected reloaded Claude Agent settings panel while cross-computer choices are unavailable', async () => {
-    // Apply the canvas CSS so userEvent checks the same pointer access as the browser.
-    render(<style>{canvasStyles}</style>)
     const fixture = getMockFixture('workspace-1')!
     const agent = fixture.agents.find((item) => item.id === 'agent-researcher')!
     agent.harness = 'claude'
@@ -224,30 +222,11 @@ describe('WorkspaceRouteEntry integration', () => {
     expect(node).toHaveAttribute('aria-pressed', 'false')
     await user.hover(node)
     const actions = within(screen.getByLabelText('Editable workflow graph')).getByRole('group', { name: `${title} actions` })
-    const tick = setInterval(() => console.error('TICK'), 1000)
-    Error.stackTraceLimit = 80
-    {
-      const original = window.getComputedStyle.bind(window)
-      let count = 0
-      const wrapped = ((...args: Parameters<typeof original>) => {
-        count += 1
-        const frames = String(new Error('x').stack).split('\n').filter(line => !line.includes('jsdom') && !line.includes('node_modules/.pnpm/@testing-library') ).slice(1, 9).join('\n')
-        console.error(`GCS ${count}\n${frames}`)
-        return original(...args)
-      }) as typeof window.getComputedStyle
-      window.getComputedStyle = wrapped
-      globalThis.getComputedStyle = wrapped
-    }
-    console.error('BEFORE CLICK')
     await user.click(within(actions).getByRole('button', { name: `Open ${title} settings` }))
-    console.error('AFTER CLICK')
     const rail = await screen.findByRole('complementary', { name: 'Workflow side panel' })
-    console.error('RAIL FOUND')
     expect(rail).toBeVisible()
     expect(within(rail).getByRole('textbox', { name: 'Name' })).toHaveValue(agent.name)
-    console.error('NAME OK')
     expect(await within(rail).findByText('Computers can’t be checked right now. Try again shortly.', {}, { timeout: 8000 })).toBeVisible()
-    clearInterval(tick)
   }, 15_000)
 
   it('opens the accepted new workflow while workspace details still serve the old list', async () => {
