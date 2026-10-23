@@ -1542,7 +1542,7 @@ export class CloudCi {
           cancellation = await this.requestCancellation(run, providerRunId)
         } catch (error) {
           if (!(error instanceof DomainError && error.code === 'CI_CLOUD_CANCEL_DENIED')) throw error
-          // A suspended or denied account answers neither cancel nor status again; asking on every read only fills the log.
+          // A suspended account answers neither cancel nor status again; asking on every read only fills the log.
           log.warn({ err: error, runId: run.runId, providerRunId }, 'Cloud CI cancellation refused; the attempt ends here')
           canceled.add(providerRunId)
           run = await this.save({ ...run, cancellation: { ...run.cancellation!, canceledIds: [...canceled] } })

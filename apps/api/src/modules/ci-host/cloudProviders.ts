@@ -7,7 +7,7 @@ import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import { providerCommand } from './providerPoll.js'
 import { CloudHttp, type CloudRestOptions } from './cloudHttp.js'
 import { GitHubRest } from './cloudGithub.js'
-import { CircleRest } from './cloudCircle.js'
+import { CircleRest, circleAccountSuspended } from './cloudCircle.js'
 import { circleCiIntegrationResults } from './circleCiResults.js'
 import { isCircleCreditRefusal } from './circleCreditRefusal.js'
 
@@ -196,8 +196,9 @@ async function executeCommand(ports: HostCiPorts, label: string, file: string, a
     }
     const lookup = file === 'circleci' && args[1] === 'get' && (args[0] === 'run' || args[0] === 'job')
     const denied = /permission denied|not authorized|unauthori[sz]ed|forbidden|authentication|invalid (?:api )?token|\b40[13]\b/i
-    if (file === 'circleci' && args[0] === 'run' && args[1] === 'cancel' && denied.test(result.stderr)) {
-      throw new DomainError('CI_CLOUD_CANCEL_DENIED', 'CircleCI refused the cancel (account suspended or denied): '
+    // Only a suspended account is known to run nothing more; other denials keep the execution until a cancel is confirmed.
+    if (file === 'circleci' && args[0] === 'run' && args[1] === 'cancel' && circleAccountSuspended.test(result.stderr)) {
+      throw new DomainError('CI_CLOUD_CANCEL_DENIED', 'CircleCI refused the cancel (account suspended): '
         + result.stderr.trim().slice(0, 300), 502)
     }
     if (lookup && denied.test(result.stderr)) {

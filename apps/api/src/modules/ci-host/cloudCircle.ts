@@ -29,6 +29,9 @@ function lifecycle(status: string) {
   return { phase, ...(phase === 'ended' ? { outcome: outcomes[status] ?? status } : {}) }
 }
 
+/** CircleCI's reply for a suspended account, which runs no further work. */
+export const circleAccountSuspended = /account has been suspended/i
+
 export class CircleRest {
   constructor(private readonly http: CloudHttp) {}
 
@@ -46,8 +49,10 @@ export class CircleRest {
     }
     if (args[1] === 'cancel' && (response.status === 401 || response.status === 403)) {
       // A suspended or denied account can never confirm a cancel; retrying it forever only fills the log.
-      await response.body?.cancel()
-      throw new DomainError('CI_CLOUD_CANCEL_DENIED', 'CircleCI refused the cancel (account suspended or denied).', 502)
+      if (circleAccountSuspended.test(await response.text())) {
+        throw new DomainError('CI_CLOUD_CANCEL_DENIED', 'CircleCI refused the cancel (account suspended).', 502)
+      }
+      throw new DomainError('CI_RUN_UNKNOWN', 'CircleCI refused the cancel (account suspended or denied).', 404)
     }
     const lookupDenied = args[1] === 'get' && (args[0] === 'run' || args[0] === 'job')
       && (response.status === 401 || response.status === 403)
