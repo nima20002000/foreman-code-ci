@@ -34,7 +34,7 @@ import { CanonicalJobPreparationSources, CanonicalJobPreparationService, Canonic
 import type { JobPreparationPort, JobQueueConfiguration } from './ports.js'
 import { JobPublicationAuthority } from './authority.js'
 import { createCanonicalJobInputPorts } from '../files/jobInputs/factory.js'
-import { createMainJobInputRsyncExtension, jobInputTransferPorts, type MainJobInputRsyncPorts } from '../files/jobInputs/rsyncProduction.js'
+import { createMainJobInputRsyncExtension, type MainJobInputRsyncPorts } from '../files/jobInputs/rsyncProduction.js'
 import { createAdmittedJobOutputs } from '../files/jobs/admittedFactory.js'
 import type { ResumableByteTransferService } from '../byte-transfer/index.js'
 import type { MainJobOutputRsyncPorts } from '../files/jobs/rsyncProduction.js'
@@ -351,7 +351,7 @@ export async function createProductionJobs(input: ProductionJobsInput) {
   const canonicalInputs = createCanonicalJobInputPorts({ pool: input.pool, storageRoot: input.storageRoot, runtime: dispatch,
     systemInput: createVerificationSystemInput({ configuration: installedConfiguration, journal: getMainJournal }),
     endpoint: { currentBinding: deviceId => input.endpoint().currentBinding(deviceId) }, receiptRoot: join(input.runtimeRoot, 'job-input-receipts') })
-  const inputs = { ...canonicalInputs, extension: createMainJobInputRsyncExtension(canonicalInputs.main, canonicalInputs.extension, jobInputTransferPorts({ captureRequest: (...args) => input.endpoint().captureRequest(...args) }, input.inputRsync)) }
+  const inputs = { ...canonicalInputs, extension: createMainJobInputRsyncExtension(canonicalInputs.main, canonicalInputs.extension, input.inputRsync) }
   const privateRepositories = new CanonicalJobPrivateRepositories(input.pool, source.sources, source.executions,
     input.infrastructure?.privateRepositoryRemote ?? { async preparePrivateRepository(principal, record) {
       const manifest = await withTransaction(input.pool, async (sql) => {

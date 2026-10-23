@@ -1,7 +1,7 @@
 import type { DeliveryTarget } from '@foreman-code/contracts'
 import type { AgentChatState } from '@foreman-code/contracts/agent-chat'
 import type { agentChatApi } from '../../../shared/api/agentChat'
-import { acceptAgentChatState } from '../../chat-core'
+import { acceptAgentChatState } from './model'
 
 type AgentReadback = Awaited<ReturnType<typeof agentChatApi.read>>
 
