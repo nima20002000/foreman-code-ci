@@ -57,6 +57,25 @@ async function requireNativeTarget(target) {
 export async function downloadBrowserRuntimeArtifact(url, destination, expected, fetchArtifact = globalThis.fetch) {
   invariant(digest.test(expected ?? ''), 'expected artifact digest required');
   invariant(new URL(url).protocol === 'https:', 'invalid artifact URL');
+  // An optional local cache keyed by the pinned digest; a cached copy is re-hashed before use.
+  const cache = process.env.FOREMAN_BROWSER_ARTIFACT_CACHE;
+  const cached = cache ? join(cache, expected) : undefined;
+  if (cached) {
+    const bytes = await readFile(cached).catch(error => { if (error.code === 'ENOENT') return undefined; throw error; });
+    if (bytes && createHash('sha256').update(bytes).digest('hex') === expected) {
+      await writeFile(destination, bytes, { flag: 'wx', mode: 0o600 });
+      return { url, sha256: expected, size: bytes.length };
+    }
+  }
+  const result = await fetchAndStore(url, destination, expected, fetchArtifact);
+  if (cached) {
+    await mkdir(cache, { recursive: true, mode: 0o700 });
+    await copyFile(destination, cached);
+  }
+  return result;
+}
+
+async function fetchAndStore(url, destination, expected, fetchArtifact) {
   const response = await fetchArtifact(url, { redirect: 'follow' });
   invariant(response.ok && response.body, `artifact unavailable (${response.status})`);
   const handle = await open(destination, 'wx', 0o600), hash = createHash('sha256');

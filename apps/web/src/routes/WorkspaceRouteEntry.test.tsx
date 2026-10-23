@@ -225,6 +225,14 @@ describe('WorkspaceRouteEntry integration', () => {
     await user.hover(node)
     const actions = within(screen.getByLabelText('Editable workflow graph')).getByRole('group', { name: `${title} actions` })
     const tick = setInterval(() => console.error('TICK'), 1000)
+    for (const [obj, name] of [[Element.prototype, 'setAttribute'], [Element.prototype, 'querySelector'], [Node.prototype, 'appendChild'], [Node.prototype, 'removeChild'], [window, 'getComputedStyle'], [Node.prototype, 'insertBefore']] as const) {
+      const original = (obj as any)[name] as (...args: unknown[]) => unknown
+      let count = 0
+      ;(obj as any)[name] = function (this: unknown, ...args: unknown[]) {
+        if (++count === 400000) { const trace = new Error(`LOOP ${name}`).stack; console.error(String(trace).slice(0, 3000)); throw new Error(`LOOP ${name}`) }
+        return original.apply(this, args)
+      }
+    }
     console.error('BEFORE CLICK')
     await user.click(within(actions).getByRole('button', { name: `Open ${title} settings` }))
     console.error('AFTER CLICK')
