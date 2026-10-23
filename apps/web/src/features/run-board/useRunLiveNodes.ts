@@ -1,4 +1,4 @@
-import { createContext, useMemo } from 'react'
+import { createContext, useEffect, useMemo } from 'react'
 import type { CiActivity } from '@foreman-code/contracts'
 import type { RunBoardEdgeSnapshot } from '@foreman-code/contracts/run-snapshots'
 import type { RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
@@ -8,6 +8,7 @@ import type { EdgePulse } from '../graph/SignalEdgeShape'
 import { useInteractionsQuery } from '../../shared/api/query'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
 import { useCurrentRunQuery } from '../workflow-board/currentRunQuery'
+import { useRunHandoffsQuery } from '../workflow-board/runHandoffsQuery'
 import { useRunChoreography } from '../workflow-board/inspect/runChoreography'
 import { runningIntervalChecks } from '../workflow-board/inspect/pinnedTopology'
 import { interactionWaits, isActiveCi, liveNodeView } from '../workflow-board/inspect/runLiveStatus'
@@ -34,14 +35,19 @@ export function useRunLiveNodes(scope: RepeatGraphScopeV3, names: ReadonlyMap<st
   const waits = useMemo(() => withDirectionWait(interactionWaits(record, pending.isError ? [] : pending.data?.items ?? [], names), direction),
     [record, pending.data, pending.isError, names, direction])
   const checking = useMemo(() => live ? runningIntervalChecks(record) : new Map<string, { check: number; queued: boolean }>(), [record, live])
-  const choreography = useRunChoreography(record, edges)
+  // Work hand-offs are read beside the cut and refreshed with it, so a light leaves as its receiver's work appears.
+  const working = Boolean(visible && record?.state.executions.some((execution) => execution.workActivationId))
+  const handoffs = useRunHandoffsQuery(scope, working)
+  const { refetch } = handoffs, sequence = record?.asOfSequence
+  useEffect(() => { if (working && sequence) void refetch() }, [working, sequence, refetch])
+  const choreography = useRunChoreography(record, edges, working ? handoffs.data?.transfers : undefined)
   // One line per agent pair: an approval beside a handoff travels on the handoff's line.
   const lines = useMemo(() => relationshipLines(edges), [edges])
   const flights: [string, EdgePulse[]][] = []
   for (const [id, items] of choreography.pulses) {
     const line = lines.alias.get(id)
-    if (line) flights.push([line.lineId, items.map(({ key, signal, reversed, startsAt }) => ({ key, signal, startsAt,
-      reversed: reversed !== line.flipped }))])
+    if (line) flights.push([line.lineId, items.map(({ key, signal, reversed, startsAt, word }) => ({ key, signal, startsAt,
+      reversed: reversed !== line.flipped, ...(word ? { word } : {}) }))])
   }
   const flightKey = JSON.stringify(flights)
   const pulses = useMemo(() => {

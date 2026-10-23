@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { RepeatGraphCurrentV3, WorkflowRelationship } from '@foreman-code/contracts/wave25'
+import type { RepeatGraphCurrentV3, RunHandoffsRead, WorkflowRelationship } from '@foreman-code/contracts/wave25'
 import type { AgentNodeState, AgentNodeTransition } from '../../../shared/ui/nocturne'
 import type { EdgeSignal } from '../../graph/signalEdge'
 import { lifecycleView } from '../runFacts'
@@ -11,11 +11,12 @@ export const SETTLE_MS = 1100
 const GAP_MS = 180
 
 type RunEdge = Pick<WorkflowRelationship, 'id' | 'kind' | 'source' | 'target'>
+type RunTransfer = RunHandoffsRead['transfers'][number]
 export type RunNodeDisplay = { state: AgentNodeState; label: string }
 /** One accepted fact that crosses an edge: a handoff, a repeat carry, an approval request or its answer.
  * `fromExecution`/`toExecution` are exact attempts, so causal order survives repeats and retries. */
 export type Handoff = { key: string; edgeId: string; signal: EdgeSignal; reversed: boolean; from: string; to: string
-  kind: 'binding' | 'ask' | 'answer'; fromExecution: string; toExecution: string }
+  kind: 'binding' | 'ask' | 'answer'; fromExecution: string; toExecution: string; word?: string }
 export type Pulse = Handoff & { startsAt: number }
 
 const IDLE: RunNodeDisplay = { state: 'idle', label: 'Not started' }
@@ -60,8 +61,21 @@ export function runNodeDisplays(record: RepeatGraphCurrentV3, lifecycleOnly = fa
 }
 
 /** Every edge crossing the cut records, in the direction the fact travelled. */
-export function runHandoffs(record: RepeatGraphCurrentV3, edges: readonly RunEdge[]): Handoff[] {
+export function runHandoffs(record: RepeatGraphCurrentV3, edges: readonly RunEdge[], transfers: readonly RunTransfer[] = []): Handoff[] {
   const handoffs: Handoff[] = []
+  // A work hand-off starts the receiver's work directly; it crosses once that work is in the cut.
+  for (const transfer of transfers) {
+    const edge = edges.find((item) => item.id === transfer.relationshipId && item.kind === 'execution')
+    const received = transfer.toActivationId ? record.state.executions.filter((item) => item.workActivationId === transfer.toActivationId)
+      .sort((a, b) => a.identity.attempt - b.identity.attempt)[0] : undefined
+    if (!edge || !received) continue
+    const returned = transfer.kind === 'return'
+    handoffs.push({ key: `work:${transfer.transferId}`, edgeId: edge.id, reversed: edge.source !== transfer.fromNodeId,
+      signal: !returned ? 'task' : transfer.outcome === 'accepted' ? 'grant' : 'return',
+      ...(returned ? { word: transfer.outcome === 'accepted' ? 'Accepted' : 'Changes requested' } : {}),
+      from: transfer.fromNodeId, to: transfer.toNodeId, kind: 'binding',
+      fromExecution: transfer.fromExecutionId, toExecution: received.identity.executionId })
+  }
   for (const binding of record.state.bindings) {
     const from = binding.sender.workflowNodeId, to = binding.recipient.workflowNodeId
     if (binding.kind === 'predecessor') {
@@ -130,12 +144,13 @@ function causes(handoff: Handoff, all: Iterable<Handoff>): Handoff[] {
  * carrying it arrives, and a sender's pulse leaves only after its own input landed.
  * Nothing here changes a fact; it only orders what is already recorded.
  */
-export function useRunChoreography(record: RepeatGraphCurrentV3 | undefined, edges: readonly RunEdge[] | undefined): RunChoreography {
+export function useRunChoreography(record: RepeatGraphCurrentV3 | undefined, edges: readonly RunEdge[] | undefined,
+  transfers?: readonly RunTransfer[]): RunChoreography {
   const memory = useRef<Memory>({ primed: false, displayed: false, starts: new Map(), handoffs: new Map(), shown: new Map(), transitions: new Map(), landed: new Set() })
   const [tick, setTick] = useState(0)
   const views = useMemo(() => record ? runNodeDisplays(record) : undefined, [record])
   const lifecycles = useMemo(() => record ? runNodeDisplays(record, true) : undefined, [record])
-  const found = useMemo(() => record && edges ? runHandoffs(record, edges) : [], [record, edges])
+  const found = useMemo(() => record && edges ? runHandoffs(record, edges, transfers) : [], [record, edges, transfers])
   const now = performance.now()
   const m = memory.current
   if (views) {

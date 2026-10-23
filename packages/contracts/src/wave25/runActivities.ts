@@ -134,6 +134,13 @@ const RunHandoffUnresolvedStateSchema = z.object({
   executionId: GraphIdSchema, reason: z.enum(['finish_with_findings', 'repeated_exhausted_route']),
   relationshipId: GraphIdSchema.optional(), createdAt: TimestampSchema,
 }).strict()
+/** One work hand-off across a connection: a request to the next Agent, or the verdict returned to its requester.
+ * `toActivationId` names the receiver's work; it is null when a return does not continue the requester. */
+const RunHandoffTransferSchema = z.object({
+  transferId: GraphIdSchema, kind: z.enum(['request', 'return']), relationshipId: GraphIdSchema,
+  fromNodeId: GraphIdSchema, fromExecutionId: GraphIdSchema, toNodeId: GraphIdSchema,
+  toActivationId: GraphIdSchema.nullable(), outcome: z.enum(['accepted', 'needs_changes']).optional(),
+}).strict()
 export const RunHandoffsReadSchema = z.object({
   scope: RunGraphScopeSchema, policy: z.enum(['work', 'not_configured']),
   runState: z.enum(['queued', 'running', 'waiting', 'interrupted', 'completed']),
@@ -142,8 +149,10 @@ export const RunHandoffsReadSchema = z.object({
   notices: z.array(RunHandoffNoticeStateSchema).max(1000),
   unresolved: z.array(RunHandoffUnresolvedStateSchema).max(1000),
   directionWait: z.boolean(),
+  /** The Run's newest hand-offs in the order they happened, so a Board can show each one crossing its line. */
+  transfers: z.array(RunHandoffTransferSchema).max(200).default([]),
 }).strict().refine((value) => value.policy === 'work'
   || !value.connections.length && !value.routes.length && !value.notices.length
-    && !value.unresolved.length && !value.directionWait,
+    && !value.unresolved.length && !value.directionWait && !value.transfers.length,
   'UNMARKED_RUN_HAS_HANDOFF_STATE')
 export type RunHandoffsRead = z.infer<typeof RunHandoffsReadSchema>

@@ -76,6 +76,21 @@ export class RunHandoffReadService {
           [run.id])).rows
         if (notices.length>1000 || unresolved.length>1000) throw new DomainError('HANDOFF_READ_TOO_LARGE',
           'The Run has too many notices or unresolved work items to read.', 409)
+        // The newest requests and returns, oldest first; a return travels back along its request's connection.
+        const transfers = (await sql.query<{ kind: 'request' | 'return'; transfer_id: string; relationship_id: string
+          from_node_id: string; from_execution_id: string; to_node_id: string; to_activation_id: string | null
+          outcome: 'accepted' | 'needs_changes' | null }>(
+          `select kind,transfer_id,relationship_id,from_node_id,from_execution_id,to_node_id,to_activation_id,outcome from (
+            (select 'request' as kind,request_id as transfer_id,relationship_id,requester_node_id as from_node_id,
+              requester_execution_id as from_execution_id,destination_node_id as to_node_id,
+              destination_activation_id as to_activation_id,null as outcome,accepted_at as at
+              from run_work_requests where run_id=$1 order by accepted_at desc,request_id desc limit 100)
+            union all
+            (select 'return',t.return_id,q.relationship_id,q.destination_node_id,t.source_execution_id,
+              q.requester_node_id,t.requester_continuation_activation_id,t.outcome,t.returned_at
+              from run_work_returns t join run_work_requests q on q.run_id=t.run_id and q.request_id=t.request_id
+              where t.run_id=$1 order by t.returned_at desc,t.return_id desc limit 100)) h
+            order by at,transfer_id`, [run.id])).rows
         const directionWait = run.executionState === 'waiting' && !snapshot.stopRequested
           && (await sql.query(`select 1 from run_work_direction_waits d where d.run_id=$1
             and not exists(select 1 from durable_interactions i where i.run_id=d.run_id
@@ -99,7 +114,10 @@ export class RunHandoffReadService {
           unresolved: unresolved.map((item) => ({ unresolvedId: item.unresolved_id,
             activationId: item.activation_id, executionId: item.execution_id, reason: item.reason,
             ...(item.relationship_id ? { relationshipId: item.relationship_id } : {}),
-            createdAt: item.created_at.toISOString() })), directionWait })
+            createdAt: item.created_at.toISOString() })), directionWait,
+          transfers: transfers.map((item) => ({ transferId: item.transfer_id, kind: item.kind,
+            relationshipId: item.relationship_id, fromNodeId: item.from_node_id, fromExecutionId: item.from_execution_id,
+            toNodeId: item.to_node_id, toActivationId: item.to_activation_id, ...(item.outcome ? { outcome: item.outcome } : {}) })) })
         canonicalGraphJson(result, 256 * 1024)
         return result
       })

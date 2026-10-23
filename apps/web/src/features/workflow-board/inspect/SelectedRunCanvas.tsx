@@ -198,7 +198,7 @@ export function SelectedRunCanvas({ scope, panels: suppliedPanels, layout, geome
     [record, pending.data, pending.isError, names, direction])
   const states = useMemo(() => pinnedNodeStates(record), [record])
   const checking = useMemo(() => live ? runningIntervalChecks(record) : new Map<string, { check: number; queued: boolean }>(), [record, live])
-  const choreography = useRunChoreography(record, topology?.edges)
+  const choreography = useRunChoreography(record, topology?.edges, handoffsQuery.data?.transfers)
   // One line per agent pair: an approval beside a handoff is drawn on the handoff's line.
   const lines = useMemo(() => relationshipLines(topology?.edges ?? []), [topology])
   const motion = useMemo<LineMotion>(() => {
