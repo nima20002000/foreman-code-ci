@@ -48,7 +48,7 @@ import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
 import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
-import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
+import { withTransaction } from '../src/infrastructure/transaction.js'
 
 /** Only native I/O and the finished-Run read projection are synthetic. File uploads,
  * disk bytes, grants, chat services, PostgreSQL receipts, HTTP and MCP are real. */
@@ -135,10 +135,10 @@ describe.skipIf(!postgresEnabled)('FIL-10 real chat attachments', { timeout: 60_
     const present = await database.pool.query('select 1 from application_migrations where version=$1', [fileStorageMigration.version])
     if (!present.rowCount) {
       const client = await database.pool.connect()
-      try {
-        await beginTransaction(client); await client.query(fileStorageMigration.sql)
-        await client.query('insert into application_migrations(version) values($1)', [fileStorageMigration.version]); await commitTransaction(client)
-      } catch (error) { await rollbackTransaction(client); throw error } finally { client.release() }
+      try { await withTransaction({ client }, async transaction => {
+        await transaction.query(fileStorageMigration.sql)
+        await transaction.query('insert into application_migrations(version) values($1)', [fileStorageMigration.version])
+      }) } finally { client.release() }
     }
     root = await mkdtemp(join(process.env.FOREMAN_CODE_TEST_ROOT!, '.fil10-test-'))
     fixture = await seedWorkflowFixture(database.pool, root, makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential'))
@@ -368,18 +368,20 @@ describe.skipIf(!postgresEnabled)('FIL-10 real chat attachments', { timeout: 60_
       agentId: query().agentId, workspaceId: fixture.scope.workspaceId, workflowId: fixture.scope.workflowId } })
     const input = request(id, { attachments: [pin(file)] })
     const gate = await database.pool.connect()
-    await beginTransaction(gate)
-    await gate.query('select file_id from files where file_id=$1 for update', [file.file.fileId])
-    const blockingPid = Number((await gate.query('select pg_backend_pid() as pid')).rows[0].pid)
-    const sending = agentSend(input).then((response) => response)
     // A navigation read of another node cannot retarget the already parsed command.
     const otherNode = fixture.version.definition.nodes[1]!
     const otherContext = { workflowId: fixture.scope.workflowId, workflowNodeId: otherNode.id, agentId: otherNode.agentId }
+    let sending!: Promise<Awaited<ReturnType<typeof agentSend>>>
     try {
-      await waitFor(async () => Boolean((await database.pool.query(
-        'select 1 from pg_stat_activity where $1::int=any(pg_blocking_pids(pid))', [blockingPid])).rowCount))
-      expect((await agent.read(owner.principal, fixture.scope.workspaceId, otherContext)).conversation).toBeNull()
-    } finally { await rollbackTransaction(gate); gate.release() }
+      await withTransaction({ client: gate }, async transaction => {
+        await transaction.query('select file_id from files where file_id=$1 for update', [file.file.fileId])
+        const blockingPid = Number((await transaction.query('select pg_backend_pid() as pid')).rows[0].pid)
+        sending = agentSend(input).then(response => response)
+        await waitFor(async () => Boolean((await database.pool.query(
+          'select 1 from pg_stat_activity where $1::int=any(pg_blocking_pids(pid))', [blockingPid])).rowCount))
+        expect((await agent.read(owner.principal, fixture.scope.workspaceId, otherContext)).conversation).toBeNull()
+      })
+    } finally { gate.release() }
     expect((await sending).statusCode).toBe(202); await settleAgent(id)
     const duplicate = await agentSend(input)
     expect(duplicate.statusCode).toBe(200)
@@ -524,15 +526,17 @@ describe.skipIf(!postgresEnabled)('FIL-10 real chat attachments', { timeout: 60_
     const file = await upload(id, Buffer.from('# raced'))
     const blocking = await database.pool.connect(), admission = await database.pool.connect()
     try {
-      await beginTransaction(blocking); await beginTransaction(admission)
-      await blocking.query('select file_id from files where file_id=$1 for update', [file.file.fileId])
-      const checking = validateMessageAttachments(admission, id, [pin(file)])
-      const rejected = expect(checking).rejects.toMatchObject({ code: 'MESSAGE_ATTACHMENT_UNAVAILABLE' })
-      await blocking.query("update files set state='expired' where file_id=$1", [file.file.fileId])
-      await commitTransaction(blocking); await rejected
-      await rollbackTransaction(admission)
+      let rejected!: Promise<void>
+      await withTransaction({ client: blocking }, async transaction => {
+        await transaction.query('select file_id from files where file_id=$1 for update', [file.file.fileId])
+        rejected = withTransaction({ client: admission }, async admissionTransaction => {
+          await expect(validateMessageAttachments(admissionTransaction, id, [pin(file)]))
+            .rejects.toMatchObject({ code: 'MESSAGE_ATTACHMENT_UNAVAILABLE' })
+        })
+        await transaction.query("update files set state='expired' where file_id=$1", [file.file.fileId])
+      })
+      await rejected
     } finally {
-      await rollbackTransaction(blocking).catch(() => /* ignore: best-effort cleanup; the test outcome is already decided */ {}); await rollbackTransaction(admission).catch(() => /* ignore: best-effort cleanup; the test outcome is already decided */ {})
       blocking.release(); admission.release()
     }
   })

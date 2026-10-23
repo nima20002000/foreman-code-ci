@@ -1,7 +1,5 @@
 import { sourceStorageCapacityFixture } from './helpers/sourceStorageCapacityFixture.js'
-import {
-  beginTransaction, commitTransaction, rollbackTransaction, withTransaction,
-} from '../src/infrastructure/transaction.js'
+import { withTransaction } from '../src/infrastructure/transaction.js'
 import { PostgresCommandReceiptRetention } from '../src/modules/commands/receiptRetention.js'
 import { sourceStorageLimits } from '../src/modules/sources/storageCapacity.js'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
@@ -454,17 +452,15 @@ it('scans protected snapshots without waiting for the storage lock', async () =>
   const held = await f.reservation(protectedSources[0]!)
   const sql = await f.pool.connect()
   try {
-    await beginTransaction(sql)
-    await sql.query('select pg_advisory_xact_lock(hashtext($1))', [`source-storage:${held.record.scopeId}`])
-    await f.sources.releaseUnusedSnapshots(undefined, true)
-    for (const source of protectedSources) {
-      expect((await f.read(source)).availability).toBe('retained')
-      expect((await f.reservation(source)).state).toBe('retained')
-    }
-  } finally {
-    await rollbackTransaction(sql)
-    sql.release()
-  }
+    await withTransaction({ client: sql }, async transaction => {
+      await transaction.query('select pg_advisory_xact_lock(hashtext($1))', [`source-storage:${held.record.scopeId}`])
+      await f.sources.releaseUnusedSnapshots(undefined, true)
+      for (const source of protectedSources) {
+        expect((await f.read(source)).availability).toBe('retained')
+        expect((await f.reservation(source)).state).toBe('retained')
+      }
+    })
+  } finally { sql.release() }
 }, 60_000)
 
 it('coalesces concurrent pressure scans and allows retry after a deletion failure', async () => {
@@ -889,17 +885,15 @@ it.each(['measurement', 'deletion'] as const)(
       // Both database row sets remain available while filesystem work is paused.
       const sql = await f.pool.connect()
       try {
-        await beginTransaction(sql)
-        const approvals = await sql.query(`select snapshot_id from source_approvals
+        await withTransaction({ client: sql }, async transaction => {
+        const approvals = await transaction.query(`select snapshot_id from source_approvals
           where snapshot_id=any($1::uuid[]) for update skip locked`, [snapshotIds])
-        const reservations = await sql.query(`select owner_id from source_storage_reservations
+        const reservations = await transaction.query(`select owner_id from source_storage_reservations
           where owner_kind='capture' and owner_id=any($1::text[]) for update skip locked`, [snapshotIds])
         expect(approvals.rowCount).toBe(snapshotIds.length)
         expect(reservations.rowCount).toBe(snapshotIds.length)
-      } finally {
-        await rollbackTransaction(sql)
-        sql.release()
-      }
+        })
+      } finally { sql.release() }
       const input = { ...f.approval, commandId: randomUUID() }
       const [, response, denied] = await Promise.all([
         f.sources.reconcileCaptures(),
@@ -941,17 +935,14 @@ it('skips a snapshot while admission holds its shared lock, then releases it aft
   const source = (await f.approve(SOURCE_RETENTION_SECONDS * 3)).source
   const sql = await f.pool.connect()
   try {
-    await beginTransaction(sql)
-    await f.sources.resolveApprovedSource(sql, f.owner.principal, f.workspaceId, f.pin(source))
-    await f.sources.releaseUnusedSnapshots()
-    expect((await f.read(source)).availability).toBe('retained')
-    await commitTransaction(sql)
+    await withTransaction({ client: sql }, async transaction => {
+      await f.sources.resolveApprovedSource(transaction, f.owner.principal, f.workspaceId, f.pin(source))
+      await f.sources.releaseUnusedSnapshots()
+      expect((await f.read(source)).availability).toBe('retained')
+    })
     await f.sources.releaseUnusedSnapshots()
     expect((await f.reservation(source)).state).toBe('reclaimed')
-  } finally {
-    await rollbackTransaction(sql)
-    sql.release()
-  }
+  } finally { sql.release() }
 }, 60_000)
 
 it.each(['deletion', 'accounting'] as const)('retries interrupted %s without resurrecting the unavailable snapshot',

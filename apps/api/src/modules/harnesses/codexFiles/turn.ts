@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { FileRevisionSchema, type FileRevision, type FileWithRevision, type MessageAttachmentRef } from '@foreman-code/contracts/files'
-import type { FileToolOperation } from '../../files/tools/types.js'
+import type { FileToolOperation } from '../../files/index.js'
 import { markdownReadText } from '../../files/tools/markdownReadText.js'
 import { FILE_SESSION_LEASE_MS, FILE_SESSION_RENEWAL_WINDOW_MS } from '../../files/tools/context.js'
 import { leaseFailureCause, renewOwnedLeases } from '../../leases/index.js'

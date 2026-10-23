@@ -10,7 +10,7 @@ import type { NativeHarnessSessionManager, NativeHistory, NativeResponseIdentity
 import type { PostgresApprovalBudgetRepository } from '../src/modules/interactions/budget.js'
 import { matchingDeliveryEvidence, responseValueDigest, type InteractionDeliveryClaim, type NativeDeliveryOutcome, type NativeResponseDeliveryEvidence } from '../src/modules/interactions/delivery.js'
 import type { GraphResumeClaim } from '../src/modules/interactions/deliveryPostgres.js'
-import { Wave25InteractionRepository } from '../src/modules/interactions/current/repository.js'
+import { CurrentInteractionRepository } from '../src/modules/interactions/current/repository.js'
 import { SingleWriterSessionManager } from '../src/modules/interactions/sessionWriter.js'
 import { nativeLanes } from './helpers/memorySessionCoordination.js'
 import type { InteractionNativeRuntime } from '../src/modules/interactions/runtimePorts.js'
@@ -19,7 +19,7 @@ import { deferred } from './helpers/deferred.js'
 import { ActivityProductionReplay } from './helpers/activityProductionReplay.js'
 import { input } from './fixtures/codex-test-helpers.js'
 import { CodexAppServerSessionManager } from '../src/modules/harnesses/codexAppServer.js'
-import { ApprovalPostgresSaver } from '../src/infrastructure/approvalCheckpointSaver.js'
+import { ApprovalPostgresSaver } from '../src/modules/runs/approvalCheckpointSaver.js'
 import { ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js'
 
 function fixture(): DurableInteraction {
@@ -75,7 +75,7 @@ function harness(manager?: NativeHarnessSessionManager, pending?: PendingNativeI
     assertOrchestratorConnection: async () => ({ orchestratorNodeId: 'node-reviewer' }),
     coordination: { findReviewJob: async () => ({ state: control.reviewState }) },
     get: async () => structuredClone(record),
-    decide: async (input: Parameters<Wave25InteractionRepository['decide']>[0]) => {
+    decide: async (input: Parameters<CurrentInteractionRepository['decide']>[0]) => {
       assert.equal(input.id, record.id)
       assert.ok(input.principal, 'the service must forward authenticated authority, including on replay')
       const option = record.responseOptions.find((item) => item.optionId === input.optionId)!
@@ -148,7 +148,7 @@ function harness(manager?: NativeHarnessSessionManager, pending?: PendingNativeI
     },
   }
   const noSql = () => { throw new Error('Unscripted SQL in the approval service unit fixture') }
-  const repository = new Wave25InteractionRepository({ query: noSql, connect: noSql } as unknown as pg.Pool)
+  const repository = new CurrentInteractionRepository({ query: noSql, connect: noSql } as unknown as pg.Pool)
   Object.assign(repository, { get: ports.get, decide: ports.decide })
   Object.assign(repository.delivery, ports.delivery)
   const budgets = {

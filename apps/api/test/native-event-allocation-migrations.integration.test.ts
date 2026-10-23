@@ -4,7 +4,7 @@ import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { nativeActivityNoiseMigration } from '../src/infrastructure/nativeActivityNoiseMigration.js'
 import { nativeEventSequenceMigration } from '../src/infrastructure/nativeEventSequenceMigration.js'
 import { counts, createDatabase, event, nextSequence, timestamp, withDatabaseFixture } from './native-event-allocation.test-support.js'
-import { beginTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
+import { withTransaction } from '../src/infrastructure/transaction.js'
 
 describe('native event sequence migration on fresh databases', () => {
   const database = withDatabaseFixture(createDatabase)
@@ -41,13 +41,15 @@ describe('native event sequence migration upgrades', () => {
       const oldActivity = (await pool.query('select * from run_activity order by sequence')).rows
       const oldReceipts = (await pool.query('select * from application_migrations order by version')).rows
       const client = await pool.connect()
+      const rollback = new Error('Simulated failed deployment')
       try {
-        await beginTransaction(client)
-        await client.query('select pg_advisory_xact_lock($1)', [810_001])
-        await client.query(nativeEventSequenceMigration.sql)
-        await client.query('insert into application_migrations(version) values(1702)')
-        await rollbackTransaction(client) // Simulated failed deployment: DDL/backfill/receipt all roll back.
-      } finally { await rollbackTransaction(client); client.release() }
+        await expect(withTransaction({ client }, async transaction => {
+          await transaction.query('select pg_advisory_xact_lock($1)', [810_001])
+          await transaction.query(nativeEventSequenceMigration.sql)
+          await transaction.query('insert into application_migrations(version) values(1702)')
+          throw rollback // Simulated failed deployment: DDL/backfill/receipt all roll back.
+        })).rejects.toBe(rollback)
+      } finally { client.release() }
       expect((await pool.query("select to_regprocedure('append_harness_native_event(jsonb)') as fn")).rows[0].fn).toBeNull()
       expect((await pool.query('select * from application_migrations order by version')).rows).toEqual(oldReceipts)
       await applyApplicationMigrations(pool)

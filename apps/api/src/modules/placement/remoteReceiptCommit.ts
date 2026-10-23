@@ -4,7 +4,7 @@ import type { DispatchIntent, AcceptedNodePlacement } from '@foreman-code/contra
 import { sameWorkflowValue } from '@foreman-code/contracts/current'
 import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import { beforeGraphCommit, isGraphTransactionFinalizing } from '../run-graph/index.js'
-import type { RunOwnership } from '../runs/ownership.js'
+import type { RunOwnership } from '../runs/index.js'
 import { readReconciledDispatchIntent, persistVerifiedRemoteReceipt, auditRejectedRemoteReceipt } from '../runs/remote/persistence.js'
 import type { RemoteResultCommitPort, RemoteResultTransaction, VerifiedRemoteEvidence } from '../runs/remote/resultBridge.js'
 import { readAcceptedPlacement } from './persistence.js'

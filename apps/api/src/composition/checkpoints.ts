@@ -1,7 +1,7 @@
-import type { BaseCheckpointSaver } from './langgraph.js'
-import { ApprovalPostgresSaver } from './approvalCheckpointSaver.js'
+import type { BaseCheckpointSaver } from '../infrastructure/langgraph.js'
+import { ApprovalPostgresSaver } from '../modules/runs/approvalCheckpointSaver.js'
 
-import { createPool, queryForReadiness, type DatabaseOptions } from './pool.js'
+import { createPool, queryForReadiness, type DatabaseOptions } from '../infrastructure/pool.js'
 
 export interface CheckpointStore {
   readonly saver: BaseCheckpointSaver

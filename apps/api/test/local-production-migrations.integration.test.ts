@@ -5,13 +5,14 @@ import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { loadConfig } from '../src/config.js'
 import { createDatabase } from '../src/infrastructure/database.js'
-import { createCheckpointStore } from '../src/infrastructure/checkpoints.js'
+import { createCheckpointStore } from '../src/composition/checkpoints.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresLocalHumanAccess } from '../src/modules/access/localHuman.js'
 import { currentDatabase, postgresEnabled } from './helpers/database.js'
 import { createFixtureSchema, dropFixtureSchema } from './helpers/testResources.js'
 import { compileApiFixture } from './helpers/compiledApiFixture.js'
-import { beginTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
+import { withTransaction } from '../src/infrastructure/transaction.js'
+import { deferred } from './helpers/deferred.js'
 
 it.skipIf(!postgresEnabled)('migrates under DDL contention without changing the API request deadline', async () => {
   const fixture = await currentDatabase({ beforeMigration: 2026100401 })
@@ -25,12 +26,18 @@ it.skipIf(!postgresEnabled)('migrates under DDL contention without changing the 
   const runtime = createDatabase(options)
   const checkpoints = createCheckpointStore(url.toString(), checkpointSchema)
   const holder = await fixture.pool.connect()
+  const release = deferred()
+  const entered = deferred<number>()
+  let holding: Promise<void> | undefined
   let command: Promise<{ success: true } | { success: false; error: Error }> | undefined
   try {
     const compiledApi = await compileApiFixture(fixture.directory)
-    await beginTransaction(holder)
-    await holder.query('lock table application_migrations in access exclusive mode')
-    const pid = (await holder.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
+    holding = withTransaction({ client: holder }, async transaction => {
+      await transaction.query('lock table application_migrations in access exclusive mode')
+      entered.resolve((await transaction.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid)
+      await release.promise
+    })
+    const pid = await entered.promise
     command = promisify(execFile)(process.execPath, [join(compiledApi, 'cli/migrate.js')], {
       env: environment, timeout: 15_000, maxBuffer: 1024 * 1024,
     }).then(() => ({ success: true as const }), (error: Error) => ({ success: false as const, error }))
@@ -40,7 +47,8 @@ it.skipIf(!postgresEnabled)('migrates under DDL contention without changing the 
     expect(blocked).toBe(true)
     // eslint-disable-next-line no-restricted-syntax -- Holding the lock past the request deadline proves migration does not use that deadline.
     await new Promise(resolve => setTimeout(resolve, options.queryTimeoutMs + 1))
-    await rollbackTransaction(holder)
+    release.resolve()
+    await holding
     const result = await command
     expect(result.success, result.success ? undefined : result.error.message).toBe(true)
     const human = await new PostgresLocalHumanAccess(fixture.pool, new PostgresAccessService(fixture.pool)).current()
@@ -48,7 +56,8 @@ it.skipIf(!postgresEnabled)('migrates under DDL contention without changing the 
     await checkpoints.ping()
     await expect(runtime.pool.query('select pg_sleep(0.5)')).rejects.toThrow(/timeout|canceling statement/i)
   } finally {
-    await rollbackTransaction(holder)
+    release.resolve()
+    if (holding) await holding
     holder.release()
     if (command) await command
     await checkpoints.close()
