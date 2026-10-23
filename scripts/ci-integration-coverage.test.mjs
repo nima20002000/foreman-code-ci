@@ -87,7 +87,7 @@ test('unresolved repository runtime inputs require full integration scope', () =
 test('Worker bundle inputs require full integration scope despite unrelated incoming dependencies', () => {
   for (const input of ['apps/worker/src/runtime.mjs', 'apps/worker/artifacts/job-quota-query.c',
     'apps/api/src/modules/harnesses/compatibility/schemaWorker.ts', 'packages/contracts/src/productEnvironment.mjs',
-    'scripts/build-worker-artifact.mjs', 'scripts/foreman-mcp.mjs', 'apps/web/public/graphql.svg']) {
+    'scripts/build-worker-artifact.mjs', 'scripts/graphql-mcp.mjs', 'apps/web/public/graphql.svg']) {
     const graph = new Map([...sources, [input, 'export {}'],
       ['apps/worker/src/consumer.mjs', `import '${input}'`],
       [second, 'execFile(process.execPath, [computedBuilderPath])']])

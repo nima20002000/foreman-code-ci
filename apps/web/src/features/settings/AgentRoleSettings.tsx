@@ -1,6 +1,5 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import {
-  agentTemplateForRole, DEFAULT_HARNESS_DEFAULTS, memoryBoardTools, nativeToolsSummary, newAgentForemanTools,
+  agentTemplateForRole, DEFAULT_HARNESS_DEFAULTS, memoryBoardTools, nativeToolsSummary, newAgentGraphqlTools,
   operatorHarnessDefaults, type AgentDefaults, type HarnessConfiguration,
 } from '@foreman-code/contracts'
 import type { SettingsAgentRole } from '@foreman-code/contracts/management'
@@ -51,16 +50,16 @@ export function AgentRoleSettings({ role, onEditPrompt }: { role: SettingsAgentR
     delete next.harnessProfileSelection
     change(next)
   }
-  const tools = role === 'operator' ? [] : template[INSTALLATION_NAMES.fields.agentTools] ?? newAgentForemanTools(role)
+  const tools = role === 'operator' ? [] : template.graphqlTools ?? newAgentGraphqlTools(role)
   const changeMemory = (memory: Memory) => {
     if (role === 'operator') return
     const kept = tools.filter(tool => !(memoryBoardTools('write') as string[]).includes(tool))
-    const foremanTools = [...kept, ...(memory === 'none' ? [] : memoryBoardTools(memory))]
-    const defaults = newAgentForemanTools(role)
-    const next = { ...template, [INSTALLATION_NAMES.fields.agentTools]: foremanTools } as Template
+    const graphqlTools = [...kept, ...(memory === 'none' ? [] : memoryBoardTools(memory))]
+    const defaults = newAgentGraphqlTools(role)
+    const next = { ...template, graphqlTools } as Template
     // Back at the role's built-in tools: keep following the built-in list instead of pinning a copy.
-    if (saved && !(INSTALLATION_NAMES.fields.agentTools in saved && saved[INSTALLATION_NAMES.fields.agentTools]) && foremanTools.length === defaults.length
-      && defaults.every(tool => foremanTools.includes(tool))) delete (next as { [INSTALLATION_NAMES.fields.agentTools]?: unknown })[INSTALLATION_NAMES.fields.agentTools]
+    if (saved && !('graphqlTools' in saved && saved.graphqlTools) && graphqlTools.length === defaults.length
+      && defaults.every(tool => graphqlTools.includes(tool))) delete (next as { graphqlTools?: unknown }).graphqlTools
     change(next)
   }
   const operator = role === 'operator' ? draft.operator : undefined

@@ -11,7 +11,8 @@ function fixture() {
   if (source.request.configuration.harness.harness !== 'codex') throw new Error('Expected Codex fixture.')
   source.request.configuration.harness.advanced!.sessionPersistence = 'ephemeral'
   source.environment = { ...source.environment!, variables: { ...source.environment!.variables, CUSTOM_APPLICATION_BEARER: 'writer-only' } }
-  const ambient = { CUSTOM_APPLICATION_BEARER: 'ambient-bearer', GRAPHQL_MCP_TOKEN: 'ambient-main', HOST_ONLY: 'host-config' }
+  const ambient = { CUSTOM_APPLICATION_BEARER: 'ambient-bearer', FOREMAN_CODE_MCP_TOKEN: 'ambient-main',
+    GRAPHQL_MCP_TOKEN: 'legacy-ambient-main', HOST_ONLY: 'host-config' }
   const close = vi.fn(async () => undefined)
   const requests: string[] = []
   const transport: CodexTransport = { start: async () => undefined, close, respond: async () => undefined, reject: async () => undefined,

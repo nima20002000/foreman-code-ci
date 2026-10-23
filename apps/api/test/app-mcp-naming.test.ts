@@ -19,7 +19,7 @@ describe.each(['codex'] as const)('%s managed MCP naming', (harness) => {
   const add = managedChange('graphql', true, endpoint)
 
   it.each(['foreman-code', 'graphql'])('writes timeouts without customizing the managed %s entry', name => {
-    const entry = connection('GRAPHQL_MCP_TOKEN')
+    const entry = connection('FOREMAN_CODE_MCP_TOKEN')
     expect(entry).toMatchObject({ startup_timeout_sec: 60, tool_timeout_sec: APP_MCP_TIMEOUTS.tool_timeout_sec })
     expect(isAppLauncher(entry)).toBe(true)
     expect(managedStatus(snapshot({ [name]: entry }), 'graphql')).toBe('installed')
@@ -35,7 +35,7 @@ describe.each(['codex'] as const)('%s managed MCP naming', (harness) => {
     const old = { ...connection('GRAPHQL_MCP_TOKEN'), startup_timeout_sec: 10, tool_timeout_sec: 30,
       enabled: false, disabled_tools: ['interaction_respond'] }
     const repaired = applyMcpEdits({ graphql: old }, mcpEdits(snapshot({ graphql: old }), add, managed))
-    expect(repaired['foreman-code']).toEqual({ ...old, ...connection('GRAPHQL_MCP_TOKEN'), enabled: false })
+    expect(repaired['foreman-code']).toEqual({ ...old, ...connection('FOREMAN_CODE_MCP_TOKEN'), enabled: false })
     expect(repaired['foreman-code']).toMatchObject({ startup_timeout_sec: 60, tool_timeout_sec: APP_MCP_TIMEOUTS.tool_timeout_sec })
     expect(appMcpNeedsMigration(snapshot(repaired))).toBe(false)
     expect(() => mcpEdits(snapshot(repaired), add, managed)).toThrow('already has a native configuration')
@@ -44,11 +44,11 @@ describe.each(['codex'] as const)('%s managed MCP naming', (harness) => {
   it('installs one canonical connection with the new token reference', () => {
     expect(add.name).toBe('foreman-code')
     const installed = applyMcpEdits({}, mcpEdits(snapshot({}), add, managed))
-    expect(installed).toEqual({ 'foreman-code': connection('GRAPHQL_MCP_TOKEN') })
+    expect(installed).toEqual({ 'foreman-code': connection('FOREMAN_CODE_MCP_TOKEN') })
     expect(managedStatus(snapshot(installed), 'graphql')).toBe('installed')
   })
 
-  it.each(['GRAPHQL_MCP_TOKEN', 'GRAPHQL_MCP_TOKEN'])('keeps the supported old name usable with %s', (token) => {
+  it.each(['GRAPHQL_MCP_TOKEN', 'FOREMAN_CODE_MCP_TOKEN'])('keeps the supported old name usable with %s', (token) => {
     const entry = connection(token)
     expect(isAppLauncher(entry)).toBe(true)
     expect(appMcpServerName({ graphql: entry })).toBe('graphql')
@@ -66,14 +66,14 @@ describe.each(['codex'] as const)('%s managed MCP naming', (harness) => {
       timeout: 5000, custom_setting: { retained: true } }
     const before = { graphql: entry, docs: { url: 'https://example.com/mcp' } }
     const after = applyMcpEdits(before, mcpEdits(snapshot(before), add, managed))
-    expect(after).toEqual({ docs: before.docs, 'foreman-code': { ...entry, ...connection('GRAPHQL_MCP_TOKEN'), enabled: false } })
+    expect(after).toEqual({ docs: before.docs, 'foreman-code': { ...entry, ...connection('FOREMAN_CODE_MCP_TOKEN'), enabled: false } })
     expect(managedStatus(snapshot(after), 'graphql')).toBe('disabled')
     expect(() => mcpEdits(snapshot(after), add, managed)).toThrow('already has a native configuration')
   })
 
   it.each([120, 300])('upgrades the previous %s-second managed deadline once during repeated readiness', async timeout => {
     const f = await deviceManagedMcpFixture()
-    const entry = { ...connection('GRAPHQL_MCP_TOKEN'), tool_timeout_sec: timeout, enabled: false,
+    const entry = { ...connection('FOREMAN_CODE_MCP_TOKEN'), tool_timeout_sec: timeout, enabled: false,
       enabled_tools: ['context_get'], disabled_tools: ['interaction_respond'],
       default_tools_approval_mode: 'prompt', tools: { context_get: { approval_mode: 'prompt' } },
       timeout: 5000, custom_setting: { retained: true } }
@@ -99,7 +99,7 @@ describe.each(['codex'] as const)('%s managed MCP naming', (harness) => {
     const stale = { ...connection('GRAPHQL_MCP_TOKEN'), command: '/removed/node/bin/node' }
     expect(isAppLauncher(stale)).toBe(false)
     const repaired = applyMcpEdits({ graphql: stale }, mcpEdits(snapshot({ graphql: stale }), add, managed))
-    expect(repaired).toEqual({ 'foreman-code': connection('GRAPHQL_MCP_TOKEN') })
+    expect(repaired).toEqual({ 'foreman-code': connection('FOREMAN_CODE_MCP_TOKEN') })
     expect(managedStatus(snapshot(repaired), 'graphql')).toBe('installed')
     const customized = { ...stale, env: { EXTRA: 'value' } }
     expect(() => mcpEdits(snapshot({ graphql: customized }), add, managed)).toThrow('custom')
@@ -116,7 +116,7 @@ describe.each(['codex'] as const)('%s managed MCP naming', (harness) => {
       .toThrow('custom')
     expect(collision.graphql).toEqual(entry)
     expect(() => assertChange(snapshot({}), { kind: 'add', name: 'custom', connection: {
-      transport: 'remote', url: endpoint, bearerTokenEnvironmentVariable: 'GRAPHQL_MCP_TOKEN',
+      transport: 'remote', url: endpoint, bearerTokenEnvironmentVariable: 'FOREMAN_CODE_MCP_TOKEN',
     } })).toThrow('managed by the server')
   })
 
@@ -125,7 +125,7 @@ describe.each(['codex'] as const)('%s managed MCP naming', (harness) => {
       bearerTokenEnvironmentVariable: 'GRAPHQL_APP_MCP_TOKEN' })
     const policy = { ...retired, enabled: false, disabled_tools: ['interaction_respond'] }
     const after = applyMcpEdits({ 'graphql-app': policy }, mcpEdits(snapshot({ 'graphql-app': policy }), add, managed))
-    expect(after).toEqual({ 'foreman-code': { ...connection('GRAPHQL_MCP_TOKEN'), enabled: false,
+    expect(after).toEqual({ 'foreman-code': { ...connection('FOREMAN_CODE_MCP_TOKEN'), enabled: false,
       disabled_tools: ['interaction_respond'] } })
     expect(() => mcpEdits(snapshot({ 'graphql-app': { url: 'https://custom.example/mcp' } }), add, managed)).toThrow('custom')
     expect(() => mcpEdits({ ...snapshot({ 'graphql-app': policy }), ownership: { 'graphql-app': false } }, add, managed))

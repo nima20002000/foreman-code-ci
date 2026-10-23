@@ -1,6 +1,5 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { useState } from 'react'
-import { agentTemplateForRole, nativeToolsSummary, memoryBoardTools, newAgentForemanTools, type AgentDefaults } from '@foreman-code/contracts'
+import { agentTemplateForRole, nativeToolsSummary, memoryBoardTools, newAgentGraphqlTools, type AgentDefaults } from '@foreman-code/contracts'
 import type { SettingsAgentRole } from '@foreman-code/contracts/management'
 import { ErrorState, LoadingState, Switch } from '../../shared/ui/nocturne'
 import { useAgentDefaultsQuery, useUpdateAgentDefaultsMutation } from '../../shared/api/query'
@@ -37,7 +36,7 @@ export function AgentDefaultsSettings({ selectedRole, promptOpen = false, onOpen
     {agentRoleOrder.map((role) => {
       const info = rolePresentation[role]
       const template = role === 'operator' ? value.operator : agentTemplateForRole(value, role)
-      const tools = role === 'operator' ? [] : template[INSTALLATION_NAMES.fields.agentTools] ?? newAgentForemanTools(role)
+      const tools = role === 'operator' ? [] : template.graphqlTools ?? newAgentGraphqlTools(role)
       const memory = memoryBoardTools('write').filter(tool => tools.includes(tool))
       const memoryLabel = memory.length ? 'Write' : 'None'
       const summary = [...harnessSummary(template.harness),

@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '../packages/contracts/src/installationNames.mjs'
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
@@ -9,7 +8,7 @@ import { assertTestPath, assertTestRoot, completeTestResourceCleanup, dropTestDa
   testAdminUrl } from './test-resources.mjs'
 import { testProcessAlive, testRootInUse } from './test-resource-process.mjs'
 
-const markerName = INSTALLATION_NAMES.paths.testOwner
+const markerName = '.graphql-test-owner.json'
 const databaseKinds = new Set(['fixture-database', 'native-acceptance-database'])
 const nativeKinds = new Set(['native-qualification', 'native-acceptance'])
 const processKinds = new Set(['suite-process-group', 'native-acceptance-process-group'])

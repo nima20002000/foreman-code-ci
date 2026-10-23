@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { errorMessage } from '@foreman-code/contracts/server-kit'
 import { acceptedJobSpecDigests } from '@foreman-code/contracts/jobs-node'
 import { AcceptedVerificationJobSpecSchema, VerificationJobExecutionSchema,
@@ -62,9 +61,9 @@ export function qualificationExecution(raw: JobQualificationCandidateRecord,
   const definitionId = `qualification:${identity.executionId}`
   const interruption = identity.executionId.endsWith(':cancelled') || identity.executionId.endsWith(':timed_out')
   const argv = interruption
-    ? ['node', '-e', QUALIFICATION_PRESSURE_DRIVER, INSTALLATION_NAMES.paths.containerQualificationContext]
-    : ['node', INSTALLATION_NAMES.paths.verificationRunner, '--context',
-      INSTALLATION_NAMES.paths.qualificationContext]
+    ? ['node', '-e', QUALIFICATION_PRESSURE_DRIVER, '/workspace/.graphql-job-inputs/qualification-context.json']
+    : ['node', '/opt/graphql-ci/verification/verify-repository.mjs', '--context',
+      '.graphql-job-inputs/qualification-context.json']
   const spec = { schemaVersion: 2, source, target: identity.target, argv,
     inputs: [], outputs, policy, workflowInput: null, definitionId, definitionRevision: 1,
     definitionVersionId: identity.definitionVersionId, profile: identity.profile,
