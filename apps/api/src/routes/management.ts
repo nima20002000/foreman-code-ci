@@ -1,7 +1,6 @@
-import { registerCircleAccountRoutes } from './circleAccounts.js'
 import { registerComputerActivityRoutes } from './computerActivity.js'
 import { registerBugReportRoutes } from './bugReports.js'
-import { registerHostCiRoutes } from './hostCi.js'
+import { registerCircleAccountRoutes, registerHostCiRoutes } from '../modules/ci/http.js'
 import { registerComputerAccountsRoutes } from './computerAccounts.js'
 import { registerComputerMaintenanceRoutes } from './computerMaintenance.js'
 import { registerComputerSyncRoutes } from './computerSync.js'
@@ -88,8 +87,8 @@ function page(query: Query) {
 }
 
 export function registerManagementRoutes(app: FastifyInstance, services: OperatorServices): void {
-  registerHostCiRoutes(app, services)
-  if (services.circleAccounts) registerCircleAccountRoutes(app, services.circleAccounts)
+  registerHostCiRoutes(app, { services, principal: requirePrincipal })
+  if (services.circleAccounts) registerCircleAccountRoutes(app, { service: services.circleAccounts, principal: requirePrincipal })
   if (services.bugReports) registerBugReportRoutes(app, services.bugReports)
   if (services.harnessRegistry) registerHarnessRegistryRoutes(app, services.harnessRegistry, async request => requirePrincipal(request))
   if (services.computerActivity) registerComputerActivityRoutes(app, services.computerActivity)

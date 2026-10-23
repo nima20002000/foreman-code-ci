@@ -50,8 +50,6 @@ export function useChatDelivery(target: DeliveryTarget | undefined, enabled: boo
     }
   }
   const query = useQuery({ queryKey, enabled: enabled && !!selected && denial !== key,
-    refetchInterval: ({ state: { data } }) => options.pollMs && data
-      && ('delivery' in data ? data.delivery.state : data.state) !== 'idle' ? options.pollMs : false,
     queryFn: async ({ signal }) => {
       try {
         const result = await chatDeliveryClient.read(selected!, { signal }); signal.throwIfAborted(); assertSession(generation)
@@ -59,7 +57,9 @@ export function useChatDelivery(target: DeliveryTarget | undefined, enabled: boo
         setDenial(undefined); return accepted
       }
       catch (error) { if (isApiAccessError(error)) deny(error); throw error }
-    } })
+    },
+    refetchInterval: ({ state: { data } }) => options.pollMs && data
+      && ('delivery' in data ? data.delivery.state : data.state) !== 'idle' ? options.pollMs : false })
   const refresh = query.refetch
   useEffect(() => {
     if (enabled && selected && denial !== key) {

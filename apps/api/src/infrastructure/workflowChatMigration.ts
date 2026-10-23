@@ -1,5 +1,5 @@
 export const workflowChatMigration = {
-  version: 2026102103,
+  version: 2026102120,
   sql: `
     create table workflow_chat_channels (
       id text primary key, workspace_id text not null, workflow_id text not null unique,

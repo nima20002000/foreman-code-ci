@@ -3,8 +3,10 @@ import { componentLogger } from '../modules/diagnostics/logger.js'
 
 /**
  * The one module that issues transaction-control statements. Everything else runs a transaction
- * through withTransaction, or, for a session that must span several transactions, the statement
- * primitives below.
+ * through withTransaction, or, for a session that must span several transactions or needs its own connection-loss
+ * and commit-outcome handling, the statement primitives below. Run-graph sessions use the same primitives through
+ * ExclusiveGraphConnection (modules/run-graph/connection.ts), which adds statement queueing, a statement guard,
+ * before-commit checks and poisoning.
  */
 
 /** Minimal SQL port: a Pool, a client or a graph transaction all satisfy it. */
@@ -163,18 +165,53 @@ export function isTransactionConflict(error: unknown): boolean {
   return code === '40001' || code === '40P01'
 }
 
+/** Where a transaction runs: a fresh connection from a pool, or a connection the caller owns, keeps and releases. */
+export type TransactionSource = Pick<pg.Pool, 'connect'> | { readonly client: pg.ClientBase }
+
+export interface TransactionRunOptions extends TransactionOptions {
+  /**
+   * The caller's open transaction, when it has one: perform runs on it directly and the caller commits or rolls
+   * back, so the other options do not apply. Undefined starts a transaction from the source as usual.
+   */
+  join?: pg.ClientBase | undefined
+}
+
 /**
- * Runs perform in one transaction on a fresh pooled connection: commit on success, rollback on any error
- * (the original error is rethrown), release always, and destroy the connection when rollback fails.
+ * The one way to run a transaction. Commit on success; on any error roll back and rethrow the original error.
+ * - From a pool: a fresh connection, released always and destroyed when rollback fails.
+ * - From `{ client }`: a connection the caller owns and releases; a failed BEGIN is not rolled back, and a failed
+ *   rollback is logged.
+ * - With `join`: inside the caller's transaction (see TransactionRunOptions.join).
+ * `conflictRetries` repeats the whole transaction after a serialization failure or deadlock.
  */
+export function withTransaction<T>(pool: Pick<pg.Pool, 'connect'>, perform: (client: pg.PoolClient) => Promise<T>,
+  options?: TransactionOptions): Promise<T>
+export function withTransaction<T>(source: TransactionSource, perform: (client: pg.ClientBase) => Promise<T>,
+  options?: TransactionRunOptions): Promise<T>
 export async function withTransaction<T>(
-  pool: Pick<pg.Pool, 'connect'>,
+  source: TransactionSource,
   perform: (client: pg.PoolClient) => Promise<T>,
-  options: TransactionOptions = {},
+  options: TransactionRunOptions = {},
 ): Promise<T> {
+  if (options.join) return perform(options.join as pg.PoolClient)
   const origin = new Error('transaction caller')
+  const retries = options.conflictRetries ?? 0
+  if ('client' in source) {
+    const client = source.client as pg.PoolClient
+    for (let attempt = 0; ; attempt += 1) {
+      await beginTransaction(client, options, origin)
+      try {
+        const result = await perform(client)
+        await commitTransaction(client)
+        return result
+      } catch (error) {
+        const rollbackError = await rollbackAfterFailure(client)
+        if (rollbackError || attempt >= retries || !isTransactionConflict(error)) throw error
+      }
+    }
+  }
   for (let attempt = 0; ; attempt += 1) {
-    const client = await pool.connect()
+    const client = await source.connect()
     let releaseError: Error | undefined
     try {
       await beginTransaction(client, options, origin)
@@ -183,38 +220,9 @@ export async function withTransaction<T>(
       return result
     } catch (error) {
       releaseError = await rollbackAfterFailure(client)
-      if (releaseError || attempt >= (options.conflictRetries ?? 0) || !isTransactionConflict(error)) throw error
+      if (releaseError || attempt >= retries || !isTransactionConflict(error)) throw error
     } finally {
       client.release(releaseError)
     }
   }
-}
-
-/**
- * One transaction on a connection the caller owns, keeps and releases. A failed BEGIN is not rolled back;
- * any later error is (the original error is rethrown, a failed rollback is logged).
- */
-export async function withClientTransaction<T>(
-  client: pg.ClientBase,
-  perform: () => Promise<T>,
-  options: TransactionOptions = {},
-): Promise<T> {
-  await beginTransaction(client, options)
-  try {
-    const result = await perform()
-    await commitTransaction(client)
-    return result
-  } catch (error) {
-    await rollbackAfterFailure(client)
-    throw error
-  }
-}
-
-/** A supplied client belongs to the caller's transaction, including its commit/rollback. */
-export async function inTransaction<T>(
-  pool: Pick<pg.Pool, 'connect'>,
-  supplied: pg.ClientBase | undefined,
-  perform: (client: pg.ClientBase) => Promise<T>,
-): Promise<T> {
-  return supplied ? perform(supplied) : withTransaction(pool, perform)
 }

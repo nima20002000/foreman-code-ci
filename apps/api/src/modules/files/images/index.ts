@@ -1,4 +1,4 @@
-import { errorMessage } from '../../../shared/errorMessage.js'
+import { errorMessage } from '@foreman-code/contracts/server-kit'
 import { MAX_FILE_BYTES, type FileMediaType } from "@foreman-code/contracts/files";
 import sharp, { type Metadata, type Sharp } from "sharp";
 

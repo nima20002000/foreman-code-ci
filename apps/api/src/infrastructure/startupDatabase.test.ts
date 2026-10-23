@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { retryStartupDatabase, runBackgroundPassAtStartup } from './startupDatabase.js'
+import { retryStartupDatabase, runBackgroundPassAtStartup } from './databaseRetry.js'
 
 afterEach(() => { vi.useRealTimers() })
 

@@ -6,7 +6,7 @@ import { AgentDefaultsSchema, DEFAULT_AGENT_DEFAULTS, DEFAULT_HARNESS_DEFAULTS, 
   type HarnessDefaults, type AgentHarness } from '@foreman-code/contracts'
 import { UnavailableHarnessDefaultsSchema, type HarnessOptions } from '@foreman-code/contracts/management'
 import { withTransaction } from '../../infrastructure/transaction.js'
-import { retryStartupDatabase } from '../../infrastructure/startupDatabase.js'
+import { retryStartupDatabase } from '../../infrastructure/databaseRetry.js'
 import { latestNativeModel, nativeModelDefaults } from './modelDefaults.js'
 import { DomainError } from '../errors.js'
 import { detectedClaudeProfilePath } from './claudeSdk/profilePath.js'

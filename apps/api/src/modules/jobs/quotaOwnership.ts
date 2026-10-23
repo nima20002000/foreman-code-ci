@@ -10,8 +10,8 @@ import { JobVerificationQuotaPoolSchema, type JobVerificationQuotaPool }
 import { RootBindingSchema, type RootBinding, type SourceProjectQuotaSlot }
   from '@foreman-code/contracts/source-materialization'
 import { DomainError } from '../errors.js'
-import { MAX_VERIFICATION_CONFIGURATION_BYTES } from './installedVerificationConfiguration.js'
-import { type InstalledRuntimeConfigurationLocation } from './installedRuntimeConfiguration.js'
+import { MAX_VERIFICATION_CONFIGURATION_BYTES, type InstalledRuntimeConfigurationLocation }
+  from '@foreman-code/contracts/installed-runtime-node'
 import { findRetainedRuntimeConfiguration } from './retainedRuntimeConfiguration.js'
 
 export const JobProjectQuotaReadbackSchema = z.object({

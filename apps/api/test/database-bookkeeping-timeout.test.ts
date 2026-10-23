@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import type { NativeHarnessEvent, NativeSessionReference } from '@foreman-code/contracts'
 import { afterEach, expect, it, vi } from 'vitest'
-import { isDatabaseTimeout, retryDatabaseTimeout } from '../src/infrastructure/databaseTimeout.js'
+import { isDatabaseTimeout, retryDatabaseTimeout } from '../src/infrastructure/databaseRetry.js'
 import { DomainError } from '../src/modules/errors.js'
 import type { NativeHarnessSessionManager } from '../src/modules/harnesses/port.js'
 import { LeaseGuard, SingleWriterSessionManager } from '../src/modules/interactions/sessionWriter.js'

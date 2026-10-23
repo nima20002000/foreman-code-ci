@@ -28,7 +28,9 @@ import { registerWorkerMcpInstallation } from '../../../apps/api/src/modules/har
 import { readUpdateRecord } from './updateSupervisor.mjs';
 import { WORKER_UPDATE_NAMESPACE } from '../../../packages/contracts/src/workerUpdate.ts';
 import { runWorkerStartupSmoke, workerCiStartupStatus, runCiInstallSmoke } from './ciInstallSmoke.mjs';
-import { HostCiRunner } from '../../../apps/api/src/modules/ci-host/runner.ts';
+// The API still provides the CI ports until the Worker supplies its own; the platform must install first.
+import '../../../apps/api/src/modules/ci/platform.ts';
+import { HostCiRunner } from '@foreman-code/ci/runner';
 import { isDeepStrictEqual } from 'node:util';
 import { WorkerArtifactReplySchema, WorkerArtifactManifestSchema } from '../../../packages/contracts/src/workerUpdate.ts';
 import { workerArtifactContentSha256 } from '../../../packages/contracts/src/workerArtifactContentNode.mjs';

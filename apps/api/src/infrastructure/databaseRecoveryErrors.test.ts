@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { retryDatabaseOperation } from './databaseTimeout.js'
+import { retryDatabaseOperation } from './databaseRetry.js'
 import { readOperationalFailures } from '../modules/diagnostics/logger.js'
 import pg from 'pg'
 import { EventEmitter } from 'node:events'

@@ -140,11 +140,12 @@ unit_slice() {
 }
 
 # An exact restored build can bypass pnpm startup; misses keep the ordinary build path.
+# The CI package compiles against the contracts output, so it builds after contracts, even from a restored cache.
 build_contracts() {
-  if [ -n "${FOREMAN_CODE_CI_CONTRACTS_CACHE:-}" ] && node scripts/ci-contracts.mjs ready "$PWD"; then
-    return 0
+  if [ -z "${FOREMAN_CODE_CI_CONTRACTS_CACHE:-}" ] || ! node scripts/ci-contracts.mjs ready "$PWD"; then
+    pnpm --filter @foreman-code/contracts build || return $?
   fi
-  pnpm --filter @foreman-code/contracts build
+  pnpm --filter @foreman-code/ci build
 }
 
 # The deploy's "API full check" (scripts/local-production-runtime.mjs), so a commit that fails deploy fails typecheck.

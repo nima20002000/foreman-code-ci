@@ -14,7 +14,6 @@ import { JobRuntimeFingerprintRecordSchema, InstalledJobRuntimeDescriptorRecordS
   from '@foreman-code/contracts/job-verification-runtime'
 import { inspectInstalledVerificationCandidate, inspectInstalledVerificationRuntime,
   captureInstalledVerificationRuntimeConfiguration, readInstalledVerificationConfiguration } from './installedVerificationRuntime.js'
-import type { InstalledVerificationRuntimeConfiguration } from './installedVerificationConfiguration.js'
 import { qualifyVerificationRuntime } from './verificationQualification.js'
 import { DeviceRegistrationSchema } from '@foreman-code/contracts/device-identity'
 import { DeviceSessionBindingSchema, type DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
@@ -28,12 +27,13 @@ import type { JobSql } from './repository.js'
 import { InstalledJobRuntimeConfigurationSchema, InstalledJobRuntimeCaptureInputSchema, InstalledJobRuntimeCaptureInputRecordSchema,
   readProtectedRuntimeConfiguration, installedRuntimeUnavailable as unavailable, type InstalledJobRuntimeConfiguration,
   type InstalledJobRuntimeCaptureInput, type InstalledRuntimeConfigurationLocation, type InstalledRuntimeObservedHost,
-} from './installedRuntimeConfiguration.js'
+  type InstalledVerificationRuntimeConfiguration,
+} from '@foreman-code/contracts/installed-runtime-node'
 export { InstalledJobRuntimeConfigurationSchema, InstalledJobRuntimeCaptureInputSchema, InstalledJobRuntimeCaptureInputRecordSchema,
   InstalledJobRuntimeRefreshInputSchema, InstalledJobRuntimeConfigurationRecordSchema, readProtectedRuntimeConfiguration,
   readProtectedRuntimeFile, type InstalledJobRuntimeConfiguration, type InstalledJobRuntimeCaptureInput,
   type InstalledRuntimeConfigurationLocation, type InstalledRuntimeObservedHost,
-} from './installedRuntimeConfiguration.js'
+} from '@foreman-code/contracts/installed-runtime-node'
 
 export async function captureInstalledRuntimeConfigurationRecord(
   input: z.infer<typeof InstalledJobRuntimeCaptureInputRecordSchema>,

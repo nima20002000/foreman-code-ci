@@ -100,6 +100,8 @@ export function native2Fixture(completed = true,
     consumeLaunch: (): boolean => false,
   } satisfies RepeatNativeObservationStore
   const runs = {
+    // These fixtures have no workflow memory board.
+    kanbanRecordMissing: async () => false,
     ...idleWorkflowControls,
     repeat: async () => ({ ...idleWorkflowRepeat, ...store }),
     ensureExecution: forbidden('ensureExecution'),

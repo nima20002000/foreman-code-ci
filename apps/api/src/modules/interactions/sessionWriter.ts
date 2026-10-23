@@ -6,7 +6,7 @@ import { nativeEventBatches } from './nativeEventBatches.js'
 import { reviewPreflightIdentity } from './reviewPolicy.js'
 import { setImmediate as yieldToEventLoop } from 'node:timers/promises'
 import { componentLogger } from '../diagnostics/logger.js'
-import { isDatabaseTimeout, retryDatabaseTimeout, retryDatabaseOperation } from '../../infrastructure/databaseTimeout.js'
+import { isDatabaseTimeout, retryDatabaseTimeout, retryDatabaseOperation } from '../../infrastructure/databaseRetry.js'
 import { isTransactionConflict } from '../../infrastructure/transaction.js'
 import { isRetryableLaneRenewal } from './laneRenewal.js'
 
