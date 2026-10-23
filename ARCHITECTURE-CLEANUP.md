@@ -496,6 +496,15 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   shared seams, `livePrincipal` (the live principal read) and `commandReceiptLedger` (conversation control receipts),
   which recognise statements by their bound values instead of SQL text, plus bound-value checks in a few fakes. The rest
   route several tables on SQL text; they need real-Postgres integration tests or a fake at a port.
+  - Part 3 (`fix/a51-sql3`, base `1d6b544d7a`): **in progress, CI blocked**. Ownership is the last 45 of the
+    base's 135 pending entries (harness-profile-selection-persistence through workflow-node-history-compatibility).
+    Nine entries converted: profile selection persistence, Operator submitted ACK/terminal messages, Run authority,
+    graph transactions, reviewer cleanup/fencing, continuation upgrade, and selected-run admission lock observation.
+    Persistence tests use migrated Postgres; SQL predicate assertions are replaced by saved rows and public results.
+    Pending list: 135 → 126. The other 36 entries and earlier call-order/value-count conversions in this third remain.
+    Verification is incomplete: base lint `8dc9a1cc-bd0c-4ea3-a005-b59dd74e6192` failed at cached-store installation;
+    base typecheck `8fdadc5a-0567-4178-a610-13c9badbd5b3` was submitted. Repeated focused integration and final
+    typecheck/lint submissions returned `DATABASE_BUSY`/`INTERNAL_ERROR` during CI admission. No local checks run.
 - [x] #52 Stale lint allowlist pruned: 674 → 276 (#69), then → 116 files (#74).
 - [x] #53 DB test gating: one `postgresEnabled` gate on `TEST_DATABASE_URL` (#74). 11b (#79) removed
   `ENG03_A_TEST_DATABASE_URL` and `WAVE25_TEST_DATABASE_URL` from the acceptance runner, the test-resource environment,

@@ -268,9 +268,6 @@ importers:
 
   apps/worker:
     dependencies:
-      '@foreman-code/api':
-        specifier: workspace:*
-        version: link:../api
       '@foreman-code/ci':
         specifier: workspace:*
         version: link:../ci
@@ -299,8 +296,6 @@ importers:
       yaml:
         specifier: 2.9.0
         version: 2.9.0
-
-  packages/ci-protocol: {}
 
   packages/contracts:
     dependencies:
