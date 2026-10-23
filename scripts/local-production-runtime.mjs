@@ -569,19 +569,6 @@ async function deployApiPackage(run, destination) {
   try {
     // Shared-lockfile deployment keeps resolved versions and their supply-chain checks.
     await runDependencyCommand(run, ['--filter', '@foreman-code/api', 'deploy', '--prod', destination])
-    // CI resolves through the API's release contracts, just as it does with cached deployments.
-    const ci = join(destination, 'node_modules/@foreman-code/ci')
-    const installedCi = await realpath(ci)
-    const temporaryCi = await mkdtemp(join(dirname(ci), '.production-package-copy-'))
-    try {
-      const snapshot = join(temporaryCi, 'ci')
-      await cp(installedCi, snapshot, { recursive: true, verbatimSymlinks: true,
-        filter: source => source !== join(installedCi, 'node_modules') })
-      await rm(ci, { recursive: true })
-      await rename(snapshot, ci)
-    } finally {
-      await rm(temporaryCi, { recursive: true, force: true })
-    }
     // Freeze mutable workspace files; pnpm already isolates installed dependencies.
     const contracts = await realpath(join(destination, 'node_modules/@foreman-code/contracts'))
     for (const packageDirectory of [destination, contracts]) {
