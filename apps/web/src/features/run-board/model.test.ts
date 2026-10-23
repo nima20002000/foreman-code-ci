@@ -2,8 +2,6 @@ import { nativeNode } from '../../shared/mocks/nativeFixtureTypes'
 import { describe, expect, it } from 'vitest'
 import { Position } from '@xyflow/react'
 import { projectRunBoard, READ_ONLY_FLOW_PROPS } from './model'
-import { WorkflowHierarchyReadResultSchema } from '@foreman-code/contracts'
-import { WORKER_NODE_SIZE } from '../graph/mapper'
 import { savedEdgeCurve } from './curve'
 import { runA, runB } from './testFixtures'
 
@@ -25,17 +23,6 @@ describe('saved board projection', () => {
     expect(y!.y).toBeLessThan(z!.y)
     expect(projectRunBoard(runB).nodes.map((node) => node.id)).not.toContain('node-y')
   })
-  it('sizes a Run node by the Run\'s saved role, not an unsaved role change in the draft', () => {
-    const hierarchy = WorkflowHierarchyReadResultSchema.parse({ workspaceId: runA.workspaceId, workflowId: runA.workflowId,
-      workflowVersionId: runA.workflowVersionId, revision: 1, hierarchy: null, run: { runId: runA.runId, state: 'running' },
-      agents: runA.nodes.map(node => ({ workspaceId: runA.workspaceId, workflowId: runA.workflowId, workflowNodeId: node.id,
-        agentId: nativeNode(node).agentId, displayName: node.name, configurationVersionId: nativeNode(node).agentConfigurationVersionId,
-        productRole: 'coder' })) })
-    const draft = [{ id: 'agent-x', name: 'X today', productRole: 'orchestrator' as const }]
-    const x = projectRunBoard(runA, undefined, hierarchy, { agents: draft }).nodes.find(node => node.id === 'node-x')!
-    expect(x.style).toEqual({ width: WORKER_NODE_SIZE, height: WORKER_NODE_SIZE })
-    expect(x.data.role).toBe('Worker')
-  })
   it('never installs mutable canvas geometry into the frozen snapshot', () => {
     const before = JSON.stringify(runA)
     const result = projectRunBoard(runA)
@@ -47,15 +34,14 @@ describe('saved board projection', () => {
     expect(Object.isFrozen(runA)).toBe(true)
     expect(Object.isFrozen(nativeNode(runA.nodes[0]!).position)).toBe(true)
   })
-  it('draws an approval beside its handoff on the handoff\'s one line, keeping both edges\' facts, handles and policy', () => {
+  it('keeps approval and execution edges distinct, including handles, labels and policy', () => {
     const { edges } = projectRunBoard(runA)
-    expect(edges.map((edge) => edge.id)).toEqual(['edge-xy', 'edge-yz'])
+    expect(edges.map((edge) => edge.id)).toEqual(['edge-xy', 'approval-xy', 'edge-yz'])
     expect(edges[0]).toMatchObject({ source: 'node-x', target: 'node-y', sourceHandle: 'bottom', targetHandle: 'top' })
     expect(edges[0]!.data!.snapshot).toBe(runA.edges[0])
-    expect(edges[0]!.data!.members).toEqual([runA.edges[0], runA.edges[1]])
     expect(edges[0]!.data!.snapshot.maxWorkHandoffsPerRun).toBe(3)
-    expect(edges[0]!.ariaLabel).toMatch(/^Handoff · approval from X before rename to Y/)
-    expect(edges[1]).toMatchObject({ sourceHandle: 'right', targetHandle: 'left' })
+    expect(edges[0]!.data!.lane).not.toBe(edges[1]!.data!.lane)
+    expect(edges[2]).toMatchObject({ sourceHandle: 'right', targetHandle: 'left' })
   })
   it('locks keyboard, drag, connect, reconnect and delete at both canvas and object levels', () => {
     expect(READ_ONLY_FLOW_PROPS).toMatchObject({ nodesDraggable: false, nodesConnectable: false,

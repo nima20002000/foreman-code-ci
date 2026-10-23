@@ -1,13 +1,9 @@
-import { memo, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useContext, useEffect, useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Background, Controls, Handle, Position, ReactFlow, ReactFlowProvider, type EdgeProps, type NodeProps } from '@xyflow/react'
 import { AgentNodeView } from '../../shared/ui/nocturne/Canvas'
 import { useReducedMotion } from '../../shared/ui/nocturne'
-import type { ActivitySnapshotV1, Agent, WorkflowHierarchyReadResult } from '@foreman-code/contracts'
-import type { WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
-import { useGraphDraftStore } from '../graph/store'
-import { nextDraftKey } from '../graph/nextDraft/state'
-import { editorAgents } from '../graph/nextDraft/agentEdits'
+import type { ActivitySnapshotV1, WorkflowHierarchyReadResult } from '@foreman-code/contracts'
 import { CiServerNode, CiTransferEdge, type CiServerFlowNode, type CiTransferFlowEdge } from '../workflow-board/inspect/CiServer'
 import { CI_SERVER_NODE_ID, ciJobRefreshing, ciNodeActivities, runCiApi } from '../workflow-board/inspect/ciServer'
 import { useCiTransfers } from '../workflow-board/inspect/useCiTransfers'
@@ -20,8 +16,7 @@ import '../workflow-board/inspect/inspection.css'
 import { ciNodePresentation } from './ciPresentation'
 import { SignalEdgeShape } from '../graph/SignalEdgeShape'
 import { useFloatingCurve } from '../graph/signalEdge'
-import { RESPONSIVE_FIT_OPTIONS, RESPONSIVE_MIN_ZOOM, useResponsiveGraphViewport } from '../graph/useResponsiveGraphViewport'
-import { boardViewportKey } from '../graph/boardViewport'
+import { useResponsiveGraphViewport } from '../graph/useResponsiveGraphViewport'
 import { isRunAccessError } from '../runs-selector/query'
 import { RunSubagentsOverlay } from '../run-subagents/RunSubagentsOverlay'
 import { savedEdgeCurve } from './curve'
@@ -45,7 +40,7 @@ const SavedAgent = memo(function SavedAgent({ id, data }: NodeProps<SavedBoardNo
         statusLabel={presentation.label} state={presentation.state} transition={live?.transition} transitionKey={live?.transitionKey} />
     </div>
     {/* The whole node is the Inspect target, so no button covers the node's face. */}
-    {data.inspect ? <button type="button" className="run-board-inspect nopan"
+    {data.inspect ? <button type="button" className="run-board-inspect nodrag nopan"
       aria-label={`Inspect ${data.snapshot.name}`} title={`Inspect ${data.snapshot.name}`} onClick={data.inspect} /> : null}
     {ci ? <span role="status">{ciNodePresentation(ci).label}</span> : null}
     {data.snapshot.kind !== 'job' && data.role ? <p className="run-board-node-caption">{data.role}{data.reportingParent ? ` · Reports to ${data.reportingParent}` : ''}</p> : null}
@@ -57,75 +52,47 @@ const SavedAgent = memo(function SavedAgent({ id, data }: NodeProps<SavedBoardNo
 })
 const SavedConnection = memo(function SavedConnection(props: EdgeProps<SavedBoardEdge>) {
   const edge = props.data?.snapshot
-  const bend = props.data?.bend ?? 0, loop = props.source === props.target
-  const floating = useFloatingCurve(props.source, props.target, bend)
+  const lane = props.data?.lane ?? 0, loop = props.source === props.target
+  const floating = useFloatingCurve(props.source, props.target, lane * 44)
   if (!edge) return null
   // Same lines as the Board: straight when aligned, leaning toward the target otherwise; only a self-loop keeps its own loop.
-  const curve = !loop && floating ? floating : savedEdgeCurve({ ...props, lane: bend / 44, loop })
+  const curve = !loop && floating ? floating : savedEdgeCurve({ ...props, lane, loop })
   return <g>
-    <title>{[edge.label || (props.data!.members.length > 1 ? 'Handoff · approval' : edge.kind === 'approval' ? 'Approval' : 'Handoff'),
-      ...props.data!.members.filter(member => member.id !== edge.id).map(member => member.label)].filter(Boolean).join(' · ')}</title>
+    <title>{edge.label || (edge.kind === 'approval' ? 'Approval' : 'Handoff')}</title>
     <SignalEdgeShape id={props.id} curve={curve} kind={edge.kind} />
   </g>
 })
 const nodeTypes = { savedBoardNode: SavedAgent, ciServer: CiServerNode, boardKanban: BoardKanbanNode }
 const edgeTypes = { savedBoardEdge: SavedConnection, ciTransfer: CiTransferEdge, kanbanActivity: KanbanActivityEdge }
-// The draft Board's own zoom limits and fit, so the view behaves the same while a Run is shown.
-const fitViewOptions = RESPONSIVE_FIT_OPTIONS
+const fitViewOptions = { padding: 0.2, minZoom: 0.02, maxZoom: 1 }
 const proOptions = { hideAttribution: true }
 
-const noAgents: readonly Agent[] = []
-/** The draft Board's Agents (its mounted draft), so a Run's nodes get the same role sizes the draft shows. */
-function useDraftBoardAgents(workspaceId: string, workflowId: string) {
-  // Only names and roles size a node: other draft edits must not rebuild the Run's nodes.
-  const roles = useGraphDraftStore(state => {
-    const edit = state.nextDrafts[nextDraftKey(workspaceId, workflowId)]
-    return edit ? JSON.stringify(editorAgents(edit).map(agent => [agent.id, agent.name, agent.productRole ?? null])) : ''
-  })
-  return useMemo(() => roles ? (JSON.parse(roles) as [string, string, Agent['productRole'] | null][])
-    .map(([id, name, productRole]): Agent => ({ id, name, ...(productRole ? { productRole } : {}) })) : noAgents, [roles])
-}
-
 /** A private React Flow store, even when mounted beneath an editor's provider. */
-export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hierarchy, definition, visible = true }: {
+export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hierarchy, visible = true }: {
   snapshot: AvailableRunBoardSnapshot; activitySnapshot?: ActivitySnapshotV1 | undefined
   onInspectNode?: (nodeId: string) => void
-  hierarchy?: WorkflowHierarchyReadResult; definition?: WorkflowDefinitionV3; visible?: boolean
+  hierarchy?: WorkflowHierarchyReadResult; visible?: boolean
 }) {
   const board = useWorkflowBoard()
-  const { containerRef, onInit, onMove, onMoveEnd, onManualMove, refit, defaultViewport, fitOnMount } = useResponsiveGraphViewport<
-    SavedBoardNode | CiServerFlowNode | KanbanFlowNode, SavedBoardEdge | CiTransferFlowEdge | KanbanActivityFlowEdge>({
-    fitViewOptions, viewportKey: boardViewportKey(snapshot.workspaceId, snapshot.workflowId),
+  const { containerRef, onInit, onMove, onManualMove, refit } = useResponsiveGraphViewport<SavedBoardNode | CiServerFlowNode | KanbanFlowNode,
+    SavedBoardEdge | CiTransferFlowEdge | KanbanActivityFlowEdge>({
+    fitViewOptions,
   })
   // Callers recreate their handler every render; reading it through a ref keeps unchanged nodes referentially stable.
   const inspectNode = useRef(onInspectNode)
   inspectNode.current = onInspectNode
   const inspectable = Boolean(onInspectNode)
-  const agents = useDraftBoardAgents(snapshot.workspaceId, snapshot.workflowId)
-  const draft = useGraphDraftStore(state => state.nextDrafts[nextDraftKey(snapshot.workspaceId, snapshot.workflowId)]?.graph)
   const { nodes, edges } = useMemo(() => {
-    const projected = projectRunBoard(snapshot, activitySnapshot, hierarchy, { definition, draft, agents })
+    const projected = projectRunBoard(snapshot, activitySnapshot, hierarchy)
     if (inspectable) for (const node of projected.nodes) {
       node.data = { ...node.data, inspect: () => inspectNode.current?.(node.id) }
     }
     return projected
-  }, [snapshot, activitySnapshot, inspectable, hierarchy, definition, draft, agents])
+  }, [snapshot, activitySnapshot, inspectable, hierarchy])
   // React Flow reconciles every node it is given; keep these arrays referentially stable between unrelated renders.
   const teamNodeId = board?.teamNodeId
-  // Same rule as the draft Board: an agent the draft has can be dragged, and the drop is the draft's own layout change.
-  const move = board?.moveDraftNodes
-  const movable = useMemo(() => new Set(move ? (draft?.nodes ?? definition?.nodes ?? []).map(node => node.id) : []), [move, draft, definition])
-  const [dragged, setDragged] = useState<Readonly<Record<string, { x: number; y: number }>>>({})
-  useEffect(() => setDragged(previous => {
-    // A drop the draft has taken is drawn from the draft again; one it has not stays where it was dropped.
-    const kept = Object.entries(previous).filter(([id, place]) => {
-      const shown = nodes.find(node => node.id === id)?.position
-      return !shown || shown.x !== place.x || shown.y !== place.y
-    })
-    return kept.length === Object.keys(previous).length ? previous : Object.fromEntries(kept)
-  }), [nodes])
-  const visibleNodes = useMemo(() => nodes.map(node => ({ ...node, selected: teamNodeId === node.id,
-    ...(movable.has(node.id) ? { draggable: true, position: dragged[node.id] ?? node.position } : {}) })), [nodes, teamNodeId, movable, dragged])
+  const visibleNodes = useMemo(() => nodes.map(node => ({ ...node,
+    selected: teamNodeId === node.id })), [nodes, teamNodeId])
   const scope = useMemo(() => ({ workspaceId: snapshot.workspaceId, workflowId: snapshot.workflowId,
     runId: snapshot.runId, workflowVersionId: snapshot.workflowVersionId, executionSemanticsVersion: 3 as const }), [snapshot])
   const active = !activitySnapshot || activitySnapshot.active.length > 0
@@ -183,18 +150,13 @@ export function RunBoardCanvas({ snapshot, activitySnapshot, onInspectNode, hier
   }}>
     <ReactFlowProvider><RunLiveNodes.Provider value={liveNodes}>
       <ReactFlow<SavedBoardNode | CiServerFlowNode | KanbanFlowNode, SavedBoardEdge | CiTransferFlowEdge | KanbanActivityFlowEdge> nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
-        {...READ_ONLY_FLOW_PROPS} onNodesChange={(changes) => {
-          kanban.applyChanges(changes); ci.place.applyChanges(changes)
-          const moves = changes.flatMap(change => change.type === 'position' && change.position && movable.has(change.id) ? [[change.id, change.position] as const] : [])
-          if (moves.length) setDragged(previous => ({ ...previous, ...Object.fromEntries(moves) }))
-        }}
+        {...READ_ONLY_FLOW_PROPS} onNodesChange={(changes) => { kanban.applyChanges(changes); ci.place.applyChanges(changes) }}
         onNodeDragStop={(_event, node) => {
           if (node.id === KANBAN_NODE_ID) kanban.moved(node.position)
           if (node.id === CI_SERVER_NODE_ID) ci.place.moved(node.position)
-          if (movable.has(node.id)) move?.([{ id: node.id, position: { x: node.position.x, y: node.position.y } }])
-        }} fitView={fitOnMount} defaultViewport={defaultViewport} fitViewOptions={fitViewOptions} minZoom={RESPONSIVE_MIN_ZOOM} maxZoom={1.6}
-        onInit={onInit} onMove={onMove} onMoveEnd={onMoveEnd}
-        proOptions={proOptions} aria-label="Saved Run graph"
+        }} fitView fitViewOptions={fitViewOptions} minZoom={0.02} maxZoom={2}
+        onInit={onInit} onMove={onMove}
+        proOptions={proOptions} preventScrolling={false} aria-label="Saved Run graph"
         ariaLabelConfig={{ 'node.a11yDescription.default': 'Saved agent, read only.', 'edge.a11yDescription.default': 'Saved connection, read only.' }}>
         <RunSubagentsOverlay scope={snapshot} nodes={snapshot.nodes} visible={visible} />
         <Background color="var(--border)" gap={24} size={1} />

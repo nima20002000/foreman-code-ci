@@ -546,9 +546,7 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
     const files = within(group).getByRole('button', { name: 'Files' })
     expect(selector.compareDocumentPosition(clock) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(clock.compareDocumentPosition(files) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    // Over the Run's canvas the toolbar floats like the draft's, so the canvas keeps the draft's box.
-    expect(group.closest('header')).toHaveStyle({ minWidth: '0', boxSizing: 'border-box' })
-    expect(group.closest('header')!.parentElement).toHaveClass('workflow-collaboration-main')
+    expect(group.closest('header')).toHaveStyle({ position: 'relative', minWidth: '0', boxSizing: 'border-box' })
     expect(container.querySelector('.unified-workflow-board')).toHaveStyle({ flexDirection: 'column' })
     await userEvent.click(selector)
     const menu = await screen.findByRole('menu', { name: 'Runs' })

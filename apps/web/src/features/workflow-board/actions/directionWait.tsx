@@ -10,7 +10,7 @@ export function DirectionWaitNotice({ direction, onAnswer, onAccept }: { directi
     <Icon name="warning" size={16} />
     <div className="direction-wait-text">
       <strong>{direction.agentName} is waiting for your direction
-        <InfoHint label="Waiting for direction">{`The Run continues when you reply. Finish & accept findings writes a reply that tells ${direction.agentName} to finish with these findings as they are; send it from Group chat. To end the Run without a reply, use the Stop button.`}</InfoHint></strong>
+        <InfoHint label="Waiting for direction">{`The Run continues when you reply. Finish & accept findings writes a reply that tells ${direction.agentName} to finish with these findings as they are; send it from Group chat. To end the Run without a reply, use Run controls · Stop.`}</InfoHint></strong>
       {findings ? <span className="direction-wait-finding" title={findings}>{findings}</span> : null}
     </div>
     <Button size="sm" variant="primary" onClick={onAnswer}>Reply to {direction.agentName}</Button>

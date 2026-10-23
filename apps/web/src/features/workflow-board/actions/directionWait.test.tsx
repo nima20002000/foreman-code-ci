@@ -19,14 +19,6 @@ describe('direction wait notice', () => {
     expect(onAnswer).not.toHaveBeenCalled()
   })
 
-  it('points at the Board\'s Stop button to end the Run without a reply', async () => {
-    render(<DirectionWaitNotice direction={direction} onAnswer={vi.fn()} onAccept={vi.fn()} />)
-    await userEvent.hover(screen.getByRole('button', { name: 'About Waiting for direction' }))
-    const hint = await screen.findByText(/To end the Run without a reply/)
-    expect(hint).toHaveTextContent('use the Stop button')
-    expect(hint).not.toHaveTextContent('Run controls')
-  })
-
   it('writes the accept reply to the Master into the group chat draft and keeps what was typed', () => {
     const scope = { workspaceId: 'workspace-direction', workflowId: 'workflow-direction' }
     mentionInGroupChat(scope, direction)

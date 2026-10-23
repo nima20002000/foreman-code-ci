@@ -1,20 +1,16 @@
 .run-board-slot,
 .run-board-current,
 .run-board { min-width: 0; width: 100%; }
-.run-board-current[hidden], .run-board[hidden] { display: none !important; }
+.run-board-current[hidden] { display: none !important; }
 .run-board { position: relative; overflow: hidden; color: var(--text); }
 .run-board > p { margin: 0; padding: 1rem; font: var(--type-caption); }
 .run-board > .n-empty, .run-board > .n-error-state { padding-block: var(--space-8, 48px); }
-/* One quiet line above a standalone Run canvas; inside the Board the same caption sits in the floating toolbar. */
+/* One quiet line above the canvas, like the draft Board's "Worktree:" caption. */
 .run-board-header { position: relative; z-index: 6; display: flex; align-items: center; gap: var(--space-3); min-height: 28px; padding: 0 var(--space-4); }
-.run-board-header .run-board-label { margin-left: auto; }
-.board-run-caption { display: flex; align-items: center; gap: var(--space-3); min-width: 0; margin-inline-end: auto; }
-.board-run-caption:empty { display: none; }
-.board-run-caption .saved-workflow-worktree.is-compact { margin: 0; min-width: 0; overflow: hidden; color: var(--text-muted); font: var(--type-caption); text-overflow: ellipsis; white-space: nowrap; }
 .run-board-header .saved-workflow-worktree.is-compact { margin: 0; min-width: 0; overflow: hidden; color: var(--text-muted); font: var(--type-caption); text-overflow: ellipsis; white-space: nowrap; }
 .run-board-header .saved-workflow-worktree.is-compact > span { color: var(--text); }
 .run-board-header .saved-workflow-worktree.is-compact > em { font-style: normal; color: var(--warning); }
-.run-board-label { padding: 0 8px; border: 1px solid var(--border); border-radius: 999px;
+.run-board-label { margin-left: auto; padding: 0 8px; border: 1px solid var(--border); border-radius: 999px;
   color: var(--text-muted); font: var(--type-caption); line-height: 20px; white-space: nowrap; }
 .run-board-computers { position: relative; }
 .run-board-computers > summary { cursor: pointer; list-style: none; color: var(--text-muted); font: var(--type-caption); }

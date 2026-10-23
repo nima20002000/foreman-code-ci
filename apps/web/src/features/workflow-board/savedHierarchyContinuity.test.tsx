@@ -134,19 +134,18 @@ it.each(['graph', 'overview'])('stops an ordinary selected Run from %s and keeps
     }),
   )
   await mount(`${runsUrl('run-b')}&boardView=${view}`, { hasHierarchy: false })
-  const controls = within(await screen.findByRole('region', { name: 'Selected Run controls' }))
-  await waitFor(() => expect(controls.getByRole('button', { name: 'Stop' })).toBeEnabled())
-  fireEvent.click(controls.getByRole('button', { name: 'Stop' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Run controls · Stop' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Stop this Run' })).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: 'Stop this Run' }))
   await screen.findByText(/Stop is not confirmed:/)
   expect(stops).toHaveLength(1)
   expect(stops[0]).toMatchObject({ workspaceId: scope.workspaceId, runId: 'run-b' })
-  // The same Stop button resends the retained command, not a new one.
-  await waitFor(() => expect(controls.getByRole('button', { name: 'Stop' })).toBeEnabled())
-  fireEvent.click(controls.getByRole('button', { name: 'Stop' }))
-  await waitFor(() => expect(controls.getByRole('button', { name: 'Stop again' })).toBeEnabled())
-  expect(controls.getByText('Stopping…')).toBeVisible()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Reconcile Stop' })).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: 'Reconcile Stop' }))
+  await screen.findByText(/Stop receipt: accepted/)
   expect(stops).toHaveLength(2)
   expect(stops[1]).toEqual(stops[0])
+  expect(screen.getByRole('region', { name: 'Stop and cleanup' })).toHaveTextContent('Stop receipt: accepted')
 })
 
 it('uses saved roles and coordinates, docks one inspector, and navigates teams without changing the Run', async () => {
