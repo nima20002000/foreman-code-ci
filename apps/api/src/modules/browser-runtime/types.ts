@@ -91,6 +91,8 @@ export interface BrowserRuntimeSessionRecord {
   /** Private replay and owner lifecycle identity; no secrets, input text, or frames. */
   prepareCommandId: string; closing: boolean
   viewerDisconnected?: boolean
+  /** The agent's saved tab limit; tabs beyond it must be reused instead of opened. */
+  maxTabs?: number
 }
 
 export interface BrowserActor {

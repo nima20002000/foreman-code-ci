@@ -10,7 +10,7 @@ const descriptions: Record<typeof browserSessionOperationNames[number], string> 
   browser_session_get: 'Read exact session, control epoch, owned tabs and safe action/file/dialog facts, including retained completed output after close.',
   browser_session_close: 'Close only this session’s owned tabs. Pending means native cleanup has not yet been proven; profile storage and sibling sessions survive.',
   browser_tabs_list: 'List only tabs leased to this exact browser session and generation.',
-  browser_tab_create: 'Create one owned browser tab. A viewer-created tab does not move the agent’s logical focus. Preserve command ID on lost response.',
+  browser_tab_create: 'Create one owned browser tab, only when you need another page open at the same time; otherwise navigate a tab you already have. Agents have a tab limit. Preserve command ID on lost response.',
   browser_tab_select: 'Select an owned tab for the agent or viewer. Viewer selection never changes agent focus.',
   browser_tab_close: 'Close exactly one owned tab, with generation/control checks and idempotent command reconciliation.',
   browser_state_read: 'Read bounded page state from one owned tab. Agent reads wait while the user controls the browser; no browser-wide CDP is exposed.',

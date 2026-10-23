@@ -16,8 +16,12 @@ export const BrowserProfileOriginSchema = z.string().url().refine((origin) => {
   } catch { return false; }
 }, 'Use a normalized HTTP(S) origin without a path, credentials, query or fragment.');
 
+/** Tabs an agent may keep open in its browser when its settings name no limit. */
+export const DEFAULT_AGENT_BROWSER_TABS = 3;
 export const NodeBrowserSettingsSchema = z.object({
   enabled: z.boolean(), profileId: IdSchema.optional(),
+  /** Most tabs this agent may keep open at once; it reuses them instead of opening more. */
+  maxTabs: z.number().int().min(1).max(20).optional(),
 }).strict(); // enabled requires profileId on executable save.
 export const ExecutableNodeBrowserSettingsSchema = NodeBrowserSettingsSchema.refine((settings) => !settings.enabled || settings.profileId !== undefined, {
   path: ['profileId'], message: 'Choose a profile before enabling this browser.',

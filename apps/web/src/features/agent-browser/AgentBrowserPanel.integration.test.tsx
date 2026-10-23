@@ -71,6 +71,21 @@ it('keeps browser configuration in the caller’s draft without starting a brows
   expect(change).toHaveBeenCalledWith({ enabled: true })
 })
 
+it('lets each agent’s browser settings cap its open tabs, defaulting to three, and keeps the cap when the profile changes', async () => {
+  const change = vi.fn()
+  const catalog = { profiles: [{ id: 'work', name: 'Work' }, { id: 'home', name: 'Home' }], replicas: [], presentReplicas: [], pendingReplicas: [] } as never
+  const view = mount(<BrowserSettingsFields value={{ enabled: true, profileId: 'work' }} onChange={change} catalog={catalog}
+    computer={undefined} onManageProfiles={vi.fn()} />)
+  const limit = screen.getByRole('combobox', { name: 'Most tabs open at once' })
+  expect(limit).toHaveValue('3')
+  await userEvent.selectOptions(limit, '5')
+  expect(change).toHaveBeenLastCalledWith({ enabled: true, profileId: 'work', maxTabs: 5 })
+  view.rerender(<QueryClientProvider client={new QueryClient()}><BrowserSettingsFields value={{ enabled: true, profileId: 'work', maxTabs: 5 }}
+    onChange={change} catalog={catalog} computer={undefined} onManageProfiles={vi.fn()} /></QueryClientProvider>)
+  await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Browser profile' }), 'home')
+  expect(change).toHaveBeenLastCalledWith({ enabled: true, profileId: 'home', maxTabs: 5 })
+})
+
 it('selects the exact created viewer tab while preserving the agent’s selected tab', async () => {
   const fake = browserPortFake(), choose = vi.fn(), created = { ...browserRead().tabs[0]!, id: 'created-lease', tabId: 'created' }
   vi.mocked(fake.port.createTab).mockResolvedValue({ ...browserRead(), tabs: [...browserRead().tabs, created], createdTabId: 'created' })

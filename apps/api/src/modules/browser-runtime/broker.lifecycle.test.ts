@@ -494,3 +494,26 @@ it('logs who closed each agent browser tab, including a tab that disappears outs
     expect.objectContaining({ sessionId: session.id, tabId: session.selectedTabId, targetId, remainingTabs: 0 }))
   expect(broker.read(session.id).tabs).toEqual([])
 })
+
+it('keeps an agent within its saved tab limit so it reuses tabs, and applies a raised limit at the next preparation', async () => {
+  const f = fixture(), request = f.request(), limited = (maxTabs: number) => {
+    const browser = { ...request.browser, maxTabs }; f.assignment(request.subject, browser); return browser
+  }
+  const { session } = ready(await f.broker.prepare({ ...request, browser: limited(2) }))
+  await f.broker.createTab({ sessionId: session.id, actor: agent(session), commandId: 'second' })
+  await expect(f.broker.createTab({ sessionId: session.id, actor: agent(session), commandId: 'third' }))
+    .rejects.toMatchObject({ code: 'BROWSER_TAB_LIMIT', message: expect.stringContaining('2 of your 2 allowed tabs') })
+  expect(f.broker.read(session.id).tabs).toHaveLength(2)
+  await expect(f.broker.createTab({ sessionId: session.id, actor: agent(session), commandId: 'second' })).resolves.toBeDefined()
+  const raised = await f.broker.prepare({ ...request, commandId: 'raise', browser: limited(3) })
+  expect(raised.kind).toBe('ready')
+  await f.broker.createTab({ sessionId: session.id, actor: agent(session), commandId: 'third' })
+  expect(f.broker.read(session.id).tabs).toHaveLength(3)
+})
+
+it('defaults an agent to three open tabs when its settings name no limit', async () => {
+  const f = fixture(), { session } = ready(await f.broker.prepare(f.request()))
+  for (const commandId of ['second', 'third']) await f.broker.createTab({ sessionId: session.id, actor: agent(session), commandId })
+  await expect(f.broker.createTab({ sessionId: session.id, actor: agent(session), commandId: 'fourth' }))
+    .rejects.toMatchObject({ code: 'BROWSER_TAB_LIMIT' })
+})

@@ -156,6 +156,9 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
       } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
     }
     const generation = reuseGeneration ?? await this.options.allocateGeneration(profileId), token = randomUUID()
+    // A new process must not restore the previous process's tabs: nothing owns them, they pile up, and the
+    // restore replaces the startup window that holds the tabs this launch opens for an agent.
+    await rm(join(directory, 'Default', 'Sessions'), { recursive: true, force: true })
     const headless = !headed
     const display = headless && process.platform === 'linux' ? await this.virtualDisplay.ensure() : undefined
     const args = [`--user-data-dir=${directory}`, `--foreman-browser-owner=${token}`,

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { BrowserSessionSchema, BrowserControlSchema, BrowserTabLeaseSchema } from '@foreman-code/contracts/browser-sessions'
+import { DEFAULT_AGENT_BROWSER_TABS } from '@foreman-code/contracts/browser-profiles'
 import { browserInputHash } from '../browser-profiles/identity.js'
 import { DomainError } from '../errors.js'
 import type { BrowserLifecyclePort } from '../collaboration/ports.js'
@@ -289,6 +290,7 @@ export class BrowserBroker implements BrowserLifecyclePort {
         if (existing.record.closing || !['ready', 'paused'].includes(existing.record.session.state)) {
           return { kind: 'unavailable', reason: 'profile_busy', retryable: true }
         }
+        await this.applyTabLimit(existing, input.browser.maxTabs)
         return { kind: 'ready', session: structuredClone(existing.record.session), control: structuredClone(existing.record.control) }
       }
       if (!input.browser.profileId) return { kind: 'unavailable', reason: 'profile_missing', retryable: false }
@@ -296,6 +298,7 @@ export class BrowserBroker implements BrowserLifecyclePort {
       try { await this.options.authority.assertCurrent(input.subject) } catch (error) {
         await this.closeOwned(live); throw error
       }
+      await this.applyTabLimit(live, input.browser.maxTabs)
       return { kind: 'ready', session: structuredClone(live.record.session), control: structuredClone(live.record.control) }
     })
   }
@@ -702,6 +705,11 @@ export class BrowserBroker implements BrowserLifecyclePort {
   async createTab(input: { sessionId: string; actor: BrowserActor; commandId: string }) {
     const live = this.requireSession(input.sessionId)
     if (live.record.readOnly && input.actor.kind === 'agent') throw new DomainError('READ_ONLY', 'This agent cannot create browser tabs.', 403)
+    const limit = live.record.maxTabs ?? DEFAULT_AGENT_BROWSER_TABS
+    if (input.actor.kind === 'agent' && live.record.leases.length >= limit && !await this.options.journal.read(`${input.sessionId}:tab-create:${input.commandId}`)) {
+      throw new DomainError('BROWSER_TAB_LIMIT', `You already have ${live.record.leases.length} of your ${limit} allowed tabs open. `
+        + 'Navigate one of them (browser_action navigate) or close one before opening another.', 409)
+    }
     await this.assertCurrent(live)
     const created = await this.command(`${input.sessionId}:tab-create:${input.commandId}`, input, async markEffect => {
       const tab = await live.gate.dispatch(input.actor.kind === 'agent', () => this.assertActor(live, input.actor),
@@ -727,6 +735,13 @@ export class BrowserBroker implements BrowserLifecyclePort {
       }
       return this.read(input.sessionId)
     })
+  }
+
+  /** The saved agent settings own the tab limit; a changed limit applies to the running session at its next preparation. */
+  private async applyTabLimit(live: LiveSession, maxTabs: number | undefined): Promise<void> {
+    const limit = maxTabs ?? DEFAULT_AGENT_BROWSER_TABS
+    if (live.record.maxTabs === limit) return
+    live.record.maxTabs = limit; await this.persist(live)
   }
 
   async closeTab(input: { sessionId: string; tabId: string; actor: BrowserActor; commandId: string }) {

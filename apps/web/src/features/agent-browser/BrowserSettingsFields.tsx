@@ -2,7 +2,10 @@ import { useEffect } from 'react'
 import { Button, Select, Switch } from '../../shared/ui/nocturne'
 import { NodeRow } from '../graph/AgentMainFields'
 import type { BrowserComputerLabel, BrowserProfileCatalog } from '../browser-profiles/types'
+import { DEFAULT_AGENT_BROWSER_TABS } from '@foreman-code/contracts/browser-profiles'
 import type { NodeBrowserSettings } from './types'
+
+const TAB_LIMITS = Array.from({ length: 10 }, (_, index) => ({ value: String(index + 1), label: String(index + 1) }))
 
 export interface BrowserSettingsFieldsProps {
   value: NodeBrowserSettings | undefined
@@ -31,7 +34,7 @@ export function BrowserSettingsFields({ value, onChange, catalog, computer, disa
   const fallback = defaultProfileId(profiles)
   // A browser that is on always has a profile: pick the default once the profiles are known.
   useEffect(() => {
-    if (enabled && !value?.profileId && fallback && !disabled) onChange({ enabled: true, profileId: fallback })
+    if (enabled && !value?.profileId && fallback && !disabled) onChange({ ...value, enabled: true, profileId: fallback })
   }, [enabled, value?.profileId, fallback, disabled, onChange])
   const options = [...(value?.profileId ? [] : [{ value: '', label: loading ? 'Loading…' : 'No profile' }]),
     ...profiles.map(profile => ({ value: profile.id, label: profile.name }))]
@@ -53,7 +56,15 @@ export function BrowserSettingsFields({ value, onChange, catalog, computer, disa
     {enabled ? <NodeRow label="Profile" tone="warning" note={note && <>{note} {!profiles.length || value?.profileId && !selected
       ? <Button variant="ghost" size="sm" onClick={onManageProfiles}>Manage profiles</Button> : null}</>}>
       <Select label="Browser profile" value={value?.profileId ?? ''} options={options} disabled={disabled || loading}
-        onChange={event => onChange(event.currentTarget.value ? { enabled: true, profileId: event.currentTarget.value } : { enabled: true })} />
+        onChange={event => {
+          const next: NodeBrowserSettings = { ...value, enabled: true, profileId: event.currentTarget.value }
+          if (!next.profileId) delete next.profileId
+          onChange(next)
+        }} />
+    </NodeRow> : null}
+    {enabled ? <NodeRow label="Max tabs" note="The agent reuses its tabs and can’t open more than this.">
+      <Select label="Most tabs open at once" value={String(value?.maxTabs ?? DEFAULT_AGENT_BROWSER_TABS)} options={TAB_LIMITS}
+        disabled={disabled} onChange={event => onChange({ ...value, enabled: true, maxTabs: Number(event.currentTarget.value) })} />
     </NodeRow> : null}
   </>
 }

@@ -12,7 +12,7 @@ export const COLLABORATION_AGENT_TOOLS = {
   memory_note_archive: { label: 'Archive or restore note', description: 'Set a scoped note archive state.', roles, readOnly: false },
   browser_session_get: { label: 'Read browser session', description: 'Read this subject’s assigned browser session.', roles, readOnly: true },
   browser_tabs_list: { label: 'List owned tabs', description: 'List only this browser session’s leased tabs.', roles, readOnly: true },
-  browser_tab_create: { label: 'Create tab', description: 'Create a tab owned by the assigned session.', roles, readOnly: false },
+  browser_tab_create: { label: 'Create tab', description: 'Create a tab owned by the assigned session, only when another page must stay open; otherwise navigate an existing tab.', roles, readOnly: false },
   browser_tab_select: { label: 'Select tab', description: 'Select an owned tab for the agent without changing the viewer selection.', roles, readOnly: false },
   browser_tab_close: { label: 'Close tab', description: 'Close one owned tab.', roles, readOnly: false },
   browser_state_read: { label: 'Read page state', description: 'Observe an owned tab through its control lease.', roles, readOnly: true },
