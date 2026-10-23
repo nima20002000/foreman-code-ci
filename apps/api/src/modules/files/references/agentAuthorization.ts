@@ -3,7 +3,7 @@ import type { AgentFileReadInput } from '@foreman-code/contracts/files'
 import { ManagementPrincipalSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import { readLiveManagementPrincipal } from '../../access/liveManagementPrincipal.js'
 import { requireAuthorization } from '../../access/policy.js'
-import { assertCurrentWorkerBinding } from '../../interactions/index.js'
+import { assertWave25WorkerBinding } from '../../interactions/index.js'
 import type { FileQuery } from '../repository.js'
 import { conversationReferenceContext, referenceIdentityDenied,
   type ReferenceConversationIdentity, type ReferenceExecutionIdentity } from './agentLineage.js'
@@ -33,7 +33,7 @@ export class PostgresAgentReferenceAuthorization implements AgentReferenceAuthor
     if (result.rows.length !== 1) return referenceIdentityDenied()
     // Preserve the existing current engine's purpose, Run, execution, session/generation and revocation checks.
     // In complete(), these checks run on the same transaction that commits the provenance fact.
-    await assertCurrentWorkerBinding(query, principal.id)
+    await assertWave25WorkerBinding(query, principal.id)
     const row = result.rows[0]!
     return { workspaceId: row.workspace_id, workflowId: row.workflow_id, agentId: row.agent_id,
       runId: row.run_id, executionId: row.execution_id,

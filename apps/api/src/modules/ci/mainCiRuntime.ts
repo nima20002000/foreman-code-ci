@@ -1,6 +1,5 @@
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { RemoteOperationJournal } from '../runs/index.js'
 import { systemGitWorktreePorts } from '../sources/gitWorktree.js'
 import { CiRuntimeWorker, currentCiRuntimePaths, lastCiRuntimeRefresh, prepareCiRuntime, retainedCiJobImages,
   retireCiRuntimeConfigurations, scheduleCiRuntimeRefresh } from './runtime.js'
@@ -21,7 +20,7 @@ function mainRefreshCommand(): string[] {
  * and the persisted preparation resumes afterwards. */
 export function createMainCiRuntime(input: {
   runtimeRoot: string
-  journal(): Promise<RemoteOperationJournal>
+  journal(): Promise<Parameters<typeof retainMainJobSourceClosures>[1]>
   signal: AbortSignal
   sql: JobSql
 }): CiRuntimeWorker {

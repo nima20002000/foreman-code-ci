@@ -1,4 +1,4 @@
-import type { AgentHarness, RecordedHarnessConfiguration } from '@foreman-code/contracts'
+import type { AgentHarness, HarnessConfiguration } from '@foreman-code/contracts'
 import { ExecutionReadinessSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import { requireAuthorization } from '../access/policy.js'
 import type { HarnessCatalogService } from './catalog.js'
@@ -10,7 +10,7 @@ export class ExecutionReadinessService {
   constructor(private readonly rollout: Pick<NativeRollout, 'enabled'>,
     private readonly catalog: Pick<HarnessCatalogService, 'get'>,
     private readonly operatorConfiguration?: (principal: ManagementPrincipal, configurationVersionId?: string) => Promise<{
-      configurationVersionId: string; harness: RecordedHarnessConfiguration; defaultsRevision: number | null
+      configurationVersionId: string; harness: HarnessConfiguration; defaultsRevision: number | null
     }>) {}
 
   async get(principal: ManagementPrincipal, harness: AgentHarness,

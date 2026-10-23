@@ -8,7 +8,6 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { acquireWorkerLock } from '../src/runtime.mjs';
-import { workerPackageAliases, workerPackages } from '../../../scripts/worker-snapshot-policy.mjs';
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const fixtureRoot = await realpath(persistentFixtureRoot);
@@ -16,25 +15,26 @@ const bundleDirectory = await mkdtemp(join(fixtureRoot, 'job-cleanup-test-bundle
 after(() => rm(bundleDirectory, { recursive: true, force: true }));
 const exports = [
   ['apps/worker/src/jobCancellationCleanup.mjs', ['cleanupJobBeforeEntry', 'validateRestoredJobFilesystem', 'validateRestoredQuotaFilesystem']],
-  ['@foreman-code/api/worker/runs', ['RemoteOperationJournal']],
-  ['@foreman-code/api/worker/sources', ['sourceMaterializationClaimName']],
-  ['@foreman-code/api/worker/sources', ['PrivateSourceMaterializer', 'releaseMaterializationClaimForCancellation']],
-  ['@foreman-code/api/worker/sources', ['createSourceManifest']],
-  ['@foreman-code/api/worker/sources', ['sourceBindingHash', 'sourceMaterializationDigest']],
-  ['@foreman-code/api/worker/sources', ['openPrivateRoot', 'identity']],
-  ['@foreman-code/api/worker/sources', ['qualifyApprovedRootAllowlist']],
-  ['@foreman-code/api/worker/jobs', ['jobSupervisorIdentity']],
-  ['@foreman-code/api/testing/verification-runtime', ['verificationRuntimeFixture']],
+  ['apps/api/src/modules/runs/remote/operationJournal.ts', ['RemoteOperationJournal']],
+  ['apps/api/src/modules/sources/quotaClaims.ts', ['sourceMaterializationClaimName']],
+  ['apps/api/src/modules/sources/materialization.ts', ['PrivateSourceMaterializer', 'releaseMaterializationClaimForCancellation']],
+  ['apps/api/src/modules/sources/manifest.ts', ['createSourceManifest']],
+  ['apps/api/src/modules/sources/bindingHash.ts', ['sourceBindingHash', 'sourceMaterializationDigest']],
+  ['apps/api/src/modules/sources/privateFilesystem.ts', ['openPrivateRoot', 'identity']],
+  ['apps/api/src/modules/sources/rootAttestation.ts', ['qualifyApprovedRootAllowlist']],
+  ['apps/api/src/modules/jobs/executor.ts', ['jobSupervisorIdentity']],
+  ['apps/api/test/helpers/verificationRuntimeFixture.ts', ['verificationRuntimeFixture']],
   ['packages/contracts/src/jobVerificationRuntime.ts', ['JobVerificationRepositoryContextSchema']],
   ['packages/contracts/src/jobVerification.ts', ['JobExecutionRecordSchema']],
   ['packages/contracts/src/jobCancellationRecovery.ts', ['jobCancellationGrantMessage', 'jobCancellationClosureMessage']],
 ];
-const manifests = Object.fromEntries(await Promise.all(Object.entries(workerPackages).map(async ([name, directory]) =>
-  [name, JSON.parse(await readFile(join(repository, directory, 'package.json'))).exports])));
-const alias = Object.fromEntries(Object.entries(workerPackageAliases(manifests))
-  .map(([name, path]) => [name, resolve(repository, path)]));
+const contractPackage = JSON.parse(await readFile(join(repository, 'packages/contracts/package.json')));
+const alias = Object.fromEntries(Object.entries(contractPackage.exports).map(([name, value]) => [
+  name === '.' ? '@foreman-code/contracts' : `@foreman-code/contracts/${name.slice(2)}`,
+  join(repository, 'packages/contracts', value.import.replace('./dist/', './src/').replace(/\.js$/, '.ts')),
+]));
 await build({ stdin: { contents: exports.map(([path, names]) =>
-  `export { ${names.join(', ')} } from ${JSON.stringify(path.startsWith('@') ? path : join(repository, path))};`).join('\n'), resolveDir: repository },
+  `export { ${names.join(', ')} } from ${JSON.stringify(join(repository, path))};`).join('\n'), resolveDir: repository },
   outfile: join(bundleDirectory, 'cleanup.mjs'), bundle: true, platform: 'node', format: 'esm', target: 'node22', alias,
   banner: { js: "import { createRequire as testCreateRequire } from 'node:module'; const require = testCreateRequire(import.meta.url);" } });
 await build({ entryPoints: [join(repository, 'apps/worker/src/cli.mjs')], outfile: join(bundleDirectory, 'cli.mjs'),

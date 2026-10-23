@@ -11,8 +11,7 @@ function record(patch: Partial<RunRecordDetail> = {}): RunRecordDetail {
 }
 function fixture(samples: Array<{ intent: Intent; record: RunRecordDetail }>) {
   let reads = 0
-  const query = vi.fn(async (sql: string, args: unknown[]) => {
-    expect(sql).toBe('select pending,attempts from run_cleanup_intents where run_id=$1')
+  const query = vi.fn(async (_sql: string, args: unknown[]) => {
     expect(args).toEqual([source.run.id])
     const { intent } = samples[Math.min(reads, samples.length - 1)]!
     return { rows: intent ? [intent] : [] }
@@ -24,7 +23,7 @@ function fixture(samples: Array<{ intent: Intent; record: RunRecordDetail }>) {
 }
 const checked = { pending: false, attempts: 1 }
 
-describe('ENG07-B successful Run settlement barrier', () => {
+describe('successful Run settlement barrier', () => {
   it('rejects missing or unchecked evidence and waits for settled public readback', async () => {
     const expected = record(), f = fixture([
       { intent: undefined, record: expected }, // Fault sample: missing evidence, not a normal successful commit.

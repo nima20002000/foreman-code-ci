@@ -1,6 +1,6 @@
 import type { NativeHarnessEvent, NativeSessionReference } from '@foreman-code/contracts'
 import type { NativeHistory, NativeMessageSubmission } from '../harnesses/port.js'
-import type { nativePersistenceRedactor } from '../interactions/nativePersistence.js'
+import type { nativePersistenceRedactor } from '../interactions/index.js'
 import { activityTextEnvelope } from './activityTextEnvelope.js'
 import { committedNativeText } from './committedNativeText.js'
 import { createNativeTextStream } from './nativeTextStream.js'

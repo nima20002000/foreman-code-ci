@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { AgentHarnessSchema, RecordedHarnessConfigurationSchema } from '@foreman-code/contracts'
+import { AgentHarnessSchema, HarnessConfigurationSchema } from '@foreman-code/contracts'
 import { AgentIdentity } from '../agents'
 import { AgentSettingsForm } from '../graph'
 import { HarnessBasicFields } from './HarnessBasicFields'
@@ -11,7 +11,7 @@ import { createHarnessEditor, prepareHarnessEditor } from './harnessEditor'
 import { agentNodeFacts, agentSettingRows } from '../board-core'
 import { harnessSummary, retiredHarnessLabel } from './settingsPresentation'
 
-const configuration = RecordedHarnessConfigurationSchema.parse({
+const configuration = HarnessConfigurationSchema.parse({
   harness: 'opencode', model: 'provider/saved-model', variant: 'saved-variant',
   nativeAgent: 'saved-agent', thinking: true, autoApprove: false,
 })
