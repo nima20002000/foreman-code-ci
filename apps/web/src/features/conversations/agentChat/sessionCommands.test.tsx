@@ -254,3 +254,12 @@ it.each(['ordinary text', '/compact', '/plan', '/unknown', 'first line\nsecond l
     expect(controls.command).not.toHaveBeenCalled()
   } finally { mounted.unmount(); mounted.client.clear() }
 })
+
+it.each([['running', 'Compacting context…'], ['completed', 'Context compacted.']] as const)(
+  'shows /compact progress and its result in an idle agent chat (%s)', async (status, message) => {
+    controls.state = { ...settings, compaction: { requestId: 'compact-request', nativeSessionId: 'native',
+      nativeOperationId: 'compact-turn', status, beforeTokens: 39505, message, observedAt: new Date().toISOString() } }
+    const mounted = mountChat(structuredClone(agentChatFixtures.idleAfterCompletion))
+    await mounted.ready()
+    expect(within(screen.getByLabelText('Context compaction activity')).getByRole('status')).toHaveTextContent(message)
+  })

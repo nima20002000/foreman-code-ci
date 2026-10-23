@@ -89,7 +89,8 @@ function SetupBrowser(props: BrowserSetupDialogProps) {
       })
     }
   }, [closeId])
-  const tab = read.data?.tabs.find(item => item.tabId === (tabId ?? read.data.session.selectedTabId))
+  const tab = read.data && (read.data.tabs.find(item => item.tabId === tabId)
+    ?? read.data.tabs.find(item => item.tabId === read.data.session.selectedTabId) ?? read.data.tabs[0])
   const accessDenied = denied || browserAccessDenied(read.error)
   return <Dialog open size="xl" title={`Set up ${props.profileName} · ${props.computerName}`} busy={close.isPending}
     onOpenChange={open => { if (!open) close.mutate() }} closeLabel="Close setup browser"

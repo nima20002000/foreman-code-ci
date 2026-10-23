@@ -27,6 +27,7 @@ import { agentChatContextKey, chatBusy, intentUnavailable } from './model'
 import { useAgentChat } from './useAgentChat'
 import { ProviderAccountChip, ProviderAccountProblem } from '../../provider-accounts/ProviderAccountChip'
 import { SessionContext } from '../sessionControls/SessionControls'
+import { CompactionActivity } from '../sessionControls/CompactionActivity'
 import { useAgentConversationComposer } from './useAgentConversationComposer'
 import { useFirstAttachment } from './useFirstAttachment'
 import { AgentChatSettings } from './AgentChatSettings'
@@ -178,6 +179,7 @@ function AgentConversationContent({ context, name, activity, runLabel, onClose, 
         sessionMode: parseSessionCommand(content).kind === 'plan-task' ? 'plan' : mode })} />
       : <ConversationViewport revision="loading">{() => <RetainedAgentCommands commands={chat.commands} onDenied={chat.revoke} onReceipt={chat.confirmDelivery}
         draftKey={chat.draftKey} refresh={chat.refresh} pending={chat.query.isPending} />}</ConversationViewport>}
+    {state ? <CompactionActivity controls={sessionControls} latest /> : null}
     {state ? <div className="agent-chat-composer-controls" role="group" aria-label="Chat actions" {...drop.dropTargetProps}>
       <AgentChatComposer name={name} draftKey={chat.draftKey} inputRef={composer}
         disabled={composerDisabled} reason={composerReason} controlReason={controlReason}

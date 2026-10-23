@@ -1,7 +1,8 @@
 import type { ComposerSessionControls } from './useSessionControls'
 
-export function CompactionActivity({ controls }: { controls: ComposerSessionControls }) {
-  const saved = controls.state?.compactions ?? []
+/** `latest` shows only the newest compaction, for chats that keep the composer area compact. */
+export function CompactionActivity({ controls, latest = false }: { controls: ComposerSessionControls; latest?: boolean }) {
+  const saved = latest ? [] : controls.state?.compactions ?? []
   const current = controls.state?.compaction
   const updated = saved.map(entry => current && entry.requestId === current.requestId ? current : entry)
   const entries = current && !saved.some(entry => entry.requestId === current.requestId) ? [...updated, current] : updated

@@ -25,8 +25,10 @@ export class MaintenanceTaskStore {
 
   save(tasks: readonly MaintenanceTask[]): Promise<void> {
     const text = `${JSON.stringify(tasks)}\n`
-    this.writes = this.writes.then(() => this.ports.writePrivateText(this.path, text))
-    return this.writes
+    const write = this.writes.then(() => this.ports.writePrivateText(this.path, text))
+    // The failure belongs to this caller; the chain stays usable for later writes.
+    this.writes = write.catch(() => undefined)
+    return write
   }
 
   flushed(): Promise<void> { return this.writes }

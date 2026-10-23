@@ -36,3 +36,6 @@
 .agent-chat-composer-controls .agent-chat-controls > button {
   flex-shrink: 0;
 }
+/* /compact progress and result, just above the composer. */
+.session-compaction-activity { padding: 0 var(--space-3); }
+.session-compaction-activity p { margin: 0; font: var(--type-caption, 12px/1.4 inherit); color: var(--text-muted); }

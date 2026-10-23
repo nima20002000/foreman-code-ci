@@ -59,7 +59,8 @@ export class LocalProviderCredentials {
   }
 
   hostId(): Promise<string> {
-    this.hostIdentity ??= this.loadHostId()
+    // A rejected load is forgotten so a repaired directory or file works without restarting the API.
+    this.hostIdentity ??= this.loadHostId().catch(error => { this.hostIdentity = undefined; throw error })
     return this.hostIdentity
   }
 

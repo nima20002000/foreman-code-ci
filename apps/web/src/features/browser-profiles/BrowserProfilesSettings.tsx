@@ -23,8 +23,6 @@ export interface BrowserProfilesSettingsProps {
   sessionPort: BrowserUiPort
   files: BrowserFilesPort
   onOpenSetup(session: BrowserSession): void
-  /** Shell retains a cleanup notice/End setup action when this page has already retired. */
-  onSetupCleanupPending(session: BrowserSession, message: string): void
   /** Extra per-computer control, such as Repair browser, shown beside the computer's name. */
   computerAction?(computer: BrowserComputerLabel): ReactNode
 }
@@ -34,7 +32,7 @@ export function BrowserProfilesSettings(props: BrowserProfilesSettingsProps) {
   return <VisibleBrowserProfiles key={props.authBoundary} {...props} />
 }
 
-function VisibleBrowserProfiles({ authBoundary, computers, currentComputerId, port, sessionPort, files, onOpenSetup, onSetupCleanupPending, computerAction }: BrowserProfilesSettingsProps) {
+function VisibleBrowserProfiles({ authBoundary, computers, currentComputerId, port, sessionPort, files, onOpenSetup, computerAction }: BrowserProfilesSettingsProps) {
   const queryClient = useQueryClient()
   const [denied, setDenied] = useState(false)
   const catalog = useBrowserProfiles(port, authBoundary, !denied)
@@ -56,6 +54,7 @@ function VisibleBrowserProfiles({ authBoundary, computers, currentComputerId, po
     } })
   const unresolved = mutation.isError && browserRequestUncertain(mutation.error)
   const busy = mutation.isPending || unresolved
+  const openEditor = (next: { profile: BrowserProfile | null; computerId: string }) => { mutation.reset(); setEditor(next) }
   const act = (run: ProfileAction['run']) => { if (!busy) { setNotice(null); mutation.mutate({ commandId: crypto.randomUUID(), run }) } }
   const retry = () => { if (mutation.variables && !mutation.isPending) mutation.mutate(mutation.variables) }
   const sync = (profileIds?: readonly string[]) => act(async commandId => {
@@ -71,7 +70,7 @@ function VisibleBrowserProfiles({ authBoundary, computers, currentComputerId, po
   return <section className="browser-profiles-settings" aria-label="Browser profiles">
     {accessDenied ? <p role="alert" className="browser-profile-note">Browser profiles are unavailable right now.</p> : <>
       <div className="browser-profile-toolbar">
-        <Button variant="primary" disabled={busy || !catalog.data} onClick={() => setEditor({ profile: null, computerId: currentComputerId })}>Add profile</Button>
+        <Button variant="primary" disabled={busy || !catalog.data} onClick={() => openEditor({ profile: null, computerId: currentComputerId })}>Add profile</Button>
         <Button variant="ghost" disabled={busy || !catalog.data?.profiles.length} onClick={() => sync()}>Sync profiles to all computers</Button>
       </div>
       {catalog.isPending ? <div className="browser-profile-computers" aria-busy="true">{[0, 1].map(index => <div key={index} className="browser-profile-computer browser-profile-skeleton" />)}</div> : null}
@@ -86,7 +85,7 @@ function VisibleBrowserProfiles({ authBoundary, computers, currentComputerId, po
             <small>{computer.online ? 'Online' : 'Offline'}{computer.runtimeReady ? ' · Browser ready' : ' · Browser setup needed'}</small></div>
           <div className="browser-profile-actions">
             {computerAction?.(computer)}
-            <Button size="sm" variant="ghost" disabled={busy} onClick={() => setEditor({ profile: null, computerId: computer.id })}>Add profile here</Button>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => openEditor({ profile: null, computerId: computer.id })}>Add profile here</Button>
           </div>
         </header>
         {catalog.data!.profiles.length === 0 ? <p className="browser-profile-note">No profiles yet.</p> : null}
@@ -97,14 +96,10 @@ function VisibleBrowserProfiles({ authBoundary, computers, currentComputerId, po
           onOpen={profile => act(async commandId => {
             const session = await port.openSetup(profile.id, computer.id, commandId)
             if (active.current) { onOpenSetup(session); return }
-            try {
-              const state = await port.closeSetup(session, `retired:${commandId}`)
-              if (state === 'pending') onSetupCleanupPending(session, 'Setup browser may still be open. End setup to confirm cleanup.')
-            } catch (error) {
-              onSetupCleanupPending(session, `Setup browser may still be open. ${browserErrorMessage(error)}`)
-            }
+            // The app's close client retains an unconfirmed cleanup and throws; a second notice here would duplicate it.
+            await port.closeSetup(session, `retired:${commandId}`)
           })}
-          onEdit={profile => setEditor({ profile, computerId: computer.id })}
+          onEdit={profile => openEditor({ profile, computerId: computer.id })}
           onRemove={profile => act(async commandId => {
             const state = await port.remove(profile.id, computer.id, commandId)
             if (!active.current) return

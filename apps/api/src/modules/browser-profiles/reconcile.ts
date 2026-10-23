@@ -54,7 +54,9 @@ export async function reconcileBrowserProfileIntent(service: BrowserProfileServi
     await service.host[intent.operation as 'create' | 'remove']({ profileId: intent.profileId, computerId: intent.computerId,
       operationId: intent.id, revision: intent.revision, installationId: intent.installationId })
     return finish('completed', null)
-  } catch {
-    return finish('queued', 'Could not confirm the computer operation. Reconnect to check its original receipt.')
+  } catch (error) {
+    // Keep the operation queued for retry, then surface the native failure to the dispatcher's failure reporting.
+    await finish('queued', 'Could not confirm the computer operation. Reconnect to check its original receipt.')
+    throw error
   }
 }

@@ -78,3 +78,27 @@ it('closes the chat browser after ten idle minutes and when the chat is archived
   await f.chats.sweep()
   expect(f.open.size).toBe(0)
 })
+
+it('gives a chat on a paired device the actor from that session\'s control facts', async () => {
+  const f = fixture()
+  const control = vi.fn(async (_principal: ManagementPrincipal, sessionId: string) =>
+    sessionId === 'remote-session' ? { browserGeneration: 3, epoch: 7 } : undefined)
+  const chats = new ChatBrowserSessions({ pool: {} as pg.Pool, lifecycle: f.lifecycle, localSessions: async () => [],
+    localControl: () => undefined, sessionControl: control, chatSubject: async () => chatSubject } as never)
+  expect(await chats.agentActor(principal, 'remote-session')).toEqual({ kind: 'agent', browserGeneration: 3, epoch: 7 })
+})
+
+it('closes a chat browser that is still opening when a Run needs its profile', async () => {
+  const f = fixture()
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const prepare = f.lifecycle.prepare.getMockImplementation()!
+  f.lifecycle.prepare.mockImplementationOnce(async input => { await gate; return prepare(input) })
+  const opening = f.chats.sessionFor(principal)
+  await vi.waitFor(() => expect(f.lifecycle.prepare).toHaveBeenCalled())
+  const yielded = f.chats.yieldToRun('profile', 'main')
+  release()
+  await opening
+  await yielded
+  expect(f.open.size).toBe(0)
+})

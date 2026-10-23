@@ -11,6 +11,7 @@ import {
 } from '@foreman-code/contracts/wave25'
 import { withExclusiveGraphConnection, type GraphTransactionSql } from './connection.js'
 import { RunGraphError } from './errors.js'
+import { DomainError } from '../errors.js'
 import {
   readRecordedRepeatGraphPinsLocked, readRepeatRunStateLocked, readRepeatGraphOccurrencesLocked,
   readRepeatGraphExecutionsLocked, readRepeatGraphBindingsLocked, readRepeatGraphResolutionsLocked,
@@ -29,7 +30,11 @@ export interface RepeatGraphHead {
 async function authorizedHead(sql: GraphTransactionSql, scope: RepeatGraphScopeV3,
   authorize: AuthorizeRepeatGraphRead): Promise<RepeatGraphHead> {
   if (typeof authorize !== 'function') throw new RunGraphError('GRAPH_READ_ACCESS_DENIED')
-  try { await authorize(sql, scope) } catch { throw new RunGraphError('GRAPH_READ_ACCESS_DENIED') }
+  try { await authorize(sql, scope) } catch (error) {
+    // Only a refusal is a denial; a database failure must stay visible as a failure, not a 403 and denied-command audit.
+    if (error instanceof RunGraphError || error instanceof DomainError && error.code === 'ACCESS_DENIED') throw new RunGraphError('GRAPH_READ_ACCESS_DENIED')
+    throw error
+  }
   const rows = await sql.query<RepeatGraphHead>(`select h.head_sequence::text,h.retention_floor::text,h.protocol_version,h.history_coverage
     from runs r join workflow_versions v on v.id=r.workflow_version_id left join run_graph_heads h on h.run_id=r.id
     where r.id=$1 and r.workspace_id=$2 and r.workflow_id=$3 and r.workflow_version_id=$4
