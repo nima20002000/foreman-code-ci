@@ -16,7 +16,6 @@ import { ExecutionScopedNativeSessionManagerResolver } from '../src/modules/inte
 import { createWorkflowNativeCaptureChannel } from '../src/modules/interactions/workflowNativeCapture.js'
 import type { WorkflowClosureStore } from '../src/modules/interactions/workflowClosure.js'
 import type { RepeatNativeObservationStore } from '../src/modules/interactions/repeatObservation.js'
-import type { RunOwnership } from '../src/modules/runs/ownership.js'
 import { persistentFixtureRoot } from './helpers/fixtureStorage.js'
 import { workflowTerminalOwner } from './helpers/workflowTerminalOwner.js'
 import { nativeLanes } from './helpers/nativeLanes.js'
