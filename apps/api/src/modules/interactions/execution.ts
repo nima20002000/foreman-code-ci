@@ -3692,10 +3692,10 @@ export class ApprovalExecutionCoordinator {
             'Correct only the remaining board changes. Do not repeat the task or external work.',
           ].join('\n') : undefined
           const formatPrompt = handoffPrompt ?? (verdict ? deliverableRepairPrompt(verdict, input.deliverable!.outputSchema) : boardPrompt)
-          // A writable Agent that left no card on its workflow's Kanban is asked once, with the first correction.
-          const kanbanPrompt = observation.workResultRepairs === 0 && await observation.bookkeeping(() =>
-            this.runs.kanbanRecordMissing(observation.execution.id, observed.terminalTurn!.result, input.owner))
-            ? KANBAN_FOLLOW_UP : undefined
+          // Ask once when this writable Agent did not update its own Kanban card.
+          const missingCardId = observation.workResultRepairs === 0 ? await observation.bookkeeping(() =>
+            this.runs.kanbanRecordMissing(observation.execution.id, observed.terminalTurn!.result, input.owner)) : undefined
+          const kanbanPrompt = missingCardId ? KANBAN_FOLLOW_UP(missingCardId) : undefined
           const repairPrompt = formatPrompt && kanbanPrompt ? `${formatPrompt}\n\n${kanbanPrompt}` : formatPrompt ?? kanbanPrompt
           if (repairPrompt) {
             const repaired = await this.correctWorkflowResult(observation, nativeManager, lane, observed, captured, repairPrompt)
