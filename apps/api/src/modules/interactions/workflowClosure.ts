@@ -10,6 +10,7 @@ import { RemoteOperationReceiptSchema, remoteWorkflowTurnId } from '@foreman-cod
 import type { WorkflowNativeProofRecord } from '../runs/workflowNativeProof.js'
 import { readExecutionPlacement } from '../placement/persistence.js'
 import { assertReviewerCheckoutAvailable } from '../runs/worktreeReviewers.js'
+import { IN_PROGRESS_RUN_STATES_SQL } from '../runs/runState.js'
 
 /** Private native-closure evidence, captured by the coordinator, never an API
  * input or an inference from a terminal business result. No secrets are stored. */
@@ -153,7 +154,7 @@ async function readDetachableWorkflowLifetime(sql: Sql, owner: RunOwnership, exe
     join lateral (select * from execution_native_closures where execution_id=e.id
       order by generation desc limit 1) c on true
     where e.id=$1 and r.id=$2 and r.record->>'executionSemanticsVersion'='3'
-      and r.execution_state in ('running','waiting')
+      and r.execution_state in (${IN_PROGRESS_RUN_STATES_SQL})
       and r.record->>'outcome'='pending' and r.stop_requested_at is null
       and s.workflow_finalized_at is null
       and not exists(select 1 from run_cleanup_intents intent where intent.run_id=r.id and intent.pending)`,
@@ -183,7 +184,7 @@ export async function readRemoteWorkflowContinuation(owner: RunOwnership, execut
       join execution_dispatch_intents i on i.execution_id=e.id
       join remote_execution_receipts r using(operation_id)
       where e.id=$1 and run.id=$2 and run.record->>'executionSemanticsVersion'='3'
-        and run.execution_state in ('running','waiting') and run.record->>'outcome'='pending'
+        and run.execution_state in (${IN_PROGRESS_RUN_STATES_SQL}) and run.record->>'outcome'='pending'
         and run.stop_requested_at is null and s.workflow_finalized_at is null
         and not exists(select 1 from run_cleanup_intents c where c.run_id=run.id and c.pending)
       for share of e,s,r`, [execution.id, owner.runId])).rows[0]
@@ -228,7 +229,7 @@ export async function readRemoteOutputSettlement(owner: RunOwnership, execution:
       join execution_native_sessions s on s.execution_id=e.id
       join execution_dispatch_intents i on i.execution_id=e.id
       join remote_execution_receipts r using(operation_id)
-      where e.id=$1 and run.id=$2 and run.execution_state in ('running','waiting')
+      where e.id=$1 and run.id=$2 and run.execution_state in (${IN_PROGRESS_RUN_STATES_SQL})
         and run.record->>'outcome'='pending' and run.stop_requested_at is null
         and s.workflow_finalized_at is null
         and not exists(select 1 from run_cleanup_intents c where c.run_id=run.id and c.pending)
@@ -288,7 +289,7 @@ export class PostgresWorkflowClosureStore implements WorkflowClosureStore {
     if (saved || !this.hasRestartDetachment?.(execution.id)) return saved
     const recovered = await owner.oneShotConnection().transaction(async sql => {
       const allowed = await sql.query(`select 1 from runs r where r.id=$1
-        and r.record->>'executionSemanticsVersion'='3' and r.execution_state in ('running','waiting')
+        and r.record->>'executionSemanticsVersion'='3' and r.execution_state in (${IN_PROGRESS_RUN_STATES_SQL})
         and r.record->>'executionState'=r.execution_state and r.record->>'outcome'='pending'
         and r.stop_requested_at is null
         and not exists(select 1 from run_cleanup_intents c where c.run_id=r.id and c.pending)
@@ -339,7 +340,7 @@ export class PostgresWorkflowClosureStore implements WorkflowClosureStore {
       // This does not authorize native work. The existing continuation,
       // credentials, harness and writer-lane checks still run at their boundaries.
       const allowed = await sql.query(`select 1 from runs r where r.id=$1
-        and r.execution_state in ('running','waiting') and r.record->>'executionState'=r.execution_state
+        and r.execution_state in (${IN_PROGRESS_RUN_STATES_SQL}) and r.record->>'executionState'=r.execution_state
         and r.record->>'outcome'='pending' and r.stop_requested_at is null
         and not exists(select 1 from run_cleanup_intents c where c.run_id=r.id and c.pending)`, [execution.runId])
       if (allowed.rowCount !== 1) return conflict()

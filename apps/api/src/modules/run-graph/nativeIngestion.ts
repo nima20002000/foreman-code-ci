@@ -21,6 +21,7 @@ import { appendNormalizedNativeEvent, readPersistedNativeSequence } from '../run
 import { appendNormalizedNativeEvents } from '../runs/nativeEventBatch.js'
 import type { NormalizedNativeProducerEvent } from './nativeProducerNormalization.js'
 import { activeNativeBatch, closeNativeBatch, finishNativeBatch, hasNativeBatch, memoizeNativeRead, openNativeBatch, prefetchedNativeAppend, rememberNativeAppend, seedNativeRead, stageNativeRow } from './nativeBatch.js'
+import { CLOSED_RUN_STATES_SQL } from '../runs/runState.js'
 
 export interface NativeGraphWork {
   guard: NativeGraphProjectionGuard
@@ -98,7 +99,7 @@ async function ingest(publication: RunGraphPublication, input: HarnessNativeEven
     if (correlation.connectionId !== (event.connectionId ?? null)
       || String(correlation.connectionGeneration) !== item.guard.expected.connectionGeneration) throw new RunGraphError('GRAPH_STALE_GENERATION')
     const closed = await memoizeNativeRead(sql, `closed-work:${canonicalGraphJson(key)}`, () => sql.query<{ closed: boolean }>(
-      `select (r.stop_requested_at is not null or r.execution_state in ('completed','interrupted') or
+      `select (r.stop_requested_at is not null or r.execution_state in (${CLOSED_RUN_STATES_SQL}) or
          case when $3='workflow' then e.record->>'state'='completed' else
            exists(select 1 from review_jobs j where j.id=$4 and j.execution_id=e.id
              and (j.record->>'state'='completed' or j.record->'cleanup'->>'completedAt' is not null)) end) as closed

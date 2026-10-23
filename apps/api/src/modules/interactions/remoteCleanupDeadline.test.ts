@@ -147,12 +147,11 @@ function recoveryFixture(terminal: boolean, durationMs: number) {
   })
   const store = { ...idleWorkflowRepeat, readExecution: async () => ({ execution }), settleNegativeExecution: vi.fn(async () => {}) }
   type Args = ConstructorParameters<typeof ApprovalExecutionCoordinator>
-  const coordinator = new ApprovalExecutionCoordinator({
+  const coordinator = new ApprovalExecutionCoordinator({ runs: {
     ...f.runs, repeat: async () => store, recordExecutionFailure: async () => { failed = true },
     async *executionPages() { yield [execution] },
-  } as unknown as Args[0], f.interactions as unknown as Args[1], f.budgets as unknown as Args[2],
-  f.managers as unknown as Args[3], 60_000, undefined, undefined, f.closures,
-  undefined, undefined, undefined, recover)
+  } as unknown as Args[0]['runs'], interactions: f.interactions as unknown as Args[0]['interactions'], budgets: f.budgets as unknown as Args[0]['budgets'],
+  managers: f.managers as unknown as Args[0]['managers'], activeTimeoutMs: 60_000, workflowClosures: f.closures, recoverNativeProcesses: recover })
   return { coordinator, execution, owner, recover, store, signal: () => cleanupSignal }
 }
 

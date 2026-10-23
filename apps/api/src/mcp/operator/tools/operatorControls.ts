@@ -38,7 +38,8 @@ export function createOperatorControlTools(delivery?: Pick<ChatDeliveryRouter, '
     name: 'operator_chat_cancel',
     requires: [['operator_chat:cancel', 'global'], ['operator_chat:read', 'global']],
     enabled: s => !!s.operatorChat || !!delivery,
-    description: 'Stop only the exact active reply in your Operator conversation; queued work is preserved. Legacy requestId comes from readback; reuse commandId after response loss (omission uses a deterministic receipt for that request). Or pass canonical request {target, commandId, scope: active_turn, expectedNativeTurnId?}. Reuse the identical command, never the next active reply. Cancellation acknowledgement is not native terminal evidence. Requires operator_chat:cancel and operator_chat:read.',
+    description: 'Stop only the exact active reply in your Operator conversation; queued work is preserved. Cancellation acknowledgement is not native terminal evidence.',
+    detail: 'Legacy requestId comes from readback; reuse commandId after response loss (omission uses a deterministic receipt for that request). Or pass canonical request {target, commandId, scope: active_turn, expectedNativeTurnId?}. Reuse the identical command, never the next active reply.',
     inputSchema: z.object({ conversationId: z.string().min(1), request: z.union([CancelOperatorTurnRequestSchema,
       ChatStopRequestSchema.extend({ scope: ChatStopRequestSchema.shape.scope.extract(['active_turn']) })]) }).strict(),
     outputSchema: controlOutput,
@@ -79,14 +80,8 @@ export function createOperatorControlTools(delivery?: Pick<ChatDeliveryRouter, '
     name: 'operator_chat_respond',
     requires: [['operator_chat:respond', 'global'], ['operator_chat:read', 'global']],
     enabled: s => !!s.operatorChat,
-    description: 'Answer the pending native request in your Operator conversation using offered nativeRequestId and '
-      + 'optionId plus active model requestId from operator_chat_get. For a standalone session request with no active '
-      + 'model request, use nativeRequestId as requestId. For questions and forms, supply response matching '
-      + 'the option input schema. Check responseAvailability.available and its message first. Reuse commandId and '
-      + 'identical input after response loss. An uncertain response is never resent. '
-      + 'Read operator_chat_get activitySnapshot for the saved decision and providerAcknowledged: '
-      + 'a recorded answer alone is not delivery confirmation; native consumption may confirm it later. '
-      + 'Requires operator_chat:respond and operator_chat:read.',
+    description: 'Answer the pending native request in your Operator conversation with its offered nativeRequestId and optionId and the active requestId from operator_chat_get; check responseAvailability first. An uncertain response is never resent.',
+    detail: 'For a standalone session request with no active model request, use nativeRequestId as requestId. For questions and forms, supply response matching the option input schema. Read operator_chat_get activitySnapshot for the saved decision and providerAcknowledged: a recorded answer alone is not delivery confirmation; native consumption may confirm it later.',
     inputSchema: z.object({ conversationId: z.string().min(1), request: RespondOperatorInteractionRequestSchema }).strict(),
     outputSchema: CancelOperatorTurnResponseSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },

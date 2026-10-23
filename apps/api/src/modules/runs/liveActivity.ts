@@ -2,6 +2,7 @@ import type {
   HarnessExecution, ReviewJob, RunLiveActivity, RunNodeLiveActivity, WorkflowDefinition, WorkflowRun,
 } from '@foreman-code/contracts'
 import { nativeAction, nativeObject, nativeString, nodeAction } from './nativeAction.js'
+import { isOpenRunState } from './runState.js'
 
 /** Internal DB read model. Raw tool arguments never enter this projection. */
 export interface LiveActivityEvent {
@@ -266,7 +267,7 @@ export function projectRunLiveActivity(input: {
     lane.sequence = sequence
     updateView(node, event)
   }
-  const active = ['queued', 'running', 'waiting'].includes(run.executionState)
+  const active = isOpenRunState(run.executionState)
   return {
     runId: run.id, workspaceId: run.workspaceId, workflowId: run.workflowId, workflowVersionId: run.workflowVersionId,
     active, sequence: events.at(-1)?.sequence ?? '0', eventCount: String(seen.size),

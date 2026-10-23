@@ -85,10 +85,10 @@ export async function codexWorkflowRuntime(kind: 'questions' | 'form') {
         if (!(manager instanceof CodexAppServerSessionManager)) throw new Error('Expected the Codex workflow manager')
         return codexMcpInspectorAdapter(manager)
       }, db.pool)
-    const native = new ApprovalExecutionCoordinator(runs, repository, budgets, managers, 600000,
-      launchCredentials, continuationValidator(db.pool, locations),
-      new PostgresWorkflowClosureStore(db.pool), new PostgresRepeatReviewerBindings(db.pool),
-      nativeCapture, reviewCapture.capture)
+    const native = new ApprovalExecutionCoordinator({ runs, interactions: repository, budgets, managers, activeTimeoutMs: 600000,
+      credentials: launchCredentials, validateContinuation: continuationValidator(db.pool, locations),
+      workflowClosures: new PostgresWorkflowClosureStore(db.pool), repeatReviewerBindings: new PostgresRepeatReviewerBindings(db.pool),
+      nativeCaptures: nativeCapture, reviewNativeCaptures: reviewCapture.capture })
     engine = new LangGraphWorkflowEngine(runs, workflows, native, saver, db.directory,
       locations, launchCredentials, repository, undefined, { workerParallelism: 2 })
     const activeEngine = engine

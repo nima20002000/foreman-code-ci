@@ -13,6 +13,7 @@ import { resolveImmutableApprovalRoute, usesNativeSelfReview } from '../../workf
 import { validateReviewerBootstrap } from '../../workflows/reviewerBootstrap.js'
 import { beforeGraphCommit, type GraphSqlClient, type GraphTransactionSql } from '../../run-graph/connection.js'
 import { RUN_CLEANUP_BOUNDARY_SQL } from './cleanupAuthority.js'
+import { isOpenRunState } from '../../runs/runState.js'
 
 export function fail(code: string, message = 'The approval identity, authority or owner changed.'): never {
   throw new DomainError(code, message, code === 'AUTH_REVOKED' ? 401 : code.endsWith('ACCESS_DENIED') ? 403 : 409)
@@ -67,7 +68,7 @@ export async function readContext(sql: GraphSqlClient, interaction: DurableInter
     || canonicalGraphJson(r.approval) !== canonicalGraphJson(v.approval)
     || (interaction.kind !== 'work_direction' && canonicalGraphJson(interaction.approval) !== canonicalGraphJson(v.approval))
     || canonicalGraphJson(r.agentConfigurationVersionIds) !== canonicalGraphJson(v.agentConfigurationVersionIds)) return fail('APPROVAL_IDENTITY_MISMATCH')
-  const stopped = row.stopped || !['queued', 'running', 'waiting'].includes(r.executionState)
+  const stopped = row.stopped || !isOpenRunState(r.executionState)
   if (requireOpen && stopped) return fail('EXECUTION_STOPPED')
   const requesterRow = (await sql.query<{ record: unknown; closed: boolean }>(
     `select record,worker_credentials_closed_at is not null as closed from harness_executions

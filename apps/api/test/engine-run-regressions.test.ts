@@ -153,10 +153,9 @@ async function createFixture(placement?: AcceptedNodePlacement) {
     async authorizeNativeSubmission() {}, consumeLaunch() { if (launched) return false; launched = true; return true },
     async settleNativeExecution() { if (!closed || cleanupFails) throw new DomainError('REPEAT_CLEANUP_PENDING', 'Native cleanup pending', 409) },
   }
-  const coordinator = new ApprovalExecutionCoordinator(runs as never, interactions as never, budgets as never,
-    new ExecutionScopedNativeSessionManagerResolver(() => manager), 300_000, credentials,
-    async () => { await locations.revalidateRunAuthorization(); await locations.revalidateSnapshot() }, closures, undefined, captures.capture,
-    undefined, undefined, undefined, async context => placement ? { ...context, acceptedPlacement: placement } : context)
+  const coordinator = new ApprovalExecutionCoordinator({ runs: runs as never, interactions: interactions as never, budgets: budgets as never,
+    managers: new ExecutionScopedNativeSessionManagerResolver(() => manager), activeTimeoutMs: 300_000, credentials,
+    validateContinuation: async () => { await locations.revalidateRunAuthorization(); await locations.revalidateSnapshot() }, workflowClosures: closures, nativeCaptures: captures.capture, prepareManagerContext: async context => placement ? { ...context, acceptedPlacement: placement } : context })
   const { owner, connection } = workflowTerminalOwner(() => rows.get(candidate.id)!, closures.read, () => ['worker-1'])
   return {
     coordinator, credentials, rows, accepted, events, activities, revoked, negativeSettlements, failures,

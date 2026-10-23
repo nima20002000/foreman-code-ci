@@ -15,6 +15,7 @@ import {
 import { invokeOperatorTool } from '../invoke.js'
 import type { OperatorRequestContext } from '../types.js'
 import { WORKFLOW_SCHEDULE_TOOLS, type WorkflowScheduleToolName } from '../toolNames.js'
+import { toolDetail } from '../../shared/toolDetail.js'
 
 export { WORKFLOW_SCHEDULE_TOOLS, type WorkflowScheduleToolName }
 const actions: Record<WorkflowScheduleToolName, ManagementAction> = {
@@ -51,15 +52,18 @@ export function registerWorkflowScheduleTools(server: McpServer, context: Operat
   const read = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   const write = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   if (workflowScheduleToolAvailable(context, 'workflow_schedule_get')) server.registerTool('workflow_schedule_get', {
-    description: 'Read the one persisted schedule for a workflow, or null when absent. Read first to obtain expectedRevision. This does not dispatch or start a Run. ' + scheduleTimeContract,
+    description: 'Read a workflow\'s saved schedule (null when absent) and its revision for later writes; never starts a Run. Times are canonical UTC instants; show them in the viewing device\'s timezone.',
+    ...toolDetail(scheduleTimeContract),
     inputSchema: ScheduleGetInputSchema, outputSchema: ScheduleGetResultSchema, annotations: read,
   }, (input) => invokeOperatorTool(context, 'workflow_schedule_get', () => service.get(context.principal, input)))
   if (workflowScheduleToolAvailable(context, 'workflow_schedule_save')) server.registerTool('workflow_schedule_save', {
-    description: 'Create or replace weekly, elapsed interval (whole seconds, minutes or hours, at least one second), or Once settings. New or changed Once settings must be in the future. Use revision 0 for absence, otherwise the read revision, and retain commandId for retries. Policy is latest_saved. Saving does not immediately start a Run. Enabled saves bind the writer\'s root human owner and grant ceiling for server-side dispatch. At dispatch the owner must still have runs:start and workspace_locations:read. Older unbound schedules require a new save or enable; read occurrence history for outcomes. ' + scheduleTimeContract + ' ' + scheduleCursorContract,
+    description: 'Create or replace a workflow schedule: weekly, elapsed interval (whole seconds, minutes or hours, at least one second) or Once (in the future), with revision 0 when absent. Calendar times use the caller device\'s IANA timezone; saving never starts a Run.',
+    ...toolDetail('Policy is latest_saved. Enabled saves bind the writer\'s root human owner and grant ceiling for server-side dispatch. At dispatch the owner must still have runs:start and workspace_locations:read. Older unbound schedules require a new save or enable; read occurrence history for outcomes. ' + scheduleTimeContract + ' ' + scheduleCursorContract),
     inputSchema: ScheduleSaveInputSchema, outputSchema: ScheduleSaveResultSchema, annotations: write,
   }, (input) => invokeOperatorTool(context, 'workflow_schedule_save', () => service.save(context.principal, 'mcp', input)))
   if (workflowScheduleToolAvailable(context, 'workflow_schedule_enable')) server.registerTool('workflow_schedule_enable', {
-    description: 'Enable existing saved settings with commandId and expectedRevision, including an exhausted Once. This binds the enabling caller\'s root human owner and grant ceiling for future server dispatch; it does not immediately start a Run. Live owner Run and location rights are rechecked at dispatch. ' + scheduleCursorContract,
+    description: 'Enable a saved schedule (including an exhausted Once) with its expectedRevision, binding your root human owner and grant ceiling for future server dispatch. Does not start a Run now.',
+    ...toolDetail('Live owner Run and location rights are rechecked at dispatch. ' + scheduleCursorContract),
     inputSchema: ScheduleEnableInputSchema, outputSchema: ScheduleEnableResultSchema, annotations: write,
   }, (input) => invokeOperatorTool(context, 'workflow_schedule_enable', () => service.enable(context.principal, 'mcp', input)))
   if (workflowScheduleToolAvailable(context, 'workflow_schedule_disable')) server.registerTool('workflow_schedule_disable', {

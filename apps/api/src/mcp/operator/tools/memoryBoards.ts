@@ -64,7 +64,8 @@ export function memoryBoardToolDefinitions(
   const tools:MemoryBoardToolDefinition[]=[
     {name:'memory_board_get',requires:[['workspaces:read','resource']],discoverable:discover(false),
       permissionDetail:'Workspace boards require workspaces:read; workflow boards require workflows:read in the exact scope.',
-      description:'Read one workspace or workflow Memory board, an independent column page, note page, exact task/history or your command receipt. Card detail bounds its current-work summary and binding/claim pages. Use views bindings and claims with cardId and their independent nextCursor to read retained work. Done is loaded only on request. Unknown command status never proves that a timed-out save did not run.',
+      description:'Read a workspace or workflow Memory board, one column or note page, an exact task with its history, or your command receipt. Done tasks load only on request.',
+      detail: 'Card detail bounds its current-work summary and binding/claim pages. Use views bindings and claims with cardId and their independent nextCursor to read retained work. Unknown command status never proves that a timed-out save did not run.',
       inputSchema:schemas.read,annotations:readAnnotations,run:(context,input)=>resolve(context).read(context.principal,schemas.read.parse(input))},
     {name:'memory_board_changes_read',requires:[['workspaces:read','resource']],discoverable:discover(false),
       permissionDetail:'Workspace boards require workspaces:read; workflow boards require workflows:read in the exact scope.',
@@ -72,16 +73,21 @@ export function memoryBoardToolDefinitions(
       inputSchema:schemas.changes,annotations:readAnnotations,run:(context,input)=>resolve(context).changes(context.principal,schemas.changes.parse(input))},
   ]
   const mutations=[
-    ['memory_card_create','card_create',schemas.cardCreate,'Create a task or return the existing normalized-title task, including Done. Assignment/display links alone do not bind work. Select exact current work or an explicit one-use Next activation. Use status waiting_for_user with a reason telling the owner what to do when only the owner can act (payment, sign-in, CAPTCHA).'],
-    ['memory_card_update','card_update',schemas.cardUpdate,'Patch a task against current state; expectedRevision is optional. Live required work cannot be completed or dropped. Reopen or drop terminal failed work with a reason; historical failure remains intact. Move a task to waiting_for_user with a reason when the owner must act; work results never move it out, only an explicit update does.'],
+    ['memory_card_create','card_create',schemas.cardCreate,'Create a task, or return the existing one with the same normalized title (including Done). Use status waiting_for_user with a reason when only the owner can act (payment, sign-in, CAPTCHA).'],
+    ['memory_card_update','card_update',schemas.cardUpdate,'Patch a task against current state (expectedRevision optional); live required work cannot be completed or dropped. Move it to waiting_for_user with a reason when the owner must act.'],
     ['memory_note_create','note_create',schemas.noteCreate,'Pin a durable note; omitted rank appends once. A source post must be visible in the same board scope.'],
     ['memory_note_update','note_update',schemas.noteUpdate,'Patch note text or rank without rewriting other notes. A no-op keeps the saved revision and produces no event.'],
     ['memory_note_archive','note_archive',schemas.noteArchive,'Archive or restore a note explicitly, retaining its identity and history.'],
   ] as const
+  const details: Partial<Record<string, string>> = {
+    memory_card_create: 'Assignment/display links alone do not bind work. Select exact current work or an explicit one-use Next activation.',
+    memory_card_update: 'Reopen or drop terminal failed work with a reason; historical failure remains intact. Work results never move a task out of waiting_for_user; only an explicit update does.',
+  }
   for (const [name,kind,schema,description] of mutations) tools.push({
     name,requires:[['workspaces:update','resource']],discoverable:discover(true),
     permissionDetail:'Workspace boards require workspaces:update; workflow boards require workflows:update in the exact scope. Agent tools also require the saved node tool and writable harness.',
-    description:`${description} Keep commandId and input after an uncertain response, and check memory_board_get view command before retrying.`,
+    description:`${description} On an uncertain response, check memory_board_get view command before retrying the same input.`,
+    ...(details[name] ? { detail: details[name] } : {}),
     inputSchema:schema,annotations:writeAnnotations,
     run(context,input) {
       const operation=MemoryBoardMutationSchema.parse(input)

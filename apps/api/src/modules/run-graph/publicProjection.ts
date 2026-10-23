@@ -11,6 +11,7 @@ import { RunGraphError } from './errors.js'
 import { repeatTickIndex } from '../runs/repeatResolution.js'
 
 import type { CompactProjectionRows } from './compactProjectionRows.js'
+import { CLOSED_RUN_STATES_SQL } from '../runs/runState.js'
 
 type PublicNode = PublicGraphProjection['nodes'][number]
 export interface PublicProjectionOverlay extends PublicAttentionOverlay {
@@ -46,7 +47,7 @@ export async function readPublicNodeProjection(sql: GraphTransactionSql, scope: 
 
 export type PublicNodeRunRow = { closed: boolean; cleanup_pending: boolean }
 export const PUBLIC_NODE_RUN_SQL = `select r.stop_requested_at is not null
-    or r.execution_state in ('completed','interrupted') as closed,
+    or r.execution_state in (${CLOSED_RUN_STATES_SQL}) as closed,
     exists(select 1 from run_cleanup_intents c where c.run_id=r.id and c.pending) as cleanup_pending
     from runs r where r.id=$1`
 

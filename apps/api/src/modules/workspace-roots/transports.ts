@@ -13,6 +13,7 @@ import { toolFailure, toolResult } from '../../mcp/shared/results.js'
 import type { WorkspaceBoundLocationService } from './service.js'
 import { defineOperatorTool, registerToolDefinition } from '../../mcp/operator/definition.js'
 import type { OperatorRequestContext } from '../../mcp/operator/types.js'
+import { toolDetail } from '../../mcp/shared/toolDetail.js'
 
 const TOOLS = { adopt: 'workspace_root_configuration_adopt', choices: 'workspace_root_choices_list', get: 'workspace_root_location_get',
   validate: 'workspace_root_location_validate', browse: 'workspace_root_directories_list', set: 'workspace_root_location_set' } as const
@@ -49,7 +50,11 @@ async function invoke(principal: ManagementPrincipal, commands: Commands, name: 
     return toolFailure(error)
   }
 }
-const adoption = { description: 'Adopt the approved root configuration from the selected authenticated host installation, including product-managed storage approved by its current human pairing. Arbitrary user paths require explicit owner approval on that host. Requires scoped source_roots:read/bind and workspace_locations:read/validate/update. No caller paths or new approval; persists the configuration with an idempotent command receipt and audit. Then list, validate and bind its root choices. CI enrollment adopts and binds product-managed storage automatically.',
+const adoption = { description: 'Adopt the approved root configuration of the selected authenticated host installation, including '
+    + 'storage its current human pairing approved; then list, validate and bind its root choices. Accepts no caller paths.',
+  ...toolDetail('Arbitrary user paths require explicit owner approval on that host. Requires scoped source_roots:read/bind and '
+    + 'workspace_locations:read/validate/update. Persists the configuration with an idempotent command receipt and audit. '
+    + 'CI enrollment adopts and binds product-managed storage automatically.'),
   inputSchema: WorkspaceRootConfigurationAdoptSchema, outputSchema: WorkspaceRootConfigurationAdoptResultSchema, annotations: { ...read, readOnlyHint: false } }
 
 export const workspaceRootTools = [
@@ -57,7 +62,8 @@ export const workspaceRootTools = [
     name: TOOLS.choices,
     requires: [['source_roots:read', 'workspace'], ['workspace_locations:read', 'workspace']],
     enabled: s => !!s.workspaceRoots,
-    description: 'List persisted computer/base/root policies for an existing workspace, including Main app-managed Workspaces storage, pairing-approved product-managed Worker storage and explicitly owner-approved additional roots, without filesystem probing. managedBy identifies pairing-approved managed bases; bindingPurpose identifies CI enrollment roots that preserve the workspace’s primary location. Requires scoped source_roots:read and workspace_locations:read. No Agent or workflow is required; metadata-only is not worker readiness.',
+    description: 'List a workspace\'s saved computer, base and root policies (Main Workspaces storage, pairing-approved Worker storage and owner-approved roots) without probing the filesystem. Metadata only; not Worker readiness.',
+    detail: 'managedBy identifies pairing-approved managed bases; bindingPurpose identifies CI enrollment roots that preserve the workspace’s primary location. No Agent or workflow is required.',
     inputSchema: WorkspaceRootListInputSchema, outputSchema: WorkspaceRootListResultSchema, annotations: read,
     handle: (context, input) => invoke(context.principal, context.services.commands, TOOLS.choices,
       () => context.services.workspaceRoots!.choices(context.principal, input)),
@@ -75,7 +81,8 @@ export const workspaceRootTools = [
     name: TOOLS.validate,
     requires: [['workspace_locations:validate', 'workspace'], ['source_roots:read', 'workspace'], ['workspace_locations:read', 'workspace']],
     enabled: s => !!s.workspaceRoots,
-    description: 'Validate a relative directory through its approved computer/base configuration with native component-safe attestation. Correctable folder failures return stable domain codes such as ROOT_RELATIVE_PATH_INVALID. Requires scoped source_roots:read, workspace_locations:read and workspace_locations:validate. Does not set a location or launch a harness.',
+    description: 'Validate a relative directory through its approved computer and base configuration with native component-safe attestation, without setting a location or launching a harness.',
+    detail: 'Correctable folder failures return stable domain codes such as ROOT_RELATIVE_PATH_INVALID.',
     inputSchema: WorkspaceBoundLocationValidateInputSchema, outputSchema: WorkspaceBoundLocationValidationSchema, annotations: read,
     handle: (context, input) => invoke(context.principal, context.services.commands, TOOLS.validate,
       () => context.services.workspaceRoots!.validate(context.principal, 'mcp', input)),
@@ -93,7 +100,8 @@ export const workspaceRootTools = [
     name: TOOLS.set,
     requires: [['workspace_locations:update', 'workspace'], ['source_roots:read', 'workspace'], ['workspace_locations:read', 'workspace'], ['source_roots:bind', 'workspace'], ['workspace_locations:validate', 'workspace']],
     enabled: s => !!s.workspaceRoots,
-    description: 'Revision-check and save an approved native workspace root binding using the existing location command receipt/audit path. Main root selections update the primary execution location and its revision. Device root selections add or update that computer’s root only, preserving the primary location and its revision; the response describes the selected root. Selecting the same folder reattests its identity and can repair a replaced directory. Correctable native folder failures return stable domain codes. Requires scoped source_roots:read/bind plus workspace_locations:read/validate/update. The server derives canonical path and registered application runner identity. Existing source roots and runtime profiles keep their saved bindings across location changes while their host and policy remain authorized. Existing Runs retain accepted pins. Reuse commandId and exact input after unknown acknowledgment; never substitute another host.',
+    description: 'Revision-check and save an approved workspace root binding on Main (updating the primary execution location) or on a paired computer (that computer\'s root only). Never substitute another host on retry.',
+    detail: 'Main root selections update the primary execution location and its revision. Device root selections add or update that computer’s root only, preserving the primary location and its revision; the response describes the selected root. Selecting the same folder reattests its identity and can repair a replaced directory. Correctable native folder failures return stable domain codes. Requires scoped source_roots:read/bind plus workspace_locations:read/validate/update. The server derives canonical path and registered application runner identity. Existing source roots and runtime profiles keep their saved bindings across location changes while their host and policy remain authorized. Existing Runs retain accepted pins.',
     inputSchema: WorkspaceBoundLocationSetInputSchema, outputSchema: WorkspaceBoundLocationSetResultSchema, annotations: { ...read, readOnlyHint: false },
     handle: (context, input) => invoke(context.principal, context.services.commands, TOOLS.set,
       () => context.services.workspaceRoots!.set(context.principal, 'mcp', input)),

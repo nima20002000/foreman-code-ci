@@ -162,7 +162,7 @@ it('F8: a delayed renewal cannot update the local credential after maintenance s
     const maintenance = await fixture.runtime.maintainReviewCredential(fixture.execution.id, session, new AbortController().signal, async () => {})
     await vi.advanceTimersByTimeAsync(1)
     assert.equal(fixture.renewed.length, 1)
-    const registry = (fixture.runtime as unknown as { managerCredentials: WeakMap<NativeHarnessSessionManager, IssuedWorkerCredential> }).managerCredentials
+    const registry = (fixture.runtime as unknown as { credentialLedger: Pick<WeakMap<NativeHarnessSessionManager, IssuedWorkerCredential>, "get" | "set"> }).credentialLedger
     const before = registry.get(attached.manager)
     const stopped = maintenance.stop()
     await vi.advanceTimersByTimeAsync(1_001)
@@ -180,7 +180,7 @@ it('F8: owner replacement during renewal cannot be overwritten or have its crede
   try {
     const fixture = await reviewerFixture()
     const attached = await fixture.attach()
-    const registry = (fixture.runtime as unknown as { managerCredentials: WeakMap<NativeHarnessSessionManager, IssuedWorkerCredential> }).managerCredentials
+    const registry = (fixture.runtime as unknown as { credentialLedger: Pick<WeakMap<NativeHarnessSessionManager, IssuedWorkerCredential>, "get" | "set"> }).credentialLedger
     const replacement: IssuedWorkerCredential = { ...fixture.credential, principalId: 'principal-successor',
       environment: { agentId: fixture.execution.agentId, variables: { GRAPHQL_MCP_TOKEN: 'replacement-token' } } }
     fixture.hooks.renew = async () => { registry.set(attached.manager, replacement); return new Date(Date.now() + 60_000).toISOString() }

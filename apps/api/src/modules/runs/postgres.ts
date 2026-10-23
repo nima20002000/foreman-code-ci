@@ -31,6 +31,7 @@ import { readWorkflowTerminalSource } from './workflowNativeSource.js'
 import { NATIVE_EVENT_BATCH_SIZE } from '../interactions/nativeEventBatches.js'
 import { readWorkflowCoordinationTerminalLocked } from './workflowCoordinationTerminal.js'
 import { kanbanRecordMissingLocked } from './kanbanRecord.js'
+import { OPEN_RUN_STATES_SQL } from './runState.js'
 
 /** Saved pins never default to an old mode. Independent native/graph protocol
  * versions and WorkflowVersion revision numbers are not execution semantics. */
@@ -322,7 +323,7 @@ export class PostgresRunRepository {
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new DomainError('RUN_READ_LIMIT', 'Use a bounded Run cursor.', 409)
     // Failed Main-local Runs can outlive their detached runtime. Selection still requires physical closure in cleanup.
     const rows = (await this.pool.query<{ id: string }>(`select id from runs where id>$1 and
-      ((execution_state in ('queued','running','waiting') and not exists(
+      ((execution_state in (${OPEN_RUN_STATES_SQL}) and not exists(
           select 1 from run_work_direction_waits d
             join durable_interactions i on i.run_id=d.run_id
           where d.run_id=runs.id and d.workflow_version_id=runs.workflow_version_id
