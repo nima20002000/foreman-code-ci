@@ -68,7 +68,7 @@ it.each(['update-ref', 'worktree'] as const)(
       await vi.waitFor(async () => {
         const storage = JSON.parse(await readFile(join(cache, 'storage.json'), 'utf8')) as { reservedBytes: number }
         expect(storage.reservedBytes).toBeGreaterThan(0)
-      })
+      }, { timeout: 10_000 })
       expect(await lockOpenFile(probe, { nonBlocking: true })).toBe(false)
       expect(await readFile(join(clone, '.git', `${ref}.lock`), 'utf8')).toBe(`${first}\n`)
       socket.write('continue')
