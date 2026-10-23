@@ -1,6 +1,6 @@
 import type { Message } from '@foreman-code/contracts'
 import type { MessageAttachmentRef } from '@foreman-code/contracts/files'
-import type { ConversationAttachments } from '../attachments/index'
+import type { ConversationAttachments } from '../attachments'
 
 /** A local acknowledgement capability retained by the existing command owner, never serialized. */
 export interface ChatAttachmentAttempt {

@@ -6,7 +6,7 @@ import { http, HttpResponse } from 'msw'
 import { AgentChatStateSchema, agentChatFixtures, type AgentChatState, type AgentChatTurn, type SendAgentChatMessageRequest } from '@foreman-code/contracts/agent-chat'
 import { server } from '../../../mocks/server'
 import { AgentChatPanel } from '../../graph'
-import { useConversationDraftStore } from '../../chat-core'
+import { useConversationDraftStore } from '../conversationDraftStore'
 import { agentChatStateKey } from './useAgentChat'
 import { claimDraftReadback, receiptForCommand } from './receiptReadback'
 import { AGENT_CHAT_ACKNOWLEDGEMENT_LIMIT, compactAgentChatResult, confirmedCommandReceipt,

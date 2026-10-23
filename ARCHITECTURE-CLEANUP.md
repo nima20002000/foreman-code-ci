@@ -179,13 +179,12 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
 - [x] #12 Test-mode branches: `buildProductionApp(options)`, a `computerUpkeep` option, and one replay value.
 
 ### PR 4: Naming (not started)
-- [ ] #34 Ticket/wave names in production: `contracts/wave25` (1,023 importers), `interactions/wave25/`,
-  `pr17/pr18` migrations, `eng04_*` SQL, W07/W08/W09 comments; one version called wave25/V3/Current.
+- [x] #34 Remaining `Wave25…` TypeScript identifiers renamed to `Current…`; non-history contract docs now use `contracts/current`.
   (#74 renamed `test/wave25` → `test/native-projection` and the test helpers.)
   PR 4b renamed the code names to `current`: `contracts/wave25` → `contracts/current` (subpath, directory and
   every importer), `interactions/wave25/` → `interactions/current/`, and all 82 `*V3*` identifiers → `*Current*`
   (2,824 occurrences; no name collided, so none was skipped). `RepeatGraphCurrentV3` became
-  `RepeatGraphCurrentCurrent`, which the owner should review. Left alone: `Wave25*` identifiers, `wave25_*` SQL,
+  `RepeatGraphCurrentCurrent`, which the owner should review. Left alone: `wave25_*` SQL,
   migration file names, `wave25*` test file names, string literals, JSON keys, prose, docs and history.
 - [ ] #35 Unfinished graphql → foreman-code rename (646 files; compose/DB names, rsync path, env compat layer).
   Deployed names need a migration plan.
@@ -234,7 +233,7 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
 - [ ] #42 Config: ~90 direct `process.env` reads outside `config.ts`.
 
 ### PR 6: Module boundaries (not started, except CI and web groundwork)
-- [~] #29 No module boundaries. Web follow-up: shared chat core extracted; pending imports reduced from 98 to 51 (CI pending).
+- [~] #29 No module boundaries.
   - The CI↔API boundary is enforced (#69).
   - Web (6a): cross-feature imports go through the feature's index (759 imports rewritten; 13 features gained an
     index). The shared graph/Board leaves live in the neutral `features/board-core` (geometry, collaborationFields,
@@ -242,13 +241,13 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
     `scripts/check-web-feature-boundaries.mjs` (web lint) fails on any new import of another feature's internals; test
     files and test support modules (fixtures, testSupport, mocks) may import each other. The runtime import graph still
     has only the 2 earlier cycles (one moved with `agentEdits`/`model` into `board-core`).
-  - Web follow-up: moved shared chat presentation, draft/scroll state, attachment helpers, session controls,
-    activity/message reconciliation and committed-message buffering into the neutral `features/chat-core`.
-    Consumers use its public index; existing behavior tests stay in place and exercise the same implementations.
-    The pending list actually contained 98 imports (the earlier 97 count was stale); 47 were removed, leaving 51.
-  - Web, still open: 51 imports in `scripts/web-feature-boundary-pending.mjs` (a list that may only shrink), including
-    graph/draft hooks ↔ Board start/stop outboxes, Agent/settings/schedule dependencies, shared delivery hooks and
-    Operator composer settings/approval UI. The route/WorkspaceShell layering inversions remain separate work.
+  - Web, still open: 97 imports in `scripts/web-feature-boundary-pending.mjs` (a list that may only shrink). About 49 sit on
+    real feature cycles: `graph/store` and the draft hooks ↔ `workflow-board` start/stop outboxes, `AgentControls` ↔
+    `AgentSettingsForm`, `agents/agentSettings`, `schedules/queries`. about 48 are `operator-chat` ↔ `conversations` chat
+    pieces that tests reach through a mocked `conversations` or `operator-chat` index; move the shared chat pieces
+    (`ChatNotice`, `chatTimeline`, `chatAttachmentAttempt`, `sessionControls`, …) into a neutral feature, then re-point
+    the mocks. `routes/WorkspaceRouteEntry` → `WorkflowBoard` and `shared/ui/WorkspaceShell` → `HarnessStatusMenu` are
+    layering inversions to fix on their own.
   - Open: 75 bidirectional API module pairs.
 - [ ] #32 Layering inversions: infrastructure→modules (24 imports), MCP builds services that HTTP uses, `collaboration`
   duplicates `workflow-chat`.

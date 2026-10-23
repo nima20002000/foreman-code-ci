@@ -1,6 +1,6 @@
 import type { ActivitySnapshotV1, InteractionSummary } from '@foreman-code/contracts'
 import { Check, CircleAlert, LoaderCircle, RotateCcw } from 'lucide-react'
-import { IconButton, Tooltip } from '../../shared/ui/nocturne/index'
+import { IconButton, Tooltip } from '../../shared/ui/nocturne'
 import './chatDecisionReceipts.css'
 
 function decisionLabel(receipt: InteractionSummary) {
