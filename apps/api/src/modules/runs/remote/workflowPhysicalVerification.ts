@@ -460,10 +460,6 @@ async function prefetchRemoteWorkflowPhysical(input: RemoteWorkflowPhysicalVerif
 
 function physicalReadoutLinkDropped(error: unknown, previous: Readonly<DeviceSessionBinding> | undefined,
   current: Readonly<DeviceSessionBinding> | undefined): boolean {
-  // The link can change during retry backoff without another socket error.
-  if (previous && !same(previous, current) && error instanceof DomainError
-    && error.code === 'REMOTE_NATIVE_PHYSICAL_UNAVAILABLE'
-    && error.details?.reason === 'connection_expired') return true
   const unanswered = error instanceof DeviceConnectionError && ['timeout', 'backpressure'].includes(error.code)
   if (unanswered && previous && same(previous, current)) return false
   return isDeviceLinkDrop(error) || deviceApplicationFailure(error).code === 'DEVICE_LINK_DROPPED'
