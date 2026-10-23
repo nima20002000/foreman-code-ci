@@ -2234,12 +2234,13 @@ function configureHttpApplication(composition: ProductionComposition) {
 /** Every route group the production runtime has published so far. */
 function productionRoutes(composition: ProductionComposition): ApiRouteServices {
   const { routes, runtimeServices } = composition
-  return { ...routes, production: { ...routes.production, files: composition.files,
-    workflowArtifacts: composition.workflowArtifacts, trustedConnections: composition.trustedConnections,
-    resourceTelemetry: runtimeServices.resourceTelemetry,
-    jobRuntimeProfiles: runtimeServices.jobRuntimeProfiles
-      ? { profiles: runtimeServices.jobRuntimeProfiles,
-        ...(runtimeServices.ciRuntime ? { ciRuntime: runtimeServices.ciRuntime } : {}) } : undefined } }
+  return { ...routes, production: { ...routes.production,
+    ...(composition.files ? { files: composition.files } : {}),
+    ...(composition.workflowArtifacts ? { workflowArtifacts: composition.workflowArtifacts } : {}),
+    ...(composition.trustedConnections ? { trustedConnections: composition.trustedConnections } : {}),
+    ...(runtimeServices.resourceTelemetry ? { resourceTelemetry: runtimeServices.resourceTelemetry } : {}),
+    ...(runtimeServices.jobRuntimeProfiles ? { jobRuntimeProfiles: { profiles: runtimeServices.jobRuntimeProfiles,
+      ...(runtimeServices.ciRuntime ? { ciRuntime: runtimeServices.ciRuntime } : {}) } } : {}) } }
 }
 
 function configureRuntimeLifecycle(composition: ProductionComposition) {
