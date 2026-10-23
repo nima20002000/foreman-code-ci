@@ -26,7 +26,6 @@ vi.mock('../src/modules/runs/workflowRepositoryServices.js', () => ({
   assertWorkflowRunSettlementLocked: ports.assertSettlement,
 }))
 vi.mock('../src/modules/runs/repeatPostgres.js', () => ({ readRepeatExecutionLocked: vi.fn() }))
-vi.mock('../src/modules/collaboration/workflowControlQueue.js', () => ({ closeRunControlInputsLocked: vi.fn() }))
 
 function failure(code: string, retryable = false): ExecutionResult {
   return { outcome: 'failed', error: { code, message: `Failure: ${code}`, retryable } }

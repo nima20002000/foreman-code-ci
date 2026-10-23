@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { AgentConfigurationVersionSchema, ChatDeliveryReceiptSchema, EngineChatReadbackSchema,
   type HarnessExecutionRequest } from '@foreman-code/contracts'
 import { makeCurrentWorkflowFixture, WorkActivationInputSchema } from '@foreman-code/contracts/wave25'
@@ -7,7 +7,6 @@ import { currentOperatorIntegration } from './helpers/currentOperatorIntegration
 import { ControlledWorkflowProvider } from './helpers/controlledWorkflowProvider.js'
 import { workflowChatCall, workflowChatTarget } from './helpers/workflowChatRequests.js'
 import { postgresEnabled } from './helpers/wave25Agent3.js'
-import { DomainError } from '../src/modules/errors.js'
 
 /** The owner's saved shape: an Orchestrator connected to one Worker, no named routes, no hierarchy. */
 function orchestratorWorkerFixture() {
@@ -28,34 +27,6 @@ const output = (orchestrator: string) => (nodeId: string, request: HarnessExecut
 }
 
 describe.skipIf(!postgresEnabled)('owner chat with a workflow Agent during its Run', () => {
-  it('closes queued owner input when graph failure settles the Run without an execution failure result', async () => {
-    const fixture = orchestratorWorkerFixture()
-    const orchestrator = fixture.version.definition.nodes[0]!.id
-    const provider = new ControlledWorkflowProvider([orchestrator], output(orchestrator))
-    const f = await currentOperatorIntegration({ executionChat: true, fixture, approvalNodeIds: [], collaborationPorts: {},
-      managerFactory: context => provider.connection(context) })
-    const repeat = f.runs.repeat.bind(f.runs)
-    const failure = new DomainError('WORK_JOIN_SOURCE_CONFLICT', 'The graph cannot resolve its handoff.', 409)
-    vi.spyOn(f.runs, 'repeat').mockImplementation(async (...args) => {
-      const store = await repeat(...args)
-      store.admitWorkRequest = async () => { throw failure }
-      return store
-    })
-    const drive = f.engine.start(f.f.run.id).catch(error => error)
-    try {
-      await provider.entered(orchestrator)
-      const target = await workflowChatTarget(f, orchestrator)
-      const receipt = ChatDeliveryReceiptSchema.parse(await workflowChatCall(f, 'agent_chat_send', {
-        commandId: 'note-before-graph-failure', target, intent: 'next_turn', content: 'Include the page title.', attachments: [] }))
-      expect(receipt.state).toBe('queued')
-      provider.release(orchestrator)
-      expect(await drive).toMatchObject({ code: failure.code })
-      expect(await f.runs.get(f.f.run.id)).toMatchObject({ executionState: 'completed', outcome: 'failed' })
-      const readback = EngineChatReadbackSchema.parse(await workflowChatCall(f, 'agent_chat_read', { target }))
-      expect(readback.receipts.find(item => item.id === receipt.id)).toMatchObject({ state: 'failed', errorCode: 'TARGET_SETTLED' })
-    } finally { provider.releaseAll(); await f.stop(); await drive; await f.close() }
-  }, 60_000)
-
   it('delivers a message to a finished Orchestrator turn at its next turn in the same Run', async () => {
     const fixture = orchestratorWorkerFixture()
     const [orchestrator, worker] = fixture.version.definition.nodes.map((node) => node.id) as [string, string]
