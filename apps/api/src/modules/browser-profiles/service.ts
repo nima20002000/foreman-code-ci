@@ -83,9 +83,7 @@ export class BrowserProfileService {
     await this.authority.authorize(principal, 'settings:read', [])
     const result = await this.repository.read(async tx => ({ profile: await requireBrowserProfile(tx, profileId),
       replicas: await tx.replicas(profileId), operations: await tx.intents(profileId) }))
-    // Replicas left behind on an unpaired computer stay readable; only paired ones need current authority.
-    const paired = new Set((await this.authority.computers(principal)).map(computer => computer.id))
-    await this.authority.authorize(principal, 'settings:read', result.replicas.map(replica => replica.computerId).filter(id => paired.has(id)))
+    await this.authority.authorize(principal, 'settings:read', result.replicas.map(replica => replica.computerId))
     return result
   }
 
@@ -305,10 +303,7 @@ export class BrowserProfileService {
   async remove(principal: ManagementPrincipal, input: BrowserCommandOptions & {
     profileId: string; computerId?: string
   }): Promise<BrowserCommandReceipt<ProfileHostIntent[]>> {
-    // Stale replicas on unpaired computers have no host to remove from; only paired computers get remove intents.
-    const paired = new Set((await this.authority.computers(principal)).map(computer => computer.id))
     const computers = (await this.repository.read(tx => tx.replicas(input.profileId))).map(replica => replica.computerId)
-      .filter(id => paired.has(id))
     await this.authority.authorize(principal, 'settings:update', input.computerId ? [input.computerId] : computers)
     const installations = new Map(await Promise.all((input.computerId ? [input.computerId] : computers)
       .map(async computerId => [computerId, await this.host.installation(computerId)] as const)))
@@ -316,7 +311,7 @@ export class BrowserProfileService {
       ['catalog', `profile:${input.profileId}`], async tx => {
         const profile = await requireBrowserProfile(tx, input.profileId)
         checkBrowserRevision(profile, input.expectedRevision)
-        const targets = (await tx.replicas(input.profileId)).filter(replica => input.computerId ? replica.computerId === input.computerId : paired.has(replica.computerId))
+        const targets = (await tx.replicas(input.profileId)).filter(replica => !input.computerId || replica.computerId === input.computerId)
         const intents: ProfileHostIntent[] = []
         for (const replica of targets) {
           const intent: ProfileHostIntent = { id: this.id(), profileId: profile.id, computerId: replica.computerId,
