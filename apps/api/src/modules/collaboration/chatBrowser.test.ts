@@ -78,3 +78,12 @@ it('closes the chat browser after ten idle minutes and when the chat is archived
   await f.chats.sweep()
   expect(f.open.size).toBe(0)
 })
+
+it('gives a chat on a paired device the actor from that session\'s control facts', async () => {
+  const f = fixture()
+  const control = vi.fn(async (_principal: ManagementPrincipal, sessionId: string) =>
+    sessionId === 'remote-session' ? { browserGeneration: 3, epoch: 7 } : undefined)
+  const chats = new ChatBrowserSessions({ pool: {} as pg.Pool, lifecycle: f.lifecycle, localSessions: async () => [],
+    localControl: () => undefined, sessionControl: control, chatSubject: async () => chatSubject } as never)
+  expect(await chats.agentActor(principal, 'remote-session')).toEqual({ kind: 'agent', browserGeneration: 3, epoch: 7 })
+})
