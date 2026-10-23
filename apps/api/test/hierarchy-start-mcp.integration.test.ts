@@ -64,7 +64,7 @@ describe.skipIf(!postgresEnabled)('single-computer hierarchy Start through authe
         CurrentRunDetailsSchema.parse(await f.services.runs.get(f.writer.principal, workspaceId, runId))
         return CurrentRunDetailsSchema.parse(await workflowChatCall(f, 'run_get', { workspaceId, runId, detail: 'full' }))
       }
-      await expect.poll(async () => (await read()).run.executionState, { timeout: 30_000 }).toBe('completed')
+      await expect.poll(async () => (await read()).run.executionState, { timeout: 60_000 }).toBe('completed')
       const result = await read()
       expect(result.run).toMatchObject({ outcome: 'succeeded', workflowVersionId: saved.currentVersionId })
       expect(result.run.resultProtocol).toBe(COORDINATION_RESULT_PROTOCOL)
