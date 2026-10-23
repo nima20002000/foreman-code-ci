@@ -62,12 +62,14 @@ function installAgent(draftKey: string, instanceId: string, agent: Agent, nodeId
 }
 
 type BoardAgentSettingsProps = { draftKey: string; edit: NextDraftEdit; nodeId: string; close(): void; remove?(): void; placementOptions?: readonly NodePlacementOption[]
+  /** Saves the whole workflow after these settings are applied. */
+  saveWorkflow?(): void
   /** Node rows shown with the main settings, and node settings folded under More settings. */
   mainFields?: ReactNode; moreFields?: ReactNode }
 export function BoardAgentSettings(props: BoardAgentSettingsProps) {
   return <BoardAgentSettingsVisit key={`${props.edit.instanceId}:${props.nodeId}`} {...props} />
 }
-function BoardAgentSettingsVisit({ draftKey, edit, nodeId, close, remove, placementOptions, mainFields, moreFields }: BoardAgentSettingsProps) {
+function BoardAgentSettingsVisit({ draftKey, edit, nodeId, close, remove, placementOptions, mainFields, moreFields, saveWorkflow }: BoardAgentSettingsProps) {
   const node = edit.graph.nodes.filter(item => item.kind !== 'job').find((item) => item.id === nodeId)
   const agent = node && editorAgents(edit).find((item) => item.id === node.agentId)
   const visit = useId()
@@ -130,7 +132,7 @@ function BoardAgentSettingsVisit({ draftKey, edit, nodeId, close, remove, placem
     }}
     workspaceId={edit.graph.workspaceId} workflowApprovalHandler={edit.graph.approval?.handler}
     designatedOrchestrator={edit.graph.approval?.handler === 'orchestrator' && edit.graph.approval.designatedOrchestratorAgentId === agent.id}
-    executionPolicy={edit.graph.executionPolicy} onClose={close} onRemove={remove}
+    executionPolicy={edit.graph.executionPolicy} onClose={close} onRemove={remove} {...(saveWorkflow ? { onSaveWorkflow: saveWorkflow } : {})}
     onSave={(next, prompt, _policy, graphqlTools, placement, worktree) => {
       installAgent(draftKey, edit.instanceId, next, node.id, prompt, graphqlTools, placement, worktree)
       const saved = useGraphDraftStore.getState().nextDrafts[draftKey]?.graph.nodes.find(item => item.id === node.id)

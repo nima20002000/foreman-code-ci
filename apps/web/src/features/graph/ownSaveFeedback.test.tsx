@@ -79,7 +79,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-it.each(['Agent settings Save', 'Agent settings Save and run'] as const)(
+it.each(['Agent settings Save', 'Agent settings Save and run', 'Save inside Agent settings'] as const)(
   'acknowledges its own %s without warnings and leaves the saved version usable', async (path) => {
     let accessReads = 0
     server.use(http.get('*/api/local-human', () => {
@@ -138,12 +138,17 @@ it.each(['Agent settings Save', 'Agent settings Save and run'] as const)(
     const name = within(dialog).getByRole('textbox', { name: 'Name' })
     await user.clear(name)
     await user.type(name, 'Saved Worker')
-    await user.click(within(dialog).getByRole('button', { name: 'Apply agent settings to draft' }))
-    await user.click(within(dialog).getByRole('button', { name: 'Close fixture settings' }))
     const accessReadsBeforeStart = accessReads
-    await user.click(screen.getByRole('button', {
-      name: path === 'Agent settings Save and run' ? 'Save and run' : 'Save workflow',
-    }))
+    if (path === 'Save inside Agent settings') {
+      // The settings' own Save applies the edit and saves the workflow in one step.
+      await user.click(within(dialog).getByRole('button', { name: 'Save agent settings and workflow' }))
+    } else {
+      await user.click(within(dialog).getByRole('button', { name: 'Apply agent settings to draft' }))
+      await user.click(within(dialog).getByRole('button', { name: 'Close fixture settings' }))
+      await user.click(screen.getByRole('button', {
+        name: path === 'Agent settings Save and run' ? 'Save and run' : 'Save workflow',
+      }))
+    }
     await waitFor(() => expect(journal.intent?.state).toBe('saved'))
     try {
       await act(async () => {

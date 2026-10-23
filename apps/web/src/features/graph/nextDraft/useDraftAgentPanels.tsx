@@ -18,8 +18,9 @@ import type { DraftEditorCore } from './useDraftEditorCore'
 import { useGraphDraftStore } from '../store'
 import { rebaseAgentFormTools } from './agentForm'
 
-export function useDraftAgentPanels({ draftKey, edit, editIntent, core, board, reloading, agents }: {
+export function useDraftAgentPanels({ draftKey, edit, editIntent, core, board, reloading, agents, saveWorkflow }: {
   draftKey: string
+  saveWorkflow?(): void
   edit: NextDraftEdit
   editIntent: ReturnType<typeof useGraphEditIntent>
   core: DraftEditorCore
@@ -81,7 +82,7 @@ export function useDraftAgentPanels({ draftKey, edit, editIntent, core, board, r
       chat,
       chatHasHeader: !unsavedChat,
       settings: <fieldset className="board-popover-fields" disabled={edit.busy || reloading || editIntent.locked}>
-        <BoardAgentSettings draftKey={draftKey} edit={edit} nodeId={node.id} close={closePanel}
+        <BoardAgentSettings draftKey={draftKey} edit={edit} nodeId={node.id} close={closePanel} {...(saveWorkflow ? { saveWorkflow } : {})}
           mainFields={<NodeBrowserField graph={graph} node={graph.nodes.find((item) => item.id === node.id)!} change={update => {
             change(update)
             useGraphDraftStore.getState().updateNextDraft(draftKey, current => rebaseAgentFormTools(current, node.id))

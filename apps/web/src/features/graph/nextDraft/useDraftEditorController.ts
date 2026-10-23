@@ -67,7 +67,7 @@ export function useDraftEditorController(draftKey: string, edit: NextDraftEdit) 
     draftKey, undoScope, board, editIntent, core, saveBusy: status.saveBusy, starting, schedule: scheduleWrite,
   })
   useBoardShortcuts({ draftKey, core, board, disabled: status.saveBusy || starting || reloading || editIntent.locked || !!pendingStart })
-  const { openAgent, panels } = useDraftAgentPanels({ draftKey, edit, editIntent, core, board, reloading, agents })
+  const { openAgent, panels } = useDraftAgentPanels({ draftKey, edit, editIntent, core, board, reloading, agents, saveWorkflow: requestSave })
   return {
     graph, context, board, editIntent, undoScope, core, preflight, pendingStart, changedAgents,
     reloading, stopAndSave, discardChanges, reload, inspectLatest, startMutation, starting, start, recoverStart,

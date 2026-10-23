@@ -200,6 +200,9 @@
 .workflow-panel-tabs { display: flex; gap: 2px; margin-left: auto; min-width: 0; overflow-x: auto; scrollbar-width: none; cursor: default; }
 .workflow-panel-tabs > .n-button { min-height: 28px; height: 28px; padding: 0 .5rem; flex: 0 0 auto; }
 .workflow-floating-panel-body .agent-settings-panel-embedded { flex-shrink: 0; max-height: none; }
+/* Save stays in view at the bottom of the panel while the settings scroll. */
+.workflow-floating-panel-body .agent-settings-panel-embedded > .agent-settings-footer { position: sticky; bottom: calc(-1 * var(--space-3)); z-index: 1;
+  margin: 0 calc(-1 * var(--space-3)); padding: var(--space-2) var(--space-3); border-top: 1px solid var(--border); background: var(--surface-raised); }
 .agent-settings-panel-embedded :is(.agent-settings-general, .agent-settings-advanced-view) { overflow: visible; }
 .workflow-panel-tabs > .n-button[aria-pressed='true'] { background: var(--surface-hover); color: var(--text-strong); }
 

@@ -64,6 +64,8 @@ type EditableAgentSettingsFormProps = {
   creationDefaults?: HarnessDefaults
   onClose(): void
   onRemove?(): void
+  /** Embedded on the Board: Save applies these settings and then saves the whole workflow. */
+  onSaveWorkflow?(): void
   onSave(agent: Agent, initialPrompt: string | undefined, executionPolicy: WorkflowExecutionPolicy,
     nodeGraphqlTools: GraphqlToolOverride | undefined, placement?: SavedNodePlacement, worktree?: AgentWorktreeSettings): void
   executionPolicy?: WorkflowExecutionPolicy
@@ -191,6 +193,7 @@ function useAgentSettingsForm({ agent, initialPrompt, nodeGraphqlTools, creation
         ...(graphqlTools.defaults ? { graphqlTools: graphqlTools.defaults } : {}),
         prompt: instructions.trim() ? { system: instructions.trim() } : {}, assignedSkills: skills,
       }, prompt.trim() || undefined, executionPolicy, graphqlTools.override, placement, worktree)
+      return true
     } catch (failure) {
       initialSnapshot.current = previousSnapshot
       const nextIssues = validationIssues(failure)
@@ -199,6 +202,7 @@ function useAgentSettingsForm({ agent, initialPrompt, nodeGraphqlTools, creation
       const unmarked = nextIssues.find((issue) => !markedField(issue.path))
       if (nextIssues.some((issue) => !mainField(issue.path))) setMoreOpen(true)
       setError(unmarked?.message ?? (nextIssues.length ? 'Review the marked fields before saving.' : errorMessage(failure, 'Agent settings are invalid.')))
+      return false
     }
   }
   const leave = useUnsavedChanges({ scope: 'surface', label: 'agent settings', canResume, get dirty() { return additionalDirty || currentSnapshot !== initialSnapshot.current },
@@ -305,8 +309,10 @@ function EditableAgentSettingsForm(props: EditableAgentSettingsFormProps) {
     <footer className="agent-settings-footer">
       {onRemove ? <Button size="sm" variant="ghost" className="agent-settings-trash" aria-label={`Remove ${agent.name} from workflow`} onClick={() => void leave(onRemove)}>Remove</Button> : null}
       {embedded ? <Button size="sm" variant="ghost" className="agent-settings-cancel" onClick={() => { props.onDiscardForm?.(); onClose() }}>Cancel</Button> : null}
-      {embedded ? <Button size="sm" variant="primary" className="agent-settings-save" aria-label="Apply agent settings to draft"
+      {embedded ? <Button size="sm" variant={props.onSaveWorkflow ? 'secondary' : 'primary'} className="agent-settings-save" aria-label="Apply agent settings to draft"
         disabled={!isDirty} onClick={save}>Apply</Button> : null}
+      {embedded && props.onSaveWorkflow ? <Button size="sm" variant="primary" aria-label="Save agent settings and workflow"
+        onClick={() => { if (!isDirty || save()) props.onSaveWorkflow?.() }}>Save</Button> : null}
     </footer>
   </div>
 }
