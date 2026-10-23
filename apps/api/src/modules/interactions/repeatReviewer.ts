@@ -126,8 +126,12 @@ async function workRequest(sql: GraphSqlClient, scope: RepeatScope, version: Wor
   if (rows.rows.length !== 1) return conflict()
   const request = WorkRequestSchema.parse(rows.rows[0]!.record)
   const connection = workConnectionForRequest(version.definition, request.requesterNodeId, request.destinationNodeId)
+  // A Worker's result also travels back to the Agent that asked for it, over that request's connection.
+  const reply = connection?.id !== request.relationshipId && (await sql.query<{ reply: boolean }>(
+    'select work_reply_request($1,$2,$3,$4) as reply',
+    [scope.runId, request.requesterActivationId, request.relationshipId, request.destinationNodeId])).rows[0]?.reply
   if (request.requestId !== requestId || !isDeepStrictEqual(request.scope, scope)
-    || connection?.id !== request.relationshipId || frozen && !isDeepStrictEqual(frozen, request)) return conflict()
+    || connection?.id !== request.relationshipId && !reply || frozen && !isDeepStrictEqual(frozen, request)) return conflict()
   return request
 }
 

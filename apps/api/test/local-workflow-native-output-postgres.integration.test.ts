@@ -12,7 +12,7 @@ describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('PostgreSQL local workflow
     const definition = makeCurrentWorkflowFixture(randomUUID(), 'single')
     definition.version.definition.handoffs = { contractVersion: 1 }
     const f = await workHandoffRuntimeFixture(definition, () => ({ routing: { kind: 'finish' },
-      data: { latestDeliverable: 'accepted work', remainingFindings: ['owner direction'] } }))
+      data: { latestDeliverable: 'accepted work', remainingFindings: [] } }))
     let writer: pg.PoolClient | undefined
     let reader: pg.PoolClient | undefined
     let read: Promise<unknown> | undefined

@@ -25,8 +25,8 @@ import { createWorkflowCollaborationHooks } from '../../src/modules/collaboratio
  * writer. The test supplies native terminals and doubles physical closure only. */
 export async function workflowSettlementFixture(db: Awaited<ReturnType<typeof currentDatabase>>,
   configure: (graph: WorkflowDefinitionV3, writer: WriterFixture) => WorkflowDefinitionV3 | Promise<WorkflowDefinitionV3>,
-  form: CurrentFixtureForm = 'sequential') {
-  const writer = await writerFixture(db, form)
+  form: CurrentFixtureForm = 'sequential', options: Parameters<typeof writerFixture>[2] = {}) {
+  const writer = await writerFixture(db, form, options)
   let owner: RunOwnership | undefined
   try {
     const graph = await configure(writer.input.graph, writer)

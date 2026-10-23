@@ -31,6 +31,7 @@ import { buildWorkHandoffGraph } from './workHandoffGraph.js'
 import { workHandoffNodeAction } from './workHandoffNode.js'
 import { WorkExecutionFailure } from './workExecutionFailure.js'
 import { workflowCoordinationPrompt } from './workflowCoordinationPrompt.js'
+import { readWorkflowTeam } from './workflowTeamPrompt.js'
 import { isTransientExecutionError, repeatSettlementPending, transientExecutionFailure } from './executionRetryPolicy.js'
 export { repeatSettlementPending } from './executionRetryPolicy.js'
 import { ExecutionLimiter } from './limiter.js'
@@ -323,9 +324,11 @@ export function repeatNativeObserver(context: RepeatNativeObserverContext):
       check()
       const collaborationPrompt = await context.readCollaborationPrompt?.(execution)
       check()
+      const team = await readWorkflowTeam(context.version, node.id, id => context.workflows.getAgentConfiguration(id))
+      check()
       const request = workflowExecutionRequest({ execution: { ...execution, ...paths },
         version: context.version, configuration, workspaceId: run.workspaceId, executionContext,
-        resultProtocol: run.resultProtocol, collaborationPrompt })
+        resultProtocol: run.resultProtocol, collaborationPrompt, team })
       const coordinationResult = run.resultProtocol ? { resultProtocol: run.resultProtocol,
         definition: context.version.definition, workflowNodeId: node.id,
         interval: repeatTickIndex(execution.input) !== undefined } : undefined
@@ -550,7 +553,7 @@ export async function executeRepeatRuntime(input: {
   store: Pick<RepeatRunRepository, 'admit' | 'acceptTerminal' | 'enterBlock' | 'readOccurrence' | 'transition'
     | 'resolveExcluded' | 'completeRun' | 'ensureWorkEntry' | 'admitWorkActivation' | 'acceptWorkTerminal'
     | 'admitWorkRequest' | 'returnWork' | 'recordWorkUnresolved' | 'resolveWaitingWorkJoins' | 'completeWorkRun'>
-    & Partial<Pick<RepeatRunRepository, 'admitTick' | 'admitHierarchyGroup'>>
+    & Partial<Pick<RepeatRunRepository, 'admitTick' | 'admitHierarchyGroup' | 'readWorkCallerReport'>>
   driver: RepeatExecutionDriver; lifecycle: RepeatRuntimeLifecycle
   checkpointer: import('@langchain/langgraph-checkpoint').BaseCheckpointSaver
   configuredParallelism?: number
