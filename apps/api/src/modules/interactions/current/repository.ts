@@ -3,8 +3,8 @@ import type { DurableInteraction } from '@foreman-code/contracts'
 import type pg from 'pg'
 import { canonicalGraphJson } from '@foreman-code/contracts/current'
 import { PostgresInteractionRepository } from '../postgres.js'
-import { Wave25InteractionCoordinationRepository } from './reviews.js'
-import { Wave25InteractionDeliveryRepository } from './delivery.js'
+import { CurrentInteractionCoordinationRepository } from './reviews.js'
+import { CurrentInteractionDeliveryRepository } from './delivery.js'
 import { decide } from './decisions.js'
 import { transact } from './transaction.js'
 import { fail, isCurrentApprovalRun, lockInteraction, readContext, runFor } from './context.js'
@@ -15,13 +15,13 @@ import { WorkDirectionRepository } from '../workDirection.js'
 
 /** Current approval repository: every product mutation joins canonical G1.
  * The base provides shared bounded reads and native lane primitives only. */
-export class Wave25InteractionRepository extends PostgresInteractionRepository {
-  override readonly delivery: Wave25InteractionDeliveryRepository
-  override readonly coordination: Wave25InteractionCoordinationRepository
+export class CurrentInteractionRepository extends PostgresInteractionRepository {
+  override readonly delivery: CurrentInteractionDeliveryRepository
+  override readonly coordination: CurrentInteractionCoordinationRepository
   readonly directions: WorkDirectionRepository
   constructor(private readonly approvalPool: pg.Pool, nativeProofs?: ReviewNativeProofServices) {
     super(approvalPool)
-    this.delivery = new Wave25InteractionDeliveryRepository(approvalPool)
+    this.delivery = new CurrentInteractionDeliveryRepository(approvalPool)
     this.coordination = new RetiringInteractionCoordinationRepository(approvalPool, nativeProofs)
     this.directions = new WorkDirectionRepository(approvalPool)
   }
@@ -168,7 +168,7 @@ export class Wave25InteractionRepository extends PostgresInteractionRepository {
 /** Keep the existing coordinator's native-closure/credential checks and virtual
  * dispatch. Both its own transaction and caller-owned publications reach this
  * hook; interaction retirement joins the SAME final review-cleanup batch. */
-class RetiringInteractionCoordinationRepository extends Wave25InteractionCoordinationRepository {
+class RetiringInteractionCoordinationRepository extends CurrentInteractionCoordinationRepository {
   override async finishStoppedReviewsInPublication(publication: RunGraphPublication, credentialsRequired: boolean): Promise<void> {
     // Preserve the interaction-before-review child lock order in this shared
     // publication; the later retirement helper only re-reads these same locks.

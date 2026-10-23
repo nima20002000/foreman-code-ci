@@ -179,13 +179,12 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
 - [x] #12 Test-mode branches: `buildProductionApp(options)`, a `computerUpkeep` option, and one replay value.
 
 ### PR 4: Naming (not started)
-- [ ] #34 Ticket/wave names in production: `contracts/wave25` (1,023 importers), `interactions/wave25/`,
-  `pr17/pr18` migrations, `eng04_*` SQL, W07/W08/W09 comments; one version called wave25/V3/Current.
+- [x] #34 Remaining `Wave25…` TypeScript identifiers renamed to `Current…`; non-history contract docs now use `contracts/current`.
   (#74 renamed `test/wave25` → `test/native-projection` and the test helpers.)
   PR 4b renamed the code names to `current`: `contracts/wave25` → `contracts/current` (subpath, directory and
   every importer), `interactions/wave25/` → `interactions/current/`, and all 82 `*V3*` identifiers → `*Current*`
   (2,824 occurrences; no name collided, so none was skipped). `RepeatGraphCurrentV3` became
-  `RepeatGraphCurrentCurrent`, which the owner should review. Left alone: `Wave25*` identifiers, `wave25_*` SQL,
+  `RepeatGraphCurrentCurrent`, which the owner should review. Left alone: `wave25_*` SQL,
   migration file names, `wave25*` test file names, string literals, JSON keys, prose, docs and history.
 - [ ] #35 Unfinished graphql → foreman-code rename (646 files; compose/DB names, rsync path, env compat layer).
   Deployed names need a migration plan.
@@ -362,12 +361,10 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
 - [~] #14 "repeat" is the universal run engine despite AGENTS.md. `runs/workflowRunMode.ts` names the three modes
   (`graph`, `handoff`, `hierarchy`; only explicit repeat blocks declare repeat). `executeRepeatRuntime` now takes a
   `WorkflowGraphMode` (`handoffGraphMode` or `workflowGraphMode`) instead of branching on `work`/`repeat`, the native
-  prompt contract per mode is `nativeWorkContracts`, and the engine asks `usesWorkHandoffGraph`. Finding #14 follow-up:
-  `workflowExecutionRequest.ts`, `repeatPostgres.ts` and `workflowLifecycle.ts` now use the shared
-  `usesWorkHandoffGraph`/`isHierarchyWorkflow` predicates instead of branching on saved handoff/hierarchy fields;
-  completion uses `declaresRepeatBlocks`. Behavior and saved names are unchanged. Open: the `repeat*`
+  prompt contract per mode is `nativeWorkContracts`, and the engine asks `usesWorkHandoffGraph`. Open: the `repeat*`
   file and symbol names (`repeatRuntime.ts`, `repeatNode.ts`, `repeatGraph.ts`, `RepeatRunRepository`) still cover
-  the ordinary graph; renaming them remains a separate mechanical follow-up.
+  the ordinary graph; renaming them is a mechanical follow-up, and `workflowExecutionRequest.ts`,
+  `repeatPostgres.ts` and `workflowLifecycle.ts` still branch on `definition.handoffs`/`hierarchy` directly.
 - [~] #15 Two chat engines: shared `conversationEngine.ts` and `conversationRepositoryCore.ts`, and an Operator
   unsubscribe bug fixed. `runTurn`, observe/settle and recovery are still per engine. The web copies are untouched.
   Prompt rules are shared (`refineChatPrompt` in contracts): text-or-attachment and no attachments on steer apply to the
