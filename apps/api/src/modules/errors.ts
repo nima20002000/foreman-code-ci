@@ -1,7 +1,16 @@
 import { isDatabasePoolTimeout, type FailureClass } from '@foreman-code/contracts/failure'
 import { deviceApplicationFailure } from './devices/deviceApplicationError.js'
 
+// The browser native host is bundled separately and has its own copy of this class; the brand lets both copies
+// recognise each other's errors, so its codes and messages reach callers instead of a generic internal error.
+const domainErrorBrand = Symbol.for('foreman-code.DomainError')
+
 export class DomainError extends Error {
+  static [Symbol.hasInstance](value: unknown): boolean {
+    if (this !== DomainError) return Function.prototype[Symbol.hasInstance].call(this, value)
+    return typeof value === 'object' && value !== null && (value as { [domainErrorBrand]?: unknown })[domainErrorBrand] === true
+  }
+  readonly [domainErrorBrand] = true
   // Transport handlers reuse a denial already recorded by the domain service.
   denialAudited = false
 
