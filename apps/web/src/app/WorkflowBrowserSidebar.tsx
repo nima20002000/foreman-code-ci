@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { BrowserOperationResponseSchemas, type AgentSubject, type BrowserSession } from '@foreman-code/contracts'
+import type { AgentSubject, BrowserSession } from '@foreman-code/contracts'
 import { BrowserSidebar, type BrowserSidebarStatus, type BrowserSidebarTab } from '../features/agent-browser/BrowserSidebar'
 import { tabLabel } from '../features/agent-browser/tabLabel'
 import { useBrowserSidebar, useBrowserSidebarTabs } from '../features/workflow-board/useBrowserSidebar'
 import { useWorkflowBoard } from '../features/workflow-board/context'
-import { apiClient, ApiError } from '../shared/api/client'
 import { useManagedWorkflowQuery } from '../shared/api/query'
 import { errorMessage } from '../shared/errorMessage'
 import { browserSessionClient } from './browserRecovery'
 import { browserAuthBoundary, useBrowserComputers } from './browserComputerFacts'
+import { readLiveBrowserSessions } from './liveBrowserSessions'
 import { WorkflowBrowserTarget } from './WorkflowBrowser'
 
 export interface WorkflowBrowserSidebarProps { workspaceId: string; workflowId: string; runId?: string; workflowVersionId?: string }
@@ -17,7 +17,6 @@ export interface WorkflowBrowserSidebarProps { workspaceId: string; workflowId: 
 const POLL_MS = 3000
 /** A browser whose page, tabs or state changed within this window counts as working. */
 const WORKING_MS = 20_000
-const live = (session: BrowserSession) => session.state !== 'closed' && session.state !== 'failed'
 const runOf = (subject: AgentSubject) => subject.kind === 'execution' ? subject.execution.runId
   : subject.kind === 'coordinator_consultation' ? subject.binding.runId : undefined
 
@@ -27,27 +26,8 @@ function useLiveBrowserSessions() {
   const computers = facts.computers.filter(computer => computer.online).map(computer => computer.id).sort()
   return useQuery({ queryKey: ['browser-sidebar', browserAuthBoundary(), 'sessions', computers], enabled: computers.length > 0,
     refetchInterval: POLL_MS, refetchOnWindowFocus: false,
-    queryFn: async ({ signal }) => {
-      const sessions: BrowserSession[] = [], unreachable: string[] = []
-      await Promise.all(computers.map(async computerId => {
-        try {
-          let cursor: string | null = null
-          for (let page = 0; page < 20; page++) {
-            const input: { computerId: string; limit: number; live: true; cursor?: string } = { computerId, limit: 100, live: true, ...(cursor ? { cursor } : {}) }
-            const result: { sessions: BrowserSession[]; nextCursor: string | null } = await apiClient.request(`/api/browser/sessions?${new URLSearchParams({ input: JSON.stringify(input) })}`,
-              BrowserOperationResponseSchemas.browser_sessions_list, { signal })
-            sessions.push(...result.sessions.filter(live))
-            cursor = result.nextCursor
-            if (!cursor) break
-          }
-        } catch (error) {
-          // Only an offline computer is skipped; any other failure keeps the last good list and shows the error.
-          if (signal.aborted || !ApiError.is(error) || error.code !== 'BROWSER_COMPUTER_OFFLINE') throw error
-          unreachable.push(facts.computers.find(computer => computer.id === computerId)?.name ?? 'A computer')
-        }
-      }))
-      return { sessions, unreachable }
-    } })
+    queryFn: ({ signal }) => readLiveBrowserSessions(computers.map(id => ({ id,
+      name: facts.computers.find(computer => computer.id === id)?.name ?? 'A computer' })), signal) })
 }
 
 type Activity = { signature: string; changedAt: number; page?: string }
