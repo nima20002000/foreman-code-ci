@@ -619,7 +619,7 @@ function configureDeviceRuntime(composition: ProductionComposition) {
     rsync,
     remoteTelemetry,
   } = composition
-  const deviceRuntime = composition.deviceRuntime = new ProductionDeviceRuntime(database.pool, infrastructure?.deviceListener, {
+  const deviceRuntime: ProductionDeviceRuntime = composition.deviceRuntime = new ProductionDeviceRuntime(database.pool, infrastructure?.deviceListener, {
     workerArtifacts: workerArtifactLocation({ environment: process.env,
       releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }),
     browserMedia: (request, socket, head) => composition.browserRemote.mediaUpgrade(request, socket, head),
@@ -2238,7 +2238,8 @@ function productionRoutes(composition: ProductionComposition): ApiRouteServices 
     workflowArtifacts: composition.workflowArtifacts, trustedConnections: composition.trustedConnections,
     resourceTelemetry: runtimeServices.resourceTelemetry,
     jobRuntimeProfiles: runtimeServices.jobRuntimeProfiles
-      ? { profiles: runtimeServices.jobRuntimeProfiles, ciRuntime: runtimeServices.ciRuntime } : undefined } }
+      ? { profiles: runtimeServices.jobRuntimeProfiles,
+        ...(runtimeServices.ciRuntime ? { ciRuntime: runtimeServices.ciRuntime } : {}) } : undefined } }
 }
 
 function configureRuntimeLifecycle(composition: ProductionComposition) {

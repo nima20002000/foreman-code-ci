@@ -48,7 +48,7 @@ it.each(['start', 'discover', 'cancel'] as const)(
         run: { ...observed, state: 'canceled', finishedAt: new Date().toISOString() } }
       throw new Error(`Unexpected fixture operation: ${request.operation}`)
     } }
-    const services: Parameters<typeof sendCiDispatch>[0] = { pool: database.pool, endpoint,
+    const services: Parameters<typeof sendCiDispatch>[0] = { context: mainCiContext, pool: database.pool, endpoint,
       read: async (_id, _workspaceId, sql) => {
         const row = (await sql.query('select record from ci_runs where id=$1', [id])).rows[0]!
         return CiRunRecordSchema.parse(row.record)

@@ -31,10 +31,7 @@ async function confirmStop(user: ReturnType<typeof userEvent.setup>) {
 
 // Mounted React state/form tests with a mocked transport and canvas. These do
 // not claim an authenticated browser, React Flow geometry or native Stop test.
-vi.mock('../../workflow-board/context', async (original) => ({
-  ...await original<typeof import('../../workflow-board/context')>(),
-  useWorkflowBoard: () => ({ activeRuns: 1 }),
-}))
+vi.mock('../../workflow-board/context', () => ({ useWorkflowBoard: () => ({ activeRuns: 1 }) }))
 vi.mock('./DraftCanvas', () => ({ DraftCanvas: ({ open, panels }: { open?: { nodeId: string; panel: 'chat' | 'settings' | 'info' }; panels?: (nodeId: string) => Record<string, unknown> }) => <div>Canvas fixture{open && panels
   ? <section role="dialog" aria-label={`${open.nodeId} ${open.panel}`}>{panels(open.nodeId)[open.panel] as never}</section> : null}</div> }))
 vi.mock('../../../shared/api/query', async (original) => ({
