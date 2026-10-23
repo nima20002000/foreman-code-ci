@@ -10,8 +10,8 @@ export function createInstalledWorkerUpdater({ browser, domains, ...options }) {
       await browser.drain();
     },
     resume: async () => {
-      try { await browser.resumeAdmission(); }
-      finally { await domains().resumeAfterUpdate(); }
+      await browser.resumeAdmission();
+      await domains().resumeAfterUpdate();
     },
   }).initialize();
 }

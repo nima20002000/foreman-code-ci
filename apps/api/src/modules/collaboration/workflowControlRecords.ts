@@ -83,7 +83,7 @@ export async function updateControlCommand(sql: GraphTransactionSql, row: Contro
   if (canonicalJson(row.receipt) === canonicalJson(parsed) && row.state === state && !Object.keys(extra).length) return
   await sql.query(`update run_chat_commands set receipt=$2::jsonb,state=$3,
     continuation_id=coalesce(continuation_id,$4),consultation_id=coalesce(consultation_id,$5),
-    delivered_execution=coalesce(delivered_execution,$6::jsonb),native_target=coalesce(native_target,$7::jsonb),
+    delivered_execution=coalesce($6::jsonb,delivered_execution),native_target=coalesce(native_target,$7::jsonb),
     revision=revision+1,updated_at=$8 where id=$1`,
   [row.id,canonicalJson(parsed),state,extra.continuationId ?? null,extra.consultationId ?? null,
     extra.deliveredExecution ? canonicalJson(extra.deliveredExecution) : null,
