@@ -2,7 +2,7 @@
 import { CiComputersOutputSchema, CiCancelOutputSchema, CiGetInputSchema, CiCancelInputSchema, CiGetOutputSchema, CiListOutputSchema, CiLogsInputSchema, CiLogsOutputSchema, CiRunInputSchema, CiRunOutputSchema,
   CiTestStatusFilterSchema, CiTestsOutputSchema, OperatorCiListInputSchema } from '@foreman-code/contracts'
 import { CircleAccountAddInputSchema, CircleAccountRemoveInputSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '@foreman-code/contracts-node/server-kit'
 import { z } from 'zod'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { CiTicketClient } from './client.js'

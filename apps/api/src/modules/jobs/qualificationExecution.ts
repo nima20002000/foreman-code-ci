@@ -1,4 +1,4 @@
-import { errorMessage } from '@foreman-code/contracts/server-kit'
+import { errorMessage } from '@foreman-code/contracts-node/server-kit'
 import { acceptedJobSpecDigests } from '@foreman-code/contracts/jobs-node'
 import { AcceptedVerificationJobSpecSchema, VerificationJobExecutionSchema,
   type JobVerificationReport } from '@foreman-code/contracts/job-verification'

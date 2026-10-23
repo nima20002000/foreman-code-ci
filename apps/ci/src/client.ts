@@ -3,7 +3,7 @@
 import { ApiErrorResponseSchema, CiCancelOutputSchema, CiComputersOutputSchema, CiGetOutputSchema, CiListOutputSchema,
   CiLogsOutputSchema, CiRunOutputSchema, CiTestsOutputSchema } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
-import { DomainError } from '@foreman-code/contracts/server-kit'
+import { DomainError } from '@foreman-code/contracts-node/server-kit'
 import type { z } from 'zod'
 import type { HostCiService } from './service.js'
 
