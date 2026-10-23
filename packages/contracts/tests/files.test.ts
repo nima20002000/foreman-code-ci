@@ -85,7 +85,7 @@ describe("immutable revisions, allowed types, and limits", () => {
     ["image.png", "image/png"], ["image.jpg", "image/jpeg"], ["image.jpeg", "image/jpeg"],
     ["image.webp", "image/webp"], ["image.gif", "image/gif"], ["document.pdf", "application/pdf"],
     ["document.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
-    ["notes.md", "text/markdown"], ["archive.zip", "application/zip"],
+    ["notes.md", "text/markdown"], ["notes.txt", "text/plain"], ["archive.zip", "application/zip"],
   ];
   it.each(allowed)("accepts %s as %s", (filename, mediaType) => {
     expect(files.FileRevisionSchema.safeParse({ ...revision(), filename, mediaType }).success).toBe(true);
@@ -94,7 +94,7 @@ describe("immutable revisions, allowed types, and limits", () => {
     expect(files.MAX_FILE_BYTES).toBe(26_214_400);
     expect(files.MAX_FILE_READ_BYTES).toBe(65_536);
     expect(files.MAX_MESSAGE_ATTACHMENTS).toBe(10);
-    expect(files.FILE_MEDIA_TYPES).toHaveLength(8);
+    expect(files.FILE_MEDIA_TYPES).toHaveLength(9);
     expect(files.FileRevisionSchema.safeParse(revision({ byteSize: files.MAX_FILE_BYTES })).success).toBe(true);
     expect(files.FileRevisionSchema.safeParse(revision({ byteSize: 0 })).success).toBe(true);
   });

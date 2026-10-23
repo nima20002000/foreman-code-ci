@@ -13,9 +13,9 @@ export type NodePlacementFactsProps = {
  * Current labels/defaults/connectivity deliberately cannot enter this component. */
 export function NodePlacementFacts({ runId, nodeId, readback }: NodePlacementFactsProps) {
   const parsed = NodePlacementReadbackSchema.safeParse(readback)
-  if (!parsed.success || parsed.data.evidence === 'legacy_missing') return <p>Computer evidence unavailable. Current computer settings are not substituted.</p>
+  if (!parsed.success || parsed.data.evidence === 'legacy_missing') return <p>Computer: not recorded.</p>
   const { placement, observations } = parsed.data
-  if (placement.runId !== runId || placement.nodeId !== nodeId) return <p>Computer evidence unavailable for this exact Run node.</p>
+  if (placement.runId !== runId || placement.nodeId !== nodeId) return <p>Computer: not recorded.</p>
   const host = placement.hostRef
   const identity = host.kind === 'device' ? host.deviceId : host.mainId
   const label = placement.labelAtAcceptance ?? identity

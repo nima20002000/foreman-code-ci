@@ -6,6 +6,7 @@ import { BrowserViewer } from './BrowserViewer'
 import { BrowserSessionActions } from './BrowserSessionActions'
 import { BrowserPreparation, type BrowserPreparationRead } from './BrowserPreparation'
 import type { BrowserFilesPort } from './transferTypes'
+import { shownUrl, tabLabel } from './tabLabel'
 import { browserAccessDenied, browserErrorMessage, browserRequestUncertain } from './errors'
 import { browserSessionKey, useBrowserSession, useBrowserSessions, validateBrowserRead } from './queries'
 import type { BrowserSelection, BrowserSessionRead, BrowserTabLease, BrowserUiPort } from './types'
@@ -154,10 +155,10 @@ export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
   const mounted = useRef(false)
   const lifecycle = useRef({ keepControlOnTabChange: props.keepControlOnTabChange, onCleanupError: props.onCleanupError })
   lifecycle.current = { keepControlOnTabChange: props.keepControlOnTabChange, onCleanupError: props.onCleanupError }
-  const [url, setUrl] = useState(props.tab.url)
+  const [url, setUrl] = useState(shownUrl(props.tab.url))
   // The address follows the agent's page, except while the person is typing one.
   const typing = useRef(false)
-  useEffect(() => { if (!typing.current) setUrl(props.tab.url) }, [props.tab.url])
+  useEffect(() => { if (!typing.current) setUrl(shownUrl(props.tab.url)) }, [props.tab.url])
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     effectVisit.current += 1
@@ -223,11 +224,11 @@ export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
     <div className="agent-browser-tabs" role="tablist" aria-label="Browser tabs">{props.initial.tabs.map(tab =>
       <div key={tab.tabId} className="agent-browser-tab" data-selected={tab.tabId === props.tab.tabId || undefined}>
         <button type="button" role="tab" aria-selected={tab.tabId === props.tab.tabId} disabled={pending}
-          title={tab.title || tab.url || 'Untitled tab'} onClick={() => {
+          title={tabLabel(tab)} onClick={() => {
             if (tab.tabId === props.tab.tabId) { void controller.acquire().catch(failure => setError(browserErrorMessage(failure))); return }
             if (props.readOnly) { retiringForTab.current = true; props.onSelectTab(tab.tabId); return }
             mutate((epoch, commandId) => props.port.selectTab(props.initial.session, tab.tabId, props.viewerId, epoch, commandId), tab.tabId)
-          }}>{tab.title || tab.url || 'Untitled tab'}</button>
+          }}>{tabLabel(tab)}</button>
         {!props.readOnly ? <IconButton label={`Close ${tab.title || 'tab'}`} variant="ghost" size="sm" disabled={busy}
           onClick={() => { mutate((epoch, commandId) => props.port.closeTab(props.initial.session, tab.tabId, props.viewerId, epoch, commandId)) }}>
           <Icon name="close" size={12} /></IconButton> : null}
@@ -249,7 +250,8 @@ export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
     {snapshot.stale && snapshot.notice !== 'denied' ? <Button size="sm" onClick={() => { retiringForTab.current = true; props.onReconnect() }}>Reconnect</Button> : null}
     <BrowserViewer controller={controller} snapshot={snapshot} readOnly={props.readOnly}
       onLeavePage={() => surface.current?.querySelector<HTMLButtonElement>('[data-browser-control]')?.focus()} />
-    <small id="browser-page-help" className="agent-browser-help">Click the page to take control; click elsewhere to give it back.</small>
+    <small id="browser-page-help" className="agent-browser-help">{snapshot.notice === 'user' ? 'You have control. Click elsewhere to give it back to the agent.'
+      : snapshot.notice === 'taking' ? 'Taking control…' : 'Click the page to take control; click elsewhere to give it back.'}</small>
     <BrowserSessionActions read={props.initial} tab={props.tab} files={props.files} disabled={pending || snapshot.stale}
       onDenied={failure => controller.pause(failure)}
       readOnly={props.readOnly} onChanged={() => { if (mounted.current) props.onRefresh() }}

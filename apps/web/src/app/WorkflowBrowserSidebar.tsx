@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { BrowserOperationResponseSchemas, type AgentSubject, type BrowserSession } from '@foreman-code/contracts'
 import { BrowserSidebar, type BrowserSidebarStatus, type BrowserSidebarTab } from '../features/agent-browser/BrowserSidebar'
+import { tabLabel } from '../features/agent-browser/tabLabel'
 import { useBrowserSidebar, useBrowserSidebarTabs } from '../features/workflow-board/useBrowserSidebar'
 import { useWorkflowBoard } from '../features/workflow-board/context'
 import { apiClient, ApiError } from '../shared/api/client'
@@ -64,7 +65,7 @@ function useBrowserActivity(sessions: readonly BrowserSession[]) {
         const signature = JSON.stringify([read.session.state, read.session.browserGeneration, read.session.selectedTabId,
           read.tabs.map(tab => [tab.tabId, tab.url, tab.title])])
         const previous = queryClient.getQueryData<Activity>(queryKey)
-        const page = selected ? selected.title || selected.url : undefined
+        const page = selected ? tabLabel(selected) : undefined
         // The first read is a baseline, not activity: a browser that has sat still reads as idle.
         return { signature, page, changedAt: !previous ? 0 : previous.signature === signature ? previous.changedAt : Date.now() }
       } }

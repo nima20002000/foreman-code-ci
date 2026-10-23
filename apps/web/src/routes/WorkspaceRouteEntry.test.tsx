@@ -1,4 +1,4 @@
-import { writeSync } from 'node:fs'
+import { Worker } from 'node:worker_threads'
 import { installBrowserLocks } from '../test/browserLocks'
 import { nativeNode } from '../shared/mocks/nativeFixtureTypes'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -226,21 +226,17 @@ describe('WorkspaceRouteEntry integration', () => {
     await user.hover(node)
     const actions = within(screen.getByLabelText('Editable workflow graph')).getByRole('group', { name: `${title} actions` })
     {
-      const original = window.getComputedStyle.bind(window)
-      let count = 0
-      const wrapped = ((element: Element, ...rest: unknown[]) => {
-        count += 1
-        let depth = 0
-        for (let e: Element | null = element; e; e = e.parentElement) depth += 1
-        const frames = String(new Error('x').stack).split('\n').filter(l => !l.includes('jsdom') && !l.includes('wrapped')).slice(1, 7).map(l => l.trim().replace(/^at /, '').replace(/file:\/\/\/home\/runner\/work\/foreman-code-ci\/foreman-code-ci\//, '')).join(' | ')
-        writeSync(2, `\nGCSY ${count} ${element.tagName}.${String(element.className).slice(0, 60)} depth=${depth} :: ${frames}\n`)
-        const t0 = performance.now()
-        const result = (original as (...args: unknown[]) => CSSStyleDeclaration)(element, ...rest)
-        writeSync(2, `GCSY ${count} done ${Math.round(performance.now() - t0)}ms\n`)
-        return result
-      }) as typeof window.getComputedStyle
-      window.getComputedStyle = wrapped
-      globalThis.getComputedStyle = wrapped
+      const code = `
+        const { Session } = require('node:inspector'); const fs = require('node:fs');
+        const session = new Session(); session.connectToMainThread();
+        session.on('Debugger.paused', (message) => {
+          const frames = message.params.callFrames.slice(0, 25).map(f => f.functionName + ' ' + f.url.replace(/.*node_modules\\/\\.pnpm\\//, '').slice(-90) + ':' + f.location.lineNumber).join('\\n');
+          fs.writeSync(2, '\\nSTACKPROBE\\n' + frames + '\\n');
+          setTimeout(() => process.exit(0), 100);
+        });
+        session.post('Debugger.enable', () => setTimeout(() => session.post('Debugger.pause'), 25000));
+      `
+      new Worker(code, { eval: true })
     }
     await user.click(within(actions).getByRole('button', { name: `Open ${title} settings` }))
     const rail = await screen.findByRole('complementary', { name: 'Workflow side panel' })

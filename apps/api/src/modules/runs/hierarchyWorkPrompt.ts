@@ -23,7 +23,7 @@ export function hierarchyWorkPrompt(definition: WorkflowDefinitionV3, nodeId: st
   const outcomes = node.choice?.outcomes.map(choice => choice.outcome) ?? []
   return [
     'Return one complete JSON object with routing, data, and summary, within 65536 UTF-8 bytes.',
-    'data has latestDeliverable (your non-null business deliverable) and remainingFindings (an array of detailed findings).',
+    'data has latestDeliverable (your non-null business deliverable, including all results and facts you found) and remainingFindings (unresolved problems that still need work; [] when your task is done).',
     'summary is a nonempty string of at most 600 characters.',
     `Saved work routes: ${JSON.stringify(outcomes)}.`,
     'Delegate to selected direct children with {"kind":"delegate","requests":[{"outcome":<saved direct-child route>,"data":<the child task>}]} in routing.',

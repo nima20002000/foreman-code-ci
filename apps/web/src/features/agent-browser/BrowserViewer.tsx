@@ -56,6 +56,7 @@ export function BrowserViewer({ controller, snapshot, readOnly, onLeavePage }: {
   }
   return <div className="agent-browser-page" role="group" aria-label="Browser page" tabIndex={0}
     aria-describedby="browser-page-help" aria-disabled={!writable}
+    data-control={snapshot.notice === 'user' || snapshot.notice === 'taking' ? snapshot.notice : undefined}
     style={{ aspectRatio: snapshot.frame ? `${snapshot.frame.width}/${snapshot.frame.height}` : '16/10' }}
     onFocus={event => { if (event.target === event.currentTarget && writable) keyboard.current?.focus() }}
     onPointerDown={event => pointer(event, 'down')} onPointerUp={event => pointer(event, 'up')}

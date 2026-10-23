@@ -7,9 +7,11 @@
 .browser-sidebar-resize { position: absolute; z-index: 2; top: 0; bottom: 0; left: -3px; width: 6px; cursor: ew-resize; touch-action: none; }
 .browser-sidebar-resize:hover { background: var(--accent-subtle); }
 .browser-sidebar-tabs { display: flex; flex: 1; min-width: 0; gap: var(--space-1); overflow-x: auto; scrollbar-width: none; }
-.browser-sidebar-tab { display: flex; flex: 0 0 auto; align-items: center; min-width: 0; max-width: 100%; border: 1px solid var(--border);
+.browser-sidebar-tab { display: flex; flex: 0 1 auto; align-items: center; min-width: 3.25rem; max-width: 100%; border: 1px solid var(--border);
   border-radius: var(--radius-md); background: var(--surface-raised); }
-.browser-sidebar-tab[data-selected] { border-color: var(--accent); background: var(--accent-subtle); }
+.browser-sidebar-tab[data-selected] { flex-shrink: 0; border-color: var(--accent); background: var(--accent-subtle); }
+/* Like Chrome, many tabs shrink to fit one row; a narrow unselected tab shows its close button only on hover. */
+.browser-sidebar-tab:not([data-selected]):not(:hover):not(:focus-within) .n-icon-button { display: none; }
 .browser-sidebar-tab > button[role="tab"] { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 4px 4px 4px 8px;
   border: 0; background: none; color: var(--text); font: var(--type-body-strong); cursor: pointer; }
 .browser-sidebar-tab > button[role="tab"]:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; border-radius: var(--radius-md); }

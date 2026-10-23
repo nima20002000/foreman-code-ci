@@ -13,11 +13,9 @@ export function PinnedProviderAccount({ binding, label = 'Saved account' }: {
   // A legacy profile is shown by its account's name, never by its internal profile reference.
   const legacy = useProviderAccountDetails(binding?.kind === 'legacy-profile' ? binding.accountId : undefined)
   const legacyName = legacy.isError ? undefined : legacy.data?.name
-  if (!binding) return <p className="pinned-provider-account">{label}: not recorded.
-    Historical provider identity is unknown.</p>
+  if (!binding) return <p className="pinned-provider-account">{label}: not recorded.</p>
   if (binding.kind === 'legacy-profile') return <p className="pinned-provider-account">{label}: {legacyName
-    ? <><strong>{legacyName}</strong> · {binding.provider}</> : `legacy ${binding.provider} profile`}.
-    Historical provider identity is unknown.</p>
+    ? <><strong>{legacyName}</strong> · {binding.provider}</> : binding.provider}</p>
   const target = binding.target
   const unavailable = !account || Boolean(account.removedAt) || account.status === 'unavailable'
   return <section className="pinned-provider-account" aria-label={label}>

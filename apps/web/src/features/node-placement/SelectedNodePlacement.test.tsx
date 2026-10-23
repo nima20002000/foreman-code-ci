@@ -33,7 +33,7 @@ it('fences late A→B→A reads by visit even when transport ignores abort', asy
   await waitFor(() => expect(read).toHaveBeenCalledTimes(2))
   visit = 3
   view.rerender(<SelectedNodePlacement selection={selection(3, () => visit === 3)} nodeId="node-a" />)
-  await screen.findByText(/Computer evidence unavailable/)
+  await screen.findByText('Computer: not recorded.')
   await act(async () => { release(result()); await oldRead })
   expect(screen.queryByText('Laptop at acceptance')).not.toBeInTheDocument()
 })
