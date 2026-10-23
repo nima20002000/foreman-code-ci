@@ -1,10 +1,10 @@
 import { type WorkflowDefinitionCurrent } from '@foreman-code/contracts/current'
-import { currentWorkflowFixture as makeCurrentFixture } from '../../shared/mocks/currentWorkflow'
+import { currentWorkflowFixture as makeWave25Fixture } from '../../shared/mocks/currentWorkflow'
 import { describe, expect, it } from 'vitest'
 import { repeatPlanFromLocalDraft, validateRepeatDraft, type RepeatLocalDraft } from './repeatModel'
 
 function graph(): WorkflowDefinitionCurrent {
-  const fixture = makeCurrentFixture('repeat-ui')
+  const fixture = makeWave25Fixture('repeat-ui')
   const [entry, exit] = fixture.version.definition.nodes
   return {
     ...fixture.version.definition,

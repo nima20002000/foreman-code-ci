@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 import { loadConfig } from '../src/config.js'
 import { createDatabase } from '../src/infrastructure/database.js'
-import { createCheckpointStore } from '../src/composition/checkpoints.js'
+import { createCheckpointStore } from '../src/infrastructure/checkpoints.js'
 import { buildProductionApp } from '../src/production.js'
 import { ActivityProductionReplay } from './helpers/activityProductionReplay.js'
 import { DEFAULT_HARNESS_DEFAULTS, HarnessConfigurationSchema } from '@foreman-code/contracts'

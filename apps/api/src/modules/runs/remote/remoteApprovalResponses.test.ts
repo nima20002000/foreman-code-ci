@@ -3,7 +3,7 @@ import type pg from 'pg'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { localHumanPrincipal } from '../../access/localHuman.js'
-import { CurrentInteractionRepository } from '../../interactions/current/repository.js'
+import { Wave25InteractionRepository } from '../../interactions/current/repository.js'
 import { OperatorInteractionService } from '../../interactions/operator.js'
 import { registerGraphqlMcp } from '../../../mcp/unified/transport.js'
 import type { OperatorServices } from '../../../mcp/operator/types.js'
@@ -162,7 +162,7 @@ it('reports a live remote approval as answerable through human and authenticated
   const reader = { ...localHumanPrincipal, id: 'reader', grants: [{ actions: ['interactions:read' as const], scope: {} }] }
   const access = { authenticate: async (token: string) => token === 'reader' ? reader : localHumanPrincipal } as unknown as PostgresAccessService
   const pool = { query: async () => ({ rows: [{ record: interaction }] }) } as unknown as pg.Pool
-  const repository = new CurrentInteractionRepository(pool)
+  const repository = new Wave25InteractionRepository(pool)
   type ServiceArgs = ConstructorParameters<typeof InteractionService>
   const interactions = new InteractionService(repository, {} as ServiceArgs[1], {} as ServiceArgs[2],
     async () => undefined, undefined, async record => {
