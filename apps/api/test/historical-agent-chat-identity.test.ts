@@ -106,6 +106,7 @@ function fixture() {
   })
   const pool = { query, connect: async () => ({ query, release: vi.fn() }) } as unknown as pg.Pool
   const repository = {
+    sessionDefaults: async () => undefined,
     get: vi.fn(async (id: string) => conversations.get(id)),
     byKey: vi.fn(async (key: string) => [...conversations.values()].find((item) => item.agent_key === key)),
     state: vi.fn(async (id: string): ReturnType<PostgresAgentChatRepository['state']> => {

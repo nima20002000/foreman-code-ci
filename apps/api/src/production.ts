@@ -149,7 +149,7 @@ import { hasDetachedStdioProcess, hasNativeRestartDetachment, NativeProcessRegis
 import { join, resolve } from 'node:path'
 import { NativeLaunchRecords } from './modules/harnesses/nativeLaunchRecords.js'
 import { createExecutionCredentialProvider } from './modules/interactions/executionCredentials.js'
-import { createWorkflowManagerResolver } from './composition/workflowManagerResolver.js'
+import { createWorkflowManagerResolver } from './modules/runs/workflowManagerResolver.js'
 import { createWorkflowManagerContextPreparer } from './modules/runs/workflowManagerContext.js'
 import { createAcceptedDestinationContinuation } from './modules/placement/continuationAuthority.js'
 import { workerNativeOutputContext } from './modules/placement/workerNativeOutputContext.js'
@@ -600,7 +600,7 @@ function createDeviceRuntime({ base, callbacks, started, transport }: {
 }) {
   const { database, infrastructure } = base
   const { acceptedRsync, remoteTelemetry, rsync } = transport
-  const deviceRuntime: ProductionDeviceRuntime = new ProductionDeviceRuntime(database.pool, infrastructure?.deviceListener, {
+  const deviceRuntime = new ProductionDeviceRuntime(database.pool, infrastructure?.deviceListener, {
     workerArtifacts: workerArtifactLocation({ environment: process.env,
       releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }),
     browserMedia: (request, socket, head) => callbacks.browserRemote.get().mediaUpgrade(request, socket, head),
@@ -1853,13 +1853,11 @@ function createHttpApplication({ base, started, transport, accountStage, reposit
 /** Every route group the production runtime has published so far. */
 function productionRoutes(httpStage: HttpStage, started: StartedServices): ApiRouteServices {
   const { routes, runtimeServices } = httpStage
-  return { ...routes, production: { ...routes.production,
-    ...(started.files ? { files: started.files } : {}),
-    ...(started.workflowArtifacts ? { workflowArtifacts: started.workflowArtifacts } : {}),
-    ...(started.trustedConnections ? { trustedConnections: started.trustedConnections } : {}),
-    ...(runtimeServices.resourceTelemetry ? { resourceTelemetry: runtimeServices.resourceTelemetry } : {}),
-    ...(runtimeServices.jobRuntimeProfiles ? { jobRuntimeProfiles: { profiles: runtimeServices.jobRuntimeProfiles,
-      ...(runtimeServices.ciRuntime ? { ciRuntime: runtimeServices.ciRuntime } : {}) } } : {}) } }
+  return { ...routes, production: { ...routes.production, files: started.files,
+    workflowArtifacts: started.workflowArtifacts, trustedConnections: started.trustedConnections,
+    resourceTelemetry: runtimeServices.resourceTelemetry,
+    jobRuntimeProfiles: runtimeServices.jobRuntimeProfiles
+      ? { profiles: runtimeServices.jobRuntimeProfiles, ciRuntime: runtimeServices.ciRuntime } : undefined } }
 }
 
 function createRuntimeControl({ base, callbacks, started, runtimeState, transport, deviceRuntime, browserStage, accountStage, repositoryStage, qualificationStage, profileStage, managerStage, executionStage, conversationStage, operatorChatStage, agentChatStage, httpStage }: {

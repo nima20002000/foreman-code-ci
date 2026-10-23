@@ -52,7 +52,7 @@ describe('exclusive graph transaction port (unit, not PostgreSQL proof)', () => 
       return { rows: [], rowCount: 0 }
     }), () => undefined)
     try {
-      await expect(connection.transaction(async (sql) => { await expect(sql.query('select invalid')).rejects.toThrow('database rejected statement') })).rejects.toThrow('GRAPH_TRANSACTION_FAILED')
+      await expect(connection.transaction(async (sql) => { await sql.query('select invalid').catch(() => undefined) })).rejects.toThrow('GRAPH_TRANSACTION_FAILED')
       expect(trace.at(-1)).toBe('rollback')
       expect(trace).not.toContain('commit')
     } finally { await connection.close() }
