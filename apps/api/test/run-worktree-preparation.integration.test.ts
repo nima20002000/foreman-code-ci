@@ -87,7 +87,12 @@ describe.runIf(postgresEnabled)('Local execution worktree preparation', () => {
       const started = await f.client.callTool({ name: 'run_start', arguments: input })
       expect(started.isError, JSON.stringify(started)).not.toBe(true)
       const runId = RunStartCurrentResultSchema.parse(decodeMcpToolResult(started)).run.id
-      await expect.poll(async () => (await f.runs.get(runId))?.executionState, { timeout: 10_000 }).toBe('waiting')
+      await expect.poll(async () => ({
+        state: (await f.runs.get(runId))?.executionState,
+        dispatchErrors: f.dispatchFailureDetails,
+        executions: (await f.db.pool.query('select record from harness_executions where run_id=$1', [runId])).rows,
+        startedNodes: f.provider.startedNodes,
+      }), { timeout: 10_000 }).toMatchObject({ state: 'waiting' })
       const args = { workspaceId: f.f.run.workspaceId, runId, detail: 'full' }
       const details = OperatorRunGetResultSchema.parse(decodeMcpToolResult(
         await f.client.callTool({ name: 'run_get', arguments: args })))

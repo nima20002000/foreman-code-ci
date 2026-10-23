@@ -1,7 +1,6 @@
 import { WorkflowSettings } from './WorkflowSettings'
 import { BoardNotice } from './BoardNotice'
 import { Inbox, Redo2, Save, Undo2 } from 'lucide-react'
-import { createPortal } from 'react-dom'
 import { ActionMenu, Button, ConfirmDialog, Icon, IconButton, Toolbar } from '../../../shared/ui/nocturne'
 import { nodeTitle, removeRelationship, neverAskCodexAgents, nextDraftDirty, type NextDraftEdit } from '../../board-core'
 import { useGraphDraftStore } from '../store'
@@ -40,8 +39,6 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
   const finishingSave = editIntent.mutation.isPending && !affectedRuns.length
   const repeatOpen = panel === 'repeat', settingsOpen = !!panel && panel !== 'repeat'
   const repeatZ = useFloatingZ('board-repeat', repeatOpen), settingsZ = useFloatingZ('board-settings', settingsOpen)
-  const runAction = <Button size={board?.runActionHost ? 'sm' : undefined} variant="primary" leading={<Icon name="play" size={14} />} aria-label={pendingStart ? 'Reconcile Start' : needsSave ? 'Save and run' : 'Start saved version'}
-    title={startReason} disabled={startDisabled} loading={starting} onClick={() => void (pendingStart ? start() : prepare(() => needsSave ? startMutation.mutateAsync({ saveFirst: true }) : start())).catch(report)}>{pendingStart ? 'Confirm start' : needsSave ? 'Save and run' : 'Run'}</Button>
   return <section className="workflow-graph board-typed-editor" aria-label="Workflow authoring">
     <div className="workflow-graph-canvas">
       <DraftCanvas ref={canvas} draftKey={draftKey} graph={graph} agents={agents} kind="execution"
@@ -98,7 +95,8 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
           {board ? <IconButton label="Activities" onClick={board.openRuns}><Icon name="history" size={16} /></IconButton> : null}
           {board?.selectSidePanel ? <IconButton label="Group chat" onClick={() => board.selectSidePanel!({ kind: 'group_chat' })}><Icon name="chat" size={16} /></IconButton> : null}
           {board ? <KanbanButton workspaceId={graph.workspaceId} workflowId={graph.id} /> : null}
-          {board?.runActionHost ? createPortal(runAction, board.runActionHost) : runAction}
+          <Button variant="primary" leading={<Icon name="play" size={14} />} aria-label={pendingStart ? 'Reconcile Start' : needsSave ? 'Save and run' : 'Start saved version'}
+            title={startReason} disabled={startDisabled} loading={starting} onClick={() => void (pendingStart ? start() : prepare(() => needsSave ? startMutation.mutateAsync({ saveFirst: true }) : start())).catch(report)}>{pendingStart ? 'Confirm start' : needsSave ? 'Save and run' : 'Run'}</Button>
         </Toolbar>
         </div>
       </header>
