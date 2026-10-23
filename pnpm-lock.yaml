@@ -300,8 +300,6 @@ importers:
         specifier: 2.9.0
         version: 2.9.0
 
-  packages/ci-protocol: {}
-
   packages/contracts:
     dependencies:
       '@cfworker/json-schema':
