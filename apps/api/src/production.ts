@@ -199,7 +199,7 @@ import { OperatorRuntimeOwner } from './infrastructure/operatorRuntimeOwner.js'
 import { RuntimeShutdown } from './infrastructure/runtimeShutdown.js'
 import { PostgresAccessService } from './modules/access/postgres.js'
 import { PostgresLocalHumanAccess } from './modules/access/localHuman.js'
-import { CurrentWorkerCredentialService as WorkerCredentialService } from './modules/interactions/current/credentials.js'
+import { Wave25WorkerCredentialService as WorkerCredentialService } from './modules/interactions/current/credentials.js'
 import {
   ensureOperatorRuntimeDirectory,
   OperatorChatService,
@@ -242,7 +242,7 @@ import { ApprovalExecutionCoordinator, type CurrentApprovalExecutionDependencies
 import { PostgresWorkflowClosureStore } from './modules/interactions/workflowClosure.js'
 import { retryStartupDatabase } from './infrastructure/databaseRetry.js'
 import { OperatorInteractionService } from './modules/interactions/operator.js'
-import { CurrentInteractionRepository as PostgresInteractionRepository } from './modules/interactions/current/repository.js'
+import { Wave25InteractionRepository as PostgresInteractionRepository } from './modules/interactions/current/repository.js'
 import { InteractionService } from './modules/interactions/service.js'
 import { AutomaticReviewService } from './modules/interactions/automaticReview.js'
 import { PostgresOperatorRepository } from './modules/operators/postgres.js'
