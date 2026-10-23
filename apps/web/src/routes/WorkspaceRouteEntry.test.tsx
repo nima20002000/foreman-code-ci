@@ -190,6 +190,7 @@ describe('WorkspaceRouteEntry integration', () => {
   it('opens an unselected reloaded Claude Agent settings panel while cross-computer choices are unavailable', async () => {
     // Apply the canvas CSS so userEvent checks the same pointer access as the browser.
     render(<style>{canvasStyles}</style>)
+    console.error('STEP 1')
     const fixture = getMockFixture('workspace-1')!
     const agent = fixture.agents.find((item) => item.id === 'agent-researcher')!
     agent.harness = 'claude'
@@ -201,33 +202,57 @@ describe('WorkspaceRouteEntry integration', () => {
     const service = createCurrentBoardMock({ workspaceId: 'workspace-1', agents: fixture.agents,
       initialWorkflow: graph })
     server.use(...service.handlers)
+    console.error('STEP 2')
     server.use(http.get('*/api/management/workspaces/:workspaceId/workflows/:workflowId/nodes/:nodeId/placement-choices',
       () => new HttpResponse(null, { status: 503 })))
     const entry = '/workspaces/workspace-1?workflowId=workflow-content-pipeline'
     const first = await renderWorkspace(entry)
+    console.error('STEP 3')
     const user = userEvent.setup()
+    console.error('STEP 4')
     const before = await workflowBoard('Research to review')
+    console.error('STEP 5')
     await user.click(within(before).getByRole('button', { name: 'Research to review' }))
+    console.error('STEP 6')
     const name = screen.getByRole('textbox', { name: 'Workflow name' })
+    console.error('STEP 7')
     await user.clear(name)
+    console.error('STEP 8')
     await user.type(name, 'Activities persisted workflow{Enter}')
+    console.error('STEP 9')
     await user.click(screen.getByRole('button', { name: 'Save workflow' }))
+    console.error('STEP 10')
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Save workflow' })).not.toBeInTheDocument())
+    console.error('STEP 11')
     first.unmount()
+    console.error('STEP 12')
     first.queryClient.clear()
+    console.error('STEP 13')
     act(() => useGraphDraftStore.setState({ nextDrafts: {} }))
+    console.error('STEP 14')
     await renderWorkspace(entry)
+    console.error('STEP 15')
     const board = await workflowBoard('Activities persisted workflow')
+    console.error('STEP 16')
     const node = await within(board).findByRole('button', { name: /^Main coordinator,/ })
+    console.error('STEP 17')
     const title = 'Main coordinator'
     expect(node).toHaveAccessibleName(/Claude/)
+    console.error('STEP 18')
     expect(node).toHaveAttribute('aria-pressed', 'false')
+    console.error('STEP 19')
     await user.hover(node)
+    console.error('STEP 20')
     await user.click(screen.getByRole('button', { name: `Open ${title} settings` }))
+    console.error('STEP 21')
     const rail = await screen.findByRole('complementary', { name: 'Workflow side panel' })
+    console.error('STEP 22')
     expect(rail).toBeVisible()
+    console.error('STEP 23')
     expect(within(rail).getByRole('textbox', { name: 'Name' })).toHaveValue(agent.name)
+    console.error('STEP 24')
     expect(await within(rail).findByText('Computers can’t be checked right now. Try again shortly.')).toBeVisible()
+    console.error('STEP 25')
   }, 15_000)
 
   it('opens the accepted new workflow while workspace details still serve the old list', async () => {
