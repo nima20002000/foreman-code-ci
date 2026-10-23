@@ -1,11 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { claudeSessionScopeHash } from './compactionHistory.js'
 import { constants } from 'node:fs'
-import { open } from 'node:fs/promises'
+import { mkdir, open, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import type { ClaudePersistedSession } from './port.js'
-import { writeDurableFile } from '../../../shared/durableFile.js'
 
 const ResultSchema = z.object({
   scope: z.string(), promptUuid: z.string().uuid(), nativeSessionId: z.string(),
@@ -27,10 +26,17 @@ export async function saveClaudeCompactionResult(session: ClaudePersistedSession
     if (saved.status !== status) throw new Error('Claude native compaction outcome changed')
     return
   }
-  await writeDurableFile(location.path, JSON.stringify({ scope: location.scope, promptUuid,
-    nativeSessionId: session.nativeSessionId, status, observedAt: new Date().toISOString() }), {
-    temporaryPath: join(location.directory, `${randomUUID()}.tmp`),
-  })
+  await mkdir(location.directory, { recursive: true, mode: 0o700 })
+  const temporary = join(location.directory, `${randomUUID()}.tmp`)
+  const file = await open(temporary, 'wx', 0o600)
+  try {
+    await file.writeFile(JSON.stringify({ scope: location.scope, promptUuid,
+      nativeSessionId: session.nativeSessionId, status, observedAt: new Date().toISOString() }))
+    await file.sync()
+  } finally { await file.close() }
+  await rename(temporary, location.path)
+  const directory = await open(location.directory, 'r')
+  try { await directory.sync() } finally { await directory.close() }
 }
 
 export async function readClaudeCompactionResult(session: ClaudePersistedSession, promptUuid: string) {

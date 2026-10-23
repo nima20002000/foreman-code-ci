@@ -11,7 +11,7 @@ import { withExclusiveGraphConnection } from '../src/modules/run-graph/connectio
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { PostgresAppInteractionService } from '../src/modules/interactions/app.js'
-import { CurrentWorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
+import { Wave25WorkerCredentialService } from '../src/modules/interactions/current/credentials.js'
 import { RunCiAuthority, CI_GET_ACTIONS, CI_RUN_ACTIONS } from '../src/modules/jobs/ciAuthority.js'
 import { HostCiService, type HostCiComputer, type HostCiEndpoint } from '@foreman-code/ci/service'
 import { RunManagementService } from '../src/modules/runs/management.js'
@@ -106,7 +106,7 @@ async function fixture() {
     grants: [{ actions: ['runs:read', 'runs:stop', ...CI_GET_ACTIONS], scope }] })
   const reader = await access.issue({ name: 'Read only operator', audience: 'operator',
     expiresAt: new Date(Date.now() + 600_000), grants: [{ actions: ['runs:read', ...CI_GET_ACTIONS], scope }] })
-  const credentials = new CurrentWorkerCredentialService(pool, access)
+  const credentials = new Wave25WorkerCredentialService(pool, access)
   await f.engine.start(f.f.run.id)
   const agentTokens = new Set<string>()
   const tokenFor = async (runId: string) => {

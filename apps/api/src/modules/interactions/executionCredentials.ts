@@ -13,12 +13,12 @@ import type { PostgresRunRepository } from '../runs/postgres.js'
 import type { WorkspaceLocationService } from '../workspaces/location.js'
 import { readRetainedRemoteReviewer } from './retainedRemoteReviewer.js'
 import type { ExecutionScopedNativeSessionManagerResolver, NativeManagerResolutionContext } from './runtimePorts.js'
-import type { CurrentWorkerCredentialService } from './current/credentials.js'
+import type { Wave25WorkerCredentialService } from './current/credentials.js'
 
 export interface ExecutionCredentialDependencies {
   pool: pg.Pool
   access: Pick<PostgresAccessService, 'authenticate'>
-  credentials: CurrentWorkerCredentialService
+  credentials: Wave25WorkerCredentialService
   /** The MCP routes the credentials unlock; refreshed whenever a credential is issued or restored. */
   appRoutes: Pick<AppMcpRoutes, 'refresh'>
   /** True once shutdown has begun; renewals then skip the route refresh. */

@@ -3,8 +3,6 @@
 
 import { createHash } from 'node:crypto'
 
-export { writeDurableFile } from './durableFileNode.js'
-
 // The browser native host is bundled separately and has its own copy of this class; the brand lets both copies
 // recognise each other's errors, so its codes and messages reach callers instead of a generic internal error.
 const domainErrorBrand = Symbol.for('foreman-code.DomainError')

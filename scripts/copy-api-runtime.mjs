@@ -1,4 +1,3 @@
-import { verificationRuntimeFiles } from '../packages/verification-runner/runtime-files.mjs'
 import { createRuntimeBuildIdentity } from '../packages/contracts/src/runtimeBuildIdentityNode.mjs'
 import { copyFile, mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -9,9 +8,16 @@ export async function copyApiRuntime(repository, output) {
   const runtime = join(output, 'ci-runtime')
   const controls = ['Containerfile', 'corepack', 'context.mjs', 'seed-policy.mjs',
     'verification-policy.mjs', 'verification-observation.mjs']
+  const verification = ['ci-watchdog.mjs', 'ci-progress-reporter.mjs', 'ci-test-results.mjs', 'dense-resources.mjs',
+    'verification-runner.mjs', 'verify-repository.mjs',
+    'verification-reports.mjs', 'integration-process.mjs', 'integration-capabilities.mjs']
   const paths = [
     ...controls.map(name => `apps/worker/artifacts/ci-runtime/${name}`),
-    ...verificationRuntimeFiles,
+    ...verification.map(name => `scripts/${name}`),
+    'apps/worker/src/diagnostics.mjs',
+    'packages/contracts/src/verificationEnvironment.mjs',
+    'packages/contracts/src/integrationScheduling.mjs',
+    'packages/ci-protocol/src/testResults.mjs',
   ]
   for (const path of paths) {
     const destination = join(runtime, path)
