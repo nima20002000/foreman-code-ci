@@ -218,6 +218,19 @@ export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
     setError(null)
     mutation.mutate({ action, commandId: crypto.randomUUID(), visit: effectVisit.current, selectedTabId, selectCreated })
   }
+  // A dropped view (an app restart, a network blip) reconnects by itself, the same as pressing Reconnect.
+  const lost = snapshot.stale && snapshot.notice === 'paused' && snapshot.error !== null
+  const reconnect = useRef(props.onReconnect)
+  reconnect.current = props.onReconnect
+  useEffect(() => {
+    if (!lost) return
+    let attempts = 0
+    const timer = window.setInterval(() => {
+      if (++attempts > 40) { window.clearInterval(timer); return }
+      retiringForTab.current = true; reconnect.current()
+    }, 3_000)
+    return () => window.clearInterval(timer)
+  }, [lost])
   const busy = pending || snapshot.stale
   return <div ref={surface} className="agent-browser-content">
     {/* Chrome-like tab strip: choosing a tab takes control; nothing else sits above the page. */}

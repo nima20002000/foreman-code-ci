@@ -112,6 +112,22 @@ it('shows the accepted unavailable reason and retries only on an explicit click 
   expect(await screen.findByRole('button', { name: 'Open prepared browser' })).toBeVisible()
 })
 
+it('reconnects a browser view dropped by an app restart by itself, without replaying gestures', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  try {
+    const fake = browserPortFake()
+    mount(panel(fake))
+    await waitFor(() => expect(fake.port.openView).toHaveBeenCalled())
+    act(() => { fake.observer!.frame(frame()); fake.observer!.disconnected(new Error('Browser view disconnected')) })
+    expect(fake.port.reconnect).not.toHaveBeenCalled()
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000) })
+    await waitFor(() => expect(fake.port.reconnect).toHaveBeenCalledWith(expect.objectContaining({ id: 'session' }), expect.any(String)))
+    await waitFor(() => expect(fake.port.openView).toHaveBeenCalledTimes(2))
+    expect(fake.port.input).not.toHaveBeenCalled()
+    expect(fake.port.prepare).not.toHaveBeenCalled()
+  } finally { vi.useRealTimers() }
+})
+
 it('reconnects only the explicitly selected owned browser and never replays gestures on recovery', async () => {
   const fake = browserPortFake()
   mount(panel(fake))
