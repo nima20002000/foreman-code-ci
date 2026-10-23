@@ -197,7 +197,7 @@ export async function createGraphqlMcpServer(context: GraphqlMcpContext, request
             const value: Record<string, unknown> = { ...input as Record<string, unknown>, sessionId }
             // The chat's own session: its current generation and control epoch, not ones read from another session.
             const actor = value.actor as { kind?: string } | undefined
-            const current = !actor || actor.kind === 'agent' ? await chat.agentActor(toolContext.principal, sessionId) : undefined
+            const current = !actor || actor.kind === 'agent' ? chat.agentActor(sessionId) : undefined
             const acted = current && { ...value, actor: current }
             // Tools without an actor field keep the input as typed.
             const next = acted && (actor || (original.inputSchema as z.ZodType).safeParse(acted).success) ? acted : value

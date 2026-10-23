@@ -13,7 +13,7 @@ const descriptions: Record<typeof browserSessionOperationNames[number], string> 
   browser_tab_create: 'Create one owned browser tab, only when you need another page open at the same time; otherwise navigate a tab you already have. Agents have a tab limit. Preserve command ID on lost response.',
   browser_tab_select: 'Select an owned tab for the agent or viewer. Viewer selection never changes agent focus.',
   browser_tab_close: 'Close exactly one owned tab, with generation/control checks and idempotent command reconciliation.',
-  browser_state_read: 'Read bounded page state from one owned tab; no browser-wide CDP is exposed. Under user control, agent reads fail immediately with BROWSER_USER_CONTROL; wait for release and refresh session/control before retrying.',
+  browser_state_read: 'Read bounded page state from one owned tab. Agent reads wait while the user controls the browser; no browser-wide CDP is exposed.',
   browser_screenshot: 'Read a bounded screenshot of one owned tab through the same subject/generation/control fence as other browser observations.',
   browser_action: 'Perform typed page actions or owned upload/download phases. Every nested native dispatch is fenced; no arbitrary Python/CDP. Unknown outcomes require readback, not blind replay.',
   browser_view_open: 'Open an authenticated bounded viewer for one owned tab. Returns a view descriptor, never a raw CDP endpoint.',

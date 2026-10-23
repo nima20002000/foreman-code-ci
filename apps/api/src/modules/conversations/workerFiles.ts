@@ -181,15 +181,9 @@ export class WorkerConversationFiles {
     }
     if (transfer.result) return transfer.result
     if (transfer.length !== transfer.input.byteSize) this.denied()
-    const finishing = transfer.finishing ??= delivery.host.materialize({ ...transfer.input, writable: false,
+    transfer.finishing ??= delivery.host.materialize({ ...transfer.input, writable: false,
       bytes: Readable.from(transfer.chunks) })
-    try {
-      transfer.result = await finishing
-    } catch (error) {
-      // A failed materialization must not poison a retried finish frame (the received chunks are kept).
-      if (transfer.finishing === finishing) delete transfer.finishing
-      throw error
-    }
+    transfer.result = await transfer.finishing
     transfer.chunks = []
     signal.throwIfAborted()
     return transfer.result

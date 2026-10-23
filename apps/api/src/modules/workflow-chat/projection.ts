@@ -82,35 +82,11 @@ export class WorkflowChatProjector {
   async projectCommittedFacts(limit = 32): Promise<number> {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new DomainError('CHAT_PROJECTION_LIMIT', 'Projection batches contain 1 to 100 facts.', 422)
     let projected = 0
-    // A fact that cannot project stays pending for the next call but must not hold up the facts behind it.
-    const failed: string[] = []
-    let firstFailure: { error: unknown } | undefined
     for (let index = 0; index < limit; index++) {
-      let current: string | undefined
-      const outcome = await this.projectNext(failed, key => { current = key }).then(value => ({ value }), (error: unknown) => ({ error }))
-      if ('error' in outcome) {
-        if (!current) throw outcome.error
-        failed.push(current); firstFailure ??= outcome
-        continue
-      }
-      const result = outcome.value
-      if (!result) break
-      projected++
-      if (result.changed) {
-        const channel = await this.repository.channel(result.fact.agent)
-        this.publish(result.fact.agent.workflowId, { revision: channel?.revision ?? 0, snapshotRequired: true })
-      }
-    }
-    if (firstFailure) throw firstFailure.error
-    return projected
-  }
-
-  private projectNext(skip: string[], selected: (sourceEventKey: string) => void) {
-    return withTransaction(this.repository.pool, async tx => {
-        const pending = (await tx.query<{ source_event_key: string; fact: unknown }>(`select source_event_key,fact from workflow_chat_projection_pending
-          where source_event_key <> all($1::text[]) order by created_at,source_event_key for update skip locked limit 1`, [skip])).rows[0]
+      const result = await withTransaction(this.repository.pool, async tx => {
+        const pending = (await tx.query<{ fact: unknown }>(`select fact from workflow_chat_projection_pending
+          order by created_at,source_event_key for update skip locked limit 1`)).rows[0]
         if (!pending) return undefined
-        selected(pending.source_event_key)
         const fact = validateFact(pending.fact)
         const prior = (await tx.query<{ post_id: string | null; input_hash: string }>(
           'select post_id,input_hash from workflow_chat_projection_keys where source_event_key=$1', [fact.sourceEventKey])).rows[0]
@@ -121,6 +97,14 @@ export class WorkflowChatProjector {
         await tx.query('delete from workflow_chat_projection_pending where source_event_key=$1', [fact.sourceEventKey])
         return { fact, changed: Boolean(post) || !prior && fact.kind === 'receipt_changed' }
       }, { conflictRetries: 2 })
+      if (!result) break
+      projected++
+      if (result.changed) {
+        const channel = await this.repository.channel(result.fact.agent)
+        this.publish(result.fact.agent.workflowId, { revision: channel?.revision ?? 0, snapshotRequired: true })
+      }
+    }
+    return projected
   }
 
   private async projectLocked(tx: TransactionSql, fact: CommittedWorkflowChatFact): Promise<WorkflowChatPost | undefined> {

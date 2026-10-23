@@ -5,7 +5,6 @@ import { CanonicalRunGraphScopeSchema, CanonicalRunGraphReadCapabilitiesSchema, 
 import { hasAction, requireAuthorization } from '../access/policy.js'
 import { readRepeatGraphSnapshot, readRepeatGraphPage, readRepeatGraphCurrent, type AuthorizeRepeatGraphRead } from './repeatReader.js'
 import { RunGraphError } from './errors.js'
-import { componentLogger } from '../diagnostics/logger.js'
 
 /** Authenticated, rollout-gated HTTP/Operator-MCP read boundary. The default is
  * closed. Uses the SAME access policy and actual Run tuple as RunGraphReadService;
@@ -44,10 +43,7 @@ export class RepeatGraphReadService {
   }
   private async checked<T>(read: () => Promise<T>): Promise<T> {
     try { return await read() } catch (error) {
-      if (error instanceof RunGraphError) throw error
-      // The public error stays opaque, but the real failure is logged and kept as its cause.
-      componentLogger('http').error({ err: error, operation: 'read run graph' }, 'Run graph read failed unexpectedly')
-      throw new RunGraphError('GRAPH_INVARIANT_VIOLATION', { cause: error })
+      throw error instanceof RunGraphError ? error : new RunGraphError('GRAPH_INVARIANT_VIOLATION')
     }
   }
   snapshot(principal: ManagementPrincipal, request: unknown) {
