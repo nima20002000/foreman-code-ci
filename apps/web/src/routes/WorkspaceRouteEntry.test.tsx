@@ -212,7 +212,7 @@ describe('WorkspaceRouteEntry integration', () => {
     await user.clear(name)
     await user.type(name, 'Activities persisted workflow{Enter}')
     await user.click(screen.getByRole('button', { name: 'Save workflow' }))
-    expect(await screen.findByText('Saved.')).toBeVisible()
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Save workflow' })).not.toBeInTheDocument())
     first.unmount()
     first.queryClient.clear()
     act(() => useGraphDraftStore.setState({ nextDrafts: {} }))
