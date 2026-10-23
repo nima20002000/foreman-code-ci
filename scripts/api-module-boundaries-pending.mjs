@@ -106,7 +106,6 @@ export const internalImports = new Set([
   'conversations>harnesses/claudeSdk/callbackJournal.ts',
   'conversations>harnesses/claudeSdk/composition.ts',
   'conversations>harnesses/claudeSdk/configuration.ts',
-  'conversations>harnesses/claudeSdk/conversationActivity.ts',
   'conversations>harnesses/claudeSdk/domainAuthority.ts',
   'conversations>harnesses/claudeSdk/fileProduction.ts',
   'conversations>harnesses/claudeSdk/files.ts',

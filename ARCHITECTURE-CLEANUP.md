@@ -189,7 +189,7 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   migration file names, `wave25*` test file names, string literals, JSON keys, prose, docs and history.
 - [ ] #35 Unfinished graphql → foreman-code rename (646 files; compose/DB names, rsync path, env compat layer).
   Deployed names need a migration plan.
-- [~] #36 Retired `opencode` harness (156 refs), `LegacyChatDeliveryBridge`, 24 semantics-version guards.
+- [~] #36 Retired `opencode` harness: active/recorded configuration split implemented on `fix/a16-provider`; Foreman CI verification pending.
   - Done: one `isReadOnlyHarnessConfiguration` (contracts) replaces 8 copies of the "retired or read-only" check, and one
     `retiredHarnessError()` (`harnesses/retiredHarness.ts`) replaces 20 `HARNESS_RETIRED` throws. The unused
     semantics-2 `workflows/triggerAuthority.ts` is deleted. The bridge is renamed `ChatDeliveryBridge` (see
@@ -199,10 +199,12 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
     providers, the `check (harness in (...))` constraints), the `HARNESS_RETIRED` 409 for saved OpenCode history, and
     the retired-defaults reads in `settings/postgres.ts`. Write inputs already reject OpenCode
     (`SupportedHarnessConfigurationSchema`, `AgentHarnessSchema`).
-  - Open: the same two helpers are not applied in `production.ts`, `interactions/execution.ts` and
-    `conversations/agentChat|operatorChat|workerProduction.ts` (other streams were editing them), nor in the web
-    (`features/**`, ~90 refs, all retired-history display). Narrowing `HarnessConfiguration` to Codex and Claude, with a
-    separate recorded union for reads, would remove the remaining `=== 'opencode'` branches; it needs a typecheck run.
+  - a16: `HarnessConfiguration`/its schema now contain only Codex and Claude. `RecordedHarnessConfiguration`
+    and its schema preserve all saved/readback rows, including OpenCode. Executable UI controls take the active union;
+    retired display stays at readback boundaries. Shared typed admission keeps the same `HARNESS_RETIRED` 409 in
+    production, interaction execution and Operator/Worker chats. No stored values, migrations or permission rules change.
+  - Verification pending: the base Foreman typecheck ticket `278e7eed-8f33-4668-b832-9b15ece46b70` failed during
+    install (`ERR_PNPM_OUTDATED_LOCKFILE`: worker's new API workspace dependency), before checking source.
   - The 24 semantics-version guards are all `!== 3` fences over historical rows; they stay. The `oneShot*` owner
     fences are not semantics 1/2 (keep, per ENG-07 R04).
 - [x] #37 Ticket-named docs: 34 top-level files (ENG, FEAT, FIL, NIM, SCH, CHAT) and `docs/reviews/` moved under
@@ -371,7 +373,7 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   Prompt rules are shared (`refineChatPrompt` in contracts): text-or-attachment and no attachments on steer apply to the
   Agent, Operator and canonical send schemas, and the size check to Agent and Operator; only Operator receipt recovery
   skips the size check.
-- [ ] #16 Leaky harness port (capability descriptors not started).
+- [~] #16 Leaky harness port: capability cleanup implemented on `fix/a16-provider`; Foreman CI verification pending (see detailed status below).
 - [~] #17 `operationJournal` hand-rolled JSON DB; 2–3 sources of truth for run/CI state.
   - Done (7a, written without compiling or running tests): `shared/durableFile.ts` (`writeDurableFile`,
     `readBoundedText`, `readBoundedTextIfPresent`, with its own test) is the only atomic write and bounded read.
@@ -416,10 +418,11 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   history-match helpers for observe. The engines keep their own settle (Agent `repository.finish`, Operator terminal
   journal and runtime closure), failure classification and recovery, because those turn models genuinely differ. The
   web copies are untouched.
-- [~] #16 Leaky harness port: `harnesses/capabilities.ts` holds the steer/compact descriptors, adapters declare
-  `harnessCapabilities` on the port, and the steer qualification (conversations, session writer, Worker host, workflow
-  chat receipts) asks `supportsExpectedTurnSteer` instead of comparing `'codex'`. Open: other provider-name branches
-  outside `harnesses/` (plugin/MCP maintenance, activity normalisation, Claude-only file and journal paths).
+- [~] #16 Leaky harness port: a16 extends the port descriptors to native input identity, file delivery,
+  application MCP credential lifetime and automatic compaction. Conversation/Worker orchestration asks those
+  capabilities; native text/activity normalization lives under `harnesses/`. Plugin/MCP maintenance consumes
+  harness-owned CLI/storage descriptors. Provider-specific configuration discrimination, native adapter selection,
+  wire identities and retired-history display remain explicit. Foreman CI verification is pending the base setup fix.
 - [ ] #17 `operationJournal` hand-rolled JSON DB; 2–3 sources of truth for run/CI state.
 - [~] #18 LangGraph patched in `dist` and subclassed via internals. `infrastructure/langgraph.ts` is now the one
   module that touches LangGraph: it re-exports the graph primitives and checkpoint types, records the pinned contract
@@ -496,15 +499,6 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   shared seams, `livePrincipal` (the live principal read) and `commandReceiptLedger` (conversation control receipts),
   which recognise statements by their bound values instead of SQL text, plus bound-value checks in a few fakes. The rest
   route several tables on SQL text; they need real-Postgres integration tests or a fake at a port.
-  - Part 3 (`fix/a51-sql3`, base `1d6b544d7a`): **in progress, CI blocked**. Ownership is the last 45 of the
-    base's 135 pending entries (harness-profile-selection-persistence through workflow-node-history-compatibility).
-    Nine entries converted: profile selection persistence, Operator submitted ACK/terminal messages, Run authority,
-    graph transactions, reviewer cleanup/fencing, continuation upgrade, and selected-run admission lock observation.
-    Persistence tests use migrated Postgres; SQL predicate assertions are replaced by saved rows and public results.
-    Pending list: 135 → 126. The other 36 entries and earlier call-order/value-count conversions in this third remain.
-    Verification is incomplete: base lint `8dc9a1cc-bd0c-4ea3-a005-b59dd74e6192` failed at cached-store installation;
-    base typecheck `8fdadc5a-0567-4178-a610-13c9badbd5b3` was submitted. Repeated focused integration and final
-    typecheck/lint submissions returned `DATABASE_BUSY`/`INTERNAL_ERROR` during CI admission. No local checks run.
 - [x] #52 Stale lint allowlist pruned: 674 → 276 (#69), then → 116 files (#74).
 - [x] #53 DB test gating: one `postgresEnabled` gate on `TEST_DATABASE_URL` (#74). 11b (#79) removed
   `ENG03_A_TEST_DATABASE_URL` and `WAVE25_TEST_DATABASE_URL` from the acceptance runner, the test-resource environment,

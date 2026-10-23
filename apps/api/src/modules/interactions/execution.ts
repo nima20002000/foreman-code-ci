@@ -1,3 +1,4 @@
+import { assertActiveHarnessConfiguration, retiredHarnessError } from '../harnesses/index.js'
 import type { WorkflowVersionCurrent } from '@foreman-code/contracts/current'
 import { MemoryResultRejected } from '../collaboration/memoryResultError.js'
 import { isDatabaseTimeout, retryDatabaseTimeout } from '../../infrastructure/databaseRetry.js'
@@ -9,7 +10,6 @@ import { ExecutionConsultations } from './executionConsultations.js'
 import { ExecutionReviewerSessions } from './executionReviewerSessions.js'
 import { ExecutionCancellation } from './executionCancellation.js'
 import { isRestartCancellation } from './executionPredicates.js'
-import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
 import { runtimeTimingPoint, timeRuntimeOperation, withRuntimeTimingContext } from '../../infrastructure/runtimeTiming.js'
 import { inspectNativeResponse } from '../harnesses/responseAvailability.js'
 import { supportsExpectedTurnSteer } from '../harnesses/capabilities.js'
@@ -767,9 +767,7 @@ export class ApprovalExecutionCoordinator {
     if (configuration.id !== execution.agentConfigurationVersionId || configuration.agentId !== execution.agentId) {
       throw new Error('The pinned Agent configuration does not match its durable execution.')
     }
-    if (configuration.harness.harness === 'opencode') {
-      throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
-    }
+    assertActiveHarnessConfiguration(configuration.harness)
     const context = {
       harness: configuration.harness.harness, executionId: execution.id, agentId: execution.agentId,
       runId: execution.runId, attempt: execution.attempt,
@@ -1151,7 +1149,7 @@ export class ApprovalExecutionCoordinator {
 
   async attachInteraction(interaction: DurableInteraction, signal?: AbortSignal): Promise<AttachedInteractionSession> {
     if (interaction.harness === 'opencode') {
-      throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
+      throw retiredHarnessError()
     }
     const execution = await this.runs.getExecution(interaction.executionId)
     if (!execution?.workingDirectory || !execution.runtimeDirectory) throw new Error('The durable execution cannot reconstruct its native session start input.')
@@ -1363,7 +1361,7 @@ export class ApprovalExecutionCoordinator {
       ?? (await readRemoteWorkflowContinuation(owner, execution))?.session
     if (!detached) return false
     if (detached.harness === 'opencode') {
-      throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
+      throw retiredHarnessError()
     }
     if (pending.some((item) => item.runId !== owner.runId || item.nativeSessionId !== detached.nativeSessionId
       || item.harness !== detached.harness || item.providerVersion !== detached.providerVersion

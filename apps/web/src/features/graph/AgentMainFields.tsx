@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import {
   AgentEffortSchema, ClaudeEffortSchema, changeCodexSandbox, effectiveGraphqlTools, memoryBoardTools, GraphqlAgentToolSchema,
-  type GraphqlAgentTool, type GraphqlToolOverride, type HarnessConfiguration, type WorkflowAgentProductRole,
+  type GraphqlAgentTool, type GraphqlToolOverride, type HarnessConfiguration, type RecordedHarnessConfiguration, type WorkflowAgentProductRole,
 } from '@foreman-code/contracts'
 import { Combobox, Select, Switch } from '../../shared/ui/nocturne'
 import { useProviderHarnessModels } from '../provider-accounts'
@@ -22,12 +22,11 @@ const codexAccess = [{ value: 'read-only', label: 'Read only' }, { value: 'works
   { value: 'danger-full-access', label: 'Full access' }]
 
 /** Model, effort, access and fast mode for the selected harness. Account and sign-in live under More settings. */
-export function AgentHarnessRows({ value, onChange, issues = [], accountHost }: {
+function EditableAgentHarnessRows({ value, onChange, issues = [], accountHost }: {
   value: HarnessConfiguration; onChange(value: HarnessConfiguration): void; issues?: readonly FieldIssue[]
   accountHost?: DeviceProvisioningTarget['hostRef'] | undefined
 }) {
-  const query = useProviderHarnessModels(value.harness, value.harness === 'opencode' ? undefined : value.accountId, accountHost)
-  if (value.harness === 'opencode') return null
+  const query = useProviderHarnessModels(value.harness, value.accountId, accountHost)
   const models = query.data?.models ?? []
   const selected = models.find(model => model.id === value.model)
   const modelOptions: { value: string; label: string; description?: string; disabled?: boolean }[] = models.map(model => ({ value: model.id, label: model.name || model.id }))
@@ -104,4 +103,9 @@ export function AgentMemoryRow({ role, defaults, override, readOnly, onChange }:
         onChange(defaults ? [...defaults] : undefined, add.length || remove.length ? { add, remove } : undefined)
       }} />
   </NodeRow>
+}
+
+export function AgentHarnessRows(props: Omit<Parameters<typeof EditableAgentHarnessRows>[0], 'value'> & { value: RecordedHarnessConfiguration }) {
+  if (props.value.harness === 'opencode') return null
+  return <EditableAgentHarnessRows {...props} value={props.value} />
 }

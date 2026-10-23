@@ -1,4 +1,4 @@
-import type { HarnessConfiguration } from '@foreman-code/contracts'
+import type { RecordedHarnessConfiguration } from '@foreman-code/contracts'
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
 import type { ProviderAccountResolver } from '../provider-accounts/service.js'
 import { DomainError } from '../errors.js'
@@ -20,7 +20,7 @@ export class ProviderAccountConfigurationService {
   }
 
   async prepareProfile(input: { principal: ManagementPrincipal; source: 'http' | 'mcp';
-    configuration: HarnessConfiguration; selection?: HarnessProfileSelection | undefined;
+    configuration: RecordedHarnessConfiguration; selection?: HarnessProfileSelection | undefined;
     commandId: string; pool: pg.Pool }) {
     const prepared = await withTransaction(input.pool, async client => {
       const configuration = await this.resolve(input.configuration, input.selection, { sql: client })
@@ -40,7 +40,7 @@ export class ProviderAccountConfigurationService {
     return prepared
   }
 
-  async profile(input: { principal: ManagementPrincipal; source: 'http' | 'mcp'; configuration: HarnessConfiguration;
+  async profile(input: { principal: ManagementPrincipal; source: 'http' | 'mcp'; configuration: RecordedHarnessConfiguration;
     selection?: HarnessProfileSelection | undefined; commandId: string; client: pg.PoolClient; check?: boolean }): Promise<HarnessProfileSelection | undefined> {
     if (input.configuration.harness !== 'claude') return input.selection
     if (!input.configuration.accountId) {
@@ -72,8 +72,8 @@ export class ProviderAccountConfigurationService {
       'Save and check a local harness profile for this Claude account before saving the Agent.', 409)
   }
 
-  async resolve(configuration: HarnessConfiguration, selection?: HarnessProfileSelection,
-    options?: { sql: SqlQuery }): Promise<HarnessConfiguration> {
+  async resolve(configuration: RecordedHarnessConfiguration, selection?: HarnessProfileSelection,
+    options?: { sql: SqlQuery }): Promise<RecordedHarnessConfiguration> {
     if (configuration.harness === 'opencode') return configuration
     if (!configuration.accountId && (selection || configuration.harness === 'claude')) return configuration
     const account = await this.accounts.resolve(configuration.harness, configuration.accountId, options)
@@ -99,7 +99,7 @@ export class ProviderAccountConfigurationService {
   }
 }
 
-export function harnessSessionChanged(left: HarnessConfiguration, right: HarnessConfiguration): boolean {
+export function harnessSessionChanged(left: RecordedHarnessConfiguration, right: RecordedHarnessConfiguration): boolean {
   if (left.harness !== right.harness) return true
   if (left.harness === 'opencode' || right.harness === 'opencode') return false
   return left.accountId !== right.accountId

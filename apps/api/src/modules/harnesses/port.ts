@@ -7,7 +7,7 @@ import type {
   ExecutionResult,
   HarnessExecutionRequest,
   HarnessQualification,
-  HarnessConfiguration,
+  RecordedHarnessConfiguration,
   ApprovalResponseOption,
   McpDetection,
   NativeHarnessCapabilities,
@@ -53,7 +53,7 @@ export interface NativeEventInput {
 
 /** Read-only settings discovery; this cannot launch, resume, or cancel workflow work. */
 export interface HarnessConfigurationQualifier {
-  qualify(configuration: HarnessConfiguration, workingDirectory: string, signal?: AbortSignal): Promise<HarnessQualification>
+  qualify(configuration: RecordedHarnessConfiguration, workingDirectory: string, signal?: AbortSignal): Promise<HarnessQualification>
 }
 
 /** Values are supplied only to one child process and must never enter logs or persisted graph state. */
