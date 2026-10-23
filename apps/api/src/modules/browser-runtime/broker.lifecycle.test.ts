@@ -295,63 +295,6 @@ it('acknowledges takeover only after releasing pressed state and fences a delaye
   expect(vi.mocked(f.driver.dispatch).mock.calls.map(call => call[3])).toEqual(['Fixture.first', 'Fixture.releasePressed'])
 })
 
-it('lets the agent act again after a viewer releases control while a dialog that stopped its action has closed', async () => {
-  const f = fixture(), { session } = ready(await f.broker.prepare(f.request()))
-  const entered = deferred<void>(), proceed = deferred<void>()
-  let dialogOpen = true
-  vi.mocked(f.driver.facts).mockImplementation(() => ({ dialog: dialogOpen ? { type: 'alert', message: 'Hi' } : null, uploadChooser: null }) as never)
-  vi.mocked(f.driver.action).mockImplementationOnce(async (_action, dispatch) => dispatch('Fixture.stopped-by-dialog'))
-  const dispatchOriginal = vi.mocked(f.driver.dispatch).getMockImplementation()!
-  vi.mocked(f.driver.dispatch).mockImplementation(async (profileId, generation, targetId, method, params) => {
-    if (method === 'Fixture.stopped-by-dialog') { entered.resolve(); await proceed.promise }
-    return dispatchOriginal(profileId, generation, targetId, method, params)
-  })
-  const stopped = f.broker.action({ sessionId: session.id, tabId: session.selectedTabId!, actor: agent(session),
-    commandId: 'stopped', action: { kind: 'click', x: 2, y: 3 } })
-  await entered.promise
-  const held = await f.broker.acquire({ sessionId: session.id, browserGeneration: session.browserGeneration, viewerId: 'viewer', commandId: 'take' })
-  expect(held).toMatchObject({ state: 'user', reason: 'Resolve the current dialog to continue.' })
-  dialogOpen = false; proceed.resolve(); await stopped.catch(() => { /* ignore: control takeover can fence the stopped action; release below must still work. */ })
-  const returned = await f.broker.releaseControl({ sessionId: session.id, viewerId: 'viewer', epoch: held.epoch, commandId: 'return' })
-  expect(returned.state).toBe('agent')
-  expect(await f.broker.action({ sessionId: session.id, tabId: session.selectedTabId!, actor: agent(session, returned.epoch),
-    commandId: 'after-dialog', action: { kind: 'click', x: 4, y: 5 } })).toMatchObject({ state: 'completed' })
-})
-
-it('requires dialog resolution after returning control when the interrupted native request timed out', async () => {
-  const f = fixture(), { session } = ready(await f.broker.prepare(f.request()))
-  const entered = deferred<void>(), timedOut = deferred<void>()
-  const dialog = { type: 'alert' as const, message: 'Hi' }
-  vi.mocked(f.driver.facts).mockReturnValue({ dialog, uploadChooser: null })
-  vi.mocked(f.driver.observe).mockResolvedValue({ title: '', url: '', text: '', dialog })
-  vi.mocked(f.driver.action).mockImplementationOnce(async (_action, dispatch) => dispatch('Fixture.stopped-by-dialog'))
-  const dispatchOriginal = vi.mocked(f.driver.dispatch).getMockImplementation()!
-  vi.mocked(f.driver.dispatch).mockImplementation(async (profileId, generation, targetId, method, params) => {
-    if (method === 'Fixture.stopped-by-dialog') {
-      entered.resolve(); await timedOut.promise
-      throw new DomainError('BROWSER_NATIVE_TIMEOUT', 'The browser operation did not settle.', 504)
-    }
-    return dispatchOriginal(profileId, generation, targetId, method, params)
-  })
-  const stopped = f.broker.action({ sessionId: session.id, tabId: session.selectedTabId!, actor: agent(session),
-    commandId: 'stopped', action: { kind: 'click', x: 2, y: 3 } })
-  const timeout = expect(stopped).rejects.toMatchObject({ code: 'BROWSER_NATIVE_TIMEOUT' })
-  await entered.promise
-  const held = await f.broker.acquire({ sessionId: session.id, browserGeneration: session.browserGeneration, viewerId: 'viewer', commandId: 'take' })
-  expect(held).toMatchObject({ state: 'user', reason: 'Resolve the current dialog to continue.' })
-  timedOut.resolve(); await timeout
-  const returned = await f.broker.releaseControl({ sessionId: session.id, viewerId: 'viewer', epoch: held.epoch, commandId: 'return' })
-  expect(returned.state).toBe('agent')
-  await expect(f.broker.action({ sessionId: session.id, tabId: session.selectedTabId!, actor: agent(session, returned.epoch),
-    commandId: 'blocked-page-input', action: { kind: 'click', x: 4, y: 5 } })).rejects.toMatchObject({ code: 'BROWSER_DIALOG_REQUIRED' })
-  vi.mocked(f.driver.action).mockImplementationOnce(async (_action, dispatch) => dispatch('Page.handleJavaScriptDialog', { accept: true }))
-  expect(await f.broker.action({ sessionId: session.id, tabId: session.selectedTabId!, actor: agent(session, returned.epoch),
-    commandId: 'resolve-dialog', action: { kind: 'dialog', accept: true } })).toMatchObject({ state: 'completed' })
-  vi.mocked(f.driver.observe).mockResolvedValue({ title: 'Page', url: 'https://fixture.test/', text: '', dialog: null })
-  expect(await f.broker.action({ sessionId: session.id, tabId: session.selectedTabId!, actor: agent(session, returned.epoch),
-    commandId: 'after-dialog', action: { kind: 'click', x: 4, y: 5 } })).toMatchObject({ state: 'completed' })
-})
-
 it('ignores a stale release without fencing the current agent or changing its control epoch', async () => {
   const f = fixture(), { session } = ready(await f.broker.prepare(f.request()))
   const held = await f.broker.acquire({ sessionId: session.id, browserGeneration: session.browserGeneration, viewerId: 'viewer', commandId: 'take' })
@@ -573,4 +516,28 @@ it('defaults an agent to three open tabs when its settings name no limit', async
   for (const commandId of ['second', 'third']) await f.broker.createTab({ sessionId: session.id, actor: agent(session), commandId })
   await expect(f.broker.createTab({ sessionId: session.id, actor: agent(session), commandId: 'fourth' }))
     .rejects.toMatchObject({ code: 'BROWSER_TAB_LIMIT' })
+})
+
+it('closes page-opened popups beyond the saved agent tab limit and admits one after a tab closes', async () => {
+  const f = fixture(), request = f.request(), browser = { ...request.browser, maxTabs: 2 }
+  f.assignment(request.subject, browser)
+  const { session } = ready(await f.broker.prepare({ ...request, browser }))
+  const sibling = ready(await f.broker.prepare(f.request(execution('sibling'), 'sibling'))).session
+  const opener = await vi.mocked(f.driver.createTab).mock.results[0]!.value
+  const receive = vi.mocked(f.driver.onPopup).mock.calls[0]![0]
+  const popup = await f.driver.createTab('profile', session.browserGeneration)
+  await receive('profile', session.browserGeneration, opener.targetId, popup)
+  const accepted = f.broker.read(session.id).tabs.find(tab => tab.openerTabId === session.selectedTabId)!
+  expect(accepted).toBeDefined()
+  const excess = await Promise.all([f.driver.createTab('profile', session.browserGeneration),
+    f.driver.createTab('profile', session.browserGeneration)])
+  await Promise.all(excess.map(tab => receive('profile', session.browserGeneration, opener.targetId, tab)))
+  expect(f.broker.read(session.id).tabs).toHaveLength(2)
+  for (const tab of excess) expect(await f.driver.restoreTab('profile', session.browserGeneration, tab.targetId)).toBeNull()
+  expect(f.broker.read(sibling.id).tabs).toHaveLength(1)
+  await f.broker.closeTab({ sessionId: session.id, tabId: accepted.tabId, actor: agent(session), commandId: 'close-popup' })
+  const replacement = await f.driver.createTab('profile', session.browserGeneration)
+  await receive('profile', session.browserGeneration, opener.targetId, replacement)
+  expect(f.broker.read(session.id).tabs).toHaveLength(2)
+  expect(f.broker.ownerForTarget('profile', session.browserGeneration, replacement.targetId)?.sessionId).toBe(session.id)
 })

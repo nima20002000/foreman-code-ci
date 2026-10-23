@@ -131,10 +131,6 @@ export function createProductionBrowser(options: BrowserCompositionOptions) {
   }
   const chat: ChatBrowserSessions = new ChatBrowserSessions({ pool: options.pool, authority, lifecycle,
     localSessions: async () => runtime.status().ready ? runtime.getHost().broker.list() : [],
-    sessionControl: async (principal, sessionId) => {
-      const { session, control } = await sessions.get(principal, sessionId)
-      return { browserGeneration: session.browserGeneration, epoch: control.epoch }
-    },
     localControl: sessionId => {
       if (!runtime.status().ready) return undefined
       try {

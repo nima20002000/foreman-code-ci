@@ -1,21 +1,32 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_CODEX_ADVANCED_CONFIGURATION, type CodexHarnessConfiguration } from '@foreman-code/contracts'
 import { fixture } from './core.cases'
-import { authoringHints, startFromConnectionSource } from './model'
+import { authoringHints, entryChoices, startFromConnectionSource } from './model'
 
 const codex: CodexHarnessConfiguration = { harness: 'codex', model: 'gpt-5.6-luna', reasoningEffort: 'medium',
   sandbox: 'read-only', serviceTier: 'standard' }
 
-// These Boards have no Master, which is reported separately from the approval settings under test.
-const withoutMaster = (issues: ReturnType<typeof authoringHints>) => issues.filter(issue => issue.code !== 'MASTER_REQUIRED')
-
 describe('Board readiness reports known Save requirements', () => {
+  it('allows one Orchestrator to start with a connected Worker and no Master', () => {
+    const context = fixture(['orchestrator', 'coder'])
+    const graph = context.draft.graph
+    expect(entryChoices(graph, context)).toMatchObject({ mode: 'orchestrator', valid: true })
+    expect(authoringHints(graph, context)).toEqual([])
+    expect(authoringHints({ ...graph, entryNodeId: 'node-1' }, context)).toEqual([
+      { code: 'ENTRY_REQUIRED', message: 'Choose the orchestrator that starts the workflow.' },
+      expect.objectContaining({ code: 'ENTRY_HAS_DEPENDENCY' }),
+    ])
+  })
+  it('still requires a Master for two Orchestrators', () => {
+    const context = fixture(['orchestrator', 'orchestrator', 'coder'])
+    expect(authoringHints(context.draft.graph, context).map(issue => issue.code)).toEqual(['MASTER_REQUIRED'])
+  })
   it('includes missing limits alongside a missing reviewing orchestrator', () => {
     const context = fixture(['orchestrator'])
     const graph = { ...context.draft.graph, executionPolicy: undefined,
       approval: { handler: 'orchestrator' as const, designatedOrchestratorAgentId: 'missing-reviewer' } }
     expect(authoringHints(graph, context).map(issue => issue.code)).toEqual([
-      'EXECUTION_LIMITS_REQUIRED', 'MASTER_REQUIRED', 'REVIEWER_BOOTSTRAP_UNSUPPORTED',
+      'EXECUTION_LIMITS_REQUIRED', 'REVIEWER_BOOTSTRAP_UNSUPPORTED',
     ])
   })
   it('counts both Agent and Job nodes when execution limits are too low', () => {
@@ -31,12 +42,12 @@ describe('Board readiness reports known Save requirements', () => {
     agent.harnessConfiguration = codex
     const graph = { ...context.draft.graph,
       approval: { handler: 'orchestrator' as const, designatedOrchestratorAgentId: agent.id } }
-    const hints = withoutMaster(authoringHints(graph, context))
+    const hints = authoringHints(graph, context)
     expect(hints).toEqual([expect.objectContaining({ code: 'APPROVAL_CODEX_REVIEW_CONFIGURATION_REQUIRED', nodeId: 'node-0' })])
     const compatible = { ...agent, harnessConfiguration: { ...codex,
       advanced: { ...DEFAULT_CODEX_ADVANCED_CONFIGURATION, approvalPolicy: 'on-request' as const, approvalsReviewer: 'auto_review' as const } } }
-    expect(withoutMaster(authoringHints(graph, context, { [agent.id]: compatible }))).toEqual([])
-    expect(withoutMaster(authoringHints({ ...graph, approval: { handler: 'user' } }, context))).toEqual([])
+    expect(authoringHints(graph, context, { [agent.id]: compatible })).toEqual([])
+    expect(authoringHints({ ...graph, approval: { handler: 'user' } }, context)).toEqual([])
   })
 })
 
