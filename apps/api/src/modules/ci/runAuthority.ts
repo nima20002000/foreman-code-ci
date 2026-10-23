@@ -6,7 +6,7 @@ import { currentOperatorAuthority } from '../access/index.js'
 import { intersectGrants } from '../access/index.js'
 import { requireAuthorization } from '../access/index.js'
 import { workerScopesForAction } from '../access/index.js'
-import { assertWave25WorkerBinding } from '../interactions/index.js'
+import { assertCurrentWorkerBinding } from '../interactions/index.js'
 import { DomainError, retryDatabaseRead } from '../errors.js'
 import type { CiAuthority } from './authority.js'
 
@@ -22,7 +22,7 @@ export class RunCiAuthority implements CiAuthority {
       let executionId: string | undefined
       let initiatingAgent: JobInitiatingAgent | undefined
       if (caller.audience === 'worker') {
-        await assertWave25WorkerBinding(sql, caller.id)
+        await assertCurrentWorkerBinding(sql, caller.id)
         const binding = (await sql.query<{ workspace_id: string; workflow_id: string; run_id: string;
           authorization_principal_id: string; execution_id: string | null }>(`select b.workspace_id,b.workflow_id,b.run_id,b.execution_id,
             r.record->>'authorizationPrincipalId' as authorization_principal_id
