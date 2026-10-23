@@ -1,5 +1,6 @@
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { rejectableDeferred } from '../../test/deferred'
 import { clearRevisionedFormPersistence, useRevisionedForm } from './revisionedForm'
 
 interface Value { name: string }
@@ -34,6 +35,31 @@ describe('a save whose answer was lost during an app restart', () => {
     expect(form.result.current.uncertain).toBe(false)
     expect(form.result.current.baseRevision).toBe(2)
     expect(form.result.current.savedRevision).toBe(2)
+  })
+
+  it('blocks manual Retry while a quiet resend is in flight and preserves its acknowledgement', async () => {
+    const form = renderHook(() => useRevisionedForm<Value>(initial, 'auto-check-retry'))
+    act(() => form.result.current.setDraft({ name: 'sent' }))
+    const response = rejectableDeferred<{ value: Value; revision: number }>()
+    const perform = vi.fn()
+      .mockRejectedValueOnce(restarting())
+      .mockImplementation(() => response.promise)
+    await act(async () => { await form.result.current.save(perform) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
+    expect(perform).toHaveBeenCalledTimes(2)
+    expect(form.result.current.uncertain).toBe(true)
+    let retry!: Promise<boolean>
+    act(() => { retry = form.result.current.save(perform) })
+    const calls = perform.mock.calls.length
+    await act(async () => {
+      response.resolve({ value: { name: 'sent' }, revision: 2 })
+      await retry
+    })
+    expect(calls).toBe(2)
+    expect(form.result.current.savedRevision).toBe(2)
+    expect(form.result.current.error).toBeUndefined()
+    expect(form.result.current.uncertain).toBe(false)
+    expect(form.result.current.isDirty).toBe(false)
   })
 
   it('stops resending after ten minutes and leaves the manual Retry', async () => {
