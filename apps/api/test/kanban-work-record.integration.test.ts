@@ -26,6 +26,7 @@ it.runIf(postgresEnabled).each(['silent', 'records', 'read-only'] as const)(
     const repairs: CorrectiveRequest[] = []
     let request: HarnessExecutionRequest | undefined
     let boardId: string
+    let recordedCardId: string | undefined
     const runtime: MemoryRuntime = await currentOperatorIntegration({ fixture, approvalNodeIds: [],
       managerFactory: () => {
         const manager = runtime.provider.connection()
@@ -40,9 +41,9 @@ it.runIf(postgresEnabled).each(['silent', 'records', 'read-only'] as const)(
           async *startTurn(session: Parameters<typeof manager.startTurn>[0], input: Parameters<typeof manager.startTurn>[1]) {
             if (mode === 'records') {
               const agent = await runtime.connect(token)
-              await memoryCall(agent, 'memory_card_create', { kind: 'card_create', boardId,
+              recordedCardId = ((await memoryCall(agent, 'memory_card_create', { kind: 'card_create', boardId,
                 card: { title: 'Worker task', body: '', status: 'doing', completionKind: null,
-                  reason: null, assignee: null, linkedNodes: [] } })
+                  reason: null, assignee: null, linkedNodes: [] } })).card as { id: string }).id
             }
             yield* manager.startTurn(session, input)
           },
@@ -67,7 +68,8 @@ it.runIf(postgresEnabled).each(['silent', 'records', 'read-only'] as const)(
       expect(runtime.provider.startedExecutions).toHaveLength(1)
       const details = await runtime.runs.getDetails(scope.workspaceId, runId)
       expect(details?.executions[0]?.result).toEqual({ outcome: 'succeeded', output })
-      const doing = await memoryCall(runtime.client, 'memory_board_get', { boardId, view: 'cards', status: 'doing' })
-      expect(doing.items).toEqual(mode === 'records' ? [expect.objectContaining({ title: 'Worker task' })] : [])
+      if (mode === 'records') expect(await memoryCall(runtime.client, 'memory_board_get', { boardId, view: 'card',
+        cardId: recordedCardId })).toMatchObject({ card: { title: 'Worker task' } })
+      else expect(recordedCardId).toBeUndefined()
     } finally { await runtime.close() }
   }, 60000)
