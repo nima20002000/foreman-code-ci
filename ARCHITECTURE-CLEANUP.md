@@ -151,7 +151,7 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   now a `create*` factory returning a typed object (same call order). Services reached before they are built go through
   `ProductionCallbacks` (one `Late` slot each, `composition/late.ts`); services that exist only after startup are in
   `StartedServices`; lifecycle flags are in `ProductionState`. Not typechecked (owner decision).
-- [~] #7 Business logic, authorization and SQL in `production.ts`.
+- [x] #7 Business logic, authorization and SQL in `production.ts`.
   - Moved out earlier: profile authority, device host override, provider-accounts worker authority, rsync transfer
     authority, main provisioning target, and the Run-principal query (one function, used in four places).
   - Moved out in 3c: the workflow manager resolver (`runs/workflowManagerResolver.ts`) and context preparation
@@ -159,8 +159,8 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
     selection and compaction recovery (`conversations/chatSources.ts`), the Worker native-output context and the placed
     continuation check (`placement/`), with their SQL in `readRunWorkflowScopeForShare`, `readStoredRemoteReceipt` and
     `readExecutionWorkflowNode`.
-  - Still there: the Agent chat and Operator manager factories (the per-harness allocation in `createConversationManagers`
-    and `createAgentChat`), which need most of the harness services.
+  - Completed: the Agent chat and Operator per-harness manager allocation now lives in
+    `conversations/managerResolvers.ts`; `createConversationManagers` and `createAgentChat` only wire the factories.
 - [x] #8 Missing wiring surfaces as runtime 503s. Guards that only checked wiring (`remoteWorkflow`, `workerChats`,
   `runtimeOwner`, `browserRemote`) and the `!.` reads are gone. Guards on real startup state keep their codes; no test
   asserts any of them.
