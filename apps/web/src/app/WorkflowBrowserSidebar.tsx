@@ -20,7 +20,7 @@ const WORKING_MS = 20_000
 const runOf = (subject: AgentSubject) => subject.kind === 'execution' ? subject.execution.runId
   : subject.kind === 'coordinator_consultation' ? subject.binding.runId : undefined
 
-/** Every live browser session this person can see, read per online computer so one offline computer hides nothing else. */
+/** Every live browser session this person can see, read per online computer so one that cannot answer hides nothing else. */
 function useLiveBrowserSessions() {
   const facts = useBrowserComputers()
   const computers = facts.computers.filter(computer => computer.online).map(computer => computer.id).sort()

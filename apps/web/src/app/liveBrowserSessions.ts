@@ -6,6 +6,7 @@ const live = (session: BrowserSession) => session.state !== 'closed' && session.
 /** Every live browser session on these computers, read one computer at a time. */
 export async function readLiveBrowserSessions(computers: readonly { id: string; name: string }[], signal: AbortSignal) {
   const sessions: BrowserSession[] = [], unreachable: string[] = []
+  let answered = 0, failure: unknown
   await Promise.all(computers.map(async computer => {
     try {
       let cursor: string | null = null
@@ -17,11 +18,15 @@ export async function readLiveBrowserSessions(computers: readonly { id: string; 
         cursor = result.nextCursor
         if (!cursor) break
       }
+      answered++
     } catch (error) {
-      // Only an offline computer is skipped; any other failure keeps the last good list and shows the error.
-      if (signal.aborted || !ApiError.is(error) || error.code !== 'BROWSER_COMPUTER_OFFLINE') throw error
+      if (signal.aborted) throw error
+      // A computer that is offline, outdated or failing hides only its own browsers, never the other computers'.
       unreachable.push(computer.name)
+      if (!ApiError.is(error) || error.code !== 'BROWSER_COMPUTER_OFFLINE') failure ??= error
     }
   }))
+  // With no computer answering, keep the last good list on screen and show why.
+  if (!answered && failure) throw failure
   return { sessions, unreachable }
 }
