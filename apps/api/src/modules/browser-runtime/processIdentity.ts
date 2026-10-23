@@ -57,8 +57,9 @@ export async function writeBrowserProcessIdentity(value: BrowserProcessIdentity)
   try { await parent.sync() } finally { await parent.close() }
 }
 
-function commandLine(pid: number): string[] {
-  try { return readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0') } catch { return [] /* A disappeared process has no command line. */ }
+/** Chromium rewrites its process title into one space-joined string, so arguments are matched as text. */
+function commandLine(pid: number): string {
+  try { return readFileSync(`/proc/${pid}/cmdline`, 'utf8') } catch { return '' /* A disappeared process has no command line. */ }
 }
 
 /** The endpoint's browser process must be the recorded one; on Linux its command line must also carry the owner token. */
