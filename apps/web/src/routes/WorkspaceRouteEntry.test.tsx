@@ -202,7 +202,7 @@ describe('WorkspaceRouteEntry integration', () => {
       initialWorkflow: graph })
     server.use(...service.handlers)
     server.use(http.get('*/api/management/workspaces/:workspaceId/workflows/:workflowId/nodes/:nodeId/placement-choices',
-      () => new HttpResponse(null, { status: 500 })))
+      () => HttpResponse.json({ error: { code: 'UNAVAILABLE', message: 'Choices are unavailable.' } }, { status: 500 })))
     const entry = '/workspaces/workspace-1?workflowId=workflow-content-pipeline'
     const first = await renderWorkspace(entry)
     const user = userEvent.setup()
