@@ -163,21 +163,19 @@ async function inspectorApi(kind: 'agent' | 'job' = 'agent') {
 }
 
 describe('selected saved Run board (real Router, Query, HTTP/MSW and canvas)', () => {
-  it('shows removed agent Y, the old name, a hierarchy layout (not the saved coordinates) and every saved edge in A; B has no Y', async () => {
+  it('shows removed agent Y, the old name, a hierarchy layout where its saved version places nothing, and one line per agent pair in A; B has no Y', async () => {
     const { container } = await mount()
     const y = await savedNode('Y')
     expect(y).toHaveStyle({ transform: 'translate(0px,260px)', width: '156px', height: '156px' })
     const x = await savedNode('X before rename')
     expect(x).toHaveStyle({ transform: 'translate(0px,0px)' })
     expect(x).toHaveAttribute('title', expect.stringContaining('config-x-old'))
-    await waitFor(() => expect(container.querySelectorAll('.react-flow__edge')).toHaveLength(3))
+    // As on the draft Board, the approval beside the X -> Y handoff rides on the handoff's one line.
+    await waitFor(() => expect(container.querySelectorAll('.react-flow__edge')).toHaveLength(2))
     const handoff = container.querySelector('.react-flow__edge[data-id="edge-xy"]')!
-    const approval = container.querySelector('.react-flow__edge[data-id="approval-xy"]')!
-    expect(handoff).toHaveAttribute('aria-label', 'Handoff from X before rename to Y: Old handoff, read only')
-    expect(approval.querySelector('.n-signal-edge')).toHaveAttribute('data-kind', 'approval')
-    expect(handoff.querySelector('path.n-signal-edge-base')?.getAttribute('d'))
-      .not.toBe(approval.querySelector('path.n-signal-edge-base')?.getAttribute('d'))
-
+    expect(handoff).toHaveAttribute('aria-label', 'Handoff · approval from X before rename to Y: Old handoff, read only')
+    expect(container.querySelector('.react-flow__edge[data-id="approval-xy"]')).not.toBeInTheDocument()
+    expect(container.querySelector('.react-flow__edge[data-id="edge-yz"]')).toHaveAttribute('aria-label', 'Handoff from Y to Z, read only')
     await select('run-b')
     expect(await savedNode('X in B')).toHaveStyle({ transform: 'translate(0px,0px)' })
     expect(screen.queryByRole('group', { name: 'Y, saved agent, read only' })).not.toBeInTheDocument()

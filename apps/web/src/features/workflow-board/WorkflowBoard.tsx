@@ -7,7 +7,7 @@ import type { ExecutionRef, WorkflowRunSummary } from '@foreman-code/contracts'
 import type { BoardSidePanel, RepeatGraphScopeV3, WorkspaceBoardInspection } from '@foreman-code/contracts/wave25'
 import { Alert, Button, Icon, IconButton } from '../../shared/ui/nocturne'
 import { WorkspaceExecutionLocationSettings } from '../settings/WorkspaceExecutionLocationSettings'
-import { RunBoardSlot } from '../run-board'
+import { RunBoardSlot, useRunBoardShown } from '../run-board'
 import { useRunSummaries, useSelectedRun, useSelectedRunSnapshot } from '../runs-selector'
 import { isRunAccessError } from '../runs-selector/query'
 import { BoardNavigationControls } from './BoardNavigationControls'
@@ -153,18 +153,11 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   const direction = useRunDirectionWait(runControlsScope)
   const suppliedOverview = collaborationSlots?.overview
   const overviewContent = side.memoryOpen ? null : suppliedOverview?.()
-  return <WorkflowBoardContext.Provider value={value}><PanelHeaderSlotContext.Provider value={panelHeaderSlot}><PanelFooterSlotContext.Provider value={panelFooterSlot}>
-    <div ref={toolbar} className="unified-workflow-board" data-testid="unified-workflow-board" style={{ flexDirection: 'column' }}>
-      <nav className="workflow-collaboration-toolbar" aria-label="Workflow views">
-        <span>{legacyRun || pickedRunId ? 'Selected Run' : 'Editing draft'}</span>
-        <Button size="sm" variant="ghost" aria-pressed={side.view === 'graph'} onClick={() => side.selectView('graph')}>Graph</Button>
-        <Button size="sm" variant="ghost" aria-pressed={side.view === 'overview'} onClick={() => side.selectView('overview')}>Overview</Button>
-      </nav>
-      {browserRelease.error ? <Alert tone="warning" title="Browser control release is unconfirmed.">
-        {browserRelease.error} Use the retained browser recovery controls to reconcile the original release.</Alert> : null}
-      {collaborationSlots?.browserRecovery?.()}
-      {!current || side.view === 'overview' ? <header className="board-topbar" aria-label="Board toolbar"
-        style={{ position: 'relative', inset: 'auto', zIndex: 10, flex: '0 0 auto', flexWrap: 'wrap', justifyContent: 'flex-end', padding: 'var(--space-2)', boxSizing: 'border-box', minWidth: 0 }}>
+  // Over the Run's canvas it floats like the draft's own toolbar, so the canvas keeps the draft's exact box.
+  const shownBoard = useRunBoardShown(boardSelection)
+  const boardToolbar = shownBoard === 'run' || side.view === 'overview' ? <header className="board-topbar" aria-label="Board toolbar"
+        style={side.view === 'graph' ? { flexWrap: 'wrap', justifyContent: 'flex-end', boxSizing: 'border-box', minWidth: 0 }
+          : { position: 'relative', inset: 'auto', zIndex: 10, flex: '0 0 auto', flexWrap: 'wrap', justifyContent: 'flex-end', padding: 'var(--space-2)', boxSizing: 'border-box', minWidth: 0 }}>
         {direction && !side.memoryOpen ? <DirectionWaitNotice direction={direction} onAnswer={() => {
           mentionInGroupChat({ workspaceId, workflowId }, direction)
           side.selectPanel({ kind: 'group_chat' })
@@ -179,11 +172,23 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
         {runControlsScope ?
           <SelectedRunControls key={JSON.stringify(boardSelection.identity)} visible={!side.memoryOpen}
             scope={runControlsScope} /> : null}
-      </header> : null}
+      </header> : null
+  return <WorkflowBoardContext.Provider value={value}><PanelHeaderSlotContext.Provider value={panelHeaderSlot}><PanelFooterSlotContext.Provider value={panelFooterSlot}>
+    <div ref={toolbar} className="unified-workflow-board" data-testid="unified-workflow-board" style={{ flexDirection: 'column' }}>
+      <nav className="workflow-collaboration-toolbar" aria-label="Workflow views">
+        <span>{legacyRun || pickedRunId ? 'Selected Run' : 'Editing draft'}</span>
+        <Button size="sm" variant="ghost" aria-pressed={side.view === 'graph'} onClick={() => side.selectView('graph')}>Graph</Button>
+        <Button size="sm" variant="ghost" aria-pressed={side.view === 'overview'} onClick={() => side.selectView('overview')}>Overview</Button>
+      </nav>
+      {browserRelease.error ? <Alert tone="warning" title="Browser control release is unconfirmed.">
+        {browserRelease.error} Use the retained browser recovery controls to reconcile the original release.</Alert> : null}
+      {collaborationSlots?.browserRecovery?.()}
+      {side.view === 'overview' ? boardToolbar : null}
 
       <div className="workflow-collaboration-layout">
       <div className="workflow-collaboration-canvas" hidden={side.view !== 'graph'} inert={side.view !== 'graph'}>
-      <RunBoardSlot selection={boardSelection}>
+      {side.view === 'graph' ? boardToolbar : null}
+      <RunBoardSlot selection={boardSelection} shown={shownBoard}>
         <div className="workflow-board-authoring" onClickCapture={authoringEvent} onKeyDownCapture={authoringEvent} onSubmitCapture={authoringEvent}>
           {children}
           <ActivitiesPopover open={current && runsOpen} onClose={() => setRunsOpen(false)} findAnchor={findActivitiesButton}>

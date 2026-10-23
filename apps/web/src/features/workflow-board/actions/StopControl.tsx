@@ -3,9 +3,9 @@ import { useRef } from 'react'
 import { Button } from '../../../shared/ui/nocturne'
 import { useMutation } from '@tanstack/react-query'
 import type { RepeatGraphScopeV3 } from '@foreman-code/contracts/wave25'
-import { reserveBoardStop, sendBoardStop, recordBoardStopReceipt, settleBoardStop, useBoardStopOutbox } from '../stopOutbox'
+import { settleBoardStop, useBoardStopOutbox } from '../stopOutbox'
 import { runActionsClient } from './client'
-import { useActionLifetime } from './state'
+import { useRunStop } from './useRunStop'
 import type { ActionRun } from './policy'
 
 export function StopReceipt({ scope }: { scope: RepeatGraphScopeV3 }) {
@@ -20,25 +20,7 @@ export function StopReceipt({ scope }: { scope: RepeatGraphScopeV3 }) {
 export function StopControl({ scope, run, permitted, available, refresh }: {
   scope: RepeatGraphScopeV3; run: ActionRun; permitted: boolean; available: boolean; refresh(): void
 }) {
-  const outbox = useBoardStopOutbox(scope), life = useActionLifetime(), heading = useRef<HTMLHeadingElement>(null)
-  const stop = useMutation({ retry: false, gcTime: 0, mutationFn: async () => {
-    life.assertCurrent()
-    const options = { signal: life.signal }
-    await runActionsClient.authorize('runs:stop', scope, options)
-    const [fresh, capabilities] = await Promise.all([runActionsClient.status(scope, options), runActionsClient.capabilities(options)])
-    if (!capabilities.stopAvailable) throw new Error('Stop isn’t available here. Nothing was sent.')
-    if (fresh.executionState === 'completed' && !fresh.cleanupPending && !outbox.journal) {
-      throw new Error('This run has already finished. Nothing to stop.')
-    }
-    life.assertCurrent()
-    const journal = await reserveBoardStop(scope)
-    life.assertCurrent()
-    const receipt = await sendBoardStop(journal)
-    life.assertCurrent()
-    await recordBoardStopReceipt(journal, receipt)
-    refresh()
-    return receipt
-  }, onError: refresh })
+  const { stop, outbox, life } = useRunStop(scope, refresh), heading = useRef<HTMLHeadingElement>(null)
   const settlement = useMutation({ retry: false, gcTime: 0, mutationFn: async () => {
     const journal = outbox.journal
     if (!journal?.receipt || journal.receipt.status === 'not_owner') throw new Error('Send the stop first, then check cleanup.')

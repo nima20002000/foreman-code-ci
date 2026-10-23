@@ -43,8 +43,6 @@ async function stopAndCleanUp(f: Fixture, api: Awaited<ReturnType<typeof directi
 
 describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('work direction continuation and Stop', () => {
   const withFixture = useSettlementFixtures()
-  // Only a Master waits for the owner's direction; other Agents' findings fail the Run.
-  const master = { roles: ['master'] as const }
   const graph = (value: WorkflowDefinitionV3): WorkflowDefinitionV3 => ({
     ...handoffs(1)(value), executionPolicy: { maxParallelism: 1, maxNodeExecutions: 1 },
   })
@@ -88,7 +86,7 @@ describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('work direction continuati
         await response
         await api.app.close()
       }
-    }, 'single', master)
+    }, 'single')
   }, timeout)
 
   it('commits the delivered direction and continuation link before returning the Start reply', async () => {
@@ -134,6 +132,6 @@ describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('work direction continuati
         await response
         await api.app.close()
       }
-    }, 'single', master)
+    }, 'single')
   }, timeout)
 })

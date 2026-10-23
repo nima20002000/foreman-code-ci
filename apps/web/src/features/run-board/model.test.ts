@@ -34,14 +34,15 @@ describe('saved board projection', () => {
     expect(Object.isFrozen(runA)).toBe(true)
     expect(Object.isFrozen(nativeNode(runA.nodes[0]!).position)).toBe(true)
   })
-  it('keeps approval and execution edges distinct, including handles, labels and policy', () => {
+  it('draws an approval beside its handoff on the handoff\'s one line, keeping both edges\' facts, handles and policy', () => {
     const { edges } = projectRunBoard(runA)
-    expect(edges.map((edge) => edge.id)).toEqual(['edge-xy', 'approval-xy', 'edge-yz'])
+    expect(edges.map((edge) => edge.id)).toEqual(['edge-xy', 'edge-yz'])
     expect(edges[0]).toMatchObject({ source: 'node-x', target: 'node-y', sourceHandle: 'bottom', targetHandle: 'top' })
     expect(edges[0]!.data!.snapshot).toBe(runA.edges[0])
+    expect(edges[0]!.data!.members).toEqual([runA.edges[0], runA.edges[1]])
     expect(edges[0]!.data!.snapshot.maxWorkHandoffsPerRun).toBe(3)
-    expect(edges[0]!.data!.lane).not.toBe(edges[1]!.data!.lane)
-    expect(edges[2]).toMatchObject({ sourceHandle: 'right', targetHandle: 'left' })
+    expect(edges[0]!.ariaLabel).toMatch(/^Handoff · approval from X before rename to Y/)
+    expect(edges[1]).toMatchObject({ sourceHandle: 'right', targetHandle: 'left' })
   })
   it('locks keyboard, drag, connect, reconnect and delete at both canvas and object levels', () => {
     expect(READ_ONLY_FLOW_PROPS).toMatchObject({ nodesDraggable: false, nodesConnectable: false,

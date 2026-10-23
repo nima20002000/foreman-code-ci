@@ -17,12 +17,25 @@ import { useHierarchy } from '../workflow-hierarchy/queries'
 import { useProtectedAccessError } from '../../shared/api/useProtectedAccessError'
 import type { AvailableRunBoardSnapshot } from './model'
 
-export type RunBoardProps = { selection: SelectedRunState }
+export type RunBoardProps = { selection: SelectedRunState; hidden?: boolean }
+
+/** True once the selected Run can be drawn in full (or has nothing to draw), so the Board never flashes a loading
+ * screen between the draft and the Run: its places come from the Run's snapshot and saved version together. */
+export function useRunBoardReady(selection: SelectedRunState) {
+  const query = useSelectedRunSnapshot(selection)
+  const snapshot = query.snapshot
+  const version = useRunVersionQuery({ ...selection.identity, runId: selection.identity.runId ?? '',
+    workflowVersionId: snapshot?.kind === 'available' ? snapshot.workflowVersionId : '', executionSemanticsVersion: 3 },
+  snapshot?.kind === 'available')
+  if (!selection.active || selection.invalid || selection.identity.runId === null) return true
+  if (!snapshot) return query.isError
+  return snapshot.kind !== 'available' || !!version.data || version.isError
+}
 
 /** Accept the SAME selected-Run hook result as RunsSelector, including its visit
  * generation. A naked runId loses the A -> B -> A fence. Query owns every read.
  */
-export function RunBoard({ selection }: RunBoardProps) {
+export function RunBoard({ selection, hidden = false }: RunBoardProps) {
   const query = useSelectedRunSnapshot(selection)
   const inspection = useRunNodeInspectionNavigation(selection)
   const board = useWorkflowBoard()
@@ -35,7 +48,7 @@ export function RunBoard({ selection }: RunBoardProps) {
   const failed = current && query.isError && !snapshot
   const loading = !failed && !snapshot
   return <section className={!board && inspection.nodeId ? 'run-board run-board-inspecting' : 'run-board'}
-    aria-label="Selected Run board" aria-busy={loading}
+    aria-label="Selected Run board" aria-busy={loading} hidden={hidden}
     data-run-id={selection.identity.runId} data-generation={selection.generation.id}>
     {query.isError && snapshot ? <p role="status" className="run-board-stale">Couldn’t refresh this run. Showing the last read.
       {' '}<Button size="sm" variant="ghost" aria-label="Retry Run refresh" onClick={() => void query.refetch()}>Try again</Button></p> : null}
@@ -59,6 +72,9 @@ function RunBoardContents({ selection, snapshot, inspection, activitySnapshot }:
 }) {
   const board = useWorkflowBoard()
   const visible = board?.canvasVisible !== false && !board?.memoryOpen
+  const version = useRunVersionQuery({ workspaceId: snapshot.workspaceId, workflowId: snapshot.workflowId, runId: snapshot.runId,
+    workflowVersionId: snapshot.workflowVersionId, executionSemanticsVersion: 3 })
+  const definition = version.data?.version.id === snapshot.workflowVersionId ? version.data.version.definition : undefined
   const hierarchy = useHierarchy({ workspaceId: snapshot.workspaceId, workflowId: snapshot.workflowId, runId: snapshot.runId },
     { enabled: visible })
   const denied = useProtectedAccessError(hierarchy)
@@ -77,8 +93,10 @@ function RunBoardContents({ selection, snapshot, inspection, activitySnapshot }:
       {visible ? <SelectedRunComputers key={`placement:${selection.generation.id}`} selection={selection} nodes={snapshot.nodes} /> : null}
       <span className="run-board-label">Read only</span>
     </header>
-    {snapshot.nodes.length ? <RunBoardCanvas key={selection.generation.id} snapshot={snapshot} visible={visible}
-      hierarchy={saved} activitySnapshot={activitySnapshot} onInspectNode={inspection.inspect} /> : <p role="status">No nodes</p>}
+    {/* Drawn once the saved version is read, so nodes appear at their saved places and never jump there. */}
+    {!snapshot.nodes.length ? <p role="status">No nodes</p> : definition || version.isError
+      ? <RunBoardCanvas key={selection.generation.id} snapshot={snapshot} visible={visible} definition={definition}
+        hierarchy={saved} activitySnapshot={activitySnapshot} onInspectNode={inspection.inspect} /> : null}
     {board ? board.sidePanelHost ? createPortal(<>{details}{settings}
       {!visible && !board.memoryOpen && panel?.kind === 'agent' && panel.tab === 'details'
         ? <p>Open Graph to inspect this saved execution. Your selection is retained.</p> : null}

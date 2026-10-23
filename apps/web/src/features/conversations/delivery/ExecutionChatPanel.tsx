@@ -28,8 +28,7 @@ export type ExecutionChatPanelProps = {
   nativeTurnId?: string; unavailableReason?: string; attachments?: ConversationAttachments; attachmentControl?: ReactNode
   sessionMode?: SessionMode; appliedSessionMode?: SessionMode
   onOpenContinuation?(receipt: ChatDeliveryReceipt): void; onOpenGroup?(postId: string): void
-  /** The Agent chat that continues a finished execution's session; shown in place of this panel when it takes no input. */
-  followUp?: ReactNode
+  onFollowUp?(): void
   onRecover?(recovery: DirectRecovery): void
 }
 
@@ -106,12 +105,12 @@ function ExecutionChatContent(props: ExecutionChatPanelProps) {
     onCancel: delivery.pendingControl ? undefined : (receipt: ChatDeliveryReceipt) => delivery.cancel(receipt.id), onRefresh: delivery.refresh, state: retained }
   const retainedAt = (index: number) => placed.filter(item => item.before === index).map(({ input }) =>
     <RetainedInput key={input.receiptId} input={input} {...retainedProps} />)
-  // A finished execution takes no new turn here; its Agent chat continues the same session with its history.
-  const closed = state?.state === 'idle' && target.kind === 'workflow_execution' && !presentation.capabilities.queue
+  // A finished Run attempt takes no new messages: offer only the follow-up in Agent chat, without an input.
+  const followUp = state?.state === 'idle' && target.kind === 'workflow_execution' && props.onFollowUp
+  const closed = !!followUp && !presentation.capabilities.queue
   if (denied || delivery.denied) return <Alert tone="warning" title="Chat access unavailable"><Button onClick={() => {
     detailAbort.current = new AbortController(); setDenied(false); delivery.refresh()
   }}>Refresh access</Button></Alert>
-  if (closed && props.followUp) return <>{props.followUp}</>
   return <section className="agent-conversation" aria-label="Selected execution chat">
     {/* The Board's chat tab already names the Run attempt above this panel. */}
     <header className="agent-chat-identity"><h2>{props.name}</h2></header>
@@ -130,6 +129,9 @@ function ExecutionChatContent(props: ExecutionChatPanelProps) {
     <ChatDeliveryReceipts receipts={receipts.filter(receipt => receipt.state === 'queued' || receipt.state === 'unknown')} controlsReason={controlsReason} onCancel={delivery.pendingControl ? undefined : receipt => delivery.cancel(receipt.id)}
       onRefresh={delivery.refresh} onOpenContinuation={props.onOpenContinuation} />
     {pin.stale ? <Button onClick={pin.refresh}>Refresh target</Button> : null}
+    {/* Below the messages, where the input would be; above them it covered the first message. */}
+    {closed ? <p className="execution-chat-closed">This agent can’t take a new message here. Continue it in Agent chat.</p> : null}
+    {followUp ? <Button className="execution-chat-follow-up" onClick={props.onFollowUp}>Follow up in Agent chat</Button> : null}
     {delivery.feedback ? <p role="alert">{delivery.feedback}</p> : null}
     {delivery.pending ? <p role="status">Delivery is not confirmed. <Button onClick={() => void delivery.reconcile()}>Check status</Button>
       <Button onClick={() => void delivery.reconcile(true)}>Retry original message</Button></p> : null}

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Edge, Node, OnMove, ReactFlowInstance } from '@xyflow/react'
+import { useBoardViewportStore } from './boardViewport'
 
 /** Fit options shared by both canvases. The low zoom floor keeps saved nodes reachable on phone widths. */
 export const RESPONSIVE_MIN_ZOOM = 0.1
@@ -9,15 +10,21 @@ export const RESPONSIVE_FIT_OPTIONS = { padding: 0.2, minZoom: RESPONSIVE_MIN_ZO
  * Refits the viewport when the measured canvas size changes (e.g. desktop -> phone). Only the
  * viewport transform changes: node positions, draft/geometry/save callbacks and access are untouched.
  * Ordinary data rerenders never refit, and a user who has panned/zoomed keeps their view across resizes.
+ * With a `viewportKey`, the canvas opens at (and returns to) the view last shown for that Board instead of refitting.
  */
 export function useResponsiveGraphViewport<N extends Node = Node, E extends Edge = Edge>(
-  { enabled = true, delay = 80, fitViewOptions = RESPONSIVE_FIT_OPTIONS }: {
-    enabled?: boolean; delay?: number; fitViewOptions?: typeof RESPONSIVE_FIT_OPTIONS
+  { enabled = true, delay = 80, fitViewOptions = RESPONSIVE_FIT_OPTIONS, viewportKey }: {
+    enabled?: boolean; delay?: number; fitViewOptions?: typeof RESPONSIVE_FIT_OPTIONS; viewportKey?: string
   } = {},
 ) {
   const containerRef = useRef<HTMLDivElement>(null)
   const instance = useRef<ReactFlowInstance<N, E> | null>(null)
-  const moved = useRef(false)
+  const [defaultViewport] = useState(() => viewportKey ? useBoardViewportStore.getState().views[viewportKey] : undefined)
+  // A restored view is the person's own view: late content never refits it.
+  const moved = useRef(!!defaultViewport)
+  const onMoveEnd = useCallback<OnMove>((_event, viewport) => {
+    if (viewportKey) useBoardViewportStore.getState().remember(viewportKey, viewport)
+  }, [viewportKey])
   const onInit = useCallback((next: ReactFlowInstance<N, E>) => { instance.current = next }, [])
   const onManualMove = useCallback(() => { moved.current = true }, [])
   const onMove = useCallback<OnMove>((event) => {
@@ -38,15 +45,23 @@ export function useResponsiveGraphViewport<N extends Node = Node, E extends Edge
     let timer: ReturnType<typeof setTimeout> | undefined
     let last: { w: number; h: number } | undefined
     // A canvas that mounted hidden (e.g. behind a live Run) was fitted at zero size; it fits again once shown.
-    let shownAfterHidden = false
+    let shownAfterHidden = false, hidden = false
     const observer = new ResizeObserver((entries) => {
       const box = entries[entries.length - 1]?.contentRect
       if (!box) return
       const w = Math.round(box.width)
       const h = Math.round(box.height)
-      if (w <= 0 || h <= 0) { if (!last) shownAfterHidden = true; return } // hidden: nothing measurable to fit
+      if (w <= 0 || h <= 0) { hidden = true; if (!last) shownAfterHidden = true; return } // hidden: nothing measurable to fit
       const prev = last
       last = { w, h }
+      // Shown again (e.g. back from a Run): take the view the other canvas last showed for this Board.
+      const shared = hidden && viewportKey ? useBoardViewportStore.getState().views[viewportKey] : undefined
+      hidden = false
+      if (shared && instance.current) {
+        moved.current = true
+        void instance.current.setViewport(shared)
+        return
+      }
       const firstShown = !prev && shownAfterHidden
       if ((!prev && !firstShown) || moved.current || (prev && prev.w === w && prev.h === h)) return
       if (timer) clearTimeout(timer)
@@ -62,7 +77,7 @@ export function useResponsiveGraphViewport<N extends Node = Node, E extends Edge
       observer.disconnect()
       if (timer) clearTimeout(timer)
     }
-  }, [enabled, delay, fitViewOptions])
+  }, [enabled, delay, fitViewOptions, viewportKey])
 
-  return { containerRef, onInit, onMove, onManualMove, refit }
+  return { containerRef, onInit, onMove, onMoveEnd, onManualMove, refit, defaultViewport, fitOnMount: !defaultViewport }
 }
