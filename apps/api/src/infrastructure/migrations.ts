@@ -78,6 +78,7 @@ import { memoryBoardsMigration } from './memoryBoardsMigration.js'
 import { workReturnNodeGroupingMigration } from './workReturnNodeGroupingMigration.js'
 import { workflowHierarchyMigration } from './workflowHierarchyMigration.js'
 import { hierarchyGroupsMigration } from './hierarchyGroupsMigration.js'
+import { workReplyRequestMigration } from './workReplyRequestMigration.js'
 import { hierarchyDirectionMigration } from './hierarchyDirectionMigration.js'
 import { coordinationResultMigration } from './coordinationResultMigration.js'
 import { workReturnRequestMigration } from './workReturnRequestMigration.js'
@@ -1054,6 +1055,7 @@ export const migrations = [
   removedProjectFolderMigration,
   draftChatCredentialsMigration,
   plainTextFilesMigration,
+  workReplyRequestMigration,
 ] as const
 
 export function assertMigrationVersions(entries: readonly { version: number }[]): void {
