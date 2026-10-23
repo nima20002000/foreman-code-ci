@@ -28,7 +28,7 @@ export default defineConfig({
     include: phase === 'heavy' ? heavy.files : ['src/**/*.{test,spec}.{ts,tsx}'],
     exclude: phase === 'fast' ? ['**/node_modules/**', ...heavy.files] : ['**/node_modules/**'],
     ...(phase === 'heavy' ? { testTimeout: heavy.timeoutMs, hookTimeout: heavy.timeoutMs } : {}),
-    setupFiles: ['./src/test/setup.ts'],
+    setupFiles: ['./src/test/setup.testSupport.ts'],
     fsModuleCache: true,
     css: true,
     passWithNoTests: false,

@@ -13,7 +13,6 @@ import { nextDraftKey } from '../../board-core'
 import { nextDraftApi } from './transport'
 import { readEditOutbox } from './editIntentStorage'
 import { journalIntent } from './nim2644Journal.fixture'
-import { installFlowLayout } from '../../run-board/testFlowLayout'
 
 async function confirmDiscard(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: /^Discard changes$/ }))
@@ -67,7 +66,6 @@ function staged(request: GraphEditStageInputCurrent): GraphEditReadResultCurrent
     outcome: 'pending', cleanupPending: false, nativePending: true, interactionPending: true, reviewPending: false })) }
 }
 beforeEach(() => {
-  installFlowLayout()
   useGraphDraftStore.getState().clearAllDrafts(); localStorage.clear(); sessionStorage.clear()
   useGraphDraftStore.getState().installNextDraft(key, fixture())
   vi.stubGlobal('navigator', { ...navigator, locks: { request: async (_name: string, work: (() => Promise<unknown>) | LockOptions, claim?: (lock: { name: string }) => unknown) => typeof work === 'function' ? work() : claim!({ name: _name }) } })
