@@ -138,7 +138,7 @@ export function graphqlRoleTools(role: WorkflowAgentProductRole, implementedColl
 
 /** Copy only into a newly created Agent. Old absent tool choices retain their legacy meaning. */
 export function newAgentGraphqlTools(role: WorkflowAgentProductRole): GraphqlAgentTool[] {
-  return [...graphqlRoleTools(role), ...memoryBoardTools(newAgentMemoryBoardAccess(role))];
+  return [...graphqlRoleTools(role), ...memoryBoardTools(newAgentMemoryBoardAccess())];
 }
 
 /** Tools named here that the role can never use. */
@@ -154,6 +154,8 @@ export function effectiveGraphqlTools(
   const roleTools = graphqlRoleTools(role, implementedCollaborationTools);
   // Missing old defaults retain the old capability set even after new handlers are enabled.
   const enabled = new Set<string>(defaults ?? graphqlRoleTools(role));
+  // Agent memory on means read and write; a workflow node's change or read-only access narrows it.
+  if (defaults?.some((tool) => tool.startsWith('memory_'))) for (const tool of memoryBoardTools('write')) enabled.add(tool);
   for (const tool of override?.add ?? []) enabled.add(tool);
   for (const tool of override?.remove ?? []) enabled.delete(tool);
   enabled.add('bug_report');
