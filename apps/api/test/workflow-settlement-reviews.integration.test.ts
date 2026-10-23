@@ -71,7 +71,7 @@ describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('workflow settlement revie
     }, 'parallel')
   }, timeout)
 
-  it.each([false, true])('persists a direction wait for accepted review findings (restart after acceptance: %s)', async (restart) => {
+  it.each([false, true])('persists a direction wait for a Master reviewer accepting with findings (restart after acceptance: %s)', async (restart) => {
     await withFixture(handoffs(2), async (f) => {
       const { request } = await sourceAndRequest(f)
       const reviewer = await acceptedActivation(f, request.destinationActivationId, { outcome: 'succeeded', output: {
@@ -96,7 +96,7 @@ describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('workflow settlement revie
         [f.run.id])).rowCount).toBe(1)
       expect((await f.db.pool.query('select 1 from harness_executions where run_id=$1', [f.run.id])).rowCount).toBe(2)
       expect(f.failureSettlements).toBe(0)
-    })
+    }, 'sequential', { roles: ['coder', 'master'] })
   }, timeout)
 
   it.each([false, true])('rejects another branch\'s return before accepting its result (restart: %s)', async (restart) => {

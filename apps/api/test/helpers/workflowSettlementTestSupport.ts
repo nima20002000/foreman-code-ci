@@ -58,8 +58,9 @@ export function useSettlementFixtures() {
     configure: (graph: WorkflowDefinitionV3) => WorkflowDefinitionV3,
     work: (fixture: Fixture) => Promise<void>,
     form: 'single' | 'sequential' | 'parallel' = 'sequential',
+    options: Parameters<typeof workflowSettlementFixture>[3] = {},
   ) {
-    const fixture = await workflowSettlementFixture(database, configure, form)
+    const fixture = await workflowSettlementFixture(database, configure, form, options)
     try {
       await work(fixture)
     } finally {
