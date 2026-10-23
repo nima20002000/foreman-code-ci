@@ -518,42 +518,26 @@ it('defaults an agent to three open tabs when its settings name no limit', async
     .rejects.toMatchObject({ code: 'BROWSER_TAB_LIMIT' })
 })
 
-it('updates a chat browser tab limit when its existing preparation command is reused', async () => {
-  const f = fixture(), subject: AgentSubject = { kind: 'conversation', agent: execution().agent, conversationId: 'chat' }
-  const request = f.request(subject, 'chat-browser'), browser = { ...request.browser, maxTabs: 1 }
-  f.assignment(subject, browser)
-  const { session } = ready(await f.broker.prepare({ ...request, browser }))
-  await expect(f.broker.createTab({ sessionId: session.id, actor: agent(session), commandId: 'at-limit' }))
-    .rejects.toMatchObject({ code: 'BROWSER_TAB_LIMIT' })
-
-  const raised = { ...browser, maxTabs: 2 }
-  f.assignment(subject, raised)
-  expect(ready(await f.broker.prepare({ ...request, browser: raised })).session.id).toBe(session.id)
-  await f.broker.createTab({ sessionId: session.id, actor: agent(session), commandId: 'second' })
-  expect(f.broker.read(session.id).tabs).toHaveLength(2)
-
-  f.assignment(subject, browser)
-  expect(ready(await f.broker.prepare({ ...request, browser })).session.id).toBe(session.id)
-  await f.broker.closeTab({ sessionId: session.id, tabId: session.selectedTabId!, actor: agent(session), commandId: 'close-first' })
-  await expect(f.broker.createTab({ sessionId: session.id, actor: agent(session), commandId: 'over-lowered-limit' }))
-    .rejects.toMatchObject({ code: 'BROWSER_TAB_LIMIT' })
-  expect(f.broker.read(session.id).tabs).toHaveLength(1)
-})
-
-it('admits only one concurrent tab creation when one place remains under the saved limit', async () => {
-  const f = fixture(), request = f.request(), browser = { ...request.browser, maxTabs: 3 }
+it('closes page-opened popups beyond the saved agent tab limit and admits one after a tab closes', async () => {
+  const f = fixture(), request = f.request(), browser = { ...request.browser, maxTabs: 2 }
   f.assignment(request.subject, browser)
   const { session } = ready(await f.broker.prepare({ ...request, browser }))
-  const input = { sessionId: session.id, actor: agent(session) }
-  await f.broker.createTab({ ...input, commandId: 'second' })
-  const results = await Promise.allSettled([
-    f.broker.createTab({ ...input, commandId: 'concurrent-a' }),
-    f.broker.createTab({ ...input, commandId: 'concurrent-b' }),
-  ])
-  expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)
-  expect(results.filter(result => result.status === 'rejected')).toEqual([
-    expect.objectContaining({ reason: expect.objectContaining({ code: 'BROWSER_TAB_LIMIT' }) }),
-  ])
-  expect(f.broker.read(session.id).tabs).toHaveLength(3)
-  expect(f.driver.createTab).toHaveBeenCalledTimes(3)
+  const sibling = ready(await f.broker.prepare(f.request(execution('sibling'), 'sibling'))).session
+  const opener = await vi.mocked(f.driver.createTab).mock.results[0]!.value
+  const receive = vi.mocked(f.driver.onPopup).mock.calls[0]![0]
+  const popup = await f.driver.createTab('profile', session.browserGeneration)
+  await receive('profile', session.browserGeneration, opener.targetId, popup)
+  const accepted = f.broker.read(session.id).tabs.find(tab => tab.openerTabId === session.selectedTabId)!
+  expect(accepted).toBeDefined()
+  const excess = await Promise.all([f.driver.createTab('profile', session.browserGeneration),
+    f.driver.createTab('profile', session.browserGeneration)])
+  await Promise.all(excess.map(tab => receive('profile', session.browserGeneration, opener.targetId, tab)))
+  expect(f.broker.read(session.id).tabs).toHaveLength(2)
+  for (const tab of excess) expect(await f.driver.restoreTab('profile', session.browserGeneration, tab.targetId)).toBeNull()
+  expect(f.broker.read(sibling.id).tabs).toHaveLength(1)
+  await f.broker.closeTab({ sessionId: session.id, tabId: accepted.tabId, actor: agent(session), commandId: 'close-popup' })
+  const replacement = await f.driver.createTab('profile', session.browserGeneration)
+  await receive('profile', session.browserGeneration, opener.targetId, replacement)
+  expect(f.broker.read(session.id).tabs).toHaveLength(2)
+  expect(f.broker.ownerForTarget('profile', session.browserGeneration, replacement.targetId)?.sessionId).toBe(session.id)
 })
