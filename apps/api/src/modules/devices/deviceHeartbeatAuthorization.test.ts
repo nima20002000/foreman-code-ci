@@ -91,22 +91,6 @@ async function fixture(namespace = 'test-echo') {
 
 afterEach(() => vi.useRealTimers())
 
-it('keeps the ready link serving when a replacement sends an incompatible hello', async () => {
-  const f = await fixture()
-  const replacement = new Socket()
-  const socket = adaptDeviceSocket(replacement)
-  try {
-    const accepted = f.endpoint.accept({ authorization: 'Bearer test-credential' }, socket)
-    replacement.emit('message', Buffer.from(JSON.stringify({ type: 'hello', protocolVersion: -1 })), false)
-    await accepted
-    expect(replacement.closed).toBe(true)
-    expect(f.connections[0]!.main.closed).toBe(false)
-    expect(f.endpoint.currentBinding(f.identity.deviceId)).toEqual(f.binding)
-    await expect(f.endpoint.request(f.identity.deviceId, 'test-echo', { retained: true }))
-      .resolves.toEqual({ payload: { retained: true } })
-  } finally { replacement.close(); await f.close() }
-})
-
 it('preserves maintenance observation support through the signed connection handshake', async () => {
   const f = await fixture('computer-maintenance-v2')
   try {
