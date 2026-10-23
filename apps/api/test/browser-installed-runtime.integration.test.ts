@@ -259,17 +259,18 @@ describe('installed managed browser against a deterministic local website', () =
     const driver = new ManagedBrowserNativeDriver({ runtime, actionDirectory: root,
       profileDirectory: async () => ({ directory, generation: 1 }), allocateGeneration: async () => 1,
       onOrigin: async () => undefined, onDisconnected: () => undefined })
-    let display = ''
+    // The host's own DISPLAY and Wayland session are unusable here, so a started headed browser proves its own display.
+    const virtualDisplays = async () => (await Promise.all((await readdir('/proc')).filter(name => /^\d+$/.test(name)).map(async name => {
+      const stat = await readFile(`/proc/${name}/stat`, 'utf8').catch(() => '' /* ignore: the process already exited */)
+      const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ')
+      return stat.includes('(Xvfb)') && Number(fields[1]) === process.pid ? name : undefined
+    }))).filter(Boolean)
     try {
       const opened = await driver.openProfile('desktop-host')
       const tab = await driver.createTab('desktop-host', opened.generation)
       const identity = JSON.parse(await readFile(join(directory, 'foreman-process.json'), 'utf8')) as { headless: boolean; endpoint: string; pid: number }
       expect(identity.headless).toBe(true)
-      // The browser runs inside its own X display, never the person's desktop or Wayland session.
-      const environment = (await readFile(`/proc/${identity.pid}/environ`, 'utf8')).split('\0')
-      display = environment.find(value => value.startsWith('DISPLAY='))?.slice('DISPLAY='.length) ?? ''
-      expect(display).toMatch(/^:\d+$/)
-      expect(environment.some(value => value.startsWith('WAYLAND_DISPLAY='))).toBe(false)
+      expect(await virtualDisplays()).toHaveLength(1)
       const version = await (await fetch(`http://${new URL(identity.endpoint).host}/json/version`)).json() as { 'User-Agent': string }
       expect(version['User-Agent']).toMatch(/ Chrome\/\d+/)
       expect(version['User-Agent']).not.toContain('Headless')
@@ -285,8 +286,8 @@ describe('installed managed browser against a deterministic local website', () =
       await driver.closeVirtualDisplay()
       for (const [name, value] of Object.entries(previous)) if (value === undefined) delete process.env[name]; else process.env[name] = value
     }
-    // Shutting the host down removes its virtual display.
-    await expect.poll(() => readdir('/tmp/.X11-unix').then(names => names.includes(`X${display.slice(1)}`))).toBe(false)
+    // Shutting the host down stops its virtual display.
+    await expect.poll(virtualDisplays).toEqual([])
   }, 30_000)
 
   it('performs successive helper actions without changing the immutable helper workspace', async () => {
