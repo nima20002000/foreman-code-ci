@@ -1,4 +1,4 @@
-import { errorMessage } from '@foreman-code/contracts/server-kit'
+import { errorMessage } from '../../shared/errorMessage.js'
 import { isTransientExecutionCode } from '../../shared/executionFailureCodes.js'
 import type { ExecutionResult } from '@foreman-code/contracts'
 

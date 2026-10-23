@@ -6,7 +6,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash } from 'node:crypto'
 import type pg from 'pg'
 import { RunGraphError } from './errors.js'
-import { isDatabaseTimeout } from '../../infrastructure/databaseRetry.js'
+import { isDatabaseTimeout } from '../../infrastructure/databaseTimeout.js'
 
 export interface GraphSqlClient {
   query<R extends pg.QueryResultRow = pg.QueryResultRow>(text: string, values?: unknown[]): Promise<pg.QueryResult<R>>

@@ -1,5 +1,5 @@
 import { resolveLintAllowlist } from './lint-allowlist.mjs'
-// Fails on runtime import cycles among apps/api/src and apps/ci/src modules.
+// Fails on runtime import cycles among apps/api/src modules.
 //   node scripts/check-import-cycles.mjs
 // Type-only imports and dynamic import() do not count. Cycles listed in scripts/lint-allowlist.json
 // ("import-cycles", one array of files per cycle) predate the check: a cycle passes only when all its files belong
@@ -74,11 +74,9 @@ function files(directory) {
   })
 }
 
-export const sourceDirectories = ['apps/api/src', 'apps/ci/src']
-
-/** The runtime import graph of the server source directories, with repository-relative file names. */
-export function sourceImportGraph(directories = sourceDirectories) {
-  const modules = new Set(directories.flatMap(directory => files(directory)))
+/** The runtime import graph of apps/api/src, with repository-relative file names. */
+export function apiImportGraph() {
+  const modules = new Set(files('apps/api/src'))
   const graph = new Map()
   for (const file of modules) {
     const targets = new Set()
@@ -95,9 +93,9 @@ export function sourceImportGraph(directories = sourceDirectories) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const allowed = resolveLintAllowlist(root, JSON.parse(readFileSync(`${root}/scripts/lint-allowlist.json`, 'utf8')))['import-cycles']
-  const rejected = newCycles(importCycles(sourceImportGraph()), allowed)
+  const rejected = newCycles(importCycles(apiImportGraph()), allowed)
   if (rejected.length) {
-    console.error(`Import cycles in ${sourceDirectories.join(' and ')} (move the shared code into a module both sides import):`)
+    console.error('Import cycles in apps/api/src (move the shared code into a module both sides import):')
     for (const cycle of rejected) console.error(`  ${cycle.join(' <-> ')}`)
     process.exit(1)
   }

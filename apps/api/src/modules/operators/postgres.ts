@@ -16,7 +16,7 @@ import type pg from 'pg'
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
 import { canonicalJsonNumericKeysFirstLegacy, canonicalJsonValueLegacy } from '@foreman-code/contracts/canonical-json'
 
-import { withTransaction } from '../../infrastructure/transaction.js'
+import { inTransaction } from '../../infrastructure/transaction.js'
 import { PostgresFoundationSettingsRepository } from '../settings/foundation.js'
 
 import { DomainError } from '../errors.js'
@@ -78,7 +78,7 @@ export class PostgresOperatorRepository {
   }
 
   async ensure(supplied?: pg.ClientBase): Promise<{ operator: OperatorAgent; configuration: OperatorConfigurationVersion }> {
-    return withTransaction(this.pool, (client) => this.ensureWithClient(client), { join: supplied })
+    return inTransaction(this.pool, supplied, (client) => this.ensureWithClient(client))
   }
 
   async ensureWithClient(client: pg.ClientBase): Promise<{ operator: OperatorAgent; configuration: OperatorConfigurationVersion }> {
@@ -126,7 +126,7 @@ export class PostgresOperatorRepository {
 
   async update(input: HarnessConfiguration, expectedConfigurationVersionId: string, supplied?: pg.ClientBase) {
     const harness = acceptedConfiguration(input)
-    return withTransaction(this.pool, (client) => this.updateWithClient(client, harness, expectedConfigurationVersionId), { join: supplied })
+    return inTransaction(this.pool, supplied, (client) => this.updateWithClient(client, harness, expectedConfigurationVersionId))
   }
 
   async updateWithClient(client: pg.ClientBase, harness: HarnessConfiguration, expectedConfigurationVersionId: string, showThinking = false,

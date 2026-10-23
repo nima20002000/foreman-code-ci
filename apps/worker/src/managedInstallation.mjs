@@ -4,8 +4,8 @@ import { createHash } from 'node:crypto';
 import { ApprovedRootAllowlistSchema } from '../../../packages/contracts/src/workspaceRootPolicies.ts';
 import { WorkerPairingConfigurationSchema } from '../../../packages/contracts/src/deviceIdentity.ts';
 import { InstalledVerificationRuntimeConfigurationSchema, MAX_VERIFICATION_CONFIGURATION_BYTES }
-  from '../../../packages/contracts/src/installedRuntimeNode.ts';
-import { fingerprintQualificationPath } from '../../../apps/api/src/modules/jobs/qualificationFingerprint.ts';
+  from '../../../apps/api/src/modules/jobs/installedVerificationConfiguration.ts';
+import { fingerprintQualificationPath } from '../../../apps/api/src/modules/jobs/qualification.ts';
 import { readVerificationQuotaPool } from '../../../apps/api/src/modules/jobs/quotaOwnership.ts';
 import { readProtectedRuntimeFile } from '../../../apps/api/src/modules/jobs/installedRuntimeHost.ts';
 import { anchored, identity, openPrivateRoot, openChildDirectory }

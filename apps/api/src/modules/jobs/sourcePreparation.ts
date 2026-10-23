@@ -24,7 +24,7 @@ import {
   type ResolvedJobDefinitionSpecRecord,
   type JobExecutionRecord,
 } from '@foreman-code/contracts/job-verification'
-import { JobRuntimeProfileRecordSchema, jobRuntimeProfilePolicy, jobRuntimeProfileLimits, matchesRuntimePolicy } from '@foreman-code/contracts/job-verification-runtime'
+import { JobRuntimeProfileRecordSchema, jobRuntimeProfilePolicy, jobRuntimeProfileLimits } from '@foreman-code/contracts/job-verification-runtime'
 import { JOB_VERIFICATION_OWNER_CONFIGURATION } from '@foreman-code/contracts/job-verification-policy'
 import type { JobPlacementIntent } from '@foreman-code/contracts/job-admission'
 import type { JobComputerCandidate, JobComputerDiscovery } from './computerSelection.js'
@@ -37,6 +37,7 @@ import { verifiedSourceWorkingTree } from '../sources/nativeStamp.js'
 import { authorizeSource } from '../sources/authority.js'
 import { DomainError } from '../errors.js'
 import { componentLogger } from '../diagnostics/logger.js'
+import { matchesRuntimePolicy } from './runtimeSelection.js'
 import { DeviceAccessError } from '../devices/access.js'
 import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { JobRepository, type JobSql } from './repository.js'

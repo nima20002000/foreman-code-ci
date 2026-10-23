@@ -1,7 +1,7 @@
-import type pg from 'pg'
-import { createAuxiliaryPool, createDedicatedClient } from './pool.js'
+import pg from 'pg'
 import { DomainError } from '../modules/errors.js'
-import { isDatabaseTimeout, retryDatabaseOperation, retryStartupDatabase } from './databaseRetry.js'
+import { retryStartupDatabase } from './startupDatabase.js'
+import { isDatabaseTimeout, retryDatabaseOperation } from './databaseTimeout.js'
 import { withAbortSignal } from './abortSignal.js'
 import { componentLogger } from './logger.js'
 
@@ -48,14 +48,15 @@ export class OperatorRuntimeOwner {
 
   constructor(private readonly connectionString: string, private readonly onLost: (error: Error) => void) {
     this.client = this.createClient()
-    this.checks = createAuxiliaryPool({
+    this.checks = new pg.Pool({
       connectionString, max: 1, connectionTimeoutMillis: ownershipCheckBudgetMs,
       statement_timeout: ownershipCheckBudgetMs, query_timeout: ownershipCheckBudgetMs,
-    }, 'graphql-runtime-owner-check', reportOwnershipCheckFailure)
+    })
+    this.checks.on('error', reportOwnershipCheckFailure)
   }
 
   private createClient(): pg.Client {
-    const client = createDedicatedClient({
+    const client = new pg.Client({
       connectionString: this.connectionString,
       connectionTimeoutMillis: 5_000,
       statement_timeout: 4_000,

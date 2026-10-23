@@ -4,7 +4,7 @@ import {
   canonicalGraphJson, CURRENT_WORKFLOW_TOOLS, CurrentWorkflowSaveResultSchema,
 } from '@foreman-code/contracts/wave25'
 import { commandInputHash } from '../src/modules/commands/postgres.js'
-import { withTransaction } from '../src/infrastructure/transaction.js'
+import { inTransaction } from '../src/infrastructure/transaction.js'
 import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
 import { insertCurrentRunFixture } from './helpers/eng04CurrentRunFixture.js'
 import { writerFixture, type WriterFixture } from './eng04-writer-fixtures.js'
@@ -89,7 +89,7 @@ describe('workflow publication and save admission', () => {
     const content = canonicalGraphJson({ definition: candidate.definition,
       configurations: candidate.agentConfigurationVersionIds, entryNodeId: candidate.entryNodeId })
     candidate.contentHash = `sha256:${createHash('sha256').update(content).digest('hex')}`
-    await expect(withTransaction(database.pool, async sql => {
+    await expect(inTransaction(database.pool, undefined, async sql => {
       await sql.query(`insert into workflow_versions(id,workspace_id,workflow_id,version,entry_node_id,record,execution_semantics_version)
         values($1,$2,$3,$4,$5,$6::jsonb,3)`, [candidate.id, candidate.workspaceId, candidate.workflowId,
       version, candidate.entryNodeId, JSON.stringify(candidate)])

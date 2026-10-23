@@ -17,7 +17,7 @@ import { readAcceptedPlacement, readAcceptedPlacements, readDispatchIntent, read
 import { readReconciledDispatchIntent } from '../runs/remote/persistence.js'
 import { readNativeExecutionBinding } from './executionBinding.js'
 import type { AcceptedExecutionBinding } from './nativeComposition.js'
-import { deliveryTransactionClient } from '../interactions/connection.js'
+import { interactionConnection } from '../interactions/connection.js'
 import { assertRemoteExecutionAuthority } from './executionAuthority.js'
 import { VerifiedRemoteEvidence } from '../runs/remote/resultBridge.js'
 import { remoteNativeManager, type MainWorkerCarrier } from './workerCarrier.js'
@@ -321,7 +321,7 @@ async function prepareRemoteWorkflowBinding(input: ProductionRemoteWorkflowInput
   bindings: Map<string, AcceptedExecutionBinding | null>, executionId: string): Promise<AcceptedExecutionBinding | null> {
   const execution = await input.execution(executionId)
   if (!execution) throw new DomainError('WORKER_EXECUTION_NOT_FOUND', 'The actual execution is unavailable.', 409)
-  const sql = deliveryTransactionClient() ?? input.pool
+  const sql = interactionConnection.getStore() ?? input.pool
   const original = await readDispatchIntent(sql, executionId)
   const placement = await readAcceptedPlacement(sql, execution.runId, execution.workflowNodeId)
   if (!!original !== !!placement) throw new DomainError('PLACEMENT_BINDING_CONFLICT', 'The actual placed execution has no exact dispatch.', 409)
@@ -527,7 +527,7 @@ function createRemoteWorkflowManager(input: ProductionRemoteWorkflowInput, depen
       latest.set(receipt.intent.executionId, key)
     },
     controlFor: async command => {
-      if (deliveryTransactionClient()) throw new DomainError('REMOTE_CONTROL_TRANSACTION_UNAVAILABLE', 'Remote native response delivery requires an admitted effect outside the Main delivery transaction.', 409)
+      if (interactionConnection.getStore()) throw new DomainError('REMOTE_CONTROL_TRANSACTION_UNAVAILABLE', 'Remote native response delivery requires an admitted effect outside the Main delivery transaction.', 409)
       const owner = requireOwner()
       return owner.oneShotConnection().transaction(sql => admitRemoteOwnerControl(sql, owner, binding, command, readOriginalInteractionDeliveryClaim()))
     },
@@ -539,7 +539,7 @@ function createRemoteWorkflowManager(input: ProductionRemoteWorkflowInput, depen
     },
     authorizeResponseRetry: async command => {
       const claim = readOriginalInteractionDeliveryClaim()
-      if (!claim || deliveryTransactionClient()) {
+      if (!claim || interactionConnection.getStore()) {
         throw new DomainError('REMOTE_CONTROL_ORIGINAL_CLAIM_REQUIRED', 'Response recovery requires its active delivery claim.', 409)
       }
       const owner = requireOwner()

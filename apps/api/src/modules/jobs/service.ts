@@ -39,7 +39,7 @@ import { canonicalJson } from '@foreman-code/contracts/canonical-json'
 import { JobRepository, type JobSql } from './repository.js'
 import type { JobArtifactPort, JobDispatchPort, JobPreparationPort } from './ports.js'
 import type { JobQueueConfiguration } from './ports.js'
-import type { CiRuntimeProvisioner } from '../ci/types.js'
+import type { CiRuntimeProvisioner } from './ciRuntimeProvisioner.js'
 import { JobQueuePreparation } from './preparation.js'
 import { JobQueueTicketSchema, JobQueuedStartSchema, JobQueueCancelSchema, JobQueueLimitsSchema,
   JobAdmissionResultSchema, JobQueueListInputSchema, JobQueuePageSchema,

@@ -2,7 +2,7 @@ import type pg from 'pg'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { componentLogger } from '../modules/diagnostics/logger.js'
 import { ExclusiveGraphConnection, beforeGraphCommit } from '../modules/run-graph/connection.js'
-import { beginTransaction, commitTransaction, withTransaction } from './transaction.js'
+import { beginTransaction, commitTransaction, withClientTransaction, withTransaction } from './transaction.js'
 
 vi.mock('../modules/diagnostics/logger.js', () => {
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
@@ -50,46 +50,13 @@ it('reports short pooled transactions including transaction control and restores
 
 it('reports caller-owned and manually controlled transactions', async () => {
   const f = fixture()
-  await withTransaction({ client: f.client }, async client => { await client.query('select 1') })
+  await withClientTransaction(f.client, async () => { await f.client.query('select 1') })
   await beginTransaction(f.client)
   await f.client.query('select 1')
   await commitTransaction(f.client)
   expect(reports()).toEqual(Array.from({ length: 2 }, () => ({ metric: 'db_transaction_statements',
     operation: 'transaction', outcome: 'committed', statements: 3 })))
   expect(f.release).not.toHaveBeenCalled()
-})
-
-it('runs joined work inside the caller transaction without its own transaction control', async () => {
-  const f = fixture()
-  const connect = vi.fn(f.pool.connect)
-  expect(await withTransaction({ connect }, async client => {
-    await client.query('select 1')
-    return client
-  }, { join: f.client })).toBe(f.client)
-  expect(f.statements()).toBe(1)
-  expect(connect).not.toHaveBeenCalled()
-  expect(reports()).toEqual([])
-})
-
-it('starts its own pooled transaction when there is no caller transaction to join', async () => {
-  const f = fixture()
-  await withTransaction(f.pool, async client => { await client.query('select 1') }, { join: undefined })
-  expect(reports()).toEqual([{ metric: 'db_transaction_statements', operation: 'transaction',
-    outcome: 'committed', statements: 3 }])
-  expect(f.release).toHaveBeenCalledOnce()
-})
-
-it('keeps a caller-owned connection after rolling back failed work', async () => {
-  const f = fixture()
-  const failure = new Error('work failed')
-  await expect(withTransaction({ client: f.client }, async client => {
-    await client.query('select 1')
-    throw failure
-  })).rejects.toBe(failure)
-  expect(reports()).toEqual([{ metric: 'db_transaction_statements', operation: 'transaction',
-    outcome: 'rolled_back', statements: 3 }])
-  expect(f.release).not.toHaveBeenCalled()
-  await expectClientRestored(f)
 })
 
 it('counts graph work and live finalizers once along with transaction controls', async () => {
@@ -155,7 +122,7 @@ it.each(['begin', 'commit', 'rollback'] as const)('reports a failed %s without r
   const failure = new Error('database failure')
   const f = fixture({ [stage === 'begin' ? 1 : 3]: failure })
   const workFailure = new Error('work failed')
-  await expect(withTransaction({ client: f.client }, async () => {
+  await expect(withClientTransaction(f.client, async () => {
     await f.client.query('select 1')
     if (stage === 'rollback') throw workFailure
   })).rejects.toBe(stage === 'rollback' ? workFailure : failure)

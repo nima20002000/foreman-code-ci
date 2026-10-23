@@ -13,9 +13,7 @@ import {
   ProvisionedJobRuntimeQualificationRpcRequestSchema, ProvisionedJobRuntimeQualificationRpcResponseSchema,
   validateJobRuntimeNativeContext,
 } from './jobRuntime.js'
-import { JobVerificationSuiteSchema, JobVerificationPassSchema, jobPolicyRequirementsRecord,
-  type JobDefinitionSpecRecord } from './jobVerification.js'
-import { canonicalJson } from './canonicalJson.js'
+import { JobVerificationSuiteSchema, JobVerificationPassSchema } from './jobVerification.js'
 import {
   JobNetworkPolicySchema, JobResourceRequestSchema, JobVerificationApprovalConfigInputSchema,
   JobVerificationApprovalConfigSchema, JobVerificationPolicyRequirementsSchema, JobVerificationProfileIdentitySchema,
@@ -309,19 +307,6 @@ export function jobRuntimeProfilePolicy(profile: JobRuntimeProfileRecord) {
 }
 export function jobRuntimeProfileLimits(profile: JobRuntimeProfileRecord) {
   return profile.schemaVersion === 1 ? profile.limits : profile.spec.resources.limits
-}
-export function matchesRuntimePolicy(spec: JobDefinitionSpecRecord, profile: JobRuntimeProfileRecord,
-  runtimePolicy = jobRuntimeProfilePolicy(profile)): boolean {
-  const policy = jobPolicyRequirementsRecord(runtimePolicy)
-  if ('runtimeSelection' in spec && spec.runtimeSelection === 'qualified-profile' && profile.schemaVersion === 2
-    && profile.approvalConfig.review && profile.status !== 'revoked') {
-    const { imageDigest: requestedImage, ...requested } = spec.policy
-    const { imageDigest: profileImage, ...candidate } = policy
-    void requestedImage
-    void profileImage
-    return canonicalJson(requested) === canonicalJson(candidate)
-  }
-  return canonicalJson(spec.policy) === canonicalJson(policy)
 }
 export const JobRuntimeProfileSaveRecordSchema = JobRuntimeProfileSaveSchema.extend({
   spec: z.union([JobRuntimeProfileSaveSchema.shape.spec, JobVerificationProfileInputSchema]),

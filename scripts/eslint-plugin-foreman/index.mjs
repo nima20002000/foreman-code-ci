@@ -95,31 +95,6 @@ const rules = {
       },
     })),
 
-  'no-raw-database-pools': rule('PostgreSQL pools and connections come from the pool factory.',
-    'Create PostgreSQL pools and connections through infrastructure/pool.ts (createPool, createAuxiliaryPool, createDedicatedClient) so connection limits, deadlines and error handling apply.',
-    context => {
-      const modules = new Set(), constructors = new Set()
-      const pgClass = name => name === 'Pool' || name === 'Client'
-      return {
-        ImportDeclaration(node) {
-          if (node.source.value !== 'pg') return
-          for (const specifier of node.specifiers) {
-            if (specifier.type === 'ImportSpecifier') {
-              if (pgClass(specifier.imported.name ?? specifier.imported.value)) constructors.add(specifier.local.name)
-            } else modules.add(specifier.local.name)
-          }
-        },
-        NewExpression(node) {
-          const callee = node.callee
-          if ((callee.type === 'Identifier' && constructors.has(callee.name))
-            || (callee.type === 'MemberExpression' && !callee.computed && callee.object.type === 'Identifier'
-              && modules.has(callee.object.name) && pgClass(callee.property.name))) {
-            context.report({ node, messageId: 'problem' })
-          }
-        },
-      }
-    }),
-
   'no-silent-catch': rule('Errors are logged or rethrown, not discarded.',
     'Handle or log the error; if discarding it is right, say why in a comment starting with "ignore:".',
     context => {
@@ -236,9 +211,6 @@ export function foremanLint(directory) {
     },
     // The shared transaction helper is the one module that sends BEGIN/COMMIT/ROLLBACK.
     { files: ['src/infrastructure/transaction.ts'], rules: { 'foreman/no-raw-transactions': 'off' } },
-    // The pool factory is the one module that constructs PostgreSQL pools and connections; tests build their own.
-    { ignores: [...tests, '**/*.testSupport.*', '**/*.test-support.*'], rules: { 'foreman/no-raw-database-pools': 'error' } },
-    { files: ['src/infrastructure/pool.ts'], rules: { 'foreman/no-raw-database-pools': 'off' } },
     { ignores: tests, rules: { 'foreman/no-error-rewrap-without-cause': 'error' } },
     { files: tests, rules: { 'foreman/no-source-text-tests': 'error' } },
     { files: ['src/**/*.test.*'], rules: { 'foreman/test-timeout-limit': 'error' } },

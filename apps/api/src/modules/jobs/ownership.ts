@@ -1,5 +1,4 @@
-import type pg from 'pg'
-import { createDedicatedClient } from '../../infrastructure/pool.js'
+import pg from 'pg'
 import { ExclusiveGraphConnection, assertGraphTransaction, type GraphTransactionSql } from '../run-graph/connection.js'
 import { DomainError } from '../errors.js'
 import { ignoreError } from '../diagnostics/ignoredError.js'
@@ -14,7 +13,7 @@ export class JobOwnership {
     this.connection=new ExclusiveGraphConnection(client,()=>this.assertOwned())
   }
   static async acquire(pool:pg.Pool,executionId:string,onLost:()=>void):Promise<JobOwnership|undefined> {
-    const client=createDedicatedClient(pool.options,'graphql-job-owner')
+    const client=new pg.Client({...pool.options,application_name:'graphql-job-owner'})
     const owner=new JobOwnership(client,executionId,onLost)
     client.on('error',owner.handleLoss);client.on('end',owner.handleLoss)
     try {

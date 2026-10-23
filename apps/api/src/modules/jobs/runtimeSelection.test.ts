@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { AutoVerificationJobSpecSchema, ResolvedVerificationJobSpecSchema, jobVerificationTemplate }
   from '@foreman-code/contracts/job-verification'
-import { jobRuntimeProfilePolicy, matchesRuntimePolicy } from '@foreman-code/contracts/job-verification-runtime'
+import { jobRuntimeProfilePolicy } from '@foreman-code/contracts/job-verification-runtime'
 import { verificationFixture } from '../../../test/helpers/jobVerificationFixture.js'
 import { preparationProfile, qualifiedPreparationProfile, builder, laptop, oldImage, newImage }
   from '../../../test/helpers/ciPreparationFixture.js'
 import { ciFixture } from '../../../test/helpers/ciFixture.js'
 import { compatibleJobComputer, orderForPlacement } from './computerSelection.js'
 import { buildComputerTarget } from '../settings/buildComputers.js'
+import { matchesRuntimePolicy } from './runtimeSelection.js'
 
 function candidate(imageDigest: string, deviceId = builder) {
   let profile = preparationProfile('runtime', 'Runtime', deviceId, '44444444-4444-4444-8444-444444444444', ['unit'])

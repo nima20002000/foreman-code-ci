@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { verificationCapacityFixture } from '../../../test/helpers/verificationCapacityFixture.js'
 import { privateFixtureDirectory } from '../../../test/helpers/privateFixtureDirectory.js'
-import { InstalledVerificationRuntimeConfigurationSchema } from '@foreman-code/contracts/installed-runtime-node'
+import { InstalledVerificationRuntimeConfigurationSchema } from './installedVerificationConfiguration.js'
 import { readInstalledVerificationConfiguration } from './installedVerificationRuntime.js'
 import { installedSourceQuotaPool } from './quotaOwnership.js'
 

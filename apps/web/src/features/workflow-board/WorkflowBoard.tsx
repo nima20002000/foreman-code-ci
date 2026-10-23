@@ -128,7 +128,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
     if (liveRunId) void selectLiveRun(liveRunId)
   }, [current, listed.isSuccess, liveRunId, selectLiveRun])
   // History is rendered only by RunBoardSlot. Do not feed legacy Run pins to the
-  // hidden editor, or fabricate missing version/semantics pins.
+  // hidden editor/SelectedRunCanvas, or fabricate missing version/semantics pins.
   const value = useMemo(() => ({ workspaceId, workflowId, selectRun: chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent,
     sidePanel: side.panel, selectedPanelNodeId: side.agentSelection?.nodeId, selectSidePanel: selectPanel, sidePanelHost, runCaptionHost, memoryOpen: side.memoryOpen,
     // A shown Run moves agents exactly as the draft Board does (owner rule: one Board, the same rules).

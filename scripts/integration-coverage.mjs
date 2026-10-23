@@ -32,8 +32,8 @@ export function executedRepositoryFiles(scripts, root, tracked) {
   for (const script of scripts) {
     if (!script.url.startsWith('file:') || !script.functions.some(fn => fn.ranges.some(range => range.count > 0))) continue
     let file = relative(root, fileURLToPath(script.url.split('?')[0])).replaceAll('\\', '/')
-    // Contracts and CI execute their built modules; selection compares the corresponding repository sources.
-    file = file.replace(/^packages\/contracts\/dist\//, 'packages/contracts/src/').replace(/^apps\/ci\/dist\//, 'apps/ci/src/')
+    // Contracts execute their built modules; selection compares the corresponding repository sources.
+    file = file.replace(/^packages\/contracts\/dist\//, 'packages/contracts/src/')
     const stem = file.replace(/\.[cm]?js$/, '')
     const candidate = [file, `${stem}.ts`, `${stem}.mts`, `${stem}.tsx`].find(path => tracked.has(path))
     if (candidate) files.add(candidate)

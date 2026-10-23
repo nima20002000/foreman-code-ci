@@ -8,7 +8,7 @@ import { ExclusiveGraphConnection } from '../src/modules/run-graph/connection.js
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { readUntil } from './helpers/observableCondition.js'
 import { agent3Database } from './helpers/wave25Agent3.js'
-import { retryDatabaseTimeout } from '../src/infrastructure/databaseRetry.js'
+import { retryDatabaseTimeout } from '../src/infrastructure/databaseTimeout.js'
 import { renewOwnedLeases } from '../src/modules/leases/ownerLeases.js'
 import { deferred } from './helpers/deferred.js'
 

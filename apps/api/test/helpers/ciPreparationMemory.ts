@@ -3,7 +3,7 @@ import { DomainError } from '../../src/modules/errors.js'
 import { ExclusiveGraphConnection } from '../../src/modules/run-graph/connection.js'
 import type { JobOwnership } from '../../src/modules/jobs/ownership.js'
 import { CiPreparationRecordSchema, type CiPreparationRecord, type CiPreparationRepository }
-  from '@foreman-code/ci/ciPreparationRepository'
+  from '../../src/modules/jobs/ciPreparationRepository.js'
 
 /** Storage and SQL sessions are synthetic; domain services and checkpoint validation run unchanged. */
 export function ciPreparationMemory() {

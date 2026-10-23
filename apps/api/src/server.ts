@@ -9,7 +9,7 @@ import { componentLogger, enableAppErrorLog, enableFileLogging } from './infrast
 import { readRuntimeBuildIdentity } from './infrastructure/runtimeIdentity.js'
 import { trackInFlightRequests } from './infrastructure/inFlightRequests.js'
 import { installProcessLifecycleLogging } from './infrastructure/processLifecycle.js'
-import { retryStartupDatabase, runBackgroundPassAtStartup } from './infrastructure/databaseRetry.js'
+import { retryStartupDatabase, runBackgroundPassAtStartup } from './infrastructure/startupDatabase.js'
 import { readTestResourcesIdentity } from './infrastructure/testRuntimeResources.js'
 import { join } from 'node:path'
 

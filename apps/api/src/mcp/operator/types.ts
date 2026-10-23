@@ -29,16 +29,16 @@ export interface OperatorServices {
   executionChat?: import('../../modules/collaboration/workflowChatService.js').WorkflowExecutionChatService
   workflowHierarchy?: import('../../modules/workflow-hierarchy/service.js').WorkflowHierarchyService
   memoryBoards?: import('../../modules/memory-boards/service.js').MemoryBoardService
-  circleAccounts?: import('../../modules/ci/types.js').CircleAccountsManagementService
+  circleAccounts?: import('../../modules/settings/circleAccounts.js').CircleAccountsManagementService
   bugReports?: import('../../modules/bug-reports/service.js').BugReportService
   providerAccounts?: import('../../modules/provider-accounts/service.js').ProviderAccountsService
-  ci?: import('../../modules/ci/types.js').HostCiService
+  ci?: import('../../modules/ci-host/service.js').HostCiService
   remoteExecution?: import('../../modules/settings/remoteExecution.js').RemoteExecutionSettingsService
   workerExecution?: import('../../modules/settings/workerExecution.js').WorkerExecutionPolicy
   jobs?: import('../../modules/jobs/service.js').JobService
   jobRuntimeProfiles?: import('../../modules/jobs/runtimeProfiles.js').JobRuntimeProfiles
-  ciRuntime?: import('../../modules/ci/types.js').CiRuntimeProvisioner
-  ciEnrollment?: import('../../modules/ci/types.js').CiEnrollment
+  ciRuntime?: import('../../modules/jobs/ciRuntimeProvisioner.js').CiRuntimeProvisioner
+  ciEnrollment?: import('../../modules/jobs/ciEnrollment.js').CiEnrollment
   resourceTelemetry?: {
     reads: import('@foreman-code/contracts/resource-telemetry').TelemetryReadService<ManagementPrincipal>
     selectors: import('@foreman-code/contracts/resource-telemetry').TelemetrySelectorService<ManagementPrincipal>

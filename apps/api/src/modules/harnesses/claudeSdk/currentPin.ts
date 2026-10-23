@@ -1,4 +1,4 @@
-import { errorMessage } from '@foreman-code/contracts/server-kit'
+import { errorMessage } from '../../../shared/errorMessage.js'
 import type { PayloadFingerprintCache } from '../payloadFingerprintCache.js'
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join } from 'node:path'

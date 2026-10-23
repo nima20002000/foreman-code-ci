@@ -2,14 +2,14 @@ import { AgentConfigurationVersionSchema, HarnessExecutionSchema } from '@forema
 import { AcceptedWorkflowRunV3Schema, RunWorktreeSchema } from '@foreman-code/contracts/wave25'
 import type pg from 'pg'
 import { DomainError } from '../errors.js'
-import { deliveryTransactionClient } from '../interactions/connection.js'
+import { interactionConnection } from '../interactions/connection.js'
 import { requiredLocationAccess } from '../workspaces/location.js'
 import type { WorkspaceLocationService } from '../workspaces/location.js'
 
 /** Shared by preflight, attachment and approval writes, before native side effects. */
 export function continuationValidator(pool: pg.Pool, locations: WorkspaceLocationService) {
   return async (executionId: string, signal?: AbortSignal): Promise<void> => {
-    const client = deliveryTransactionClient() ?? pool
+    const client = interactionConnection.getStore() ?? pool
     const result = await client.query<{ execution: unknown; run: unknown; configuration: unknown; stopped: boolean; cleanup_pending: boolean; workflow_version_id: string; location_revision: string; runner_id: string; root: string }>(
       `select he.record as execution,r.record as run,c.record as configuration,
          r.workflow_version_id,r.location_revision::text,r.runner_id,r.working_directory as root,

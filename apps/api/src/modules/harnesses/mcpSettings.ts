@@ -1,7 +1,7 @@
 import type { CanonicalMachineReference } from '@foreman-code/contracts/device-identity'
 import type { DeviceManagedMcp } from './deviceManagedMcp.js'
 import { randomUUID } from 'node:crypto'
-import { withTransaction } from '../../infrastructure/transaction.js'
+import { withClientTransaction } from '../../infrastructure/transaction.js'
 import { stat } from 'node:fs/promises'
 import type pg from 'pg'
 import { RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
@@ -278,7 +278,7 @@ export class HarnessMcpSettingsService {
         const managed = approve ? this.managed(selected) : undefined
         const expected = snapshot ? expectedMcpUserFingerprint(snapshot, selected.change, managed) : null
         const plan = selected
-        await withTransaction({ client }, async () => {
+        await withClientTransaction(client, async () => {
           await this.liveWriter(client, principal)
           const updated = await client.query<Row>(`update harness_mcp_change_plans set status=$2,decided_by=$3,error=null,
               native_user_after_hash=$4,native_file=$5
@@ -294,7 +294,7 @@ export class HarnessMcpSettingsService {
         signal.throwIfAborted()
         adapterEntered = true
         await this.adapters[selected.harness].apply(snapshot!, selected.change, signal, managed)
-        await withTransaction({ client }, async () => {
+        await withClientTransaction(client, async () => {
           await client.query("update harness_mcp_change_plans set status='applied',error=null where id=$1 and status='submitting'", [id])
           await client.query(`insert into management_audit(principal_id,source,action,target_key,outcome,details)
             values($1,$4,'harness.mcp.apply',$2,'succeeded',$3::jsonb)`, [principal.id, `harness-mcp:${plan.harness}`, JSON.stringify({ planId: id }), source])
@@ -309,7 +309,7 @@ export class HarnessMcpSettingsService {
           const message = notSubmitted
             ? 'The native write was not attempted. Retry this same review, or reject it and prepare a new change.'
             : 'The native write may have completed. Use Reconcile; this write will not be repeated.'
-          await withTransaction({ client }, async () => {
+          await withClientTransaction(client, async () => {
             const updated = await client.query("update harness_mcp_change_plans set status=$2,error=$3 where id=$1 and status='submitting'", [id, status, message])
             if (updated.rowCount) await client.query(`insert into management_audit(principal_id,source,action,target_key,outcome,details)
               values($1,$4,'harness.mcp.delivery_recorded',$2,'succeeded',$3::jsonb)`,

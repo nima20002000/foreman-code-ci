@@ -2,9 +2,9 @@ import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { readProtectedRuntimeConfiguration } from '../src/modules/jobs/installedRuntimeHost.js'
 import { InstalledVerificationRuntimeConfigurationSchema, MAX_VERIFICATION_CONFIGURATION_BYTES }
-  from '@foreman-code/contracts/installed-runtime-node'
+  from '../src/modules/jobs/installedVerificationConfiguration.js'
 import { OwnedOCIContainer, type OCIContainerOwnership } from '../src/modules/jobs/executorContainerOwner.js'
-import { runCiRuntimeCommand } from '@foreman-code/ci/ciRuntimeCommands'
+import { runCiRuntimeCommand } from '../src/modules/jobs/ciRuntimeCommands.js'
 import { bootIdentity } from '../src/modules/harnesses/recovery/linuxIdentity.js'
 import type { PodmanCommandRunner } from '../src/modules/jobs/executorPodman.js'
 

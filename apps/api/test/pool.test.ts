@@ -4,7 +4,7 @@ import pg from 'pg'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createPool, queryForReadiness } from '../src/infrastructure/pool.js'
-import { withDatabaseReadRetry } from '../src/infrastructure/databaseRetry.js'
+import { withDatabaseReadRetry } from '../src/infrastructure/databaseReadRetry.js'
 
 const connectionString = 'postgresql://graphql:graphql@127.0.0.1:5432/graphql'
 

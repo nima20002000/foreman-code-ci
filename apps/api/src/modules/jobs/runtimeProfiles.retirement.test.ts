@@ -3,7 +3,7 @@ import { JobVerificationProfileSchema } from '@foreman-code/contracts/job-verifi
 import { jobPolicyRequirementsRecord } from '@foreman-code/contracts/job-verification'
 import { verificationRuntimeFixture } from '../../../test/helpers/verificationRuntimeFixture.js'
 import { JobRuntimeProfiles, verificationProfileReadiness } from './runtimeProfiles.js'
-import { InstalledVerificationRuntimeCaptureInputSchema } from '@foreman-code/contracts/installed-runtime-node'
+import { InstalledVerificationRuntimeCaptureInputSchema } from './installedVerificationConfiguration.js'
 
 function historicalProfile() {
   const original = verificationRuntimeFixture()

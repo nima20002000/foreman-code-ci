@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { HarnessQualificationRegistry } from './registry.js'
-import { retryStartupDatabase } from '../../../infrastructure/databaseRetry.js'
+import { retryStartupDatabase } from '../../../infrastructure/startupDatabase.js'
 
 afterEach(() => { vi.useRealTimers() })
 

@@ -1,4 +1,4 @@
-import { errorMessage } from '@foreman-code/contracts/server-kit'
+import { errorMessage } from '../../shared/errorMessage.js'
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import type pg from 'pg'
 import { withTransaction } from '../../infrastructure/transaction.js'
@@ -17,9 +17,11 @@ import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.j
 import { assertDeviceHostInstallation } from '../devices/hostAuthorization.js'
 import { DomainError } from '../errors.js'
 import type { JobSql } from '../jobs/repository.js'
-import { buildComputerKey } from '../ci/values.js'
 
-export { buildComputerKey, buildComputerTarget } from '../ci/values.js'
+export function buildComputerKey(target: Pick<DeviceProvisioningTarget, 'hostRef'>): string {
+  const host = target.hostRef
+  return `${host.mainId}:${host.kind === 'device' ? host.deviceId : 'main'}`
+}
 export async function initializePairedBuildComputer(sql: JobSql, registration: DeviceRegistration,
   principalId: string): Promise<'created' | 'rebound' | 'unchanged'> {
   const target = DeviceProvisioningTargetSchema.parse({
@@ -44,6 +46,15 @@ export async function initializePairedBuildComputer(sql: JobSql, registration: D
     throw new DomainError('REVISION_CONFLICT', 'Build settings changed during pairing.', 409)
   }
   return 'rebound'
+}
+export function buildComputerTarget(target: Pick<import('@foreman-code/contracts/jobs').ResolvedJobDefinitionSpec['target'],
+  'hostRef' | 'registration' | 'mainInstallationId'>): DeviceProvisioningTarget {
+  return {
+    hostRef: target.hostRef,
+    applicationInstallationId: target.registration?.workerInstallationId ?? target.mainInstallationId,
+    keyRevision: target.registration?.keyRevision ?? null,
+    authorizationRevision: target.registration?.authorizationRevision ?? null,
+  }
 }
 export async function assertBuildComputerTarget(sql: JobSql, target: DeviceProvisioningTarget): Promise<void> {
   const registration = await assertDeviceHostInstallation(sql, target.hostRef, target.applicationInstallationId)

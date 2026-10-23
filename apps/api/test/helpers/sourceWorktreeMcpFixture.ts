@@ -21,7 +21,7 @@ import { placedContinuationValidator } from '../../src/modules/placement/continu
 import { readDispatchIntent, readExecutionPlacement, readNativePlacement } from '../../src/modules/placement/persistence.js'
 import { RunPlacementReadService } from '../../src/modules/placement/readService.js'
 import { readLiveManagementPrincipal } from '../../src/modules/access/liveManagementPrincipal.js'
-import { deliveryTransactionClient } from '../../src/modules/interactions/connection.js'
+import { interactionConnection } from '../../src/modules/interactions/connection.js'
 import { credentialAuthority } from '../../src/modules/interactions/wave25/credentialAuthority.js'
 import * as continuation from '../../src/modules/runs/continuation.js'
 import { readRemoteObservations } from '../../src/modules/runs/remote/persistence.js'
@@ -197,7 +197,7 @@ export async function sourceWorktreeMcpFixture(options: {
     preparation = new AgentExecutionPreparation(production.sources, producer)
     validatePlacement = placedContinuationValidator(base.db.pool, base.locations, {
       async prepare(executionId) {
-        const sql = deliveryTransactionClient() ?? base.db.pool
+        const sql = interactionConnection.getStore() ?? base.db.pool
         const placement = await readExecutionPlacement(sql, executionId)
         if (!placement) return null
         const intent = await readDispatchIntent(sql, executionId)
@@ -208,7 +208,7 @@ export async function sourceWorktreeMcpFixture(options: {
       },
     }, {
       async assertCurrent(binding, signal) {
-        const sql = deliveryTransactionClient() ?? base.db.pool
+        const sql = interactionConnection.getStore() ?? base.db.pool
         const run = await base.runs.get(binding.intent.runId)
         if (!run) throw new Error('Accepted Agent placement requires its Run')
         const current = await credentialAuthority(sql, binding.intent.executionId, 'workflow')

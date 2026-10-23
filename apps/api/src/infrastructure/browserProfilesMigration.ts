@@ -1,5 +1,5 @@
+/** Team D registers this SQL under the next migration version in dependency order. */
 export const browserProfilesMigration = {
-  version: 2026102122,
   name: 'managed-browser-profiles',
   sql: String.raw`
 create table browser_catalog_revision (singleton boolean primary key default true check(singleton), revision bigint not null);

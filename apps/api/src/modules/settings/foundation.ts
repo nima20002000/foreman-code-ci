@@ -26,7 +26,7 @@ import { CircleCreditAllowanceSchema, DEFAULT_CIRCLE_CREDIT_ALLOWANCE,
 import { RemoteExecutionSettingsSchema, DEFAULT_REMOTE_EXECUTION_SETTINGS,
   type RemoteExecutionSettings } from '@foreman-code/contracts/management'
 
-import { withTransaction } from '../../infrastructure/transaction.js'
+import { inTransaction, withTransaction } from '../../infrastructure/transaction.js'
 
 import { DomainError } from '../errors.js'
 import type { GraphSqlClient } from '../run-graph/connection.js'
@@ -179,7 +179,7 @@ export class PostgresFoundationSettingsRepository {
     if (expectedRevision !== undefined && (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0)) {
       throw new DomainError('REVISION_INVALID', 'Expected revision must be a nonnegative integer.', 400)
     }
-    return withTransaction(this.pool, async (client) => {
+    return inTransaction(this.pool, supplied, async (client) => {
       await client.query('select pg_advisory_xact_lock(hashtext($1))', [`setting:${key}`])
       const current = await client.query<{ revision: string }>(
         'select revision from application_settings where key = $1 for update', [key],
@@ -200,6 +200,6 @@ export class PostgresFoundationSettingsRepository {
            updated_at = excluded.updated_at`, [key, JSON.stringify(value), versionId],
       )
       return { value, revision: nextRevision, versionId }
-    }, { join: supplied })
+    })
   }
 }
