@@ -7,6 +7,7 @@ import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { currentOperatorAuthority } from '../../access/runAuthority.js'
 import { requireAuthorization } from '../../access/policy.js'
 import { credentialAuthority } from '../../interactions/wave25/credentialAuthority.js'
+import { assertWorkflowCorrelation } from '../../runs/workResultRepair.js'
 import type { RunOwnership } from '../../runs/ownership.js'
 import type { PostgresOperatorConversationRepository } from '../../conversations/operatorChatRepository.js'
 import type { PostgresAgentChatRepository } from '../../conversations/agentChatRepository.js'
@@ -156,7 +157,10 @@ export class PostgresClaudeInteractionAuthority implements ClaudeInteractionAuth
           || actual.clientCorrelationId !== `consultation:${this.binding.consultation.consultationId}`) denied()
       } else {
         const current = await credentialAuthority(this.database, this.binding.executionId, 'workflow')
-        if (current.nativeSessionId !== identity.nativeSessionId || actual.clientCorrelationId !== `execution:${this.binding.executionId}`) denied()
+        if (current.nativeSessionId !== identity.nativeSessionId) denied()
+        // The execution's own turn or a result correction it reserved, such as the Kanban reminder.
+        try { await assertWorkflowCorrelation(this.database, this.binding.executionId, actual.clientCorrelationId) }
+        catch { denied() }
       }
     } else {
       const row = await this.chat(identity.attemptId), receipt = row.payload.nativeSubmission
