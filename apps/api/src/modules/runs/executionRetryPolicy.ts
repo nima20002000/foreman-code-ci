@@ -95,7 +95,7 @@ export function hasExecutionRetryBudget(failed: HarnessExecution, attempts: read
     return attempts.length - infrastructure.length < EXECUTION_MAX_ATTEMPTS
   }
   const firstFailureAt = infrastructure.reduce((earliest, attempt) =>
-    Math.min(earliest, Date.parse(attempt.execution.finishedAt ?? '')), Infinity)
+    Math.min(earliest, Date.parse(attempt.execution.finishedAt ?? attempt.execution.startedAt ?? attempt.execution.createdAt)), Infinity)
   const nextStartAt = now + executionRetryDelayMs(failed.attempt)
   return nextStartAt < firstFailureAt + EXECUTION_INFRASTRUCTURE_RETRY_WINDOW_MS
 }

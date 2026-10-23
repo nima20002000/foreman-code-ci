@@ -61,9 +61,7 @@ export class BrowserBroker implements BrowserLifecyclePort {
       const owner = [...this.sessions.values()].find(value => value.record.session.profileId === profileId
         && value.record.session.browserGeneration === generation
         && value.record.leases.some(lease => lease.targetId === openerTargetId))
-      const atLimit = owner?.record.session.subject && owner.record.control.state === 'agent'
-        && owner.record.leases.length >= (owner.record.maxTabs ?? DEFAULT_AGENT_BROWSER_TABS)
-      if (!owner || owner.record.closing || owner.record.session.state === 'closed' || atLimit) {
+      if (!owner || owner.record.closing || owner.record.session.state === 'closed') {
         await options.driver.closeTab(profileId, generation, tab.targetId)
         return
       }
@@ -590,16 +588,20 @@ export class BrowserBroker implements BrowserLifecyclePort {
         await this.persist(live); return structuredClone(control)
       }
       try {
+        let dialogOpen = false
         for (const { lease } of live.record.leases) {
           const dispatch = this.transitionDispatch(live, lease.tabId, transitionEpoch)
           await this.options.driver.releasePressed(dispatch)
           await dispatch('Foreman.resumeManagedDialogs')
           const observed = await this.options.driver.observe(dispatch)
+          dialogOpen ||= !!observed.dialog
           lease.title = observed.title; lease.url = observed.url
         }
         if (control.epoch !== transitionEpoch || live.record.closing) return structuredClone(control)
         control.state = live.record.session.subject ? 'agent' : 'paused'; control.controllingViewerId = null
-        control.reason = live.record.session.subject ? null : 'Browser ready for you — click to continue.'
+        control.reason = dialogOpen ? 'Resolve the current dialog to continue.'
+          : live.record.session.subject ? null : 'Browser ready for you — click to continue.'
+        live.dialogBarrier = dialogOpen
         live.record.session.state = 'ready'; live.lastInput.clear(); await this.persist(live)
         if (live.record.session.subject) live.gate.open()
       } catch {

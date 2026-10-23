@@ -4,6 +4,7 @@ import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { BrowserProfileService } from './service.js'
 import { BrowserProfileSyncCoordinator } from './sync.js'
 import { BrowserProfileDispatcher } from './dispatcher.js'
+import { DomainError } from '../errors.js'
 import type { BrowserProfileRepository, BrowserProfileTransaction, BrowserProfileHost, BrowserHostAvailability,
   BrowserProfileReplica, BrowserProfileSyncJob, BrowserProfileSnapshotManifest, ProfileCommand, ProfileHostIntent,
   StoredProfile, BrowserProfilePendingWork } from './types.js'
@@ -74,9 +75,13 @@ function retainedRepository(): BrowserProfileRepository {
 
 export function profileWorkFixture() {
   const repository = retainedRepository(), statuses = new Map<string, BrowserHostAvailability>([['source', 'ready'], ['worker', 'ready']])
+  const unpaired = new Set<string>()
+  const requirePaired = (computerId: string) => {
+    if (unpaired.has(computerId)) throw new DomainError('BROWSER_PAIRING_CHANGED', 'This computer is no longer paired.', 403)
+  }
   const owner: ManagementPrincipal = { id: 'owner', name: 'Owner', audience: 'operator', expiresAt: '2099-01-01T00:00:00.000Z', revokedAt: null, grants: [] }
   const host: BrowserProfileHost = {
-    installation: async computerId => `${computerId}-installation`, status: vi.fn(async (_profileId, computerId) => statuses.get(computerId) ?? 'offline'),
+    installation: async computerId => { requirePaired(computerId); return `${computerId}-installation` }, status: vi.fn(async (_profileId, computerId) => statuses.get(computerId) ?? 'offline'),
     create: vi.fn(async () => undefined), remove: vi.fn(async () => undefined), receive: vi.fn(async () => undefined),
     apply: vi.fn(async () => undefined), prune: vi.fn(async () => undefined),
     export: vi.fn(async input => {
@@ -87,12 +92,12 @@ export function profileWorkFixture() {
     checkOrigin: vi.fn<BrowserProfileHost['checkOrigin']>(async input => ({ origin: input.origin, state: 'unknown', checkedAt: null, evidence: 'none', reason: null })),
   }
   const service = new BrowserProfileService({ repository, host, id: randomUUID, authority: {
-    authorize: async () => undefined,
-    computers: async () => [...statuses].map(([id, status]) => ({ id, online: status !== 'offline' })),
+    authorize: async (_principal, _action, ids) => { ids.forEach(requirePaired) },
+    computers: async () => [...statuses].filter(([id]) => !unpaired.has(id)).map(([id, status]) => ({ id, online: status !== 'offline' })),
   } })
   const failures: Mock<(error: unknown) => void> = vi.fn()
   const retention = { reconcile: vi.fn(async () => undefined) }
   const dispatcher = () => new BrowserProfileDispatcher({ service, sync: new BrowserProfileSyncCoordinator(service), retention,
     reportFailure: failures, retryMs: 60_000 })
-  return { owner, service, host, statuses, failures, retention, dispatcher }
+  return { owner, service, host, statuses, unpaired, failures, retention, dispatcher }
 }

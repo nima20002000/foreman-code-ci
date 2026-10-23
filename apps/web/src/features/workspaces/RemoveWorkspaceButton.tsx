@@ -5,6 +5,7 @@ import type { ManagedWorkspace, WorkspaceArchiveInput } from '@foreman-code/cont
 
 import { CommandAttempt } from '../../shared/api/commandAttempt'
 import { queryKeys, useArchiveManagedWorkspaceMutation } from '../../shared/api/query'
+import { getManagedWorkspace } from '../../shared/api/client'
 import { assertSession, sessionGeneration } from '../../shared/api/sessionBoundary'
 import { ConfirmDialog, Icon, IconButton } from '../../shared/ui/nocturne'
 
@@ -23,6 +24,13 @@ export function RemoveWorkspaceButton({ workspaceId, name, revision, renderTrigg
   const inFlight = useRef(false)
   const locked = mutation.isPending || attempt.current.unresolved
   const close = () => { if (!locked) { setOpen(false); mutation.reset() } }
+  const refreshRevision = async () => {
+    try {
+      const fresh = await queryClient.fetchQuery({ queryKey: queryKeys.managedWorkspace(workspaceId), staleTime: 0,
+        queryFn: ({ signal }) => getManagedWorkspace(workspaceId, { signal }) })
+      setBaseRevision(fresh.revision)
+    } catch { /* ignore: the original rejection stays on screen and the next attempt keeps the revision it had. */ }
+  }
   const remove = async () => {
     if (inFlight.current) return
     inFlight.current = true
@@ -33,6 +41,8 @@ export function RemoveWorkspaceButton({ workspaceId, name, revision, renderTrigg
       attempt.current.succeeded()
     } catch (error) {
       attempt.current.failed(error)
+      // A definite rejection may be a revision conflict; the next confirmation then carries the current revision.
+      if (!attempt.current.unresolved) await refreshRevision()
       return
     } finally { inFlight.current = false }
     setOpen(false)

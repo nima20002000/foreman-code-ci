@@ -27,6 +27,8 @@ export class ChatBrowserSessions {
     localSessions(): Promise<readonly BrowserSession[]>
     /** Current control facts of a local session; undefined when this computer does not hold it. */
     localControl?(sessionId: string): { browserGeneration: number; epoch: number } | undefined
+    /** Control facts of a session on any computer, through the session router; used when the local broker does not hold it. */
+    sessionControl?(principal: ManagementPrincipal, sessionId: string): Promise<{ browserGeneration: number; epoch: number } | undefined>
     /** The Agent chat subject of a worker credential; defaults to its stored conversation credential. */
     chatSubject?(principal: ManagementPrincipal): Promise<Extract<AgentSubject, { kind: 'conversation' }> | undefined>
     now?(): number
@@ -93,13 +95,15 @@ export class ChatBrowserSessions {
   }
 
   /** A chat Agent always acts as the agent on its own browser, so it never has to read and repeat control facts. */
-  agentActor(sessionId: string): { kind: 'agent'; browserGeneration: number; epoch: number } | undefined {
-    const control = this.options.localControl?.(sessionId)
+  async agentActor(principal: ManagementPrincipal, sessionId: string): Promise<{ kind: 'agent'; browserGeneration: number; epoch: number } | undefined> {
+    const control = this.options.localControl?.(sessionId) ?? await this.options.sessionControl?.(principal, sessionId)
     return control ? { kind: 'agent', ...control } : undefined
   }
 
   /** A Run browser is about to open on this profile: close every chat browser on it first. */
   async yieldToRun(profileId: string, computerId: string): Promise<void> {
+    // A chat browser still opening is not in `chats` yet; let it land so it is closed below too.
+    await Promise.allSettled([...this.opening.values()])
     await this.adopt()
     for (const [conversationId, chat] of [...this.chats]) {
       if (chat.profileId !== profileId || chat.computerId !== computerId) continue
