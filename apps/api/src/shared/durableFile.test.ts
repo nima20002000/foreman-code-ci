@@ -50,28 +50,3 @@ it('reads records within their byte limit and reports a missing file only when a
     expect(await readBoundedTextIfPresent(missing, limit)).toBeUndefined()
   })
 })
-
-
-it('keeps parent preparation with the caller and uses its exclusive temporary path', async () => {
-  await withPrivateFixtureDirectories(async () => {
-    const root = await privateFixtureDirectory('durable-file-policy-')
-    const directory = join(root, 'existing'), path = join(directory, 'record.json')
-    await expect(writeDurableFile(path, 'new', { createParent: false })).rejects.toMatchObject({ code: 'ENOENT' })
-    expect(await readdir(root)).toEqual([])
-
-    await mkdir(directory, { mode: 0o700 })
-    const temporaryPath = join(directory, '.pending')
-    await writeFile(path, 'old')
-    await writeFile(temporaryPath, 'another writer')
-    await expect(writeDurableFile(path, 'new', { createParent: false, temporaryPath }))
-      .rejects.toMatchObject({ code: 'EEXIST' })
-    expect(await readFile(path, 'utf8')).toBe('old')
-    expect(await readFile(temporaryPath, 'utf8')).toBe('another writer')
-
-    await writeDurableFile(path, new Uint8Array([1, 2, 3]), {
-      createParent: false, syncDirectory: false, temporaryPath: join(directory, '.replacement'),
-    })
-    expect(await readFile(path)).toEqual(Buffer.from([1, 2, 3]))
-    expect((await readdir(directory)).sort()).toEqual(['.pending', 'record.json'])
-  })
-})

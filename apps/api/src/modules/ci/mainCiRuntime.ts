@@ -5,7 +5,7 @@ import { systemGitWorktreePorts } from '../sources/gitWorktree.js'
 import { CiRuntimeWorker, currentCiRuntimePaths, lastCiRuntimeRefresh, prepareCiRuntime, retainedCiJobImages,
   retireCiRuntimeConfigurations, scheduleCiRuntimeRefresh } from './runtime.js'
 import { retainMainJobSourceClosures } from '../jobs/mainJobJournal.js'
-import type { JobSql } from '../jobs/index.js'
+import type { JobSql } from '../jobs/repository.js'
 import { hostEnvironment } from '../../shared/process.js'
 
 /** The command that refreshes Main's protected runtime while Main is stopped: this same Node runtime and loader

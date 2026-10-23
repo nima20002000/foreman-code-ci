@@ -1,6 +1,6 @@
 import type { HarnessConfiguration } from '@foreman-code/contracts'
 import type { HarnessProfileSelection } from '@foreman-code/contracts/harness-registry'
-import type { ProviderAccountResolver } from '../provider-accounts/index.js'
+import type { ProviderAccountResolver } from '../provider-accounts/service.js'
 import { DomainError } from '../errors.js'
 import type { HostHarnessOverrideService } from './instanceSettings/service.js'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'

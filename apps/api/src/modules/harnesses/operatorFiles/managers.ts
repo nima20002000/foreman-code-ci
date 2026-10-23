@@ -3,7 +3,7 @@ import { PostgresOperatorConversationRepository } from '../../conversations/oper
 import type { FastifyInstance } from 'fastify'
 import type pg from 'pg'
 import type { ApiConfig } from '../../../config.js'
-import type { NativeManagerResolver } from '../../conversations/index.js'
+import type { NativeManagerResolver } from '../../conversations/operatorChat.js'
 import { DomainError } from '../../errors.js'
 import { defaultFileStorageRoot } from '../../files/storage.js'
 import { productionCodexChatFiles } from '../codexFiles/production.js'

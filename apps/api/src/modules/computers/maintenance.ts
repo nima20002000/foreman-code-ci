@@ -1,4 +1,4 @@
-import { errorMessage } from '@foreman-code/contracts/server-kit'
+import { errorMessage } from '@foreman-code/contracts-node/server-kit'
 import { readOperationalFailures } from '../diagnostics/logger.js'
 import { readServiceHealth } from '../diagnostics/index.js'
 import { readClaudePlugins, claudeCliResult } from './claudePlugins.js'
@@ -29,7 +29,7 @@ import {
   SyncedPluginSchema, type SyncedPlugin,
 } from '@foreman-code/contracts/computer-maintenance'
 import { runProcessSettled, hostEnvironment } from '../../shared/process.js'
-import { createHostAdministration, type HostAdministration, type HostStep } from '../hostAdministration.js'
+import { createHostAdministration, type HostAdministration, type HostStep } from '../ci/hostAdmin.js'
 
 export type { MaintenancePorts }
 
@@ -82,7 +82,7 @@ export class ComputerMaintenance {
   private taskRevision = 0
   private readonly taskStore: MaintenanceTaskStore
   private readonly commandStore: MaintenanceCommandStore
-  private readonly host: Pick<HostAdministration, 'system'>
+  private readonly host: HostAdministration
   private readonly taskCommands = new Map<string, Map<string, string>>()
   private admissions: Promise<unknown> = Promise.resolve()
   private closing = false

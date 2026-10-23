@@ -1,6 +1,6 @@
 import type { CodexHarnessConfiguration } from '@foreman-code/contracts'
 import { HarnessExecutionError } from '../errors.js'
-import type { FileToolOperation } from '../../files/index.js'
+import type { FileToolOperation } from '../../files/tools/types.js'
 import { codexFileDynamicTools } from './index.js'
 import { harnessProfile } from '../qualification/profiles.js'
 
