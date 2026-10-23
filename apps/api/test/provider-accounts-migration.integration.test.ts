@@ -5,7 +5,7 @@ import { DEFAULT_HARNESS_DEFAULTS } from '@foreman-code/contracts'
 import type { ProviderAccount } from '@foreman-code/contracts/provider-accounts'
 import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
 import { applyApplicationMigrations, migrations } from '../src/infrastructure/migrations.js'
-import { inTransaction } from '../src/infrastructure/transaction.js'
+import { withTransaction } from '../src/infrastructure/transaction.js'
 import { providerAccountsMigration } from '../src/modules/provider-accounts/migration.js'
 import { LocalProviderCredentials } from '../src/modules/provider-accounts/localCredentials.js'
 import { ProviderAccountsRepository } from '../src/modules/provider-accounts/repository.js'
@@ -57,9 +57,9 @@ it('migrates account metadata additively and retains legacy profiles, historical
     const migrated = await accounts.get(owner.principal, { accountId: account.id })
     expect(migrated).toMatchObject(account)
     expect(migrated.binding).toMatchObject({ accountId: account.id, subject: null, profileRef: account.id })
-    const legacy = await inTransaction(db.pool, undefined, sql => accounts.acceptedBindings.accept(sql,
+    const legacy = await withTransaction(db.pool, sql => accounts.acceptedBindings.accept(sql,
       'run-node', 'legacy-run:node', DEFAULT_HARNESS_DEFAULTS.codex))
-    const pinned = await inTransaction(db.pool, undefined, sql => accounts.acceptedBindings.accept(sql,
+    const pinned = await withTransaction(db.pool, sql => accounts.acceptedBindings.accept(sql,
       'run-node', 'accepted-run:node', { ...DEFAULT_HARNESS_DEFAULTS.codex, accountId: account.id }))
     const second = (await accounts.create(owner.principal, 'http', { commandId: randomUUID(), expectedRevision: 1,
       provider: 'codex', authMode: 'subscription', name: 'Second' })).value.accounts[1]!

@@ -17,7 +17,7 @@ import { lockActiveWorkerPrincipal, requireActiveWorkerBinding } from '../access
 import { PostgresInteractionDeliveryRepository } from './deliveryPostgres.js'
 import { appendNativeEvent } from '../runs/nativeEvents.js'
 import { assertOrchestratorGraphAuthority } from './graphAuthority.js'
-import { interactionConnection } from './connection.js'
+import { deliveryTransactionClient } from './connection.js'
 import {
   assertDeliveryLease, assertInteractionRevision, interactionTransaction, lockInteraction,
   type DeliveryFailure, type InteractionLease, type LockedInteraction, type ReconciliationEvidence,
@@ -64,7 +64,7 @@ export class PostgresInteractionRepository {
     interaction: Parameters<typeof assertOrchestratorGraphAuthority>[1],
     reviewer: Parameters<typeof assertOrchestratorGraphAuthority>[2] = {},
   ) {
-    return assertOrchestratorGraphAuthority(interactionConnection.getStore() ?? this.pool, interaction, reviewer)
+    return assertOrchestratorGraphAuthority(deliveryTransactionClient() ?? this.pool, interaction, reviewer)
   }
 
   async create(input: DurableInteraction): Promise<{ interaction: DurableInteraction; created: boolean }> {

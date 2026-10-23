@@ -34,7 +34,7 @@ import { createGraphqlMcpServer, roleDeniedToolCall, type McpRequestRegistration
 import { operatorToolCatalog } from '../operator/server.js'
 import { dispatchToolRun } from '../operator/discovery.js'
 import { McpRequestCancellation } from '../shared/cancellation.js'
-import { withDatabaseReadRetry } from '../../infrastructure/databaseReadRetry.js'
+import { withDatabaseReadRetry } from '../../infrastructure/databaseRetry.js'
 
 export const GRAPHQL_MCP_PATH = '/mcp'
 const RpcIdSchema = z.union([z.string(), z.number().int()])

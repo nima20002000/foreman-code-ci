@@ -1,5 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/server'
-import { withDatabaseReadRetry } from '../../infrastructure/databaseReadRetry.js'
+import { withDatabaseReadRetry } from '../../infrastructure/databaseRetry.js'
 
 /** The registered tool's annotation is the retry boundary; writes never enter it. */
 export function retryReadOnlyToolConnections(server: McpServer): void {

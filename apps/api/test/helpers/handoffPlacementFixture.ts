@@ -16,7 +16,7 @@ import { WorkerExecutionPolicy } from '../../src/modules/settings/workerExecutio
 import { placedContinuationValidator } from '../../src/modules/placement/continuation.js'
 import { readDispatchIntent, readExecutionPlacement, readNativePlacement } from '../../src/modules/placement/persistence.js'
 import { readLiveManagementPrincipal } from '../../src/modules/access/liveManagementPrincipal.js'
-import { interactionConnection } from '../../src/modules/interactions/connection.js'
+import { deliveryTransactionClient } from '../../src/modules/interactions/connection.js'
 import { credentialAuthority } from '../../src/modules/interactions/wave25/credentialAuthority.js'
 import * as continuation from '../../src/modules/runs/continuation.js'
 import { currentOperatorIntegration } from './currentOperatorIntegration.js'
@@ -81,7 +81,7 @@ export async function handoffPlacementFixture(options: { checkOutcome?: 'qualifi
     const producer = placement.producer
     validatePlacement = placedContinuationValidator(base.db.pool, base.locations, {
       async prepare(executionId) {
-        const sql = interactionConnection.getStore() ?? base.db.pool
+        const sql = deliveryTransactionClient() ?? base.db.pool
         const accepted = await readExecutionPlacement(sql, executionId)
         if (!accepted) return null
         const intent = await readDispatchIntent(sql, executionId)
@@ -91,7 +91,7 @@ export async function handoffPlacementFixture(options: { checkOutcome?: 'qualifi
       },
     }, {
       async assertCurrent(binding, signal) {
-        const sql = interactionConnection.getStore() ?? base.db.pool
+        const sql = deliveryTransactionClient() ?? base.db.pool
         const run = await base.runs.get(binding.intent.runId)
         if (!run) throw new Error('Placed native work requires its saved Run.')
         const current = await credentialAuthority(sql, binding.intent.executionId, 'workflow')

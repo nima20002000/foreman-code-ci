@@ -1,4 +1,4 @@
-export const memoryWorkIndexesMigration = { version: 2026102102, sql: `
+export const memoryWorkIndexesMigration = { version: 2026102125, sql: `
 create index memory_bindings_card_page on memory_card_bindings(card_id,
   (case when record->'resolution' is null and record->>'state'<>'accepted' then 0 else 1 end),id);
 create index memory_bindings_unresolved on memory_card_bindings(card_id)

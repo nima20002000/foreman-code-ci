@@ -7,7 +7,7 @@ import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connec
 import type { RuntimeIdentity } from '@foreman-code/contracts'
 import { DomainError } from '../errors.js'
 import { API_APPLICATION_VERSION } from '../../infrastructure/applicationVersion.js'
-import { retryStartupDatabase } from '../../infrastructure/startupDatabase.js'
+import { retryStartupDatabase } from '../../infrastructure/databaseRetry.js'
 import { PostgresDeviceAccessService } from './access.js'
 import type { DeviceExtensionRegistration } from './deviceApplicationChannel.js'
 import { DeviceEndpoint } from './deviceEndpoint.js'

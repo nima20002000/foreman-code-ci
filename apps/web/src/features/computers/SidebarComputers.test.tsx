@@ -483,7 +483,7 @@ it('keeps last known cloud totals when a refetch exceeds the activity freshness 
     release()
     await act(() => refresh)
   }
-  expect(within(group).getByText('16 slots · 4 busy · 12 free')).toBeInTheDocument()
+  expect(await within(group).findByText('16 slots · 4 busy · 12 free')).toBeInTheDocument()
 })
 
 it('keeps both popovers open while crossing gaps and closes both after leaving or pressing Escape', async () => {

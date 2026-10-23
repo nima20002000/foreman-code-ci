@@ -1,5 +1,5 @@
 import type pg from 'pg'
-import { retryDatabaseTimeout } from '../../infrastructure/databaseTimeout.js'
+import { retryDatabaseTimeout } from '../../infrastructure/databaseRetry.js'
 import { rollbackTransaction } from '../../infrastructure/transaction.js'
 import { timeRuntimeOperation } from '../../infrastructure/runtimeTiming.js'
 

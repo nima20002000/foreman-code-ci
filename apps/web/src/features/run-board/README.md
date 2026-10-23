@@ -129,9 +129,9 @@ and the real editor's full draft lifecycle were not exercised here.
 ## Read-only canvas: no shared prop change required
 
 The new canvas composes the repository's `AgentNodeView` and `SignalEdgeShape`
-with React Flow. It does **not** call the old `SelectedRunCanvas` (which has its
-own version/configuration/Run-inspection queries), and does not fetch current
-Agent facts. Nodes use snapshot names, configuration references, positions and
+with React Flow. It does **not** reuse the old selected-Run canvas (since
+removed, which had its own version/configuration/Run-inspection queries), and
+does not fetch current Agent facts. Nodes use snapshot names, configuration references, positions and
 sizes. Every snapshot edge is retained, including parallel approval/execution
 relationships; labels, directions and explicit handles are preserved. Unspecified
 handles use renderer-only right/left anchors; the stored edge is unchanged.

@@ -4,11 +4,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { OwnedOCIContainer, proveOCIBoundaryEmpty } from '../src/modules/jobs/executorContainerOwner.js'
 import { readProtectedRuntimeConfiguration } from '../src/modules/jobs/installedRuntimeHost.js'
 import { InstalledVerificationRuntimeConfigurationSchema, MAX_VERIFICATION_CONFIGURATION_BYTES }
-  from '../src/modules/jobs/installedVerificationConfiguration.js'
+  from '@foreman-code/contracts/installed-runtime-node'
 import { reconcileInstalledJobRuntimeQualification, runInstalledJobRuntimeQualification }
   from '../src/modules/jobs/installedRuntimeQualification.js'
 import { runQualificationCommand } from '../src/modules/jobs/qualification.js'
-import { runCiRuntimeCommand } from '../src/modules/jobs/ciRuntimeCommands.js'
+import { runCiRuntimeCommand } from '@foreman-code/ci/ciRuntimeCommands'
 import { identityAlive, processIdentity } from '../src/modules/harnesses/recovery/linuxIdentity.js'
 import { jobQualificationFaultFixture } from './helpers/jobQualificationFaultFixture.js'
 import { physicalFaultEnvironment } from './helpers/physicalFaultEnvironment.js'

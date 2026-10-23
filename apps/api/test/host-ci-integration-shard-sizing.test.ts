@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { buildComputerIntegrationShards, gateIntegrationShards } from '../src/modules/ci-host/capacity.js'
+import { buildComputerIntegrationShards, gateIntegrationShards } from '@foreman-code/ci/capacity'
 
 it.each([
   { cpuCount: 16, memoryGiB: 14, allowance: 100, shards: 7 },

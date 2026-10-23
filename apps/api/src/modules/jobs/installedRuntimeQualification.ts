@@ -1,4 +1,4 @@
-import { errorMessage } from '../../shared/errorMessage.js'
+import { errorMessage } from '@foreman-code/contracts/server-kit'
 import type { ChildProcess } from 'node:child_process'
 import { constants } from 'node:fs'
 import { open, readdir, lstat, realpath, statfs, rm } from 'node:fs/promises'

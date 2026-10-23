@@ -1,4 +1,4 @@
-export const workflowChatNotificationsMigration = { version: 2026102122, sql: String.raw`
+export const workflowChatNotificationsMigration = { version: 2026102123, sql: String.raw`
 create function notify_workflow_chat_message() returns trigger language plpgsql as $$
 begin
   perform pg_notify('workflow_chat_changed', json_build_object('schema',current_schema(),

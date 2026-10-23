@@ -1,7 +1,8 @@
-import { errorMessage } from '../../shared/errorMessage.js'
+import { errorMessage } from '@foreman-code/contracts/server-kit'
 import { isDeepStrictEqual } from 'node:util'
 import { withTransaction } from '../../infrastructure/transaction.js'
-import pg from 'pg'
+import type pg from 'pg'
+import { createDedicatedClient } from '../../infrastructure/pool.js'
 import { WorkspaceSchema } from '@foreman-code/contracts'
 import { type ManagementAction, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import {
@@ -136,7 +137,7 @@ export class WorkspaceRepositoryService {
 
   async add(principal: ManagementPrincipal, source: Transport, raw: unknown) {
     const input = WorkspaceRepositoryAddInputSchema.parse(raw)
-    const ownership = new pg.Client({ ...this.pool.options, application_name: 'workspace-repository-import' })
+    const ownership = createDedicatedClient(this.pool.options, 'workspace-repository-import')
     const lock = `workspace-repository:${input.workspaceId}`
     let connected = false
     let locked = false

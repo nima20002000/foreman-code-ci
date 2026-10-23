@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url'
 import { z } from 'zod'
 import { captureInstalledRuntimeConfigurationRecord, InstalledJobRuntimeConfigurationRecordSchema }
   from '../modules/jobs/installedRuntimeHost.js'
-import { InstalledVerificationRuntimeCaptureInputSchema } from '../modules/jobs/installedVerificationConfiguration.js'
+import { InstalledVerificationRuntimeCaptureInputSchema } from '@foreman-code/contracts/installed-runtime-node'
 import { ignoreError } from '../modules/diagnostics/ignoredError.js'
 
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')

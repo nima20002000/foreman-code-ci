@@ -24,7 +24,6 @@ import { WorkConnectionLimitEditor } from './WorkConnectionLimitEditor'
 import type { EditGraph } from './AuthoringFields'
 import { useWorkflowBoard } from '../../workflow-board/context'
 import { WorkflowAgentPanel } from '../../workflow-board/WorkflowAgentPanel'
-import { SelectedRunCanvas } from '../../workflow-board/inspect/SelectedRunCanvas'
 import { CiServerNode, type CiServerFlowNode } from '../../workflow-board/inspect/CiServer'
 import { CI_SERVER_NODE_ID } from '../../workflow-board/inspect/ciServer'
 import { useBoardCiServer } from '../../workflow-board/inspect/useBoardCiServer'
@@ -136,9 +135,6 @@ const fitViewOptions = RESPONSIVE_FIT_OPTIONS
 const proOptions = { hideAttribution: true }
 export type DraftCanvasHandle = { flush(): void; cancel(): void }
 
-/** The draft remains mounted with its geometry buffer while the selected Run
- * renders its immutable topology. Hidden draft nodes do not subscribe to live
- * Run state or repeatedly scan execution history. */
 export const DraftCanvas = forwardRef<DraftCanvasHandle, {
   draftKey: string; graph: WorkflowDefinitionV3; agents: readonly Agent[]; kind: WorkflowRelationship['kind']
   baseGraph?: WorkflowDefinitionV3; semanticLocked?: boolean
@@ -151,9 +147,8 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
   change, geometry, pending, report, inspect = (action) => action(), removalDisabled = false,
   open, setOpen = () => undefined, panels = () => ({ chat: null, settings: null, info: null }), children }, ref) {
   const board = useWorkflowBoard()
-  const selectedRun = board?.run
   const responsive = useResponsiveGraphViewport<GraphNode | CiServerFlowNode | KanbanFlowNode, DraftEdge | KanbanActivityFlowEdge>({
-    enabled: !selectedRun, viewportKey: boardViewportKey(graph.workspaceId, graph.id) })
+    viewportKey: boardViewportKey(graph.workspaceId, graph.id) })
   const [project] = useState(() => createGraphTopologyProjector())
   const topology = useMemo(() => project(graph, agents), [project, graph, agents])
   const [adapter] = useState(() => createGraphGeometryAdapter(topology.nodes))
@@ -312,10 +307,8 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
   }
   const context = { draftKey, inspect, open: board?.selectSidePanel ? shown : open, setOpen: setPanel, openChat, selectNode, beginResize, resize, finishResize, changedAgentIds }
   return <CanvasContext.Provider value={context}>
-    <div ref={responsive.containerRef} {...proximity} className={`next-draft-canvas board-draft-canvas${connecting ? ' is-connecting' : ''}`} style={selectedRun ? { display: 'none' } : undefined} aria-hidden={!!selectedRun} inert={!!selectedRun} aria-label="Editable workflow graph">
-      {/* While a Run is shown, the draft's data stays mounted but its flow does not: a hidden
-          flow measures a zero-size box and would come back empty on Return to draft. */}
-      {selectedRun ? null : <ReactFlow<GraphNode | CiServerFlowNode | KanbanFlowNode, DraftEdge | KanbanActivityFlowEdge> nodes={flowNodes}
+    <div ref={responsive.containerRef} {...proximity} className={`next-draft-canvas board-draft-canvas${connecting ? ' is-connecting' : ''}`} aria-label="Editable workflow graph">
+      <ReactFlow<GraphNode | CiServerFlowNode | KanbanFlowNode, DraftEdge | KanbanActivityFlowEdge> nodes={flowNodes}
         edges={visibleEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
         onNodesChange={onNodesChange} onNodeDragStop={(_event, node) => {
           if (node.id === KANBAN_NODE_ID) kanban.moved(node.position)
@@ -337,14 +330,13 @@ export const DraftCanvas = forwardRef<DraftCanvasHandle, {
           connectNodes(connection.source, connection.target)
         }}>
         <Background color="var(--border)" gap={24} size={1} />
-      </ReactFlow>}
+      </ReactFlow>
       {children}
-      {selectedRun ? null : <BoardDock kanban={kanban.dock}
-        ci={ci.node ? undefined : { summary: ci.summary, restore: ci.place.restore }} />}
-      <WorkflowAgentPanel panels={panels} active={!selectedRun && board?.authoringActive !== false}
+      <BoardDock kanban={kanban.dock}
+        ci={ci.node ? undefined : { summary: ci.summary, restore: ci.place.restore }} />
+      <WorkflowAgentPanel panels={panels} active={board?.authoringActive !== false}
         findNode={nodeId => graph.nodes.some(node => node.id === nodeId) ? undefined : false} />
     </div>
-    {selectedRun || board?.canvasVisible === false || board?.authoringActive === false || board?.memoryOpen ? null : ci.dialog}
-    {selectedRun ? <SelectedRunCanvas key={JSON.stringify(selectedRun)} scope={selectedRun} panels={panels} layout={topology.nodes} geometry={geometry} /> : null}
+    {board?.canvasVisible === false || board?.authoringActive === false || board?.memoryOpen ? null : ci.dialog}
   </CanvasContext.Provider>
 })

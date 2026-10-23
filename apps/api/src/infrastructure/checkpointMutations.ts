@@ -2,7 +2,7 @@ import type pg from 'pg'
 import { WRITES_IDX_MAP, type SerializerProtocol } from '@langchain/langgraph-checkpoint'
 import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres'
 import { DomainError } from '../modules/errors.js'
-import { retryDatabaseTimeout } from './databaseTimeout.js'
+import { retryDatabaseTimeout } from './databaseRetry.js'
 import { withTransaction } from './transaction.js'
 
 /** The generation row serializes checkpoint commits with successor ownership. */

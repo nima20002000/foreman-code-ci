@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { CiEnrollmentRepository } from '../src/modules/jobs/ciEnrollmentRepository.js'
+import { CiEnrollmentRepository } from '@foreman-code/ci/ciEnrollmentRepository'
 import { DomainError } from '../src/modules/errors.js'
 import { buildComputerKey } from '../src/modules/settings/buildComputers.js'
 import { postgresEnabled } from './helpers/eng04CurrentDatabase.js'

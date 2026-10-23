@@ -3,7 +3,7 @@ import pg from 'pg'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { decodeMcpToolResult } from '@foreman-code/contracts/operator-mcp'
 import { PostgresWorkflowRepository } from '../src/modules/workflows/postgres.js'
-import { withClientTransaction } from '../src/infrastructure/transaction.js'
+import { withTransaction } from '../src/infrastructure/transaction.js'
 import { currentOperatorIntegration } from './helpers/currentOperatorIntegration.js'
 import { postgresEnabled } from './helpers/wave25Agent3.js'
 import { expectMcpAccessDenied } from './helpers/deniedMcpTool.js'
@@ -30,7 +30,7 @@ describe.skipIf(!postgresEnabled)('configuration reads before native launch', ()
       let locked: (() => void) | undefined
       const ready = new Promise<void>(resolve => { locked = resolve })
       const release = new Promise<void>(resolve => { releaseLock = resolve })
-      locking = withClientTransaction(client, async () => {
+      locking = withTransaction({ client }, async () => {
         await client.query('lock table agent_configuration_versions in access exclusive mode')
         locked!()
         await release

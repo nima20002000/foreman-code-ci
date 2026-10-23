@@ -6,7 +6,8 @@ import type {
 import { afterEach, expect, it, vi } from 'vitest'
 import { nativeLanes } from './helpers/nativeLanes.js'
 import { reviewerFixture } from './helpers/reviewerAudit.js'
-import { idleWorkflowControls } from './helpers/idleWorkflowControls.js'
+import { workflowTerminalOwner } from './helpers/workflowTerminalOwner.js'
+import { idleWorkflowControls, idleWorkflowRepeat } from './helpers/idleWorkflowControls.js'
 
 import { DEFAULT_WORKER_CREDENTIAL_TTL_MS, type IssuedWorkerCredential } from '../src/modules/access/workerCredentials.js'
 import { WorkerLaunchCredentialService, type ExecutionCredentialProvider } from '../src/modules/harnesses/mcpDetection.js'
@@ -20,7 +21,8 @@ import { ExecutionScopedNativeSessionManagerResolver } from '../src/modules/inte
 
 const createdAt = '2026-09-16T00:00:00.000Z'
 
-afterEach(() => vi.restoreAllMocks())
+const connections: Array<{ close(): Promise<void> }> = []
+afterEach(async () => { await Promise.all(connections.splice(0).map(connection => connection.close())); vi.restoreAllMocks() })
 
 it('rejects unsupported Claude configuration before allocating worker fixture authority', () => {
   expect(() => fixture('claude')).toThrow('supports only Codex')
@@ -100,7 +102,10 @@ function fixture(harness: AgentHarness = 'codex', started = true) {
     beginWait: vi.fn(async () => undefined), finish: vi.fn(async () => undefined), stop: vi.fn(async () => undefined),
   }
   const runs = {
+    // These fixtures have no workflow memory board.
+    kanbanRecordMissing: async () => false,
     ...idleWorkflowControls,
+    repeat: async () => ({ ...idleWorkflowRepeat, ...store }),
     getExecution: vi.fn(async () => execution),
     get: vi.fn(async () => ({ id: execution.runId, workspaceId: configuration.workspaceId })),
     getExecutionConfiguration: vi.fn(async () => configuration),
@@ -145,11 +150,13 @@ function fixture(harness: AgentHarness = 'codex', started = true) {
     consumeLaunch() { const available = launch; launch = false; return available },
     async settleNativeExecution() { if (!closed) throw new DomainError('REPEAT_CLEANUP_PENDING', 'Original close required', 409) },
   }
+  const { owner, connection } = workflowTerminalOwner(() => execution, closures.read, () => issued.map(credential => credential.principalId))
+  connections.push(connection)
   const coordinator = new ApprovalExecutionCoordinator(runs as never, interactions as never, budgets as never, resolver, 60_000, credentials,
     undefined, closures, undefined, capture.capture)
   const observe = () => coordinator.observeExact({
     execution, store, request, approval: { handler: 'user' }, workflowId: 'workflow-1', graphThreadId: execution.runId,
-    owner: { runId: execution.runId, client: {}, assertOwned() {} } as never, signal: new AbortController().signal,
+    owner, signal: new AbortController().signal,
   })
   // Establish the original owner-scoped observation before exercising resident
   // control/renewal. This runs the real coordinator, writer and lease checks;

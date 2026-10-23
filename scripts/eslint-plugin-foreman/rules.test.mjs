@@ -56,6 +56,19 @@ run('no-raw-transactions', [
   "await query('START TRANSACTION')",
 ])
 
+run('no-raw-database-pools', [
+  "import pg from 'pg'; const pool = createPool(options, 'graphql-api')",
+  "import pg from 'pg'; const client = createDedicatedClient(pool.options, 'graphql-run-owner')",
+  "import { Client } from '@modelcontextprotocol/sdk/client/index.js'; const client = new Client({ name: 'x', version: '1' })",
+  "import pg from 'pg'; const error = new pg.DatabaseError('failed', 0, 'error')",
+], [
+  "import pg from 'pg'; const pool = new pg.Pool({ max: 1 })",
+  "import pg from 'pg'; const client = new pg.Client(pool.options)",
+  "import * as postgres from 'pg'; const client = new postgres.Client()",
+  "import { Pool } from 'pg'; const pool = new Pool()",
+  "import { Client as PgClient } from 'pg'; const client = new PgClient()",
+])
+
 run('no-silent-catch', [
   'promise.catch(error => logger.warn({ error }, "cleanup failed"))',
   'promise.catch(() => { /* ignore: the process already exited */ })',

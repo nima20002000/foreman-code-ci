@@ -6,7 +6,7 @@ import { postgresEnabled } from './helpers/wave25Agent3.js'
 import { useCiRuntimePreparationFixture } from './ci-runtime-preparation.test-support.js'
 import pg from 'pg'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
-import { CiRuntimeProvisioner } from '../src/modules/jobs/ciRuntimeProvisioner.js'
+import { CiRuntimeProvisioner } from '@foreman-code/ci/ciRuntimeProvisioner'
 import { commit, qualifiedPreparationProfile } from './helpers/ciPreparationFixture.js'
 
 describe.skipIf(!postgresEnabled)('persisted runtime preparation coordination over authenticated MCP', () => {

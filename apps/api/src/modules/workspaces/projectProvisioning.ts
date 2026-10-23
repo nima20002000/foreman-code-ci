@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, realpath, rmdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import pg from 'pg'
+import type pg from 'pg'
+import { createDedicatedClient } from '../../infrastructure/pool.js'
 
 import { DomainError } from '../errors.js'
 import { renameDirectory } from './renameDirectory.js'
@@ -31,7 +32,7 @@ export class WorkspaceProjectProvisioning {
 
   constructor(pool: pg.Pool) {
     // A separate connection avoids waiting on the pool while the command owns its last client.
-    this.journal = new pg.Client({ ...pool.options, application_name: 'graphql-project-provisioning' })
+    this.journal = createDedicatedClient(pool.options, 'graphql-project-provisioning')
   }
 
   async connect() { await this.journal.connect() }

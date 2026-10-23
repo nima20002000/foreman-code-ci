@@ -1,5 +1,6 @@
 import { beginRuntimeTiming } from '../../infrastructure/runtimeTiming.js'
-import pg from 'pg'
+import type pg from 'pg'
+import { createDedicatedClient } from '../../infrastructure/pool.js'
 
 import { ExclusiveGraphConnection, type GraphSqlClient } from '../run-graph/connection.js'
 import { memoizeNativeRead } from '../run-graph/nativeBatch.js'
@@ -79,7 +80,7 @@ export class RunOwnership {
   }
 
   static async acquire(pool: pg.Pool, runId: string, onLost: () => void): Promise<RunOwnership | undefined> {
-    const client = new pg.Client({ ...pool.options, application_name: 'graphql-run-owner' })
+    const client = createDedicatedClient(pool.options, 'graphql-run-owner')
     const owner = new RunOwnership(client, runId, onLost)
     client.on('error', owner.handleLoss)
     client.on('end', owner.handleLoss)

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { CiListOutputSchema, CiTestsOutputSchema, CiGetOutputSchema, CiRunOutputSchema } from '@foreman-code/contracts'
 import { expect, it } from 'vitest'
 import { CI_GET_ACTIONS } from '../src/modules/jobs/ciAuthority.js'
-import { activeCiRuns } from '../src/modules/ci-host/cloud.js'
+import { activeCiRuns } from '@foreman-code/ci/cloud'
 import { fixture } from './helpers/hostCiMcpFixture.js'
 import { ciRunReadback } from './helpers/ciRunReadback.js'
 

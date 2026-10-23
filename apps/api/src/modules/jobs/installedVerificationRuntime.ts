@@ -1,6 +1,7 @@
 import { InstalledVerificationRuntimeConfigurationSchema, InstalledVerificationRuntimeCaptureInputSchema,
-  MAX_VERIFICATION_CONFIGURATION_BYTES, type InstalledVerificationRuntimeCaptureInput,
-  type InstalledVerificationRuntimeConfiguration } from './installedVerificationConfiguration.js'
+  MAX_VERIFICATION_CONFIGURATION_BYTES, readProtectedRuntimeFile, type InstalledVerificationRuntimeCaptureInput,
+  type InstalledVerificationRuntimeConfiguration, type InstalledRuntimeConfigurationLocation,
+  type InstalledRuntimeObservedHost } from '@foreman-code/contracts/installed-runtime-node'
 import { readVerificationQuotaPool } from './quotaOwnership.js'
 import { isDeepStrictEqual } from 'node:util'
 import { createHash } from 'node:crypto'
@@ -15,8 +16,6 @@ import { JobVerificationRuntimeFingerprintSchema, JobVerificationOfflineSeedRece
 import { DomainError } from '../errors.js'
 import { captureJobRuntimeConfiguration, fingerprintQualificationPath, qualificationMountId } from './qualification.js'
 import { readFile } from 'node:fs/promises'
-import { readProtectedRuntimeFile, type InstalledRuntimeConfigurationLocation,
-  type InstalledRuntimeObservedHost } from './installedRuntimeConfiguration.js'
 import { findRetainedRuntimeConfiguration } from './retainedRuntimeConfiguration.js'
 
 const hash = (value: unknown) => createHash('sha256').update(canonicalGraphJson(value)).digest('hex')
