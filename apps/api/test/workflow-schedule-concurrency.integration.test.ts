@@ -9,7 +9,7 @@ import { postgresEnabled } from './helpers/database.js'
 import { scheduleDispatchFixture, scheduleDomainState, type ScheduleDatabase, type ScheduleDispatchFixture } from './helpers/scheduleFixture.js'
 import { onceSchedule, minuteSchedule } from './helpers/scheduleClockCases.js'
 import { rejectableDeferred } from './helpers/deferred.js'
-import { withTransaction } from '../src/infrastructure/transaction.js'
+import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
 
 describe.skipIf(!postgresEnabled)('scheduled Start concurrency and cancellation', () => {
   let database: ScheduleDatabase
@@ -29,28 +29,29 @@ describe.skipIf(!postgresEnabled)('scheduled Start concurrency and cancellation'
     const holder = await database.pool.connect()
     let pending: Promise<unknown>[] = []
     try {
-      await withTransaction({ client: holder }, async transaction => {
-        await transaction.query('select pg_advisory_xact_lock(hashtext($1))', [`admission:runner:${f.locations.runnerId}`])
-        const first = f.dispatcher(f.startUsing(pool)).dispatch(firstSchedule)
-        const second = other.dispatcher(other.startUsing(pool)).dispatch(secondSchedule)
-        pending = [first, second]
-        // Observe both lock-probing transactions surviving the server and client SQL deadlines.
-        await vi.waitFor(async () => {
-          const queued = await database.pool.query<{ count: number }>(`select count(*)::int as count
-            from pg_stat_activity where datname=current_database()
-            and application_name='scheduled-start-lock-test'
-            and state='idle in transaction'
-            and query='select pg_try_advisory_xact_lock(hashtext($1)) as locked'
-            and clock_timestamp()-xact_start > interval '2.5 seconds'`)
-          expect(queued.rows[0]!.count).toBe(2)
-        }, { timeout: 5_000, interval: 20 })
-      })
+      await beginTransaction(holder)
+      await holder.query('select pg_advisory_xact_lock(hashtext($1))', [`admission:runner:${f.locations.runnerId}`])
+      const first = f.dispatcher(f.startUsing(pool)).dispatch(firstSchedule)
+      const second = other.dispatcher(other.startUsing(pool)).dispatch(secondSchedule)
+      pending = [first, second]
+      // Observe both lock-probing transactions surviving the server and client SQL deadlines.
+      await vi.waitFor(async () => {
+        const queued = await database.pool.query<{ count: number }>(`select count(*)::int as count
+          from pg_stat_activity where datname=current_database()
+          and application_name='scheduled-start-lock-test'
+          and state='idle in transaction'
+          and query='select pg_try_advisory_xact_lock(hashtext($1)) as locked'
+          and clock_timestamp()-xact_start > interval '2.5 seconds'`)
+        expect(queued.rows[0]!.count).toBe(2)
+      }, { timeout: 5_000, interval: 20 })
+      await commitTransaction(holder)
       await Promise.all(pending)
       expect(await f.countRuns()).toBe(1)
       expect(await other.countRuns()).toBe(1)
       expect(await f.history()).toEqual([expect.objectContaining({ status: 'accepted' })])
       expect(await other.history()).toEqual([expect.objectContaining({ status: 'accepted' })])
     } finally {
+      await rollbackTransaction(holder)
       holder.release()
       await Promise.allSettled(pending)
       await pool.end()

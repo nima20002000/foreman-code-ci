@@ -111,7 +111,8 @@ it('admits the next Run after native startup without waiting for the first Agent
 it('announces recovered native startup before observing the ongoing model turn', async () => {
   const f = nativeReviewerFixture(false)
   f.installResident()
-  f.managers.resolve = () => ({ manager: f.manager, processState: 'resident' })
+  f.internals.resolveManager = () => ({ manager: f.manager, processState: 'resident' })
+  f.internals.prepareEnvironment = async () => undefined
   let started = false
   const reconcile = f.manager.reconcile
   f.manager.reconcile = async () => {
@@ -133,7 +134,7 @@ it('announces a new native session after persisted readback and before waiting f
   f.set({ ...f.get(), nativeSessionId: undefined })
   f.store.consumeLaunch = () => true
   let started = false
-  const physical = Object.assign(f.manager, {
+  const physical = { ...f.manager,
     createSession: async () => f.session,
     async *startTurnBatches(_session: unknown, input: { onSessionReady?(): Promise<void> }) {
       await input.onSessionReady!()
@@ -143,8 +144,8 @@ it('announces a new native session after persisted readback and before waiting f
       yield [{ executionId: f.get().id, connectionId: 'startup-connection', sequence: 1,
         occurredAt: f.at, type: 'startup-observed', payload: {} }]
     },
-  })
-  f.managers.resolve = () => ({ manager: physical, processState: 'needs_start' })
+  }
+  f.internals.resolveManager = () => ({ manager: physical as never, processState: 'needs_start' })
   f.credentials.prepare = async input => ({
     credential: { principalId: 'startup-principal', expiresAt: new Date(Date.now() + 300_000).toISOString(),
       environment: { agentId: f.get().agentId, variables: {} } },

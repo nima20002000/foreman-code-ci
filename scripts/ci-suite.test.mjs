@@ -485,6 +485,9 @@ test('the other unit phase passes a recursive script-test glob to Node', t => {
   assert.equal(result.status, 0, result.stderr)
   const scriptTests = calls.find(args => args.includes('--test') && args.includes('scripts/**/*.test.mjs'))
   assert.ok(scriptTests, 'The script-test phase must discover top-level and nested test files')
+  const runtimeBuild = calls.findIndex(args => args.includes('build:worker-runtime'))
+  const workerTests = calls.findIndex(args => args.includes('test/*.test.mjs'))
+  assert.ok(runtimeBuild >= 0 && runtimeBuild < workerTests, 'API worker exports must be built before Worker tests')
 })
 
 for (const suite of ['typecheck-api', 'typecheck-other', 'build-api']) {

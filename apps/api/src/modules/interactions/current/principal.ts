@@ -4,7 +4,7 @@ import type { SqlTransaction } from '../../../infrastructure/transaction.js'
 import { requireRespondableInteraction } from '../../access/appPolicy.js'
 import { canUserInteract } from '../../access/userPolicy.js'
 import { requireAuthorization } from '../../access/policy.js'
-import { assertCurrentWorkerBinding } from './credentialAuthority.js'
+import { assertWave25WorkerBinding } from './credentialAuthority.js'
 import { fail, type ApprovalContext } from './context.js'
 
 /** Use durable grants and binding, including on an exact decision replay. */
@@ -45,7 +45,7 @@ export async function lockPrincipal(sql: SqlTransaction, snapshot: ManagementPri
     || binding.workflow_id !== context.scope.workflowId || binding.purpose !== 'reviewer'
     || binding.environment_variable !== 'GRAPHQL_MCP_TOKEN'
     || binding.approval_native_session_id !== reviewer.nativeSessionId) return fail('AUTH_REVOKED')
-  await assertCurrentWorkerBinding(sql, principal.id)
+  await assertWave25WorkerBinding(sql, principal.id)
   if (replay) return principal
   const active = await sql.query(`select 1 from review_jobs j join native_session_lanes l
       on l.harness=j.record->>'provider' and l.native_session_id=j.record->>'nativeSessionId'

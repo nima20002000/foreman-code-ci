@@ -15,7 +15,7 @@ import { componentLogger } from '../diagnostics/logger.js'
 import type { RunOwnership } from '../runs/ownership.js'
 import { workflowExecutionRequest } from '../runs/workflowExecutionRequest.js'
 import { isRestartCancellation } from './executionPredicates.js'
-import type { ExecutionSessionHost, OwnedNativeSession } from './executionSessionHost.js'
+import type { ExecutionSessionHost, OwnedNativeSession } from './execution.js'
 
 /** Retained coordinator consultations: start, credential upkeep, release and Stop cleanup. */
 export class ExecutionConsultations {

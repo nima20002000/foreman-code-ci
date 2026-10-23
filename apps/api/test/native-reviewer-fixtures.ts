@@ -10,9 +10,7 @@ import { ApprovalExecutionCoordinator } from '../src/modules/interactions/execut
 import type { RepeatNativeObservationStore } from '../src/modules/interactions/repeatObservation.js'
 import { createWorkflowNativeCaptureChannel } from '../src/modules/interactions/workflowNativeCapture.js'
 import { DomainError } from '../src/modules/errors.js'
-import type { NativeHarnessSessionManager, NativeHistory } from '../src/modules/harnesses/port.js'
-import type { NativeSessionManagerResolver } from '../src/modules/interactions/runtimePorts.js'
-import { SingleWriterSessionManager } from '../src/modules/interactions/sessionWriter.js'
+import type { NativeHistory } from '../src/modules/harnesses/port.js'
 import type { ExecutionCredentialProvider } from '../src/modules/harnesses/mcpDetection.js'
 import { nativeCompleted, nativeFixture, nativeStored, nativeAt } from './native-repeat-fixtures.js'
 import { idleWorkflowControls, idleWorkflowRepeat } from './helpers/idleWorkflowControls.js'
@@ -154,7 +152,7 @@ export function nativeReviewerFixture(completed = true,
     },
     revokeForExecution: async (id: string) => { calls.push(`revoke-execution:${id}`); revoked = true; return 1 },
   }
-  const managers: NativeSessionManagerResolver = { resolve: forbidden('resolve'), release: () => { calls.push('release-manager') } }
+  const managers = { resolve: forbidden('resolve'), release: () => { calls.push('release-manager') } }
   const closures = {
     begin: async () => '41',
     recordDetached: forbidden('detached-close'), recordUnbound: forbidden('unbound-close'),
@@ -171,7 +169,7 @@ export function nativeReviewerFixture(completed = true,
   const history = () => ({ correlationId: `execution:${execution.id}`, nativeTurnId: 'turn-native2-exact',
     terminalTurn: { correlationId: `execution:${execution.id}`, providerId: 'turn-native2-exact', result: nativeCompleted(execution).result! },
     pendingInteractions: [], events: [], responseDeliveries: [] } as unknown as NativeHistory)
-  const native = {
+  const manager = {
     harness: 'codex' as const,
     assertCapturedLease: () => undefined,
     capturedLease: () => ({ fence: { id: 'lane-native2-exact', token: 'lease-native2-exact' },
@@ -194,15 +192,14 @@ export function nativeReviewerFixture(completed = true,
         guard: { check: async () => undefined, signal: new AbortController().signal }, observedStatus: 'idle',
       }),
   }
-  // This fixture supplies a writer port with recording methods; the coordinator still resolves it through its public dependency.
-  const manager = Object.assign(new SingleWriterSessionManager(native as unknown as NativeHarnessSessionManager,
-    interactions.coordination as never, execution.agentId), native)
   const resident = { execution, context: { harness: 'codex', executionId: execution.id, agentId: execution.agentId,
     workingDirectory: execution.workingDirectory, configuration } as Record<string, unknown>, manager,
     controller: new AbortController(), generation: 7, closureGeneration: '41', closureRegistration: Promise.resolve('41'), session }
   const internals = coordinator as unknown as {
     ownedSessions: Map<string, typeof resident>
     credentialLedger: { set(manager: object, credential: unknown): void }
+    resolveManager: () => { manager: typeof manager; processState: 'resident' | 'needs_start'; beginStart?(): void; markResident?(): void }
+    prepareEnvironment: (context?: unknown, resolved?: unknown, signal?: AbortSignal, purpose?: unknown, enterNative?: () => Promise<void>) => Promise<undefined>
     closeRepeatLifetime: (value: typeof resident, check: () => void) => Promise<void>
   }
   const installResident = (reviewer = false) => {

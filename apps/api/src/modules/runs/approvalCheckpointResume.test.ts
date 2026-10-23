@@ -1,9 +1,9 @@
 import type pg from 'pg'
 import { DurableInteractionSchema, NATIVE_INTERACTION_FIXTURES } from '@foreman-code/contracts'
 import { afterEach, expect, it, vi } from 'vitest'
-import { ApprovalPostgresSaver } from './approvalCheckpointSaver.js'
+import { ApprovalPostgresSaver } from '../../infrastructure/approvalCheckpointSaver.js'
 import { DomainError } from '../errors.js'
-import { CurrentInteractionRepository } from '../interactions/current/repository.js'
+import { Wave25InteractionRepository } from '../interactions/current/repository.js'
 import { consumeDeliveredApprovals } from './approvalCheckpointResume.js'
 import type { RunOwnership } from './ownership.js'
 
@@ -16,7 +16,7 @@ afterEach(() => {
 it('stops every resume claim when the Run owner disconnects during the last acquisition', async () => {
   vi.useFakeTimers()
   const pool = { query: vi.fn(async () => { throw new Error('Unexpected database call') }) } as unknown as pg.Pool
-  const repository = new CurrentInteractionRepository(pool)
+  const repository = new Wave25InteractionRepository(pool)
   const saver = new ApprovalPostgresSaver(pool)
   const pending = NATIVE_INTERACTION_FIXTURES.codex
   const option = pending.responseOptions[0]!
