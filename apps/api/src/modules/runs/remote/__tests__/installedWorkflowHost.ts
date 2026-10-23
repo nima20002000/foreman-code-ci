@@ -20,7 +20,7 @@ import * as installedNativeOutput from '../installedNativeOutput.js'
 import * as codexOutputProtection from '../../../harnesses/codexOutputProtection.js'
 import { createInstalledWorkflowNativeOutputProviders } from '../installedWorkflowNativeOutputs.js'
 import type { CodexNativeOutputs } from '../../../harnesses/codexNativeOutput.js'
-import { runCommand } from '../../../harnesses/index.js'
+import { runCommand } from '../../../harnesses/process.js'
 import { workflowNativeOutputMain } from '../../../../../test/support/workflowNativeOutputs.js'
 import {
   ExecutionFactsRequestSchema,

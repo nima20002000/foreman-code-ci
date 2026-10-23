@@ -31,6 +31,7 @@
       "types": "./dist/localClientNode.d.ts",
       "import": "./dist/localClientNode.js"
     },
+    "./installation-names": { "types": "./dist/installationNames.d.mts", "import": "./dist/installationNames.mjs" },
     "./product": { "types": "./dist/product.d.ts", "import": "./dist/product.js" },
     "./product-environment": { "types": "./dist/productEnvironment.d.mts", "import": "./dist/productEnvironment.mjs" },
     "./product-environment-node": { "types": "./dist/productEnvironmentNode.d.mts", "import": "./dist/productEnvironmentNode.mjs" },

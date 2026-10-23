@@ -2,7 +2,7 @@ import Fastify from 'fastify'
 import { afterEach, beforeEach } from 'vitest'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { registerGraphqlMcp } from '../src/mcp/unified/transport.js'
+import { registerForemanMcp } from '../src/mcp/unified/transport.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { CiRuntimeProvisioner } from '@foreman-code/ci/ciRuntimeProvisioner'
@@ -63,7 +63,7 @@ export function useCiRuntimePreparationFixture() {
     const services = { commands, ciRuntime: service, jobRuntimeProfiles: fixture.profileService } as unknown as OperatorServices
     const interactions = { toolAccess: async () => ({ role: 'coder', tools: [] }), canRead: async () => false,
       canRespond: async () => false } as unknown as AppInteractionService
-    registerGraphqlMcp(app, { access, operator: services, interactions })
+    registerForemanMcp(app, { access, operator: services, interactions })
     const url = await app.listen({ port: 0, host: '127.0.0.1' })
     const rpc = async (method: string, params: unknown, bearer = writer.token) => {
       const response = await fetch(`${url}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${bearer}`,

@@ -6,6 +6,3 @@ export { assertRemoteReviewerReceipt, remoteReviewerPolicy } from './remoteRevie
 export { readPlacement } from './binding.js'
 export { readNativeExecutionBinding } from './executionBinding.js'
 export type { MainWorkerCarrier } from './workerCarrier.js'
-export { type placedContinuationValidator } from './continuation.js'
-export { type createProductionRemoteWorkflow } from './productionRemoteWorkflow.js'
-export { remoteMcpPreflight } from './remoteMcpPreflight.js'

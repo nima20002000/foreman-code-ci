@@ -9,7 +9,7 @@ import type { InteractionResponder } from '../responder.js'
 import type { GraphResumeClaim } from '../deliveryPostgres.js'
 import { INTERACTION_DELIVERY_LEASE_MS, matchingDeliveryEvidence, selectedInteractionResponse,
   type InteractionDeliveryClaim, type NativeDeliveryOutcome } from '../delivery.js'
-import type { Wave25InteractionRepository } from './repository.js'
+import type { CurrentInteractionRepository } from './repository.js'
 import { fail } from './context.js'
 import { holdResumeClaims } from './resume.js'
 import { SingleWriterSessionManager } from '../sessionWriter.js'
@@ -22,7 +22,7 @@ import { assertInteractionResponseActive, type InteractionResponseOptions } from
  * receipt is not a qualified implementation. */
 export type AtomicApprovalResumeConsumer = (claim: GraphResumeClaim) => Promise<void>
 export interface ApprovalRuntimeDependencies {
-  repository: Wave25InteractionRepository
+  repository: CurrentInteractionRepository
   nativeRuntime: InteractionNativeRuntime
   journal?: NativeResponseJournal
   atomicResume?: AtomicApprovalResumeConsumer

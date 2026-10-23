@@ -2,7 +2,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { canonicalJson, ExecutionResultSchema, type CoordinatorConsultationBinding,
   type NativeHarnessEvent, type NativeSessionReference } from '@foreman-code/contracts'
 import type { NativeHarnessSessionManager, NativeHistory } from '../harnesses/port.js'
-import { supportsExpectedTurnSteer } from '../harnesses/index.js'
+import { supportsExpectedTurnSteer } from '../harnesses/capabilities.js'
 import { DomainError } from '../errors.js'
 import type { ConsultationTransaction } from '../collaboration/index.js'
 import { bindCoordinatorConsultationNativeLocked, captureCoordinatorConsultationNativeLocked,

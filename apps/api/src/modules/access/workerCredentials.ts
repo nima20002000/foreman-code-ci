@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { workflowChatGrants } from './workflowChatGrants.js'
 import { canonicalJson, CoordinatorConsultationBindingSchema, HarnessExecutionSchema, WorkflowRunSchema,
   type CoordinatorConsultationBinding } from '@foreman-code/contracts'
@@ -12,7 +13,7 @@ import { lockActiveWorkerPrincipal, lockWorkerExecution, requireActiveWorkerExec
 import { RETAINED_REVIEWER_SETTLEMENT_PENDING, WORKER_BINDING_ELIGIBLE } from './workerEligibility.js'
 import { readCoordinatorCredentialAuthority, readConsultationCredentialSubject } from './consultationAuthority.js'
 
-export const APP_MCP_TOKEN_ENVIRONMENT_VARIABLE = 'GRAPHQL_MCP_TOKEN'
+export const APP_MCP_TOKEN_ENVIRONMENT_VARIABLE = INSTALLATION_NAMES.environment.MCP_TOKEN
 export const DEFAULT_WORKER_CREDENTIAL_TTL_MS = 15 * 60 * 1000
 export { WORKER_CREDENTIAL_EXPIRY_MARGIN_MS } from './credentialLifetime.js'
 /** Main renews the execution credential this early so every dependent Worker relay and launcher route,

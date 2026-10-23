@@ -11,7 +11,7 @@ import { withInteractionResponse, isSessionNativeInteraction } from '@foreman-co
 import { missingAgentChatDirectory, missingChatFolderMessage, resolveAgentChatDirectory, revalidateAgentChatDirectory } from './agentChatDirectory.js'
 import type { SessionControlRequest } from '@foreman-code/contracts'
 import { pendingSessionControls, type ChatModelCatalog } from '../harnesses/sessionControlDefaults.js'
-import { supportsExpectedTurnSteer } from '../harnesses/index.js'
+import { supportsExpectedTurnSteer } from '../harnesses/capabilities.js'
 import { readRunChatTranscript } from './runChatTranscript.js'
 import { ExecutionActivityReader, type ExecutionActivityRequest } from './executionActivity.js'
 import { SessionControlStateSchema } from '@foreman-code/contracts'

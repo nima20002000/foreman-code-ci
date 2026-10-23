@@ -29,7 +29,7 @@ import {
   SyncedPluginSchema, type SyncedPlugin,
 } from '@foreman-code/contracts/computer-maintenance'
 import { runProcessSettled, hostEnvironment } from '../../shared/process.js'
-import { createHostAdministration, type HostAdministration, type HostStep } from '../ci/index.js'
+import { createHostAdministration, type HostAdministration, type HostStep } from '../hostAdministration.js'
 
 export type { MaintenancePorts }
 
@@ -82,7 +82,7 @@ export class ComputerMaintenance {
   private taskRevision = 0
   private readonly taskStore: MaintenanceTaskStore
   private readonly commandStore: MaintenanceCommandStore
-  private readonly host: HostAdministration
+  private readonly host: Pick<HostAdministration, 'system'>
   private readonly taskCommands = new Map<string, Map<string, string>>()
   private admissions: Promise<unknown> = Promise.resolve()
   private closing = false
@@ -460,7 +460,7 @@ export class ComputerMaintenance {
     }
   }
 
-  private async installLatest(harness: MaintainedHarness, step: HostStep) {
+  private async installLatest(harness: MaintainedHarness, step: Step) {
     const home = this.ports.environment.HOME ?? homedir()
     if (harness === 'claude') {
       const claude = await this.ports.find('claude')
@@ -494,7 +494,7 @@ export class ComputerMaintenance {
   }
 
   /** Reconciles Main's managed definitions while preserving servers installed independently on this computer. */
-  private async syncMcp(harness: MaintainedHarness, servers: readonly SyncedMcpServer[], managed: Set<string>, step: HostStep,
+  private async syncMcp(harness: MaintainedHarness, servers: readonly SyncedMcpServer[], managed: Set<string>, step: Step,
     signal: AbortSignal, skipped: readonly string[], saveOwnership: () => Promise<void>): Promise<string> {
     const previous = [...managed]
     const wanted = new Set([...servers.map(server => server.name), ...skipped])
@@ -588,7 +588,7 @@ export class ComputerMaintenance {
   }
 
   private async syncPlugins(plugins: readonly string[], marketplaces: readonly SyncedMarketplace[], managed: Set<string>,
-    step: HostStep, signal: AbortSignal, saveOwnership: () => Promise<void>, versions: Readonly<Record<string, string>> = {}): Promise<string> {
+    step: Step, signal: AbortSignal, saveOwnership: () => Promise<void>, versions: Readonly<Record<string, string>> = {}): Promise<string> {
     const previous = [...managed]
     if (!plugins.length && !previous.length) return 'Nothing to sync'
     const codex = await this.ports.find('codex')
@@ -672,7 +672,7 @@ export class ComputerMaintenance {
 
   private async syncClaudePlugins(
     plugins: Readonly<NonNullable<PluginSyncRequest['claudePlugins']>>, marketplaces: readonly SyncedMarketplace[],
-    managed: Set<string>, step: HostStep, signal: AbortSignal, saveOwnership: () => Promise<void>,
+    managed: Set<string>, step: Step, signal: AbortSignal, saveOwnership: () => Promise<void>,
   ): Promise<string> {
     const previous = [...managed]
     const wanted = plugins.map(plugin => plugin.pluginId)
@@ -777,7 +777,7 @@ export class ComputerMaintenance {
   }
 
   private acquirePlugin(harness: MaintainedHarness, binary: string, pluginId: string, version: string,
-    marketplace: SyncedMarketplace | undefined, step: HostStep, signal: AbortSignal): Promise<AcquiredPluginRelease> {
+    marketplace: SyncedMarketplace | undefined, step: Step, signal: AbortSignal): Promise<AcquiredPluginRelease> {
     const ports: MaintenancePorts = { ...this.ports,
       run: (command, args, options) => step(command, args, `${harness} acquire ${args.join(' ')}`, options) }
     return verifyPluginRelease(ports, { harness, binary, pluginId, version, marketplace }, signal)

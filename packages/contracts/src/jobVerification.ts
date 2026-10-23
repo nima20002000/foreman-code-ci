@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from './installationNames.mjs'
 import { z } from 'zod'
 import {
   DeviceDigestSchema, DeviceSafeIntegerSchema, DeviceExecutionAdmissionFields, validateHistoricalDeviceExecutionAdmission,
@@ -74,8 +75,8 @@ const JobVerificationTemplateSchema = z.object({
   parameters: JobVerificationParametersSchema,
   maxUnitWorkers: DeviceSafeIntegerSchema.min(1).max(JOB_VERIFICATION_OWNER_CONFIGURATION.unitWorkers),
   maxIntegrationShards: DeviceSafeIntegerSchema.min(1).max(64).optional(),
-  argv: z.tuple([z.literal('node'), z.literal('/opt/graphql-ci/verification/verify-repository.mjs'),
-    z.literal('--context'), z.literal('.graphql-job-inputs/verification.json')]),
+  argv: z.tuple([z.literal('node'), z.literal(INSTALLATION_NAMES.paths.verificationRunner),
+    z.literal('--context'), z.literal(INSTALLATION_NAMES.paths.verificationContext)]),
   outputs: JobVerificationOutputsSchema.nullable(),
   setupIssue: z.literal('report_budget_insufficient').optional(),
 }).strict().superRefine((value, context) => {
@@ -103,7 +104,7 @@ export function jobVerificationTemplate(input: Omit<JobVerificationTemplate, 'ar
     integrationShards: input.suite === 'integration'
       ? Math.min(input.maxIntegrationShards ?? 1, qualificationIntegrationShards(input.resources))
       : JOB_VERIFICATION_INITIAL_CONCURRENCY.integrationShards }
-  const argv = ['node', '/opt/graphql-ci/verification/verify-repository.mjs', '--context', '.graphql-job-inputs/verification.json']
+  const argv = ['node', INSTALLATION_NAMES.paths.verificationRunner, '--context', INSTALLATION_NAMES.paths.verificationContext]
   if (!reportBytes) return JobVerificationTemplateSchema.parse({ ...input, ready: false,
     setupIssue: 'report_budget_insufficient', parameters, argv, outputs: null })
   return JobVerificationTemplateSchema.parse({

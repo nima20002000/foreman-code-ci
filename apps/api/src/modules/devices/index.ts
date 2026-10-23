@@ -10,4 +10,3 @@ export { isDeviceLinkDrop, sameDeviceInstallation, waitForDeviceReconnect } from
 export { deviceRequestTimeoutMs, retryDeviceRequest } from './deviceRequestRetry.js'
 export { DeviceConnectionError } from './deviceWire.js'
 export { readMainInstallationId } from './mainIdentity.js'
-export { type ProductionDeviceRuntime } from './productionRuntime.js'

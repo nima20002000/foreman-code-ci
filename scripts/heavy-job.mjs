@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '../packages/contracts/src/installationNames.mjs'
 import { sleep } from './sleep.mjs'
 import { readProductEnvironment } from '../packages/contracts/src/productEnvironment.mjs'
 import { retainedHeavyJobTokens, writeHeavyJobRecord } from './heavy-job-slots.mjs'
@@ -332,7 +333,7 @@ function inputHash(kind) {
   if (list.status !== 0) throw new Error('Build cache source inventory could not be read.')
   const hash = createHash('sha256').update(process.version).update(process.platform).update(process.arch).update(common).update(root)
   const scope = kind === 'contracts' ? 'packages/contracts' : `apps/${kind}`
-  const tools = kind === 'web' ? ['typescript', 'vite', '@vitejs/plugin-react', '@tailwindcss/vite'] : ['typescript']
+  const tools = kind === 'web' ? ['typescript', 'vite', '@vitejs/plugin-react'] : ['typescript']
   try {
     for (const name of tools) {
       const path = require.resolve(name, { paths: [join(root, scope)] })
@@ -522,7 +523,7 @@ async function main() {
       common, worktree: root, pid: process.pid, start: procStart(process.pid),
       pgid: null, phase: 'acquiring', namespace, token,
     })
-    const environment = { ...process.env, TMPDIR: tempPath, TMP: tempPath, TEMP: tempPath, FOREMAN_CODE_HEAVY_BASE_TMPDIR: baseTmp, FOREMAN_CODE_HEAVY_JOB_COMMON: common, FOREMAN_CODE_HEAVY_JOB_TOKEN: token, GRAPHQL_HEAVY_BASE_TMPDIR: baseTmp, GRAPHQL_HEAVY_JOB_COMMON: common, GRAPHQL_HEAVY_JOB_TOKEN: token }
+    const environment = { ...process.env, TMPDIR: tempPath, TMP: tempPath, TEMP: tempPath, [INSTALLATION_NAMES.environment.HEAVY_BASE_TMPDIR]: baseTmp, [INSTALLATION_NAMES.environment.HEAVY_JOB_COMMON]: common, [INSTALLATION_NAMES.environment.HEAVY_JOB_TOKEN]: token, }
     const launch = reported
       ? [process.execPath, fileURLToPath(new URL('./verification-reports.mjs', import.meta.url)), '__command',
         root, process.cwd(), process.env.npm_lifecycle_event, ...command]

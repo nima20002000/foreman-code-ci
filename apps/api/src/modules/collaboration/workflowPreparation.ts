@@ -1,5 +1,6 @@
+import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import {
-  AgentConfigurationVersionSchema, AgentSubjectSchema, BoardDigestSchema, effectiveGraphqlTools,
+  AgentConfigurationVersionSchema, AgentSubjectSchema, BoardDigestSchema, effectiveForemanTools,
   type AgentSubject, type BoardDigest, type HarnessExecution, type LogicalWorkRef,
 } from '@foreman-code/contracts'
 import { AcceptedWorkflowRunCurrentSchema, type AcceptedWorkflowRunCurrent,
@@ -88,8 +89,8 @@ export class WorkflowMemoryContext {
         [execution.agentConfigurationVersionId])).rows[0]
       if (!row) throw new DomainError('AGENT_CONFIGURATION_NOT_FOUND', 'The saved Agent is unavailable.', 409)
       const configuration = AgentConfigurationVersionSchema.parse(row.record)
-      if (!configuration.productRole || !effectiveGraphqlTools(configuration.productRole,
-        configuration.graphqlTools, node.graphqlTools, false, ['memory_board_get']).includes('memory_board_get')) return undefined
+      if (!configuration.productRole || !effectiveForemanTools(configuration.productRole,
+        configuration[INSTALLATION_NAMES.fields.agentTools], node[INSTALLATION_NAMES.fields.agentTools], false, ['memory_board_get']).includes('memory_board_get')) return undefined
       const identity = await workflowPreparationIdentityLocked(sql, actualRun, version, execution)
       if (!identity) return undefined
       await retainWorkflowPreparationLocked(sql, execution, identity)
