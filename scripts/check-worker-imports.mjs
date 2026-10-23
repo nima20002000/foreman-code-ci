@@ -1,12 +1,12 @@
 // Checks the Worker source graph without bundling or executing imported modules.
 //   node scripts/check-worker-imports.mjs [repository-root]
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   assertWorkerSnapshotSource, rsyncWriterEntrypoint, schemaWorkerEntrypoint,
-  workerEntryPoints, workerPackageAliases, workerPackages,
+  workerContractAliases, workerEntryPoints,
 } from './worker-snapshot-policy.mjs'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -53,10 +53,8 @@ function runtimeSpecifiers(file, text) {
 }
 
 export function checkWorkerImports(root) {
-  const manifest = directory => existsSync(join(root, directory, 'package.json'))
-    ? JSON.parse(readFileSync(join(root, directory, 'package.json'), 'utf8')).exports : {}
-  const aliases = workerPackageAliases(Object.fromEntries(Object.entries(workerPackages)
-    .map(([name, directory]) => [name, manifest(directory)])))
+  const manifest = JSON.parse(readFileSync(join(root, 'packages/contracts/package.json'), 'utf8'))
+  const aliases = workerContractAliases(manifest.exports)
   const options = { moduleResolution: ts.ModuleResolutionKind.Bundler, allowJs: true, resolveJsonModule: true }
   const seen = new Set()
   const pending = [...Object.values(workerEntryPoints), rsyncWriterEntrypoint, schemaWorkerEntrypoint]
@@ -86,7 +84,7 @@ export function checkWorkerImports(root) {
       const runtime = target.resolvedFileName.replace(/\.d\.(m|c)?ts$/, (_, kind) => `.${kind ?? ''}js`)
       pending.push([...chain, relative(root, ts.sys.fileExists(runtime) ? runtime : target.resolvedFileName).replaceAll('\\', '/')])
     }
-  }  return [...seen].sort()
+  }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

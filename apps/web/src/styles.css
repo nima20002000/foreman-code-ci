@@ -945,7 +945,8 @@ h1 {
   color: var(--color-text-muted);
 }
 
-.surface-placeholder h2 {
+.surface-placeholder h2,
+.terminal-placeholder h2 {
   margin: 0;
   color: var(--color-text-strong);
   font-size: 15px;
@@ -984,6 +985,10 @@ h1 {
 .terminal-surface {
   grid-column: 2;
   border-top: 1px solid var(--color-border);
+}
+
+.terminal-placeholder {
+  background: var(--color-surface-subtle);
 }
 
 .terminal-heading {

@@ -1,4 +1,4 @@
-import { errorMessage } from '@foreman-code/contracts/server-kit'
+import { errorMessage } from '../../shared/errorMessage.js'
 import { isDeepStrictEqual } from 'node:util'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import pg from 'pg'

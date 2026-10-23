@@ -348,8 +348,7 @@ function inputHash(kind) {
   }
   return hash.digest('hex')
 }
-const outputs = { contracts: 'packages/contracts/dist/index.js', ci: 'apps/ci/dist/environment.js',
-  api: 'apps/api/dist/server.js', web: 'apps/web/dist/index.html' }
+const outputs = { contracts: 'packages/contracts/dist/index.js', api: 'apps/api/dist/server.js', web: 'apps/web/dist/index.html' }
 function outputHash(kind) {
   const primary = join(root, outputs[kind])
   if (!existsSync(primary)) return null

@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { underDeadline } from '@foreman-code/contracts/server-kit'
+import { underDeadline } from '../processDeadline.js'
 
 export interface GitProcessOptions {
   cwd?: string

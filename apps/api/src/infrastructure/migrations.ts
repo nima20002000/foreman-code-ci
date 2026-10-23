@@ -30,7 +30,7 @@ import { workflowFileContextSessionMigration } from './workflowFileContextSessio
 import { nativeBatchReadMigration } from './nativeBatchReadMigration.js'
 import { withTransaction } from './transaction.js'
 import { checkpointOwnerMigration } from './checkpointOwnerMigration.js'
-import { errorMessage } from '@foreman-code/contracts/server-kit'
+import { errorMessage } from '../shared/errorMessage.js'
 import { providerAccountsMigration, providerAccountObservationsMigration } from '../modules/provider-accounts/migration.js'
 import { nativeProofSourceLimitMigration } from './nativeProofSourceLimitMigration.js'
 import { nativeActivityNoiseMigration } from './nativeActivityNoiseMigration.js'

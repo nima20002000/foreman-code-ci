@@ -231,7 +231,6 @@ async function main() {
   if (head !== BASE) console.log('ENG07 checkout differs from the documented base; record its commit separately before accepting results.')
   stage = 'contracts build (run corepack pnpm install beforehand)'
   await command('corepack', ['pnpm', '--filter', '@foreman-code/contracts', 'build'])
-  await command('corepack', ['pnpm', '--filter', '@foreman-code/ci', 'build'])
   interrupted()
   process.umask(0o077)
   await assertOwned(state, owner)

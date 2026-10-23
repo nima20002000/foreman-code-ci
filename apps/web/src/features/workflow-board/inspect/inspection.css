@@ -1,6 +1,21 @@
 /* Authoring chrome remains owned by the existing Board. Reserve its top/bottom
  * overlays; the context note is a row above, not a competing canvas column. */
 .unified-workflow-board { flex-direction: column; }
+.pinned-run-canvas {
+  box-sizing: border-box;
+  padding-top: 72px;
+  padding-bottom: 64px;
+  display: flex;
+  flex-direction: column;
+  min-height: 360px;
+}
+.pinned-run-flow { position: relative; flex: 1; min-height: 120px; }
+.pinned-run-flow .react-flow { background: var(--canvas-glow, none), var(--color-surface); }
+.pinned-work-limit-object { overflow: visible; pointer-events: none; }
+.pinned-work-limit-control { display: grid; justify-items: center; gap: 3px; pointer-events: auto; }
+.pinned-work-limit-pill { min-width: 44px; min-height: 32px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-raised); color: var(--text-strong); font: var(--type-control); cursor: pointer; }
+.pinned-work-limit-pill:hover, .pinned-work-limit-pill:focus-visible { border-color: var(--accent); outline: 2px solid var(--focus); outline-offset: 2px; }
+.pinned-work-limit-usage { padding: 2px 6px; border-radius: 5px; background: var(--surface-raised); color: var(--text-muted); font: var(--type-caption); text-align: center; }
 .run-execution-inspector { display: grid; gap: 12px; min-width: 0; }
 .run-execution-inspector header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .run-execution-inspector label { display: grid; gap: 6px; font-weight: 500; }
@@ -14,6 +29,9 @@
 .board-run-context-note { flex: 0 0 auto; padding: 6px 12px; margin: 0; font-size: 12px; border-bottom: 1px solid var(--border); }
 
 .workflow-board-run-panel .board-run-row > span:last-child { grid-column: 1 / -1; justify-self: start; overflow-wrap: anywhere; }
+@media (max-width: 900px) {
+  .pinned-run-canvas { padding-top: 120px; overflow: auto; }
+}
 
 /* CI server: a presentation-only Board component beside the Agents, with its jobs, tests and log in a small floating window. */
 .react-flow__edge-ciTransfer { pointer-events: none; }
@@ -127,6 +145,8 @@
   .ci-server-node[data-state='running'] .ci-server-bay:nth-child(3) .ci-server-led { animation-delay: -.7s; }
 }
 @keyframes ci-server-blink { 0% { opacity: 1; } 100% { opacity: .25; } }
+/* The handoff limit shows only while its edge is hovered or the control has keyboard focus. */
+.pinned-work-limit-object[data-visible='false']:not(:focus-within) { opacity: 0; }
 .board-job-list { list-style: none; margin: 0; padding: 0; }
 .board-job-list .board-job-row { display: grid; grid-template-columns: minmax(0, 1fr) 16px 64px minmax(0, 100px) 90px; gap: var(--space-2); width: 100%; text-align: start; border-bottom: 1px solid var(--n-border); border-radius: 0; }
 .board-job-name, .board-job-computer { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
