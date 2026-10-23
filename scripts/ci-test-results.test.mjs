@@ -118,7 +118,7 @@ process.exit(3)
   assert.deepEqual(results.files[0].tests, [{ name: 'renders', status: 'failed', durationMs: 9, message: 'broken' }])
 })
 
-test('unit-other merges contracts, CI, Worker and script results while preserving a failing exit status', t => {
+test('unit-other merges contracts, Worker and script results while preserving a failing exit status', t => {
   const directory = temporary(t)
   const root = fileURLToPath(new URL('..', import.meta.url))
   const output = join(directory, 'test-results.json')
@@ -130,7 +130,7 @@ const vitest = args.find(arg => arg.startsWith('--outputFile.json='))
 const destination = args.find(arg => arg.startsWith('--test-reporter-destination=') && !arg.endsWith('=stdout'))
 if (!vitest && !destination) process.exit(0)
 const report = (vitest ?? destination).slice((vitest ?? destination).indexOf('=') + 1)
-const file = vitest ? (args.includes('@foreman-code/ci') ? 'apps/ci/test/value.test.ts' : 'packages/contracts/src/value.test.ts') : process.cwd().endsWith('/apps/worker')
+const file = vitest ? 'packages/contracts/src/value.test.ts' : process.cwd().endsWith('/apps/worker')
   ? 'apps/worker/test/value.test.mjs' : 'scripts/value.test.mjs'
 const failed = file.startsWith('apps/worker/')
 writeFileSync(report, JSON.stringify({ testResults: [{ name: file, status: failed ? 'failed' : 'passed',
@@ -144,8 +144,7 @@ process.exit(failed ? 7 : 0)
       CI_HOST_RUNNER: '0', CI_EXPECTED_DURATION_MS: '', CI_PROGRESS_FILE: '', CI_WATCHDOG_ACTIVE: '', BASH_ENV: '' } })
   assert.equal(result.status, 7, result.stderr)
   const results = JSON.parse(readFileSync(output, 'utf8'))
-  assert.deepEqual(results.summary, { passed: 3, failed: 1, skipped: 0 })
-  assert.ok(results.files.some(file => file.file === 'apps/ci/test/value.test.ts'))
+  assert.deepEqual(results.summary, { passed: 2, failed: 1, skipped: 0 })
   assert.equal(results.files[0].file, 'apps/worker/test/value.test.mjs')
   assert.equal(results.files[0].tests[0].message, 'worker assertion failed')
 })

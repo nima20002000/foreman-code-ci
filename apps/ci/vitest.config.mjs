@@ -1,4 +1,3 @@
-import process from 'node:process'
 import { configDefaults, defineConfig } from 'vitest/config'
 
 const configuredWorkers = process.env.FOREMAN_CODE_VERIFICATION_UNIT_WORKERS

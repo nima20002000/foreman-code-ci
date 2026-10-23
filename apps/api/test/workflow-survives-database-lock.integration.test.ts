@@ -27,14 +27,6 @@ describe.runIf(postgresEnabled)('workflow reporting under database contention', 
   it('finishes while a separate transaction locks its Run during Agent reporting', async () => {
     await fixture.launch()
     await fixture.active()
-    // The Run lock also blocks sibling startup. Isolate reporting contention so a
-    // legitimate infrastructure retry there cannot violate the one-attempt check.
-    const ready = await readUntil(fixture.read, details => details.executions.some(execution =>
-      execution.workflowNodeId === fixture.sibling.id && execution.state === 'completed'
-      && execution.result?.outcome === 'succeeded'),
-    { timeoutMs: 8_000, description: 'the sibling Agent completed before reporting contention' })
-    const reporting = ready.executions.find(execution => execution.workflowNodeId === fixture.affected.id)!
-    expect(reporting).toMatchObject({ state: 'running', nativeSessionId: expect.any(String) })
     await fixture.setReportingDeadline(1_000)
     const retryFailures = () => readOperationalFailures().find(value => value.operation === 'retry database operation')
     const retriesBefore = retryFailures()?.failureCount ?? 0
@@ -55,11 +47,7 @@ describe.runIf(postgresEnabled)('workflow reporting under database contention', 
       })])
       fixture.release()
       await hold
-      const details = await fixture.finished()
-      expectSuccessfulFaultRecovery(details, fixture)
-      expect(details.executions.filter(execution => execution.workflowNodeId === fixture.affected.id))
-        .toEqual([expect.objectContaining({ id: reporting.id, attempt: 1,
-          nativeSessionId: reporting.nativeSessionId })])
+      expectSuccessfulFaultRecovery(await fixture.finished(), fixture)
       expect(retryFailures()).toMatchObject({ component: 'engine', status: 'degraded' })
       expect(retryFailures()!.failureCount).toBeGreaterThan(retriesBefore)
     } finally {

@@ -98,7 +98,7 @@ it('F8: Run cancellation stops the reviewer heartbeat and retains the no-replay 
   vi.useFakeTimers(); vi.setSystemTime(new Date(now))
   try {
     const fixture = await reviewerFixture({ silent: true })
-    const task = fixture.dispatcher.dispatchNext(fixture.job.reviewerAgentId, 'worker').catch(() => { /* ignore: Run cancellation rejects the active dispatch; the assertions below verify its stopped lifecycle. */ })
+    const task = fixture.dispatcher.dispatchNext(fixture.job.reviewerAgentId, 'worker').catch(() => undefined)
     await until(() => fixture.starts.length === 1)
     await vi.advanceTimersByTimeAsync(1)
     fixture.stopFence()
