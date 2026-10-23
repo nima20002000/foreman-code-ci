@@ -218,7 +218,8 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     await mounted.query.invalidateQueries({ queryKey: boardDraftContextKey(mock.workspaceId, id) })
     await mounted.query.invalidateQueries({ queryKey: ['workbench', 'board-start-preflight'] })
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Workflow alerts, 2' })).toBeVisible())
+    // Two update failures beside the lone Worker's hint to add an Orchestrator.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Workflow alerts, 3' })).toBeVisible())
     expect(control('Start saved version')).toBeDisabled()
     expect(readBoardStart(key)).toBeUndefined()
     expect(mock.calls.filter((call) => call.method === 'POST' && call.path.endsWith('/runs'))).toEqual([])
@@ -226,18 +227,18 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     expect(screen.queryByText('Draft updates are unavailable. Start requires a fresh verified saved read.')).not.toBeInTheDocument()
     act(() => useGraphDraftStore.getState().changeNextDraft(key, (graph) => ({ ...graph, name: 'Retained through unavailable updates' })))
     const local = useGraphDraftStore.getState().nextDrafts[key]!
-    await user.click(screen.getByRole('button', { name: 'Workflow alerts, 2' }))
+    await user.click(screen.getByRole('button', { name: 'Workflow alerts, 3' }))
     const dialog = screen.getByRole('dialog', { name: 'Workflow alerts' })
-    expect(within(dialog).getAllByRole('listitem')).toHaveLength(2)
+    expect(within(dialog).getAllByRole('listitem')).toHaveLength(3)
     expect(within(dialog).getByText('Workspace updates unavailable. Local edits are kept.')).toBeVisible()
     expect(within(dialog).getByText('Draft updates unavailable. Running requires a fresh saved read.')).toBeVisible()
     workspaceAvailable = true
     await user.click(within(dialog).getByRole('button', { name: 'Retry workspace updates' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Workflow alerts, 1' })).toBeVisible())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Workflow alerts, 2' })).toBeVisible())
     draftAvailable = true
     await user.click(within(dialog).getByRole('button', { name: 'Retry draft updates' }))
-    await waitFor(() => expect(screen.queryByRole('button', { name: /Workflow alerts/ })).not.toBeInTheDocument())
-    expect(screen.queryByRole('dialog', { name: 'Workflow alerts' })).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Workflow alerts, 1' })).toBeVisible())
+    expect(within(dialog).queryByText(/updates unavailable/)).not.toBeInTheDocument()
     expect(useGraphDraftStore.getState().nextDrafts[key]!.graph).toBe(local.graph)
     expect(useGraphDraftStore.getState().nextDrafts[key]!.context.draft.baseWorkflowVersionId).toBe(saved.id)
     expect(nextDraftDirty(useGraphDraftStore.getState().nextDrafts[key]!)).toBe(true)
@@ -267,7 +268,10 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     expect(screen.queryByRole('region', { name: 'Activities popover' })).not.toBeInTheDocument()
     expect(activities).toHaveFocus()
     stageShape(key, 'single', mock)
-    await waitFor(() => expect(within(authoring()).queryByRole('button', { name: /Workflow alerts/ })).not.toBeInTheDocument())
+    // Only the lone Worker's hint to add an Orchestrator remains.
+    await waitFor(() => expect(within(authoring()).getByRole('button', { name: 'Workflow alerts, 1' })).toBeVisible())
+    await user.click(within(authoring()).getByRole('button', { name: 'Workflow alerts, 1' }))
+    expect(within(screen.getByRole('dialog', { name: 'Workflow alerts' })).getByText(/Add an Orchestrator and connect/)).toBeVisible()
   }, 30_000)
 
   it('keeps saved Board actions hidden for inspection and no-ops, and hides them again after Undo', async () => {
@@ -411,12 +415,13 @@ describe('ENG-S3-ONLY actual registered Board / shared current HTTP', () => {
     server.use(http.get('*/api/workspaces/:workspaceId/workflows/:workflowId/execution-chat/target',
       () => HttpResponse.json({ kind: 'unavailable', reason: 'NODE_UNAVAILABLE' })))
     const { key } = await create(mock, user)
-    for (let added = 0; added < 2; added++) {
-      await user.click(control('Add agent'))
-      const worker = within(screen.getByRole('menu', { name: 'Add agent' })).getByRole('menuitem', { name: 'Worker' })
-      await waitFor(() => expect(worker).not.toHaveAttribute('aria-disabled'))
-      await user.click(worker)
-    }
+    // The menu stays open so several Agents can be added in a row.
+    await user.click(control('Add agent'))
+    const worker = within(screen.getByRole('menu', { name: 'Add agent' })).getByRole('menuitem', { name: 'Worker' })
+    await waitFor(() => expect(worker).not.toHaveAttribute('aria-disabled'))
+    await user.click(worker)
+    await user.click(within(screen.getByRole('menu', { name: 'Add agent' })).getByRole('menuitem', { name: 'Worker' }))
+    await user.keyboard('{Escape}')
     expect(screen.queryByRole('menu', { name: 'Add agent' })).not.toBeInTheDocument()
     expect(useGraphDraftStore.getState().nextDrafts[key]!.graph.nodes.map(node => node.name)).toEqual(['Worker', 'Worker 2'])
     const draftActions = within(screen.getByRole('group', { name: 'Draft actions' }))
