@@ -13,7 +13,19 @@ export async function closeWorkflowControlInputLocked(sql:GraphTransactionSql,
     ) select ${CONTROL_COMMAND_SUMMARY_COLUMNS} from run_chat_commands c
     where c.run_id=$1 and c.kind='delivery' and c.state='queued'
       and c.target #>> '{execution,executionId}' in (select id from lineage) order by c.sequence`,[input.runId,input.executionId])).rows
+  await failQueued(sql,rows,input.now)
+}
+
+/** A Run that completes or fails gives its Agents no further turn, so input still queued for them closes with it. */
+export async function closeRunControlInputsLocked(sql:GraphTransactionSql,input:{runId:string;now:string}):Promise<void> {
+  assertGraphTransaction(sql)
+  await failQueued(sql,(await sql.query<ControlCommandSummary>(`select ${CONTROL_COMMAND_SUMMARY_COLUMNS} from run_chat_commands c
+    where c.run_id=$1 and c.kind='delivery' and c.state='queued' and c.target->>'kind'='workflow_execution'
+    order by c.sequence`,[input.runId])).rows,input.now)
+}
+
+async function failQueued(sql:GraphTransactionSql,rows:readonly ControlCommandSummary[],now:string) {
   for(const row of rows) await updateControlCommand(sql,row,{
-    ...ChatDeliveryReceiptSchema.parse(row.receipt),state:'failed',errorCode:'TARGET_SETTLED',updatedAt:input.now,
-  },input.now)
+    ...ChatDeliveryReceiptSchema.parse(row.receipt),state:'failed',errorCode:'TARGET_SETTLED',updatedAt:now,
+  },now)
 }

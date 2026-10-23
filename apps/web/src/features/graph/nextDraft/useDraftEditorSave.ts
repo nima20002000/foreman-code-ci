@@ -50,6 +50,7 @@ export function useDraftEditorSave({ draftKey, edit, editIntent, core, pendingSt
     const result = allowStop ? await editIntent.advance(true) : await editIntent.save()
     if (!allowStop && result.canStop && !result.affectedSetChanged && result.current.some((item) => !item.settled)) setConfirm('save')
     if (result.intent?.state === 'saved') setMessage(result.intent.stops.length ? 'Saved. Stopped runs were not restarted.' : 'Saved.')
+    else if (!result.intent) setMessage('Already saved.')
     else if (result.intent?.state === 'blocked' || result.intent?.state === 'uncertain') {
       setLocalError(result.intent.error?.message ?? 'Saving isn’t confirmed yet. Your changes are still here.')
     } else setMessage('Edits retained. Save waits for every affected Run to stop and finish cleanup.')

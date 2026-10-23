@@ -1082,19 +1082,22 @@ export class HostCiService {
     this.dispatchRequested = true
     if (this.stoppingRuns) return this.dispatching ?? Promise.resolve()
     this.dispatching ??= (async () => {
-      while (this.dispatchRequested && !this.stoppingRuns) {
-        this.dispatchRequested = false
-        await trackService('ci-dispatch', { cadenceMs: 1000, deadlineMs: CI_DISPATCH_PASS_MS },
-          () => withCiDispatchDeadline(() => withProviderPoll(() => this.dispatchOnce())))
-        this.dispatchRetry.reset()
-      }
+      // The pass stops being "current" in the same synchronous step that finds no wake-up left, so a dispatch()
+      // arriving afterwards starts a new pass instead of joining one that has already finished.
+      try {
+        while (this.dispatchRequested && !this.stoppingRuns) {
+          this.dispatchRequested = false
+          await trackService('ci-dispatch', { cadenceMs: 1000, deadlineMs: CI_DISPATCH_PASS_MS },
+            () => withCiDispatchDeadline(() => withProviderPoll(() => this.dispatchOnce())))
+          this.dispatchRetry.reset()
+        }
+      } finally { this.dispatching = undefined }
     })().catch(error => {
       // Slow work has already spent the pass budget; other errors still need an increasing retry delay.
       const nextRetryMs = error instanceof CiDispatchDeadlineError ? 0 : this.dispatchRetry.fail()
       log.warn({ err: error, nextRetryMs }, 'CI dispatch failed; retry scheduled')
     })
-      .finally(() => { this.dispatching = undefined })
-    return this.dispatching
+    return this.dispatching ?? Promise.resolve()
   }
 
   private dispatchServices(computer: HostCiComputer, status = this.planningEndpoint.dispatchStatus(computer)) {
@@ -1181,11 +1184,10 @@ export class HostCiService {
       return
     }
     const request: CiHostRequest = { operation: 'read', runId: ciExecutionRunId(run), afterOffset: 0, maxBytes: 32_768,
-      ...(computer.hostRef.kind === 'cloud' ? { observeOnly: true } : {}),
       ...(['integration', 'unit'].includes(run.suite) ? { durations: true } : {}),
       ...(computer.hostRef.kind === 'cloud' && run.step === 'queued' && this.spareElsewhere(run, computer)
         ? { reassign: true } : {}) }
-    let reply = await (computer.hostRef.kind === 'cloud'
+    const reply = await (computer.hostRef.kind === 'cloud'
       ? requestCloud(this.endpoint, computer, request)
       : this.endpoint.request(computer, request, { priority: 'background' })).catch(error => {
         throw new CiExecutorObservationError(error)
@@ -1223,14 +1225,6 @@ export class HostCiService {
         }
       }
       options.onCollecting?.()
-    }
-    if (computer.hostRef.kind === 'cloud' && reply.run.collection === 'pending') {
-      options.onCollecting?.()
-      const collected = await this.endpoint.request(computer, { ...request, observeOnly: false }, { priority: 'background' })
-      if (collected.operation !== 'read' || collected.run.runId !== ciExecutionRunId(run)) {
-        throw new DomainError('CI_HOST_REPLY_INVALID', 'Expected collection for this CI execution.', 502)
-      }
-      reply = collected
     }
     let logError: unknown
     let logTail: string | undefined = reply.text

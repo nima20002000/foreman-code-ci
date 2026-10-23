@@ -52,7 +52,9 @@ export const useConversationDraftStore = create<ConversationDraftState>((set) =>
       let latest = state.drafts[id]
       try { latest = window.localStorage.getItem(protectedKey('draft', id)) ?? latest }
       catch { /* ignore: the in-memory draft remains available. */ }
-      if (latest !== expectedContent || state.drafts[id] !== expectedContent || (state.versions[id] ?? 0) !== expectedVersion) return state
+      // Sent text is trimmed, so compare trimmed; an unchanged version proves the draft is still the one that was sent.
+      if (latest?.trim() !== expectedContent.trim() || state.drafts[id]?.trim() !== expectedContent.trim()
+        || (state.versions[id] ?? 0) !== expectedVersion) return state
       const drafts = { ...state.drafts }; delete drafts[id]
       try { window.localStorage.removeItem(protectedKey('draft', id)) }
       catch { /* ignore: this view retains the cleared state. */ }

@@ -11,13 +11,16 @@ import type { WorkflowChatLockedTarget, WorkflowChatOwnerPort } from './workflow
 
 interface AdmissionIdentity { id: string; commandId: string; principalId: string; now: string }
 
-async function assertSendable(context: WorkflowChatLockedTarget): Promise<void> {
+async function assertSendable(context: WorkflowChatLockedTarget, request?: Pick<ChatSendRequest, 'intent'>): Promise<void> {
   if (context.stopping) throw new DomainError('TARGET_SETTLING', 'The selected Run is stopping. Your input was not redirected.', 409)
   if (!['queued', 'running', 'waiting'].includes(context.run.executionState)) {
     throw new DomainError('TARGET_SETTLED', 'This Run no longer accepts input.', 409)
   }
   if (context.target.kind === 'workflow_execution') {
-    if (context.accepted) throw new DomainError('TARGET_SETTLED', 'This exact logical work has already been accepted.', 409)
+    // Finished work takes no steer or interrupt; a next-turn message waits for this Agent's next turn in the Run.
+    if (context.accepted && request?.intent !== 'next_turn' && request?.intent !== 'auto') {
+      throw new DomainError('TARGET_SETTLED', 'This exact logical work has already been accepted.', 409)
+    }
     const directionSource = (await context.sql.query('select 1 from run_hierarchy_direction_waits where run_id=$1 and source_execution_id=$2',
       [context.run.id,context.target.execution.executionId])).rowCount
     if (directionSource) throw new DomainError('TARGET_SETTLED', 'The source execution is closed. Select its recorded direction continuation explicitly.', 409)
@@ -57,7 +60,7 @@ function appliedIntent(context: WorkflowChatLockedTarget, request: ChatSendReque
 
 export async function qualifyWorkflowChatSendLocked(context: WorkflowChatLockedTarget, request: ChatSendRequest,
   identity: { id: string; principalId: string; channelContext?: string }, owner: WorkflowChatOwnerPort) {
-  await assertSendable(context)
+  await assertSendable(context, request)
   const applied = appliedIntent(context, request)
   const prepared = await owner.validateAdmission(context, request, { ...identity, appliedIntent: applied })
   return { appliedIntent: applied, nativePrompt: prepared.nativePrompt }
@@ -65,7 +68,7 @@ export async function qualifyWorkflowChatSendLocked(context: WorkflowChatLockedT
 
 export async function admitWorkflowChatSendLocked(context: WorkflowChatLockedTarget, request: ChatSendRequest,
   identity: AdmissionIdentity, owner: WorkflowChatOwnerPort) {
-  await assertSendable(context)
+  await assertSendable(context, request)
   const applied = appliedIntent(context, request)
   const prepared = await owner.validateAdmission(context, request, { ...identity, appliedIntent: applied })
   const operation = applied === 'steer' ? 'steer' : applied === 'interrupt_and_send' ? 'interrupt'

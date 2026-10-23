@@ -58,8 +58,9 @@ export function useSettlementFixtures() {
     configure: (graph: WorkflowDefinitionV3) => WorkflowDefinitionV3,
     work: (fixture: Fixture) => Promise<void>,
     form: 'single' | 'sequential' | 'parallel' = 'sequential',
+    options: Parameters<typeof workflowSettlementFixture>[3] = {},
   ) {
-    const fixture = await workflowSettlementFixture(database, configure, form)
+    const fixture = await workflowSettlementFixture(database, configure, form, options)
     try {
       await work(fixture)
     } finally {
@@ -74,6 +75,14 @@ export async function acceptedActivation(f: Fixture, activationId: string, resul
   const accepted = await f.accept(admitted.execution.id)
   assert.equal(accepted.kind, 'accepted')
   return accepted.execution
+}
+
+/** A Run already waiting for owner direction: Runs that reached a direction wait before only a Master could wait. */
+export async function seedDirectionWait(f: Fixture, result: ExecutionResult) {
+  const execution = await acceptedActivation(f, await f.store.ensureWorkEntry(), result)
+  await f.store.recordWorkUnresolved(execution.id)
+  assert.ok(f.lifecycle.persistDirectionWait)
+  await f.lifecycle.persistDirectionWait()
 }
 
 export async function sourceAndRequest(f: Fixture) {

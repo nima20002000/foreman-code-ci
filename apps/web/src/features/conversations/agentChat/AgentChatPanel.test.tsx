@@ -189,6 +189,15 @@ describe('AgentChatPanel commands and drafts', () => {
     expect(input).toHaveFocus()
   })
 
+  it('clears the composer after sending a draft that ends in whitespace', async () => {
+    const mounted = mountChat(); await mounted.ready(); write('Message with trailing space \n')
+    const input = screen.getByRole('textbox', { name: 'Message' })
+    await userEvent.click(screen.getByRole('button', { name: 'Send message' }))
+    await waitFor(() => expect(sent(mounted.mock)).toHaveLength(1))
+    expect(sent(mounted.mock)[0]!.body).toMatchObject({ content: 'Message with trailing space' })
+    await waitFor(() => expect(input).toHaveValue(''))
+  })
+
   it('follow-up after completion targets the same conversation with a new requestId', async () => {
     const mounted = mountChat(agentChatFixtures.idleAfterCompletion); await mounted.ready(); write('What next?')
     await userEvent.click(screen.getByRole('button', { name: 'Send message' }))

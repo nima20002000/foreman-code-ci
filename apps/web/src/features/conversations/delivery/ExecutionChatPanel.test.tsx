@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -38,7 +39,7 @@ class NativeSource implements ExecutionChatSource {
   message(message: EngineChatMessage, revision: number) { this.subscriptions.at(-1)!.receive({ target, message, revision }) }
 }
 function endpoints(value: EngineChatReadback = structuredClone(initial)) {
-  const state = { value, reads: 0, commands: [] as ChatSendRequest[], stops: [] as ChatStopRequest[], loseStop: false, inputs: [] as unknown[] }
+  const state = { value, reads: 0, commands: [] as ChatSendRequest[], stops: [] as ChatStopRequest[], loseStop: false, rejectStop: false, inputs: [] as unknown[] }
   const receipt = (command: ChatSendRequest): ChatDeliveryReceipt => ({ id: 'delivery-a', commandId: command.commandId!, target: command.target,
     requestedIntent: command.intent, appliedIntent: command.intent === 'auto' ? 'steer' : command.intent,
     state: 'accepted', nativeTurnId: 'native-turn-a', createdAt: date, updatedAt: date })
@@ -57,18 +58,20 @@ function endpoints(value: EngineChatReadback = structuredClone(initial)) {
     http.post(`${root}/stop`, async ({ request }) => {
       const input = ChatStopRequestSchema.parse(await request.json()); state.stops.push(input)
       if (state.loseStop) { state.loseStop = false; return HttpResponse.error() }
+      if (state.rejectStop) { state.rejectStop = false
+        return HttpResponse.json({ error: { code: 'CHAT_TARGET_SETTLED', message: 'The turn already finished.' } }, { status: 409 }) }
       return HttpResponse.json({ commandId: input.commandId, target, operation: 'stop_active', state: 'completed', affectedReceiptIds: [], replayed: state.stops.length > 1 })
     }),
   )
   return state
 }
 function mount(source: NativeSource, options: { visible?: boolean; nativeTurnId?: string; attachments?: ConversationAttachments;
-  onOpenContinuation?: (receipt: ChatDeliveryReceipt) => void } = {}) {
+  onOpenContinuation?: (receipt: ChatDeliveryReceipt) => void; followUp?: ReactNode } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   clients.push(client)
   const tree = (visible = true) => <QueryClientProvider client={client}><ExecutionChatPanel visible={visible}
     target={target} name="Ava" source={source} nativeTurnId={options.nativeTurnId} attachments={options.attachments}
-    onOpenContinuation={options.onOpenContinuation} /></QueryClientProvider>
+    onOpenContinuation={options.onOpenContinuation} followUp={options.followUp} /></QueryClientProvider>
   const view = render(tree(options.visible ?? true))
   return { ...view, visible: (value: boolean) => view.rerender(tree(value)) }
 }
@@ -167,6 +170,16 @@ describe('exact Execution chat public surface', () => {
     expect(state.stops[0]!.expectedNativeTurnId).toBeUndefined()
   })
 
+  it('drops a Stop the server definitely rejected so a new Stop uses a new command', async () => {
+    const state = endpoints(), source = new NativeSource(); state.rejectStop = true; mount(source)
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop active turn' }))
+    await screen.findByText('The turn already finished.')
+    expect(screen.queryByRole('button', { name: 'Retry original control' })).not.toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop active turn' }))
+    await waitFor(() => expect(state.stops).toHaveLength(2))
+    expect(state.stops[1]!.commandId).not.toBe(state.stops[0]!.commandId)
+  })
+
   it('keeps newer committed rows when an ordinary read started before the stream update finishes late', async () => {
     const state = endpoints(), source = new NativeSource(); mount(source)
     await screen.findByText('Selected native answer')
@@ -237,5 +250,16 @@ describe('exact Execution chat public surface', () => {
       expect(state.commands).toHaveLength(1)
     }
     expect(acknowledge).not.toHaveBeenCalled()
+  })
+
+  it('keeps an unconfirmed message and its Check status control on a finished execution instead of showing the follow-up chat', async () => {
+    const receipt: ChatDeliveryReceipt = { id: 'late-receipt', commandId: 'command-late', target,
+      requestedIntent: 'next_turn', appliedIntent: 'next_turn', state: 'unknown', createdAt: date, updatedAt: date }
+    endpoints({ ...structuredClone(initial), state: 'idle', capabilities: { steer: 'unavailable', queue: false, interruptAndSend: false },
+      receipts: [receipt] })
+    mount(new NativeSource(), { followUp: <p>Agent chat follow-up</p> })
+    expect(await screen.findByText('Delivery unconfirmed')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Check status' })).toBeVisible()
+    expect(screen.queryByText('Agent chat follow-up')).not.toBeInTheDocument()
   })
 })
