@@ -202,10 +202,11 @@ it.each([503, 403])('recovers edited prompts after a %s app access failure and r
 
 it.each([503, 403])('retries the original uncertain prompt save after a %s app access failure', async status => {
   const writes: PromptSettingUpdateInput[] = []
+  let restarting = true
   server.use(http.put('/api/management/settings/operator-initial-prompt', async ({ request }) => {
     const input = PromptSettingUpdateInputSchema.parse(await request.json())
     writes.push(input)
-    if (writes.length === 1) {
+    if (restarting) {
       return HttpResponse.json({ error: { code: 'UNAVAILABLE', message: 'Save not confirmed.' } }, { status: 503 })
     }
     return HttpResponse.json({
@@ -219,6 +220,7 @@ it.each([503, 403])('retries the original uncertain prompt save after a %s app a
   await user.type(editor, '\nSubmitted edit')
   await user.click(screen.getByRole('button', { name: 'Save initial prompt' }))
   expect(await within(screen.getByRole('region', { name: 'Initial prompt settings' })).findByText('Save not confirmed')).toBeVisible()
+  expect(screen.getByText(/Checking again by itself until the app answers/)).toBeVisible()
   server.use(http.get('/api/local-human', () => HttpResponse.json({
     error: { code: 'ACCESS_UNAVAILABLE', message: 'Access check failed.' },
   }, { status })))
@@ -240,10 +242,12 @@ it.each([503, 403])('retries the original uncertain prompt save after a %s app a
   const retry = within(dialog).getByRole('button', { name: 'Retry original save' })
   expect(retry).toBeEnabled()
   expect(within(dialog).getByRole('button', { name: 'Discard' })).toBeDisabled()
+  restarting = false
   await user.click(retry)
   await waitFor(() => expect(router.state.location.pathname).toBe('/settings'))
-  expect(writes).toHaveLength(2)
-  expect(writes[1]).toEqual(writes[0])
+  // While the app was unavailable the same command was also resent by itself.
+  expect(writes.length).toBeGreaterThanOrEqual(2)
+  expect(writes.every(write => JSON.stringify(write) === JSON.stringify(writes[0]))).toBe(true)
 }, 20_000)
 
 it.each([false, true])('guards navigation and blocks saving after prompt denial (uncertain: %s)', async uncertain => {

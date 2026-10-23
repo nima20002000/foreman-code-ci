@@ -9,6 +9,8 @@ interface SettingsFormState {
   isDirty: boolean
   isSaving: boolean
   uncertain: boolean
+  /** The unconfirmed save is being resent by itself until the app answers. */
+  checking?: boolean
   conflicted: boolean
   error?: string
   savedRevision?: number
@@ -27,7 +29,8 @@ export function SettingsFormFeedback({ form }: { form: SettingsFormState }) {
           <Button size="sm" variant="ghost" disabled={form.isSaving || form.uncertain} onClick={form.reset}>Load latest</Button>
         </div>} />
     </div> : null}
-    {form.uncertain ? <div className="settings-form-feedback"><Alert live tone="warning" title="Save not confirmed. Retry to check it." /></div> : null}
+    {form.uncertain ? <div className="settings-form-feedback"><Alert live tone="warning" title={form.checking
+      ? 'Save not confirmed yet. Checking again by itself…' : 'Save not confirmed. Retry to check it.'} /></div> : null}
     {form.error && !form.conflicted && !form.uncertain ? <div className="settings-form-feedback"><Alert live tone="danger" title="Couldn’t save">
       {form.error} Your edits are still here.
     </Alert></div> : null}
@@ -57,7 +60,8 @@ export function SettingsFormActions({ form, onSave, saveLabel = 'Save defaults',
     const before = previous.current
     if (toasts) {
       if (form.uncertain && !before.uncertain) toasts.notify({ tone: 'warning', title: 'Save not confirmed',
-        description: 'Retry the original save to learn whether it committed.' })
+        description: form.checking ? 'Checking again by itself until the app answers. Your edits are kept.'
+          : 'Retry the original save to learn whether it committed.' })
       else if (form.conflicted && !before.conflicted) toasts.notify({ tone: 'warning', title: `${subjectTitle} changed elsewhere`,
         description: 'Review the changes before saving again.' })
       else if (form.error && !form.conflicted && (form.error !== before.error || before.saving)) {
@@ -69,7 +73,7 @@ export function SettingsFormActions({ form, onSave, saveLabel = 'Save defaults',
     }
     previous.current = { revision: form.savedRevision, error: form.error, uncertain: form.uncertain,
       conflicted: form.conflicted, saving: form.isSaving }
-  }, [form.savedRevision, form.error, form.uncertain, form.conflicted, form.isSaving, form.isDirty, subject, subjectTitle, toasts])
+  }, [form.savedRevision, form.error, form.uncertain, form.checking, form.conflicted, form.isSaving, form.isDirty, subject, subjectTitle, toasts])
   if (!canSave) return null
   return <footer className="settings-save-actions">
     {extra ? <div className="settings-footer-options">{extra}</div> : null}

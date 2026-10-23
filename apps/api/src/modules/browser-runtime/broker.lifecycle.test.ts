@@ -458,3 +458,22 @@ it('allows a newly authenticated viewer to reclaim ownership after host journal 
   expect(await recovered.acquire({ sessionId: session.id, browserGeneration: session.browserGeneration,
     viewerId: 'fresh-viewer', commandId: 'reclaim' })).toMatchObject({ state: 'user', controllingViewerId: 'fresh-viewer' })
 })
+
+it('tells an agent at once that a person controls the browser instead of holding its action until a tool timeout', async () => {
+  const f = fixture(), { session } = ready(await f.broker.prepare(f.request()))
+  const held = await f.broker.acquire({ sessionId: session.id, browserGeneration: session.browserGeneration,
+    viewerId: 'viewer', commandId: 'take' })
+  const calls = [
+    f.broker.action({ sessionId: session.id, tabId: session.selectedTabId!, actor: agent(session, held.epoch),
+      commandId: 'while-user', action: { kind: 'click', x: 2, y: 3 } }),
+    f.broker.observe({ sessionId: session.id, tabId: session.selectedTabId!, actor: agent(session, held.epoch) }),
+    f.broker.screenshot({ sessionId: session.id, tabId: session.selectedTabId!, actor: agent(session, held.epoch) }),
+  ]
+  for (const call of calls) {
+    const settled = await Promise.race([call.then(() => 'resolved', error => error),
+      new Promise(resolve => setTimeout(() => resolve('still waiting'), 1_000))])
+    expect(settled).toMatchObject({ code: 'BROWSER_USER_CONTROL',
+      message: expect.stringContaining('A person is controlling this browser right now') })
+  }
+  expect(vi.mocked(f.driver.action)).not.toHaveBeenCalled()
+})

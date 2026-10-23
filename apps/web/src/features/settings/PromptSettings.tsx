@@ -64,7 +64,8 @@ export function PromptSettings({ page }: { page: PromptSettingsPage; onBack?(): 
       </div>}>
       <details><summary>Current saved prompt</summary><pre className="prompt-settings-saved">{query.data?.value.text}</pre></details>
     </Alert> : null}
-    {form.uncertain ? <Alert live tone="warning" title="Save not confirmed">Retry to check it. Your edits are kept.</Alert> : null}
+    {form.uncertain ? <Alert live tone="warning" title="Save not confirmed">{form.checking
+      ? 'Checking again by itself until the app answers.' : 'Retry to check it.'} Your edits are kept.</Alert> : null}
     {form.error && !form.conflicted && !form.uncertain ? <Alert live tone="danger" title="Prompt was not saved">
       {form.error} Your edits are still here.
     </Alert> : null}

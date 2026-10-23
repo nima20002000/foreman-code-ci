@@ -13,3 +13,12 @@ profile foreman-browser-runtime /home/**/browser-runtime/versions/*/chromium/chr
 
   include if exists <local/foreman-browser-runtime>
 }
+
+# The release build starts the same Chromium once from its private build directory to collect
+# its license notices (scripts/browser-runtime-install.mjs collectChromiumNotices). A deploy that
+# runs as a systemd service needs the same user-namespace permission there.
+profile foreman-browser-build /home/**/.browser-build-*/unit/chromium/chrome-linux64/chrome flags=(unconfined) {
+  userns,
+
+  include if exists <local/foreman-browser-build>
+}

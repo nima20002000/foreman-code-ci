@@ -14,6 +14,8 @@ interface Pending<T> {
   request: Request<T>
   attempt: CommandAttempt<{ value: T; expectedRevision: number }>
   state: 'sending' | 'uncertain'
+  /** Set while the original command is resent by itself, until the app answers or the deadline passes. */
+  checkingUntil?: number
 }
 export interface Form<T> {
   value: T
@@ -26,10 +28,16 @@ export interface Form<T> {
 }
 const useForms = create<{ forms: Record<string, Form<unknown>> }>(() => ({ forms: {} }))
 let epoch = 0
+/** An unconfirmed save is resent quietly: 1, 2, 4, 8, then every 10 s for up to 10 minutes (an app restart). */
+const CHECK_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 10_000]
+const CHECK_WINDOW_MS = 10 * 60_000
+const checks = new Map<string, ReturnType<typeof setTimeout>>()
 function same(left: unknown, right: unknown): boolean { return JSON.stringify(left) === JSON.stringify(right) }
 
 export function clearRevisionedFormPersistence(): void {
   ++epoch
+  for (const timer of checks.values()) clearTimeout(timer)
+  checks.clear()
   useForms.setState({ forms: {} })
 }
 
@@ -65,23 +73,41 @@ function acknowledged<T>(current: Form<T> | undefined, submitted: T, value: T, r
   }
 }
 
-/** A command and its exact payload outlive the initiating component, but never its access session. */
+function scheduleCheck<T>(key: string, perform: (request: Request<T>) => Promise<Snapshot<T>>,
+  prepare: (value: T) => T, attempt: number): void {
+  const pending = (useForms.getState().forms[key] as Form<T> | undefined)?.pending
+  if (pending?.state !== 'uncertain' || !pending.checkingUntil || Date.now() >= pending.checkingUntil) {
+    if (pending?.checkingUntil) update<T>(key, form => form?.pending && ({ ...form, pending: { ...form.pending, checkingUntil: undefined } }))
+    return
+  }
+  clearTimeout(checks.get(key))
+  checks.set(key, setTimeout(() => {
+    checks.delete(key)
+    void saveRevisionedForm(key, perform, prepare, attempt + 1)
+  }, CHECK_DELAYS_MS[Math.min(attempt, CHECK_DELAYS_MS.length - 1)]))
+}
+
+/** A command and its exact payload outlive the initiating component, but never its access session.
+ * `check` > 0 is a quiet automatic resend of an unconfirmed save: the form keeps showing it as unconfirmed. */
 export async function saveRevisionedForm<T>(
   key: string,
   perform: (request: Request<T>) => Promise<Snapshot<T>>,
   prepare: (value: T) => T = (value) => value,
+  check = 0,
 ): Promise<boolean> {
   const generation = sessionGeneration()
   const startedEpoch = epoch
   const current = useForms.getState().forms[key] as Form<T> | undefined
   if (!current || current.pending?.state === 'sending') return false
+  if (check > 0 && current.pending?.state !== 'uncertain') return false
+  if (check === 0) { clearTimeout(checks.get(key)); checks.delete(key) }
   if (!current.pending && current.latest && current.base.revision !== current.latest.revision) {
     update<T>(key, (form) => form && ({ ...form, error: 'These settings changed elsewhere. Review the changes, then reapply your edits or explicitly discard them.' }))
     return false
   }
   let pending: Pending<T> | undefined
   try {
-    if (current.pending) pending = { ...current.pending, state: 'sending' }
+    if (current.pending) pending = check > 0 ? current.pending : { ...current.pending, state: 'sending' }
     else {
       const attempt = new CommandAttempt<{ value: T; expectedRevision: number }>()
       const submitted = structuredClone(current.value)
@@ -89,7 +115,7 @@ export async function saveRevisionedForm<T>(
       pending = { submitted, request, attempt, state: 'sending' }
     }
     const active = pending
-    update<T>(key, (form) => form && ({ ...form, pending: active, error: undefined, issues: undefined, savedRevision: undefined }))
+    if (check === 0) update<T>(key, (form) => form && ({ ...form, pending: active, error: undefined, issues: undefined, savedRevision: undefined }))
     const response = await perform(active.request)
     if (generation !== sessionGeneration() || startedEpoch !== epoch) return false
     active.attempt.succeeded()
@@ -98,12 +124,20 @@ export async function saveRevisionedForm<T>(
   } catch (error) {
     if (generation !== sessionGeneration() || startedEpoch !== epoch) return false
     pending?.attempt.failed(error)
-    const retained = pending?.attempt.unresolved ? { ...pending, state: 'uncertain' as const } : undefined
+    const retained = pending?.attempt.unresolved ? { ...pending, state: 'uncertain' as const,
+      checkingUntil: check > 0 ? pending.checkingUntil : Date.now() + CHECK_WINDOW_MS } : undefined
+    if (check > 0 && retained) {
+      // Still unanswered: keep the shown state as it is and ask again later.
+      update<T>(key, (form) => form && form.pending === pending ? { ...form, pending: retained } : form)
+      scheduleCheck(key, perform, prepare, check)
+      return false
+    }
     const issues = validationIssues(error)
     update<T>(key, (form) => form && ({
       ...form, pending: retained, issues, savedRevision: undefined,
       error: issues.length ? 'Review the marked fields before saving.' : errorMessage(error, 'Settings could not be saved.'),
     }))
+    if (retained) scheduleCheck(key, perform, prepare, 0)
     return false
   }
 }
@@ -138,6 +172,7 @@ export function useRevisionedForm<T>(incoming: Snapshot<T> | undefined, persiste
     conflicted,
     isSaving: form?.pending?.state === 'sending',
     uncertain: form?.pending?.state === 'uncertain',
+    checking: form?.pending?.state === 'uncertain' && Boolean(form.pending.checkingUntil),
     pendingCommandId: form?.pending?.request.commandId,
     error: form?.error,
     issues: form?.issues,
