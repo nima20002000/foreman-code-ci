@@ -14,6 +14,9 @@ import { nextDraftApi } from './transport'
 import { readEditOutbox } from './editIntentStorage'
 import { journalIntent } from './nim2644Journal.fixture'
 
+// Shared test setup imports the editor before this suite installs its isolated canvas and Board mocks.
+vi.hoisted(() => { vi.resetModules() })
+
 async function confirmDiscard(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: /^Discard changes$/ }))
   const dialog = await screen.findByRole('alertdialog')

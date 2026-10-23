@@ -39,7 +39,7 @@ export const workerSnapshotFiles = [
 
 export function assertWorkerSnapshotSource(path) {
   const forbiddenApiModule = /^apps\/api\/src\/(?:server|app|production)\.ts$/.test(path)
-    || /^apps\/api\/src\/(?:infrastructure\/(?:db|database)(?:\.|\/)|(?:db|migrations|bootstrap)\/)/.test(path)
+    || /^apps\/api\/src\/(?:infrastructure\/(?:db|database)|(?:db|migrations|bootstrap)\/)/.test(path)
   const invalidPath = path.startsWith('/') || path.split('/').some(part => !part || part === '.' || part === '..')
   const testSource = /\.(?:test|spec)\.[cm]?[jt]s$/.test(path)
   const secretSource = /(?:^|\/)\.env(?:\.|$)|\.(?:pem|key)$|(?:^|\/)(?:credentials|secrets)\.json$/.test(path)

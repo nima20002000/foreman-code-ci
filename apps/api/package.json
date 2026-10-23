@@ -27,7 +27,6 @@
     "credential": "node --import tsx src/cli/operatorCredentials.ts",
     "harness:check": "node --import tsx src/cli/harnessCompatibility.ts",
     "qualify:harness": "node ../../scripts/test-command.mjs -- node ../../scripts/qualify-harness.mjs",
-    "build:worker-runtime": "tsc -p tsconfig.build.json --noCheck && node ../../scripts/copy-api-runtime.mjs",
     "build": "node ../../scripts/heavy-job.mjs --build api -- sh -c \"tsc -p tsconfig.build.json && node ../../scripts/copy-api-runtime.mjs && node dist/cli/harnessCompatibility.js\""
   },
   "dependencies": {

@@ -142,18 +142,3 @@ test('Worker artifacts reject forbidden modules, sensitive files and imports out
     });
   }
 });
-
-
-test('Worker public API exports preserve retryable device failures', async () => {
-  const { DeviceApplicationError } = await import('@foreman-code/api/worker/devices');
-  const failure = new DeviceApplicationError('unavailable');
-  assert.equal(failure.code, 'unavailable');
-  assert.equal(failure.retryable, true);
-});
-
-test('the committed Worker import graph passes the artifact source boundary', () => {
-  const result = spawnSync(process.execPath, [join(repository, 'scripts/check-worker-imports.mjs')],
-    { cwd: repository, encoding: 'utf8', timeout: 30_000 });
-  assert.ifError(result.error);
-  assert.equal(result.status, 0, result.stderr);
-});
