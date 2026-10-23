@@ -552,7 +552,13 @@ export class LangGraphWorkflowEngine {
   }
 
   private async requestRestartCleanup(owner: RunOwnership, approvals?: WorkflowRestartApprovals): Promise<void> {
-    if (await settleWorkForRestart(owner, approvals)) return
+    // A loop check whose turn just finished has unsettled native evidence, like any in-flight work: it is not
+    // retained for restart but cleaned up.
+    const retained = await settleWorkForRestart(owner, approvals).catch((error: unknown) => {
+      if (error instanceof DomainError && error.code === 'REPEAT_CLEANUP_PENDING') return false
+      throw error
+    })
+    if (retained) return
     await this.runs.requestCleanup(owner.runId, owner)
   }
 }
