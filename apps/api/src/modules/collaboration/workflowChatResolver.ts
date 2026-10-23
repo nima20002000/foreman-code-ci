@@ -9,7 +9,6 @@ import type { Principal } from './ports.js'
 import { controlDigest } from './workflowControlRecords.js'
 import { readWorkflowChatAgent, readWorkflowChatIdentity, readWorkflowChatVersion, workflowChatExecutionRef, workflowChatState,
   type WorkflowChatExecutionRow, type WorkflowChatRunRow } from './workflowChatIdentity.js'
-import { OPEN_RUN_STATES_SQL } from '../runs/runState.js'
 
 type Choice = Extract<WorkflowExecutionChatResolution, { kind: 'selected' }>
 const Cursor = z.object({ scope: z.string(), before: z.string() }).strict()
@@ -55,7 +54,7 @@ export async function resolveWorkflowChatTarget(sql: GraphSqlClient, principal: 
   }
   const runs = (await sql.query<WorkflowChatRunRow>(`select id,workspace_id,workflow_id,workflow_version_id,execution_state,
     stop_requested_at is not null as stopped from runs where workspace_id=$1 and workflow_id=$2
-      and execution_state in (${OPEN_RUN_STATES_SQL}) and ($3::text is null or workflow_version_id=$3)
+      and execution_state in ('queued','running','waiting') and ($3::text is null or workflow_version_id=$3)
       and ($4::text is null or id<$4) and ($6::text[] is null or id=any($6)) order by id desc limit $5`,
   [input.workspaceId, input.workflowId, input.workflowVersionId ?? null, before ?? null, input.limit + 1, authorizedRunIds])).rows
   if (!runs.length && !input.cursor) return unrestricted ? outsideRun(sql, principal, input, action)

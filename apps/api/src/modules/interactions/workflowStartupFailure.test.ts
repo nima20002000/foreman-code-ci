@@ -41,18 +41,18 @@ it.each([
   const dispose = vi.fn(async () => {})
   const requestCleanup = vi.fn(async () => {})
   type Args = ConstructorParameters<typeof ApprovalExecutionCoordinator>
-  const coordinator = new ApprovalExecutionCoordinator({ runs: {
+  const coordinator = new ApprovalExecutionCoordinator({
     ...idleWorkflowControls, repeat: async () => store, recordExecutionFailure, requestCleanup,
-  } as unknown as Args[0]['runs'], interactions: {
+  } as unknown as Args[0], {
     coordination: nativeLanes(),
-  } as unknown as Args[0]['interactions'], budgets: {
+  } as unknown as Args[1], {
     ensure: async () => {}, resume: async () => {}, remaining: async () => 60_000, stop: async () => {},
-  } as unknown as Args[0]['budgets'], managers: {
+  } as unknown as Args[2], {
     resolve: () => ({ manager: { harness: configuration.harness.harness, createSession, dispose },
       processState: 'needs_start' }),
-  } as unknown as Args[0]['managers'], activeTimeoutMs: 60_000, workflowClosures: {
+  } as unknown as Args[3], 60_000, undefined, undefined, {
     begin: async () => '1', recordUnbound: async () => ({ durableGeneration: '1' }),
-  } as unknown as Args[0]['workflowClosures'] })
+  } as unknown as Args[7])
 
   await expect(coordinator.observeExact({
     execution, owner, workflowId: f.run.workflowId, graphThreadId: f.run.id,

@@ -5,7 +5,6 @@ import type { TextTruncation } from '@foreman-code/contracts/activity-text'
 import { withTransaction, type TransactionSql } from '../../infrastructure/transaction.js'
 import type { AcceptedChatInput } from './nativeChatInput.js'
 import type { StoredDelivery } from '../workflow-chat/model.js'
-import type { ChatDeliveryReceipt } from '@foreman-code/contracts'
 import { admitSessionMessage } from './sessionControls/messageAdmission.js'
 import { SessionControlStore } from './sessionControls/store.js'
 import type { NativeMessageSubmission } from '../harnesses/port.js'
@@ -49,7 +48,7 @@ import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.j
 import { requireAuthorization } from '../access/policy.js'
 import { authorizeOperatorConfigurationRead } from '../operators/configurationRead.js'
 import { acceptOperatorConfiguration } from './operatorAcceptedConfiguration.js'
-import { ConversationRepositoryCore } from './conversationRepositoryCore.js'
+import { recordNativeNonSubmission, type NativeNonSubmission } from './nativeNonSubmission.js'
 import { OperatorConversationRecordSchema, publicOperatorConversation } from './operatorConversationRecord.js'
 import { legacyProviderAccountBinding, readProviderAccountBinding, saveProviderAccountBinding }
   from '../provider-accounts/acceptedBindings.js'
@@ -145,10 +144,9 @@ function conversation(row: ConversationRow): Conversation {
 }
 
 /** SQL transitions are fenced by the accepted request, even under a delayed native response. */
-export class PostgresOperatorConversationRepository extends ConversationRepositoryCore<ConversationRow> {
+export class PostgresOperatorConversationRepository {
   readonly activity: PostgresOperatorActivityRepository
-  constructor(pool: pg.Pool, private readonly accountConfigurations?: ProviderAccountConfigurationService) {
-    super(pool, 'operator')
+  constructor(readonly pool: pg.Pool, private readonly accountConfigurations?: ProviderAccountConfigurationService) {
     this.activity = new PostgresOperatorActivityRepository(pool)
   }
 
@@ -729,6 +727,21 @@ export class PostgresOperatorConversationRepository extends ConversationReposito
     })
   }
 
+  async markInitialInputOffered(id: string, requestId: string): Promise<void> {
+    const changed = await this.pool.query(`update operator_conversation_turns t
+      set payload=payload || '{"initialInputOffered":true}'::jsonb
+      from operator_conversations c where c.id=t.conversation_id and c.id=$1
+        and c.active_request_id=$2 and t.request_id=$2 and c.deleted_at is null`, [id, requestId])
+    if (changed.rowCount !== 1) throw new DomainError('CHAT_OWNER_CHANGED', 'The initial native input lost its admitted owner.', 409)
+  }
+
+  async initialInputOffered(id: string, requestId: string): Promise<boolean> {
+    const row = (await this.pool.query<{ offered: boolean }>(`select
+      coalesce((payload->>'initialInputOffered')::boolean,false) as offered
+      from operator_conversation_turns where conversation_id=$1 and request_id=$2`, [id, requestId])).rows[0]
+    return row?.offered === true
+  }
+
   async preparedInput(id: string, requestId: string, query: Queryable = this.pool): Promise<AcceptedChatInput | undefined> {
     return (await query.query<{ input: AcceptedChatInput | null }>(`select payload->'preparedInput' as input
       from operator_conversation_turns where conversation_id=$1 and request_id=$2`, [id, requestId])).rows[0]?.input ?? undefined
@@ -775,7 +788,7 @@ export class PostgresOperatorConversationRepository extends ConversationReposito
 
   async claimDelivery(id: string): Promise<{ input: SendOperatorMessageRequest; configuration: OperatorConfigurationVersion; ownerId: string } | undefined> {
     return withTransaction(this.pool, async tx => {
-      const row = await this.lockRow(tx, id)
+      const row = (await tx.query<ConversationRow>(`select * from operator_conversations where id=$1 and kind='operator' for update`, [id])).rows[0]
       if (!row || row.deleted_at || row.active_request_id || !row.owner_principal_id || !['idle', 'error'].includes(row.turn_state)) return undefined
       const turn = (await tx.query<{ request_id: string; operator_configuration_version_id: string;
         payload: { request: SendOperatorMessageRequest; preparedInput: AcceptedChatInput } }>(`select * from operator_conversation_turns
@@ -796,27 +809,6 @@ export class PostgresOperatorConversationRepository extends ConversationReposito
         revision=revision+1,updated_at=now() where id=$1`, [id, turn.request_id, configuration.id])
       return { input: turn.payload.request, configuration, ownerId: row.owner_principal_id }
     })
-  }
-
-  /** Persisted owner evidence for one delivered command, read in the receipt's refresh transaction. */
-  async deliveryEvidence(tx: TransactionSql, id: string, requestId: string) {
-    return (await tx.query<{ delivery: ChatDeliveryReceipt['state']; result: ExecutionResult | null;
-      native_turn_id: string | null; delivery_error: { code: string } | null; submitted: boolean; uncertain: boolean;
-      original_result: ExecutionResult | null }>(`select t.delivery,t.result,t.native_turn_id,t.delivery_error,
-      t.payload->'nativeSubmission' is not null as submitted,
-      c.active_request_id=t.request_id and c.turn_state='uncertain' as uncertain,original.result as original_result
-      from operator_conversation_turns t join operator_conversations c on c.id=t.conversation_id
-      left join operator_conversation_turns original on original.conversation_id=t.conversation_id
-        and original.request_id=t.payload->>'targetRequestId'
-      where t.conversation_id=$1 and t.request_id=$2`, [id, requestId])).rows[0]
-  }
-
-  /** Settles a steer receipt that was still submitting or unconfirmed. */
-  async recordSteerDelivery(id: string, requestId: string, delivery: ChatDeliveryReceipt['state'], nativeTurnId: string | undefined,
-    error: { code: string; message: string } | undefined): Promise<void> {
-    await this.pool.query(`update operator_conversation_turns set delivery=$3,native_turn_id=coalesce(native_turn_id,$4),
-      delivery_error=$5::jsonb,updated_at=now() where conversation_id=$1 and request_id=$2 and delivery in ('submitting','unknown')`,
-    [id, requestId, delivery, nativeTurnId ?? null, error ? JSON.stringify(error) : null])
   }
 
   async queuedConversationIds(): Promise<string[]> {
@@ -908,11 +900,20 @@ export class PostgresOperatorConversationRepository extends ConversationReposito
     ) select id from acknowledged union select id from existing`, [id, requestId, nativeTurnId, owner.nativeSessionId, owner.principalId])
     return result.rowCount === 1
   }
+  async requestCancel(id: string, requestId: string): Promise<boolean> {
+    const result = await this.pool.query(`update operator_conversations set cancel_requested=true,turn_state='canceling',
+      revision=revision+1,updated_at=now() where id=$1 and active_request_id=$2`, [id, requestId])
+    return result.rowCount === 1
+  }
   async uncertain(id: string, requestId: string, message: string): Promise<void> {
     await this.pool.query(`update operator_conversations set turn_state='uncertain',last_error=$3,revision=revision+1,updated_at=now()
       where id=$1 and active_request_id=$2`, [id, requestId, message])
   }
 
+  recordNonSubmission(id: string, requestId: string, operation: NativeNonSubmission['operation'],
+    result: ExecutionResult): Promise<boolean> {
+    return recordNativeNonSubmission(this.pool, id, requestId, operation, result)
+  }
   async pending(id: string, requestId: string | null, value?: PendingNativeInteraction): Promise<void> {
     await this.pool.query(`update operator_conversations set pending_interaction=$3::jsonb,
       response_delivery=case when $3::jsonb is null then null

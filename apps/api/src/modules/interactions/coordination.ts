@@ -9,7 +9,6 @@ import { DomainError } from '../errors.js'
 import { appendNativeEvent } from '../runs/nativeEvents.js'
 import { assertOrchestratorGraphAuthority } from './graphAuthority.js'
 import { pendingReviewCleanup } from './reviewPolicy.js'
-import { CLOSED_RUN_STATES_SQL } from '../runs/runState.js'
 
 // A submitted job may have reached the provider even when no acknowledgement was saved.
 const recoverableJob = `(state in ('pending','leased','blocked_busy','blocked_disconnected','submitted','acknowledged','uncertain')
@@ -59,7 +58,7 @@ export class PostgresInteractionCoordinationRepository {
   async reviewRunStopped(reviewJobId: string): Promise<boolean> {
     const result = await this.queryConnection.query(
       `select 1 from review_jobs j join harness_executions e on e.id=j.execution_id
-       join runs r on r.id=e.run_id where j.id=$1 and (r.execution_state in (${CLOSED_RUN_STATES_SQL})
+       join runs r on r.id=e.run_id where j.id=$1 and (r.execution_state in ('completed','interrupted')
          or exists(select 1 from run_cleanup_intents c where c.run_id=r.id and c.pending))`, [reviewJobId],
     )
     return result.rowCount === 1

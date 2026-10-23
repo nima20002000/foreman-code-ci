@@ -17,7 +17,6 @@ import type { BrowserSessionAuthority } from '../browser-runtime/service.js'
 import type { BrowserSubjectAuthority, BrowserSession } from '../browser-runtime/types.js'
 import type { BrowserProfileRepository } from '../browser-profiles/types.js'
 import { browserAgentTools, chatToolOverride } from './browserTools.js'
-import { isOpenRunState } from '../runs/runState.js'
 
 export interface BrowserSubjectDetails {
   subject: AgentSubject; browser: NodeBrowserSettings; configuration: AgentConfigurationVersion
@@ -159,7 +158,7 @@ export class BrowserAuthority implements BrowserSubjectAuthority, BrowserSession
       browser = node.browser
       workflowVersionId = identity.version.id
       active = consultation !== undefined || !identity.run.stopped
-        && isOpenRunState(identity.run.execution_state)
+        && ['queued', 'running', 'waiting'].includes(identity.run.execution_state)
         && ['queued', 'starting', 'running', 'waiting'].includes(identity.execution!.state)
       const placement = await readExecutionPlacement(this.pool, execution.executionId)
       if (placement) computerId = placement.hostRef.kind === 'main' ? placement.hostRef.mainId : placement.hostRef.deviceId

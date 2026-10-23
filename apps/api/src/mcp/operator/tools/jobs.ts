@@ -21,7 +21,6 @@ import { DomainError } from '../../../modules/errors.js'
 import type { JobService } from '../../../modules/jobs/service.js'
 import type { PostgresCommandCoordinator } from '../../../modules/commands/postgres.js'
 import { toolFailure, toolResult } from '../../shared/results.js'
-import { toolDetail } from '../../shared/toolDetail.js'
 import { componentLogger } from '../../../infrastructure/logger.js'
 const log = componentLogger('jobs')
 export const JOB_TOOLS = [
@@ -82,8 +81,10 @@ export function registerJobTools(server:McpServer,context:JobMcpContext):void {
   const read={readOnlyHint:true,idempotentHint:true,openWorldHint:false}
   const write={readOnlyHint:false,idempotentHint:true,openWorldHint:false}
   if (jobToolAvailable(context, 'job_choices_get')) server.registerTool('job_choices_get', {
-    description: 'Read the authorized CI sources, fixed computer and root choices, Auto runtime requirements and repository verification templates for authoring Jobs. Installs nothing and logs in nowhere.',
-    ...toolDetail('Templates retain the saved resource envelope, qualified worker allowance, wrapper command and four required reports. Unqualified or offline profiles remain authorable; readiness is checked at Start. Each template ready flag reflects its current runtime readiness.'),
+    description: 'Read authorized CI sources, fixed computer/root choices, Auto runtime requirements and repository '
+      + 'verification templates. Templates retain the saved resource envelope, qualified worker allowance, wrapper '
+      + 'command and four required reports. Unqualified or offline profiles remain authorable; readiness is checked '
+      + 'at Start. Each template ready flag reflects its current runtime readiness. No installation or provider login.',
     inputSchema: scope, outputSchema: JobAuthoringChoicesRecordSchema, annotations: read,
   }, input => invoke(context, 'job_choices_get', () => service.choices(context.principal, input.workspaceId, 'mcp')))
   if(jobToolAvailable(context,'job_workflow_execution_get')) server.registerTool('job_workflow_execution_get',{description:'Read the persisted relationship from a Run node execution to its JobExecutionRecord. Requires jobs:read for its persisted workspace, workflow and Run. IDs are never inferred or borrowed from another Run.',inputSchema:scope.extend({runId:z.string().min(1),nodeExecutionId:z.string().min(1)}),outputSchema:z.object({reference:JobWorkflowExecutionReferenceSchema}),annotations:read},input=>invoke(context,'job_workflow_execution_get',async()=>({reference:await service.getWorkflowExecutionReference(context.principal,input.workspaceId,input.runId,input.nodeExecutionId,'mcp')})))
@@ -91,8 +92,13 @@ export function registerJobTools(server:McpServer,context:JobMcpContext):void {
   if(jobToolAvailable(context,'job_definition_get')) server.registerTool('job_definition_get',{description:'Read an exact workspace job definition and revision.',inputSchema:scope.extend({definitionId:z.string().min(1)}),outputSchema:z.object({definition:JobDefinitionRecordSchema}),annotations:read},input=>invoke(context,'job_definition_get',async()=>({definition:await service.getDefinition(context.principal,input.workspaceId,input.definitionId,'mcp')})))
   if(jobToolAvailable(context,'job_definition_version_get')) server.registerTool('job_definition_version_get',{description:'Read one exact immutable saved job version. Current definition edits never substitute its source, target, command or policy.',inputSchema:scope.extend({definitionId:z.string().min(1),versionId:z.string().min(1)}),outputSchema:z.object({definition:JobDefinitionRecordSchema}),annotations:read},input=>invoke(context,'job_definition_version_get',async()=>({definition:await service.getDefinitionVersion(context.principal,input.workspaceId,input.definitionId,input.versionId,'mcp')})))
   if (jobToolAvailable(context, 'job_definition_save')) server.registerTool('job_definition_save', {
-    description: 'Create or edit an Auto or fixed build or verification Job definition with a command receipt and optimistic revision. Saves only; nothing runs or installs.',
-    ...toolDetail('Verification retains its suite, parameters, resource request and report declarations from job_choices_get templates, identified by profile ID, profile revision and suite. Auto limits must equal verification.resources.limits; update both when editing resources or choosing runtime requirements. Auto saves source, command, inputs, outputs and runtime requirements without an online computer. Selection and capacity are checked when the queued request is claimed.'),
+    description: 'Create or edit an Auto or fixed build or verification Job with command receipt and optimistic '
+      + 'revision. Verification retains its suite, parameters, resource request and report declarations from '
+      + 'job_choices_get templates, identified by profile ID, profile revision and suite. Auto limits must equal '
+      + 'verification.resources.limits; update both when editing resources or choosing runtime requirements. '
+      + 'Auto saves source, command, inputs, outputs and runtime requirements without '
+      + 'an online computer. Selection and capacity are checked when the queued request is claimed. '
+      + 'No execution or installation.',
     inputSchema: JobDefinitionSaveRecordSchema.extend({ workspaceId: z.string().min(1) }),
     outputSchema: z.object({ definition: JobDefinitionRecordSchema }), annotations: write,
   }, input => invoke(context, 'job_definition_save', async () => {
@@ -101,8 +107,10 @@ export function registerJobTools(server:McpServer,context:JobMcpContext):void {
   }))
   if(jobToolAvailable(context,'job_validate')) server.registerTool('job_validate',{description:'Validate static Auto source/configuration authority or fixed-target readiness without installation. Computer eligibility and capacity are rechecked when the queued request is claimed; unavailable computers can wait.',inputSchema:scope.extend({spec:JobDefinitionSpecRecordSchema}),outputSchema:JobValidationSchema,annotations:read},input=>invoke(context,'job_validate',()=>service.validate(context.principal,input.workspaceId,input.spec,'mcp')))
   if (jobToolAvailable(context, 'job_launch_validate')) server.registerTool('job_launch_validate', {
-    description: 'Check a saved Job revision and an optional Start computer override without queuing: canQueue reports configuration and authorization, valid reports current computer readiness and capacity.',
-    ...toolDetail('A temporarily unavailable computer can wait in the queue. The queue rechecks eligibility before launch.'),
+    description: 'Check a saved Job revision and optional Start computer override without queuing, reservation or '
+      + 'preparation. Requires jobs:start. canQueue reports configuration and authorization; valid reports current '
+      + 'computer readiness and capacity. A temporarily unavailable computer can wait in the queue. '
+      + 'The queue rechecks eligibility before launch.',
     inputSchema: JobLaunchValidationInputSchema.extend({ workspaceId: z.string().min(1) }),
     outputSchema: JobLaunchValidationSchema, annotations: read,
   }, input => invoke(context, 'job_launch_validate', () => {
@@ -110,11 +118,11 @@ export function registerJobTools(server:McpServer,context:JobMcpContext):void {
     return service.validateLaunch(context.principal, workspaceId, body, 'mcp')
   }))
   if (jobToolAvailable(context, 'job_start')) server.registerTool('job_start', {
-    description: 'Queue a standalone build Job from its saved definition revision, optionally overriding placement (Auto, a preferred '
-      + 'computer or an exact computer/root); it runs the source commit captured when queued. Returns pending with a ticket '
-      + '(follow with job_queue_get) or accepted with the executionId (job_get).',
-    ...toolDetail(JOB_QUEUE_CAPABILITY_DETAIL + ' Retrying a retained pre-queue command returns its original execution without creating a ticket. '
-      + 'Claimed cancellation and disconnected execution do not prove process closure or released capacity.'),
+    description: JOB_QUEUE_CAPABILITY_DETAIL + ' Persist a request using the saved definition revision. '
+      + 'The Job runs the source commit captured by that queued request, even when the source-root head advances. '
+      + 'The admission result is pending with a ticket or accepted with the original executionId. Retrying a retained pre-queue command returns its original execution without creating a ticket. '
+      + 'Retry the same commandId and payload after an unknown acknowledgment; read job_queue_get for waiting or claim state and job_get after acceptance. '
+      + 'Claimed cancellation and disconnected execution do not prove process closure or released capacity.',
     inputSchema: JobQueuedStartSchema.extend({ workspaceId: z.string().min(1) }),
     outputSchema: z.object({ admission: JobAdmissionResultSchema }), annotations: write,
   }, input => invoke(context, 'job_start', async () => {
@@ -122,24 +130,31 @@ export function registerJobTools(server:McpServer,context:JobMcpContext):void {
     return { admission: await service.enqueue(context.principal, 'mcp', workspaceId, body) }
   }))
   if (jobToolAvailable(context, 'job_queue_get')) server.registerTool('job_queue_get', {
-    description: 'Read one build queue ticket: enqueue time, deadline, state, waiting reasons, compatible targets, queue position and, once claimed, the selected computer, root and runtime profile. Never selects or launches.',
-    ...toolDetail('Requires jobs:read for its persisted workspace, workflow and Run. Cleanup status shows retained capacity after cancellation or terminal execution. Source capacity waits retain the reservation and expose sourceCapacityWait with bounded retryAt and attempts. Accepted tickets reference the original executionId. Start estimates are unknown.'),
+    description: 'Read one build queue ticket with jobs:read for its persisted workspace, workflow and Run. '
+      + 'Includes original enqueue/deadline, state, waiting reasons, compatible-target count and workspace queue position. '
+      + 'Claimed tickets expose the persisted selected computer, root binding and runtime profile; cleanup status shows retained capacity after cancellation or terminal execution. '
+      + 'Source capacity waits retain the reservation and expose sourceCapacityWait with bounded retryAt and attempts. '
+      + 'Accepted tickets reference the original executionId. Start estimates are unknown. No selection or launch.',
     inputSchema: scope.extend({ ticketId: z.uuid() }),
     outputSchema: z.object({ ticket: JobQueueTicketSchema }), annotations: read,
   }, input => invoke(context, 'job_queue_get', async () => ({
     ticket: await service.getQueueTicket(context.principal, input.workspaceId, input.ticketId, 'mcp'),
   })))
   if (jobToolAvailable(context, 'job_queue_list')) server.registerTool('job_queue_list', {
-    description: 'Read every active build request in a workspace plus a page of completed history (nextHistoryCursor as historyBeforeSequence); filter by workflowId or initiatingExecutionId. Never starts work.',
-    ...toolDetail('Requires jobs:read for the selected workflow and, for an Agent filter, its persisted Run. Active requests appear on every page. historyLimit bounds history only. Queue positions describe this workspace.'),
+    description: 'Read every active workspace-scoped build request plus a page of completed request history. '
+      + 'Use nextHistoryCursor as historyBeforeSequence to read older history; active requests appear on every page. '
+      + 'Filter by workflowId for all requests in one workflow, or initiatingExecutionId for one Agent execution’s CI requests. '
+      + 'Requires jobs:read for the selected workflow and, for an Agent filter, its persisted Run. '
+      + 'historyLimit bounds history only. Queue positions describe this workspace. Reading never starts work.',
     inputSchema: scope.extend(JobQueueListInputSchema.shape), outputSchema: JobQueuePageSchema, annotations: read,
   }, input => invoke(context, 'job_queue_list', () => {
     const { workspaceId, ...page } = input
     return service.listQueuePage(context.principal, workspaceId, page, 'mcp')
   }))
   if (jobToolAvailable(context, 'job_queue_cancel')) server.registerTool('job_queue_cancel', {
-    description: 'Cancel a standalone build request with its current ticket revision. Waiting requests cancel without contacting a computer; a cancellation request does not confirm that processes stopped.',
-    ...toolDetail('Claimed or accepted cancellation keeps the original attempt and retains capacity until confirmed closure.'),
+    description: 'Cancel a standalone build request with its current ticket revision and a retryable commandId. '
+      + 'Waiting cancellation persists without contacting a computer. Claimed or accepted cancellation keeps the original attempt and retains capacity until confirmed closure. '
+      + 'Read-only callers cannot cancel; a cancellation request is not confirmation that processes stopped.',
     inputSchema: JobQueueCancelSchema.extend({ workspaceId: z.string().min(1) }),
     outputSchema: z.object({ ticket: JobQueueTicketSchema }), annotations: write,
   }, input => invoke(context, 'job_queue_cancel', async () => {

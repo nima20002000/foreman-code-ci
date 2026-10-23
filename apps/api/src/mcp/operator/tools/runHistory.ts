@@ -10,7 +10,6 @@ import { toolFailure } from '../../shared/results.js'
 import { invokeOperatorTool } from '../invoke.js'
 import type { OperatorRequestContext } from '../types.js'
 import { RUN_HISTORY_TOOLS, type RunHistoryToolName } from '../toolNames.js'
-import { toolDetail } from '../../shared/toolDetail.js'
 
 export { RUN_HISTORY_TOOLS, type RunHistoryToolName }
 
@@ -36,13 +35,11 @@ export function registerRunHistoryTools(server: McpServer, context: OperatorRequ
   if (!reads || !runHistoryToolsAvailable(context)) return
   const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   server.registerTool(RUN_HISTORY_TOOLS.list, {
-    description: 'Read Run summaries for one workflow, newest admission first (50 by default, at most 100); startedAt is null until a Run actually starts. No graph, prompt, session or configuration body.',
-    ...toolDetail('Run-only grants see only their Runs. Replay opaque cursors in the same workflow. Pre-capture V3 Runs at this base were manual-only. Older Runs without provable trigger provenance are omitted from summaries, not relabeled.'),
+    description: 'Read Run dropdown summaries for one workspace and workflow. Requires live runs:read; Run-only grants see only their Runs. Default 50, maximum 100. Newest admission first with stable Run-ID tie-breaking; replay opaque cursors in the same workflow. startedAt is null until actually started. Pre-capture V3 Runs at this base were manual-only. Older Runs without provable trigger provenance are omitted from summaries, not relabeled. No graph, prompt, session or configuration body.',
     inputSchema: RunDropdownListInputSchema, outputSchema: RunDropdownPageSchema, annotations,
   }, async (input) => invokeOperatorTool(context, RUN_HISTORY_TOOLS.list, () => reads.list(context.principal, input)))
   server.registerTool(RUN_HISTORY_TOOLS.snapshot, {
-    description: 'Read a Run\'s immutable admission-time Board snapshot (node names, Agent and configuration versions, layout, edges) plus live execution queue waits, CI activity and Agent loop checks. Never starts or changes a Run.',
-    ...toolDetail('A separate live executionQueue reports startup-capacity and workflow-parallelism waits with execution/node identity, kind, since and limit; host waits include hostKey. These process-local waits clear on admission or cancellation and do not change the saved Board. Runs with Agent-requested Host CI also return a separate activitySnapshot with persisted CI state, originating execution, part, partition and computer. Runs whose pinned version has Agent loops also return live intervalChecks from the same database snapshot as the Run lifecycle, per node: interval, checks so far, whether a check is running (the Agent is awake on check number `checks` until it finishes), and nextCheckAt while the Run is running. Run activities label loop executions as Loop N. Old Runs without capture return unavailable/legacy_run.'),
+    description: 'Read an immutable admission-time Run Board snapshot in a workspace/workflow/Run scope. Requires live runs:read. Includes saved node names, Agent/configuration-version IDs, layout and edges. A separate live executionQueue reports startup-capacity and workflow-parallelism waits with execution/node identity, kind, since and limit; host waits include hostKey. These process-local waits clear on admission or cancellation and do not change the saved Board. Runs with Agent-requested Host CI also return a separate activitySnapshot with persisted CI state, originating execution, part, partition and computer. Runs whose pinned version has Agent loops also return live intervalChecks from the same database snapshot as the Run lifecycle, per node: interval, checks so far, whether a check is running (the Agent is awake on check number `checks` until it finishes), and nextCheckAt while the Run is running. Run activities label loop executions as Loop N. Old Runs without capture return unavailable/legacy_run. Does not require access to live Agents or start/modify a Run.',
     inputSchema: RunBoardSnapshotGetInputSchema, outputSchema: RunBoardSnapshotGetResultSchema, annotations,
   }, async (input) => invokeOperatorTool(context, RUN_HISTORY_TOOLS.snapshot, () => reads.snapshot(context.principal, input)))
 }

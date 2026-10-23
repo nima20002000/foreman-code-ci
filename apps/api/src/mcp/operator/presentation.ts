@@ -32,9 +32,9 @@ export function installOperatorPresentation(server: McpServer): OperatorCatalog 
         const fullList = list
         const handler: ListHandler = async (request, context) => {
           const result = await fullList(request, context)
-          // Only the core and discovery tools are listed; the catalog callback below keeps every tool and its detail.
+          // Only the core and discovery tools are listed; the catalog callback below keeps every tool.
           return { ...result, tools: result.tools.filter(tool => operatorListedTool(tool.name))
-            .map(({ outputSchema: _outputSchema, _meta: _detail, ...tool }) => { void _outputSchema; void _detail
+            .map(({ outputSchema: _outputSchema, ...tool }) => { void _outputSchema
               return OPERATOR_DISCOVERY_TOOLS.has(tool.name) ? tool : { ...tool, description: firstSentence(tool.description) } }) }
         }
         return Reflect.apply(register, target, ['tools/list', handler])

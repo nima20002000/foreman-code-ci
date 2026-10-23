@@ -37,7 +37,6 @@ import {
 import type { InteractionResponseOptions } from './cancellation.js'
 import { ignoreError } from '../diagnostics/ignoredError.js'
 import { readConsultationCredentialSubject } from '../access/consultationAuthority.js'
-import { OPEN_RUN_STATES_SQL } from '../runs/runState.js'
 
 const CURSOR_PREFIX = 'interaction:'
 export const AppInteractionListInputSchema = ListInteractionsRequestSchema.pick({ cursor: true, limit: true }).strict()
@@ -220,7 +219,7 @@ export class PostgresAppInteractionService implements AppInteractionService {
        where b.principal_id=$1 and b.agent_id=$2 and b.revoked_at is null
          and b.purpose in ('workflow','reviewer')
          and c.record->>'productRole' in ('master','orchestrator')
-         and r.execution_state in (${OPEN_RUN_STATES_SQL})
+         and r.execution_state in ('queued','running','waiting')
          and exists (select 1 from jsonb_to_recordset($3::jsonb)
            as response_grant("workspaceIds" text[],"workflowIds" text[],"runIds" text[])
            where r.workspace_id=any(response_grant."workspaceIds")

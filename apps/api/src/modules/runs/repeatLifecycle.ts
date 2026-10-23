@@ -18,7 +18,6 @@ import { sameRepeatValue } from './repeatResolution.js'
 import { readAcceptedRepeatRunLocked } from './repeatStartRead.js'
 import { cancelHierarchyContinuationsLocked } from './hierarchyDirection.js'
 import { cancelWorkflowControlsLocked } from '../collaboration/workflowControlStore.js'
-import { isOpenRunState, writeRunStateLocked } from './runState.js'
 
 export function workflowRunScope(run: AcceptedWorkflowRunV3) {
   return RepeatGraphScopeV3Schema.parse({ workspaceId: run.workspaceId, workflowId: run.workflowId,
@@ -90,7 +89,7 @@ export async function markRepeatRunRunning(owner: RunOwnership,
     beforeGraphCommit(sql, () => authorize(true))
     if (snapshot.stopRequested || snapshot.cleanupPending) throw new DomainError('GRAPH_STOP_CONFLICT', 'Stop/cleanup fences block repeat progress.', 409)
     if (run.executionState === 'waiting') await assertConsumedWorkflowResumeLocked(sql, owner, run, resume)
-    if (!isOpenRunState(run.executionState)) throw new DomainError('GRAPH_TERMINAL_CONFLICT', 'A terminal/interrupted Run cannot be started again.', 409)
+    if (!['queued', 'running', 'waiting'].includes(run.executionState)) throw new DomainError('GRAPH_TERMINAL_CONFLICT', 'A terminal/interrupted Run cannot be started again.', 409)
     if (run.startedAt !== undefined && update.startedAt !== undefined && run.startedAt !== update.startedAt) {
       throw new DomainError('RUN_PIN_CONFLICT', 'The original Run start timestamp cannot be replaced.', 409)
     }
@@ -101,7 +100,9 @@ export async function markRepeatRunRunning(owner: RunOwnership,
     }
     const next = AcceptedWorkflowRunV3Schema.parse({ ...run, executionState: 'running', outcome: 'pending',
       startedAt: run.startedAt ?? update.startedAt ?? new Date().toISOString() })
-    if (await writeRunStateLocked(sql, run.executionState, next, JSON.stringify(next)) !== 1) throw new DomainError('RUN_NOT_FOUND', 'The owned Run disappeared during lifecycle publication.', 409)
+    const changed = await sql.query('update runs set execution_state=$2,record=$3::jsonb where id=$1',
+      [run.id, next.executionState, JSON.stringify(next)])
+    if (changed.rowCount !== 1) throw new DomainError('RUN_NOT_FOUND', 'The owned Run disappeared during lifecycle publication.', 409)
     await publishRepeatRunStateLocked(publication, owner)
   })
 }

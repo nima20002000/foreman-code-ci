@@ -26,7 +26,6 @@ import { decisionDigest, nextInteraction, publishInteraction } from '../interact
 import { assertSavedPendingApprovalOriginalLocked } from '../interactions/nativeApprovalProof.js'
 import { isSettlementPendingCheckpointError } from '../interactions/repeatNativeEvidence.js'
 import { ensureWorkDirectionInteraction } from './workDirectionInteraction.js'
-import { isOpenRunState, isRunInProgress, writeRunStateLocked } from './runState.js'
 
 function fail(code: string): never {
   throw new DomainError(code, 'The workflow lifecycle requires its exact persisted owner, checkpoint and settlement evidence.', 409)
@@ -44,7 +43,7 @@ export async function settleWorkForRestart(owner: RunOwnership, approvals?: Work
   return owner.oneShotConnection().transaction(async (sql) => {
     const { snapshot } = await openWorkflowLifecycleLocked(sql, owner.runId)
     if (snapshot.stopRequested || snapshot.cleanupPending
-      || !isOpenRunState(snapshot.run.executionState)) return false
+      || !['queued', 'running', 'waiting'].includes(snapshot.run.executionState)) return false
     const waiting = [...new Set(approvals?.interactions.map(item => item.executionId) ?? [])]
     const pending = (await sql.query<{ pending: boolean }>(`select exists(
       select 1 from harness_executions e where e.run_id=$1 and (
@@ -85,7 +84,7 @@ export async function readUnconsumedWorkflowApprovals(owner: RunOwnership,
     const { snapshot } = await openWorkflowLifecycleLocked(sql, owner.runId)
     await retainOwner(sql, owner)
     if (snapshot.stopRequested || snapshot.cleanupPending) return fail('GRAPH_STOP_CONFLICT')
-    if (!isRunInProgress(snapshot.run.executionState)) return fail('GRAPH_TERMINAL_CONFLICT')
+    if (!['running', 'waiting'].includes(snapshot.run.executionState)) return fail('GRAPH_TERMINAL_CONFLICT')
     const stored = await readRepeatExecutionLocked(sql, snapshot, execution.id)
     if (!sameRepeatValue(stored.execution, execution)) return fail('REPEAT_EXECUTION_INPUT_CONFLICT')
     const rows = (await sql.query<{ id: string; status: string; record: unknown;
@@ -149,7 +148,7 @@ export async function persistWorkflowApprovalWait(owner: RunOwnership, saver: Ba
       const { run, version } = snapshot
       await retainOwner(sql, owner)
       if (snapshot.stopRequested || snapshot.cleanupPending) return fail('GRAPH_STOP_CONFLICT')
-      if (!isRunInProgress(run.executionState)) return fail('GRAPH_TERMINAL_CONFLICT')
+      if (!['running', 'waiting'].includes(run.executionState)) return fail('GRAPH_TERMINAL_CONFLICT')
       const workHandoffs = version.definition.handoffs !== undefined
       const wrappers = workHandoffs ? null : new Map(compileRepeatLayout(version).nodes.map((node) => [node.name, node]))
       const seen = new Set<string>(), current: DurableInteraction[] = []
@@ -215,7 +214,7 @@ export async function persistWorkflowApprovalWait(owner: RunOwnership, saver: Ba
         await lifecycleSource(publication, { kind: 'approval_wait', next, afterSequence: head, bindings: retained.map(({ item, checkpointId }) => ({
           interactionId: item.id, graphInterruptId: item.graphInterruptId, checkpointId,
         })) }, async () => {
-          await writeRunStateLocked(sql, run.executionState, next, JSON.stringify(next))
+          await sql.query('update runs set execution_state=$2,record=$3::jsonb where id=$1', [run.id, next.executionState, JSON.stringify(next)])
         })
       }
       beforeGraphCommit(sql, async () => {
@@ -260,7 +259,7 @@ export async function persistWorkDirectionWait(owner: RunOwnership,
     const { run, version } = snapshot
     await retainOwner(sql, owner)
     if (!version.definition.handoffs || snapshot.stopRequested || snapshot.cleanupPending
-      || !isRunInProgress(run.executionState)) return fail('WORK_DIRECTION_WAIT_CONFLICT')
+      || !['running', 'waiting'].includes(run.executionState)) return fail('WORK_DIRECTION_WAIT_CONFLICT')
     const rows = (await sql.query<{ unresolved_id: string }>(
       'select unresolved_id from run_work_unresolved where run_id=$1 order by unresolved_id limit 1001',
       [run.id])).rows
@@ -283,7 +282,9 @@ export async function persistWorkDirectionWait(owner: RunOwnership,
     await assertWorkflowRunSettlementLocked(sql, run, owner)
     const next = AcceptedWorkflowRunV3Schema.parse({ ...run, executionState: 'waiting', outcome: 'pending' })
     await lifecycleSource(publication, { kind: 'work_direction_wait', next, unresolvedIds }, async () => {
-      if (await writeRunStateLocked(sql, run.executionState, next, canonicalGraphJson(next)) !== 1) return fail('RUN_PIN_CONFLICT')
+      const changed = await sql.query('update runs set execution_state=$2,record=$3::jsonb where id=$1',
+        [run.id, next.executionState, canonicalGraphJson(next)])
+      if (changed.rowCount !== 1) return fail('RUN_PIN_CONFLICT')
       await sql.query(`insert into run_work_direction_waits(run_id,workflow_version_id,unresolved_ids,created_at)
         values($1,$2,$3::jsonb,clock_timestamp())`, [run.id, version.id, canonicalGraphJson(unresolvedIds)])
       await sql.query(`insert into run_activity(run_id,source,kind,occurred_at,payload)
@@ -315,7 +316,7 @@ export async function recordWorkflowExecutionFailure(owner: RunOwnership, execut
     const { publication, snapshot } = await openWorkflowLifecycleLocked(sql, owner.runId)
     await retainOwner(sql, owner)
     if (snapshot.stopRequested || snapshot.cleanupPending
-      || !isRunInProgress(snapshot.run.executionState)) {
+      || !['running', 'waiting'].includes(snapshot.run.executionState)) {
       return fail('GRAPH_STOP_CONFLICT')
     }
     const stored = await readRepeatExecutionLocked(sql, snapshot, executionId)
@@ -447,7 +448,7 @@ export async function settleWorkflowRun(owner: RunOwnership, interrupted = false
     const next = AcceptedWorkflowRunV3Schema.parse({ ...run, executionState: 'completed', outcome: result.outcome,
       result, finishedAt: new Date().toISOString() })
     await lifecycleSource(publication, { kind: 'negative_terminal', previous: run, next, stopped: snapshot.stopRequested }, async () => {
-      await writeRunStateLocked(sql, run.executionState, next, canonicalGraphJson(next))
+      await sql.query('update runs set execution_state=$2,record=$3::jsonb where id=$1', [run.id, next.executionState, canonicalGraphJson(next)])
       await assertWorkflowRunSettlementLocked(sql, next, owner, 'cleanup')
       await closeRunControlInputsLocked(sql, { runId: run.id, now: next.finishedAt! })
       if (snapshot.version.definition.handoffs) {

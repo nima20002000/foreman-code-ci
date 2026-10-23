@@ -14,7 +14,6 @@ import { toolFailure } from '../../shared/results.js'
 import { invokeOperatorTool } from '../invoke.js'
 import type { OperatorRequestContext } from '../types.js'
 import { FILE_REFERENCE_TOOL_NAMES, type FileReferenceToolName } from '../toolNames.js'
-import { toolDetail } from '../../shared/toolDetail.js'
 
 export { FILE_REFERENCE_TOOL_NAMES, type FileReferenceToolName }
 
@@ -67,8 +66,7 @@ export function registerFileReferenceTools(server: McpServer, context: OperatorR
   if (!service) return
   const readAnnotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   if (fileReferenceToolAvailable(context, 'reference_files_list')) server.registerTool('reference_files_list', {
-    description: 'List the permanent reference files in one exact workspace_reference or workflow_reference scope, including pending files and removal tombstones; page with nextCursor.',
-    ...toolDetail('Workspace references are not copied into workflow lists. No worker access.'),
+    description: 'List permanent reference files in one exact workspace_reference or workflow_reference scope, including pending files and removal tombstones. Workspace references are not copied into workflow lists. Requires workspaces:read or workflows:read for that resource; no worker access. Use the opaque nextCursor for bounded paging.',
     inputSchema: FileReferenceListInputSchema, outputSchema: FilePageSchema, annotations: readAnnotations,
   }, async ({ scope, ...query }) => invokeOperatorTool(context, 'reference_files_list',
     () => service.list(context.principal, scope, query)))
@@ -78,8 +76,7 @@ export function registerFileReferenceTools(server: McpServer, context: OperatorR
   }, async ({ scope, ...input }) => invokeOperatorTool(context, 'reference_file_read',
     async () => ({ value: await service.read(context.principal, scope, input) })))
   if (fileReferenceToolAvailable(context, 'reference_file_add')) server.registerTool('reference_file_add', {
-    description: 'Add a new permanent reference file (up to 25 MiB) to a workspace or workflow scope from upload metadata and canonical contentBase64. Never overwrites, executes content or reads a host path or URL.',
-    ...toolDetail('Performs the same allocate/verify/finalize flow as HTTP; retry with identical requestId and metadata. Requires overlapping read and update grants for that workspace or workflow. Grants no worker write access.'),
+    description: 'Add a NEW permanent reference (up to 25 MiB). Supply scope, upload {requestId,filename,mediaType,byteSize,sha256}, and canonical contentBase64. Performs the same allocate/verify/finalize flow as HTTP; retry with identical requestId and metadata. Requires overlapping read+update grants for that workspace or workflow. Never overwrites, executes content, reads a host path/URL, or grants worker write access.',
     inputSchema: FileReferenceAddInputSchema, outputSchema: FileReferenceMutationResultSchema,
     annotations: { ...readAnnotations, readOnlyHint: false },
   }, async (input) => invokeOperatorTool(context, 'reference_file_add', () => service.add(context.principal, input)))

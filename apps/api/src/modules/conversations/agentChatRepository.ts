@@ -7,8 +7,7 @@ import { lockActiveWorkspace } from '../workspaces/admission.js'
 import { assertAgentChatDirectoryAvailable } from './agentChatDirectory.js'
 import type { NativeMessageSubmission } from '../harnesses/port.js'
 import type { AcceptedChatInput } from './nativeChatInput.js'
-import type { NativeNonSubmission } from './nativeNonSubmission.js'
-import { ConversationRepositoryCore } from './conversationRepositoryCore.js'
+import { recordNativeNonSubmission, type NativeNonSubmission } from './nativeNonSubmission.js'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { messageAttachmentIdentity } from '@foreman-code/contracts/files'
@@ -180,10 +179,10 @@ export interface NewAgentConversation {
   systemPrompt?: PromptSettingSnapshot
 }
 
-export class PostgresAgentChatRepository extends ConversationRepositoryCore<AgentConversationRow> {
+export class PostgresAgentChatRepository {
   private settledProjection?: (tx: TransactionSql, input: { row: AgentConversationRow; requestId: string;
     result: ExecutionResult; nativeMessageId?: string }) => Promise<void>
-  constructor(pool: pg.Pool, private readonly accountBindings?: AcceptedProviderAccountBindings) { super(pool, 'agent') }
+  constructor(readonly pool: pg.Pool, private readonly accountBindings?: AcceptedProviderAccountBindings) {}
 
   /** Installed once by C's feature composition. The native terminal journal and pending projection commit together. */
   setCommittedChatProjection(project: NonNullable<PostgresAgentChatRepository['settledProjection']>): void {
@@ -370,6 +369,21 @@ export class PostgresAgentChatRepository extends ConversationRepositoryCore<Agen
       where conversation_id=$1 and request_id=$2`, [id, requestId])).rows[0]?.content
   }
 
+  async markInitialInputOffered(id: string, requestId: string): Promise<void> {
+    const changed = await this.pool.query(`update operator_conversation_turns t
+      set payload=payload || '{"initialInputOffered":true}'::jsonb
+      from operator_conversations c where c.id=t.conversation_id and c.id=$1
+        and c.active_request_id=$2 and t.request_id=$2 and c.deleted_at is null`, [id, requestId])
+    if (changed.rowCount !== 1) throw new DomainError('CHAT_OWNER_CHANGED', 'The initial native input lost its admitted owner.', 409)
+  }
+
+  async initialInputOffered(id: string, requestId: string): Promise<boolean> {
+    const row = (await this.pool.query<{ offered: boolean }>(`select
+      coalesce((payload->>'initialInputOffered')::boolean,false) as offered
+      from operator_conversation_turns where conversation_id=$1 and request_id=$2`, [id, requestId])).rows[0]
+    return row?.offered === true
+  }
+
   async turnPreparedInput(id: string, requestId: string, query: Queryable = this.pool): Promise<{
     input: AcceptedChatInput; configurationVersionId: string
   } | undefined> {
@@ -421,7 +435,7 @@ export class PostgresAgentChatRepository extends ConversationRepositoryCore<Agen
       const hash = agentChatInputHash(input.request)
       if (row) {
         // Claim/finish/interrupt use this same lock: admission cannot retarget a later queued turn.
-        row = (await this.lockRow(client, row.id))!
+        row = (await client.query<AgentConversationRow>(`select * from operator_conversations where id=$1 and kind='agent' for update`, [row.id])).rows[0]!
       }
       // Revalidate after both admission locks, before replay or any durable write.
       // The principal/delegation share locks remain held until this transaction ends.
@@ -551,7 +565,7 @@ export class PostgresAgentChatRepository extends ConversationRepositoryCore<Agen
   /** Claim the conversation for this turn. False when another turn is active or the turn left the queue. */
   async claim(id: string, requestId: string): Promise<boolean> {
     return withTransaction(this.pool, async (client) => {
-      const row = await this.lockRow(client, id)
+      const row = (await client.query<AgentConversationRow>(`select * from operator_conversations where id=$1 and kind='agent' for update`, [id])).rows[0]
       if (!row || row.active_request_id || row.record.sessionUnavailable) return false
       // A legacy orphan must be reconciled before any queued input can own this session.
       const unresolved = await client.query(`select 1 from operator_conversation_turns
@@ -588,7 +602,8 @@ export class PostgresAgentChatRepository extends ConversationRepositoryCore<Agen
   async applyConfiguration(id: string, requestId: string, configuration: AgentConfigurationVersion,
     options: { replaceSession: boolean; directoryBinding?: AgentChatDirectoryBinding | undefined }): Promise<AgentConversationRow> {
     return withTransaction(this.pool, async client => {
-      const row = await this.lockRow(client, id)
+      const row = (await client.query<AgentConversationRow>(
+        `select * from operator_conversations where id=$1 and kind='agent' for update`, [id])).rows[0]
       if (!row || row.active_request_id !== requestId || row.active_native_turn_id || row.cancel_requested) {
         throw new DomainError('AGENT_CHAT_CONFIGURATION_CONFLICT', 'The active chat turn changed before applying settings.', 409)
       }
@@ -621,6 +636,11 @@ export class PostgresAgentChatRepository extends ConversationRepositoryCore<Agen
       }
       return (await this.accountReadback(client, updated))!
     })
+  }
+
+  recordNonSubmission(id: string, requestId: string, operation: NativeNonSubmission['operation'],
+    result: ExecutionResult): Promise<boolean> {
+    return recordNativeNonSubmission(this.pool, id, requestId, operation, result)
   }
 
   async bindSession(id: string, providerVersion: string, nativeSessionId: string): Promise<void> {
@@ -683,7 +703,7 @@ export class PostgresAgentChatRepository extends ConversationRepositoryCore<Agen
 
   async accepted(id: string, requestId: string, nativeTurnId: string): Promise<boolean> {
     return withTransaction(this.pool, async (client) => {
-      const row = await this.lockRow(client, id)
+      const row = (await client.query<AgentConversationRow>(`select * from operator_conversations where id=$1 and kind='agent' for update`, [id])).rows[0]
       if (!row || row.active_request_id !== requestId) return false
       if (row.active_native_turn_id && row.active_native_turn_id !== nativeTurnId) {
         throw new DomainError('AGENT_CHAT_NATIVE_TURN_MISMATCH', 'Native evidence addressed a different turn.', 409)
@@ -729,11 +749,15 @@ export class PostgresAgentChatRepository extends ConversationRepositoryCore<Agen
       where id=$1 and active_request_id is not distinct from $2 and pending_interaction is distinct from $3::jsonb`,
     [id, requestId, pending ? JSON.stringify(PendingNativeInteractionSchema.parse(pending)) : null])
   }
+  async requestCancel(id: string, requestId: string, query: Queryable = this.pool): Promise<boolean> {
+    return (await query.query(`update operator_conversations set cancel_requested=true,turn_state='canceling',revision=revision+1,updated_at=now()
+      where id=$1 and active_request_id=$2`, [id, requestId])).rowCount === 1
+  }
 
   /** Plain Stop linearizes its expected-turn check, queue cancellation and active cancel intent. */
   async interrupt(id: string, expectedNativeTurnId?: string, scope: 'active_turn' | 'active_and_queued' = 'active_and_queued'): Promise<AgentChatInterruptTarget | undefined> {
     return withTransaction(this.pool, async (client) => {
-      const row = await this.lockRow(client, id)
+      const row = (await client.query<AgentConversationRow>(`select * from operator_conversations where id=$1 and kind='agent' for update`, [id])).rows[0]
       if (!row) throw new DomainError('CONVERSATION_NOT_FOUND', 'Conversation was not found.', 404)
       if (expectedNativeTurnId && row.active_native_turn_id !== expectedNativeTurnId) {
         throw new DomainError('AGENT_CHAT_TURN_NOT_ACTIVE', 'That turn already finished.', 409)
@@ -748,7 +772,7 @@ export class PostgresAgentChatRepository extends ConversationRepositoryCore<Agen
   /** Terminal settlement of the active turn; clears the conversation's active identity. */
   async finish(id: string, requestId: string, result: ExecutionResult, nativeMessageId?: string, rejectedSessionCreation = false): Promise<boolean> {
     return withTransaction(this.pool, async (client) => {
-      const row = await this.lockRow(client, id)
+      const row = (await client.query<AgentConversationRow>(`select * from operator_conversations where id=$1 and kind='agent' for update`, [id])).rows[0]
       if (!row || row.active_request_id !== requestId) return false
       if (rejectedSessionCreation) {
         // A negative creation result only retires ITS unbound marker, never a later owner/binding.
@@ -934,5 +958,9 @@ export class PostgresAgentChatRepository extends ConversationRepositoryCore<Agen
     // One oversized message is allowed over HTTP/MCP readback, ensuring cursor progress
     // without truncating native content or putting it back in a live snapshot.
     return { messages: await hydrateMessageAttachments(query, id, page.messages), nextCursor: page.next_cursor }
+  }
+
+  private async bump(id: string, query: Queryable = this.pool): Promise<void> {
+    await query.query('update operator_conversations set revision=revision+1,updated_at=now() where id=$1', [id])
   }
 }

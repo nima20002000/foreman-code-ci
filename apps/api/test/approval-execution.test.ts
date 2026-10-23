@@ -365,11 +365,12 @@ function fixture(harness: AgentHarness = 'codex', options: { remote?: boolean; i
       if (!closed) throw new DomainError('REPEAT_CLEANUP_PENDING', 'Original manager close is required', 409)
     },
   }
-  const coordinator = new ApprovalExecutionCoordinator({ runs, interactions, budgets, managers: resolver, activeTimeoutMs: 60_000, credentials, workflowClosures: closures, nativeCaptures: { capture(input) {
+  const coordinator = new ApprovalExecutionCoordinator(runs, interactions, budgets, resolver, 60_000, credentials,
+    undefined, closures, undefined, { capture(input) {
       capturedSourceKinds.push(input.source.type)
       return captures.capture.capture(input)
-    } }, prepareManagerContext: options.remote ? async context => ({ ...context,
-      acceptedPlacement: { hostRef: { kind: 'device' } } as NonNullable<typeof context.acceptedPlacement> }) : undefined })
+    } }, undefined, undefined, undefined, options.remote ? async context => ({ ...context,
+      acceptedPlacement: { hostRef: { kind: 'device' } } as NonNullable<typeof context.acceptedPlacement> }) : undefined)
   const controller = new AbortController()
   const input = { execution: candidate, store, request, approval: { handler: 'user' as const }, workflowId: 'workflow-1',
     graphThreadId: candidate.runId, owner, signal: controller.signal }

@@ -14,7 +14,6 @@ import { executeRepeatRuntime, repeatExecutionDriver, repeatNativeObserver, type
 import { readAcceptedRepeatRunLocked, type AcceptedRepeatRunSnapshot } from './repeatStartRead.js'
 import type { RunnerAdmission } from './runnerAdmission.js'
 import type { ExecutionLimiter } from './limiter.js'
-import { isOpenRunState } from './runState.js'
 
 /** These are existing-engine dependencies, not another owner, scheduler, gate
  * or checkpoint thread. Production composes the real current lifecycle and
@@ -154,7 +153,7 @@ export async function executeRepeatEngineStart(input: RepeatEngineStartContext):
   const snapshot = await input.owner.oneShotConnection().transaction((sql) => readAcceptedRepeatRunLocked(sql, input.owner.runId))
   check()
   if (snapshot.stopRequested || snapshot.cleanupPending) throw new DomainError('GRAPH_STOP_CONFLICT', 'A stopped/cleanup-pending Run cannot enter repeat execution.', 409)
-  if (!isOpenRunState(snapshot.run.executionState)) {
+  if (!['queued', 'running', 'waiting'].includes(snapshot.run.executionState)) {
     throw new DomainError('GRAPH_TERMINAL_CONFLICT', 'Terminal/interrupted repeat work requires cleanup, not another graph invocation.', 409)
   }
   const store = input.factory.forOwner(input.owner, snapshot.version)

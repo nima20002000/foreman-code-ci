@@ -163,8 +163,8 @@ export function native2Fixture(completed = true,
       return proof
     },
   }
-  const coordinator = new ApprovalExecutionCoordinator({ runs: runs as never, interactions: interactions as never, budgets: budgets as never,
-    managers: managers as never, activeTimeoutMs: 60_000, credentials: credentials as never, validateContinuation, workflowClosures: closures, nativeCaptures: captureChannel.capture })
+  const coordinator = new ApprovalExecutionCoordinator(runs as never, interactions as never, budgets as never,
+    managers as never, 60_000, credentials as never, validateContinuation, closures, undefined, captureChannel.capture)
   const history = () => ({ correlationId: `execution:${execution.id}`, nativeTurnId: 'turn-native2-exact',
     terminalTurn: { correlationId: `execution:${execution.id}`, providerId: 'turn-native2-exact', result: nativeCompleted(execution).result! },
     pendingInteractions: [], events: [], responseDeliveries: [] } as unknown as NativeHistory)
@@ -196,7 +196,7 @@ export function native2Fixture(completed = true,
     controller: new AbortController(), generation: 7, closureGeneration: '41', closureRegistration: Promise.resolve('41'), session }
   const internals = coordinator as unknown as {
     ownedSessions: Map<string, typeof resident>
-    credentialLedger: { set(manager: object, credential: unknown): void }
+    managerCredentials: WeakMap<object, unknown>
     resolveManager: () => { manager: typeof manager; processState: 'resident' | 'needs_start'; beginStart?(): void; markResident?(): void }
     prepareEnvironment: (context?: unknown, resolved?: unknown, signal?: AbortSignal, purpose?: unknown, enterNative?: () => Promise<void>) => Promise<undefined>
     closeRepeatLifetime: (value: typeof resident, check: () => void) => Promise<void>
@@ -204,7 +204,7 @@ export function native2Fixture(completed = true,
   const installResident = (reviewer = false) => {
     if (reviewer) resident.context.purpose = 'reviewer'
     internals.ownedSessions.set(execution.id, resident)
-    internals.credentialLedger.set(manager, { principalId: 'principal-native2-captured',
+    internals.managerCredentials.set(manager, { principalId: 'principal-native2-captured',
       expiresAt: new Date(Date.now() + DEFAULT_WORKER_CREDENTIAL_TTL_MS).toISOString(), environment: { variables: {} } })
   }
   const observe = () => coordinator.observeExact({ execution, store,

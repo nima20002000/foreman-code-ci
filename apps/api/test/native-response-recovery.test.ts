@@ -99,9 +99,9 @@ it('uncertain approval recovery cannot start native work without its exact admit
   }
   const updateExecution = vi.fn(async () => undefined), resolve = vi.fn()
   const runs = { updateExecution } as unknown as PostgresRunRepository
-  const coordinator = new ApprovalExecutionCoordinator({ runs,
-    interactions: new Wave25InteractionRepository({} as pg.Pool), budgets: {} as PostgresApprovalBudgetRepository,
-    managers: { resolve } as unknown as NativeSessionManagerResolver, activeTimeoutMs: 60_000 })
+  const coordinator = new ApprovalExecutionCoordinator(runs,
+    new Wave25InteractionRepository({} as pg.Pool), {} as PostgresApprovalBudgetRepository,
+    { resolve } as unknown as NativeSessionManagerResolver, 60_000)
   const owner = { runId: execution.runId, assertOwned() {}, client: {} } as unknown as RunOwnership
   const store = { readExecution: async () => ({ execution }) } as unknown as RepeatNativeObservationStore
   await expect(coordinator.observeExact({ execution, store, owner, workflowId: interaction.workflowId,

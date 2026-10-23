@@ -13,7 +13,6 @@ import {
 } from './records.js'
 import { activeNativeBatch, memoizeNativeRead, stageNativeRow, WORKFLOW_CORRELATION_READ_PREFIX,
   type NativeBatch, type StagedNativeRow } from './nativeBatch.js'
-import { isClosedRunState } from '../runs/runState.js'
 
 /** The G1 writer port. All methods require the caller's Run -> head -> domain lock order. */
 export class PostgresNativeGraphProjectionWriter {
@@ -48,7 +47,7 @@ export class PostgresNativeGraphProjectionWriter {
         if (!row) throw new RunGraphError('GRAPH_SCOPE_MISMATCH')
         if (row.stopped) throw new RunGraphError('GRAPH_STOP_CONFLICT')
         // Settlement may continue after a Run outcome; it must not be advertised as fresh native work.
-        if (row.work_closed || isClosedRunState(row.execution_state)) throw new RunGraphError('GRAPH_TERMINAL_CONFLICT')
+        if (row.work_closed || ['completed', 'interrupted'].includes(row.execution_state)) throw new RunGraphError('GRAPH_TERMINAL_CONFLICT')
       }
       const batch = activeNativeBatch(sql)
       if (batch) {
