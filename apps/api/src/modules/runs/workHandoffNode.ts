@@ -16,7 +16,7 @@ export function workHandoffNodeAction(input: {
   version: WorkflowVersionV3
   store: Pick<RepeatRunRepository, 'admitWorkActivation' | 'acceptWorkTerminal' | 'admitWorkRequest'
     | 'returnWork' | 'recordWorkUnresolved' | 'resolveWaitingWorkJoins'>
-    & Partial<Pick<RepeatRunRepository, 'admitHierarchyGroup' | 'readWorkCallerReport'>>
+    & Partial<Pick<RepeatRunRepository, 'admitHierarchyGroup'>>
   driver: RepeatExecutionDriver; limiter: ExecutionLimiter; signal: AbortSignal
 }) {
   const execute = async (activationId: string): Promise<readonly string[]> => {
@@ -86,11 +86,7 @@ export function workHandoffNodeAction(input: {
         if (admitted.kind === 'needs_direction') return []
         if (admitted.destinationReady) selected.push(admitted.request.destinationActivationId)
       } else {
-        const selectedRoutes = selectedWorkHandoffRoutes(input.version.definition, execution.workflowNodeId, result)
-        // Without a route of its own, a Worker's finish goes back to the Orchestrator that asked for the work.
-        const report = !selectedRoutes.length && result.routing.kind === 'finish' && result.routing.outcome === undefined
-          ? await input.store.readWorkCallerReport?.(terminal.execution.id) : undefined
-        const routes = report ? [report] : selectedRoutes
+        const routes = selectedWorkHandoffRoutes(input.version.definition, execution.workflowNodeId, result)
         for (const relationshipId of routes) {
           const admitted = await input.store.admitWorkRequest(terminal.execution.id, relationshipId)
           if (admitted.kind === 'limit_reached') {

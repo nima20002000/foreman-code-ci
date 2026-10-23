@@ -14,7 +14,6 @@ import { nativeOutputSchema } from '../interactions/deliverable.js'
 import { readDispatchIntent, readExecutionPlacement } from '../placement/persistence.js'
 import { withExclusiveGraphConnection } from '../run-graph/connection.js'
 import { workflowExecutionPromptContext } from '../runs/workflowExecutionRequest.js'
-import { readWorkflowTeam } from '../runs/workflowTeamPrompt.js'
 import { workflowDeliverableContract, referencesCreatedByExecution } from '../runs/workflowDeliverable.js'
 import { readWorkResultContextLocked } from '../runs/workReturnValidation.js'
 import { repeatTickIndex } from '../runs/repeatResolution.js'
@@ -50,11 +49,7 @@ async function prepareWorkflowChatPrompt(context: WorkflowChatLockedTarget, requ
     ? WorkActivationInputSchema.parse(source.input) : undefined
   const executionContext = work ? await readWorkResultContextLocked({ sql: context.sql, scope: work.work.activation.scope },
     work.work.activation.activationId, source.input, context.run.resultProtocol) : undefined
-  const team = await readWorkflowTeam(context.version, source.workflowNodeId, async id => {
-    const record = (await context.sql.query<{ record: unknown }>('select record from agent_configuration_versions where id=$1', [id])).rows[0]?.record
-    return record ? AgentConfigurationVersionSchema.parse(record) : undefined
-  })
-  const original = workflowExecutionPromptContext({ execution: source, version: context.version, configuration, team,
+  const original = workflowExecutionPromptContext({ execution: source, version: context.version, configuration,
     workspaceId: context.run.workspaceId, executionContext, resultProtocol: context.run.resultProtocol,
     collaborationPrompt: await readWorkflowCollaborationPromptLocked(context.sql, source.id) })
   const directed = { ...original, initialPrompt: workflowChatDirectionPrompt(original, { receiptId: admission.id, request }) }

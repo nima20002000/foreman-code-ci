@@ -127,7 +127,7 @@ describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('workflow settlement direc
             [f.writer.principal.id])).rows
           expect(audit.some((row) => row.source === 'mcp')).toBe(true)
         } finally { await api.app.close() }
-      }, 'single', { roles: ['master'] })
+      }, 'single')
     }, timeout,
   )
 
