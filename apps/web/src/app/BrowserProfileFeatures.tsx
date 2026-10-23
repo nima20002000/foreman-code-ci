@@ -23,8 +23,7 @@ export function BrowserProfileManager({ computer }: { computer?: DeviceProvision
     {facts.error ? <p role="alert" className="browser-profile-note">Couldn’t check the computers. Some details may be missing.</p> : null}
     <BrowserProfilesSettings visible authBoundary={browserAuthBoundary()} computers={computers}
       currentComputerId={selected ?? facts.mainId ?? ''} port={browserProfileClient} sessionPort={browserSessionClient}
-      files={browserFilesClient} onOpenSetup={useBrowserRecovery.getState().openSetup} onSetupCleanupPending={retainSetupCleanup}
-      computerAction={computer => {
+      files={browserFilesClient} onOpenSetup={useBrowserRecovery.getState().openSetup}      computerAction={computer => {
         const target = targets[computers.findIndex(item => item.id === computer.id)]
         return target && !computer.runtimeReady ? <Button size="sm" variant="ghost" disabled={repair.isPending || repair.unresolved}
           onClick={() => repair.mutate({ targets: [target], task: { kind: 'repair-browser' } })}>Repair browser</Button> : null

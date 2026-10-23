@@ -408,9 +408,8 @@ it('totals physical CPU and RAM from both computers and keeps missing readings e
   expect(await within(group).findByText('8 cores · 4 busy · 4 free')).toBeInTheDocument()
   expect(within(group).getByText('1 of 2 computers reporting')).toBeInTheDocument()
   act(() => onlineManager.setOnline(false))
-  expect(within(group).queryByText(/cores ·/)).not.toBeInTheDocument()
-  expect(within(group).getByText('CPU unavailable')).toBeInTheDocument()
-  expect(within(group).getByText('RAM unavailable')).toBeInTheDocument()
+  expect(within(group).getByText('Last known · 8 cores · 4 busy · 4 free')).toBeInTheDocument()
+  expect(within(group).getByText('Last known · 16 GiB · 4 used · 12 free')).toBeInTheDocument()
 })
 
 it('totals cloud slots and each organization’s own credits', async () => {
@@ -439,7 +438,52 @@ it('totals cloud slots and each organization’s own credits', async () => {
   await user.hover(within(group).getByRole('button', { name: /^CircleCI gamma, Cloud CI/ }))
   expect(await screen.findByText('Credits unavailable (Usage unavailable)')).toBeInTheDocument()
   act(() => onlineManager.setOnline(false))
-  expect(within(group).getByText('Slots unavailable')).toBeInTheDocument()
+  expect(within(group).getByText('Last known · 106 slots · 15 busy · 91 free')).toBeInTheDocument()
+})
+
+it.each(['network error', '503'] as const)('keeps last known cloud totals after a %s and updates them on recovery', async failure => {
+  const f = computersFixture(inRouter().element)
+  f.activity.cloud.push({ provider: 'circleci', name: 'CircleCI', ready: true, slots: 30, running: 3,
+    credits: { total: 400000, used: 125000, remaining: 275000, asOf: new Date().toISOString() } })
+  await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
+  const icon = await screen.findByRole('button', { name: 'Cloud CI' })
+  const group = await openGroup('Cloud CI')
+  expect(within(group).getByText('30 slots · 3 busy · 27 free')).toBeInTheDocument()
+  server.use(http.get('*/api/management/computers/activity', () => failure === 'network error' ? HttpResponse.error()
+    : HttpResponse.json({ error: { code: 'UNAVAILABLE', message: 'Restarting' } }, { status: 503 })))
+  await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
+  expect(screen.getByRole('button', { name: 'Cloud CI' })).toBe(icon)
+  expect(await within(group).findByText('Last known · 30 slots · 3 busy · 27 free')).toBeInTheDocument()
+  expect(within(group).getByText('Last known · ≈ 275,000 credits left')).toBeInTheDocument()
+  expect(within(group).getByRole('button', { name: 'CircleCI, Cloud CI, Status unknown' })).toBeInTheDocument()
+  server.use(http.get('*/api/management/computers/activity', () => HttpResponse.json(f.activity)))
+  await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
+  expect(await within(group).findByText('30 slots · 3 busy · 27 free')).toBeInTheDocument()
+  expect(within(group).queryByText(/Last known/)).not.toBeInTheDocument()
+})
+
+it('keeps last known cloud totals when a refetch exceeds the activity freshness window', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  const f = computersFixture(inRouter().element)
+  f.activity.cloud.push({ provider: 'github', name: 'GitHub Actions', ready: true, slots: 16, running: 4 })
+  await act(() => f.client.invalidateQueries({ queryKey: ['computer-activity'] }))
+  const group = await openGroup('Cloud CI')
+  let release!: () => void
+  const pending = new Promise<void>(resolve => { release = resolve })
+  server.use(http.get('*/api/management/computers/activity', async () => {
+    await pending
+    return HttpResponse.json(f.activity)
+  }))
+  const refresh = f.client.invalidateQueries({ queryKey: ['computer-activity'] })
+  try {
+    await act(() => vi.advanceTimersByTimeAsync(16_000))
+    expect(screen.getByRole('button', { name: 'Cloud CI' })).toBeInTheDocument()
+    expect(within(group).getByText('Last known · 16 slots · 4 busy · 12 free')).toBeInTheDocument()
+  } finally {
+    release()
+    await act(() => refresh)
+  }
+  expect(within(group).getByText('16 slots · 4 busy · 12 free')).toBeInTheDocument()
 })
 
 it('keeps both popovers open while crossing gaps and closes both after leaving or pressing Escape', async () => {

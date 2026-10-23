@@ -97,6 +97,17 @@ describe('OperatorChat', () => {
     expect(screen.queryByRole('button', { name: 'Start chat' })).not.toBeInTheDocument()
     expect(api.create).not.toHaveBeenCalled()
   })
+  it('stays usable when it is reopened while the close animation is running', async () => {
+    renderChat()
+    fireEvent.click(screen.getByRole('button', { name: 'Open Operator chat' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Close Operator chat' }))
+    act(() => { useOperatorChatStore.getState().setOpen(true) })
+    await new Promise((settle) => setTimeout(settle, 300))
+    const panel = await screen.findByRole('dialog', { name: 'Operator chat' })
+    expect(panel).not.toHaveAttribute('inert')
+    expect(screen.queryByRole('button', { name: 'Open Operator chat' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Close Operator chat' })).toBeEnabled()
+  })
   it('hides only the UI when visibility is disabled', () => {
     renderChat(false)
     expect(screen.queryByRole('button', { name: 'Open Operator chat' })).not.toBeInTheDocument()
