@@ -234,7 +234,7 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
 - [ ] #42 Config: ~90 direct `process.env` reads outside `config.ts`.
 
 ### PR 6: Module boundaries (not started, except CI and web groundwork)
-- [~] #29 No module boundaries. Web follow-up: shared chat core extracted; pending imports reduced from 98 to 51 (CI pending).
+- [~] #29 No module boundaries.
   - The CI↔API boundary is enforced (#69).
   - Web (6a): cross-feature imports go through the feature's index (759 imports rewritten; 13 features gained an
     index). The shared graph/Board leaves live in the neutral `features/board-core` (geometry, collaborationFields,
@@ -242,13 +242,13 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
     `scripts/check-web-feature-boundaries.mjs` (web lint) fails on any new import of another feature's internals; test
     files and test support modules (fixtures, testSupport, mocks) may import each other. The runtime import graph still
     has only the 2 earlier cycles (one moved with `agentEdits`/`model` into `board-core`).
-  - Web follow-up: moved shared chat presentation, draft/scroll state, attachment helpers, session controls,
-    activity/message reconciliation and committed-message buffering into the neutral `features/chat-core`.
-    Consumers use its public index; existing behavior tests stay in place and exercise the same implementations.
-    The pending list actually contained 98 imports (the earlier 97 count was stale); 47 were removed, leaving 51.
-  - Web, still open: 51 imports in `scripts/web-feature-boundary-pending.mjs` (a list that may only shrink), including
-    graph/draft hooks ↔ Board start/stop outboxes, Agent/settings/schedule dependencies, shared delivery hooks and
-    Operator composer settings/approval UI. The route/WorkspaceShell layering inversions remain separate work.
+  - Web, still open: 97 imports in `scripts/web-feature-boundary-pending.mjs` (a list that may only shrink). About 49 sit on
+    real feature cycles: `graph/store` and the draft hooks ↔ `workflow-board` start/stop outboxes, `AgentControls` ↔
+    `AgentSettingsForm`, `agents/agentSettings`, `schedules/queries`. about 48 are `operator-chat` ↔ `conversations` chat
+    pieces that tests reach through a mocked `conversations` or `operator-chat` index; move the shared chat pieces
+    (`ChatNotice`, `chatTimeline`, `chatAttachmentAttempt`, `sessionControls`, …) into a neutral feature, then re-point
+    the mocks. `routes/WorkspaceRouteEntry` → `WorkflowBoard` and `shared/ui/WorkspaceShell` → `HarnessStatusMenu` are
+    layering inversions to fix on their own.
   - Open: 75 bidirectional API module pairs.
 - [ ] #32 Layering inversions: infrastructure→modules (24 imports), MCP builds services that HTTP uses, `collaboration`
   duplicates `workflow-chat`.
@@ -268,11 +268,15 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   - Not converted automatically: imports of names that are re-exported from another file, and default or namespace
     imports. Add them to the index by hand.
   - Open: web cross-feature imports (425, 392 into internals). There is a codemod for the web part (see the handoff).
-- [~] #32 Layering inversions (6b, not typechecked or linted).
+- [~] #32 Layering inversions: saver infrastructure imports removed; owner decision pending (Foreman CI pending).
   - Infrastructure→modules: 24 imports became 2 non-test imports (the logging core, ten migration files, storage
-    roots and `DomainError` moved or were replaced). Left: `infrastructure/approvalCheckpointSaver.ts` imports
-    `assertGraphTransaction` and a type from `run-graph/connection.ts`; moving the saver would touch about a dozen
-    test helpers, so it is open. Two infrastructure tests also import `ExclusiveGraphConnection`.
+    roots and `DomainError` moved or were replaced). Follow-up: `ApprovalPostgresSaver` now belongs to
+    `modules/runs`; its transaction assertion uses the public `run-graph` entry and its SQL type remains in
+    infrastructure. The checkpoint-store factory moved to `composition/checkpoints.ts`; all consumers, mocks and
+    local acceptance entrypoints use the new paths. SQL, transaction checks and saved/deployed names are unchanged.
+    The earlier two-import count was stale: the saver had one runtime module import and no remaining module type
+    import. Separate migration-registry imports into CI/runs remain outside this saver cleanup. Two infrastructure
+    tests also still import `ExclusiveGraphConnection`.
   - `modules/diagnostics/{logger,logComponent,runtimeTiming,ignoredError,operationalFailures,rotatingLogDestination,appErrors}.ts`
     are now one-line re-exports of the files in `infrastructure/`, so import paths and test mocks keep working.
     A test that mocks `diagnostics/logger.js` no longer intercepts infrastructure's own logger calls; mock
@@ -282,7 +286,19 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
     construction in `mcp/`. `OperatorServices` (the shared service bag type) still lives in `mcp/operator/types.ts`.
   - `collaboration` and `workflow-chat` are not duplicates in a mechanical way: `collaboration/workflowChat*` is the
     Run-owned execution chat (HTTP, Group chat and MCP admission), `workflow-chat` is the Group chat channel. Not
-    merged; the audit finding needs a design look.
+    merged; the owner must choose the boundary.
+  - Owner options (no design change implemented):
+    1. Keep separate modules: `collaboration` owns exact Run-target admission, owner transactions and native
+       dispatch; `workflow-chat` owns Group posts, prepared deliveries and reply projection. Move their shared
+       delivery ports/types into a neutral boundary and inject the Run adapter during composition to remove the
+       mutual imports. This preserves the two distinct durable lifecycles.
+    2. Consolidate the execution-chat files under `workflow-chat` with explicit execution/channel subareas, leaving
+       browser and memory-board collaboration separate. This groups chat code together, but requires a larger
+       import/mocking migration and careful preservation of owner transactions versus Group pending delivery.
+    Recommendation: option 1. `WorkflowChatService.post` retains a Group post before its pending drain dispatches,
+    whereas `WorkflowExecutionChatService.deliver` admits a command under the existing Run owner and reconciles
+    native submission. They share delivery contracts, not one transaction/lifecycle. Resolve the mutual dependency
+    through composition rather than merging these services. Await the owner's choice before implementing either.
 - [~] #33 Contracts carries runtime code. #69 and #71 added `server-kit` and `installed-runtime-node` there on purpose.
   Split the Node-only code into its own package.
   - 6d stopped before moving code: the new package is a third built workspace package, and it cannot be added safely

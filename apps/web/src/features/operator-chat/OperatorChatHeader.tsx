@@ -2,7 +2,8 @@ import type { RefObject } from 'react'
 import { Icon, IconButton } from '../../shared/ui/nocturne'
 import type { useMovableWindow } from '../../shared/ui/useMovableWindow'
 import type { AcceptedProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
-import { SessionContext, type ComposerSessionControls } from '../chat-core'
+import { SessionContext } from '../conversations/sessionControls/SessionControls'
+import type { ComposerSessionControls } from '../conversations/sessionControls/useSessionControls'
 import { ProviderAccountChip } from '../provider-accounts'
 
 export function OperatorChatHeader({ historyOpen, historyId, historyTriggerRef, closeRef, historyFailed, moveGrip, sessionControls, accountBinding, onToggleHistory, onClose }: {

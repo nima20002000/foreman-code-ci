@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Icon, IconButton } from '../../shared/ui/nocturne/index'
+import { Icon, IconButton } from '../../shared/ui/nocturne'
 import './chatNotice.css'
 
 /** A small one-line notice for a real problem. The user can dismiss it; a different message shows again. */

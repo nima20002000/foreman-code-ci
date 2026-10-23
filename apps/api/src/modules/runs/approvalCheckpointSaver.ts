@@ -1,12 +1,12 @@
-import { asRecord } from '../shared/records.js'
+import { asRecord } from '../../shared/records.js'
 import type pg from 'pg'
-import type { BaseCheckpointSaver, LangGraphPostgresSaver, SerializerProtocol } from './langgraph.js'
+import type { BaseCheckpointSaver, LangGraphPostgresSaver, SerializerProtocol } from '../../infrastructure/langgraph.js'
 import type { DurableInteraction } from '@foreman-code/contracts'
-import type { SqlTransaction } from './transaction.js'
-import { assertGraphTransaction } from '../modules/run-graph/connection.js'
+import type { SqlTransaction } from '../../infrastructure/transaction.js'
+import { assertGraphTransaction } from '../run-graph/index.js'
 import { DomainError } from '@foreman-code/contracts/server-kit'
-import { nextApprovalResumeValues } from './approvalCheckpointPlan.js'
-import { CheckpointMutationSaver } from './checkpointMutations.js'
+import { nextApprovalResumeValues } from '../../infrastructure/approvalCheckpointPlan.js'
+import { CheckpointMutationSaver } from '../../infrastructure/checkpointMutations.js'
 
 const INTERRUPT = '__interrupt__', RESUME = '__resume__'
 const MAX_WRITE_BYTES = 262144

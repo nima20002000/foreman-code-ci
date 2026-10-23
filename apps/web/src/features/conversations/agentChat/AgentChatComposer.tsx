@@ -2,7 +2,8 @@ import { useLayoutEffect, useId, type ReactNode, type RefObject } from 'react'
 import { ArrowUp, CornerDownLeft, Square } from 'lucide-react'
 import { parseSessionCommand, type SessionMode } from '@foreman-code/contracts'
 import { IconButton, Textarea, Tooltip } from '../../../shared/ui/nocturne'
-import { useConversationDraftStore, useSlashCommandMenu } from '../../chat-core'
+import { useConversationDraftStore } from '../conversationDraftStore'
+import { useSlashCommandMenu } from '../sessionControls/useSlashCommandMenu'
 
 export function AgentChatComposer({ name, draftKey, inputRef, disabled, reason, controlReason, pending, controlPending,
   hasAttachments, attachmentControl, actions, canStop, stopReason, onStop, onSubmit, deliveryActions, sessionCommands = true }: {

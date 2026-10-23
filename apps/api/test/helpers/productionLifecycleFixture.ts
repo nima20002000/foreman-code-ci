@@ -10,7 +10,7 @@ import { afterEach, beforeEach, expect, vi } from 'vitest'
 
 import { loadConfig } from '../../src/config.js'
 import { createDatabase } from '../../src/infrastructure/database.js'
-import { createCheckpointStore } from '../../src/infrastructure/checkpoints.js'
+import { createCheckpointStore } from '../../src/composition/checkpoints.js'
 import { makeCurrentWorkflowFixture, WorkflowVersionCurrentSchema } from '@foreman-code/contracts/current'
 import { seedWorkflowFixture } from './workflowDatabase.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'

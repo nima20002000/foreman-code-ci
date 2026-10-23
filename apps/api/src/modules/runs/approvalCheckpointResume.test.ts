@@ -1,7 +1,7 @@
 import type pg from 'pg'
 import { DurableInteractionSchema, NATIVE_INTERACTION_FIXTURES } from '@foreman-code/contracts'
 import { afterEach, expect, it, vi } from 'vitest'
-import { ApprovalPostgresSaver } from '../../infrastructure/approvalCheckpointSaver.js'
+import { ApprovalPostgresSaver } from './approvalCheckpointSaver.js'
 import { DomainError } from '../errors.js'
 import { Wave25InteractionRepository } from '../interactions/current/repository.js'
 import { consumeDeliveredApprovals } from './approvalCheckpointResume.js'

@@ -1,8 +1,10 @@
 import { errorMessage } from '../../shared/errorMessage'
 import { parseSessionCommand, type SessionMode } from '@foreman-code/contracts'
-import { useSlashCommandMenu, type ComposerSessionControls, useConversationDraftStore } from '../chat-core'
+import { useSlashCommandMenu } from './sessionControls/useSlashCommandMenu'
+import type { ComposerSessionControls } from './sessionControls/useSessionControls'
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
 import { MessageComposer } from '../../shared/ui/nocturne'
+import { useConversationDraftStore } from './conversationDraftStore'
 
 export interface ConversationComposerProps {
   conversationId: string

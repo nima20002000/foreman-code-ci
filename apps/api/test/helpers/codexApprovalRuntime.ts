@@ -13,7 +13,7 @@ import { vi } from 'vitest'
 import { AgentConfigurationVersionSchema, DEFAULT_CODEX_ADVANCED_CONFIGURATION,
   DEFAULT_HARNESS_DEFAULTS, type ResolvedSkill, type CodexHarnessConfiguration } from '@foreman-code/contracts'
 import { ExecutableWorkflowCurrentSchema, makeCurrentWorkflowFixture, WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
-import { ApprovalPostgresSaver } from '../../src/infrastructure/approvalCheckpointSaver.js'
+import { ApprovalPostgresSaver } from '../../src/modules/runs/approvalCheckpointSaver.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
 import { CodexAppServerSessionManager } from '../../src/modules/harnesses/codexAppServer.js'
