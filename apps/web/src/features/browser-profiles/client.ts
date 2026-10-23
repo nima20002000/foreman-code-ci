@@ -20,8 +20,7 @@ async function collectCatalog(read: (cursor: string | null) => Promise<CatalogPa
     for (let pageNumber = 0; pageNumber < 1000; pageNumber += 1) {
       signal.throwIfAborted()
       const page = await read(cursor)
-      // A restart reads a consistent catalog; if writes keep landing, the last attempt keeps the merged pages and the next poll corrects it.
-      if (attempt === 0 && revision !== undefined && page.revision !== revision) break
+      if (revision !== undefined && page.revision !== revision) break
       revision = page.revision
       for (const profile of page.profiles) profiles.set(profile.id, profile)
       for (const replica of page.replicas) replicas.set(`${replica.profileId}/${replica.computerId}`, replica)
@@ -46,7 +45,7 @@ async function collectSync(jobId: string, read: (profile: string | null, target:
       signal.throwIfAborted()
       const page = BrowserProfileSyncPageSchema.parse(await read(profile, target))
       if (page.job.id !== jobId) throw new Error('Browser sync readback belongs to a different job.')
-      if (attempt === 0 && revision !== undefined && revision !== page.job.revision) break
+      if (revision !== undefined && revision !== page.job.revision) break
       revision = page.job.revision
       for (const value of page.job.profiles) profiles.set(value.profileId, value)
       for (const value of page.job.targets) targets.set(`${value.profileId}/${value.computerId}`, value)

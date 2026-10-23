@@ -92,7 +92,7 @@ it('refreshes the visible production transcript for an exact native-message chan
   expect(connection!.closed).toBe(true)
 })
 
-it('opens historical follow-up with the selected source execution retained', async () => {
+it('continues a finished execution in its Agent chat right in the Board chat, without a dead end', async () => {
   const state = endpoints()
   state.value = { ...state.value, state: 'idle', capabilities: { steer: 'unavailable', queue: false, interruptAndSend: false } }
   const selections: URL[] = []
@@ -117,8 +117,8 @@ it('opens historical follow-up with the selected source execution retained', asy
     return HttpResponse.json({ error: { code: 'SOURCE_UNAVAILABLE', message: 'Source unavailable' } }, { status: 409 })
   }))
   mount('idle')
-  fireEvent.click(await screen.findByRole('button', { name: 'Follow up in Agent chat' }))
   await waitFor(() => expect(selections).toHaveLength(1))
+  expect(screen.queryByText(/can.t take a new message/)).toBeNull()
   expect(selections[0]!.pathname).toBe(`/api/workspaces/${fixture.node.workspaceId}/agent-chat/workflows/${fixture.node.workflowId}`
     + `/runs/${fixture.execution.runId}/nodes/${fixture.node.workflowNodeId}`)
   expect(selections[0]!.searchParams.get('executionId')).toBe(fixture.execution.executionId)

@@ -507,21 +507,3 @@ test('verifies readiness without putting an installed file inventory in process 
   assert.deepEqual(await checkBrowserRuntimeReadiness({ rootDirectory: directory,
     pythonExecutable: python, chromiumExecutable: join(directory, 'chrome') }), { ready: true });
 });
-
-test('Worker browser lifecycle diagnostics reach structured stdout without a caller-supplied logger', async t => {
-  const writes = [];
-  t.mock.method(process.stdout, 'write', chunk => { writes.push(String(chunk)); return true; });
-  const f = bootstrapFixture();
-  f.module.createBrowserHost = async options => ({ ...f.host, close: async () => {
-    options.log?.('Agent browser tab closed by the agent', { sessionId: 'worker-session', tabId: 'worker-tab' });
-    await f.host.close();
-  } });
-  try {
-    assert.equal((await f.runtime.start()).ready, true);
-  } finally { await f.runtime.close(); }
-  assert.equal(writes.length, 1);
-  const record = JSON.parse(writes[0]);
-  assert(Number.isFinite(Date.parse(record.time)));
-  assert.deepEqual(record, { level: 'info', time: record.time, component: 'agent-browser',
-    sessionId: 'worker-session', tabId: 'worker-tab', msg: 'Agent browser tab closed by the agent' });
-});

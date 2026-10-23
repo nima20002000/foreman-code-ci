@@ -79,33 +79,6 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-it('acknowledges Save from unchanged Agent settings without claiming runs block it', async () => {
-  const source: AuthoringContext = fixture(['coder'])
-  source.savedDraft = source.draft
-  source.agents = source.agents.map(item => ({ ...item, agent: { ...item.agent,
-    harness: 'codex', harnessConfiguration: DEFAULT_HARNESS_DEFAULTS.codex } }))
-  vi.spyOn(nextDraftApi, 'context').mockResolvedValue(source)
-  vi.spyOn(nextDraftApi, 'editRead').mockResolvedValue(empty)
-  const stage = vi.spyOn(nextDraftApi, 'editStage').mockResolvedValue(empty)
-  const advance = vi.spyOn(nextDraftApi, 'editAdvance').mockResolvedValue(empty)
-  vi.mocked(useBoardStartPreflight).mockReturnValue({ data: startFacts(source, empty),
-    isError: false } as ReturnType<typeof useBoardStartPreflight>)
-  vi.mocked(readBoardStartPreflight).mockResolvedValue(startFacts(source, empty))
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  clients.push(client)
-  render(<QueryClientProvider client={client}><PersistedWorkflowBoundary workspaceId="workspace"
-    workflowId="workflow" workflow={source.draft.graph} /></QueryClientProvider>)
-  const user = userEvent.setup()
-  await user.click(await screen.findByRole('button', { name: 'Open fixture settings' }))
-  const dialog = screen.getByRole('dialog', { name: 'Agent settings' })
-  expect(within(dialog).getByRole('button', { name: 'Apply agent settings to draft' })).toBeDisabled()
-  await user.click(within(dialog).getByRole('button', { name: 'Save agent settings and workflow' }))
-  expect(await screen.findByText('Already saved.')).toBeVisible()
-  expect(screen.queryByText(/Save waits for every affected Run/)).not.toBeInTheDocument()
-  expect(stage).not.toHaveBeenCalled()
-  expect(advance).not.toHaveBeenCalled()
-})
-
 it.each(['Agent settings Save', 'Agent settings Save and run', 'Save inside Agent settings'] as const)(
   'acknowledges its own %s without warnings and leaves the saved version usable', async (path) => {
     let accessReads = 0

@@ -12,11 +12,9 @@ export function PhysicalComputeTotals({ readings }: { readings: ReturnType<typeo
   const ram = memory.reduce((total, value) => total + (value.totalBytes ?? 0), 0) / GIB
   const used = memory.reduce((total, value) => total + value.bytes, 0) / GIB
   const reporting = readings.filter(reading => reading.cpu && reading.memory?.totalBytes).length
-  const cpuStale = readings.some(reading => reading.cpu && reading.stale.cpu)
-  const memoryStale = readings.some(reading => reading.memory?.totalBytes && reading.stale.memory)
   return <div className="sidebar-compute-totals" aria-label="Total compute">
-    <p>{cpu.length ? `${cpuStale ? 'Last known · ' : ''}${NUMBER.format(cores)} cores · ${NUMBER.format(busy)} busy · ${NUMBER.format(cores - busy)} free` : 'CPU unavailable'}</p>
-    <p>{memory.length ? `${memoryStale ? 'Last known · ' : ''}${NUMBER.format(ram)} GiB · ${NUMBER.format(used)} used · ${NUMBER.format(ram - used)} free` : 'RAM unavailable'}</p>
+    <p>{cpu.length ? `${NUMBER.format(cores)} cores · ${NUMBER.format(busy)} busy · ${NUMBER.format(cores - busy)} free` : 'CPU unavailable'}</p>
+    <p>{memory.length ? `${NUMBER.format(ram)} GiB · ${NUMBER.format(used)} used · ${NUMBER.format(ram - used)} free` : 'RAM unavailable'}</p>
     {reporting < readings.length && <p className="sidebar-hover-note">{reporting} of {readings.length} computers reporting</p>}
   </div>
 }
@@ -39,8 +37,8 @@ export function CloudComputeTotals({ clouds, fresh }: { clouds: CloudCiActivity[
   const credits = readable.reduce((total, org) => total + (org.credits?.remaining ?? 0), 0)
   const partial = readable.length < orgs.length ? ` (${readable.length} of ${orgs.length} orgs)` : ''
   return <div className="sidebar-compute-totals" aria-label="Total cloud compute">
-    <p>{fresh ? '' : 'Last known · '}{`${slots} slots · ${running} busy · ${Math.max(0, capacity - running)} free${unavailable ? ` · ${unavailable} unavailable` : ''}`}</p>
-    {unavailable > 0 && [...reasons].map(([reason, names]) =>
+    <p>{fresh ? `${slots} slots · ${running} busy · ${Math.max(0, capacity - running)} free${unavailable ? ` · ${unavailable} unavailable` : ''}` : 'Slots unavailable'}</p>
+    {fresh && unavailable > 0 && [...reasons].map(([reason, names]) =>
       <p key={reason} className="sidebar-hover-note">Unavailable: {names.join(', ')} ({reason})</p>)}
     {orgs.length > 0 && <p>
       {readable.length ? `${fresh ? '' : 'Last known · '}≈ ${NUMBER.format(credits)} credits left${partial}` : 'Credits unavailable'}

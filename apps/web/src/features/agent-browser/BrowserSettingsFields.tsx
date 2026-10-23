@@ -51,7 +51,7 @@ export function BrowserSettingsFields({ value, onChange, catalog, computer, disa
     <NodeRow label="Browser">
       <Switch label="Browser" checked={enabled} disabled={disabled}
         onChange={event => onChange(event.currentTarget.checked
-          ? { ...value, enabled: true, ...(value?.profileId ?? fallback ? { profileId: value?.profileId ?? fallback } : {}) }
+          ? { enabled: true, ...(value?.profileId ?? fallback ? { profileId: value?.profileId ?? fallback } : {}) }
           : { ...value, enabled: false })} />
     </NodeRow>
     {enabled ? <NodeRow label="Profile" tone="warning" note={note && <>{note} {!profiles.length || value?.profileId && !selected

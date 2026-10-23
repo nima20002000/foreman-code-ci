@@ -57,7 +57,7 @@ export class MemoryBoardService implements MemoryBoardPort {
         return result.receipts[0]!
       })
     } catch (error) {
-      if (!(error instanceof DomainError) || error.status>=500 || ['ACCESS_DENIED','AUTH_REQUIRED','COMMAND_INPUT_CONFLICT'].includes(error.code)) throw error
+      if (!(error instanceof DomainError) || error.status>=500 || ['ACCESS_DENIED','AUTH_REQUIRED','NOT_FOUND','COMMAND_INPUT_CONFLICT'].includes(error.code)) throw error
       // The mutation transaction has rolled back. A second transaction records
       // only the definitive rejection; uncertain connection/commit errors stay unknown.
       const recovered = await this.recordRejection(principal,operation,error)

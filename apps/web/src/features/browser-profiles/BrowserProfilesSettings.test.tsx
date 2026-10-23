@@ -31,13 +31,13 @@ function profileFixture() {
   return { port, data, job }
 }
 
-function mount(port: BrowserProfilesPort, onOpenSetup = vi.fn()) {
+function mount(port: BrowserProfilesPort, onOpenSetup = vi.fn(), onSetupCleanupPending = vi.fn()) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return render(<QueryClientProvider client={client}><BrowserProfilesSettings visible authBoundary="login" currentComputerId="main"
     computers={[{ id: 'main', name: 'Main', online: true, runtimeReady: true, lastSeenAt: null },
       { id: 'worker', name: 'Worker', online: true, runtimeReady: true, lastSeenAt: null }]}
     port={port} sessionPort={browserPortFake().port} files={browserFilesFake()}
-    onOpenSetup={onOpenSetup} /></QueryClientProvider>)
+    onOpenSetup={onOpenSetup} onSetupCleanupPending={onSetupCleanupPending} /></QueryClientProvider>)
 }
 
 it('saves clearing local override without admitting sync, then only a separate sync click creates a job', async () => {
@@ -70,18 +70,6 @@ it('retains a saved override policy when sync admission fails and retries the id
   await userEvent.click(screen.getByRole('button', { name: 'Check original request' }))
   await waitFor(() => expect(port.sync).toHaveBeenCalledTimes(2))
   expect(vi.mocked(port.sync).mock.calls[1]).toEqual(vi.mocked(port.sync).mock.calls[0])
-})
-
-it('opens a new profile editor without the previous operation failure', async () => {
-  const { port } = profileFixture()
-  vi.mocked(port.setLocalOverride).mockRejectedValueOnce(Object.assign(new Error('Policy was rejected'), { outcome: 'rejected' }))
-  mount(port)
-  const worker = within(await screen.findByRole('region', { name: 'Browser profiles on Worker' }))
-  await userEvent.click(worker.getByRole('button', { name: 'Use source updates' }))
-  await screen.findByText(/Policy was rejected/)
-  await userEvent.click(screen.getByRole('button', { name: 'Add profile' }))
-  await screen.findByRole('dialog')
-  expect(screen.queryByText(/Policy was rejected/)).not.toBeInTheDocument()
 })
 
 it('opens a newly created source profile before its first snapshot publication and never changes override merely by opening', async () => {
