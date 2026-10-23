@@ -11,7 +11,8 @@ import {
   type FileMediaType, type FileWithRevision, type TemporaryFileScope,
 } from '@foreman-code/contracts/files'
 import { server } from '../../mocks/server'
-import { beginSessionChange, finishSessionChange } from '../../shared/api/sessionBoundary'
+import { RUNTIME_INSTALLATION_HEADER } from '@foreman-code/contracts'
+import { beginSessionChange, bindDocumentInstallation, finishSessionChange } from '../../shared/api/sessionBoundary'
 import { AttachmentDraftProvider } from './AttachmentDraftProvider'
 import { ChatAttachmentControl } from './ChatAttachmentControl'
 import { createAttachmentHttpClient, type AttachmentClient, type AttachmentUploadInput } from './attachmentClient'
@@ -37,6 +38,7 @@ interface Metadata { requestId: string; filename: string; mediaType: FileMediaTy
 interface UploadRequest extends Metadata { scope: TemporaryFileScope }
 let uploads: UploadRequest[]
 let byteUploads: string[]
+let byteInstallations: (string | null)[]
 let finalizations: { requestId: string; scope: TemporaryFileScope }[]
 let cancellations: { scope: TemporaryFileScope; requestId: string }[]
 let staged: Map<string, FileWithRevision>
@@ -112,7 +114,7 @@ async function ready(view: ReturnType<typeof mount>, count = 1) {
 }
 
 beforeEach(() => {
-  uploads = []; byteUploads = []; finalizations = []; cancellations = []; staged = new Map(); clients = []
+  uploads = []; byteUploads = []; byteInstallations = []; finalizations = []; cancellations = []; staged = new Map(); clients = []
   createUrl = vi.fn<typeof URL.createObjectURL>((blob) => {
     if (!(blob instanceof Blob)) throw new Error('Expected attachment Blob')
     return `blob:attachment-${blob.size}-${crypto.randomUUID()}`
@@ -132,6 +134,7 @@ beforeEach(() => {
       const value = staged.get(requestId)
       if (!value) return HttpResponse.json({ error: { code: 'NOT_FOUND', message: 'No allocation.' } }, { status: 404 })
       byteUploads.push(requestId)
+      byteInstallations.push(request.headers.get(RUNTIME_INSTALLATION_HEADER))
       return HttpResponse.json({ value, replayed: false })
     }),
     http.post(paths.finalize, ({ request }) => finalizeUpload(request)),
@@ -161,6 +164,20 @@ describe('shared attachment picker and real HTTP boundary', () => {
     expect(byteUploads).toEqual([uploads[0].requestId])
     expect(finalizations).toEqual([{ requestId: uploads[0].requestId, scope: scopeA }])
     expect(view.draft.prepareSend()?.attachments).toEqual(view.draft.readyRefs)
+  })
+
+  it('sends the app installation with the upload bytes once the document is bound to one', async () => {
+    const installationId = 'd95abeb8-598a-49a4-8c3c-c6e3533053e8'
+    expect(bindDocumentInstallation(installationId)).toBe(true)
+    try {
+      const view = mount()
+      await userEvent.setup().upload(picker(), file())
+      await ready(view)
+      expect(byteInstallations).toEqual([installationId])
+    } finally {
+      // A new session generation drops the binding so later tests start unbound.
+      beginSessionChange(); finishSessionChange()
+    }
   })
 
   it('rejects dropped unsupported files and folders and unavailable conversation writes', async () => {
