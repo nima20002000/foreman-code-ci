@@ -21,7 +21,7 @@ import {
   ExecutableWorkflowCurrentSchema, makeCurrentWorkflowFixture,
 } from '@foreman-code/contracts/current'
 import { applyApplicationMigrations } from '../../src/infrastructure/migrations.js'
-import { createCheckpointStore } from '../../src/infrastructure/checkpoints.js'
+import { createCheckpointStore } from '../../src/composition/checkpoints.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { Wave25WorkerCredentialService as WorkerCredentialService } from '../../src/modules/interactions/current/credentials.js'

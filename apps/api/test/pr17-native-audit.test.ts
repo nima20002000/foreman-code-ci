@@ -29,7 +29,7 @@ function codexManager(f: Fixture) {
 }
 
 describe.skipIf(process.platform === 'win32')('PR17 Codex native recovery', () => {
-  it.each(['GRAPHQL_PRODUCTION_DB_PASSWORD', 'GRAPHQL_PRODUCTION_DB_PASSWORD'])(
+  it.each(['GRAPHQL_PRODUCTION_DB_PASSWORD', 'FOREMAN_CODE_PRODUCTION_DB_PASSWORD'])(
     'rejects %s in scoped native environments', async name => {
       const f = await codexFixture()
       const worker = input(f.directory)

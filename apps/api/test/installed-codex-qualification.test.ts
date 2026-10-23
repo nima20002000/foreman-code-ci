@@ -197,7 +197,7 @@ describe('actual Main and installed Codex qualification read capability', () => 
       const codexBinary = join(stateDirectory, 'codex')
       const appMcpLauncher = join(stateDirectory, 'graphql-mcp.mjs')
       await writeFile(codexBinary, '#!/bin/sh\nprintf "codex-cli 0.132.0\\n"\n', { mode: 0o700 })
-      await copyFile(new URL('../../../scripts/foreman-mcp.mjs', import.meta.url), appMcpLauncher)
+      await copyFile(new URL('../../../scripts/graphql-mcp.mjs', import.meta.url), appMcpLauncher)
       // Retain an explicit fixture selection instead of discovering host CLIs or a built release.
       await writeFile(join(stateDirectory, 'workflow-runtime.json'), JSON.stringify({
         schemaVersion: 1,

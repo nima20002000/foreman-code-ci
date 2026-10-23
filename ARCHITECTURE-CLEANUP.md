@@ -187,9 +187,8 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   (2,824 occurrences; no name collided, so none was skipped). `RepeatGraphCurrentV3` became
   `RepeatGraphCurrentCurrent`, which the owner should review. Left alone: `Wave25*` identifiers, `wave25_*` SQL,
   migration file names, `wave25*` test file names, string literals, JSON keys, prose, docs and history.
-- [~] #35 Code rename redone on `fix/a35-graphql`; MCP symbols and source modules use Foreman names.
-  Frozen installation and saved names are centralized in contracts `installationNames.mjs`; no environment alias layer.
-  Deployed cutover remains owner-only. Foreman CI verification is in progress.
+- [ ] #35 Unfinished graphql → foreman-code rename (646 files; compose/DB names, rsync path, env compat layer).
+  Deployed names need a migration plan.
 - [~] #36 Retired `opencode` harness (156 refs), `LegacyChatDeliveryBridge`, 24 semantics-version guards.
   - Done: one `isReadOnlyHarnessConfiguration` (contracts) replaces 8 copies of the "retired or read-only" check, and one
     `retiredHarnessError()` (`harnesses/retiredHarness.ts`) replaces 20 `HARNESS_RETIRED` throws. The unused
@@ -269,11 +268,24 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   - Not converted automatically: imports of names that are re-exported from another file, and default or namespace
     imports. Add them to the index by hand.
   - Open: web cross-feature imports (425, 392 into internals). There is a codemod for the web part (see the handoff).
-- [~] #32 Layering inversions (6b, not typechecked or linted).
+- [~] #32 Layering inversions: saver infrastructure imports removed; owner decision pending (Foreman CI blocked by inherited lockfile setup failure).
   - Infrastructure→modules: 24 imports became 2 non-test imports (the logging core, ten migration files, storage
-    roots and `DomainError` moved or were replaced). Left: `infrastructure/approvalCheckpointSaver.ts` imports
-    `assertGraphTransaction` and a type from `run-graph/connection.ts`; moving the saver would touch about a dozen
-    test helpers, so it is open. Two infrastructure tests also import `ExclusiveGraphConnection`.
+    roots and `DomainError` moved or were replaced). Follow-up: `ApprovalPostgresSaver` now belongs to
+    `modules/runs`; its transaction assertion uses the public `run-graph` entry and its SQL type remains in
+    infrastructure. The checkpoint-store factory moved to `composition/checkpoints.ts`; all consumers, mocks and
+    local acceptance entrypoints use the new paths. SQL, transaction checks and saved/deployed names are unchanged.
+    The earlier two-import count was stale: the saver had one runtime module import and no remaining module type
+    import. Separate migration-registry imports into CI/runs remain outside this saver cleanup. Two infrastructure
+    tests also still import `ExclusiveGraphConnection`.
+  - Verification: cleanup commit `431eb159d3d260c3a8b7af78a21c3e974668827a`, Foreman tickets:
+    affected unit (13 files) `c3460e6e-8d5e-44ea-a426-d386e47c746d`, affected integration (9 files)
+    `da1e10a6-6f2e-46cf-84d5-449b24f8f080`, full typecheck `ed7b5e06-4588-491f-b5cb-fc445f9eda10`,
+    full lint `5796f310-f845-4b32-a1b1-78d1f1b27bcc`. Unit/typecheck/lint failed before execution during
+    installation; integration's first attempt failed there too. The logs report `ERR_PNPM_OUTDATED_LOCKFILE`:
+    worker requires `@foreman-code/api@workspace:*`, absent from the lockfile. Base typecheck ticket
+    `7f6f62b6-4769-4f25-8a6e-344b78b6396a` at `1d6b544d7a` has the identical setup failure; both affected
+    dependency files are unchanged here. No local tests, typecheck, lint or builds ran; no passing result or
+    touched-file diagnostics are available. Re-run CI after the integration agent repairs the base lockfile.
   - `modules/diagnostics/{logger,logComponent,runtimeTiming,ignoredError,operationalFailures,rotatingLogDestination,appErrors}.ts`
     are now one-line re-exports of the files in `infrastructure/`, so import paths and test mocks keep working.
     A test that mocks `diagnostics/logger.js` no longer intercepts infrastructure's own logger calls; mock
@@ -283,7 +295,19 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
     construction in `mcp/`. `OperatorServices` (the shared service bag type) still lives in `mcp/operator/types.ts`.
   - `collaboration` and `workflow-chat` are not duplicates in a mechanical way: `collaboration/workflowChat*` is the
     Run-owned execution chat (HTTP, Group chat and MCP admission), `workflow-chat` is the Group chat channel. Not
-    merged; the audit finding needs a design look.
+    merged; the owner must choose the boundary.
+  - Owner options (no design change implemented):
+    1. Keep separate modules: `collaboration` owns exact Run-target admission, owner transactions and native
+       dispatch; `workflow-chat` owns Group posts, prepared deliveries and reply projection. Move their shared
+       delivery ports/types into a neutral boundary and inject the Run adapter during composition to remove the
+       mutual imports. This preserves the two distinct durable lifecycles.
+    2. Consolidate the execution-chat files under `workflow-chat` with explicit execution/channel subareas, leaving
+       browser and memory-board collaboration separate. This groups chat code together, but requires a larger
+       import/mocking migration and careful preservation of owner transactions versus Group pending delivery.
+    Recommendation: option 1. `WorkflowChatService.post` retains a Group post before its pending drain dispatches,
+    whereas `WorkflowExecutionChatService.deliver` admits a command under the existing Run owner and reconciles
+    native submission. They share delivery contracts, not one transaction/lifecycle. Resolve the mutual dependency
+    through composition rather than merging these services. Await the owner's choice before implementing either.
 - [~] #33 Contracts carries runtime code. #69 and #71 added `server-kit` and `installed-runtime-node` there on purpose.
   Split the Node-only code into its own package.
   - 6d stopped before moving code: the new package is a third built workspace package, and it cannot be added safely

@@ -23,7 +23,7 @@ describe('remote execution settings', () => {
 
   it('reports every explicit override and keeps the saved values intact', () => {
     const environment = {
-      GRAPHQL_LAPTOP_EXECUTION_ENABLED: '0', GRAPHQL_DEVICE_LISTENER_ENABLED: '0',
+      FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED: '0', FOREMAN_CODE_DEVICE_LISTENER_ENABLED: '0',
       DEVICE_LISTENER_HOST: '0.0.0.0', DEVICE_LISTENER_PORT: '8443', DEVICE_LISTENER_TLS_CERT_FILE: '/override/cert.pem',
       DEVICE_LISTENER_TLS_KEY_FILE: '/override/key.pem', DEVICE_LISTENER_TLS_TRUST_CERT_FILE: '/override/ca.pem',
       DEVICE_LISTENER_ADVERTISED_ENDPOINT: 'wss://override.example:8443/device/connect',
@@ -40,8 +40,8 @@ describe('remote execution settings', () => {
 
   it('recognizes product environment aliases as explicit overrides', () => {
     expect(resolveRemoteExecutionSettings(saved, { GRAPHQL_LAPTOP_EXECUTION_ENABLED: '0' }))
-      .toMatchObject({ effective: { enabled: false }, environmentOverrides: ['GRAPHQL_LAPTOP_EXECUTION_ENABLED'] })
-    expect(() => resolveRemoteExecutionSettings(saved, { GRAPHQL_LAPTOP_EXECUTION_ENABLED: 'true' })).toThrow()
+      .toMatchObject({ effective: { enabled: false }, environmentOverrides: ['FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED'] })
+    expect(() => resolveRemoteExecutionSettings(saved, { FOREMAN_CODE_LAPTOP_EXECUTION_ENABLED: 'true' })).toThrow()
   })
 
   it('requires a separate listener port and rejects unsafe URLs and paths', () => {

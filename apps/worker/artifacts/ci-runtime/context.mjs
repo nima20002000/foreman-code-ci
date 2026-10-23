@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile, open } from 'node:fs/promises';
@@ -137,7 +136,7 @@ export async function buildCiRuntimeContext({ repository, commit = 'HEAD', outpu
       releaseAge: { minimumMinutes: 2880, strict: true, rejectMissingTime: true, packages: seed.packages.length } };
   }
   if (unitCodex) receipt.unitCodex = { version: unitCodex.tool.version, binarySha256: unitCodex.tool.binarySha256,
-    executable: INSTALLATION_NAMES.paths.ciCodex, review: unitCodex.tool.review };
+    executable: '/opt/graphql-ci/tools/codex', review: unitCodex.tool.review };
   await writeFile(join(output, 'context-receipt.json'), `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
   return receipt;
 }

@@ -3,9 +3,9 @@ import { useState } from 'react'
 import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
-import { memoryBoardTools, newAgentForemanTools, type ForemanAgentTool } from '@foreman-code/contracts'
+import { memoryBoardTools, newAgentGraphqlTools, type GraphqlAgentTool } from '@foreman-code/contracts'
 import { WorkflowBoardProvider, type CollaborationFieldSlots } from '../board-core'
-import { ForemanToolsFields } from './ForemanToolsFields'
+import { GraphqlToolsFields } from './GraphqlToolsFields'
 import { NodeWorkflowFields } from './nextDraft/AuthoringFields'
 import { fixture } from './nextDraft/core.cases'
 import { CollaborationUIProvider } from '../../shared/ui/collaborationSlots'
@@ -14,7 +14,7 @@ afterEach(cleanup)
 function FieldsFixture() {
   const context = fixture(), [graph, setGraph] = useState(context.draft.graph)
   const node = graph.nodes[0]!
-  const [tools, setTools] = useState<ForemanAgentTool[]>(['context_get'])
+  const [tools, setTools] = useState<GraphqlAgentTool[]>(['context_get'])
   const fields: CollaborationFieldSlots = {
     memoryAccess: props => <section aria-label="Injected Memory access">
       <p>{props.role} · {props.executionReadOnly ? 'Effective read-only execution' : 'Writable execution'}</p>
@@ -28,7 +28,7 @@ function FieldsFixture() {
   return <WorkflowBoardProvider value={{ workspaceId: 'workspace', workflowId: 'workflow',
     inspection: {}, selectInspection: () => undefined, selectRun: () => undefined,
     openLocation: () => undefined, openRuns: () => undefined, activeRuns: 0, collaborationFields: fields }}>
-    <ForemanToolsFields role="coder" defaults={tools} override={undefined} executionReadOnly
+    <GraphqlToolsFields role="coder" defaults={tools} override={undefined} executionReadOnly
       onChange={value => setTools(value ?? [])} />
     <NodeWorkflowFields graph={graph} node={node} context={context} change={setGraph} />
     <output aria-label="Selected tools">{tools.join(', ')}</output>
@@ -50,7 +50,7 @@ it('mounts feature-owned controls on the ordinary tool and node draft values wit
 
 it('mounts the same injected Memory access field in standalone Agent settings outside a Board', () => {
   render(<CollaborationUIProvider value={{ memoryAccess: props => <p>Standalone {props.role} Memory access</p> }}>
-    <ForemanToolsFields role="orchestrator" defaults={undefined} override={undefined} onChange={() => undefined} />
+    <GraphqlToolsFields role="orchestrator" defaults={undefined} override={undefined} onChange={() => undefined} />
   </CollaborationUIProvider>)
   expect(screen.getByText('Standalone orchestrator Memory access')).toBeVisible()
 })
@@ -58,11 +58,11 @@ it('mounts the same injected Memory access field in standalone Agent settings ou
 it('keeps an explicit browser tool Off choice even when Agent defaults omit browser tools', async () => {
   const changed = vi.fn()
   render(<CollaborationUIProvider value={{ nodeBrowser: () => null }}>
-    <ForemanToolsFields role="coder" defaults={newAgentForemanTools('coder')}
+    <GraphqlToolsFields role="coder" defaults={newAgentGraphqlTools('coder')}
       override={{ add: ['browser_action'], remove: [] }} onChange={changed} />
   </CollaborationUIProvider>)
   const choice = within(screen.getByRole('group', { name: 'Act on page: this workflow' })).getByRole('radio', { name: 'Off' })
   expect(choice).toBeEnabled()
   await userEvent.click(choice)
-  expect(changed).toHaveBeenCalledWith(newAgentForemanTools('coder'), { add: [], remove: ['browser_action'] })
+  expect(changed).toHaveBeenCalledWith(newAgentGraphqlTools('coder'), { add: [], remove: ['browser_action'] })
 })

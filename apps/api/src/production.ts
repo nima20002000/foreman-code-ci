@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
 import { BROWSER_DEVICE_EXTENSION } from '@foreman-code/contracts'
 import { createProductionBrowser } from './modules/collaboration/browserComposition.js'
 import { createMainBrowserRemote } from './modules/collaboration/browserRemote.js'
@@ -194,7 +193,7 @@ import { MainCodexSelection } from './modules/computers/installedCodexSelection.
 import { workspaceStorageRoot } from './modules/workspaces/storage.js'
 import { HarnessDirectoryBrowser } from './modules/harnesses/directoryBrowser.js'
 import { CodexMcpConnections } from './modules/harnesses/codexMcpConnections.js'
-import type { CheckpointStore } from './infrastructure/checkpoints.js'
+import type { CheckpointStore } from './composition/checkpoints.js'
 import type { createDatabase } from './infrastructure/database.js'
 import { OperatorRuntimeOwner } from './infrastructure/operatorRuntimeOwner.js'
 import { RuntimeShutdown } from './infrastructure/runtimeShutdown.js'
@@ -1516,7 +1515,7 @@ function createAgentChat({ base, callbacks, transport, accountStage, repositoryS
       const manager = workerChats.create({ configuration, conversationId, workingDirectory, appMcpAccess, fileInputs: true,
         profileSelection: selector, sourceExecution: selected.sourceExecution,
         applicationAccess: start => {
-          const token = start.environment?.variables[INSTALLATION_NAMES.environment.MCP_TOKEN]
+          const token = start.environment?.variables.FOREMAN_CODE_MCP_TOKEN ?? start.environment?.variables.GRAPHQL_MCP_TOKEN
           return token ? { kind: 'agent-chat-mcp', token } : undefined
         } })
       if (featureContext) await conversationNativeAccess.bind(manager, featureContext)

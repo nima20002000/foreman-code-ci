@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from './installationNames.mjs'
 import { ChatDeliveryIntentSchema, ChatDeliveryReceiptSchema } from './chatDelivery.js';
 import { BoardDigestSchema } from './memoryBoards.js';
 import { AgentProductRoleSchema as WorkflowAgentProductRoleSchema, type WorkflowAgentProductRole } from './agentIdentity.js';
@@ -58,7 +57,7 @@ export type {
 import type { ApprovalHandler } from "./current/workflowShape.js";
 import type { RunLiveActivity } from "./runLiveActivity.js";
 import { RunStopCauseSchema } from "./runStopCause.js";
-import { ForemanToolDefaultsSchema, foremanToolsOutsideRole } from "./foremanMcpTools.js";
+import { GraphqlToolDefaultsSchema, graphqlToolsOutsideRole } from "./graphqlMcpTools.js";
 export * from "./runStopCause.js";
 export * from "./runState.js";
 export * from "./runLiveActivity.js";
@@ -67,7 +66,7 @@ export * from "./harnessEditing.js";
 export * from "./harnessCompatibility.js";
 export * from "./harnessQualification.js";
 export * from "./approvalTopology.js";
-export * from "./foremanMcpTools.js";
+export * from "./graphqlMcpTools.js";
 
 import { ExecutionLocationSchema } from "./executionLocation.js";
 export { ExecutionLocationSchema } from "./executionLocation.js";
@@ -233,7 +232,7 @@ const RetiredOpenCodePermissionRuleSchema = z.object({
 const RetiredOpenCodeAdvancedConfigurationSchema = z.object({
   apiVersion: z.literal("v1"),
   permissionRules: z.array(RetiredOpenCodePermissionRuleSchema),
-  permissionHandling: z.enum([INSTALLATION_NAMES.protocol.permissionHandling, "native_auto"]),
+  permissionHandling: z.enum(["graphql_routed", "native_auto"]),
   subagentDepth: z.number().int().nonnegative().optional(),
   plugins: z.object({ mode: z.enum(["inherit", "pure"]) }).strict(),
   compaction: z.object({
@@ -344,7 +343,7 @@ export function validateHarnessWorkflowCompatibility(
 
 const AgentTemplateSchema = z.object({
   nativeTools: NativeToolsSchema.optional(),
-  [INSTALLATION_NAMES.fields.agentTools]: ForemanToolDefaultsSchema.optional(),
+  graphqlTools: GraphqlToolDefaultsSchema.optional(),
   harnessProfileSelection: z.lazy(() => HarnessProfileSelectionSchema).optional(),
   role: ConfiguredAgentProductRoleSchema,
   boardAddable: z.boolean(),
@@ -353,8 +352,8 @@ const AgentTemplateSchema = z.object({
   if (value.role === "operator" && value.boardAddable) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["boardAddable"], message: "Operator is application-level and cannot be added to a workflow board" });
   }
-  if (value[INSTALLATION_NAMES.fields.agentTools] && (value.role === 'operator' || foremanToolsOutsideRole(value.role, value[INSTALLATION_NAMES.fields.agentTools]).length)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: [INSTALLATION_NAMES.fields.agentTools], message: 'Workflow tool defaults must be allowed for the selected Agent role.' });
+  if (value.graphqlTools && (value.role === 'operator' || graphqlToolsOutsideRole(value.role, value.graphqlTools).length)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['graphqlTools'], message: 'Workflow tool defaults must be allowed for the selected Agent role.' });
   }
 });
 
@@ -740,7 +739,7 @@ export const AgentSchema = z
     prompt: AgentPromptSchema.optional(),
     assignedSkills: z.array(AssignedSkillSchema).optional(),
     /** Default Foreman Code MCP tools; absence retains the pre-collaboration role tools. */
-    [INSTALLATION_NAMES.fields.agentTools]: ForemanToolDefaultsSchema.optional(),
+    graphqlTools: GraphqlToolDefaultsSchema.optional(),
     ...OptionalTimestampFields,
   })
   .strict();
@@ -762,7 +761,7 @@ export const AgentConfigurationVersionSchema = z
     prompt: AgentPromptSchema,
     assignedSkills: z.array(AssignedSkillSchema),
     resolvedSkills: z.array(ResolvedSkillSchema).max(100).optional(),
-    [INSTALLATION_NAMES.fields.agentTools]: ForemanToolDefaultsSchema.optional(),
+    graphqlTools: GraphqlToolDefaultsSchema.optional(),
     /** Present on configurations accepted after Skills v1: the persistent prompt and pinned
      * skills are delivered as native app instructions, separate from task text. Absent on
      * earlier accepted configurations, which keep their original in-task delivery. */
@@ -1237,7 +1236,7 @@ export type ApiErrorResponse = z.infer<typeof ApiErrorResponseSchema>;
 export const ServiceHealthSchema = z
   .object({
     status: z.enum(["ok", "unavailable"]),
-    service: z.literal(INSTALLATION_NAMES.protocol.apiService),
+    service: z.literal("graphql-api"),
     checks: z
       .object({
         database: z.enum(["ok", "unavailable"]).optional(),

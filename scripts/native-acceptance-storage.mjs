@@ -1,4 +1,3 @@
-import { INSTALLATION_NAMES } from '../packages/contracts/src/installationNames.mjs'
 import { chmod, cp, lstat, mkdir, mkdtemp, readlink, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
@@ -49,7 +48,7 @@ async function copyPluginCache(source, destination) {
 export async function withNativeAcceptanceStorage(source, execute) {
   const originalHome = source.HOME ?? homedir()
   const sourceMcpDirectory = readProductEnvironment(source, 'APP_MCP_DIRECTORY')
-    ?? join(originalHome, '.local', 'share', INSTALLATION_NAMES.mcp.server, 'mcp')
+    ?? join(originalHome, '.local', 'share', 'graphql', 'mcp')
   const root = await mkdtemp(join(source.TMPDIR ?? tmpdir(), 'foreman-code-native-'))
   const environment = {
     ...source,
@@ -61,9 +60,9 @@ export async function withNativeAcceptanceStorage(source, execute) {
     TMPDIR: join(root, 'tmp'),
     FOREMAN_CODE_NATIVE_TEST_ROOT: root,
     FOREMAN_CODE_NATIVE_SOURCE_APP_MCP_DIRECTORY: sourceMcpDirectory,
-    [INSTALLATION_NAMES.environment.APP_MCP_DIRECTORY]: join(root, 'app-mcp'),
+    FOREMAN_CODE_APP_MCP_DIRECTORY: join(root, 'app-mcp'),
   }
-  delete environment[INSTALLATION_NAMES.environment.APP_MCP_DIRECTORY]
+  delete environment.GRAPHQL_APP_MCP_DIRECTORY
   try {
     for (const name of ['CODEX_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_STATE_HOME', 'TMPDIR']) {
       await mkdir(environment[name], { recursive: true, mode: 0o700 })

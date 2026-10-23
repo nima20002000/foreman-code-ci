@@ -10,7 +10,7 @@ type LauncherOperation =
 
 const launcherModule = new URL('../../src/modules/harnesses/appMcpLauncher.ts', import.meta.url).href
 const upgradeModule = new URL('../../src/modules/harnesses/productionMcpUpgrade.ts', import.meta.url).href
-const source = new URL('../../../../scripts/foreman-mcp.mjs', import.meta.url).href
+const source = new URL('../../../../scripts/graphql-mcp.mjs', import.meta.url).href
 const program = `
   import { randomUUID } from 'node:crypto';
   import { realpathSync } from 'node:fs';
@@ -58,7 +58,7 @@ const program = `
     await upgradeProductionMcpLauncher(operation.home);
   } else if (operation.kind === 'recognize') {
     delete process.env.GRAPHQL_APP_MCP_DIRECTORY;
-    process.env.GRAPHQL_APP_MCP_DIRECTORY = dirname(operation.launcher);
+    process.env.FOREMAN_CODE_APP_MCP_DIRECTORY = dirname(operation.launcher);
     const recognized = Array.isArray(operation.entry)
       ? operation.entry.map(entry => isAppLauncher(entry)) : isAppLauncher(operation.entry);
     console.log(JSON.stringify(recognized));

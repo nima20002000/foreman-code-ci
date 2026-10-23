@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { WorkflowHierarchySchema, WorkflowHierarchyContextSchema, WorkflowDelegationContextSchema } from './workflowHierarchy.js';
-import { effectiveForemanTools, foremanRoleTools } from './foremanMcpTools.js';
+import { effectiveGraphqlTools, graphqlRoleTools } from './graphqlMcpTools.js';
 import { newAgentMemoryBoardAccess } from './collaborationTools.js';
 import { collaborationContractFixtures as fixture } from './collaborationFixtures.js';
 import { DEFAULT_AGENT_DEFAULTS, agentTemplateForRole } from './index.js';
@@ -62,12 +62,12 @@ it('preserves explicit Master identity through authoring, defaults and immutable
 it('keeps future tools dormant and preserves legacy absent defaults after handler cutover', () => {
   const implemented = ['memory_board_get', 'memory_card_create'];
   for (const role of ['master', 'orchestrator', 'coder'] as const) {
-    expect(foremanRoleTools(role)).not.toContain('memory_board_get');
-    expect(effectiveForemanTools(role, ['memory_board_get'])).not.toContain('memory_board_get');
-    expect(effectiveForemanTools(role, undefined, undefined, false, implemented)).not.toContain('memory_board_get');
-    expect(effectiveForemanTools(role, ['memory_board_get'], undefined, false, implemented)).toContain('memory_board_get');
+    expect(graphqlRoleTools(role)).not.toContain('memory_board_get');
+    expect(effectiveGraphqlTools(role, ['memory_board_get'])).not.toContain('memory_board_get');
+    expect(effectiveGraphqlTools(role, undefined, undefined, false, implemented)).not.toContain('memory_board_get');
+    expect(effectiveGraphqlTools(role, ['memory_board_get'], undefined, false, implemented)).toContain('memory_board_get');
   }
-  expect(effectiveForemanTools('master', ['interaction_respond'])).toEqual(['bug_report', 'interaction_respond']);
-  expect(effectiveForemanTools('coder', ['interaction_respond'])).toEqual(['bug_report']);
+  expect(effectiveGraphqlTools('master', ['interaction_respond'])).toEqual(['bug_report', 'interaction_respond']);
+  expect(effectiveGraphqlTools('coder', ['interaction_respond'])).toEqual(['bug_report']);
   expect(newAgentMemoryBoardAccess()).toBe('write');
 });

@@ -1,7 +1,6 @@
-import { INSTALLATION_NAMES } from '@foreman-code/contracts/installation-names'
-export const identityEpochKey = INSTALLATION_NAMES.browserStorage.identityEpoch
-export const identityChangedEvent = INSTALLATION_NAMES.browserStorage.identityChanged
-export const chatStoragePrefix = INSTALLATION_NAMES.browserStorage.chatPrefix
+export const identityEpochKey = 'graphql.identity-epoch'
+export const identityChangedEvent = 'graphql:identity-changed'
+export const chatStoragePrefix = 'graphql.chat:'
 let volatileEpoch: string | undefined
 
 function freshEpoch(): string {
@@ -38,7 +37,7 @@ export function parseChatPreferences(value: unknown): Partial<ChatPreferences> {
     ...(typeof data.selectedConversationId === 'string' ? { selectedConversationId: data.selectedConversationId } : {}) }
 }
 
-const instanceBindingKey = INSTALLATION_NAMES.browserStorage.chatBinding
+const instanceBindingKey = 'graphql.chat-instance-binding'
 let instanceReloadRequired = false
 /** Bind protected state before rendering it. True means the caller must reload
  * with children hidden: document-scoped stores still belong to the old epoch.

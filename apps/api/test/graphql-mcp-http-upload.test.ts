@@ -29,7 +29,7 @@ async function uploadBridge(format: 'json' | 'sse' = 'json') {
   const directory = await mkdtemp(join(cache, 'mcp-http-upload-'))
   cleanup.push(() => rm(directory, { recursive: true, force: true }))
   const launcher = join(directory, 'launcher.mjs')
-  await copyFile(new URL('../../../scripts/foreman-mcp.mjs', import.meta.url), launcher)
+  await copyFile(new URL('../../../scripts/graphql-mcp.mjs', import.meta.url), launcher)
   let begin!: () => void
   let progress!: (bytes: number) => void
   let uploaded!: () => void
@@ -108,7 +108,7 @@ async function uploadBridge(format: 'json' | 'sse' = 'json') {
     process.send('ready')
   `)
   const child = spawn(process.execPath, ['--import', clock, launcher], {
-    env: { ...process.env, GRAPHQL_MCP_TOKEN: token, },
+    env: { ...process.env, FOREMAN_CODE_MCP_TOKEN: token, GRAPHQL_MCP_TOKEN: token },
     stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
   })
   cleanup.push(async () => {
