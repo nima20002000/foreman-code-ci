@@ -1,3 +1,4 @@
+import { INSTALLATION_NAMES } from '../packages/contracts/src/installationNames.mjs'
 import { diagnosticWarning } from './diagnostic-warning.mjs'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
@@ -39,7 +40,7 @@ const child = spawn(process.execPath, args, {
     ...environment,
     HOST: '127.0.0.1',
     PORT: String(port),
-    FOREMAN_CODE_BROWSER_ORIGIN: origin,
+    [INSTALLATION_NAMES.environment.BROWSER_ORIGIN]: origin,
     DATABASE_URL: databaseUrl,
     DATABASE_CONNECTION_TIMEOUT_MS: '250',
     DATABASE_QUERY_TIMEOUT_MS: '1000',
@@ -48,7 +49,7 @@ const child = spawn(process.execPath, args, {
     HARNESS_WORKSPACE_ROOT: process.env.HARNESS_WORKSPACE_ROOT ?? join(state, 'runtime'),
     WORKSPACE_STORAGE_ROOT: process.env.WORKSPACE_STORAGE_ROOT ?? join(state, 'workspaces'),
     FILE_STORAGE_ROOT: process.env.FILE_STORAGE_ROOT ?? join(state, 'files'),
-    FOREMAN_CODE_APP_MCP_DIRECTORY: environment.FOREMAN_CODE_APP_MCP_DIRECTORY ?? join(state, 'mcp'),
+    [INSTALLATION_NAMES.environment.APP_MCP_DIRECTORY]: environment[INSTALLATION_NAMES.environment.APP_MCP_DIRECTORY] ?? join(state, 'mcp'),
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 })
@@ -90,7 +91,7 @@ let postgresStopped = false
 try {
   await waitForReady()
   assert.equal((await request('/health/live')).status, 200)
-  if (environment.FOREMAN_CODE_WEB_DIST) {
+  if (environment[INSTALLATION_NAMES.environment.WEB_DIST]) {
     const dashboard = await fetch(`http://127.0.0.1:${port}/workspaces`, {
       credentials: 'omit', signal: AbortSignal.timeout(2000),
     })

@@ -34,10 +34,10 @@ it.each(['GRAPHQL_', 'FOREMAN_CODE_'])('keeps local production restrictions with
 })
 
 it('accepts matching production aliases and rejects conflicting opt-ins', () => {
-  const local = { ...environment, FOREMAN_CODE_LOCAL_PRODUCTION: '1' }
+  const local = { ...environment, GRAPHQL_LOCAL_PRODUCTION: '1' }
   expect(loadConfig(local).host).toBe('127.0.0.1')
   expect(new NativeRollout(local).enabled('codex')).toBe(true)
-  const conflicting = { ...local, FOREMAN_CODE_LOCAL_PRODUCTION: '0' }
+  const conflicting = { ...local, GRAPHQL_LOCAL_PRODUCTION: '0' }
   expect(() => loadConfig(conflicting)).toThrow('conflicts')
   expect(() => new NativeRollout(conflicting).enabled('codex')).toThrow('conflicts')
 })
