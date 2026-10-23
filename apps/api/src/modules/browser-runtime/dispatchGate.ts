@@ -43,7 +43,7 @@ export class BrowserDispatchGate {
 
   async dispatch<T>(isAgent: boolean, assertCurrent: () => void, call: () => Promise<T>, tabId?: string): Promise<T> {
     if (this.closed || isAgent && !this.agentOpen) {
-      throw new DomainError('BROWSER_PAUSED', 'Browser actions are paused while control changes.', 409)
+      throw new DomainError('BROWSER_PAUSED', 'Browser actions are paused because a person took control or control is changing hands. Try again after control returns to you.', 409)
     }
     assertCurrent()
     // No await between the fence check and admission.

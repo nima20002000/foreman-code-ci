@@ -27,6 +27,9 @@ export interface BrowserBrokerOptions {
 }
 
 /** One instance is the authoritative browser owner for one computer. D composes the existing host lock. */
+/** Longest wait for a control handover (agent ↔ person) before an agent call is told to retry. */
+const AGENT_HANDOVER_WAIT_MS = 15_000
+
 export class BrowserBroker implements BrowserLifecyclePort {
   private readonly sessions = new Map<string, LiveSession>()
   private readonly pending = new Map<string, Promise<unknown>>()
@@ -391,6 +394,27 @@ export class BrowserBroker implements BrowserLifecyclePort {
     return lease
   }
 
+  /** An agent never waits out a person's control: it learns why at once and can tell the user or do other
+   * work. (A queued call could not run after the release anyway: releasing changes the control epoch.)
+   * Only a short handover between owners is waited for, with a bound well inside any tool-call timeout. */
+  private async agentTurn(live: LiveSession): Promise<void> {
+    const control = live.record.control
+    if (control.state === 'user' || control.state === 'quiescing' || control.state === 'paused' && control.controllingViewerId) {
+      throw new DomainError('BROWSER_USER_CONTROL', 'A person is controlling this browser right now. You cannot interrupt them: '
+        + 'your browser actions stay paused until they release control. Wait and try again later, or tell the user what you need.'
+        + (control.reason ? ` (${control.reason})` : ''), 409)
+    }
+    if (control.state === 'paused') {
+      throw new DomainError('BROWSER_PAUSED', `Browser actions are paused${control.reason ? `: ${control.reason}` : '.'}`, 409)
+    }
+    try {
+      await live.gate.waitForAgent(AbortSignal.timeout(AGENT_HANDOVER_WAIT_MS))
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'TimeoutError')) throw error
+      throw new DomainError('BROWSER_PAUSED', 'Browser control is still changing hands. Try again in a moment.', 409, undefined, { cause: error })
+    }
+  }
+
   private assertActor(live: LiveSession, actor: BrowserActor): void {
     const control = live.record.control
     if (live.record.closing || live.record.session.state === 'closed') throw new DomainError('BROWSER_CLOSED', 'The browser session is closing.', 409)
@@ -428,7 +452,7 @@ export class BrowserBroker implements BrowserLifecyclePort {
     if (live.record.readOnly && input.actor.kind === 'agent') throw new DomainError('READ_ONLY', 'This agent can observe the browser but cannot change it.', 403)
     await this.assertCurrent(live)
     return this.command(`${input.sessionId}:action:${input.commandId}`, input, async markEffect => {
-      if (input.actor.kind === 'agent') await live.gate.waitForAgent()
+      if (input.actor.kind === 'agent') await this.agentTurn(live)
       this.assertActor(live, input.actor); this.lease(live, input.tabId, input.actor.browserGeneration)
       const dispatch = this.checkedDispatch(input.sessionId, input.tabId, input.actor, markEffect)
       const result = await this.options.driver.action(input.action, dispatch)
@@ -611,7 +635,7 @@ export class BrowserBroker implements BrowserLifecyclePort {
 
   async screenshot(input: { sessionId: string; tabId: string; actor: BrowserActor }) {
     const live = this.requireSession(input.sessionId)
-    if (input.actor.kind === 'agent') await live.gate.waitForAgent()
+    if (input.actor.kind === 'agent') await this.agentTurn(live)
     const owned = this.lease(live, input.tabId, input.actor.browserGeneration)
     const result = input.actor.kind === 'agent'
       ? await this.checkedDispatch(input.sessionId, input.tabId, input.actor)('Page.captureScreenshot', { format: 'png' })
@@ -642,7 +666,7 @@ export class BrowserBroker implements BrowserLifecyclePort {
     if (live.record.readOnly && input.actor.kind === 'agent') throw new DomainError('READ_ONLY', 'This agent cannot attach files.', 403)
     await this.assertCurrent(live)
     return this.command(`${input.sessionId}:file-attach:${input.commandId}`, input, async markEffect => {
-      if (input.actor.kind === 'agent') await live.gate.waitForAgent()
+      if (input.actor.kind === 'agent') await this.agentTurn(live)
       this.assertActor(live, input.actor); this.lease(live, input.tabId, input.actor.browserGeneration)
       const dispatch = this.checkedDispatch(input.sessionId, input.tabId, input.actor, markEffect)
       return attach(async privatePath => {
@@ -655,7 +679,7 @@ export class BrowserBroker implements BrowserLifecyclePort {
   async observe(input: { sessionId: string; tabId: string; actor: BrowserActor }) {
     const live = this.requireSession(input.sessionId)
     if (input.actor.kind === 'agent') {
-      await live.gate.waitForAgent()
+      await this.agentTurn(live)
       return this.options.driver.observe(this.checkedDispatch(input.sessionId, input.tabId, input.actor))
     }
     const owned = this.lease(live, input.tabId, input.actor.browserGeneration)
