@@ -58,4 +58,19 @@ describe.skipIf(!connectionString)('activity source records in PostgreSQL', () =
     expect((await pool.query('select activity_record_revision::text from runs')).rows[0].activity_record_revision).toBe('1')
     expect((await pool.query('select activity_record_revision::text from harness_executions')).rows[0].activity_record_revision).toBe('1')
   })
+  it('keeps streaming a Claude reply past its first words after the stored receipt comes back from jsonb', async () => {
+    const receipt = { kind: 'message' as const, nativeSessionId: 'session', nativeMessageId: 'native-message', clientCorrelationId: 'correlation' }
+    await pool.query(`create table operator_conversation_turns (conversation_id text,request_id text,payload jsonb);
+      update operator_conversations set harness='claude',active_native_turn_id=null`)
+    await pool.query('insert into operator_conversation_turns values ($1,$2,$3::jsonb)', ['conversation', 'A', JSON.stringify({ nativeSubmission: receipt })])
+    const claude = (sequence: number, text: string, final = false): ActivityTextOperation => {
+      const value = operation(sequence, text, final); delete value.identity.turnId; return value
+    }
+    const fence = { nativeSubmission: receipt }
+    expect((await appendConversationTextOperation(pool, 'conversation', 'A', claude(1, 'Got'), fence))?.status).toBe('committed')
+    expect((await appendConversationTextOperation(pool, 'conversation', 'A', claude(2, ' it! Creating a tab.'), fence))?.status).toBe('committed')
+    expect((await pool.query('select content from operator_conversation_messages')).rows[0].content).toBe('Got it! Creating a tab.')
+    expect((await appendConversationTextOperation(pool, 'conversation', 'A', claude(3, 'Got it! Creating a new tab.', true), fence))?.status).toBe('committed')
+    expect((await pool.query('select content from operator_conversation_messages')).rows[0].content).toBe('Got it! Creating a new tab.')
+  })
 })
