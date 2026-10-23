@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { afterAll, beforeAll } from 'vitest'
 import { stringify } from 'yaml'
-import { pnpmInstall, shellQuote } from '@foreman-code/ci/warmSetup'
+import { pnpmInstall, shellQuote } from '../../src/modules/ci-host/warmSetup.js'
 
 const execute = promisify(execFile)
 const scripts = fileURLToPath(new URL('../../../../scripts/', import.meta.url))

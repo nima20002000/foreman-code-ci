@@ -4,9 +4,9 @@ import { CiRunRecordSchema, type CiRunRecord } from '@foreman-code/contracts'
 import { ciIntegrationSelectionMigration } from '../src/infrastructure/ciIntegrationSelectionMigration.js'
 import { applyApplicationMigrations } from '../src/infrastructure/migrations.js'
 import { withTransaction } from '../src/infrastructure/transaction.js'
-import { readQueuedCiRuns } from '@foreman-code/ci/queuedRuns'
+import { readQueuedCiRuns } from '../src/modules/ci-host/queuedRuns.js'
 import { ciGroupSharing, joinCiRequest, registerCiRequest, releaseCiRequester }
-  from '@foreman-code/ci/requestSharing'
+  from '../src/modules/ci-host/requestSharing.js'
 import { currentDatabase } from './helpers/eng04CurrentDatabase.js'
 
 it.each(['running', 'passed'].flatMap(state => [false, true].map(initiatorLeft => ({ state, initiatorLeft }))))(

@@ -82,3 +82,33 @@ it.each([
   expect(flight()).not.toHaveAttribute('data-reversed')
   await waitFor(() => expect(container.querySelector('[data-testid="rf__node-node-y"]')).toHaveTextContent('Running'), { timeout: 3000 })
 })
+
+it('keeps the Orchestrator on its finished turn while the Worker result travels back to it', async () => {
+  const worked = (node: string, executionId: string, activationId: string, state: 'completed' | 'running' | 'queued') => ({
+    identity: { ...identity(node), executionId }, inputDigest: digest, previousExecutionId: null, workActivationId: activationId,
+    state, resultOutcome: state === 'completed' ? 'succeeded' : null })
+  const send = { transferId: 'request-1', kind: 'request', relationshipId: 'edge-xy', fromNodeId: 'node-x',
+    fromExecutionId: 'exec-x-1', toNodeId: 'node-y', toActivationId: 'activation-y' }
+  const back = { transferId: 'request-2', kind: 'request', relationshipId: 'edge-xy', fromNodeId: 'node-y',
+    fromExecutionId: 'exec-y-1', toNodeId: 'node-x', toActivationId: 'activation-x-2' }
+  let back_sent = false
+  // The server commits each hand-off with the work it starts, so both reads always agree.
+  server.use(
+    http.get('*/api/workspaces/:workspaceId/workflows/:workflowId/runs/:runId/graph/v1/current', () => HttpResponse.json({ ...current,
+      asOfSequence: back_sent ? '3' : '2', state: { ...current.state, bindings: [], results: [], executions: back_sent
+        ? [worked('node-x', 'exec-x-1', 'activation-x-1', 'completed'), worked('node-y', 'exec-y-1', 'activation-y', 'completed'),
+          worked('node-x', 'exec-x-2', 'activation-x-2', 'queued')]
+        : [worked('node-x', 'exec-x-1', 'activation-x-1', 'completed'), worked('node-y', 'exec-y-1', 'activation-y', 'running')] } })),
+    http.get('*/api/management/workspaces/:workspaceId/runs/:runId/handoffs', () => HttpResponse.json({ scope, policy: 'work',
+      runState: 'running', connections: [], routes: [], notices: [], unresolved: [], directionWait: false,
+      transfers: back_sent ? [send, back] : [send] })))
+  const container = await mount()
+  const node = (id: string) => container.querySelector(`[data-testid="rf__node-${id}"]`)
+  await waitFor(() => expect(node('node-y')).toHaveTextContent('Running'), { timeout: 3000 })
+  expect(node('node-x')).toHaveTextContent('Completed')
+  back_sent = true
+  const returning = () => container.querySelector('[data-testid="rf__edge-edge-xy"] .n-signal-edge-flight[data-reversed]')
+  await waitFor(() => expect(returning()).toBeTruthy(), { timeout: 5000 })
+  expect(node('node-x')).toHaveTextContent('Completed')
+  expect(node('node-x')).not.toHaveTextContent('Not started')
+}, 15_000)

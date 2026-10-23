@@ -3,7 +3,7 @@ import { BuildComputerAllowanceSchema } from './buildComputers.js'
 import { circleCreditsShape, circleSchedulingShape } from './circleCredits.js'
 import { CI_LOG_MAX_BYTES, CI_MAX_RUN_TICKETS, CiCachedFileSchema, CiCollectionSchema, CiComputerRefSchema, CiActivitySchema, CiRunRecordSchema, CiSuiteSchema, CiScopeSchema, CiSelectedFilesSchema,
   CiTestResultsSchema, CiPrioritySchema, CiPriorityReasonSchema,
-  CiTestStatusSchema, CiTestSummarySchema, CiUserSystemdSchema, validCiSelection, type CiActivity } from './ciHost.js'
+  CiTestStatusSchema, CiTestSummarySchema, CiUserSystemdSchema, validCiSelection } from './ciHost.js'
 import { CiSelectionSchema } from './ciHost.js'
 import { IdSchema } from './schemaPrimitives.js'
 import { JobResourceRequestSchema } from './jobVerificationPolicy.js'
@@ -281,13 +281,3 @@ export type CiRuntimeRequest = z.infer<typeof CiRuntimeRequestSchema>
 export type CiRuntimeWorkerState = z.infer<typeof CiRuntimeWorkerStateSchema>
 export type BuildComputerPrepareInput = z.infer<typeof BuildComputerPrepareInputSchema>
 export type BuildComputerPrepareStatus = z.infer<typeof BuildComputerPrepareStatusSchema>
-
-export function ciActivityFromRecord(record: unknown): CiActivity {
-  const run = CiRunRecordSchema.parse(record)
-  return CiActivitySchema.parse({
-    id: run.id, groupId: run.groupId, suite: run.suite, part: run.part, partition: run.partition,
-    state: run.state, queuedAt: run.queuedAt, startedAt: run.startedAt, finishedAt: run.finishedAt,
-    computer: run.computer ? { ...run.computer, label: run.computer.label.slice(0, 100) } : null,
-    step: run.step?.slice(0, 80) ?? null, exitCode: run.exitCode,
-  })
-}

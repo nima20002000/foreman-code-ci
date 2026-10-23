@@ -1,4 +1,4 @@
-import { errorMessage } from '@foreman-code/contracts/server-kit'
+import { errorMessage } from '../../shared/errorMessage.js'
 import { captureVerificationInventory } from '../../../../../scripts/verification-runner.mjs'
 import { constants } from 'node:fs'
 import { mkdir, open, readFile, readlink, rm, statfs, writeFile } from 'node:fs/promises'

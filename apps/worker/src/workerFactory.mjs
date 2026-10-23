@@ -28,7 +28,7 @@ import { registerWorkerMcpInstallation } from '../../../apps/api/src/modules/har
 import { readUpdateRecord } from './updateSupervisor.mjs';
 import { WORKER_UPDATE_NAMESPACE } from '../../../packages/contracts/src/workerUpdate.ts';
 import { runWorkerStartupSmoke, workerCiStartupStatus, runCiInstallSmoke } from './ciInstallSmoke.mjs';
-import { HostCiRunner } from '../../../apps/api/src/modules/ci/runner.ts';
+import { HostCiRunner } from '../../../apps/api/src/modules/ci-host/runner.ts';
 import { isDeepStrictEqual } from 'node:util';
 import { WorkerArtifactReplySchema, WorkerArtifactManifestSchema } from '../../../packages/contracts/src/workerUpdate.ts';
 import { workerArtifactContentSha256 } from '../../../packages/contracts/src/workerArtifactContentNode.mjs';

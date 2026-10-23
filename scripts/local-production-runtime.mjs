@@ -47,8 +47,7 @@ export async function recordStartupConfiguration(stateFile) {
 }
 
 // Compiled output whose source file no longer exists; tsc --incremental never removes it.
-const typeScriptOutputs = [['apps/api/dist', 'apps/api/src'], ['packages/contracts/dist', 'packages/contracts/src'],
-  ['apps/ci/dist', 'apps/ci/src']]
+const typeScriptOutputs = [['apps/api/dist', 'apps/api/src'], ['packages/contracts/dist', 'packages/contracts/src']]
 const outputSuffix = /(\.d)?\.(?:m?js|ts|mts)(\.map)?$/
 
 async function pruneStaleTypeScriptOutput(source, trackedSources) {
@@ -125,8 +124,6 @@ export async function measureProductionStep(step, action, log = console.log) {
 // The full API check overlaps emission, browser bundling and staging, and gates activation.
 export async function buildProductionSource(run, { stage = async () => undefined } = {}) {
   await run('corepack', ['pnpm', '--filter', '@foreman-code/contracts', 'build'])
-  // The CI package compiles against the contracts output; the API check and emit read its declarations.
-  await run('corepack', ['pnpm', '--filter', '@foreman-code/ci', 'build'])
   const results = await Promise.allSettled([
     measureProductionStep('API full check', () => run('corepack', ['pnpm', '--filter', '@foreman-code/api',
       'exec', 'tsc', '-p', 'tsconfig.build.json', '--noEmit', '--isolatedModules',
@@ -441,11 +438,11 @@ export function localProductionEnvironment(desktopHome, password) {
   }
 }
 
-// Installed dependencies are immutable; contracts and CI package build output belongs to each release.
+// Installed dependencies are immutable; contracts build output belongs to each release.
 async function apiDependencyKey(source) {
   const hash = createHash('sha256')
   hash.update(`${process.platform}\0${process.arch}\0${process.versions.modules}\0`)
-  const inputs = ['pnpm-lock.yaml', 'apps/api/package.json', 'packages/contracts/package.json', 'apps/ci/package.json',
+  const inputs = ['pnpm-lock.yaml', 'apps/api/package.json', 'packages/contracts/package.json',
     'pnpm-workspace.yaml', '.npmrc']
   for (const path of inputs) {
     hash.update(`${path}\0`)
@@ -453,7 +450,7 @@ async function apiDependencyKey(source) {
       const bytes = await readFile(join(source, path))
       hash.update(`${bytes.length}\0`).update(bytes)
     } catch (error) {
-      if (error.code !== 'ENOENT' || inputs.indexOf(path) < 4) throw error
+      if (error.code !== 'ENOENT' || inputs.indexOf(path) < 3) throw error
       hash.update('absent\0')
     }
   }
@@ -469,7 +466,7 @@ async function linkReleaseDependencies(shared, destination, source) {
     await symlink(join(installed, name), join(modules, name))
   }
   for (const name of await readdir(join(installed, '@foreman-code'))) {
-    if (name === 'contracts' || name === 'ci') continue
+    if (name === 'contracts') continue
     await symlink(join(installed, '@foreman-code', name), join(modules, '@foreman-code', name))
   }
   const contracts = await realpath(join(installed, '@foreman-code/contracts'))
@@ -482,12 +479,6 @@ async function linkReleaseDependencies(shared, destination, source) {
   const nested = join(contracts, 'node_modules')
   const dependencies = existsSync(nested) ? nested : dirname(dirname(contracts))
   await symlink(dependencies, join(releaseContracts, 'node_modules'))
-  // The CI package is a real directory without node_modules: its contracts, yaml and zod imports resolve through the
-  // API's node_modules, so it loads this release's contracts copy and shares one DomainError with the API.
-  const releaseCi = join(modules, '@foreman-code/ci')
-  await mkdir(releaseCi)
-  await copyFile(join(source, 'apps/ci/package.json'), join(releaseCi, 'package.json'))
-  await cp(join(source, 'apps/ci/dist'), join(releaseCi, 'dist'), { recursive: true })
   await symlink(installed, join(modules, '.production-dependencies'))
 }
 

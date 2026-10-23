@@ -4,7 +4,7 @@ import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/pr
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { pnpmInstall } from '@foreman-code/ci/warmSetup'
+import { pnpmInstall } from '../src/modules/ci-host/warmSetup.js'
 
 it('keeps real pnpm store and another checkout intact after a suite overwrites its dependency', async () => {
   const base = join(homedir(), '.cache', 'foreman-tmp')

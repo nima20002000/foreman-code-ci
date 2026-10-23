@@ -216,7 +216,7 @@ it.each([
   try {
     const started = CiRunOutputSchema.parse(await f.value(f.agent!, 'ci_run', {
       suite: 'lint', commandId: 'commit-priority', commit: 'b'.repeat(40), scope: 'affected',
-      files: ['apps/ci/src/service.ts', 'packages/contracts/src/ciHost.ts'],
+      files: ['apps/api/src/modules/ci-host/service.ts', 'packages/contracts/src/ciHost.ts'],
     }))
     const read = CiGetOutputSchema.parse(await f.value(f.agent!, 'ci_get', { ticketId: started.ticketId }))
     expect(read.run).toMatchObject({ priority: expected.priority, priorityReason: expected.priorityReason })

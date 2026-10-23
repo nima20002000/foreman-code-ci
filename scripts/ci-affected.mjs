@@ -2,13 +2,13 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ciCodeFile as codeFile, ciInfrastructureFile, importSpecifiers as imports, resolveImport, runtimeDependencies,
-  workspacePackageExports } from '../packages/contracts/src/ciImportGraph.mjs'
+import { ciCodeFile as codeFile, ciInfrastructureFile, importSpecifiers as imports, resolveImport, runtimeDependencies }
+  from '../packages/contracts/src/ciImportGraph.mjs'
 import { usableIntegrationCoverage } from '../packages/contracts/src/ciCoverage.mjs'
 import { workerEntryPoints, rsyncWriterEntrypoint, schemaWorkerEntrypoint, verificationScripts, workerSnapshotFiles }
   from './worker-snapshot-policy.mjs'
 
-const projects = ['apps/api', 'apps/ci', 'apps/web', 'apps/worker', 'packages/contracts']
+const projects = ['apps/api', 'apps/web', 'apps/worker', 'packages/contracts']
 const testFile = /\.(?:test|spec)\.(?:[cm]?[jt]sx?)$/
 const integrationFile = /^apps\/api\/test\/[^/]+\.integration\.test\.ts$/
 
@@ -132,7 +132,8 @@ export function affectedSnapshot(commit, suite, cwd = process.cwd(), defaultRef 
     git(['checkout-index', '--all', `--prefix=${tree}/`], env)
     const paths = git(['ls-tree', '-r', '--name-only', '-z', commit]).split('\0').filter(Boolean)
     const sources = new Map(paths.map(file => [file, codeFile.test(file) ? readFileSync(join(tree, file), 'utf8') : '']))
-    const exports = workspacePackageExports(path => sources.get(path))
+    const manifest = sources.get('packages/contracts/package.json')
+    const exports = manifest ? JSON.parse(manifest).exports : {}
     const coverage = suite === 'integration' ? preparedCoverage ?? ancestorCoverage(git, commit, coverageMaps) : {}
     const { changedFiles: coverageChanges = [], coverageMap, coverageReason } = coverage
     return selectAffectedFiles({ suite, changedFiles: [...new Set([...changedFiles, ...coverageChanges])],

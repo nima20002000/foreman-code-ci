@@ -9,8 +9,8 @@ import { createInstalledWorkerDomains } from './installedWorkerDomains.js'
 import { deviceApplicationFailure } from './deviceApplicationError.js'
 
 const preparation = vi.hoisted(() => ({ root: '', pause: async () => {}, launches: 0, failSource: false }))
-vi.mock('../ci/runner.js', async original => {
-  const actual = await original<typeof import('../ci/runner.js')>()
+vi.mock('../ci-host/runner.js', async original => {
+  const actual = await original<typeof import('../ci-host/runner.js')>()
   return { ...actual, HostCiRunner: class extends actual.HostCiRunner {
     constructor() {
       super(join(preparation.root, 'host-ci'), { cpus: 8, memoryBytes: 16 * 2 ** 30, now: () => new Date(),

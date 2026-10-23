@@ -106,7 +106,6 @@ async function main() {
   const database = new URL(process.env.DATABASE_URL)
   const apiUrl = `http://127.0.0.1:${port}`
   await run('Contracts build', ['--filter', '@foreman-code/contracts', 'build'])
-  await run('CI build', ['--filter', '@foreman-code/ci', 'build'])
   const { resolveLocalBrowserOrigin } = await import('../packages/contracts/dist/browserOrigin.js')
   const { createRuntimeIdentity } = await import('../packages/contracts/dist/runtimeIdentityNode.js')
   const browser = resolveLocalBrowserOrigin(process.env)
@@ -175,9 +174,8 @@ async function main() {
     console.log('Foreman Code is already running.')
     return
   }
-  // dev:api and dev:web already own a contracts watcher when one is reused; dev:api also owns the CI watcher.
+  // dev:api and dev:web already own a contracts watcher when one is reused.
   if (api && web) start('Contracts watcher', ['--filter', '@foreman-code/contracts', 'dev'])
-  if (api && web) start('CI watcher', ['--filter', '@foreman-code/ci', 'dev'])
   console.log(`Foreman Code ready: ${webUrl} (API ${apiUrl}).`)
   console.log('Server ready for browsing. Harness execution eligibility is separate; check Operator chat for rollout and saved-default qualification status.')
   console.log('Local development browser access is active; open the app without signing in.')
