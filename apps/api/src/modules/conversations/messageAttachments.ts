@@ -1,4 +1,4 @@
-import type { FileQuery } from '../files/repository.js'
+import type { FileQuery } from '../files/index.js'
 import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { MessageSchema, type ActivitySourceRevision, type Message } from '@foreman-code/contracts'
 import { readClaudeMessagePublications } from '../harnesses/claudeSdk/publications.js'

@@ -7,9 +7,9 @@ import {
   WorkerConversationFileResultSchema, WorkerConversationFilePublicationsSchema,
   type WorkerConversationRpcRequest,
 } from '@foreman-code/contracts/remote-execution-rpc'
-import type { CodexChatFiles } from '../harnesses/codexFiles/runtime.js'
+import type { CodexChatFiles } from '../harnesses/index.js'
 import type { NativeSessionReference } from '@foreman-code/contracts'
-import type { CodexFileHostLease, RegisteredCodexCopy } from '../harnesses/codexFiles/port.js'
+import type { CodexFileHostLease, RegisteredCodexCopy } from '../harnesses/index.js'
 import { DomainError } from '../errors.js'
 import type { workerConversationCallbacks } from './workerCallbacks.js'
 

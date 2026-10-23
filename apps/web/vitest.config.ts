@@ -1,6 +1,5 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
-import tailwindcss from '@tailwindcss/vite'
 import { readFileSync } from 'node:fs'
 
 const configuredWorkers = process.env.FOREMAN_CODE_VERIFICATION_UNIT_WORKERS
@@ -17,7 +16,7 @@ if (phase !== undefined && phase !== 'fast' && phase !== 'heavy') throw new Erro
 
 export default defineConfig({
   define: { __RUNTIME_BUILD_IDENTITY__: JSON.stringify({ version: 1, buildId: 'a'.repeat(64), contractsId: 'b'.repeat(64) }) },
-  plugins: [react(), tailwindcss()],
+  plugins: [react()],
   test: {
     ...(process.env.CI_PROGRESS_FILE ? { runner: '../../packages/contracts/ci-test-runner.mjs', reporters: ['default', '../../scripts/ci-progress-reporter.mjs'] } : {}),
     globalSetup: ['../../scripts/vitest-heavy-setup.mjs'],

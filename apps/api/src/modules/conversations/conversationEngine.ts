@@ -3,7 +3,7 @@ import { errorMessage } from '@foreman-code/contracts/server-kit'
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import { DomainError } from '../errors.js'
 import { NativeDeliveryError } from '../harnesses/errors.js'
-import type { DeliveryQualification } from '../workflow-chat/model.js'
+import type { DeliveryQualification } from '../workflow-chat/index.js'
 import type { ConversationDeliveryOwner } from './conversationDeliveryOwner.js'
 
 /*

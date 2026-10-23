@@ -1,6 +1,7 @@
 import type { HarnessNativeEvent } from '@foreman-code/contracts'
 import { describe, expect, it } from 'vitest'
-import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
+import { withTransaction } from '../src/infrastructure/transaction.js'
+import { deferred } from './helpers/deferred.js'
 import { appendNativeEvent } from '../src/modules/runs/nativeEvents.js'
 import { counts, event, forcedRace, nextSequence, withSharedAllocationDatabase } from './native-event-allocation.test-support.js'
 
@@ -42,7 +43,12 @@ describe('PostgreSQL native event allocation races', () => {
       const b = await pool.connect()
       const gateA = await pool.connect()
       const gateB = await pool.connect()
-      const pending: Promise<unknown>[] = []
+      const gateReadyA = deferred<number>(), gateReadyB = deferred<number>()
+      const releaseGateA = deferred(), releaseGateB = deferred()
+      const eventReadyA = deferred(), eventReadyB = deferred()
+      const publishA = deferred(), publishB = deferred()
+      let gateTransactionA: Promise<void> | undefined, gateTransactionB: Promise<void> | undefined
+      let eventTransactionA: Promise<void> | undefined, eventTransactionB: Promise<void> | undefined
       let gateInstalled = false
       const readActivity = (cursor = '0') => pool.query<{ sequence: string; harness_execution_id: string }>(`
         select a.sequence::text,a.harness_execution_id from run_activity a
@@ -62,31 +68,45 @@ describe('PostgreSQL native event allocation races', () => {
             deferrable initially deferred for each row when (NEW.kind='harness_output')
             execute function pause_fixture_activity_commit()`)
         gateInstalled = true
-        await beginTransaction(gateA)
-        await beginTransaction(gateB)
-        for (const [gate, executionId] of [[gateA, 'execution'], [gateB, 'other-execution']] as const) {
-          await gate.query(`select pg_advisory_xact_lock(hashtextextended(
-            current_schema() || ':fixture_activity_commit:' || $1::text,0))`, [executionId])
-        }
-        const pidA = (await a.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
-        const pidB = (await b.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
-        const gatePidA = (await gateA.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
-        const gatePidB = (await gateB.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
-        await beginTransaction(a)
-        await beginTransaction(b)
-        await appendNativeEvent(a, event())
-        await appendNativeEvent(b, event(0, { executionId: 'other-execution' }))
+        gateTransactionA = withTransaction({ client: gateA }, async transaction => {
+          await transaction.query(`select pg_advisory_xact_lock(hashtextextended(
+            current_schema() || ':fixture_activity_commit:' || $1::text,0))`, ['execution'])
+          gateReadyA.resolve((await transaction.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid)
+          await releaseGateA.promise
+        })
+        gateTransactionB = withTransaction({ client: gateB }, async transaction => {
+          await transaction.query(`select pg_advisory_xact_lock(hashtextextended(
+            current_schema() || ':fixture_activity_commit:' || $1::text,0))`, ['other-execution'])
+          gateReadyB.resolve((await transaction.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid)
+          await releaseGateB.promise
+        })
+        const [gatePidA, gatePidB] = await Promise.all([gateReadyA.promise, gateReadyB.promise])
+        let pidA = 0, pidB = 0
+        eventTransactionA = withTransaction({ client: a }, async transaction => {
+          pidA = (await transaction.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
+          await appendNativeEvent(transaction, event())
+          eventReadyA.resolve()
+          await publishA.promise
+        })
+        eventTransactionB = withTransaction({ client: b }, async transaction => {
+          pidB = (await transaction.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
+          await appendNativeEvent(transaction, event(0, { executionId: 'other-execution' }))
+          eventReadyB.resolve()
+          await publishB.promise
+        })
+        await Promise.all([eventReadyA.promise, eventReadyB.promise])
         expect(await counts(pool)).toEqual({ events: 0, activity: 0 })
-        const firstCommit = commitTransaction(a)
-        pending.push(Promise.allSettled([firstCommit]))
+        publishA.resolve()
+        const firstCommit = eventTransactionA!
         await expect.poll(() => blockedBy(pidA, gatePidA)).toBe(true)
-        const secondCommit = commitTransaction(b)
-        pending.push(Promise.allSettled([secondCommit]))
+        publishB.resolve()
+        const secondCommit = eventTransactionB!
         await expect.poll(() => blockedBy(pidB, pidA)).toBe(true)
         expect((await readActivity()).rows).toEqual([])
         expect(await counts(pool)).toEqual({ events: 0, activity: 0 })
 
-        await commitTransaction(gateA)
+        releaseGateA.resolve()
+        await gateTransactionA
         await firstCommit
         await expect.poll(() => blockedBy(pidB, gatePidB)).toBe(true)
         expect(await counts(pool)).toEqual({ events: 1, activity: 1 })
@@ -95,7 +115,7 @@ describe('PostgreSQL native event allocation races', () => {
         const cursor = firstPage[0]!.sequence
         expect((await readActivity(cursor)).rows).toEqual([])
 
-        await commitTransaction(gateB)
+        releaseGateB.resolve()
         await secondCommit
         const secondPage = (await readActivity(cursor)).rows
         expect(secondPage).toMatchObject([{ harness_execution_id: 'other-execution' }])
@@ -103,11 +123,9 @@ describe('PostgreSQL native event allocation races', () => {
         expect((await readActivity(secondPage[0]!.sequence)).rows).toEqual([])
         expect(await counts(pool)).toEqual({ events: 2, activity: 2 })
       } finally {
-        await rollbackTransaction(gateA)
-        await rollbackTransaction(gateB)
-        await Promise.all(pending)
-        await rollbackTransaction(a)
-        await rollbackTransaction(b)
+        releaseGateA.resolve(); releaseGateB.resolve(); publishA.resolve(); publishB.resolve()
+        await Promise.allSettled([gateTransactionA, gateTransactionB, eventTransactionA, eventTransactionB]
+          .filter((value): value is Promise<void> => Boolean(value)))
         a.release()
         b.release()
         gateA.release()
@@ -144,30 +162,43 @@ describe('PostgreSQL native event allocation races', () => {
         const b = await pool.connect()
         const firstEvent = event()
         const secondEvent = event(0, { executionId: 'other-execution' })
+        const readyA = deferred(), readyB = deferred(), releaseA = deferred(), releaseB = deferred()
+        let transactionA: Promise<void> | undefined, transactionB: Promise<void> | undefined
         const readActivity = (cursor = '0') => pool.query<{ sequence: string; harness_execution_id: string }>(`
           select a.sequence::text,a.harness_execution_id from run_activity a
           where a.run_id='run' and a.kind='harness_output' and a.sequence>$1::bigint
           order by a.sequence limit 1`, [cursor])
         try {
-          await beginTransaction(a, { isolation: 'read committed' })
-          await beginTransaction(b, { isolation: 'read committed' })
-          await appendNativeEvent(a, firstEvent)
-          await b.query("select set_config('statement_timeout','500ms',true)")
-          await appendNativeEvent(b, secondEvent)
+          transactionA = withTransaction({ client: a }, async transaction => {
+            await appendNativeEvent(transaction, firstEvent)
+            readyA.resolve()
+            await releaseA.promise
+          }, { isolation: 'read committed' })
+          transactionB = withTransaction({ client: b }, async transaction => {
+            await transaction.query("select set_config('statement_timeout','500ms',true)")
+            await appendNativeEvent(transaction, secondEvent)
+            readyB.resolve()
+            await releaseB.promise
+          }, { isolation: 'read committed' })
+          await Promise.all([readyA.promise, readyB.promise])
           expect(await counts(pool)).toEqual({ events: 0, activity: 0 })
           expect((await readActivity()).rows).toEqual([])
 
-          const firstCommit = firstExecutionId === 'execution' ? a : b
-          const secondCommit = firstExecutionId === 'execution' ? b : a
+          const firstCommit = firstExecutionId === 'execution' ? transactionA : transactionB
+          const secondCommit = firstExecutionId === 'execution' ? transactionB : transactionA
           const secondExecutionId = firstExecutionId === 'execution' ? 'other-execution' : 'execution'
-          await commitTransaction(firstCommit)
+          if (firstExecutionId === 'execution') releaseA.resolve()
+          else releaseB.resolve()
+          await firstCommit
           expect(await counts(pool)).toEqual({ events: 1, activity: 1 })
           const firstPage = (await readActivity()).rows
           expect(firstPage).toMatchObject([{ harness_execution_id: firstExecutionId }])
           const cursor = firstPage[0]!.sequence
           expect((await readActivity(cursor)).rows).toEqual([])
 
-          await commitTransaction(secondCommit)
+          if (firstExecutionId === 'execution') releaseB.resolve()
+          else releaseA.resolve()
+          await secondCommit
           const secondPage = (await readActivity(cursor)).rows
           expect(secondPage).toMatchObject([{ harness_execution_id: secondExecutionId }])
           expect(BigInt(secondPage[0]!.sequence)).toBeGreaterThan(BigInt(cursor))
@@ -184,8 +215,8 @@ describe('PostgreSQL native event allocation races', () => {
           expect(await counts(pool)).toEqual({ events: 2, activity: 2 })
           expect((await readActivity(secondPage[0]!.sequence)).rows).toEqual([])
         } finally {
-          await rollbackTransaction(a)
-          await rollbackTransaction(b)
+          releaseA.resolve(); releaseB.resolve()
+          await Promise.allSettled([transactionA, transactionB].filter((value): value is Promise<void> => Boolean(value)))
           a.release()
           b.release()
         }
@@ -197,19 +228,30 @@ describe('PostgreSQL native event allocation races', () => {
       const a = await pool.connect()
       const b = await pool.connect()
       const payload = { nativeMethod: 'item/agentMessage/delta', text: 'stream chunk' }
+      const firstEntered = deferred(), secondEntered = deferred(), finishFirst = deferred(), finishSecond = deferred()
+      let firstTransaction: Promise<void> | undefined, secondTransaction: Promise<void> | undefined
       try {
-        await beginTransaction(a)
-        await appendNativeEvent(a, event(17, { payload }))
-        await beginTransaction(b)
-        await b.query("set local lock_timeout='2s'")
-        await appendNativeEvent(b, event(0, { executionId: 'other-execution', payload }))
-        await commitTransaction(b) // Must finish while a still owns its execution row.
+        firstTransaction = withTransaction({ client: a }, async transaction => {
+          await appendNativeEvent(transaction, event(17, { payload }))
+          firstEntered.resolve()
+          await finishFirst.promise
+        })
+        secondTransaction = withTransaction({ client: b }, async transaction => {
+          await transaction.query("set local lock_timeout='2s'")
+          await appendNativeEvent(transaction, event(0, { executionId: 'other-execution', payload }))
+          secondEntered.resolve()
+          await finishSecond.promise
+        })
+        await Promise.all([firstEntered.promise, secondEntered.promise])
+        finishSecond.resolve()
+        await secondTransaction // Must finish while a still owns its execution row.
         expect(await counts(pool)).toEqual({ events: 1, activity: 0 })
-        await commitTransaction(a)
+        finishFirst.resolve()
+        await firstTransaction
         expect(await counts(pool)).toEqual({ events: 2, activity: 0 })
       } finally {
-        await rollbackTransaction(a)
-        await rollbackTransaction(b)
+        finishFirst.resolve(); finishSecond.resolve()
+        await Promise.allSettled([firstTransaction, secondTransaction].filter((value): value is Promise<void> => Boolean(value)))
         a.release()
         b.release()
       }

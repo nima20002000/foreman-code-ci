@@ -1,3 +1,4 @@
+import { verificationRuntimeFiles, verificationArtifactPath } from '../packages/verification-runner/runtime-files.mjs';
 import { readProductEnvironment } from '../packages/contracts/src/productEnvironment.mjs'
 import { inspectQuotaHelperAbi } from './quota-helper-abi.mjs';
 import { copyBuiltBrowserRuntime } from '../apps/worker/src/browserRuntimeInstall.mjs';
@@ -117,13 +118,8 @@ for (const name of ciRuntimeControls) {
 const committedScripts = new Set(execFileSync('git', ['ls-tree', '-r', '--name-only', commit, '--', ...verificationScripts],
   { cwd: root, encoding: 'utf8' }).trim().split('\n'));
 if (verificationScripts.every(path => committedScripts.has(path))) {
-  await mkdir(join(output, 'artifacts/verification'));
-  for (const path of verificationScripts) {
-    await writeFile(join(output, 'artifacts/verification', path.slice('scripts/'.length)), snapshotSource(path), { mode: 0o600 });
-  }
-  for (const path of ['apps/worker/src/diagnostics.mjs', 'packages/contracts/src/verificationEnvironment.mjs',
-    'packages/contracts/src/integrationScheduling.mjs', 'packages/ci-protocol/src/testResults.mjs']) {
-    const destination = join(output, 'artifacts', path);
+  for (const path of verificationRuntimeFiles) {
+    const destination = join(output, 'artifacts', verificationArtifactPath(path));
     await mkdir(dirname(destination), { recursive: true });
     await writeFile(destination, snapshotSource(path), { mode: 0o600 });
   }

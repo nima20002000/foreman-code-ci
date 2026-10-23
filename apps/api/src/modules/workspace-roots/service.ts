@@ -13,7 +13,7 @@ import { readLiveManagementPrincipal } from '../access/index.js'
 import type { PostgresCommandCoordinator } from '../commands/index.js'
 import { DomainError } from '../errors.js'
 import { WORKSPACE_FOLDER_LIFECYCLE_LOCK } from '../workspaces/index.js'
-import type { AuthorizedWorkspaceRoot, WorkspaceRootPolicyPort } from '../sources/rootPolicyPorts.js'
+import type { AuthorizedWorkspaceRoot, WorkspaceRootPolicyPort } from '../sources/index.js'
 
 type Sql = Pick<pg.PoolClient, 'query'>
 interface LocationRow { execution_location: unknown; location_revision: string; archived_at: Date | null }

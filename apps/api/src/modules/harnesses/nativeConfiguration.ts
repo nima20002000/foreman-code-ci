@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util'
 import type { CanonicalMachineReference } from '@foreman-code/contracts/device-identity'
 import { HarnessOptionsDiscoveryRequestSchema } from '@foreman-code/contracts/harness-registry'
-import type { DeviceEndpoint } from '../devices/deviceEndpoint.js'
+import type { DeviceEndpoint } from '../devices/index.js'
 import { logIgnoredError } from '../diagnostics/index.js'
 import type { ProviderAccountBinding } from '@foreman-code/contracts/provider-accounts'
 import {
@@ -16,7 +16,7 @@ import { HarnessExecutionError } from './errors.js'
 import { DomainError } from '../errors.js'
 import { claudeSettingSupport, type ClaudeNativeConfigurationPort } from './claudeSdk/nativeConfiguration.js'
 import { requireClaudeProductionCredentialDelivery } from './claudeSdk/productionCredentials.js'
-import type { ProviderAccountResolver } from '../provider-accounts/service.js'
+import type { ProviderAccountResolver } from '../provider-accounts/index.js'
 import { retiredHarnessError } from './retiredHarness.js'
 
 export class NativeConfigurationService {
