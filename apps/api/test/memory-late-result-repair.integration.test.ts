@@ -30,7 +30,7 @@ it.runIf(postgresEnabled).each([false, true])('repairs a late card conflict and 
     },
     managerFactory: () => {
       const manager = correctiveNativeManager(runtime.provider.connection(), repairs,
-        () => ({ outcome: 'succeeded', output: result(2) }))
+        () => ({ outcome: 'succeeded', output: result(conflicted ? 2 : 1) }))
       return { ...manager,
         async *startTurn(session, input, signal) {
           if (settled) throw new Error('The provider cannot accept turns after output settlement')
@@ -60,7 +60,10 @@ it.runIf(postgresEnabled).each([false, true])('repairs a late card conflict and 
     expect(conflicted).toBe(true)
     expect(settled).toBe(true)
     expect(settlementAttempts).toBe(retrySettlement ? 2 : 1)
-    expect(repairs).toHaveLength(1)
+    expect(repairs).toHaveLength(2)
+    expect(repairs[0]!.prompt).toContain('Kanban')
+    expect(repairs[1]!.prompt).toContain('REVISION_CONFLICT')
+    expect(repairs[1]!.prompt).toContain('Concurrent operator update')
     expect(runtime.provider.startedExecutions).toHaveLength(1)
     expect(await memoryCall(runtime.client, 'memory_board_get', { boardId, view: 'card', cardId }))
       .toMatchObject({ card: { body: 'Agent update', revision: 3 } })
