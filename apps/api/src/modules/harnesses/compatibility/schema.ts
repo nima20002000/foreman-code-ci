@@ -1,5 +1,5 @@
 import { isRecord } from '../../../shared/records.js'
-import { errorMessage } from '@foreman-code/contracts/server-kit'
+import { errorMessage } from '../../../shared/errorMessage.js'
 import { CODEX_RESPONSE_FIELDS, protocolFromBundle } from '../codexProtocolBundle.js'
 import { CompatibilityCheckError } from './errors.js'
 

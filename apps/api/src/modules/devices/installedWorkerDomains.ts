@@ -73,7 +73,7 @@ import {
 } from '@foreman-code/contracts/source-materialization'
 import { snapshotAgentWorktree } from '../sources/agentSnapshot.js'
 import { CI_HOST_NAMESPACE, CI_RUNTIME_NAMESPACE } from '@foreman-code/contracts'
-import { HostCiRunner, hostCiDirectory, systemHostCiPorts } from '../ci/runner.js'
+import { HostCiRunner, hostCiDirectory, systemHostCiPorts } from '../ci-host/runner.js'
 import { CiRuntimeWorker } from '../jobs/ciRuntimeWorker.js'
 import { prepareCiRuntime } from '../jobs/ciRuntimePrepare.js'
 import { retainedCiJobImages } from '../jobs/ciRuntimeImages.js'

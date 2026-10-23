@@ -592,9 +592,6 @@ export async function runIntegration(argv = [], {
     const contractsBuild = spawnSync('corepack', ['pnpm', '--dir', 'packages/contracts', 'build'],
       { cwd: root, stdio: 'inherit', env })
     if (contractsBuild.status !== 0) throw new Error('Integration contracts build failed')
-    // The CI package compiles against the contracts output.
-    const ciBuild = spawnSync('corepack', ['pnpm', '--dir', 'apps/ci', 'build'], { cwd: root, stdio: 'inherit', env })
-    if (ciBuild.status !== 0) throw new Error('Integration CI package build failed')
   }
   const allFiles = discoverFiles()
   let selected = selectFiles(allFiles, startAt)

@@ -135,6 +135,12 @@ describe('explicit execution retry classification', () => {
     expect(isTransientExecutionError(new HarnessExecutionError('PROVIDER_BUSY', 'Try later.', true))).toBe(true)
   })
 
+  it('retries a Claude session whose SDK did not confirm its tool connection before any work ran', () => {
+    const unconfirmed = new HarnessExecutionError('CLAUDE_MCP_CREDENTIAL_DELIVERY_UNCONFIRMED', 'The SDK did not confirm its owned MCP control update.')
+    expect(unconfirmed.result.error?.retryable).toBe(true)
+    expect(isTransientExecutionError(unconfirmed)).toBe(true)
+  })
+
   it('gives unclassified harness failures the same transient code defaults as execution retries', () => {
     const disconnected = new HarnessExecutionError('CODEX_APP_SERVER_DISCONNECTED', 'Connection lost.')
     expect(disconnected.result.error?.retryable).toBe(true)

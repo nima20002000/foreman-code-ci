@@ -4,7 +4,8 @@ import type { WorkflowVersionV3 } from '@foreman-code/contracts/wave25'
 import { readRunActivitySnapshot } from '../src/modules/runs/activitySnapshot.js'
 import { projectNativeActivityFacts } from '../src/modules/runs/nativeActivitySnapshot.js'
 import type { ActivityReadRow } from '../src/modules/runs/activityProjection.js'
-import { CiRunRecordSchema, ciActivityFromRecord } from '@foreman-code/contracts'
+import { ciActivityFromRecord } from '../src/modules/runs/agentCiSnapshot.js'
+import { CiRunRecordSchema } from '@foreman-code/contracts'
 
 const scope = { workspaceId: 'ws', workflowId: 'wf', runId: 'run', workflowVersionId: 'version' }
 const version = { id: 'version', workspaceId: 'ws', workflowId: 'wf', definition: { nodes: [], edges: [] } } as unknown as WorkflowVersionV3

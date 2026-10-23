@@ -5,7 +5,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { expect, it, vi } from 'vitest'
-import { HostCiRunner, systemHostCiPorts, type HostCiPorts } from '@foreman-code/ci/runner'
+import { HostCiRunner, systemHostCiPorts, type HostCiPorts } from '../src/modules/ci-host/runner.js'
 import { deferred, type Deferred } from './helpers/deferred.js'
 import { gitFixtureEnvironment } from './helpers/gitFixture.js'
 

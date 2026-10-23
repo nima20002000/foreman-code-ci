@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { importCycles, newCycles, sourceImportGraph } from './check-import-cycles.mjs'
+import { apiImportGraph, importCycles, newCycles } from './check-import-cycles.mjs'
 import { lintFilePaths } from './lint-allowlist.mjs'
 import { hasTicketName } from './check-test-names.mjs'
 
@@ -16,7 +16,7 @@ const allowlist = JSON.parse(readFileSync(file, 'utf8'))
 const paths = lintFilePaths(root, allowlist)
 
 const failing = new Map(Object.keys(allowlist.eslint).map(id => [id, new Set()]))
-for (const project of ['apps/api', 'apps/ci', 'apps/web', 'apps/worker', 'packages/contracts']) {
+for (const project of ['apps/api', 'apps/web', 'apps/worker', 'packages/contracts']) {
   const result = spawnSync('corepack', ['pnpm', '--dir', project, 'exec', 'eslint', '.', '--format', 'json'], {
     cwd: root, encoding: 'utf8', maxBuffer: 1024 * 1024 * 1024, env: { ...process.env, FOREMAN_LINT_BASELINE: '1' },
   })
@@ -31,7 +31,7 @@ for (const [id, files] of Object.entries(allowlist.eslint)) {
   allowlist.eslint[id] = files.filter(fileId => paths[fileId]?.some(path => failing.get(id).has(path)))
 }
 allowlist['test-names'] = allowlist['test-names'].filter(id => paths[id]?.some(hasTicketName))
-const cycles = importCycles(sourceImportGraph())
+const cycles = importCycles(apiImportGraph())
 allowlist['import-cycles'] = allowlist['import-cycles'].filter(ids => {
   const cycle = ids.map(id => paths[id]?.length === 1 ? paths[id][0] : undefined)
   return cycle.every(Boolean) && cycles.some(found => !newCycles([found], [cycle]).length)

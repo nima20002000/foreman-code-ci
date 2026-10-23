@@ -1,6 +1,6 @@
 import type pg from 'pg'
 import { withTransaction } from '../../infrastructure/transaction.js'
-import { errorMessage } from '@foreman-code/contracts/server-kit'
+import { errorMessage } from '../../shared/errorMessage.js'
 import { AgentDefaultsSchema, withAdvancedDefaults, CodexSessionCompatibilitySchema, validateHarnessWorkflowCompatibility, type AgentDefaults, type WorkflowDefaults } from '@foreman-code/contracts'
 import { WorkspaceDefaultsUpdateInputSchema, type WorkspaceDefaultsUpdateInput, type ManagementPrincipal } from '@foreman-code/contracts/management'
 import { GeneralSettingsUpdateInputSchema, type GeneralSettingsUpdateInput } from '@foreman-code/contracts/management'

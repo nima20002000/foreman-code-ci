@@ -28,7 +28,6 @@ export const workerSnapshotFiles = [
   'packages/contracts/src/productEnvironment.mjs',
   'packages/contracts/src/verificationEnvironment.mjs',
   'packages/contracts/src/integrationScheduling.mjs',
-  'apps/ci/package.json',
   'apps/worker/package.json',
   'package.json',
   'pnpm-workspace.yaml',
@@ -41,7 +40,7 @@ export function assertWorkerSnapshotSource(path) {
   const invalidPath = path.startsWith('/') || path.split('/').some(part => !part || part === '.' || part === '..')
   const testSource = /\.(?:test|spec)\.[cm]?[jt]s$/.test(path)
   const secretSource = /(?:^|\/)\.env(?:\.|$)|\.(?:pem|key)$|(?:^|\/)(?:credentials|secrets)\.json$/.test(path)
-  const allowedSource = path.startsWith('apps/api/src/') || path.startsWith('apps/ci/src/') || path.startsWith('apps/worker/src/')
+  const allowedSource = path.startsWith('apps/api/src/') || path.startsWith('apps/worker/src/')
     || path.startsWith('apps/worker/artifacts/') || path.startsWith('packages/contracts/src/')
     || verificationScripts.includes(path) || workerSnapshotFiles.includes(path)
   if (forbiddenApiModule || invalidPath || testSource || secretSource || !allowedSource) {
@@ -49,23 +48,10 @@ export function assertWorkerSnapshotSource(path) {
   }
 }
 
-/** Workspace packages the Worker bundles from source: package directory by short name. */
-export const workerPackages = Object.freeze({ contracts: 'packages/contracts', ci: 'apps/ci' })
-
-/** Bundler aliases from each package's exported dist module to its TypeScript source.
- * @param {Partial<Record<keyof typeof workerPackages, Record<string, unknown>>>} manifests `exports` by package. */
-export function workerPackageAliases(manifests) {
-  return Object.fromEntries(Object.entries(manifests).flatMap(([name, exports]) => {
-    const directory = workerPackages[name]
-    if (!directory) throw new Error(`Unknown Worker package: ${name}`)
-    return Object.entries(exports ?? {}).map(([key, value]) => [
-      key === '.' ? `@foreman-code/${name}` : `@foreman-code/${name}/${key.slice(2)}`,
-      `./${directory}/${(typeof value === 'string' ? value : value.import)
-        .replace('./dist/', './src/').replace(/\.js$/, '.ts')}`,
-    ])
-  }))
-}
-
 export function workerContractAliases(exports) {
-  return workerPackageAliases({ contracts: exports })
+  return Object.fromEntries(Object.entries(exports).map(([key, value]) => [
+    key === '.' ? '@foreman-code/contracts' : `@foreman-code/contracts/${key.slice(2)}`,
+    `./packages/contracts/${(typeof value === 'string' ? value : value.import)
+      .replace('./dist/', './src/').replace(/\.js$/, '.ts')}`,
+  ]))
 }
