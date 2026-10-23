@@ -16,7 +16,7 @@ import type { NativeManagerResolutionContext } from './runtimePorts.js'
 import { coordinateSessionManager, isLeaseLost, LeaseGuard, ownedEvents, type SessionWriteLease, type SingleWriterSessionManager } from './sessionWriter.js'
 import type { NativeHarnessSessionManager, NativeHistory } from '../harnesses/port.js'
 import { normalizeNativeProducerEvent } from '../run-graph/nativeProducerNormalization.js'
-import { retiredHarnessError } from '../harnesses/retiredHarness.js'
+import { retiredHarnessError } from '../harnesses/index.js'
 
 export class ReviewerDispatcher {
   private readonly workerId = `review-worker-${randomUUID()}`

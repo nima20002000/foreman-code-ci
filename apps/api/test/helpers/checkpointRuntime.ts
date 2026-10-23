@@ -6,7 +6,7 @@ import { requireAuthorization } from '../../src/modules/access/policy.js'
 import type pg from 'pg'
 import { AcceptedRepeatStartV1Schema } from '@foreman-code/contracts/current'
 import { APP_MCP_TOKEN_ENVIRONMENT_VARIABLE } from '../../src/modules/access/workerCredentials.js'
-import { CurrentWorkerCredentialService } from '../../src/modules/interactions/current/credentials.js'
+import { Wave25WorkerCredentialService } from '../../src/modules/interactions/current/credentials.js'
 import { McpDetectionService, WorkerLaunchCredentialService, type ExecutionCredentialProvider, type NativeMcpInspector } from '../../src/modules/harnesses/mcpDetection.js'
 import type { NativeHarnessSessionManager } from '../../src/modules/harnesses/port.js'
 import { DomainError } from '../../src/modules/errors.js'
@@ -25,13 +25,13 @@ import { randomUUID } from 'node:crypto'
 import { vi } from 'vitest'
 import { AgentConfigurationVersionSchema } from '@foreman-code/contracts'
 import { ExecutableWorkflowCurrentSchema, makeCurrentWorkflowFixture, WorkflowRunCurrentSchema } from '@foreman-code/contracts/current'
-import { ApprovalPostgresSaver } from '../../src/modules/runs/approvalCheckpointSaver.js'
+import { ApprovalPostgresSaver } from '../../src/infrastructure/approvalCheckpointSaver.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.js'
 import { PostgresApprovalBudgetRepository } from '../../src/modules/interactions/budget.js'
 import { ApprovalExecutionCoordinator } from '../../src/modules/interactions/execution.js'
 import { InteractionService } from '../../src/modules/interactions/service.js'
-import { CurrentInteractionRepository } from '../../src/modules/interactions/current/repository.js'
+import { Wave25InteractionRepository } from '../../src/modules/interactions/current/repository.js'
 import { ExecutionScopedNativeSessionManagerResolver, type NativeManagerResolutionContext } from '../../src/modules/interactions/runtimePorts.js'
 import type { RunOwnership } from '../../src/modules/runs/ownership.js'
 import { LangGraphWorkflowEngine } from '../../src/modules/runs/engine.js'
@@ -142,10 +142,10 @@ export async function checkpointRuntimeFixture(branches: 1 | 2 = 1, pendingPerEx
           ...(options.admitPlacementExecutionLocked
             ? { admitPlacementExecutionLocked: options.admitPlacementExecutionLocked } : {}) } },
         options.nativeCommitted)
-      const repository = new CurrentInteractionRepository(db.pool, new ReviewNativeProofServices(reviewCapture.verify)), budgets = new PostgresApprovalBudgetRepository(db.pool)
+      const repository = new Wave25InteractionRepository(db.pool, new ReviewNativeProofServices(reviewCapture.verify)), budgets = new PostgresApprovalBudgetRepository(db.pool)
       const managers = new ExecutionScopedNativeSessionManagerResolver((context, owner) =>
         options.managerFactory ? options.managerFactory(context, owner) : provider.connection())
-      const credentials = new CurrentWorkerCredentialService(db.pool, access, options.credentialTtlMs)
+      const credentials = new Wave25WorkerCredentialService(db.pool, access, options.credentialTtlMs)
       // This helper's external provider is deterministic. Its configuration
       // inspector is the same explicit synthetic boundary as its transport.
       const validate = options.validateContinuation ?? continuationValidator(db.pool, locations)
@@ -227,7 +227,7 @@ export async function insertProviderRun(pool: pg.Pool, fixture: ReturnType<typeo
 
 /** Production credential validation and issuance with a provider-specific inspector. */
 export function providerLaunchCredentials(runs: PostgresRunRepository, locations: WorkspaceLocationService,
-  managers: ExecutionScopedNativeSessionManagerResolver, credentials: CurrentWorkerCredentialService,
+  managers: ExecutionScopedNativeSessionManagerResolver, credentials: Wave25WorkerCredentialService,
   inspector: (manager: NativeHarnessSessionManager) => NativeMcpInspector, pool: pg.Pool,
   options: {
     prepareContext?: ((context: NativeManagerResolutionContext) => Promise<NativeManagerResolutionContext>) | undefined

@@ -24,7 +24,7 @@ import type { ProviderAccountConfigurationService } from '../harnesses/index.js'
 import { resolveWorkspaceSkills } from '../skills/catalog.js'
 import { composeInstructionText, instructionsTooLarge } from '../skills/instructions.js'
 import { sha256Hex } from '../../shared/hash.js'
-import { retiredHarnessError } from '../harnesses/retiredHarness.js'
+import { retiredHarnessError } from '../harnesses/index.js'
 
 const OPERATOR_ID = 'application-operator'
 

@@ -6,7 +6,7 @@ import { http, HttpResponse } from 'msw'
 import { AgentChatStateSchema, agentChatFixtures, type AgentChatState, type AgentChatTurn, type SendAgentChatMessageRequest } from '@foreman-code/contracts/agent-chat'
 import { server } from '../../../mocks/server'
 import { AgentChatPanel } from '../../graph'
-import { useConversationDraftStore } from '../../chat-core'
+import { useConversationDraftStore } from '../conversationDraftStore'
 import { agentChatStateKey } from './useAgentChat'
 import { claimDraftReadback, receiptForCommand } from './receiptReadback'
 import { AGENT_CHAT_ACKNOWLEDGEMENT_LIMIT, compactAgentChatResult, confirmedCommandReceipt,
@@ -212,7 +212,7 @@ describe('G5 B2-PF-02 / B-R07 compact recovered-command retirement', () => {
     const mutationKey = [...key.slice(0, 3), 'command']
     const failedTransport = async (command: AgentChatCommand) => { void command; throw new Error('HTTP response lost') }
     const unresolved = client.getMutationCache().build(client, { mutationKey, mutationFn: failedTransport })
-    await unresolved.execute(sendCommand(initial, 'still-unconfirmed')).catch(() => { /* ignore: the simulated transport failure leaves a retained command whose state is asserted below. */ })
+    await unresolved.execute(sendCommand(initial, 'still-unconfirmed')).catch(() => undefined)
     const unknownCommand = sendCommand(initial, 'still-unknown'), unknownState = withReceipt(initial, unknownCommand.input, 'unknown')
     const unknown = client.getMutationCache().build(client, { mutationKey, mutationFn: async (input: AgentChatCommand) => { void input; return compactAgentChatResult({
       state: unknownState, turn: unknownState.turns.at(-1)!, replayed: false }) } })
@@ -220,7 +220,7 @@ describe('G5 B2-PF-02 / B-R07 compact recovered-command retirement', () => {
     rememberAgentChatReadback(client, key, unknownState)
     const pendingGate = gate(), pendingCommand = sendCommand(initial, 'still-pending')
     const pending = client.getMutationCache().build(client, { mutationKey, mutationFn: async (input: AgentChatCommand) => { void input; await pendingGate.promise; throw new Error('Unconfirmed') } })
-    const pendingResult = pending.execute(pendingCommand).catch(() => { /* ignore: the simulated transport failure leaves a retained command whose state is asserted below. */ })
+    const pendingResult = pending.execute(pendingCommand).catch(() => undefined)
     try {
       for (let index = 0; index < AGENT_CHAT_ACKNOWLEDGEMENT_LIMIT + 13; index++) {
         const command = sendCommand(initial, `recovered-${index}`), queued = withReceipt(initial, command.input, 'queued')
@@ -230,7 +230,7 @@ describe('G5 B2-PF-02 / B-R07 compact recovered-command retirement', () => {
             if (index % 5 !== 0) throw new Error('HTTP response lost')
             return compactAgentChatResult({ state: queued, turn: queued.turns.at(-1)!, replayed: false })
           } })
-        await mutation.execute(command).catch(() => { /* ignore: the simulated transport failure leaves a retained command whose state is asserted below. */ })
+        await mutation.execute(command).catch(() => undefined)
         const delivery = (['completed', 'failed', 'canceled'] as const)[index % 3]!
         const terminal = withReceipt(initial, command.input, delivery)
         client.setQueryData(key, terminal); rememberAgentChatReadback(client, key, terminal)
@@ -270,7 +270,7 @@ describe('G5 B2-PF-02 / B-R07 compact recovered-command retirement', () => {
     const command = sendCommand(state, 'fenced-proof')
     const mutation = client.getMutationCache().build(client, { mutationKey: [...key.slice(0, 3), 'command'],
       mutationFn: async (input: AgentChatCommand) => { void input; throw new Error('lost') } })
-    await mutation.execute(command).catch(() => { /* ignore: the simulated transport failure leaves a retained command whose state is asserted below. */ })
+    await mutation.execute(command).catch(() => undefined)
     const terminal = withReceipt(state, command.input, 'completed')
     rememberAgentChatReadback(client, [key[0], Number(key[1]) + 1, key[2], key[3]], terminal)
     rememberAgentChatReadback(client, key, { ...terminal, context: { ...terminal.context, agentId: 'another-agent' } })

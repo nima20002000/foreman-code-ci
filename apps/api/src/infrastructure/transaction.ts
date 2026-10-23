@@ -1,6 +1,5 @@
 import type pg from 'pg'
 import { retryDatabaseTimeout } from './databaseRetry.js'
-import { databaseDomainError } from './databaseErrors.js'
 import { componentLogger } from './logger.js'
 import { timeRuntimeOperation } from './runtimeTiming.js'
 
@@ -247,7 +246,7 @@ export async function withTransaction<T>(
     for (let tries = 0; ; tries += 1) {
       const result = await attempt(client, perform, options, origin, options.rollback !== undefined)
       if (result.ok) return result.value
-      if (result.rollbackError || tries >= retries || !isTransactionConflict(result.error)) throw databaseDomainError(result.error)
+      if (result.rollbackError || tries >= retries || !isTransactionConflict(result.error)) throw result.error
     }
   }
   for (let tries = 0; ; tries += 1) {
@@ -257,7 +256,7 @@ export async function withTransaction<T>(
       const result = await attempt(client, perform, options, origin, true)
       if (result.ok) return result.value
       releaseError = result.rollbackError
-      if (releaseError || tries >= retries || !isTransactionConflict(result.error)) throw databaseDomainError(result.error)
+      if (releaseError || tries >= retries || !isTransactionConflict(result.error)) throw result.error
     } finally {
       client.release(releaseError)
     }
