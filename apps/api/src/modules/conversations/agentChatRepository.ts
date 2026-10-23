@@ -842,17 +842,6 @@ export class PostgresAgentChatRepository {
     })
   }
 
-  /** A steer that was never submitted because its target turn is gone: settled, not unconfirmed, so it holds no open-turn slot. */
-  async failSteer(id: string, requestId: string, message: string): Promise<void> {
-    return withTransaction(this.pool, async (client) => {
-      await client.query(`select id from operator_conversations where id=$1 and kind='agent' for update`, [id])
-      const receipt = await client.query(`update operator_conversation_turns set delivery='failed',delivery_error=$3::jsonb,updated_at=now()
-        where conversation_id=$1 and request_id=$2 and intent='steer' and delivery='submitting'`,
-      [id, requestId, JSON.stringify({ code: 'AGENT_CHAT_TURN_NOT_ACTIVE', message })])
-      if (receipt.rowCount) await this.bump(id, client)
-    })
-  }
-
   /** Missing evidence never releases ownership, cancellation or pending native interactions. */
   async abandon(id: string, requestId: string, message: string): Promise<void> {
     await this.unknown(id, requestId, message)

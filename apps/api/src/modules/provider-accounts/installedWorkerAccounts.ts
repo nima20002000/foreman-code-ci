@@ -172,7 +172,12 @@ export function createInstalledWorkerAccounts(input: {
     },
   })
   const configurations = new NativeConfigurationService('', input.stateDirectory, factories)
-  attachWorkerAccountCleanup(native, configurations)
+  const closeNative = native.close.bind(native)
+  native.close = async () => {
+    const results = await Promise.allSettled([configurations.shutdownChecks(), closeNative()])
+    const failures = results.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
+    if (failures.length) throw new AggregateError(failures, 'Worker account cleanup remains unconfirmed.')
+  }
   return { native, resolve, validate,
     ...(input.prepareAccount ? { prepareAccount: input.prepareAccount } : {}),
     async provision(raw) {
@@ -190,13 +195,7 @@ export function createInstalledWorkerAccounts(input: {
           writeRecord(path(account.id), removed)
           return removed
         }
-        // The record is written before the native step, so a failed first attempt is finished here.
-        if (previous.binding?.profileRef === previous.id) {
-          await credentials.assertAvailable(previous.id).catch(async error => {
-            if (!(error instanceof DomainError && error.code === 'PROVIDER_ACCOUNT_UNAVAILABLE')) throw error
-            await credentials.create(previous)
-          })
-        } else if (!previous.removedAt) await native.resolveProfile(previous)
+        if (previous.binding?.profileRef === previous.id) await credentials.assertAvailable(previous.id)
         return previous
       }
       if (account.removedAt) {
@@ -227,14 +226,5 @@ export function createInstalledWorkerAccounts(input: {
         }
       }
     },
-  }
-}
-
-function attachWorkerAccountCleanup(native: NativeProviderAccountOperations, configurations: NativeConfigurationService) {
-  const closeNative = native.close.bind(native)
-  native.close = async () => {
-    const results = await Promise.allSettled([configurations.shutdownChecks(), closeNative()])
-    const failures = results.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
-    if (failures.length) throw new AggregateError(failures, 'Worker account cleanup remains unconfirmed.')
   }
 }

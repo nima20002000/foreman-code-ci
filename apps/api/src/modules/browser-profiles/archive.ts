@@ -27,17 +27,9 @@ export class BrowserSnapshotArchive {
     } catch (error) { await handle.close(); await rm(temporary, { force: true }); throw error }
     await handle.close(); await rename(temporary, this.path(transfer))
     const metadataPath = `${this.path(transfer)}.${randomUUID()}.metadata.tmp`
-    const manifestPath = `${this.path(transfer)}.manifest.json`
-    try {
-      const metadata = await open(metadataPath, 'wx', 0o600)
-      try { await metadata.writeFile(JSON.stringify(transfer)); await metadata.sync() } finally { await metadata.close() }
-      await rename(metadataPath, manifestPath)
-    } catch (error) {
-      // prune() only discovers snapshots through manifests: without one, this ciphertext would never be collected.
-      await rm(metadataPath, { force: true })
-      if (!(await lstat(manifestPath).then(info => info.isFile(), () => false))) await rm(this.path(transfer), { force: true })
-      throw error
-    }
+    const metadata = await open(metadataPath, 'wx', 0o600)
+    try { await metadata.writeFile(JSON.stringify(transfer)); await metadata.sync() } finally { await metadata.close() }
+    await rename(metadataPath, `${this.path(transfer)}.manifest.json`)
     const parent = await open(this.root, 'r')
     try { await parent.sync() } finally { await parent.close() }
   }

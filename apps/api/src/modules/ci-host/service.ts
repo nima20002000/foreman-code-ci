@@ -1082,22 +1082,19 @@ export class HostCiService {
     this.dispatchRequested = true
     if (this.stoppingRuns) return this.dispatching ?? Promise.resolve()
     this.dispatching ??= (async () => {
-      // The pass stops being "current" in the same synchronous step that finds no wake-up left, so a dispatch()
-      // arriving afterwards starts a new pass instead of joining one that has already finished.
-      try {
-        while (this.dispatchRequested && !this.stoppingRuns) {
-          this.dispatchRequested = false
-          await trackService('ci-dispatch', { cadenceMs: 1000, deadlineMs: CI_DISPATCH_PASS_MS },
-            () => withCiDispatchDeadline(() => withProviderPoll(() => this.dispatchOnce())))
-          this.dispatchRetry.reset()
-        }
-      } finally { this.dispatching = undefined }
+      while (this.dispatchRequested && !this.stoppingRuns) {
+        this.dispatchRequested = false
+        await trackService('ci-dispatch', { cadenceMs: 1000, deadlineMs: CI_DISPATCH_PASS_MS },
+          () => withCiDispatchDeadline(() => withProviderPoll(() => this.dispatchOnce())))
+        this.dispatchRetry.reset()
+      }
     })().catch(error => {
       // Slow work has already spent the pass budget; other errors still need an increasing retry delay.
       const nextRetryMs = error instanceof CiDispatchDeadlineError ? 0 : this.dispatchRetry.fail()
       log.warn({ err: error, nextRetryMs }, 'CI dispatch failed; retry scheduled')
     })
-    return this.dispatching ?? Promise.resolve()
+      .finally(() => { this.dispatching = undefined })
+    return this.dispatching
   }
 
   private dispatchServices(computer: HostCiComputer, status = this.planningEndpoint.dispatchStatus(computer)) {

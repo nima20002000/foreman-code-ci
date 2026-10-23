@@ -51,7 +51,7 @@ async function writePrivateFile(path: string, value: Buffer | string): Promise<v
 
 /** Only the local runtime receives paths and credentials from this storage. */
 export class LocalProviderCredentials {
-  private hostIdentity: Promise<string> | undefined
+  private hostIdentity?: Promise<string>
   private readonly root: string
 
   constructor(root: string) {
@@ -59,8 +59,7 @@ export class LocalProviderCredentials {
   }
 
   hostId(): Promise<string> {
-    // A rejected load is forgotten so a repaired directory or file works without restarting the API.
-    this.hostIdentity ??= this.loadHostId().catch(error => { this.hostIdentity = undefined; throw error })
+    this.hostIdentity ??= this.loadHostId()
     return this.hostIdentity
   }
 

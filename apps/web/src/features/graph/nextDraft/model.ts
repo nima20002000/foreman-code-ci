@@ -70,8 +70,8 @@ export function authoringHints(graph: WorkflowDefinitionV3, context: NextDraftCo
   const entry = entryChoices(graph, context, agentEdits)
   const roleOf = (nodeId: string) => entry.roles.get(nodeId)?.role
   const orchestrators = graph.nodes.filter(node => roleOf(node.id) === 'orchestrator').map(node => node.id)
-  // Orchestrators without a Master: one alert to add the Master, which then starts the workflow.
-  const masterless = !graph.hierarchy && orchestrators.length > 0 && !graph.nodes.some(node => roleOf(node.id) === 'master')
+  // Multiple Orchestrators without a Master: one alert to add the Master, which then starts the workflow.
+  const masterless = !graph.hierarchy && orchestrators.length > 1 && !graph.nodes.some(node => roleOf(node.id) === 'master')
   if (!graph.nodes.length) issues.push({ code: 'ENTRY_REQUIRED', message: 'Add an agent to start building this workflow.' })
   else if (entry.unresolved.length) issues.push({ code: 'ROLE_PIN_UNAVAILABLE', message: 'An agent’s role changed or can’t be confirmed. Reload the saved draft.' })
   else if (masterless) issues.push({ code: 'MASTER_REQUIRED', message: 'Add a Master to lead this workflow. It starts the work and hands it to the Orchestrators.' })

@@ -5,7 +5,6 @@ import { ChatQueueCancelRequestSchema, ChatStopRequestSchema, type DeliveryTarge
 import { identityEpoch, protectedKey } from '../../../shared/api/protectedChatStorage'
 import { assertSession, sessionGeneration } from '../../../shared/api/sessionBoundary'
 import { isApiAccessError } from '../../../shared/api/accessError'
-import { commandWasRejected } from '../../../shared/api/commandAttempt'
 import { chatDeliveryClient } from './client'
 
 const commandSchema = z.discriminatedUnion('operation', [
@@ -40,10 +39,7 @@ export function useChatControl(target: DeliveryTarget | undefined, enabled: bool
   }, onError: (error, attempt) => {
     if (attempt.epoch !== identityEpoch() || currentKey.current !== attempt.key) return
     if (isApiAccessError(error)) onDenied(error)
-    // A structured rejection proves the control did not run; keeping it would replay a dead command forever.
-    const rejected = commandWasRejected(error)
-    if (rejected) localStorage.removeItem(attempt.key)
-    setState({ key: attempt.key, command: rejected ? undefined : read(attempt.key), error: error.message })
+    setState({ key: attempt.key, command: read(attempt.key), error: error.message })
   } })
   const run = (fresh?: Command) => {
     if (!enabled || !target || !navigator.onLine || locks.has(key)) return
