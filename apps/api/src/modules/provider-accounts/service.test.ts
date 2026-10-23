@@ -458,6 +458,20 @@ it('keeps scoped-default CAS independent from label edits and rejects another ca
     .rejects.toMatchObject({ code: 'PROVIDER_ACCOUNT_TARGET_CONFLICT' })
 })
 
+it('bumps an account label revision by one when its API key is provisioned, not to the document revision', async () => {
+  const f = await fixture()
+  await add(f.service, f.owner.principal, 'codex', 'subscription')
+  const created = await add(f.service, f.owner.principal, 'claude', 'api-key', 1)
+  const accountId = created.value.accounts[1]!.id
+  const labelRevision = created.value.accounts[1]!.revision
+  const provisioned = await f.service.provisionApiKey(f.owner.principal, accountId,
+    { ...command(2), apiKey: `sk-${randomUUID()}` })
+  expect(provisioned.value.accounts[1]!.revision).toBe(labelRevision + 1)
+  const renamed = await f.service.rename(f.owner.principal, 'http', accountId,
+    { ...command(3), name: 'Renamed', expectedLabelRevision: labelRevision + 1 })
+  expect(renamed.value.accounts[1]).toMatchObject({ name: 'Renamed', revision: labelRevision + 2 })
+})
+
 it('detects reliable same-scope duplicates without merging and protects a used principal from replacement', async () => {
   const f = await fixture()
   const first = (await add(f.service, f.owner.principal, 'codex', 'subscription')).value.accounts[0]!

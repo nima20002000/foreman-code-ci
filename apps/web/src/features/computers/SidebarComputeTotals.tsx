@@ -25,21 +25,12 @@ export function CloudComputeTotals({ clouds, fresh }: { clouds: CloudCiActivity[
   const running = available.reduce((total, cloud) => total + cloud.running, 0)
   const capacity = available.reduce((total, cloud) => total + cloud.slots, 0)
   const unavailable = slots - capacity
-  // Say why capacity is missing, grouped by reason, so "90 unavailable" is never a mystery.
-  const reasons = new Map<string, string[]>()
-  for (const cloud of clouds.filter(item => !item.ready)) {
-    const reason = cloud.creditsUnavailable && /suspended/i.test(cloud.creditsUnavailable)
-      ? `${cloud.provider === 'circleci' ? 'CircleCI' : cloud.name} suspended this account` : cloud.creditsUnavailable ?? 'not ready'
-    reasons.set(reason, [...reasons.get(reason) ?? [], cloud.account ?? cloud.name])
-  }
   const orgs = clouds.filter(cloud => cloud.provider === 'circleci')
   const readable = orgs.filter(org => org.credits)
   const credits = readable.reduce((total, org) => total + (org.credits?.remaining ?? 0), 0)
   const partial = readable.length < orgs.length ? ` (${readable.length} of ${orgs.length} orgs)` : ''
   return <div className="sidebar-compute-totals" aria-label="Total cloud compute">
     <p>{fresh ? `${slots} slots · ${running} busy · ${Math.max(0, capacity - running)} free${unavailable ? ` · ${unavailable} unavailable` : ''}` : 'Slots unavailable'}</p>
-    {fresh && unavailable > 0 && [...reasons].map(([reason, names]) =>
-      <p key={reason} className="sidebar-hover-note">Unavailable: {names.join(', ')} ({reason})</p>)}
     {orgs.length > 0 && <p>
       {readable.length ? `${fresh ? '' : 'Last known · '}≈ ${NUMBER.format(credits)} credits left${partial}` : 'Credits unavailable'}
     </p>}

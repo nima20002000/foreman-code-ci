@@ -32,6 +32,7 @@ export class HarnessInstallationMonitor {
   private mainHost: CanonicalMachineReference | undefined
   private timer: NodeJS.Timeout | undefined
   private refreshTask: Promise<void> | undefined
+  private readonly rechecks = new Set<Promise<void>>()
   constructor(private readonly registry: ProductionHarnessRegistry,
     private readonly checks: HostHarnessInstanceProfileChecks,
     private readonly endpoint: () => DeviceEndpoint,
@@ -96,7 +97,7 @@ export class HarnessInstallationMonitor {
           'HARNESS_INVENTORY_STALE', 'The Worker connection changed during qualification.', 409)
       }
     }
-    void this.checks.recheckInstallation({ host, driverId, applicationInstallationId: installationId, generation,
+    const check = this.checks.recheckInstallation({ host, driverId, applicationInstallationId: installationId, generation,
       signal, authorize,
       installation: value => this.registry.currentInstallation(value),
       refresh: refreshSignal => this.refreshHosts([host], refreshSignal),
@@ -115,6 +116,8 @@ export class HarnessInstallationMonitor {
       }
       this.report(error)
     })
+    this.rechecks.add(check)
+    void check.finally(() => this.rechecks.delete(check))
     return true
   }
   refresh(): Promise<void> {
@@ -223,5 +226,6 @@ export class HarnessInstallationMonitor {
     this.stopping.abort(new Error('Harness installation monitoring is stopping.'))
     if (this.refreshTask) await Promise.allSettled([this.refreshTask])
     await Promise.allSettled([...this.hostRefreshes.values()].map(refresh => refresh.task))
+    await Promise.allSettled([...this.rechecks])
   }
 }
