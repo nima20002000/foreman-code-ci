@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { Button } from '../../../shared/ui/nocturne'
 import { AgentConversation } from '../agentChat/AgentConversation'
 import type { WorkflowExecutionChatViewProps } from '../../workflow-hierarchy/execution-chat/types'
 import { ExecutionChatPanel } from './ExecutionChatPanel'
@@ -8,14 +10,19 @@ export function WorkflowExecutionConversation(props: WorkflowExecutionChatViewPr
 }
 
 function SelectedConversation({ resolved, onSelectTarget }: WorkflowExecutionChatViewProps) {
+  const [followUp, setFollowUp] = useState(false)
   const target = resolved.target
-  // A finished execution continues in its Agent chat right here, so the owner can always message the Agent.
-  const followUp = target.kind === 'workflow_execution' ? <AgentConversation
-    context={{ ...target.agent, runId: target.execution.runId }} name={resolved.agent.displayName}
-    selection={{ workspaceId: target.agent.workspaceId, workflowId: target.agent.workflowId,
-      workflowNodeId: target.agent.workflowNodeId, runId: target.execution.runId, executionId: target.execution.executionId }} /> : undefined
+  if (followUp && target.kind === 'workflow_execution') {
+    const context = { ...target.agent, runId: target.execution.runId }
+    const selection = { workspaceId: target.agent.workspaceId, workflowId: target.agent.workflowId,
+      workflowNodeId: target.agent.workflowNodeId, runId: target.execution.runId, executionId: target.execution.executionId }
+    return <>
+      <Button onClick={() => setFollowUp(false)}>Back to execution</Button>
+      <AgentConversation context={context} selection={selection} name={resolved.agent.displayName} />
+    </>
+  }
   return <ExecutionChatPanel visible target={target} name={resolved.agent.displayName} source={productionExecutionChatSource}
-    followUp={followUp} onOpenContinuation={receipt => {
+    onFollowUp={() => setFollowUp(true)} onOpenContinuation={receipt => {
       if (receipt.continuationExecution) onSelectTarget({ kind: 'workflow_execution', agent: target.agent,
         execution: receipt.continuationExecution }, receipt.continuationExecution.workflowVersionId)
     }} />

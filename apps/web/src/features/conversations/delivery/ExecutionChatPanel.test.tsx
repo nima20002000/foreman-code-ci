@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -64,12 +63,12 @@ function endpoints(value: EngineChatReadback = structuredClone(initial)) {
   return state
 }
 function mount(source: NativeSource, options: { visible?: boolean; nativeTurnId?: string; attachments?: ConversationAttachments;
-  onOpenContinuation?: (receipt: ChatDeliveryReceipt) => void; followUp?: ReactNode } = {}) {
+  onOpenContinuation?: (receipt: ChatDeliveryReceipt) => void } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   clients.push(client)
   const tree = (visible = true) => <QueryClientProvider client={client}><ExecutionChatPanel visible={visible}
     target={target} name="Ava" source={source} nativeTurnId={options.nativeTurnId} attachments={options.attachments}
-    onOpenContinuation={options.onOpenContinuation} followUp={options.followUp} /></QueryClientProvider>
+    onOpenContinuation={options.onOpenContinuation} /></QueryClientProvider>
   const view = render(tree(options.visible ?? true))
   return { ...view, visible: (value: boolean) => view.rerender(tree(value)) }
 }
@@ -238,16 +237,5 @@ describe('exact Execution chat public surface', () => {
       expect(state.commands).toHaveLength(1)
     }
     expect(acknowledge).not.toHaveBeenCalled()
-  })
-
-  it('keeps an unconfirmed message and its Check status control on a finished execution instead of showing the follow-up chat', async () => {
-    const receipt: ChatDeliveryReceipt = { id: 'late-receipt', commandId: 'command-late', target,
-      requestedIntent: 'next_turn', appliedIntent: 'next_turn', state: 'unknown', createdAt: date, updatedAt: date }
-    endpoints({ ...structuredClone(initial), state: 'idle', capabilities: { steer: 'unavailable', queue: false, interruptAndSend: false },
-      receipts: [receipt] })
-    mount(new NativeSource(), { followUp: <p>Agent chat follow-up</p> })
-    expect(await screen.findByText('Delivery unconfirmed')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Check status' })).toBeVisible()
-    expect(screen.queryByText('Agent chat follow-up')).not.toBeInTheDocument()
   })
 })

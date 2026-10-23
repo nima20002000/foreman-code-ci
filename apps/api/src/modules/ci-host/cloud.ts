@@ -331,7 +331,20 @@ export class CloudCi {
       if (!['queued', 'starting', 'running'].includes(canceled.state)) this.schedulePrune(canceled, canceled.runId)
       return CiHostReplySchema.parse({ operation: 'cancel', run: this.view(canceled, 0) })
     }
-    return this.withRead(request.runId, async () => this.answer(request, await this.refresh(request.runId, request.reassign)))
+    return this.withRead(request.runId, () => withProviderPoll(async () => {
+      let run = await this.refresh(request.runId, request.reassign)
+      // Collection runs outside the provider-status semaphore. Main can first read the terminal journal, release
+      // its observation permit, then request these downloads without delaying the rest of the fleet.
+      if (!request.observeOnly && collectionPending(run) && this.ports.now().getTime() >= this.backoff.until) {
+        try { run = await this.collect(run) }
+        catch (error) {
+          if (!(error instanceof DomainError && error.code === 'CI_CLOUD_RATE_LIMITED')) throw error
+          this.pausePolling(run.runId)
+          run = await this.read(run.runId)
+        }
+      }
+      return this.answer(request, run)
+    }))
   }
 
   private async withRead<T>(runId: string, read: () => Promise<T>): Promise<T> {
@@ -1321,8 +1334,8 @@ export class CloudCi {
     if (!['starting', 'running'].includes(run.state) && !pendingCancellation && !pendingCollection && !pendingAttempts) return run
     const now = this.ports.now().getTime()
     if (run.reconciliation && now - Date.parse(run.reconciliation.at) < POLL_MS) return run
-    if (pendingCollection && !pendingCancellation && !pendingAttempts && run.collection?.retry) {
-      if (now - Date.parse(run.collection.retry.since) >= COLLECTION_RECOVERY_MS) return this.collect(run)
+    if (pendingCollection && !pendingCancellation && !pendingAttempts && run.state !== 'running' && run.collection?.retry) {
+      if (now - Date.parse(run.collection.retry.since) >= COLLECTION_RECOVERY_MS) return run
       if (now < Date.parse(run.collection.retry.nextAttemptAt)) return run
     }
     if (now < this.backoff.until) return run
@@ -1339,7 +1352,7 @@ export class CloudCi {
       return await withProviderPoll(async () => {
         let next: CloudRun
         if (pendingCancellation) next = await this.cancelAttempts(run)
-        else if (pendingCollection || !['starting', 'running'].includes(run.state)) {
+        else if (!['starting', 'running'].includes(run.state)) {
           next = (await this.reconcileAcceptedAttempts(run)).run
           this.polled.set(runId, this.ports.now().getTime())
         }
@@ -1350,7 +1363,6 @@ export class CloudCi {
           delete recovered.reconciliation
           next = await this.save(recovered)
         }
-        if (collectionPending(next)) next = await this.collect(next)
         if (this.backoff.generation === generation) this.backoff = { until: 0, ms: 0, generation }
         return next
       })
@@ -1439,7 +1451,7 @@ export class CloudCi {
     chunk = chunk.subarray(0, Math.max(0, CLOUD_LOG_LIMIT - bytes))
     if (!chunk.length && step === live.step && output?.bytes === live.output?.bytes && seen.size === live.seen.length) return run
     const text = sanitizeCiText(chunk.toString('utf8'))
-    if (text.length) await writeFile(this.path(run.runId, 'log'), text, { flag: 'a', mode: 0o600 })
+    if (text.length && !run.collection?.log) await writeFile(this.path(run.runId, 'log'), text, { flag: 'a', mode: 0o600 })
     bytes += Buffer.byteLength(text)
     return this.save({ ...run, lastProgressAt: this.ports.now().toISOString(),
       live: { step, seen: [...seen], ...(output ? { output } : {}), bytes } })
@@ -1572,10 +1584,16 @@ export class CloudCi {
     const attempts = (run.collection!.retry?.attempts ?? 0) + 1
     const delayMs = Math.min(60_000, POLL_MS * 2 ** Math.min(attempts - 1, 4))
     const collection = { ...run.collection! }
+    const started = performance.now()
+    let artifactsMs = 0, logMs = 0
     try {
       if (!collection.artifacts) {
+        const artifactsStarted = performance.now()
         try {
           const artifacts = await this.provider.artifacts(run, join(this.root, 'runs', run.runId, 'artifact'))
+          if (run.state === 'running' && artifacts.suiteLog === undefined) {
+            throw new DomainError('CI_COLLECTION_PENDING', 'Uploaded CI results are not visible yet.', 503)
+          }
           if (artifacts.suiteLog !== undefined) {
             const contents = Buffer.from(artifacts.suiteLog).subarray(-CLOUD_LOG_LIMIT)
             await writeFile(this.path(run.runId, 'log'), contents, { mode: 0o600 })
@@ -1606,12 +1624,16 @@ export class CloudCi {
         } catch (error) {
           if (error instanceof DomainError && error.code === 'CI_CLOUD_RATE_LIMITED') throw error
           log.warn({ err: error, runId: run.runId }, 'Final CI artifacts remain pending')
+        } finally {
+          artifactsMs = performance.now() - artifactsStarted
         }
       }
       // The provider's log is only needed when the artifacts did not carry the suite log, and its download may be slow:
       // it continues in the background while this pass answers.
-      if (!collection.log) {
+      if (!collection.log && run.state !== 'running') {
+        const logStarted = performance.now()
         const text = await this.finalLog(run)
+        logMs = performance.now() - logStarted
         if (text !== undefined) {
           let contents = Buffer.from(text).subarray(-CLOUD_LOG_LIMIT)
           if (run.live?.bytes) {
@@ -1623,11 +1645,12 @@ export class CloudCi {
         }
       }
     } finally {
-      this.polled.set(run.runId, this.ports.now().getTime())
       if (collection.log && collection.artifacts) delete collection.retry
       else collection.retry = { since, attempts,
         nextAttemptAt: new Date(this.ports.now().getTime() + delayMs).toISOString() }
       run = await this.save({ ...run, collection })
+      log.info({ runId: run.runId, provider: this.provider.id, state: run.state, artifactsMs, logMs,
+        totalMs: performance.now() - started, complete: collection.log && collection.artifacts }, 'Cloud CI collection timing')
     }
     return run
   }
@@ -1724,6 +1747,9 @@ export class CloudCi {
       run = await this.save(run)
     }
     run = await this.progress(run, status)
+    if (status.artifactsReady && !run.collection) {
+      run = await this.save({ ...run, collection: { log: false, artifacts: false } })
+    }
     if (!status.done) return run
     if (this.provider.id === 'circleci') run = await this.recordTerminatedAttempt(run, run.providerRunId!, status)
     this.polled.delete(runId)
@@ -1744,9 +1770,11 @@ export class CloudCi {
       : `${this.provider.label}: ${status.conclusion}.`
     const message = passed ? run.message : [run.message, status.message ?? failure].filter(Boolean).join(' ')
     const terminal = await this.save({ ...run, state,
-      exitCode: passed ? 0 : 1, finishedAt: status.finishedAt, collection: { log: false, artifacts: false },
+      exitCode: passed ? 0 : 1, finishedAt: status.finishedAt, collection: run.collection ?? { log: false, artifacts: false },
       ...(failedSetup || status.notStarted ? { testsStarted: false } : {}),
       message })
+    log.info({ runId, provider: this.provider.id, providerFinishedAt: status.finishedAt,
+      observedAt: this.ports.now().toISOString() }, 'Cloud CI terminal observed')
     return terminal
   }
 }

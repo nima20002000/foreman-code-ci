@@ -36,13 +36,11 @@ describe.skipIf(!postgresEnabled)('exhausted saved work routes: multiple-routes'
       return finished(3)
     })
     try {
-      // Both exhausted routes are recorded; with nobody left to take the work, the Run fails with that reason.
-      await expect(runWorkHandoffWithRestart(f, recover, (execution) => {
+      const runtime = await runWorkHandoffWithRestart(f, recover, (execution) => {
         const { work } = WorkActivationInputSchema.parse(execution.input)
         return work.kind === 'limit_denial' && work.denial.relationshipId === 'a-2'
-      })).rejects.toMatchObject({ code: 'WORK_SELECTED_EXECUTION_FAILED' })
-      expect(await f.runs.get(f.f.run.id)).toMatchObject({ executionState: 'completed', outcome: 'failed',
-        result: { error: { code: 'WORK_FINISHED_WITH_FINDINGS', message: expect.stringContaining('Worker 0') } } })
+      })
+      expect(await runtime.runs.get(f.f.run.id)).toMatchObject({ executionState: 'waiting', outcome: 'pending' })
       const causes = (await f.db.pool.query<{ relationship_id: string; execution_id: string }>(
         `select relationship_id,execution_id from run_work_unresolved
          where run_id=$1 and relationship_id is not null order by relationship_id`, [f.f.run.id])).rows
@@ -50,8 +48,11 @@ describe.skipIf(!postgresEnabled)('exhausted saved work routes: multiple-routes'
       expect(new Set(causes.map((row) => row.execution_id)).size).toBe(1)
       expect((await f.db.pool.query('select used from run_work_connection_usage where run_id=$1', [f.f.run.id])).rows)
         .toEqual([{ used: 1 }, { used: 1 }])
+      const before = { ...f.provider.counts }
+      await runtime.engine.start(f.f.run.id)
+      expect(f.provider.counts).toEqual(before)
       expect((await f.db.pool.query('select run_id from run_work_direction_waits where run_id=$1',
-        [f.f.run.id])).rowCount).toBe(0)
+        [f.f.run.id])).rowCount).toBe(1)
     } finally { await f.close() }
   }, 120000)
 })

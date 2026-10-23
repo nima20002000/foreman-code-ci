@@ -9,7 +9,7 @@ import { requireAuthorization } from '../src/modules/access/policy.js'
 import { workDirectionInteractionId } from '../src/modules/runs/workDirectionInteraction.js'
 import { deferred } from './helpers/deferred.js'
 import {
-  useSettlementFixtures, timeout, handoffs, seedDirectionWait, directionApi, type Fixture,
+  useSettlementFixtures, timeout, handoffs, runtime, directionApi, type Fixture,
 } from './helpers/workflowSettlementTestSupport.js'
 
 // The fixture supplies completed native work; direction decisions, Start,
@@ -21,8 +21,12 @@ vi.mock('../src/modules/interactions/repeatNativeSettlement.js', async (importOr
 }))
 
 async function waitForDirection(f: Fixture) {
-  await seedDirectionWait(f, { outcome: 'succeeded', output: { routing: { kind: 'finish' },
-    data: { latestDeliverable: { revision: 1 }, remainingFindings: ['Review is incomplete'] } } })
+  await runtime(f, async (execution) => {
+    if (execution.state !== 'completed') await f.finish(execution.id, {
+      outcome: 'succeeded', output: { routing: { kind: 'finish' },
+        data: { latestDeliverable: { revision: 1 }, remainingFindings: ['Review is incomplete'] } },
+    })
+  })()
 }
 
 async function stopAndCleanUp(f: Fixture, api: Awaited<ReturnType<typeof directionApi>>) {

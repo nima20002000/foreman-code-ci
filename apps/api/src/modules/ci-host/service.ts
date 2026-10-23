@@ -1181,10 +1181,11 @@ export class HostCiService {
       return
     }
     const request: CiHostRequest = { operation: 'read', runId: ciExecutionRunId(run), afterOffset: 0, maxBytes: 32_768,
+      ...(computer.hostRef.kind === 'cloud' ? { observeOnly: true } : {}),
       ...(['integration', 'unit'].includes(run.suite) ? { durations: true } : {}),
       ...(computer.hostRef.kind === 'cloud' && run.step === 'queued' && this.spareElsewhere(run, computer)
         ? { reassign: true } : {}) }
-    const reply = await (computer.hostRef.kind === 'cloud'
+    let reply = await (computer.hostRef.kind === 'cloud'
       ? requestCloud(this.endpoint, computer, request)
       : this.endpoint.request(computer, request, { priority: 'background' })).catch(error => {
         throw new CiExecutorObservationError(error)
@@ -1222,6 +1223,14 @@ export class HostCiService {
         }
       }
       options.onCollecting?.()
+    }
+    if (computer.hostRef.kind === 'cloud' && reply.run.collection === 'pending') {
+      options.onCollecting?.()
+      const collected = await this.endpoint.request(computer, { ...request, observeOnly: false }, { priority: 'background' })
+      if (collected.operation !== 'read' || collected.run.runId !== ciExecutionRunId(run)) {
+        throw new DomainError('CI_HOST_REPLY_INVALID', 'Expected collection for this CI execution.', 502)
+      }
+      reply = collected
     }
     let logError: unknown
     let logTail: string | undefined = reply.text

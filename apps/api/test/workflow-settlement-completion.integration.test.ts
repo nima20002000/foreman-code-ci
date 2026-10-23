@@ -75,7 +75,7 @@ describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('workflow settlement compl
     }, timeout,
   )
 
-  it('fails a sole finish result with findings with the Agent\'s reason instead of waiting for direction', async () => {
+  it('preserves a sole finish result with findings as a direction wait across restart', async () => {
     await withFixture((graph) => ({ ...handoffs(1)(graph),
       executionPolicy: { maxParallelism: 1, maxNodeExecutions: 1 },
     }), async (f) => {
@@ -90,17 +90,20 @@ describe.skipIf(process.env.NIM2691_POSTGRES !== '1')('workflow settlement compl
         launches++
         await f.finish(execution.id, result)
       })
-      await expect(execute()).rejects.toMatchObject({ code: 'WORK_SELECTED_EXECUTION_FAILED' })
-      expect(await f.readRun()).toMatchObject({ executionState: 'completed', outcome: 'failed', result: { outcome: 'failed', error: {
-        code: 'WORK_FINISHED_WITH_FINDINGS',
-        message: expect.stringContaining('finished with unresolved findings: Full verification remains pending; Worktree retained for the orchestrator'),
-      } } })
-      expect(await hasWorkDirectionWait(f.owner)).toBe(false)
+      await execute()
+      const waiting = await f.readRun()
+      expect(waiting).toMatchObject({ executionState: 'waiting', outcome: 'pending' })
+      expect(await hasWorkDirectionWait(f.owner)).toBe(true)
+      await f.restart()
+      expect(await hasWorkDirectionWait(f.owner)).toBe(true)
+      await execute()
+      expect(await f.readRun()).toEqual(waiting)
+      expect(await f.store.completeWorkRun()).toBe('needs_direction')
       expect(launches).toBe(1)
       const read = await f.call(CANONICAL_RUN_GRAPH_MCP_TOOLS.current, { protocolVersion: 1, scope: f.scope })
       expect(read.result?.isError, JSON.stringify(read)).not.toBe(true)
       const persisted = CanonicalRunGraphCurrentSchema.parse(graphRpcValue(read.result))
-      expect(persisted.state.run).toMatchObject({ executionState: 'completed', outcome: 'failed', pendingInteractionCount: 0 })
+      expect(persisted.state.run).toMatchObject({ executionState: 'waiting', outcome: 'pending', pendingInteractionCount: 1 })
       expect(persisted.state.executions).toHaveLength(1)
     }, 'single')
   }, timeout)

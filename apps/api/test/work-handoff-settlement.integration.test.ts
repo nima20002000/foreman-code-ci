@@ -135,8 +135,7 @@ describe.runIf(postgresEnabled)('handoff settlement and withheld feedback', () =
         && WorkActivationInputSchema.parse(item.execution.input).work.kind === 'work_return')!.execution
       release.resolve()
       await drive
-      // The coder's last continuation still reports its own finding, so the Run fails with it as the reason.
-      expect(failure).toMatchObject({ code: 'WORK_SELECTED_EXECUTION_FAILED' })
+      expect(failure).toBeUndefined()
       expect(feedback).toHaveLength(2)
       const groups = feedback.map(input => {
         if (input.work.kind !== 'work_return') throw new Error('Expected correlated requester feedback')
@@ -145,8 +144,7 @@ describe.runIf(postgresEnabled)('handoff settlement and withheld feedback', () =
       expect(groups).toEqual([[{ nodeId: first.id }], [{ nodeId: second.id }]])
       expect((await events()).filter(event => event.kind === 'work_requester_reactivated'
         && event.payload.requesterNodeId === coder.id)).toHaveLength(2)
-      expect(await f.runs.get(f.f.run.id)).toMatchObject({ executionState: 'completed', outcome: 'failed',
-        result: { error: { code: 'WORK_FINISHED_WITH_FINDINGS', message: expect.stringContaining(`finding-${coder.id}`) } } })
+      expect(await f.runs.get(f.f.run.id)).toMatchObject({ executionState: 'waiting', outcome: 'pending' })
       expect(await f.runs.getExecution(firstExecution.id)).toEqual(firstExecution)
       expect(new Set(feedback.map(input => input.work.activation.activationId)).size).toBe(2)
     } finally {

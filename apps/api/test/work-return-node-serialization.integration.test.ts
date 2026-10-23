@@ -113,10 +113,8 @@ describe.runIf(postgresEnabled)('return continuations across review rounds', () 
       expect(executing).toHaveLength(1)
       releaseCoder.resolve()
       await drive
-      // The coder's last turn still reports review findings, so the Run fails with them as the reason.
-      expect(failure).toMatchObject({ code: 'WORK_SELECTED_EXECUTION_FAILED' })
-      expect(await f.runs.get(f.f.run.id)).toMatchObject({ executionState: 'completed', outcome: 'failed',
-        result: { error: { code: 'WORK_FINISHED_WITH_FINDINGS', message: expect.stringContaining('Further review findings remain') } } })
+      expect(failure).toBeUndefined()
+      expect(await f.runs.get(f.f.run.id)).toMatchObject({ executionState: 'waiting', outcome: 'pending' })
       expect(coderTurns).toBe(4)
       expect(feedback).toHaveLength(3)
       const returns = feedback.flatMap(input => {
