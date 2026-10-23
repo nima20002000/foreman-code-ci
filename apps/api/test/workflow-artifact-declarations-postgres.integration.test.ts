@@ -15,6 +15,7 @@ import { registerCurrentWorkflowTools } from '../src/mcp/operator/tools/currentW
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { DomainError } from '../src/modules/errors.js'
 import { postgresEnabled } from './helpers/database.js'
+import { readToolDetail } from '../src/mcp/shared/toolDetail.js'
 
 /** Actual SQL saved-version writer and authenticated production HTTP/MCP handlers.
  * This verifies declarations only; no native qualification, output or edge is fabricated. */
@@ -66,7 +67,7 @@ describe.skipIf(!postgresEnabled)('saved workflow artifact declaration parity', 
       const saveTool = tools.tools.find(tool => tool.name === CURRENT_WORKFLOW_TOOLS.save)!
       expect(JSON.stringify(saveTool.inputSchema)).toContain('artifactOutputs')
       expect(JSON.stringify(saveTool.inputSchema)).toContain('artifactInputs')
-      expect(saveTool.description).toContain('canonical publication proof')
+      expect(readToolDetail(saveTool)).toContain('canonical publication proof')
       const savedCall = await owner.callTool({ name: CURRENT_WORKFLOW_TOOLS.save, arguments: input })
       expect(savedCall.isError, JSON.stringify(savedCall)).not.toBe(true)
       const saved = CurrentWorkflowSaveResultSchema.parse(decodeMcpToolResult(savedCall))

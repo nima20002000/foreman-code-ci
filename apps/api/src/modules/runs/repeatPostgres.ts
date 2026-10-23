@@ -82,6 +82,7 @@ import {
   type RepeatInputBinding, type RepeatNodeRef,
   type RepeatResolution, type RepeatScope, type RepeatSource,
 } from './repeatResolution.js'
+import { CLOSED_RUN_STATES_SQL, isClosedRunState } from './runState.js'
 
 export { readRepeatExecutionLocked, type StoredRepeatExecution } from './repeatExecutionRead.js'
 
@@ -239,7 +240,7 @@ export class RepeatRunRepository {
   }
   private active(context: Context): void {
     if (context.stopped || context.cleanup) repeatConflict('GRAPH_STOP_CONFLICT')
-    if (['completed', 'interrupted'].includes(context.hooks.run.executionState)) repeatConflict('GRAPH_TERMINAL_CONFLICT')
+    if (isClosedRunState(context.hooks.run.executionState)) repeatConflict('GRAPH_TERMINAL_CONFLICT')
   }
   /** Commands join this owner's ordinary Run/head/slot transaction. The
    * captured native writer is rechecked inside it, without native I/O. */
@@ -1083,7 +1084,7 @@ export class RepeatRunRepository {
       await this.recordedEffect(context, 'input.bind', executionId)
       if (stored.execution.state === 'completed') return
       const closing = await context.sql.query(`select 1 from runs r where r.id=$1 and (
-        r.stop_requested_at is not null or r.execution_state in ('completed','interrupted')
+        r.stop_requested_at is not null or r.execution_state in (${CLOSED_RUN_STATES_SQL})
         or exists(select 1 from run_cleanup_intents c where c.run_id=r.id and c.pending)
         or exists(select 1 from harness_executions e join approval_execution_state b on b.execution_id=e.id
           where e.id=$2 and e.run_id=r.id and b.failure_result is not null))`,

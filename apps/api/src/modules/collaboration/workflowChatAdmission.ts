@@ -8,12 +8,13 @@ import { claimWorkflowControlInputLocked, readWorkflowControlDispositionLocked,
 import { readCoordinatorConsultationLocked, reserveCoordinatorConsultationLocked,
   stopCoordinatorConsultationLocked } from './workflowConsultations.js'
 import type { WorkflowChatLockedTarget, WorkflowChatOwnerPort } from './workflowControlTypes.js'
+import { isOpenRunState } from '../runs/runState.js'
 
 interface AdmissionIdentity { id: string; commandId: string; principalId: string; now: string }
 
 async function assertSendable(context: WorkflowChatLockedTarget, request?: Pick<ChatSendRequest, 'intent'>): Promise<void> {
   if (context.stopping) throw new DomainError('TARGET_SETTLING', 'The selected Run is stopping. Your input was not redirected.', 409)
-  if (!['queued', 'running', 'waiting'].includes(context.run.executionState)) {
+  if (!isOpenRunState(context.run.executionState)) {
     throw new DomainError('TARGET_SETTLED', 'This Run no longer accepts input.', 409)
   }
   if (context.target.kind === 'workflow_execution') {

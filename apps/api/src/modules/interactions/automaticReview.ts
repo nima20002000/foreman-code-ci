@@ -12,6 +12,7 @@ import { DomainError } from '../errors.js'
 import { requestReviewFailureStop } from './reviewFailureLifecycle.js'
 import type { ApprovalExecutionCoordinator } from './execution.js'
 import { ignoreError, logIgnoredError } from '../diagnostics/ignoredError.js'
+import { isRunInProgress } from '../runs/runState.js'
 
 /** Drives durable, explicitly assigned reviewers; never fabricates a board Agent or grants. */
 export class AutomaticReviewService {
@@ -96,7 +97,7 @@ export class AutomaticReviewService {
 
   private async schedule(interaction: DurableInteraction): Promise<void> {
     const run = await this.runs.get(interaction.runId)
-    if (!run || !['running', 'waiting'].includes(run.executionState) || !run.authorizationPrincipalId) return
+    if (!run || !isRunInProgress(run.executionState) || !run.authorizationPrincipalId) return
     await this.locations.revalidateRunAuthorization(run.authorizationPrincipalId, run.workspaceId, run.workflowId)
     if (this.closing) return
     const reviewerId = interaction.approval.designatedOrchestratorAgentId

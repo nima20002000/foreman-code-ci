@@ -2,12 +2,14 @@ import type { McpServer, ServerContext } from '@modelcontextprotocol/server'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { TelemetrySelectorTargetSchema, type TelemetrySelectorService } from '@foreman-code/contracts/resource-telemetry'
 import { toolFailure } from '../shared/results.js'
+import { toolDetail } from '../shared/toolDetail.js'
 import { RESOURCE_TELEMETRY_SELECTOR_TOOL, resolveTelemetrySelector } from '../../modules/resource-telemetry/readback/selector.js'
 import type { TelemetryDenialAudit } from '../../modules/resource-telemetry/readback/adapters.js'
 import { defineOperatorTool } from './definition.js'
 import { TELEMETRY_PERMISSION_DETAIL, telemetryDenialAudit, telemetryDiscoverable } from './resourceTelemetry.js'
 
-const description = 'Resolve one authorized ResourceTelemetry selector from an exact public computer, Run execution, CI attempt, or conversation reference. The server supplies authenticated host and collector generations from existing live ownership; this never creates an owner, starts collection or execution, or grants computer access from an owned scope. Denied and unavailable results expose no identities, owners, or metric values.'
+const description = 'Resolve the telemetry selector for an exact computer, Run execution, CI attempt or conversation reference, for resource_telemetry_read. Never starts collection or execution or grants computer access.'
+const detail = 'The server supplies authenticated host and collector generations from existing live ownership; this never creates an owner or grants computer access from an owned scope. Denied and unavailable results expose no identities, owners or metric values.'
 const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
 
 async function respond(selectors: TelemetrySelectorService<ManagementPrincipal>, principal: ManagementPrincipal,
@@ -26,6 +28,7 @@ export const resourceTelemetrySelectorTool = defineOperatorTool({
   discoverable: telemetryDiscoverable,
   permissionDetail: TELEMETRY_PERMISSION_DETAIL,
   description,
+  detail,
   inputSchema: TelemetrySelectorTargetSchema,
   annotations,
   handle: (context, input, { extra }) => respond(context.services.resourceTelemetry!.selectors, context.principal, input, extra,
@@ -34,6 +37,6 @@ export const resourceTelemetrySelectorTool = defineOperatorTool({
 
 export function registerResourceTelemetrySelectorTools(server: McpServer, principal: ManagementPrincipal,
   selectors: TelemetrySelectorService<ManagementPrincipal>, audit: TelemetryDenialAudit): void {
-  server.registerTool(RESOURCE_TELEMETRY_SELECTOR_TOOL, { description, inputSchema: TelemetrySelectorTargetSchema, annotations },
+  server.registerTool(RESOURCE_TELEMETRY_SELECTOR_TOOL, { description, ...toolDetail(detail), inputSchema: TelemetrySelectorTargetSchema, annotations },
     (input, extra) => respond(selectors, principal, input, extra, audit))
 }

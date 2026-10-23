@@ -6,6 +6,7 @@ import { validateReviewerBootstrap } from '../../workflows/reviewerBootstrap.js'
 import { fail } from './context.js'
 import { readRecoverableRemoteReviewer } from '../retainedRemoteReviewer.js'
 import { readConsultationCredentialSubject } from '../../access/consultationAuthority.js'
+import { isOpenRunState } from '../../runs/runState.js'
 
 type Purpose = 'workflow' | 'reviewer'
 interface WorkerCredentialBinding {
@@ -55,7 +56,7 @@ export async function credentialAuthority(
   const e = HarnessExecutionSchema.parse(row.execution), c = AgentConfigurationVersionSchema.parse(row.configuration)
   // Retry admission owns the budget. Credentials bind to that exact persisted
   // execution/attempt, not an attempt-one-only workflow or a reused credential.
-  if (row.stopped || !['running','waiting','queued'].includes(r.executionState) || r.outcome !== 'pending'
+  if (row.stopped || !isOpenRunState(r.executionState) || r.outcome !== 'pending'
     || e.id !== executionId || e.runId !== r.id || e.attempt !== row.attempt || r.workflowVersionId !== v.id
     || v.workspaceId !== r.workspaceId || v.workflowId !== r.workflowId || c.workspaceId !== r.workspaceId
     || c.agentId !== e.agentId || c.id !== e.agentConfigurationVersionId || !c.productRole

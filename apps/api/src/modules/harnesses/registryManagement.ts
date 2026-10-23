@@ -6,6 +6,7 @@ import type { ProductionHarnessRegistry } from './productionRegistry.js'
 import { hasAction } from '../access/policy.js'
 import { toolFailure, toolResult } from '../../mcp/shared/results.js'
 import { defineOperatorTool } from '../../mcp/operator/definition.js'
+import { toolDetail } from '../../mcp/shared/toolDetail.js'
 
 export type HarnessRegistryManagementService = Pick<ProductionHarnessRegistry, 'get'>
 
@@ -20,15 +21,14 @@ export function registerHarnessRegistryRoutes(app: FastifyInstance, service: Har
   })
 }
 
-const description = 'Read the authorized selected computer inventory and every saved global preset, including Claude. '
-  + 'Match its driver to an installed harness, use harness_instance_save to configure a host override, '
-  + 'enabled saves qualify the profile automatically. Start and placement choices check missing or stale results. '
+const description = 'Read a computer\'s harness inventory and every saved global preset, including Claude; match a driver to an '
+  + 'installed harness and configure a host profile with harness_instance_save. Performs no discovery, native probe or fallback.'
+const detail = 'Enabled saves qualify the profile automatically. Start and placement choices check missing or stale results. '
   + 'Saving and explicit checking require update grants; automatic checks add no grants. '
   + 'Installation, authentication, qualification and connection facts remain separate; '
   + 'the sidebar installation indicator uses installed, without implying authentication or execution readiness. '
-  + 'previously qualified Main and Worker profiles are checked automatically after installed payload changes. '
-  + 'harness_instances_list reports pending checks and persisted failure reasons. '
-  + 'no discovery, native probe or fallback is performed.'
+  + 'Previously qualified Main and Worker profiles are checked automatically after installed payload changes. '
+  + 'harness_instances_list reports pending checks and persisted failure reasons.'
 const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
 
 async function respond(service: HarnessRegistryManagementService, principal: ManagementPrincipal,
@@ -42,6 +42,7 @@ export const harnessRegistryTools = [defineOperatorTool({
   requires: [['harnesses:read', 'global']],
   enabled: s => !!s.harnessRegistry,
   description,
+  detail,
   inputSchema: HarnessHostReferenceSchema, outputSchema: HarnessRegistryReadbackSchema,
   annotations,
   handle: (context, input) => respond(context.services.harnessRegistry!, context.principal, input),
@@ -50,6 +51,6 @@ export const harnessRegistryTools = [defineOperatorTool({
 export function registerHarnessRegistryTools(server: McpServer, service: HarnessRegistryManagementService,
   principal: ManagementPrincipal): void {
   if (!hasAction(principal, 'harnesses:read')) return
-  server.registerTool('harness_registry_get', { description, inputSchema: HarnessHostReferenceSchema,
+  server.registerTool('harness_registry_get', { description, ...toolDetail(detail), inputSchema: HarnessHostReferenceSchema,
     outputSchema: HarnessRegistryReadbackSchema, annotations }, input => respond(service, principal, input))
 }

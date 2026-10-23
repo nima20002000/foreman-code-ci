@@ -17,10 +17,8 @@ export const workflowTools = [
     name: 'workflow_list',
     requires: [['workflows:read', 'resource']],
     enabled: s => !!s.workflows,
-    description: 'List authorized workflow summaries in saved workspace order, including empty workflows (10 by default). '
-      + 'Use detail:full or workflow_get for the saved definition. Each page includes orderRevision for workflow_reorder. '
-      + 'orderRevision is 0 when no read grant applies to this workspace. '
-      + 'Pass pageInfo.nextCursor as cursor; null means the end. Restart pagination after order or membership changes.',
+    description: 'List workflow summaries in saved workspace order, including empty workflows (10 by default); pass pageInfo.nextCursor as cursor until null. detail: "full" or workflow_get returns the saved definition.',
+    detail: 'Each page includes orderRevision for workflow_reorder; it is 0 when no read grant applies to this workspace. Restart pagination after order or membership changes.',
     inputSchema: OperatorWorkflowListInputSchema,
     outputSchema: WorkflowSummaryPageSchema.or(ManagedWorkflowPageSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -49,19 +47,18 @@ export const workflowTools = [
     name: 'workflow_create',
     requires: [['workflows:create', 'workspace']],
     enabled: s => !!s.workflows,
-    description: 'Create a named semantics-3 workflow using global workflow defaults. '
-      + 'The built-in approval handler is native; saved global defaults take precedence. '
+    description: 'Create a named semantics-3 workflow from the global workflow defaults; provide initialSave '
+      + '{graph, expectedAgentConfigurationVersionIds} to create and save it atomically. Later graph edits use workflow_validate_v3 and workflow_save_v3.',
+    detail: 'The built-in approval handler is native; saved global defaults take precedence. '
       + `New workflows start with executionPolicy ${JSON.stringify(DEFAULT_WORKFLOW_EXECUTION_POLICY)}; change it with the workflow edit tools. `
-      + 'Omit initialSave for an unsaved workflow, or provide initialSave '
-      + '{graph, expectedAgentConfigurationVersionIds} to atomically create and save. '
+      + 'Omit initialSave for an unsaved workflow. '
       + 'Omitted graph.approval uses the workflow creation default; explicit orchestrator handling requires a designated reviewer. '
       + 'The graph omits workflow identity, name, description, defaultWorktree and timestamps; '
       + 'creation supplies those fields. Invalid graphs or configuration references leave no workflow. '
       + 'Initial save additionally requires workflows:read/update, graph:read/edit/save, agents:read '
       + 'and workspace_locations:read, and referenced skill/harness/source grants, '
       + 'scoped to the workspace without workflow-ID restrictions. '
-      + 'Read back with workflow_saved_get_v3; retry the same commandId and input after an uncertain reply. '
-      + 'Use workflow_validate_v3 and workflow_save_v3 for later graph edits, with or without repeat. '
+      + 'Read back with workflow_saved_get_v3. '
       + 'Omit defaultWorktree to copy the ready workspace project root; pass null to opt out '
       + 'or {rootBinding,branchPrefix?} to select an approved immutable Git source. '
       + 'Worktree selection requires sources:read, source_roots:read and workspace_locations:read. '

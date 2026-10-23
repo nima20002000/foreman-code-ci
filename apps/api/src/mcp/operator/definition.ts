@@ -5,6 +5,7 @@ import type { ManagementAction, ManagementScope, OperatorToolName } from '@forem
 import { hasAction, isAuthorized, type AuthorizedResource } from '../../modules/access/policy.js'
 import type { OperatorCatalog } from './presentation.js'
 import type { OperatorRequestContext, OperatorServices } from './types.js'
+import { toolDetail } from '../shared/toolDetail.js'
 
 /**
  * One declarative Operator MCP tool. Its definition is the single source of truth for the
@@ -33,7 +34,10 @@ interface ToolMetadata<I extends StandardSchemaWithJSON> {
   discoverable?: (context: OperatorRequestContext, resource?: AuthorizedResource) => boolean
   /** operator_get_capabilities detail for this tool's requirements, when the default one is not enough. */
   permissionDetail?: string
+  /** One or two sentences: what the tool does and what a caller must know to call it. */
   description: string
+  /** Longer guidance, served on demand by tool_schema and operator_tool_schema_get, never in tools/list. */
+  detail?: string
   inputSchema: I
   outputSchema?: StandardSchemaWithJSON
   annotations: ToolAnnotations
@@ -131,6 +135,7 @@ export function registerToolDefinition(server: McpServer, context: OperatorReque
     inputSchema: tool.inputSchema,
     ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
     annotations: tool.annotations,
+    ...(tool.detail ? toolDetail(tool.detail) : {}),
   }, (input: unknown, extra: ServerContext) => {
     const call: OperatorToolCall = { extra, tools: options.tools ?? [], ...(options.catalog ? { catalog: options.catalog } : {}) }
     if (tool.handle) return tool.handle(context, input, call)
