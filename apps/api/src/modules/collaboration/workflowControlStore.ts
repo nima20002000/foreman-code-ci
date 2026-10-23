@@ -142,21 +142,11 @@ export async function claimWorkflowControlInputLocked(sql:GraphTransactionSql,
   input:{execution:ExecutionRef;now:string;claimNew?:boolean}):Promise<WorkflowQueuedInput | undefined> {
   assertGraphTransaction(sql)
   const ref=ExecutionRefSchema.parse(input.execution)
-  // An unsubmitted input follows technical retries, but never crosses an explicit control continuation.
-  const retained=(await sql.query<ControlCommandRow>(`with recursive retries(id) as (
-      select $2::text union select x.previous_execution_id from run_repeat_executions x
-      join retries r on r.id=x.execution_id where x.run_id=$1 and x.previous_execution_id is not null
-        and not exists(select 1 from run_control_continuations k where k.run_id=$1 and k.successor_execution_id=x.execution_id)
-    ) select ${CONTROL_COMMAND_COLUMNS} from run_chat_commands
-    where run_id=$1 and kind='delivery' and delivered_execution->>'executionId' in (select id from retries)
-      and state in ('submitting','accepted','unknown')
-      and (delivered_execution->>'executionId'=$2 or $3::boolean and state='submitting' and native_target is null)
-    order by sequence limit 1 for update`,[ref.runId,ref.executionId,input.claimNew!==false])).rows[0]
+  const retained=(await sql.query<ControlCommandRow>(`select ${CONTROL_COMMAND_COLUMNS} from run_chat_commands
+    where run_id=$1 and kind='delivery' and delivered_execution->>'executionId'=$2
+      and state in ('submitting','accepted','unknown') order by sequence limit 1`,[ref.runId,ref.executionId])).rows[0]
   if(retained) {
-    const receipt=ChatDeliveryReceiptSchema.parse(retained.receipt), target=receipt.target
-    if(!sameExecution(ExecutionRefSchema.parse(retained.delivered_execution),ref)) {
-      await updateControlCommand(sql,retained,{...receipt,updatedAt:input.now},input.now,{deliveredExecution:ref})
-    }
+    const target=ChatDeliveryReceiptSchema.parse(retained.receipt).target
     const sameWork=target.kind!=='workflow_execution' || target.execution.executionId===ref.executionId
       || (await sql.query(`${LINEAGE} select 1 from lineage where id=$3`,[ref.runId,ref.executionId,target.execution.executionId])).rowCount===1
     return queuedInput(retained,ref,sameWork)
@@ -177,8 +167,8 @@ export async function claimWorkflowControlInputLocked(sql:GraphTransactionSql,
   return queuedInput(row,ref,row.same_work)
 }
 const LINEAGE=`with recursive lineage(id) as (
-      select $2::text union select k.previous_execution_id from run_repeat_executions k
-      join lineage l on l.id=k.execution_id where k.run_id=$1 and k.previous_execution_id is not null
+      select $2::text union select k.previous_execution_id from run_control_continuations k
+      join lineage l on l.id=k.successor_execution_id where k.run_id=$1 and k.successor_execution_id is not null
     )`
 /** A prompt saved for an earlier turn is not this turn's; the new turn's own request then carries the message. */
 function queuedInput(row:ControlCommandRow,execution:ExecutionRef,sameWork:boolean):WorkflowQueuedInput {
