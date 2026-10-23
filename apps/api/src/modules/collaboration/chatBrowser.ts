@@ -23,8 +23,8 @@ export class ChatBrowserSessions {
 
   constructor(private readonly options: {
     pool: pg.Pool; authority: BrowserAuthority; lifecycle: BrowserLifecyclePort
-    /** Sessions the local browser host holds, including ones opened before this API process started. */
-    localSessions(): Promise<readonly BrowserSession[]>
+    /** Local and retained paired-host sessions, including ones opened before this API process started. */
+    sessions(): Promise<readonly BrowserSession[]>
     /** Current control facts of a local session; undefined when this computer does not hold it. */
     localControl?(sessionId: string): { browserGeneration: number; epoch: number } | undefined
     /** Control facts of a session on any computer, through the session router; used when the local broker does not hold it. */
@@ -90,7 +90,7 @@ export class ChatBrowserSessions {
 
   private async runUses(profileId: string, computerId: string): Promise<boolean> {
     if ([...this.runs.values()].some(run => run.profileId === profileId && run.computerId === computerId)) return true
-    return (await this.options.localSessions()).some(session => session.subject && session.subject.kind !== 'conversation'
+    return (await this.options.sessions()).some(session => session.subject && session.subject.kind !== 'conversation'
       && session.state !== 'closed' && session.state !== 'failed' && session.profileId === profileId && session.computerId === computerId)
   }
 
@@ -146,7 +146,7 @@ export class ChatBrowserSessions {
 
   private async adopt(): Promise<void> {
     const known = new Set([...this.chats.values()].map(chat => chat.sessionId))
-    for (const session of await this.options.localSessions()) {
+    for (const session of await this.options.sessions()) {
       const subject = session.subject
       if (subject?.kind !== 'conversation' || known.has(session.id) || session.state === 'closed' || session.state === 'failed'
         || this.chats.has(subject.conversationId)) continue

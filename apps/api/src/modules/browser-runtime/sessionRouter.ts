@@ -1,6 +1,7 @@
 import type pg from 'pg'
 import { BrowserSessionSchema } from '@foreman-code/contracts/browser-sessions'
 import { DomainError } from '../errors.js'
+import { componentLogger } from '../diagnostics/logger.js'
 import type { BrowserPairingAuthority, BrowserInstallationBinding } from '../browser-profiles/keys.js'
 import type { BrowserSessionService, BrowserSessionAuthority, BrowserSessionPort, BrowserSessionListInput } from './service.js'
 import type { AgentSubject, BrowserSession } from './types.js'
@@ -27,7 +28,8 @@ export function createBrowserSessionLocations(pool: pg.Pool): BrowserSessionLoca
     },
     async save(session, installationId) {
       await pool.query(`insert into browser_session_locations(session_id,computer_id,installation_id,session) values($1,$2,$3,$4)
-        on conflict(session_id) do update set session=excluded.session where browser_session_locations.installation_id=excluded.installation_id`,
+        on conflict(session_id) do update set installation_id=excluded.installation_id,session=excluded.session
+        where browser_session_locations.computer_id=excluded.computer_id`,
       [session.id, session.computerId, installationId, BrowserSessionSchema.parse(session)])
     },
     async view(viewId) { return (await pool.query<{ session_id: string }>('select session_id from browser_view_locations where view_id=$1', [viewId])).rows[0]?.session_id },
@@ -103,11 +105,20 @@ export function createBrowserSessionRouter<Principal>(options: BrowserSessionRou
         current = computers.indexOf(value[0]); cursor = value[1] ?? undefined
         if (current < 0) throw new DomainError('CURSOR_INVALID', 'The browser computer set changed. Refresh the session list.', 409)
       }
-      const computer = computers[current]
-      if (!computer) return { sessions: [], nextCursor: null }
-      const page = await call(computer, 'list', principal, [{ ...input, computerId: computer, cursor }])
-      const next = page.nextCursor ? [computer, page.nextCursor] : computers[current + 1] ? [computers[current + 1], null] : null
-      return { sessions: page.sessions, nextCursor: next ? Buffer.from(JSON.stringify(next)).toString('base64url') : null }
+      while (current < computers.length) {
+        const computer = computers[current]!
+        let page: Awaited<ReturnType<BrowserSessionPort<Principal>['list']>>
+        try { page = await call(computer, 'list', principal, [{ ...input, computerId: computer, cursor }]) } catch (error) {
+          if (input.computerId || input.subject || !(error instanceof DomainError) || error.code !== 'BROWSER_COMPUTER_OFFLINE') throw error
+          componentLogger('lifecycle').warn({ err: error, computerId: computer, operation: 'list browser sessions' },
+            'Offline computer omitted from browser session list')
+          current++; cursor = undefined
+          continue
+        }
+        const next = page.nextCursor ? [computer, page.nextCursor] : computers[current + 1] ? [computers[current + 1], null] : null
+        return { sessions: page.sessions, nextCursor: next ? Buffer.from(JSON.stringify(next)).toString('base64url') : null }
+      }
+      return { sessions: [], nextCursor: null }
     },
     authorizeUpload: (p, id, fileId) => sessionCall('authorizeUpload', p, id, true, [id, fileId]),
     get: (p, id) => sessionCall('get', p, id, false, [id]),

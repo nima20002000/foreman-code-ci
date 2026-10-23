@@ -1418,26 +1418,15 @@ export class AgentChatService {
     if (turn.intent === 'steer') {
       await this.control(id, async () => {
         const row = await this.conversation(workspaceId, id, principal, 'agent_chat:write')
+        const runtime = this.runtimes.get(id)
         const expected = turn.targetNativeTurnId
         const retained = await this.canonicalDelivery?.receipts.find(principal.id, requestId)
         const original = retained?.ownerBinding
         if (!expected || row.active_native_turn_id !== expected || !row.active_request_id
           || !original?.ownerRequestId || original.ownerRequestId !== row.active_request_id
-          || original.nativeSessionId !== row.native_session_id || original.nativeTurnId !== expected) {
+          || original.nativeSessionId !== row.native_session_id || original.nativeTurnId !== expected
+          || runtime?.session?.nativeSessionId !== row.native_session_id || !runtime?.manager.steerTurn) {
           // Nothing was submitted, so the steer ends here like the legacy path's 409 instead of staying unconfirmed.
-          await this.repository.failSteer(id, requestId, 'The selected native turn is no longer available to take this steer.')
-          this.events.publish(id, 'turn', { requestId })
-          return
-        }
-        let runtime = this.runtimes.get(id)
-        if (!runtime?.session) {
-          const configuration = await this.conversationConfiguration(row)
-          if (!configuration) throw new DomainError('AGENT_CHAT_UNAVAILABLE', 'The pinned Agent configuration is unavailable.', 503)
-          // The pending drain can adopt a prepared steer before startup recovery attaches its original owner.
-          runtime = await this.runtime(row, configuration, agentChatCorrelation(id, row.active_request_id),
-            AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(60_000)]), principal.id)
-        }
-        if (!runtime.session || runtime.session.nativeSessionId !== row.native_session_id || !runtime.manager.steerTurn) {
           await this.repository.failSteer(id, requestId, 'The selected native turn is no longer available to take this steer.')
           this.events.publish(id, 'turn', { requestId })
           return
@@ -2418,11 +2407,7 @@ export class AgentChatService {
     for (const row of await this.repository.open()) {
       if (this.closing) return
       if (row.harness === 'opencode') continue
-      try { await this.repair(row.id) } catch (error) {
-        componentLogger('harness').warn({ err: error, conversationId: row.id }, 'Agent chat startup recovery will retry this conversation')
-        this.events.publish(row.id, 'error', { message: errorMessage(error, 'Native reconciliation failed.') })
-        this.scheduleReconcile(row.id)
-      }
+      await this.repair(row.id)
     }
   }
 

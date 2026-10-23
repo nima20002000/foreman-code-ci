@@ -1,7 +1,7 @@
 import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { resolveBrowserTarget } from './browserTargets.js'
 import type pg from 'pg'
-import { canonicalJson, type AgentSubject } from '@foreman-code/contracts'
+import { canonicalJson, BrowserSessionSchema, type AgentSubject } from '@foreman-code/contracts'
 import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { DeviceRegistrationSchema } from '@foreman-code/contracts/device-identity'
 import type { DeviceSessionBinding } from '@foreman-code/contracts/device-connection'
@@ -124,13 +124,24 @@ export function createProductionBrowser(options: BrowserCompositionOptions) {
       }
       await pairing.assertInstallation(saved.session.computerId, saved.installationId)
       const result = await (saved.session.computerId === identity() ? runtime.getHost().broker.release(input) : remote.release(input))
-      if (result.state !== 'pending') authority.forget(input.subject)
-      if (result.state !== 'pending') chat.runClosed(input.sessionId)
+      if (result.state !== 'pending') {
+        await locations.save({ ...saved.session, state: 'closed', selectedTabId: null }, saved.installationId)
+        authority.forget(input.subject)
+        chat.runClosed(input.sessionId)
+      }
       return result
     },
   }
   const chat: ChatBrowserSessions = new ChatBrowserSessions({ pool: options.pool, authority, lifecycle,
-    localSessions: async () => runtime.status().ready ? runtime.getHost().broker.list() : [],
+    sessions: async () => {
+      const retained = await options.pool.query<{ session: unknown }>(`select locations.session from browser_session_locations locations
+        join device_registrations devices on devices.id::text=locations.computer_id
+          and devices.worker_installation_id::text=locations.installation_id
+        where devices.main_id=$1 and devices.record->>'status'='paired'
+          and locations.session->>'state' not in ('closed','failed')`, [identity()])
+      return [...(runtime.status().ready ? runtime.getHost().broker.list() : []),
+        ...retained.rows.map(row => BrowserSessionSchema.parse(row.session))]
+    },
     sessionControl: async (principal, sessionId) => {
       const { session, control } = await sessions.get(principal, sessionId)
       return { browserGeneration: session.browserGeneration, epoch: control.epoch }
