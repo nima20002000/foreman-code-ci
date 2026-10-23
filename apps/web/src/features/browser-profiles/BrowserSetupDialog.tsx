@@ -99,7 +99,7 @@ function SetupBrowser(props: BrowserSetupDialogProps) {
     {accessDenied ? <p role="alert" className="browser-profile-note">The browser is unavailable right now.</p>
       : read.isPending ? <p role="status" className="browser-profile-note">Opening the browser…</p>
         : read.error ? <p role="alert">{browserErrorMessage(read.error)}</p>
-          : read.data && tab ? <BrowserSessionPanel key={`${tab.tabId}:${connection}`} port={props.port} files={props.files} initial={read.data}
+          : read.data && tab ? <BrowserSessionPanel key={tab.tabId} connectionVisit={connection} port={props.port} files={props.files} initial={read.data}
             tab={tab} viewerId={viewerId} readOnly={false} computerName={props.computerName} setup
             onRead={result => queryClient.setQueryData(key, result)} onSelectTab={setTabId} keepControlOnTabChange={() => true}
             onRefresh={() => { if (mounted.current) void read.refetch() }}

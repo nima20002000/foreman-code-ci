@@ -105,8 +105,8 @@ function SelectedBrowser(props: AgentBrowserPanelProps & { keepControlOnTabChang
         </>
           : read.isPending ? <p role="status">Loading browser…</p>
             : data?.session.state === 'closed' || data?.session.state === 'failed' ? <p>No live browser remains for this selected session.</p>
-              : data && tab ? <BrowserSessionPanel key={`${data.session.id}:${data.session.browserGeneration}:${tab.tabId}:${connectionVisit}`}
-                {...props} initial={data} tab={tab} viewerId={viewerId} onDenied={deny}
+              : data && tab ? <BrowserSessionPanel key={`${data.session.id}:${data.session.browserGeneration}:${tab.tabId}`}
+                {...props} initial={data} tab={tab} viewerId={viewerId} onDenied={deny} connectionVisit={connectionVisit}
                 onRead={result => queryClient.setQueryData(browserSessionKey(props.selection), validateBrowserRead(result, props.selection))}
                 onRefresh={() => { void read.refetch() }}
                 onReconnect={recover} reconnectAttempts={reconnectAttempts} />
@@ -141,6 +141,7 @@ export interface BrowserSessionPanelProps {
   onSelectTab(tabId: string): void; onCleanupError(message: string): void
   onRefresh(): void
   reconnectAttempts: RefObject<number>
+  connectionVisit: number
 }
 
 type ViewerMutation = {
@@ -149,7 +150,12 @@ type ViewerMutation = {
 }
 
 export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
-  const [controller] = useState(() => new BrowserController(props.port, props.initial, props.tab, props.viewerId, props.onDenied))
+  const view = useRef<{ visit: number; controller: BrowserController } | null>(null)
+  if (!view.current || view.current.visit !== props.connectionVisit) {
+    view.current = { visit: props.connectionVisit,
+      controller: new BrowserController(props.port, props.initial, props.tab, props.viewerId, props.onDenied) }
+  }
+  const controller = view.current.controller
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot)
   const surface = useRef<HTMLDivElement>(null)
   const retiringForTab = useRef(false)
@@ -165,6 +171,7 @@ export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
   useEffect(() => {
     effectVisit.current += 1
     mounted.current = true
+    retiringForTab.current = false
     void controller.start()
     const outside = (event: globalThis.PointerEvent) => {
       if (event.target instanceof Node && !surface.current?.contains(event.target)) void controller.release()
@@ -176,11 +183,12 @@ export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
     return () => {
       mounted.current = false
       const retiringVisit = ++effectVisit.current
+      const retiringTab = retiringForTab.current
       document.removeEventListener('pointerdown', outside); window.removeEventListener('blur', blur)
       // React StrictMode replays setup immediately; only a genuinely retired mount closes the host view.
       queueMicrotask(() => {
-        if (effectVisit.current !== retiringVisit) return
-        const release = !retiringForTab.current || !lifecycle.current.keepControlOnTabChange()
+        if (effectVisit.current !== retiringVisit && view.current?.controller === controller) return
+        const release = !retiringTab || !lifecycle.current.keepControlOnTabChange()
         void controller.close(release).catch(failure => lifecycle.current.onCleanupError(browserErrorMessage(failure)))
       })
     }
@@ -269,7 +277,7 @@ export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
     }}>Check original browser action</Button> : null}
     {snapshot.stale && snapshot.notice !== 'denied' ? <Button size="sm" disabled={pending}
       onClick={() => { retiringForTab.current = true; props.onReconnect() }}>Reconnect</Button> : null}
-    <BrowserViewer controller={controller} snapshot={snapshot} readOnly={props.readOnly}
+    <BrowserViewer key={props.connectionVisit} controller={controller} snapshot={snapshot} readOnly={props.readOnly}
       onLeavePage={() => surface.current?.querySelector<HTMLButtonElement>('[data-browser-control]')?.focus()} />
     <small id="browser-page-help" className="agent-browser-help">{snapshot.notice === 'user' ? 'You have control. Click elsewhere to give it back to the agent.'
       : snapshot.notice === 'taking' ? 'Taking control…' : 'Click the page to take control; click elsewhere to give it back.'}</small>

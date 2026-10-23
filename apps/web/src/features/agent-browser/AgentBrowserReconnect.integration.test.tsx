@@ -48,10 +48,13 @@ it('settles the original browser command before automatically reconnecting a los
     act(() => fake.observer!.frame(frame()))
     fireEvent.click(screen.getByRole('button', { name: 'New tab' }))
     await waitFor(() => expect(fake.port.createTab).toHaveBeenCalledTimes(1))
+    expect(screen.getByRole('button', { name: 'New tab' })).toBeDisabled()
     const original = vi.mocked(fake.port.createTab).mock.calls[0]!
     act(() => fake.observer!.disconnected(new Error('Browser view disconnected')))
     await act(async () => { await vi.advanceTimersByTimeAsync(3_050) })
     expect(fake.port.reconnect).not.toHaveBeenCalled()
+    expect(fake.port.openView).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'Reconnect', exact: true })).toBeDisabled()
     await act(async () => { response.reject(new TypeError('Failed to fetch')) })
     expect(await screen.findByRole('button', { name: 'Check original browser action' })).toBeVisible()
     await act(async () => { await vi.advanceTimersByTimeAsync(3_050) })
