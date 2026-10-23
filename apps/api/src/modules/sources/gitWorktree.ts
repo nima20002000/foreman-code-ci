@@ -6,7 +6,7 @@ import { SourceError } from './manifest.js'
 import { DomainError } from '../errors.js'
 import { gitAcquisitionFailure, gitFailure } from './gitErrors.js'
 import { directoryFlags, withPrivateDirectoryLock } from './privateFilesystem.js'
-import { runGitProcess } from './gitProcess.js'
+import { runGitProcess, type GitProcessOptions, type GitProcessResult } from './gitProcess.js'
 import { runGitWithCacheStorage } from './gitCacheStorage.js'
 import { hostEnvironment } from '../../shared/process.js'
 
@@ -14,8 +14,7 @@ export interface WorktreeRequest { repository: string; branch: string }
 export interface GitWorktreePorts {
   /** One clone per repository on this computer, outside every approved root. */
   cloneDirectory(repository: string): string
-  git(args: string[], options: { cwd?: string; signal: AbortSignal; env?: Record<string, string>;
-    lifetimeLockFd?: number }): Promise<{ code: number; stdout: string; stderr: string }>
+  git(args: string[], options: GitProcessOptions): Promise<GitProcessResult>
 }
 
 const REPOSITORY = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/u

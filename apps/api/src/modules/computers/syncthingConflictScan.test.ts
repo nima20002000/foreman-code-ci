@@ -1,9 +1,5 @@
 import { beforeEach, expect, it, vi } from 'vitest'
-import { systemSyncthingPorts } from '../src/hostAdmin/index.js'
-
-function conflictPorts() {
-  return systemSyncthingPorts({ find: async () => null, run: async () => { throw new Error('Conflict scans must not run commands') } }, {})
-}
+import { systemSyncthingPorts } from './syncthingSystem.js'
 
 const filesystem = vi.hoisted(() => ({ inspected: 0, conflictAt: -1, nested: false }))
 beforeEach(() => { filesystem.inspected = 0; filesystem.conflictAt = -1; filesystem.nested = false })
@@ -31,7 +27,7 @@ vi.mock('node:fs/promises', async importOriginal => {
 })
 
 it('bounds conflict traversal even when every file is ordinary', async () => {
-  const ports = conflictPorts()
+  const ports = systemSyncthingPorts()
   expect(await ports.conflicts('/shared/workspace')).toEqual([])
   expect(filesystem.inspected).toBe(10_000)
 })
@@ -40,7 +36,7 @@ it('bounds conflict traversal even when every file is ordinary', async () => {
 it.each([false, true])('resumes bounded scans to find later conflicts with nested=%s', async nested => {
   filesystem.conflictAt = nested ? -1 : 10_000
   filesystem.nested = nested
-  const ports = conflictPorts()
+  const ports = systemSyncthingPorts()
   expect(await ports.conflicts('/shared/workspace')).toEqual([])
   const names = new Set<string>()
   for (let index = 0; index < 3; index++) {
@@ -54,7 +50,7 @@ it.each([false, true])('resumes bounded scans to find later conflicts with neste
 
 it('retains discovered conflicts across slices and removes them after a complete rescan', async () => {
   filesystem.conflictAt = 0
-  const ports = conflictPorts()
+  const ports = systemSyncthingPorts()
   const names = ['late.sync-conflict-20261016.txt']
   expect(await ports.conflicts('/shared/workspace')).toEqual(names)
   expect(await ports.conflicts('/shared/workspace')).toEqual(names)
