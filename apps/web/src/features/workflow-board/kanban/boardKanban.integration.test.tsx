@@ -172,7 +172,8 @@ it('shows which Agent just changed a card on that card only, with a light from t
 it('opens a card in its own window with what its Agent did and every update across Runs', async () => {
   const board = install('kanban-card-window', { visible: true, frame: { x: 700, y: 0, width: 760, height: 460 } })
   const node = board.graph.nodes[0]!
-  const agent = { workspaceId: board.graph.workspaceId, workflowId: board.graph.id, workflowNodeId: node.id, agentId: node.agentId }
+  if (node.kind === 'job') throw new Error('The fixture starts with an Agent node')
+  const agent ={ workspaceId: board.graph.workspaceId, workflowId: board.graph.id, workflowNodeId: node.id, agentId: node.agentId }
   board.memory.cards.set(board.release.id, { ...board.release, status: 'done', completionKind: 'completed', assignee: agent,
     body: 'Drafted the release notes.\nLinked the changelog.' })
   const update = (id: string, sequence: number, changes: MemoryChange['changes'], runId: string): MemoryChange => ({
