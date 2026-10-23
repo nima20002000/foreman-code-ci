@@ -60,7 +60,7 @@ it('resizes a node on the draft through layout Save while the active Run’s sav
   expect(wire.writes()).toHaveLength(1)
 }, 15_000)
 
-it('keeps an active Run’s saved node in place under a pointer drag and writes nothing', async () => {
+it('moves an active Run’s node under a pointer drag like the draft Board, saving only the draft layout and never the Run or saved version', async () => {
   installFlowLayout(1000, 720)
   const fixture = await inspectionBoardFixture('active-node-pointer')
   const scope = fixture.runs.before.scope
@@ -85,8 +85,11 @@ it('keeps an active Run’s saved node in place under a pointer drag and writes 
   act(() => { view.dispatchEvent(pointer('mousemove', 160, 150)) })
   act(() => { view.dispatchEvent(pointer('mousemove', 220, 200)) })
   act(() => { view.dispatchEvent(pointer('mouseup', 220, 200)) })
-  expect(node.style.transform).toBe(before)
-  expect(wire.writes()).toHaveLength(0)
+  // Owner rule: the Run view is the same Board, so a drag moves the agent there as on the draft.
+  expect(node.style.transform).not.toBe(before)
+  await waitFor(() => expect(wire.writes().length).toBeGreaterThan(0))
+  // The draft Board's own silent layout save; the Run and its saved version are untouched.
+  expect(wire.writes().map(write => `${write.method} ${write.path}`)).toEqual([expect.stringMatching(/^PUT .*\/workflows\/[^/]+\/definition$/)])
   expect(fixture.mock.versions.get(scope.workflowVersionId)).toEqual(originalVersion)
   expect(fixture.mock.runs.get(scope.runId)).toEqual(originalRun)
 }, 15_000)

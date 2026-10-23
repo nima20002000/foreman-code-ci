@@ -19,7 +19,6 @@ import { idleWorkflowControls, idleWorkflowRepeat } from '../../../test/helpers/
 import { DomainError } from '../errors.js'
 import { DeviceApplicationError } from '../devices/deviceApplicationError.js'
 import { workflowExecutionRequest } from '../runs/workflowExecutionRequest.js'
-import { readWorkflowTeam } from '../runs/workflowTeamPrompt.js'
 
 vi.mock('../placement/persistence.js', () => ({ readExecutionPlacement: vi.fn() }))
 vi.mock('../placement/remoteReviewerAuthority.js', () => ({
@@ -128,10 +127,8 @@ async function recoveryFixture(options: { handoff?: boolean } = {}) {
     retain: () => async () => {}, release: async () => {},
   } as unknown as RunOwnership
   const acquireOwnership = vi.fn(async (): Promise<RunOwnership | undefined> => owner)
-  const configurationById = async (id: string) => f.base.configurations.find((item) => item.id === id)
-  const team = await readWorkflowTeam(f.base.version, f.execution.workflowNodeId, configurationById)
   const originalRequest = workflowExecutionRequest({ execution: f.execution, version: f.base.version,
-    configuration: f.base.configurations[0]!, workspaceId: f.base.run.workspaceId, team,
+    configuration: f.base.configurations[0]!, workspaceId: f.base.run.workspaceId,
     ...(options.handoff ? { executionContext: { parentRequest: null } } : {}) })
   const beforeReattach: (signal?: AbortSignal) => Promise<void> = async () => {}
   const worker = { receipt: structuredClone(f.receipt), authenticated: true, session: f.session,
@@ -192,7 +189,7 @@ async function recoveryFixture(options: { handoff?: boolean } = {}) {
     proxies.push(manager)
     type Args = ConstructorParameters<typeof ApprovalExecutionCoordinator>
     return new ApprovalExecutionCoordinator({ ...idleWorkflowControls, getExecution: async () => f.execution,
-      getExecutionConfiguration: configurationById,
+      getExecutionConfiguration: async () => f.base.configurations[0],
       getRepeatVersion: async () => f.base.version,
       repeat: async () => ({ ...idleWorkflowRepeat, readWorkExecutionContext: async () => ({ parentRequest: null }) }),
       get: async () => ({ ...f.base.run, executionState: 'running', outcome: 'pending' }),

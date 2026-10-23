@@ -4,6 +4,7 @@
 .workflow-collaboration-toolbar > span { margin-right: auto; color: var(--text-muted); font: var(--type-caption); }
 .workflow-collaboration-layout { container-type: inline-size; display: flex; flex: 1; min-width: 0; min-height: 0; }
 .workflow-collaboration-canvas, .workflow-overview-slot { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
+.workflow-collaboration-main { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
 .workflow-collaboration-canvas[hidden] { display: none; }
 .workflow-collaboration-canvas > .run-board-slot, .workflow-collaboration-canvas .run-board-current, .workflow-collaboration-canvas .run-board { display: flex; flex: 1; flex-direction: column; min-height: 0; }
 .workflow-collaboration-canvas .run-board .run-board-canvas { flex: 1; height: auto; min-height: 0; }

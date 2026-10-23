@@ -23,7 +23,6 @@ import { hierarchyContinuationForRequestLocked, readHierarchyGroupInputLocked,
 import { readHierarchyDirectionInputLocked } from './hierarchyDirection.js'
 import { parseWorkflowWorkResult } from './workflowCoordinationResult.js'
 import { workflowLifecycleLocked } from './workflowCollaborationRuntime.js'
-import { isCoordinatorRole } from './workflowTeamPrompt.js'
 
 async function assertAcceptedWorkResult(sql: GraphTransactionSql, scope: RepeatScope,
   execution: ReturnType<typeof HarnessExecutionSchema.parse>, activationId: string): Promise<void> {
@@ -369,29 +368,6 @@ async function recordWorkRerouteActivityLocked(context: AdmissionContext, reques
 /** Called only inside RepeatRunRepository's owner-fenced, Run-locked transaction.
  * This is an admission receipt; native launch still uses the original one-use
  * claim, authorization, session and possible-submission boundary. */
-/** A Worker without a downstream route answers the Orchestrator or Master whose request started its work,
- * over that request's own connection, so the caller checks the result. Returns that reply route. */
-export async function readCallerReportLocked(context: AdmissionContext, activationId: string,
-  nodeId: string): Promise<{ relationshipId: string; callerNodeId: string } | undefined> {
-  const { sql, version } = context
-  const node = version.definition.nodes.find((item) => item.id === nodeId)
-  if (isHierarchyWorkflow(version) || !node || node.kind === 'job' || node.choice
-    || version.definition.edges.some((edge) => edge.kind === 'execution' && edge.source === nodeId)) return undefined
-  const parent = await readParentWorkRequestLocked(context, activationId)
-  const caller = parent && parent.requesterNodeId !== nodeId
-    ? version.definition.nodes.find((item) => item.id === parent.requesterNodeId) : undefined
-  if (!parent || !caller || caller.kind === 'job') return undefined
-  const role = (await sql.query<{ role: string | null }>(
-    "select record->>'productRole' as role from agent_configuration_versions where id=$1",
-    [version.agentConfigurationVersionIds[caller.agentId]])).rows[0]?.role
-  return isCoordinatorRole(role) ? { relationshipId: parent.relationshipId, callerNodeId: caller.id } : undefined
-}
-
-export async function readWorkCallerReportLocked(context: AdmissionContext, sourceExecutionId: string) {
-  const { execution, activationId } = await readAcceptedWorkSourceLocked(context, sourceExecutionId)
-  return (await readCallerReportLocked(context, activationId, execution.workflowNodeId))?.relationshipId
-}
-
 export async function admitWorkHandoffLocked(context: AdmissionContext, sourceExecutionId: string,
   selectedRelationshipId?: string, dispatchSourceActivationId?: string): Promise<WorkRequestAdmission> {
   const { sql, scope, version, hooks } = context
@@ -430,14 +406,12 @@ export async function admitWorkHandoffLocked(context: AdmissionContext, sourceEx
     return repeatConflict('WORK_REQUEST_ROUTE_FORBIDDEN')
   }
   const relationship = version.definition.edges.find((item) => item.id === relationshipId)
-  const reply = routing.kind === 'finish' && !node.choice ? await readCallerReportLocked(context, sourceActivationId, node.id)
-    .then(report => report?.relationshipId === relationshipId ? report : undefined) : undefined
   if (routing.kind === 'finish' && (node.choice ? target?.kind !== 'edge' || target.relationshipId !== relationshipId
-    : relationship?.source !== node.id && !reply)) return repeatConflict('WORK_REQUEST_ROUTE_FORBIDDEN')
-  const destinationNodeId = reply ? reply.callerNodeId : relationship?.source === node.id ? relationship.target
+    : relationship?.source !== node.id)) return repeatConflict('WORK_REQUEST_ROUTE_FORBIDDEN')
+  const destinationNodeId = relationship?.source === node.id ? relationship.target
     : relationship?.workRequestDirection === 'both' && relationship.target === node.id ? relationship.source : undefined
   if (!relationship || !destinationNodeId || !node
-    || !reply && workConnectionForRequest(version.definition, node.id, destinationNodeId)?.id !== relationship.id) {
+    || workConnectionForRequest(version.definition, node.id, destinationNodeId)?.id !== relationship.id) {
     return repeatConflict('WORK_REQUEST_ROUTE_FORBIDDEN')
   }
   const requestId = repeatId('work-request', scope.runId, sourceExecutionId, relationship.id)
@@ -488,8 +462,7 @@ export async function admitWorkHandoffLocked(context: AdmissionContext, sourceEx
     from run_work_connection_usage where run_id=$1 and workflow_version_id=$2 and relationship_id=$3 for update`,
   [scope.runId, scope.workflowVersionId, relationship.id])).rows[0]
   if (!usage || usage.maximum !== maximum) return repeatConflict('WORK_COUNTER_PIN_CONFLICT')
-  // A reply answers work already counted on this connection, so the limit applies only to new handoffs.
-  if (maximum !== null && usage.used >= maximum && !reply) {
+  if (maximum !== null && usage.used >= maximum) {
     const alreadyNotified = (await sql.query(`select 1 from run_work_denials d
       join run_work_activations a on a.run_id=d.run_id and a.activation_id=d.requester_activation_id
       where d.run_id=$1 and d.relationship_id=$2 and a.lineage_id=$3 limit 1`,
@@ -552,11 +525,9 @@ export async function admitWorkHandoffLocked(context: AdmissionContext, sourceEx
     }
   }
   if (!existingActivation) await assertWorkflowExecutionCapacityLocked(sql, scope.runId, version)
-  const reserved = (await sql.query<{ used: number }>(reply
-    ? `update run_work_connection_usage set replies=replies+1
-      where run_id=$1 and workflow_version_id=$2 and relationship_id=$3 returning replies as used`
-    : `update run_work_connection_usage set used=used+1 where run_id=$1 and workflow_version_id=$2
-      and relationship_id=$3 and (maximum is null or used<maximum) returning used`,
+  const reserved = (await sql.query<{ used: number }>(`update run_work_connection_usage set used=used+1
+    where run_id=$1 and workflow_version_id=$2 and relationship_id=$3
+      and (maximum is null or used<maximum) returning used`,
   [scope.runId, scope.workflowVersionId, relationship.id])).rows[0]
   if (!reserved) return repeatConflict('WORK_COUNTER_RACE')
   const next = WorkActivationIdentitySchema.parse({ scope, activationId,
@@ -573,9 +544,9 @@ export async function admitWorkHandoffLocked(context: AdmissionContext, sourceEx
     join ? 'waiting' : 'queued', canonicalGraphJson(next)])
   await sql.query(`insert into run_work_requests(request_id,run_id,workflow_version_id,relationship_id,ordinal,
     requester_activation_id,requester_execution_id,destination_activation_id,requester_node_id,destination_node_id,
-    payload_digest,record,accepted_at,reply) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14)`,
+    payload_digest,record,accepted_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13)`,
   [requestId, scope.runId, scope.workflowVersionId, relationship.id, reserved.used, activation.activationId,
-    sourceExecutionId, activationId, node.id, destinationNodeId, payloadDigest, canonicalGraphJson(request), context.now, !!reply])
+    sourceExecutionId, activationId, node.id, destinationNodeId, payloadDigest, canonicalGraphJson(request), context.now])
   if (hooks.run.resultProtocol) {
     const requests = (await sql.query<{ request_id: string }>(`select request_id from run_work_requests
       where run_id=$1 and requester_activation_id=$2 order by request_id`, [scope.runId, activation.activationId])).rows
@@ -589,7 +560,7 @@ export async function admitWorkHandoffLocked(context: AdmissionContext, sourceEx
   await sql.query(`insert into run_activity(run_id,source,kind,harness_execution_id,occurred_at,payload)
     values($1,'backend','work_handoff_accepted',$2,$3,$4::jsonb)`, [scope.runId, sourceExecutionId,
     context.now, canonicalGraphJson({ requestId, relationshipId: relationship.id, requesterNodeId: node.id,
-      destinationNodeId, ...(reply ? {} : { used: reserved.used, maximum }) })])
+      destinationNodeId, used: reserved.used, maximum })])
   await recordWorkRerouteActivityLocked(context, request, activation.activationId)
   return { kind: 'accepted', request, replayed: false, destinationReady }
 }
@@ -730,14 +701,12 @@ export async function returnWorkHandoffLocked(context: AdmissionContext, sourceE
       destinations: await resolveHierarchyGroupsLocked(context, activation.activationId) }
   }
   if (value.outcome === 'needs_changes') {
-    const usage = (await sql.query<{ used: number; maximum: number | null; reply: boolean }>(
-      `select u.used,u.maximum,r.reply from run_work_connection_usage u join run_work_requests r
-        on r.run_id=u.run_id and r.workflow_version_id=u.workflow_version_id and r.relationship_id=u.relationship_id
-        where u.run_id=$1 and u.workflow_version_id=$2 and u.relationship_id=$3 and r.request_id=$4 for update of u`,
-      [scope.runId, scope.workflowVersionId, request.relationshipId, request.requestId])).rows[0]
+    const usage = (await sql.query<{ used: number; maximum: number | null }>(
+      `select used,maximum from run_work_connection_usage
+        where run_id=$1 and workflow_version_id=$2 and relationship_id=$3 for update`,
+      [scope.runId, scope.workflowVersionId, request.relationshipId])).rows[0]
     if (!usage) return repeatConflict('WORK_COUNTER_PIN_CONFLICT')
-    // Asking a Worker to change its reply opens no new handoff, so it is never the connection's last return.
-    if (usage.maximum !== null && usage.used === usage.maximum && !usage.reply) {
+    if (usage.maximum !== null && usage.used === usage.maximum) {
       await persistWorkLimitNoticeLocked(context, { cause: { kind: 'last_return', returnId },
         requesterActivationId: request.requesterActivationId, requesterNodeId: request.requesterNodeId,
         continuationActivationId: continuationActivationId!, relationshipId: request.relationshipId,

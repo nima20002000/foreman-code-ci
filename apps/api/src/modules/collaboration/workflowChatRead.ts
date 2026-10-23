@@ -94,9 +94,8 @@ export async function readWorkflowExecutionChat(pool: pg.Pool, owner: WorkflowCh
   const next: PageCursor = { target: cursor.target, native: native.nextCursor, nativeDone: !native.hasMore,
     beforeReceipt: stored.page.before, receiptsDone: !stored.page.hasMore }
   const result = EngineChatReadbackSchema.parse({ target, state: stored.identity.state,
-    capabilities: stored.identity.nextTurn ? { steer: 'unavailable', queue: true, interruptAndSend: false }
-      : stored.identity.state === 'idle' || stored.identity.state === 'settling'
-        ? { steer: 'unavailable', queue: false, interruptAndSend: false } : observation.capabilities,
+    capabilities: stored.identity.state === 'idle' || stored.identity.state === 'settling'
+      ? { steer: 'unavailable', queue: false, interruptAndSend: false } : observation.capabilities,
     ...(stored.identity.state === 'active' && observation.nativeTurnId ? { nativeTurnId: observation.nativeTurnId } : {}),
     messages: native.messages, receipts: stored.page.receipts, hasMore,
     nextCursor: hasMore ? Buffer.from(JSON.stringify(next)).toString('base64url') : null,

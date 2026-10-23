@@ -4,7 +4,7 @@ import { RespondToInteractionResponseSchema } from '@foreman-code/contracts'
 import { ManagementActionSchema } from '@foreman-code/contracts/management'
 import { CanonicalRunGraphCurrentSchema, CANONICAL_RUN_GRAPH_MCP_TOOLS,
   CURRENT_WORKFLOW_TOOLS, CurrentWorkflowReadResultSchema, CurrentWorkflowSaveInputSchema,
-  CurrentWorkflowSaveResultSchema, makeCurrentWorkflowFixture } from '@foreman-code/contracts/wave25'
+  CurrentWorkflowSaveResultSchema, makeCurrentWorkflowFixture, parseWorkHandoffResult } from '@foreman-code/contracts/wave25'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
 import { buildApp } from '../src/app.js'
 import { OperatorInteractionService } from '../src/modules/interactions/operator.js'
@@ -66,7 +66,7 @@ async function saveInput(f: Pick<Awaited<ReturnType<typeof codexApprovalRuntime>
   })
 }
 
-it.skipIf(!postgresEnabled)('allows workflow saves after a Run fails on its remaining findings', async () => {
+it.skipIf(!postgresEnabled)('allows workflow saves after an owner finishes a Run with remaining findings', async () => {
   const fixture = makeCurrentWorkflowFixture(randomUUID(), 'single')
   fixture.version.definition.handoffs = { contractVersion: 1 }
   fixture.version.definition.executionPolicy = { maxParallelism: 1, maxNodeExecutions: 1 }
@@ -77,12 +77,10 @@ it.skipIf(!postgresEnabled)('allows workflow saves after a Run fails on its rema
   try {
     transport = await saveApp(f)
     const { app, caller, call, rpc } = transport
-    await expect(f.engine.start(f.f.run.id)).rejects.toMatchObject({ code: 'WORK_SELECTED_EXECUTION_FAILED' })
-    const completed = await f.runs.get(f.f.run.id)
-    expect(completed).toMatchObject({ executionState: 'completed', outcome: 'failed', result: { error: {
-      code: 'WORK_FINISHED_WITH_FINDINGS', message: expect.stringContaining('The owner still needs to review the result') } } })
-    expect(await f.pending()).toEqual([])
-    // A Run that ended on its findings is never driven again by reconciliation.
+    await f.engine.start(f.f.run.id)
+    const [interaction] = await f.pending()
+    expect(interaction).toMatchObject({ kind: 'work_direction', status: 'pending' })
+    if (!interaction) throw new Error('Expected a direction interaction')
     for (const engine of [f.engine, f.compose().engine]) {
       const drives = vi.spyOn(engine, 'start')
       const errors: unknown[] = []
@@ -97,12 +95,25 @@ it.skipIf(!postgresEnabled)('allows workflow saves after a Run fails on its rema
         drives.mockRestore()
       }
     }
+    await f.engine.start(f.f.run.id)
+    expect(await f.runs.get(f.f.run.id)).toMatchObject({ executionState: 'waiting', outcome: 'pending' })
+    expect(await call('interaction_get', { interactionId: interaction.id })).toMatchObject({ canRespond: true })
+    const decision = RespondToInteractionResponseSchema.parse(await call('interaction_respond', {
+      interactionId: interaction.id, expectedRevision: interaction.revision, optionId: 'finish',
+    }))
+    expect(decision.interaction.status).toBe('delivered')
+    await f.engine.start(f.f.run.id)
+    const completed = await f.runs.get(f.f.run.id)
+    expect(completed).toMatchObject({ executionState: 'completed', outcome: 'succeeded' })
+    expect(parseWorkHandoffResult(completed?.result).data.remainingFindings).toEqual(output.data.remainingFindings)
     const graph = CanonicalRunGraphCurrentSchema.parse(await call(CANONICAL_RUN_GRAPH_MCP_TOOLS.current,
       { protocolVersion: 1, scope: f.f.scope }))
     expect(graph.state.run).toMatchObject({ executionState: 'completed', pendingInteractionCount: 0 })
     expect(graph.state.interactions).toEqual([])
     expect(graph.state.executions).toHaveLength(1)
     expect(f.counts()).toMatchObject({ prompts: 1, responses: 0 })
+    expect(await call('interaction_get', { interactionId: interaction.id }))
+      .toMatchObject({ interaction: decision.interaction, canRespond: false })
     expect(await f.receipts()).toEqual([])
     const reader = await f.access.issue({ name: 'Workflow reader', audience: 'operator',
       expiresAt: new Date(Date.now() + 600_000), grants: [{

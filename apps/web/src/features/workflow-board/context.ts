@@ -1,3 +1,4 @@
+import type { GraphGeometryChange } from '../graph/geometry'
 import { createContext, useContext, type ReactNode } from 'react'
 import type { BoardSidePanel, RepeatGraphScopeV3, WorkspaceBoardInspection } from '@foreman-code/contracts/wave25'
 import type { CollaborationFieldSlots } from '../graph/collaborationFields'
@@ -10,6 +11,8 @@ export type WorkflowAuthoringActions = {
   draftNodeBrowser(nodeId: string): NodeBrowserSettings | null | undefined
   /** Saves only a draft node's Agent and its configuration, never the workflow graph; resolves to its Agent id. */
   saveChatAgent(nodeId: string): Promise<string | undefined>
+  /** Moves draft nodes exactly as dragging them on the draft Board does. */
+  moveNodes?(changes: GraphGeometryChange[]): void
 }
 
 /** Callbacks and presentation context only; neither drafts nor Run facts live here. */
@@ -34,6 +37,10 @@ export const WorkflowBoardContext = createContext<{
   selectedPanelNodeId?: string
   selectSidePanel?(selection: BoardSidePanel): void
   sidePanelHost?: HTMLDivElement | null
+  /** Where a shown Run puts its caption (worktree, computers, Read only): inside the Board's floating toolbar. */
+  runCaptionHost?: HTMLDivElement | null
+  /** The draft Board's own layout change (manual places, saved as a layout revision), for dragging on a shown Run. */
+  moveDraftNodes?(changes: GraphGeometryChange[]): void
   executionChatMounted?: boolean
   collaborationFields?: CollaborationFieldSlots
   memoryOpen?: boolean
