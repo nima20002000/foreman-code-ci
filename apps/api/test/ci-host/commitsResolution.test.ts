@@ -11,12 +11,6 @@ import { runGitProcess } from '../../src/modules/sources/gitProcess.js'
 import { publishCommit } from '../../src/modules/sources/githubPublisher.js'
 import { mainCiContext } from '../../src/modules/ci/context.js'
 
-async function resolvePublished(commits: GitCiCommits, repository: string, defaultBranch: string, commit: string | undefined) {
-  const resolved = await commits.resolve(repository, defaultBranch, commit, null)
-  await commits.publish(repository, resolved)
-  return resolved
-}
-
 const roots: string[] = []
 afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
@@ -52,7 +46,7 @@ async function shallowFixture() {
   return { origin, clone, commit, base, tip, run, git, ports, commits: new GitCiCommits(mainCiContext, ports) }
 }
 
-it('resolves a missing non-tip commit without pushing until dispatch pins it', async () => {
+it('resolves a published non-tip commit missing from a shallow clone without pushing it', async () => {
   const f = await shallowFixture()
   expect(f.run(f.clone, 'rev-parse', '--is-shallow-repository')).toBe('true')
   expect(() => f.run(f.clone, 'cat-file', '-e', `${f.commit}^{commit}`)).toThrow()
@@ -64,8 +58,6 @@ it('resolves a missing non-tip commit without pushing until dispatch pins it', a
   const fetches = f.git.mock.calls.filter(([args]) => args[0] === 'fetch')
   expect(fetches).toHaveLength(1)
   expect(fetches[0]![0]).toEqual(expect.arrayContaining(['--depth=1', 'origin', f.commit]))
-  await f.commits.publish('octo/site', f.commit)
-  expect(f.run(f.origin, 'rev-parse', `refs/heads/foreman/ci/${f.commit}`)).toBe(f.commit)
 })
 
 it('publishes a missing non-tip commit by reading it from origin at depth one', async () => {
@@ -78,7 +70,7 @@ it('publishes a missing non-tip commit by reading it from origin at depth one', 
 
 it('resolves a branch tip Main already holds without pushing it', async () => {
   const f = await shallowFixture()
-  expect(await resolvePublished(f.commits, 'octo/site', 'main', f.tip)).toBe(f.tip)
+  expect(await f.commits.resolve('octo/site', 'main', f.tip, null)).toBe(f.tip)
   expect(f.git.mock.calls.filter(([args]) => args[0] === 'push')).toHaveLength(0)
   expect(f.run(f.origin, 'for-each-ref', '--format=%(refname)', 'refs/heads/')).toBe('refs/heads/main')
 })
@@ -86,7 +78,7 @@ it('resolves a branch tip Main already holds without pushing it', async () => {
 it('pins a published commit Main already holds without moving origin branches', async () => {
   const f = await shallowFixture()
   f.run(f.clone, 'fetch', '--quiet', '--depth=2', 'origin', 'main')
-  expect(await resolvePublished(f.commits, 'octo/site', 'main', f.commit)).toBe(f.commit)
+  expect(await f.commits.resolve('octo/site', 'main', f.commit, null)).toBe(f.commit)
   expect(f.run(f.origin, 'rev-parse', `refs/heads/foreman/ci/${f.commit}`)).toBe(f.commit)
   expect(f.run(f.origin, 'rev-parse', 'refs/heads/main')).toBe(f.tip)
 })
@@ -96,7 +88,7 @@ it('pushes an unpublished local commit so origin can serve it', async () => {
   f.run(f.clone, 'commit', '--quiet', '--allow-empty', '-m', 'local')
   const local = f.run(f.clone, 'rev-parse', 'HEAD')
   expect(() => f.run(f.origin, 'cat-file', '-e', `${local}^{commit}`)).toThrow()
-  expect(await resolvePublished(f.commits, 'octo/site', 'main', local)).toBe(local)
+  expect(await f.commits.resolve('octo/site', 'main', local, null)).toBe(local)
   expect(f.run(f.origin, 'rev-parse', `refs/heads/foreman/ci/${local}`)).toBe(local)
   expect(f.run(f.origin, 'rev-parse', 'refs/heads/main')).toBe(f.tip)
 })
@@ -106,14 +98,14 @@ it('does not treat a stale remote-tracking branch as published', async () => {
   f.run(f.clone, 'commit', '--quiet', '--allow-empty', '-m', 'local')
   const local = f.run(f.clone, 'rev-parse', 'HEAD')
   f.run(f.clone, 'update-ref', 'refs/remotes/origin/main', local)
-  expect(await resolvePublished(f.commits, 'octo/site', 'main', local)).toBe(local)
+  expect(await f.commits.resolve('octo/site', 'main', local, null)).toBe(local)
   expect(f.run(f.origin, 'rev-parse', `refs/heads/foreman/ci/${local}`)).toBe(local)
 })
 
 it('reports a commit absent from both the shallow clone and origin without attempting a push', async () => {
   const f = await shallowFixture()
   await expect(f.commits.resolve('octo/site', 'main', 'f'.repeat(40), null))
-    .rejects.toMatchObject({ code: 'SOURCE_WORKTREE_FAILED' })
+    .rejects.toMatchObject({ code: 'SOURCE_GITHUB_PUSH_REQUIRED' })
   expect(f.git.mock.calls.filter(([args]) => args[0] === 'push')).toHaveLength(0)
   expect(f.run(f.origin, 'for-each-ref', '--format=%(refname)', 'refs/heads/')).toBe('refs/heads/main')
 })
@@ -136,7 +128,7 @@ async function fixture() {
   return { commits, git, advance: () => { head = 'b'.repeat(40) } }
 }
 
-it('shares publication of a known commit across concurrent dispatches and later requests', async () => {
+it('shares publication of a known commit across concurrent resolution and later requests', async () => {
   const f = await fixture()
   const commit = 'a'.repeat(40)
   let release!: () => void
@@ -146,16 +138,16 @@ it('shares publication of a known commit across concurrent dispatches and later 
     if (args[0] === 'push') await blocked
     return run(args, options)
   })
-  const requests = Array.from({ length: 4 }, () => resolvePublished(f.commits, 'octo/site', 'main', commit))
+  const requests = Array.from({ length: 4 }, () => f.commits.resolve('octo/site', 'main', commit, null))
   release()
   expect(await Promise.all(requests)).toEqual(Array(4).fill(commit))
-  expect(await resolvePublished(f.commits, 'octo/site', 'main', commit)).toBe(commit)
+  expect(await f.commits.resolve('octo/site', 'main', commit, null)).toBe(commit)
   expect(f.git.mock.calls.filter(([args]) => args[0] === 'push')).toHaveLength(1)
-  await resolvePublished(f.commits, 'octo/other', 'main', commit)
+  await f.commits.resolve('octo/other', 'main', commit, null)
   expect(f.git.mock.calls.filter(([args]) => args[0] === 'push')).toHaveLength(2)
 })
 
-it('retries publication after a failed push instead of caching the failure', async () => {
+it('retries publication after a failed resolution instead of caching the failure', async () => {
   const f = await fixture()
   const run = f.git.getMockImplementation()!
   let fail = true
@@ -166,7 +158,7 @@ it('retries publication after a failed push instead of caching the failure', asy
     }
     return run(args, options)
   })
-  const resolve = () => resolvePublished(f.commits, 'octo/site', 'main', 'a'.repeat(40))
+  const resolve = () => f.commits.resolve('octo/site', 'main', 'a'.repeat(40), null)
   await expect(resolve()).rejects.toMatchObject({ code: 'SOURCE_GITHUB_PUSH_REQUIRED' })
   expect(await resolve()).toBe('a'.repeat(40))
   expect(f.git.mock.calls.filter(([args]) => args[0] === 'push')).toHaveLength(2)
@@ -174,10 +166,10 @@ it('retries publication after a failed push instead of caching the failure', asy
 
 it('refreshes a moving default branch while reusing publication of its resolved commit', async () => {
   const f = await fixture()
-  expect(await resolvePublished(f.commits, 'octo/site', 'main', undefined)).toBe('a'.repeat(40))
+  expect(await f.commits.resolve('octo/site', 'main', undefined, null)).toBe('a'.repeat(40))
   f.advance()
-  expect(await resolvePublished(f.commits, 'octo/site', 'main', undefined)).toBe('b'.repeat(40))
-  expect(await resolvePublished(f.commits, 'octo/site', 'main', 'a'.repeat(40))).toBe('a'.repeat(40))
+  expect(await f.commits.resolve('octo/site', 'main', undefined, null)).toBe('b'.repeat(40))
+  expect(await f.commits.resolve('octo/site', 'main', 'a'.repeat(40), null)).toBe('a'.repeat(40))
   expect(f.git.mock.calls.filter(([args]) => args[0] === 'fetch')).toHaveLength(2)
   expect(f.git.mock.calls.filter(([args]) => args[0] === 'push')).toHaveLength(2)
 })
