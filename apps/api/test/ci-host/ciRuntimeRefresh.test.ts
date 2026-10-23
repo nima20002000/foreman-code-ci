@@ -10,6 +10,7 @@ import { currentCiRuntimePaths, hostDeviceLimits, nextCaptureInput, recaptureCiT
   pruneCiRuntimeRefreshFiles, scheduleCiRuntimeRefresh } from '@foreman-code/ci/ciRuntimeRefresh'
 import { refreshMainJobRuntime } from '../../src/cli/refreshMainJobRuntime.js'
 import { identity, openPrivateRoot } from '../../src/modules/sources/privateFilesystem.js'
+import * as ciEnvironment from '@foreman-code/ci/environment'
 import { relocateCiQuotaSlots } from '@foreman-code/ci/ciRuntimeInstallation'
 import { mainCiContext } from '../../src/modules/ci/context.js'
 
@@ -186,17 +187,21 @@ describe('CI runtime refresh', () => {
     const { current, root, slots, oldSource, newSource } = await quotaRelocationFixture()
     const destination = root.binding.filesystem
     const changed = { ...destination, [field]: String(BigInt(destination[field]) + 1n) }
-    const context = { ...mainCiContext, platform: { ...mainCiContext.platform,
-      identity: async (handle: Parameters<typeof identity>[0]) => {
-        const observed = await identity(handle)
-        return observed.inode === destination.inode ? changed : observed
-      } } }
-    expect(await relocateCiQuotaSlots(context, current, { ...root, binding: { ...root.binding, filesystem: changed } }))
-      .toBeNull()
-    expect(commands.beforeRename).not.toHaveBeenCalled()
-    for (const slot of slots) {
-      expect(await readFile(join(oldSource, slot.namespace, 'retained'), 'utf8')).toBe(slot.namespace)
-      await expect(stat(join(newSource, slot.namespace))).rejects.toMatchObject({ code: 'ENOENT' })
+    const observedIdentity = ciEnvironment.identity
+    const readIdentity = vi.spyOn(ciEnvironment, 'identity').mockImplementation(async handle => {
+      const observed = await observedIdentity(handle)
+      return observed.inode === destination.inode ? changed : observed
+    })
+    try {
+      expect(await relocateCiQuotaSlots(mainCiContext, current, { ...root, binding: { ...root.binding, filesystem: changed } }))
+        .toBeNull()
+      expect(commands.beforeRename).not.toHaveBeenCalled()
+      for (const slot of slots) {
+        expect(await readFile(join(oldSource, slot.namespace, 'retained'), 'utf8')).toBe(slot.namespace)
+        await expect(stat(join(newSource, slot.namespace))).rejects.toMatchObject({ code: 'ENOENT' })
+      }
+    } finally {
+      readIdentity.mockRestore()
     }
   })
 

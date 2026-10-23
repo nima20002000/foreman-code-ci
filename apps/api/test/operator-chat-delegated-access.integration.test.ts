@@ -20,8 +20,6 @@ import { registerOperatorChatFixture, type OperatorChatFixture, waitFor } from '
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { postgresEnabled } from './helpers/database.js'
 
-const connectionString = process.env.TEST_DATABASE_URL
-
 let pool: OperatorChatFixture['pool']
 let access: OperatorChatFixture['access']
 let operators: OperatorChatFixture['operators']

@@ -619,7 +619,7 @@ function configureDeviceRuntime(composition: ProductionComposition) {
     rsync,
     remoteTelemetry,
   } = composition
-  const deviceRuntime: ProductionDeviceRuntime = composition.deviceRuntime = new ProductionDeviceRuntime(database.pool, infrastructure?.deviceListener, {
+  const deviceRuntime = composition.deviceRuntime = new ProductionDeviceRuntime(database.pool, infrastructure?.deviceListener, {
     workerArtifacts: workerArtifactLocation({ environment: process.env,
       releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }),
     browserMedia: (request, socket, head) => composition.browserRemote.mediaUpgrade(request, socket, head),
@@ -2234,13 +2234,11 @@ function configureHttpApplication(composition: ProductionComposition) {
 /** Every route group the production runtime has published so far. */
 function productionRoutes(composition: ProductionComposition): ApiRouteServices {
   const { routes, runtimeServices } = composition
-  return { ...routes, production: { ...routes.production,
-    ...(composition.files ? { files: composition.files } : {}),
-    ...(composition.workflowArtifacts ? { workflowArtifacts: composition.workflowArtifacts } : {}),
-    ...(composition.trustedConnections ? { trustedConnections: composition.trustedConnections } : {}),
-    ...(runtimeServices.resourceTelemetry ? { resourceTelemetry: runtimeServices.resourceTelemetry } : {}),
-    ...(runtimeServices.jobRuntimeProfiles ? { jobRuntimeProfiles: { profiles: runtimeServices.jobRuntimeProfiles,
-      ...(runtimeServices.ciRuntime ? { ciRuntime: runtimeServices.ciRuntime } : {}) } } : {}) } }
+  return { ...routes, production: { ...routes.production, files: composition.files,
+    workflowArtifacts: composition.workflowArtifacts, trustedConnections: composition.trustedConnections,
+    resourceTelemetry: runtimeServices.resourceTelemetry,
+    jobRuntimeProfiles: runtimeServices.jobRuntimeProfiles
+      ? { profiles: runtimeServices.jobRuntimeProfiles, ciRuntime: runtimeServices.ciRuntime } : undefined } }
 }
 
 function configureRuntimeLifecycle(composition: ProductionComposition) {

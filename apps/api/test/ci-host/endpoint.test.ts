@@ -191,7 +191,7 @@ it('spends a start retry only after a live status reports the assigned run absen
   }
   const pool = { query, connect: async () => ({ query, release: () => {} }) } as unknown as pg.Pool
   const retry = vi.fn(async () => { throw new Error('Start delivery lost') })
-  const services = { context: mainCiContext, pool, endpoint: { computers: async () => [computer], request: retry },
+  const services = { pool, endpoint: { computers: async () => [computer], request: retry },
     read: async () => run, settle: vi.fn(async () => true) }
   request.mockRejectedValue(new DeviceApplicationAdmissionError('background_yield'))
   for (let poll = 0; poll < 4; poll++) {
