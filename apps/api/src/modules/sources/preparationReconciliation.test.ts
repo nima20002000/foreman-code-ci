@@ -193,6 +193,18 @@ it.each([
     await closed
   }
 })
+it('waits briefly for a process that is exiting inside the source directory', async () => {
+  const f = await fixture(false)
+  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 500)'], { cwd: f.directory, stdio: 'ignore' })
+  const closed = new Promise<void>(resolve => child.once('close', () => resolve()))
+  await new Promise<void>((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject) })
+  try {
+    await expect(preparationChildrenClosed(f.directory)).resolves.toBe(true)
+  } finally {
+    child.kill('SIGKILL')
+    await closed
+  }
+})
 it.each(['release', 'deadline'] as const)('waits for a contended preparation lock until %s', async outcome => {
   const f = await fixture()
   const root = await openPrivateRoot(f.directory)
