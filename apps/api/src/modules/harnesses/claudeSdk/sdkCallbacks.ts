@@ -1,6 +1,7 @@
 import type { CanUseTool, HookCallback, Options } from '@anthropic-ai/claude-agent-sdk'
 import type { ClaudeCallbackIdentity } from './interactions.js'
 import type { ClaudeNativeSessionManager } from './sessionManager.js'
+import { componentLogger } from '../../diagnostics/logger.js'
 
 /** The existing B bridge is injected, never replaced by another response/interaction store. */
 export interface ClaudeSdkPolicyBridge {
@@ -29,7 +30,10 @@ export function createClaudeSdkCallbacks(input: {
       return await input.bridge.canUseTool({ ...context, ...authority,
         toolUseId: options.toolUseID, nativeRequestId: options.requestId, nativeRequestType: 'can_use_tool',
         ...(options.mcpServer ? { mcpServer: options.mcpServer } : {}) }, name, value, options.signal)
-    } catch {
+    } catch (error) {
+      // A denied callback stops the Agent's turn; record why so the failed attempt can be diagnosed.
+      componentLogger('harness').warn({ err: error, tool: name, toolUseId: options.toolUseID, aborted: options.signal.aborted },
+        'Claude permission callback failed')
       return { behavior: 'deny', message: 'The admitted native callback context is unavailable.', interrupt: options.signal.aborted }
     }
   }
