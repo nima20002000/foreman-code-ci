@@ -8,7 +8,6 @@ import { authorizeCaller } from './authorization.js'
 import { applyBatch, lockSelections, mutationTool, parseOperations } from './batch.js'
 import { lockSelectionRuns } from './runLocks.js'
 import { readDigest } from './digest.js'
-import { ensureAgentCard } from './agentCard.js'
 import { inputHash, invalid, same, scopeContains, workKey } from './identity.js'
 import { applyLifecycle, beginEffect, effectReceipt, finishEffect } from './lifecycle.js'
 import { replayCommand } from './mutations.js'
@@ -78,9 +77,6 @@ export class MemoryBoardService implements MemoryBoardPort {
         { code:error.code,message:error.message,status:error.status,...(error.details ? { details:error.details } : {}) }])
       return undefined
     })
-  }
-  ensureAgentCardLocked(tx: GraphTransactionSql, input: Parameters<typeof ensureAgentCard>[2]) {
-    return ensureAgentCard(tx, this.dependencies.authority, input, this.now())
   }
   readDigest(input: Parameters<MemoryBoardPort['readDigest']>[0]) {
     return this.dependencies.readTransaction(tx => readDigest(tx,this.dependencies.authority,input))

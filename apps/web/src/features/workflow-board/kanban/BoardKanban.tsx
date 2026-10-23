@@ -13,6 +13,7 @@ import { PulseFlight, type EdgePulse } from '../../graph/SignalEdgeShape'
 import { useFloatingCurve } from '../../graph/signalEdge'
 import { useWorkflowBoard } from '../context'
 import { kanbanScope, reportKanbanActivity, useKanbanActivity, type KanbanCardActivity } from './kanbanActivity'
+import { KanbanCardDialog } from './KanbanCardDialog'
 import './boardKanban.css'
 
 const client = createMemoryBoardClient(MemoryBoardWireSchemas)
@@ -68,6 +69,9 @@ function KanbanColumns({ workspaceId, workflowId }: { workspaceId: string; workf
     return next
   }), [])
   const retries = Object.values(failed)
+  // A clicked card opens in its own window on any Board; editing stays in the memory board.
+  const [openCard, setOpenCard] = useState<string>()
+  const editCard = board?.openMemoryCard
   // While loading or after a failed read the columns keep their shape, so the Kanban never collapses or jumps.
   if (!view) return <div className="board-kanban-columns" role="region" aria-label="Kanban columns" aria-busy={!error}>
     {(Object.keys(statusLabels) as Card['status'][]).map((status, index) => <section key={status} className="board-kanban-column is-placeholder"
@@ -79,9 +83,12 @@ function KanbanColumns({ workspaceId, workflowId }: { workspaceId: string; workf
   </div>
   return <div className="board-kanban-columns" role="region" aria-label="Kanban columns">
     {(Object.keys(statusLabels) as Card['status'][]).map((status, index) => <KanbanColumn key={status} view={view}
-      status={status} nodes={nodes} activity={byCard} onOpen={(cardId) => board?.openMemoryCard?.(cardId)} onFailure={reportFailure}
+      status={status} nodes={nodes} activity={byCard} onOpen={setOpenCard} onFailure={reportFailure}
       notice={index === 0 && retries.length ? <p className="board-kanban-error" role="alert">Couldn’t load cards.
         <Button size="sm" variant="ghost" onClick={() => retries.forEach((retry) => retry())}>Retry</Button></p> : null} />)}
+    {openCard ? <KanbanCardDialog client={client} boardId={view.board.id} cardId={openCard} nodes={nodes}
+      onClose={() => setOpenCard(undefined)}
+      {...(editCard ? { onEdit: () => { setOpenCard(undefined); editCard(openCard) } } : {})} /> : null}
   </div>
 }
 

@@ -21,12 +21,6 @@ import { repeatTickIndex } from './repeatResolution.js'
 export async function prepareMemoryLaunchLocked(tx: GraphTransactionSql, service: MemoryBoardService,
   execution: HarnessExecution): Promise<HarnessExecution> {
   const saved = await memoryExecution(tx, execution.id)
-  if (repeatTickIndex(execution.input) !== undefined) return execution
-  const agentName = saved.node.name ? undefined : (await tx.query<{ name: string }>(
-    "select record->>'name' as name from agents where id=$1 and workspace_id=$2",
-    [execution.agentId, saved.version.workspaceId])).rows[0]?.name
-  await service.ensureAgentCardLocked(tx, { subject: saved.subject, work: saved.work,
-    title: saved.node.name ?? agentName ?? saved.subject.agent.displayName })
   const previous = saved.previousExecutionId ? await memoryExecution(tx, saved.previousExecutionId) : undefined
   const digest = previous?.execution.memoryBoardDigest
     ?? await service.readDigestLocked(tx, { subject: saved.subject, work: saved.work })

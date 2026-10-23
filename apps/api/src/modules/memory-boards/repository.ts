@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import {
   MemoryBoardSchema, MemoryCardSchema, MemoryNoteSchema,
   MemoryCardWorkBindingSchema, MemoryCardWorkClaimSchema,
-  type AgentNodeRef, type MemoryBoardScope, type MemoryCard, type MemoryNote,
+  type MemoryBoardScope, type MemoryCard, type MemoryNote,
   type MemoryCardWorkBinding, type MemoryCardWorkClaim,
 } from '@foreman-code/contracts'
 import type { GraphTransactionSql } from '../run-graph/connection.js'
@@ -40,14 +40,6 @@ export async function findScopeBoard(tx: GraphTransactionSql, scope: MemoryBoard
 export async function cardById(tx: GraphTransactionSql, boardId: string, id: string): Promise<MemoryCard> {
   const result = await tx.query<{ record: unknown }>('select record from memory_cards where board_id=$1 and id=$2', [boardId,id])
   return MemoryCardSchema.parse(result.rows[0]?.record ?? missing('Task'))
-}
-/** Assignment is the persistent identity, including completed cards without digest targets. */
-export async function agentCard(tx: GraphTransactionSql, boardId: string, node: AgentNodeRef): Promise<MemoryCard | undefined> {
-  const result = await tx.query<{ record: unknown }>(`select record from memory_cards
-    where board_id=$1 and record->'assignee'=$2::jsonb order by record->>'createdAt',id limit 1`,
-  [boardId, { workspaceId: node.workspaceId, workflowId: node.workflowId,
-    workflowNodeId: node.workflowNodeId, agentId: node.agentId }])
-  return result.rows[0] ? MemoryCardSchema.parse(result.rows[0].record) : undefined
 }
 export async function cardByTitle(tx: GraphTransactionSql, boardId: string, title: string): Promise<MemoryCard | undefined> {
   const result = await tx.query<{ record: unknown }>('select record from memory_cards where board_id=$1 and normalized_title=$2',
