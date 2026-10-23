@@ -66,12 +66,12 @@ function fixture() {
     ...idleWorkflowControls,
     repeat: async () => ({ ...idleWorkflowRepeat, readExecution: store.readExecution, settleNegativeExecution: async () => {} }),
     getRepeatSnapshot: async () => ({ stopRequested: false }),
-  } as unknown as CoordinatorArguments[0]['runs']
-  const interactions = { coordination: nativeLanes(), cancelPendingForRun: async () => 0 } as unknown as CoordinatorArguments[0]['interactions']
+  } as unknown as CoordinatorArguments[0]
+  const interactions = { coordination: nativeLanes(), cancelPendingForRun: async () => 0 } as unknown as CoordinatorArguments[1]
   const budgets = {
     ensure: async () => {}, remaining: async () => 3_600_000, resume: async () => {}, assertActive: async () => {},
     finish: async () => {}, stop: async () => {},
-  } as unknown as CoordinatorArguments[0]['budgets']
+  } as unknown as CoordinatorArguments[2]
   const prepare = vi.fn(async () => ({ credential: { principalId: 'principal',
     expiresAt: new Date(Date.now() + 900_000).toISOString(),
     environment: { agentId: configuration.agentId, variables: { GRAPHQL_MCP_TOKEN: 'test-scoped-token' } },
@@ -118,9 +118,9 @@ function fixture() {
     }),
   } as unknown as NativeHarnessSessionManager
   const validateContinuation = vi.fn(async () => {})
-  const coordinator = new ApprovalExecutionCoordinator({ runs, interactions, budgets,
-    managers: new ExecutionScopedNativeSessionManagerResolver(() => manager), activeTimeoutMs: 3_600_000, credentials,
-    validateContinuation, workflowClosures: closures as unknown as WorkflowClosureStore, nativeCaptures: captures.capture })
+  const coordinator = new ApprovalExecutionCoordinator(runs, interactions, budgets,
+    new ExecutionScopedNativeSessionManagerResolver(() => manager), 3_600_000, credentials,
+    validateContinuation, closures as unknown as WorkflowClosureStore, undefined, captures.capture)
   const controller = new AbortController()
   const pending = coordinator.observeExact({ execution, store, owner, signal: controller.signal,
     workflowId: 'workflow', graphThreadId: execution.runId,

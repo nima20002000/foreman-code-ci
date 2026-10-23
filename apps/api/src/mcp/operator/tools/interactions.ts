@@ -41,8 +41,10 @@ export const interactionTools = [
     name: 'interaction_respond',
     requires: [['interactions:respond', 'resource'], ['interactions:read', 'resource']],
     enabled: s => !!s.interactions,
-    description: 'Respond to a user-handled approval or workflow direction interaction with an offered option, its revision and, for questions or forms, a response matching the option input schema.',
-    detail: 'Direction finish accepts the recorded findings; continue requires direction and runs:start, workflows:read and workspace_locations:read grants; stop requires runs:stop. Designated Orchestrator interactions remain assigned to their bound reviewer.',
+    description: 'Respond to a user-handled approval or workflow direction interaction using its offered option and revision. '
+      + 'For questions or forms, supply response matching the option input schema. Requires scoped read and respond grants. '
+      + 'Direction finish accepts the recorded findings; continue requires direction and runs:start, workflows:read and workspace_locations:read grants; stop requires runs:stop. '
+      + 'Designated Orchestrator interactions remain assigned to their bound reviewer.',
     inputSchema: RespondToInteractionRequestSchema, outputSchema: RespondToInteractionResponseSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     run: (context, input) => context.services.interactions!.respond(context.principal, input, 'mcp'),

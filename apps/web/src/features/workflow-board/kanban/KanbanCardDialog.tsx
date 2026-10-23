@@ -51,15 +51,13 @@ function CardWindowBody({ detail, client, nodes }: { detail: MemoryCardDetail; c
 function Update({ entry, nodes }: { entry: MemoryChange; nodes: readonly MemoryNodeOption[] }) {
   const when = visibleTime(entry.occurredAt)
   const runId = entry.provenance?.work?.runId ?? entry.provenance?.execution?.runId
-  const created = entry.entityRevision === 1
-  const lines = created ? [] : Object.entries(entry.changes ?? {}).flatMap(([field, change]) => {
+  const lines = Object.entries(entry.changes ?? {}).flatMap(([field, change]) => {
     const line = changeLine(field, change.after, nodes)
     return line ? [<li key={field}>{line}</li>] : []
   })
-  const startedIn = entry.changes?.status?.after as keyof typeof statusLabels | undefined
   return <li className="kanban-card-update" aria-label={`${entry.actor.displayName} · ${when}`}>
     <p className="kanban-card-update-head"><strong>{entry.actor.displayName}</strong><small>{when}{runId ? ` · Run ${runId.slice(0, 8)}` : ''}</small></p>
-    {created ? <p>Created this card{startedIn && statusLabels[startedIn] ? ` in ${statusLabels[startedIn]}` : ''}</p> : <ul>{lines}</ul>}
+    {entry.entityRevision === 1 && !lines.length ? <p>Created this card</p> : <ul>{lines}</ul>}
   </li>
 }
 

@@ -1,6 +1,7 @@
 import type { SqlQuery } from '../../infrastructure/transaction.js'
 import { withWorkflowChatContext } from '../workflow-chat/nativeContext.js'
 import { nativeChatPrompt, preflightChatInput, restoreAcceptedChatInput, type AcceptedChatInput, type AcceptedChatSettings, type PreparedChatInput } from './nativeChatInput.js'
+import { logIgnoredError } from '../diagnostics/ignoredError.js'
 import type { ReadObservation } from '@foreman-code/contracts'
 import { failedReadObservation, successfulReadObservation } from '../diagnostics/readObservation.js'
 import { DeviceConnectionError } from '../devices/deviceWire.js'
@@ -14,7 +15,7 @@ import { pendingSessionControls, type ChatModelCatalog } from '../harnesses/sess
 import { readRunChatTranscript } from './runChatTranscript.js'
 import { ExecutionActivityReader, type ExecutionActivityRequest } from './executionActivity.js'
 import { SessionControlStateSchema } from '@foreman-code/contracts'
-import { lockedSessionModes, validateSessionMessage } from './sessionControls/messageAdmission.js'
+import { validateSessionMessage } from './sessionControls/messageAdmission.js'
 import { parseSessionCommand, sessionTaskContent } from '@foreman-code/contracts'
 import { SessionControlStore } from './sessionControls/store.js'
 import { acceptedResponseControl } from './acceptedResponseControl.js'
@@ -86,8 +87,6 @@ import { validateMessageAttachments } from './messageAttachments.js'
 import type { ChatSendRequest, DeliveryTarget } from '@foreman-code/contracts'
 import type { DeliveryQualification, StoredDelivery } from '../workflow-chat/model.js'
 import { ConversationDeliveryOwner, type ConversationTarget } from './conversationDeliveryOwner.js'
-import { ConversationControlQueue, ConversationEvents, conversationDeliveryState, definiteCreationRejection, definitePromptRejection,
-  failedTurnResult, followDeliveryReceipts, nativeErrorCode, qualifyDeliveryIntent } from './conversationEngine.js'
 import type { PostgresChatDeliveryRepository } from '../workflow-chat/deliveryRepository.js'
 import type { TransactionSql } from '../../infrastructure/transaction.js'
 import { conversationFeatureContext, type ConversationFeatureContext } from './conversationFeatureSubject.js'
@@ -116,8 +115,26 @@ export interface AgentChatManagerFactory extends ChatModelCatalog {
   qualifiedSteer?(row: AgentConversationRow, configuration: AgentConfigurationVersion): Promise<boolean>
 }
 
-export class AgentChatEvents extends ConversationEvents<AgentChatStreamEvent> {
-  constructor() { super(AgentChatStreamEventSchema) }
+export class AgentChatEvents {
+  private sequence = 0
+  private readonly listeners = new Map<string, Set<(event: AgentChatStreamEvent) => void>>()
+  private readonly owners = new Set<(event: AgentChatStreamEvent) => void>()
+  publish(conversationId: string, type: AgentChatStreamEvent['type'], data: Record<string, unknown>) {
+    const event = AgentChatStreamEventSchema.parse({ id: this.sequence++, conversationId, type, data })
+    for (const owner of this.owners) owner(event)
+    for (const listener of this.listeners.get(conversationId) ?? []) {
+      try { listener(event) } catch (error) { logIgnoredError('engine', 'publish conversation event', error) }
+    }
+  }
+  subscribeOwner(listener: (event: AgentChatStreamEvent) => void) { this.owners.add(listener); return () => this.owners.delete(listener) }
+  subscribe(id: string, listener: (event: AgentChatStreamEvent) => void) {
+    const listeners = this.listeners.get(id) ?? new Set()
+    listeners.add(listener); this.listeners.set(id, listeners)
+    return () => {
+      listeners.delete(listener)
+      if (!listeners.size && this.listeners.get(id) === listeners) this.listeners.delete(id)
+    }
+  }
 }
 
 export type ConversationFeatureBinder = (input: { conversationId: string; principalId: string;
@@ -157,18 +174,34 @@ function forksRunHistory(row: AgentConversationRow): boolean {
 const STEER_UNAVAILABLE_REASON = 'This harness cannot add input to a running turn. Queue it for the next turn or interrupt and send.'
 
 function failure(error: unknown, code = 'AGENT_CHAT_TURN_FAILED'): ExecutionResult {
-  return failedTurnResult(error, code, 'The native turn failed.')
+  const provider = error && typeof error === 'object' && 'result' in error ? (error as { result?: ExecutionResult }).result?.error : undefined
+  return { outcome: 'failed', error: { code: nativeErrorCode(error) ?? code,
+    message: provider?.message ?? (errorMessage(error, 'The native turn failed.')), retryable: true } }
 }
-/** Applied only before the first submission or offered initial input. */
-const definiteRejection = (error: unknown) => definitePromptRejection(error, 'any-method')
+function definiteRejection(error: unknown): boolean {
+  if (error instanceof NativeDeliveryError) {
+    return error.operation === 'turn_submission' && error.delivery === 'not_sent'
+  }
+  if (!error || typeof error !== 'object') return false
+  if ('certainty' in error) return error.certainty === 'definite'
+  return 'uncertain' in error && error.uncertain === false
+}
 /** Only the native creation boundary can prove that an unbound attempt created no session. */
 class RejectedSessionCreation extends Error {
   constructor(readonly rejection: unknown) {
     super('Native session creation was definitely rejected and its owner was disposed.', { cause: rejection })
   }
 }
-const definiteNonCreation = (error: unknown) => definiteCreationRejection(error, false)
+function definiteNonCreation(error: unknown): boolean {
+  return error instanceof NativeDeliveryError
+    && error.operation === 'session_creation' && error.delivery === 'not_sent'
+}
 const EPHEMERAL_SESSION_LOST = 'This ephemeral Codex session is no longer live and cannot be resumed after the API restarts. Start a separate conversation.'
+function nativeErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  const nested = 'result' in error ? (error as { result?: ExecutionResult }).result?.error?.code : undefined
+  return nested ?? ('code' in error && typeof error.code === 'string' ? error.code : undefined)
+}
 function nativeUnavailable(error: unknown): { reason: 'native_session_missing' | 'harness_unavailable'; message: string } | undefined {
   const code = nativeErrorCode(error)
   if (code === 'CODEX_SCOPED_ENVIRONMENT_REQUIRED' || code === 'CODEX_APP_MCP_UNAVAILABLE') {
@@ -268,7 +301,7 @@ export class AgentChatService {
   /** Live preparation is not orphan recovery, including the create-to-bind gap. */
   private readonly preparations = new Map<string, { requestId: string; done: Promise<void> }>()
   private readonly wakeups = new Set<string>()
-  private readonly controls = new ConversationControlQueue(() => this.assertOpen())
+  private readonly controls = new Map<string, Promise<unknown>>()
   private readonly reconciliationTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly inflightCommands = new Set<Promise<unknown>>()
   private recovery: Promise<void> | undefined
@@ -309,7 +342,13 @@ export class AgentChatService {
   }
 
   /** Serialize native lifecycle decisions per conversation. */
-  private control<T>(id: string, operation: () => Promise<T>): Promise<T> { return this.controls.run(id, operation) }
+  private control<T>(id: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.controls.get(id) ?? Promise.resolve()
+    const next = previous.catch(() => { /* ignore: the previous caller receives its failure; the queue must still admit the next operation. */ }).then(() => { this.assertOpen(); return operation() })
+    this.controls.set(id, next)
+    void next.finally(() => { if (this.controls.get(id) === next) this.controls.delete(id) }).catch(() => { /* ignore: the owner awaits the original promise; this observer prevents a duplicate unhandled rejection. */ })
+    return next
+  }
   private assertOpen() {
     if (this.closing) throw new DomainError('AGENT_CHAT_CLOSING', 'Agent chat is shutting down.', 503)
   }
@@ -1223,13 +1262,21 @@ export class AgentChatService {
       }, ...(changed ? { changed } : {}),
     })
     this.canonicalDelivery = owner
-    followDeliveryReceipts(this.events, owner, { operation: 'synchronize retained Agent delivery',
-      target: async (id) => {
-        const row = await this.repository.get(id)
-        return row ? { kind: 'agent_conversation', conversationId: id, agent: { workspaceId: row.workspace_id,
-          workflowId: row.workflow_id, workflowNodeId: row.workflow_node_id, agentId: row.agent_id } } : undefined
-      } })
+    this.events.subscribeOwner(event => {
+      if (event.type === 'delta') return
+      void this.syncDeliveryReceipts(event.conversationId, owner).catch(error =>
+        logIgnoredError('engine', 'synchronize retained Agent delivery', error))
+    })
     return owner
+  }
+
+  private async syncDeliveryReceipts(id: string, owner: ConversationDeliveryOwner): Promise<void> {
+    const row = await this.repository.get(id)
+    if (!row) return
+    const target: DeliveryTarget = { kind: 'agent_conversation', conversationId: id,
+      agent: { workspaceId: row.workspace_id, workflowId: row.workflow_id, workflowNodeId: row.workflow_node_id, agentId: row.agent_id } }
+    const commands = await owner.receipts.unfinishedForTarget(target)
+    for (const command of commands) if (!['completed', 'failed', 'canceled'].includes(command.receipt.state)) await owner.refresh(command)
   }
 
   private async authorizeDelivery(principal: ManagementPrincipal, target: ConversationTarget,
@@ -1261,7 +1308,8 @@ export class AgentChatService {
     const key = existing?.agent_key ?? agentChatKey(context)
     await lockActiveWorkspace(tx, target.agent.workspaceId)
     await tx.query('select pg_advisory_xact_lock(hashtext($1))', [`agent-chat:${key}`])
-    let row = await this.repository.lockLiveRow(tx, target.conversationId)
+    let row = (await tx.query<AgentConversationRow>(`select * from operator_conversations
+      where id=$1 and kind='agent' and deleted_at is null for update`, [target.conversationId])).rows[0]
     if (!row && create) {
       await tx.query('select id from workflows where workspace_id=$1 and id=$2 for share', [context.workspaceId, context.workflowId])
       await tx.query('select id from agents where workspace_id=$1 and id=$2 for share', [context.workspaceId, context.agentId])
@@ -1305,13 +1353,17 @@ export class AgentChatService {
     const configuration = await this.pendingConfiguration(row, tx) ?? await this.conversationConfiguration(row)
     const unavailable = this.sessionUnavailable(row, configuration)
     if (unavailable || !configuration) throw new DomainError('AGENT_CHAT_UNAVAILABLE', unavailable?.message ?? 'The accepted configuration is unavailable.', 409)
-    const modes = await lockedSessionModes(tx, row.id, input.sessionMode)
+    const controls = (await tx.query<{ record: unknown }>('select record from conversation_session_controls where conversation_id=$1 for update', [row.id])).rows[0]
+    const savedControls = controls ? SessionControlStateSchema.parse(controls.record) : undefined
+    const appliedMode = savedControls?.appliedMode ?? 'regular'
+    const requestedMode = input.sessionMode ?? savedControls?.desiredMode ?? 'regular'
     const liveSteer = Boolean(row.active_request_id && row.active_native_turn_id && await this.hasQualifiedSteer(row.id))
     const canSteer = liveSteer && configuration.id === row.agent_configuration_version_id
-      && !input.attachments?.length && modes.requested === modes.applied
-    const appliedIntent = qualifyDeliveryIntent(input.intent, { canSteer, active: Boolean(row.active_request_id) }, {
-      steerUnavailable: 'This input cannot steer the qualified active turn; use Queue or Interrupt and send.',
-      notActive: 'There is no active turn to interrupt.' })
+      && !input.attachments?.length && requestedMode === appliedMode
+    const appliedIntent = input.intent === 'auto' ? canSteer ? 'steer' : 'next_turn' : input.intent
+    if (appliedIntent === 'steer' && !canSteer) throw new DomainError('CHAT_STEER_UNAVAILABLE',
+      'This input cannot steer the qualified active turn; use Queue or Interrupt and send.', 409)
+    if (appliedIntent === 'interrupt_and_send' && !row.active_request_id) throw new DomainError('CHAT_TURN_NOT_ACTIVE', 'There is no active turn to interrupt.', 409)
     const request = this.legacyDeliveryRequest({ ...input, commandId: input.commandId }, row, appliedIntent)
     validateSessionMessage(request.content, request.sessionMode)
     await validateMessageAttachments(tx, row.id, request.attachments)
@@ -1351,7 +1403,9 @@ export class AgentChatService {
       throw new DomainError('CHAT_TARGET_CHANGED', 'The selected conversation candidate changed; refresh its target before sending.', 409)
     }
     const steer = row && await this.hasQualifiedSteer(row.id) ? 'native_expected_turn' as const : 'unavailable' as const
-    return { target, state, receipts: [], delivery: { state: conversationDeliveryState(row),
+    return { target, state, receipts: [], delivery: { state: row?.turn_state === 'starting' ? 'starting' as const
+      : row?.turn_state === 'canceling' || row?.turn_state === 'uncertain' ? 'settling' as const
+        : row?.active_request_id ? 'active' as const : 'idle' as const,
     capabilities: { steer, queue: state.availability.canSend, interruptAndSend: state.availability.canSend },
     ...(row?.active_native_turn_id ? { nativeTurnId: row.active_native_turn_id } : {}) } }
   }
@@ -2382,7 +2436,7 @@ export class AgentChatService {
       // An admitted command/recovery pass may still be awaiting SQL or publishing control work.
       // Drain producers before disposing managers or allowing the production owner to unlock.
       while (this.inflightCommands.size || this.tasks.size || this.controls.size || this.preparations.size || this.recovery) {
-        await Promise.allSettled([...this.inflightCommands, ...this.tasks.values(), ...this.controls.pending(),
+        await Promise.allSettled([...this.inflightCommands, ...this.tasks.values(), ...this.controls.values(),
           ...[...this.preparations.values()].map((entry) => entry.done), ...(this.recovery ? [this.recovery] : [])])
       }
       await this.commands.drain()

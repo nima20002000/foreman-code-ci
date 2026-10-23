@@ -6,7 +6,6 @@ import type { GraphTransactionSql } from './connection.js'
 import { RunGraphError } from './errors.js'
 
 import { type CurrentNativeActivity, type CurrentActivityContext } from './nativeActivitySelection.js'
-import { CLOSED_RUN_STATES_SQL } from '../runs/runState.js'
 export { selectCurrentNodeActivity, type CurrentNativeActivity, type CurrentActivityContext } from './nativeActivitySelection.js'
 
 export type CurrentNativeActivityRow = {
@@ -73,7 +72,7 @@ export async function readCurrentNativeActivities(sql: GraphTransactionSql, scop
 export async function readCurrentActivityContext(sql: GraphTransactionSql, scope: RunGraphScope,
   workflowNodeId: string): Promise<CurrentActivityContext> {
   const result = await sql.query<{ closed: boolean; workflow_closed: boolean; pending_id: string | null; delivery_blocked: boolean }>(
-    `select r.stop_requested_at is not null or r.execution_state in (${CLOSED_RUN_STATES_SQL})
+    `select r.stop_requested_at is not null or r.execution_state in ('completed','interrupted')
        or exists(select 1 from run_cleanup_intents c where c.run_id=r.id and c.pending) as closed,
        coalesce((select e.record->>'state'='completed' from harness_executions e
          join run_repeat_executions x on x.execution_id=e.id

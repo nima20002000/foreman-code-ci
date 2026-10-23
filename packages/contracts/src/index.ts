@@ -39,7 +39,7 @@ export { McpCredentialArrangementSchema } from './mcpDetection.js';
 export type { McpCredentialArrangement } from './mcpDetection.js';
 export { PairedMcpEndpointSchema, type PairedMcpEndpoint } from './mcpDetection.js';
 import { MessageAttachmentFields } from "./files.js";
-import { IdSchema, TimestampSchema, GraphIdSchema, RunExecutionStateSchema, RunInputSchema } from "./schemaPrimitives.js";
+import { IdSchema, TimestampSchema, GraphIdSchema, RunInputSchema } from "./schemaPrimitives.js";
 export { IdSchema, TimestampSchema } from "./schemaPrimitives.js";
 export type { Id, Timestamp } from "./schemaPrimitives.js";
 import {
@@ -826,7 +826,13 @@ export type Conversation = z.infer<typeof ConversationSchema>;
 
 
 
-export { RunExecutionStateSchema } from "./schemaPrimitives.js";
+export const RunExecutionStateSchema = z.enum([
+  "queued",
+  "running",
+  "waiting",
+  "interrupted",
+  "completed",
+]);
 export type RunExecutionState = z.infer<typeof RunExecutionStateSchema>;
 
 /** A terminal task result. An interrupted run has no successful/failed outcome by implication. */

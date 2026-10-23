@@ -190,10 +190,11 @@ async function fixture(items: HarnessExecution[], cold = false) {
       workingDirectory: execution.workingDirectory!, runtimeDirectory: execution.runtimeDirectory! }, durableGeneration } },
     async readUnbound() { return undefined },
   }
-  const coordinator = new ApprovalExecutionCoordinator({
-    runs: runs as unknown as PostgresRunRepository, interactions: interactions as unknown as Wave25InteractionRepository,
-    budgets: budgets as unknown as PostgresApprovalBudgetRepository, managers: resolver as NativeSessionManagerResolver, activeTimeoutMs: 60_000,
-    credentials: credentials as unknown as ExecutionCredentialProvider, workflowClosures: closures, nativeCaptures: captures.capture })
+  const coordinator = new ApprovalExecutionCoordinator(
+    runs as unknown as PostgresRunRepository, interactions as unknown as Wave25InteractionRepository,
+    budgets as unknown as PostgresApprovalBudgetRepository, resolver as NativeSessionManagerResolver, 60_000,
+    credentials as unknown as ExecutionCredentialProvider, undefined, closures, undefined, captures.capture,
+  )
   const launched = new Set<string>()
   const store: RepeatNativeObservationStore = {
     async readExecution(id) { const execution = rows.get(id)!; return { execution, ref: { nodeId: execution.workflowNodeId, occurrence: null },
@@ -349,8 +350,8 @@ it('keeps waiting sessions resident, preserves exact identities, and makes repea
 it('does not start replacement native work when Stop finds a nonresident session', async () => {
   const f = await fixture([execution('one')])
   const resolver: NativeSessionManagerResolver = { resolve: () => ({ manager: f.managers.get('one')!, processState: 'needs_start' }), release: () => undefined }
-  const coordinator = new ApprovalExecutionCoordinator({ runs: f.runs as unknown as PostgresRunRepository,
-    interactions: f.interactions as unknown as Wave25InteractionRepository, budgets: f.budgets as unknown as PostgresApprovalBudgetRepository, managers: resolver, activeTimeoutMs: 60_000 })
+  const coordinator = new ApprovalExecutionCoordinator(f.runs as unknown as PostgresRunRepository,
+    f.interactions as unknown as Wave25InteractionRepository, f.budgets as unknown as PostgresApprovalBudgetRepository, resolver, 60_000)
   await assert.rejects(coordinator.cancelRun('run-1'), { code: 'GRAPH_STOP_CONFLICT' })
   assert.ok(!f.calls.some((call) => call.startsWith('create:') || call.startsWith('attach:')))
 })

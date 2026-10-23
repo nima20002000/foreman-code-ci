@@ -1338,9 +1338,9 @@ function queueFixture() {
   const repository = { coordination: Object.assign(f.coordination.asRepository(), { workflowSession: async () => ({ session, finalized: true }) }),
     assertOrchestratorConnection: async () => ({ orchestratorNodeId: 'reviewer-node' }), list: async () => [interaction] }
   type Args = ConstructorParameters<typeof ApprovalExecutionCoordinator>
-  const coordinator = new ApprovalExecutionCoordinator({ runs: runs as unknown as Args[0]['runs'], interactions: repository as unknown as Args[0]['interactions'],
-    budgets: {} as Args[0]['budgets'], managers: { resolve: (context) => { resolvedContexts.push(context); return { manager: f.manager, processState: 'resident' } } },
-    activeTimeoutMs: 30_000, repeatReviewerBindings: bindings })
+  const coordinator = new ApprovalExecutionCoordinator(runs as unknown as Args[0], repository as unknown as Args[1],
+    {} as Args[2], { resolve: (context) => { resolvedContexts.push(context); return { manager: f.manager, processState: 'resident' } } },
+    30_000, undefined, undefined, undefined, bindings)
   return { ...f, coordinator, resolvedContexts, selections, setExecutions: (value: typeof executions) => { executions = value } }
 }
 
@@ -1383,9 +1383,9 @@ test('a missing exact reviewer binding fails closed, never replaced with the req
 test('durable session attach rejects an identity different from its saved execution', async () => {
   const f = fixture()
   type Args = ConstructorParameters<typeof ApprovalExecutionCoordinator>
-  const coordinator = new ApprovalExecutionCoordinator({ runs: { getExecution: async () => ({
+  const coordinator = new ApprovalExecutionCoordinator({ getExecution: async () => ({
     id: 'reviewer-execution', agentId: 'reviewer', nativeSessionId: 'saved-native', workingDirectory: '/accepted', runtimeDirectory: '/runtime',
-  }) } as unknown as Args[0]['runs'], interactions: { coordination: f.coordination.asRepository() } as Args[0]['interactions'], budgets: {} as Args[0]['budgets'], managers: {} as Args[0]['managers'], activeTimeoutMs: 30_000 })
+  }) } as unknown as Args[0], { coordination: f.coordination.asRepository() } as Args[1], {} as Args[2], {} as Args[3], 30_000)
   await assert.rejects(coordinator.attachOwnedSession({ harness: 'codex', executionId: 'reviewer-execution', agentId: 'reviewer', workingDirectory: '/accepted' }, session),
     /ownership context does not match/)
   assert.equal(f.counts().attached, 0)

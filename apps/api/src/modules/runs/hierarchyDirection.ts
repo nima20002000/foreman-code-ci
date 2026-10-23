@@ -10,7 +10,6 @@ import { parseHierarchyWorkResult } from './hierarchyResults.js'
 import { repeatConflict, repeatDigest, repeatId, sameRepeatValue } from './repeatResolution.js'
 import { readParentWorkRequestLocked } from './workReturnValidation.js'
 import { workflowLifecycleLocked } from './workflowCollaborationRuntime.js'
-import { isClosedRunState } from './runState.js'
 
 export type HierarchyDirectionReservation = { kind: 'reserved'; direction: HierarchyDirection; input: WorkActivationInput;
   replayed: boolean } | { kind: 'refused'; code: string; replayed: boolean }
@@ -144,7 +143,7 @@ export async function releaseHierarchyDirectionLocked(sql: GraphTransactionSql,
   assertGraphTransaction(sql)
   const run = (await sql.query<{ stopped: boolean; state: string }>(`select stop_requested_at is not null as stopped,
     execution_state as state from runs where id=$1 for no key update`, [input.runId])).rows[0]
-  if (!run || run.stopped || isClosedRunState(run.state)) return repeatConflict('TARGET_SETTLED')
+  if (!run || run.stopped || ['completed','interrupted'].includes(run.state)) return repeatConflict('TARGET_SETTLED')
   const row = (await sql.query<{ state: string; held_activation_id: string; released_receipt_id: string | null }>(
     `select state,held_activation_id,released_receipt_id from run_hierarchy_direction_waits
       where run_id=$1 and held_execution_id=$2 for update`, [input.runId, input.executionId])).rows[0]

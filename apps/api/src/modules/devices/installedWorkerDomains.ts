@@ -23,9 +23,9 @@ import { createInstalledJobExecutionHost } from '../jobs/executorInstalled.js'
 import { createVerificationSystemInput } from '../jobs/verificationSystemInput.js'
 import { WorkerJobApplicationSink } from '../runs/remote/workerJobApplicationSink.js'
 import { createInstalledJobSource } from '../runs/remote/installedJobSource.js'
-import { createRemoteExecutionHandler, executionExtension } from '../runs/remote/executionRouter.js'
+import { createRemoteExecutionHandler } from '../runs/remote/executionRouter.js'
 import { workflowPreparationExtension } from '../runs/remote/preparationExtension.js'
-import { REMOTE_EXECUTION_EXTENSION, REMOTE_PREPARATION_EXTENSION } from '@foreman-code/contracts/remote-execution-rpc'
+import { REMOTE_PREPARATION_EXTENSION } from '@foreman-code/contracts/remote-execution-rpc'
 import { createWorkerJobInputPort } from '../files/jobInputs/workerFactory.js'
 import { JOB_INPUT_NAMESPACE } from '../files/jobInputs/protocol.js'
 import { createWorkerJobOutputCollector } from '../runs/remote/workerJobOutputs.js'
@@ -731,10 +731,10 @@ async function configureWorkerExecution(composition: InstalledWorkerComposition)
     composition.jobs = host
     return host
   })()
-  const execution = extensions.find(extension => extension.namespace === REMOTE_EXECUTION_EXTENSION)
+  const execution = extensions.find(extension => extension.namespace === 'execution-v1')
   const createConversations = () => createInstalledWorkerConversations({ stateDirectory: input.stateDirectory,
     configuration: composition.configuration, registry, journal, approvedRoots: roots, current,
-    capture: () => input.connection()?.captureRequest(REMOTE_EXECUTION_EXTENSION), request,
+    capture: () => input.connection()?.captureRequest('execution-v1'), request,
     codexSuiteRevision: input.codexSuiteRevision, signal: lifetime.signal, ...(accounts ? { accounts } : {}) })
   composition.conversations = approved ? await createConversations() : null
   composition.activateWorkflowConfiguration = async (location: InstalledWorkflowConfigurationLocation) => {
@@ -771,21 +771,19 @@ async function configureWorkerExecution(composition: InstalledWorkerComposition)
     extensions.push({namespace:JOB_INPUT_NAMESPACE,version:1,role:'client',maxJsonBytes:1_048_576,maxBinaryBytes:8192})
   }
   if (input.jobConfiguration && approved || composition.conversations || workflowSupport) {
-    const handler = executionExtension({
-      admit(_payload, context) {
+    const handler: DeviceExtensionRegistration = { namespace: 'execution-v1', version: 1, role: 'duplex', maxJsonBytes: 1_048_576, maxBinaryBytes: 0,
+      async handle(payload, context) {
         if (context.bytes !== undefined || !isDeepStrictEqual(current(), context.binding)) throw new DomainError('JOB_RUNTIME_CONNECTION_CHANGED', 'Execution requires its actual authenticated worker channel.', 409)
-      },
-      async dispatch(payload, context) {
         const job = input.jobConfiguration && RemoteJobExecutionRpcRequestRecordSchema.safeParse(payload).success ? await openJobs() : composition.jobs
         const conversationHost = composition.conversations
         return { payload: await createRemoteExecutionHandler({ handle: async raw => {
           const workflow = composition.native?.kind === 'configured'
-            ? composition.native.extensions.find(extension => extension.namespace === REMOTE_EXECUTION_EXTENSION)?.handle : undefined
+            ? composition.native.extensions.find(extension => extension.namespace === 'execution-v1')?.handle : undefined
           if (!workflow) throw new DomainError('WORKER_WORKFLOW_UNAVAILABLE', 'The installed Workflow runtime is unavailable.', 409)
           return (await workflow(raw, context)).payload
         } }, job, conversationHost ? { handle: raw => conversationHost.handle(raw, context.binding, context.signal) } : undefined)(payload) }
       },
-    })
+    }
     if (execution) extensions.splice(extensions.indexOf(execution), 1, handler)
     else extensions.push(handler)
     const preparation = extensions.find(extension => extension.namespace === REMOTE_PREPARATION_EXTENSION.namespace)
@@ -930,7 +928,7 @@ async function configureWorkerDrain(composition: InstalledWorkerComposition) {
       // Admission is decided when the request arrives, so a drain that starts during the bundle check waits for this task.
       updateDrain.assertAdmission(extension.namespace, payload)
       if (requiresWorkerBundle(extension.namespace, payload)) await composition.input.assertBundleReady?.(context)
-      if (extension.namespace === REMOTE_EXECUTION_EXTENSION && payload && typeof payload === 'object'
+      if (extension.namespace === 'execution-v1' && payload && typeof payload === 'object'
         && 'method' in payload && ['inspect-mcp', 'conversation.inspect-mcp'].includes(String(payload.method))) {
         await composition.managedMcp.ensureReady({ signal: AbortSignal.any([context.signal, lifetime.signal,
           ...(context.connectionSignal ? [context.connectionSignal] : [])]) })

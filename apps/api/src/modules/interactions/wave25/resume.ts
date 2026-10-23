@@ -14,7 +14,6 @@ import { approvalAttentionFacts } from './attention.js'
 import { approvalAckRecord, assertWorkflowApprovalAckLocked } from '../nativeApprovalProof.js'
 import { componentLogger } from '../../diagnostics/logger.js'
 import { leaseFailureCause, renewOwnedLeases } from '../../leases/ownerLeases.js'
-import { OPEN_RUN_STATES_SQL } from '../../runs/runState.js'
 
 const RESUME_CLAIM_RENEWAL_WINDOW_MS = 40_000
 
@@ -104,7 +103,7 @@ export async function claimResume(pool: pg.Pool, runId: string, id: string, toke
 export async function renewResume(pool: pg.Pool, claim: GraphResumeClaim): Promise<void> {
   const result = await pool.query(`update interaction_graph_resumes g set lease_expires_at=clock_timestamp()+($3::integer*interval '1 millisecond')
     from runs r where g.interaction_id=$1 and g.lease_token=$2 and g.state='resuming' and g.lease_expires_at>clock_timestamp()
-      and r.id=g.run_id and r.stop_requested_at is null and r.execution_state in (${OPEN_RUN_STATES_SQL})`,
+      and r.id=g.run_id and r.stop_requested_at is null and r.execution_state in ('running','waiting','queued')`,
   [claim.interaction.id, claim.ownerToken, INTERACTION_DELIVERY_LEASE_MS])
   if (result.rowCount !== 1) return fail('GRAPH_RESUME_OWNER_LOST')
 }

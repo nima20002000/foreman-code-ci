@@ -121,8 +121,7 @@ import { ProviderAccountConfigurationService } from './modules/harnesses/provide
 import { prepareClaudeWorkflowCredentials } from './modules/harnesses/claudeSdk/workflowCredentials.js'
 import { productionSelectedProfileManager } from './modules/harnesses/selectedProfileProduction.js'
 import { createProductionWorkerConversations } from './modules/conversations/workerProduction.js'
-import { REMOTE_EXECUTION_EXTENSION, REMOTE_PREPARATION_EXTENSION, WorkerConversationCallbackSchema } from '@foreman-code/contracts/remote-execution-rpc'
-import { executionExtension } from './modules/runs/remote/executionRouter.js'
+import { REMOTE_PREPARATION_EXTENSION, WorkerConversationCallbackSchema } from '@foreman-code/contracts/remote-execution-rpc'
 import { credentialAuthority } from './modules/interactions/wave25/credentialAuthority.js'
 import type { GraphSqlClient } from './modules/run-graph/connection.js'
 import { AcceptedHarnessProfileAdmission, AcceptedClaudeProfileAdmission, type AcceptedProfileAuthority } from './modules/harnesses/instanceSettings/acceptedProfile.js'
@@ -249,7 +248,7 @@ import type { NativeHarnessSessionManager } from './modules/harnesses/port.js'
 import { NativeHarnessConfigurationQualifier } from './modules/harnesses/nativeConfigurationQualifier.js'
 import { PostgresAppInteractionService } from './modules/interactions/app.js'
 import { PostgresApprovalBudgetRepository } from './modules/interactions/budget.js'
-import { ApprovalExecutionCoordinator, type CurrentApprovalExecutionDependencies } from './modules/interactions/execution.js'
+import { ApprovalExecutionCoordinator } from './modules/interactions/execution.js'
 import { PostgresWorkflowClosureStore } from './modules/interactions/workflowClosure.js'
 import { retryStartupDatabase } from './infrastructure/databaseRetry.js'
 import { OperatorInteractionService } from './modules/interactions/operator.js'
@@ -675,28 +674,28 @@ function configureDeviceRuntime(composition: ProductionComposition) {
       { namespace: CI_HOST_NAMESPACE, version: 1, role: 'client', maxJsonBytes: 1_048_576, maxBinaryBytes: 0 },
       { namespace: 'host-harness-check-v1', version: 1, role: 'client', maxJsonBytes: 1_048_576, maxBinaryBytes: 0 },
       { ...REMOTE_PREPARATION_EXTENSION, role: 'client' },
-      executionExtension({ routes: [
-        { matches: payload => WorkerConversationCallbackSchema.safeParse(payload).success, handle: async (payload, context) => {
-          if (!composition.workerChats || context.bytes !== undefined) throw new DomainError('WORKER_CONVERSATION_UNAVAILABLE',
-            'The Main conversation callback authority is unavailable.', 503)
-          return { payload: await composition.workerChats.bridge.handle(payload, context.binding, context.signal) }
+      { namespace: 'execution-v1', version: 1, role: 'duplex', maxJsonBytes: 1_048_576, maxBinaryBytes: 0,
+        handle: async (payload, context) => {
+          if (WorkerConversationCallbackSchema.safeParse(payload).success) {
+            if (!composition.workerChats || context.bytes !== undefined) throw new DomainError('WORKER_CONVERSATION_UNAVAILABLE',
+              'The Main conversation callback authority is unavailable.', 503)
+            return { payload: await composition.workerChats.bridge.handle(payload, context.binding, context.signal) }
+          }
+          if (RemoteJobMainRpcRequestRecordSchema.safeParse(payload).success) {
+            if (!composition.jobRuntime) throw new DomainError('JOB_RUNTIME_UNAVAILABLE', 'The actual main Job application bridge is unavailable.', 503)
+            return { payload: await composition.jobRuntime.application.handle(payload, context.binding) }
+          }
+          const native = infrastructure?.deviceDomains?.extensions.find(value => value.namespace === 'execution-v1')
+          if (!native?.handle) throw new DomainError('REMOTE_WORKFLOW_RPC_UNAVAILABLE', 'The actual main workflow application bridge is unavailable.', 503)
+          return native.handle(payload, context)
         } },
-        { matches: payload => RemoteJobMainRpcRequestRecordSchema.safeParse(payload).success, handle: async (payload, context) => {
-          if (!composition.jobRuntime) throw new DomainError('JOB_RUNTIME_UNAVAILABLE', 'The actual main Job application bridge is unavailable.', 503)
-          return { payload: await composition.jobRuntime.application.handle(payload, context.binding) }
-        } }],
-      dispatch: async (payload, context) => {
-        const native = infrastructure?.deviceDomains?.extensions.find(value => value.namespace === REMOTE_EXECUTION_EXTENSION)
-        if (!native?.handle) throw new DomainError('REMOTE_WORKFLOW_RPC_UNAVAILABLE', 'The actual main workflow application bridge is unavailable.', 503)
-        return native.handle(payload, context)
-      } }),
       { namespace: JOB_INPUT_NAMESPACE, version: 1, role: 'server', maxJsonBytes: 1_048_576, maxBinaryBytes: 8192,
         handle: async (payload, context) => {
           const handler = composition.jobRuntime?.inputs.extension.handle
           if (!handler) throw new DomainError('JOB_RUNTIME_UNAVAILABLE', 'The actual Job input authority is unavailable.', 503)
           return handler(payload, context)
         } },
-      ...(infrastructure?.deviceDomains?.extensions.filter(value => ![REMOTE_EXECUTION_EXTENSION, REMOTE_PREPARATION_EXTENSION.namespace, JOB_INPUT_NAMESPACE, BYTE_TRANSFER_NAMESPACE,
+      ...(infrastructure?.deviceDomains?.extensions.filter(value => !['execution-v1', REMOTE_PREPARATION_EXTENSION.namespace, JOB_INPUT_NAMESPACE, BYTE_TRANSFER_NAMESPACE,
         remoteTelemetry.extension.namespace].includes(value.namespace)) ?? []),
     ],
     async bindingLost(binding) {
@@ -1463,22 +1462,22 @@ function configureExecutionCoordinator(composition: ProductionComposition) {
       return expiresAt
     },
   }
-  composition.approvals = new ApprovalExecutionCoordinator({
-    runs, interactions: repository, budgets, managers, activeTimeoutMs: config.harnesses.timeoutMs, credentials: launchCredentials, validateContinuation,
-    workflowClosures: new PostgresWorkflowClosureStore(database.pool, executionId =>
+  composition.approvals = new ApprovalExecutionCoordinator(
+    runs, repository, budgets, managers, config.harnesses.timeoutMs, launchCredentials, validateContinuation,
+    new PostgresWorkflowClosureStore(database.pool, executionId =>
       processRegistry instanceof NativeProcessRegistry
         && hasNativeRestartDetachment(processRegistry.scope(`execution:${executionId}`))),
-    repeatReviewerBindings: new PostgresRepeatReviewerBindings(database.pool),
-    nativeCaptures: { capture(input) {
+    new PostgresRepeatReviewerBindings(database.pool),
+    { capture(input) {
       const evidence = workflowCapture.capture.capture(input)
       remoteWorkflow!.capture(input, workflowCapture.verify.read(evidence))
       return evidence
-    } }, reviewNativeCaptures: { capture(input) {
+    } }, { capture(input) {
       const evidence = reviewCapture.capture.capture(input)
       remoteWorkflow.captureReview(reviewCapture.verify.read(evidence))
       return evidence
     } },
-    recoverNativeProcesses: async (executionId, signal, owner) => {
+    async (executionId, signal, owner) => {
       signal.throwIfAborted()
       const placement = await readExecutionPlacement(database.pool, executionId)
       const closed = placement?.hostRef.kind === 'device'
@@ -1488,7 +1487,7 @@ function configureExecutionCoordinator(composition: ProductionComposition) {
       signal.throwIfAborted()
       return closed
     },
-    reserveNativeLaunch: async (executionId, manager, consultation) => {
+    async (executionId, manager, consultation) => {
       if (remoteWorkflow!.isRemote(executionId)) return
       const scope = launchScopes.get(manager)
       const expectedOwner = consultation ? `consultation:${consultation.consultationId}` : `execution:${executionId}`
@@ -1497,9 +1496,10 @@ function configureExecutionCoordinator(composition: ProductionComposition) {
       if (hasDetachedStdioProcess(scope)) return
       Object.assign(scope, await processRegistry.reserveLaunch(scope.owner))
     },
-    prepareManagerContext: prepareWorkflowManagerContext,
-    commitReviewNative: executionId => remoteWorkflow.afterReviewCommit(executionId),
-    collaboration: composition.workflowCollaboration } satisfies CurrentApprovalExecutionDependencies)
+    prepareWorkflowManagerContext,
+    executionId => remoteWorkflow.afterReviewCommit(executionId),
+    composition.workflowCollaboration,
+  )
   composition.telemetryLifetime = new AbortController()
   composition.mainTelemetryContext = null
 }

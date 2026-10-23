@@ -64,10 +64,10 @@ export async function checkpointRuntimeFixture(branches: 1 | 2 = 1, pendingPerEx
     /** Frozen A/B ports; the production D adapter owns lifecycle and preparation. */
     collaborationPorts?: WorkflowFeaturePorts;
     /** Exact physical closure port; omitted unless a fixture supplies native lifetimes. */
-    recoverNativeProcesses?: ConstructorParameters<typeof ApprovalExecutionCoordinator>[0]['recoverNativeProcesses'];
+    recoverNativeProcesses?: ConstructorParameters<typeof ApprovalExecutionCoordinator>[11];
     managerFactory?: (context: NativeManagerResolutionContext,
       owner: () => RunOwnership | undefined) => NativeHarnessSessionManager;
-    prepareManagerContext?: ConstructorParameters<typeof ApprovalExecutionCoordinator>[0]['prepareManagerContext'];
+    prepareManagerContext?: ConstructorParameters<typeof ApprovalExecutionCoordinator>[13];
     validateContinuation?: ReturnType<typeof continuationValidator>;
     mcpInspector?: (manager: NativeHarnessSessionManager) => NativeMcpInspector } = {}) {
   const db = options.database ?? await agent3Database(options.databaseUrl)
@@ -154,10 +154,11 @@ export async function checkpointRuntimeFixture(branches: 1 | 2 = 1, pendingPerEx
           entry: { name: input.serverName, transport: 'streamable-http', endpoint: providerAppEndpoint,
             enabled: true, credentialEnvironmentVariable: APP_MCP_TOKEN_ENVIRONMENT_VARIABLE, status: 'connected' } } },
       })), db.pool, { prepareContext: options.prepareManagerContext, validateContinuation: validate })
-      const native = new ApprovalExecutionCoordinator({ runs, interactions: repository, budgets, managers, activeTimeoutMs: 600000,
-        credentials: launchCredentials, validateContinuation: validate,
-        workflowClosures: new PostgresWorkflowClosureStore(db.pool), repeatReviewerBindings: new PostgresRepeatReviewerBindings(db.pool),
-        nativeCaptures: workflowCapture.capture, reviewNativeCaptures: reviewCapture.capture, recoverNativeProcesses: options.recoverNativeProcesses, prepareManagerContext: options.prepareManagerContext, collaboration })
+      const native = new ApprovalExecutionCoordinator(runs, repository, budgets, managers, 600000,
+        launchCredentials, validate,
+        new PostgresWorkflowClosureStore(db.pool), new PostgresRepeatReviewerBindings(db.pool),
+        workflowCapture.capture, reviewCapture.capture, options.recoverNativeProcesses,
+        undefined, options.prepareManagerContext, undefined, collaboration)
       const engine = new LangGraphWorkflowEngine(runs, workflows, native, checkpointer, db.directory,
         locations, launchCredentials, repository, options.onRunTerminal,
         { workerParallelism: options.workerParallelism ?? 2 })

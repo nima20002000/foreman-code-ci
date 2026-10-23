@@ -15,15 +15,13 @@ export function workflowChatTools(chat?: WorkflowChatService) {
   const enabled = (services: OperatorRequestContext['services']) => !!chat || !!services.workflowChat
   return [
     defineOperatorTool({ name: 'workflow_chat_read', requires: [['agent_chat:read', 'workflow']], enabled,
-      description: 'Read the workflow Group channel, 50 posts per page by default (at most 100 or 256 KiB); plain posts do not wake agents. For a post\'s complete text use mode body with postId, then bodyCursor.',
-      detail: 'An exact postId or receiptId stays reachable outside a run filter. commandId reconciles a lost post response without dispatch.',
+      description: 'Read the workflow Group channel. Plain posts do not wake agents. Pages default to 50 and cap at 100/256 KiB. Exact postId or receiptId remains reachable outside a run filter. Use mode body and postId, then bodyCursor for complete retained text. commandId reconciles a lost post response without dispatch.',
       inputSchema: page, annotations: readAnnotations,
       run: (context, input) => input.postId && (input.mode === 'body' || input.bodyCursor !== undefined)
         ? service(context).body(context.principal, input, input.postId, input.bodyCursor) : service(context).read(context.principal, input, input),
     }),
     defineOperatorTool({ name: 'workflow_chat_post', requires: [['agent_chat:write', 'workflow'], ['agent_chat:read', 'workflow']], enabled,
-      description: 'Post text to the workflow Group channel with explicitly resolved UTF-16 mention chips, one delivery per mentioned node; raw @ text never wakes agents. Agent replies use replyToPostId with empty mentions and deliveries.',
-      detail: 'Agent posts never wake agents. Intent is explicit; interrupt_and_send is never implied. A replayed commandId only reads the same post and receipts.',
+      description: 'Atomically post exact text and explicitly resolved UTF-16 mention chips with one delivery per distinct node. Raw @ text and Agent posts never wake agents. Retain commandId after response loss; replay only reads the same post and receipts. Intent is explicit; interrupt_and_send is never implied. Agent replies use replyToPostId with empty mentions and deliveries.',
       inputSchema: WorkflowChatPostRequestSchema, outputSchema: WorkflowChatPostResponseSchema,
       annotations: { ...readAnnotations, readOnlyHint: false }, run: (context, input) => service(context).post(context.principal, input),
     }),

@@ -10,9 +10,6 @@ export type Timestamp = z.infer<typeof TimestampSchema>;
 /** Bounded identities shared by current persisted execution contracts. */
 export const GraphIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/);
 
-/** The Run state machine's states; apps/api `runs/runState.ts` owns the allowed transitions. */
-export const RunExecutionStateSchema = z.enum(["queued", "running", "waiting", "interrupted", "completed"]);
-
 export const RunInputSchema = z.record(z.string(), z.json())
 export type RunInput = z.infer<typeof RunInputSchema>
 

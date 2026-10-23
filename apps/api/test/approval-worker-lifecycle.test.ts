@@ -152,7 +152,8 @@ function fixture(harness: AgentHarness = 'codex', started = true) {
   }
   const { owner, connection } = workflowTerminalOwner(() => execution, closures.read, () => issued.map(credential => credential.principalId))
   connections.push(connection)
-  const coordinator = new ApprovalExecutionCoordinator({ runs: runs as never, interactions: interactions as never, budgets: budgets as never, managers: resolver, activeTimeoutMs: 60_000, credentials, workflowClosures: closures, nativeCaptures: capture.capture })
+  const coordinator = new ApprovalExecutionCoordinator(runs as never, interactions as never, budgets as never, resolver, 60_000, credentials,
+    undefined, closures, undefined, capture.capture)
   const observe = () => coordinator.observeExact({
     execution, store, request, approval: { handler: 'user' }, workflowId: 'workflow-1', graphThreadId: execution.runId,
     owner, signal: new AbortController().signal,

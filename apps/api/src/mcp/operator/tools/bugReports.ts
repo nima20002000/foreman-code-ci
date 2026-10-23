@@ -11,7 +11,7 @@ import {
   BugReportCreateResultSchema,
 } from '@foreman-code/contracts/management'
 
-import { BUG_REPORT_TOOL_DESCRIPTION, BUG_REPORT_TOOL_DETAIL } from '../../shared/bugReports.js'
+import { BUG_REPORT_TOOL_DESCRIPTION } from '../../shared/bugReports.js'
 import { defineOperatorTool } from '../definition.js'
 
 const readAnnotations = {
@@ -24,7 +24,6 @@ export const bugReportTools = [
     requires: [['bug_reports:report', 'resource']],
     enabled: s => !!s.bugReports,
     description: BUG_REPORT_TOOL_DESCRIPTION,
-    detail: BUG_REPORT_TOOL_DETAIL,
     inputSchema: BugReportCreateInputSchema,
     outputSchema: BugReportCreateResultSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -34,8 +33,11 @@ export const bugReportTools = [
     name: 'bug_reports_list',
     requires: [['bug_reports:read', 'resource']],
     enabled: s => !!s.bugReports,
-    description: 'List bug reports newest first: active (open or triaged) by default, or view "history" for closed ones with resolution, note and closedAt. Filter by status, workspaceId or severity; follow pageInfo.nextCursor.',
-    detail: 'A status filter narrows the view, or selects that status alone when view is omitted.',
+    description: 'List authorized Foreman Code bug reports newest first. By default only active (open or triaged) '
+      + 'reports are returned; closed reports are archived. Pass view "history" for closed reports (fixed, wont-fix, '
+      + 'duplicate) with their resolution status, note and closedAt. A status filter narrows the view, or selects that '
+      + 'status alone when view is omitted. Filter by workspaceId or severity; follow pageInfo.nextCursor. '
+      + 'Requires bug_reports:read for each returned report.',
     inputSchema: BugReportListInputSchema,
     outputSchema: BugReportPageSchema,
     annotations: readAnnotations,
@@ -56,8 +58,12 @@ export const bugReportTools = [
     name: 'bug_report_update',
     requires: [['bug_reports:update', 'resource']],
     enabled: s => !!s.bugReports,
-    description: 'Mark a Foreman Code bug report open or triaged with its expectedRevision, which also reopens a closed report; close reports with bug_reports_close.',
-    detail: 'Previously saved fixed/wont-fix update commands can still be retried with their original input; new closed-status updates are rejected. A different command with a stale revision conflicts.',
+    description: 'Mark a Foreman Code bug report open or triaged using its expectedRevision; this also reopens a '
+      + 'closed report. Close reports with bug_reports_close. '
+      + 'Previously saved fixed/wont-fix update commands can still be retried with their original input; new '
+      + 'closed-status updates are rejected. '
+      + 'Retry the same commandId and payload after an uncertain response. A different command with a stale '
+      + 'revision conflicts. Requires bug_reports:update in the report scope; read-only callers cannot update.',
     inputSchema: BugReportUpdateInputSchema,
     outputSchema: BugReportUpdateResultSchema,
     annotations: { ...readAnnotations, readOnlyHint: false },
@@ -67,8 +73,13 @@ export const bugReportTools = [
     name: 'bug_reports_close',
     requires: [['bug_reports:update', 'resource'], ['bug_reports:read', 'resource']],
     enabled: s => !!s.bugReports,
-    description: 'Close one or more bug reports all-or-nothing as fixed, wont-fix or duplicate (with duplicateOfId in the same workspace), each with its expectedRevision, and an optional short note.',
-    detail: 'Closed reports are archived from the default bug_reports_list view. Any stale revision rejects the whole call. A later repeat of a fixed report reopens it as a regression. Requires bug_reports:read and bug_reports:update on every report (and bug_reports:read on the duplicate target).',
+    description: 'Close one or more Foreman Code bug reports in one all-or-nothing call and archive them from the '
+      + 'default bug_reports_list view. status is fixed, wont-fix or duplicate; duplicate requires duplicateOfId, a '
+      + 'report in the same workspace. Optional note records a short reason such as the release or commit. Give each '
+      + 'report its expectedRevision; any stale revision rejects the whole call. A later repeat of a fixed report '
+      + 'reopens it as a regression. Retry the same commandId and payload after an uncertain response. Requires '
+      + 'bug_reports:read and bug_reports:update on every report (and bug_reports:read on the duplicate target); '
+      + 'read-only callers cannot close.',
     inputSchema: BugReportCloseInputSchema,
     outputSchema: BugReportCloseResultSchema,
     annotations: { ...readAnnotations, readOnlyHint: false },

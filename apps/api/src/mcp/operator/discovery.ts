@@ -3,7 +3,6 @@ import { z } from 'zod'
 import { DomainError } from '../../modules/errors.js'
 import { toolFailure, toolResult } from '../shared/results.js'
 import { compactJsonSchema, firstSentence } from '../shared/schemaCompaction.js'
-import { readToolDetail } from '../shared/toolDetail.js'
 import type { OperatorCatalog } from './presentation.js'
 
 /**
@@ -31,12 +30,7 @@ export function operatorListedTool(name: string): boolean {
 
 export const OPERATOR_DISCOVERY_INSTRUCTIONS = 'tools/list shows only core tools. For anything else, call tools_find '
   + 'with a short query, then tool_schema for the chosen tool, then tool_run_read (read-only tools) or tool_run '
-  + '(changes) with { name, arguments }. tool_run behaves exactly like calling the tool directly. '
-  + 'tool_schema also returns a tool\'s detail: read it before a tool\'s first use. '
-  + 'Tools that take a commandId are idempotent: after an uncertain reply, retry with the same commandId and input; '
-  + 'different input under a used commandId conflicts. A stale expectedRevision returns REVISION_CONFLICT; '
-  + 'where expectedRevision is optional, omitting it means last write wins. Every call rechecks your grants and scope; '
-  + 'operator_get_capabilities lists the actions each tool requires.'
+  + '(changes) with { name, arguments }. tool_run behaves exactly like calling the tool directly.'
 
 const read = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
 const RunInput = z.object({
@@ -49,12 +43,11 @@ function terms(query: string | undefined): string[] {
     .map(term => term.length > 3 && term.endsWith('s') ? term.slice(0, -1) : term)
 }
 
-/** Name matches rank above description and detail matches; every matched term counts. */
+/** Name matches rank above description matches; every matched term counts. */
 export function findTools(tools: readonly Tool[], query: string | undefined) {
   const wanted = terms(query)
   const scored = tools.filter(tool => !OPERATOR_DISCOVERY_TOOLS.has(tool.name)).map(tool => {
-    const name = tool.name.toLowerCase()
-    const description = `${tool.description ?? ''} ${readToolDetail(tool) ?? ''}`.toLowerCase()
+    const name = tool.name.toLowerCase(), description = (tool.description ?? '').toLowerCase()
     const score = wanted.reduce((sum, term) => sum + (name.includes(term) ? 3 : description.includes(term) ? 1 : 0), 0)
     return { tool, score }
   }).filter(entry => !wanted.length || entry.score > 0)
@@ -76,7 +69,7 @@ export function registerOperatorDiscoveryTools(server: McpServer, catalog: () =>
     return toolResult({ tools: found, next: 'Call tool_schema for one name, then tool_run_read or tool_run.' })
   })
   server.registerTool('tool_schema', {
-    description: 'Read one available tool’s description, detail, input schema and annotations before calling it with tool_run.',
+    description: 'Read one available tool’s full description, input schema and annotations before calling it with tool_run.',
     inputSchema: z.object({ name: z.string().min(1).max(200) }),
     annotations: read,
   }, async (input: { name: string }, extra: ServerContext) => {
@@ -85,9 +78,7 @@ export function registerOperatorDiscoveryTools(server: McpServer, catalog: () =>
       return toolFailure(new DomainError('TOOL_NOT_FOUND', 'No available tool has this name. Use tools_find.', 404))
     }
     const readOnly = tool.annotations?.readOnlyHint === true
-    const detail = readToolDetail(tool)
-    return toolResult({ name: tool.name, description: tool.description ?? '', ...(detail ? { detail } : {}),
-      inputSchema: compactJsonSchema(tool.inputSchema),
+    return toolResult({ name: tool.name, description: tool.description ?? '', inputSchema: compactJsonSchema(tool.inputSchema),
       ...(tool.annotations ? { annotations: tool.annotations } : {}), callWith: readOnly ? TOOL_RUN_READ : TOOL_RUN })
   })
   // The /mcp endpoint dispatches valid tool_run calls as direct calls of the named tool (dispatchToolRun),

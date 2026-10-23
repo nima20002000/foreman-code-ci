@@ -39,7 +39,6 @@ import type { AcceptedProviderAccountBinding } from '@foreman-code/contracts/pro
 import { ignoreError } from '../diagnostics/ignoredError.js'
 import { requireRunStartAvailable } from './maintenance.js'
 import { withRunSourceUse } from '../sources/runSourceUse.js'
-import { OPEN_RUN_STATES_SQL, RUN_INITIAL_STATE } from './runState.js'
 
 /** Internal canonical producer, not a rollout flag or an admission capability.
  * The production management arm intentionally supplies no producer at this base.
@@ -368,7 +367,7 @@ export async function admitRepeatRun(pool: pg.Pool, locations: WorkspaceLocation
         const completeContinuation = await options.continuation?.lock(sql)
         await assertWorkflowRecovered(sql, input.workspaceId, input.workflowId)
         const live = await sql.query<{ count: string }>(`select count(*)::text as count from runs r where r.runner_id=$1
-          and (r.execution_state in (${OPEN_RUN_STATES_SQL}) or exists(select 1 from run_cleanup_intents c where c.run_id=r.id and c.pending))`,
+          and (r.execution_state in ('queued','running','waiting') or exists(select 1 from run_cleanup_intents c where c.run_id=r.id and c.pending))`,
         [prepared.location.runnerId])
         const count = live.rows[0]?.count
         if (!count || !/^[0-9]+$/.test(count)) return conflict('RUNNER_ADMISSION_UNCERTAIN', 'Runner capacity could not be established.')
@@ -388,7 +387,7 @@ export async function admitRepeatRun(pool: pg.Pool, locations: WorkspaceLocation
           workflowId: input.workflowId, workflowVersionId: version.id, executionSemanticsVersion: 3,
           agentConfigurationVersionIds: version.agentConfigurationVersionIds, executionLocation: snapshot.workspace.location,
           authorizationPrincipalId: authority.principal.id, approval: version.approval,
-          executionCondition: version.definition.executionCondition, executionState: RUN_INITIAL_STATE, outcome: 'pending',
+          executionCondition: version.definition.executionCondition, executionState: 'queued', outcome: 'pending',
           input: input.input, createdAt: new Date().toISOString() })
         admissionBegan = true
         await insertRepeatRun(sql, AcceptedRepeatStartV1Schema.parse({ snapshot, run }), {

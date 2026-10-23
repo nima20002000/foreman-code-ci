@@ -10,7 +10,6 @@ import { assertGraphTransaction, beforeGraphCommit, type GraphTransactionSql } f
 import type { RunOwnership } from '../runs/ownership.js'
 import type { MemoryBoardPort } from './ports.js'
 import { readWorkflowCollaborationBindingLocked } from './workflowHooks.js'
-import { isOpenRunState } from '../runs/runState.js'
 
 export interface WorkflowPreparationIdentity { subject: AgentSubject; work: LogicalWorkRef }
 
@@ -28,7 +27,7 @@ export async function withWorkflowPreparation<T>(owner: RunOwnership, execution:
         from runs r where r.id=$1 for update`, [execution.runId])).rows[0]
     if (!row) throw new DomainError('RUN_NOT_FOUND', 'The preparation Run is unavailable.', 404)
     const run = AcceptedWorkflowRunV3Schema.parse(row.record)
-    if (active && (row.stopped || row.cleanup || !isOpenRunState(run.executionState))) {
+    if (active && (row.stopped || row.cleanup || !['queued', 'running', 'waiting'].includes(run.executionState))) {
       throw new DomainError('GRAPH_STOP_CONFLICT', 'The Run no longer admits preparation.', 409)
     }
     const stored = (await sql.query<{ record: unknown }>('select record from harness_executions where id=$1 and run_id=$2',
