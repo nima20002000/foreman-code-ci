@@ -2,7 +2,7 @@ import type { discoverInstalledClaudeSdk } from './claudeSdk/currentPin.js'
 import { withTransaction } from '../../infrastructure/transaction.js'
 import { harnessConnectionGeneration, harnessSessionConnectionGeneration, matchesHarnessConnectionGeneration } from './hostConnectionGeneration.js'
 import type pg from 'pg'
-import { HarnessConfigurationSchema, withAdvancedDefaults, type HarnessDefaults } from '@foreman-code/contracts'
+import { RecordedHarnessConfigurationSchema, withAdvancedDefaults, type HarnessDefaults } from '@foreman-code/contracts'
 import { HarnessHostReferenceSchema, HarnessRegistryReadbackSchema, type HarnessRegistryReadback,
   type HostHarnessOverride, type HostHarnessProfileEvidence } from '@foreman-code/contracts/harness-registry'
 import type { CanonicalMachineReference } from '@foreman-code/contracts/device-identity'
@@ -171,7 +171,7 @@ export class ProductionHarnessRegistry {
   // Session pins read the last collected inventory and stay available while the application shuts down:
   // in-flight launches revalidate their original selection until the engine detaches them for restart.
   pinAccepted(configuration: { id: string; agentId: string; harness: unknown }): RegistryHarnessSelection {
-    const value = HarnessConfigurationSchema.parse(configuration.harness)
+    const value = RecordedHarnessConfigurationSchema.parse(configuration.harness)
     if (value.harness === 'opencode') throw retiredHarnessError()
     const instance: ConfiguredHarnessInstance = { instanceId: configuration.id, instanceRevision: configuration.id,
       driverId: value.harness, enabled: true, configuration: value }

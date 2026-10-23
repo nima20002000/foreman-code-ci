@@ -1,3 +1,4 @@
+import { capabilityDescriptorsOf } from '../harnesses/index.js'
 import { isDeepStrictEqual } from 'node:util'
 import type { CompactionState, ExecutionResult, NativeSessionReference, SessionPreferences, SessionMode } from '@foreman-code/contracts'
 import type { NativeMessageSubmission } from '@foreman-code/contracts/claude'
@@ -145,7 +146,7 @@ export class WorkerConversationJournal {
         const storedBinding = request?.method === 'conversation.open' && request.previousConfiguration
           ? (await inspect())?.binding ?? binding : binding
         await this.change(storedBinding, record => {
-          if (binding.harness !== 'claude' || callback.identity.nativeSessionId !== record.session?.nativeSessionId) {
+          if (capabilityDescriptorsOf(binding).inputIdentity !== 'message' || callback.identity.nativeSessionId !== record.session?.nativeSessionId) {
             conflict('The callback belongs to another native session.')
           }
           const callbacks = record.claudeCallbacks ??= {}

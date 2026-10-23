@@ -1,8 +1,9 @@
+import { capabilityDescriptorsOf, assertActiveHarnessConfiguration } from '../harnesses/index.js'
 import { assertWorkerSteerAuthority } from './workerSteerAuthority.js'
 import type pg from 'pg'
 import { isDeepStrictEqual } from 'node:util'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
-import { NativeSessionReferenceSchema, withAdvancedDefaults, RETIRED_OPENCODE_MESSAGE } from '@foreman-code/contracts'
+import { NativeSessionReferenceSchema, withAdvancedDefaults, isReadOnlyHarnessConfiguration } from '@foreman-code/contracts'
 import type { AgentConfigurationVersion, NativeSessionReference, PromptSettingSnapshot } from '@foreman-code/contracts'
 import type { HarnessQualification } from '@foreman-code/contracts/harness-qualification'
 import { WorkerConversationBindingSchema, WorkerConversationReceiptSchema, type WorkerConversationConfiguration,
@@ -399,9 +400,9 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
       ? 'revalidateObservation' : 'revalidate'](observation, accepted)
     currentChannel()
   }
-  const claudeFiles = configuration.harness.harness === 'claude' && input.fileService
+  const claudeFiles = capabilityDescriptorsOf(configuration.harness).files === 'session_bridge' && input.fileService
     ? createMainWorkerClaudeFiles({ pool: input.pool, binding: owner, service: input.fileService,
-      allowMutation: configuration.harness.sandbox !== 'read-only' }) : undefined
+      allowMutation: !isReadOnlyHarnessConfiguration(configuration.harness) }) : undefined
   const manager = new WorkerConversationManager({ binding, configuration: executionConfiguration,
     lifecycle: options.lifecycle ?? 'owner',
     ...(options.applicationAccess ? { applicationAccess: options.applicationAccess } : {}),
@@ -412,9 +413,9 @@ async function admitWorkerConversation(input: ProductionWorkerConversationsInput
     ...(changingAccess || changingSkills ? { previousBinding: originalBinding } : {}),
     ...(previousConfiguration ? { previousConfiguration } : {}),
     sourceWorkingDirectory: options.workingDirectory,
-    ...(configuration.harness.harness === 'codex' && (binding.appMcpAccess === 'none' || options.fileInputs) && input.files
+    ...(capabilityDescriptorsOf(configuration.harness).files === 'turn_mcp' && (binding.appMcpAccess === 'none' || options.fileInputs) && input.files
       ? { files: input.files(options.conversationId, configuration, binding.workingDirectory) } : {}),
-    ...(configuration.harness.harness === 'claude'
+    ...(capabilityDescriptorsOf(configuration.harness).inputIdentity === 'message'
       ? { claudeAuthority: conversationClaudeAuthority(input.pool, owner, claudeFiles) } : {}),
     profile: () => readWorkerConversationProfileFacts(input, configuration, accepted),
     observeSession: async session => {
@@ -453,9 +454,7 @@ export function createProductionWorkerConversations(input: ProductionWorkerConve
   }
   const create = (options: WorkerConversationOptions) => {
     const configuration = structuredClone(options.configuration)
-    if (configuration.harness.harness === 'opencode') {
-      throw new DomainError('HARNESS_RETIRED', RETIRED_OPENCODE_MESSAGE, 409)
-    }
+    assertActiveHarnessConfiguration(configuration.harness)
     const selector = options.profileSelection ?? configuration.harnessProfileSelection
     if (!selector || selector.target.hostRef.kind !== 'device') unavailable('A selected device profile is required.')
     let caller = options.observationPrincipalId
@@ -496,7 +495,7 @@ export function createProductionWorkerConversations(input: ProductionWorkerConve
       yield* manager.startInitialTurn(start, turn, signal)
     }
     inspectors.set(admitted.manager, admitted.inspector)
-    if (configuration.harness.harness === 'claude' && kind === 'operator' && options.appMcpAccess === 'scoped') {
+    if (capabilityDescriptorsOf(configuration.harness).applicationMcp === 'startup_config' && kind === 'operator' && options.appMcpAccess === 'scoped') {
       credentials.set(admitted.manager, async (token, signal) => {
         const manager = await admitted.actual(signal)
         return manager.deliverClaudeCredential(token, signal)
