@@ -27,7 +27,7 @@ create or replace function work_reply_request(work_run_id text, requester_activa
 $$;
 
 create or replace function assert_work_request() returns trigger language plpgsql as $$
-declare pinned jsonb; work_edge jsonb; current_usage run_work_connection_usage%rowtype;
+declare pinned jsonb; work_edge jsonb; current_usage run_work_connection_usage%rowtype; counted integer;
   source_activation run_work_activations%rowtype; destination_activation run_work_activations%rowtype;
   source_execution harness_executions%rowtype; accepted_digest text;
 begin
@@ -39,14 +39,12 @@ begin
     where run_id=new.run_id and workflow_version_id=new.workflow_version_id and relationship_id=new.relationship_id;
   select value into strict work_edge from jsonb_array_elements(pinned #> '{definition,edges}') e
     where e->>'id'=new.relationship_id and e->>'kind'='execution';
-  if case when new.reply
-      then not work_reply_request(new.run_id,new.requester_activation_id,new.relationship_id,new.destination_node_id)
-        or new.ordinal>current_usage.replies
-      else not ((work_edge->>'source'=new.requester_node_id and work_edge->>'target'=new.destination_node_id)
-          or (work_edge->>'workRequestDirection'='both' and work_edge->>'target'=new.requester_node_id
-            and work_edge->>'source'=new.destination_node_id))
-        or new.ordinal>current_usage.used or current_usage.maximum is not null and new.ordinal>current_usage.maximum
-    end then
+  counted := case when new.reply then current_usage.replies else current_usage.used end;
+  if new.reply and not work_reply_request(new.run_id,new.requester_activation_id,new.relationship_id,new.destination_node_id)
+    or not new.reply and not ((work_edge->>'source'=new.requester_node_id and work_edge->>'target'=new.destination_node_id)
+      or (work_edge->>'workRequestDirection'='both' and work_edge->>'target'=new.requester_node_id
+        and work_edge->>'source'=new.destination_node_id))
+    or new.ordinal>counted or not new.reply and current_usage.maximum is not null and new.ordinal>current_usage.maximum then
     raise exception 'WORK_REQUEST_ROUTE_OR_QUOTA_CONFLICT'; end if;
   select * into strict source_activation from run_work_activations where activation_id=new.requester_activation_id;
   select * into strict destination_activation from run_work_activations where activation_id=new.destination_activation_id;
@@ -66,8 +64,7 @@ begin
         and destination_activation.cause_id=destination_activation.activation_id) then
     raise exception 'WORK_REQUEST_ANCESTRY_CONFLICT'; end if;
   if (select count(*) from run_work_requests where run_id=new.run_id and workflow_version_id=new.workflow_version_id
-      and relationship_id=new.relationship_id and reply=new.reply)
-    <>case when new.reply then current_usage.replies else current_usage.used end then
+      and relationship_id=new.relationship_id and reply=new.reply)<>counted then
     raise exception 'WORK_COUNTER_EVIDENCE_CONFLICT'; end if;
   return null;
 end $$;
