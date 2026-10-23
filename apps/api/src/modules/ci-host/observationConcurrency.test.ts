@@ -3,6 +3,28 @@ import { setImmediate } from 'node:timers/promises'
 import { expect, it } from 'vitest'
 import { observationFixture } from './observationConcurrency.testSupport.js'
 
+it('observes later cloud tickets while earlier tickets download their results', async () => {
+  const gate = rejectableDeferred<void>()
+  const f = observationFixture({ cloud: 8, local: 0, poolSize: 4, collection: gate.promise })
+  try {
+    await f.warm()
+    for (let pass = 0; pass < f.records.length; pass++) {
+      await f.service.dispatch()
+      await setImmediate()
+    }
+    expect(new Set(f.reads)).toEqual(new Set(f.records.map(record => record.id)))
+    gate.resolve()
+    await f.service.drain()
+    for (const record of f.records) {
+      expect((await f.service.get(f.caller, { ticketId: record.id })).run)
+        .toMatchObject({ state: 'passed', collection: 'complete' })
+    }
+  } finally {
+    gate.resolve()
+    await f.service.close()
+  }
+})
+
 it('leaves half the shared pool available while a full fleet is being observed', async () => {
   const gate = rejectableDeferred<void>()
   const f = observationFixture({ cloud: 48, local: 8, poolSize: 8, beforeRead: () => gate.promise })
