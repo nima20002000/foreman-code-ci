@@ -365,6 +365,27 @@ describe('NIM-2644 mounted frontend recovery through the real edit-intent hook',
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
   })
 
+  it('shows no Stop or reconcile wording while a Save with no affected Runs is still finishing', async () => {
+    const user = userEvent.setup()
+    mount()
+    const original = structuredClone(edit().context)
+    let staged = empty
+    vi.spyOn(nextDraftApi, 'editStage').mockImplementation(async (request) => {
+      staged = GraphEditReadResultV3Schema.parse({ ...empty, intent: journalIntent(request, original) })
+      return staged
+    })
+    let finish!: (value: GraphEditReadResultV3) => void
+    const advance = vi.spyOn(nextDraftApi, 'editAdvance').mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    typeMeaning()
+    await requestSave(user)
+    await waitFor(() => expect(advance).toHaveBeenCalledOnce())
+    expect(screen.queryByText('Edits staged. Stop has not been requested.')).not.toBeInTheDocument()
+    expect(screen.queryByText(/until every affected run has fully stopped/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reconcile Save' })).not.toBeInTheDocument()
+    await act(async () => finish(published(staged)))
+    expect(await screen.findByText('Saved.')).toBeInTheDocument()
+  })
+
   it('FE-001 retains a rejected form, unlocks it, and lets the next Discard finish without Stage replay or Stop', async () => {
     const stage = vi.spyOn(nextDraftApi, 'editStage').mockRejectedValue(new ApiError({ code: 'REVISION_CONFLICT', message: 'Rejected before insert' }, 409))
     const advance = vi.spyOn(nextDraftApi, 'editAdvance'), user = userEvent.setup()

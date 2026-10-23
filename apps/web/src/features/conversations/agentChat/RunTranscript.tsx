@@ -2,6 +2,7 @@ import { Button } from '../../../shared/ui/nocturne'
 import { AgentChatMessage } from './AgentChatMessage'
 import { AgentChatActivity } from './AgentChatActivity'
 import { executionIsLive, type useExecutionActivity } from './executionActivity'
+import { sameStructuredResult } from './structuredResult'
 
 const states: Record<string, string> = {
   queued: 'Queued', starting: 'Starting', running: 'Working', completed: 'Completed', failed: 'Failed', canceled: 'Stopped', interrupted: 'Interrupted',
@@ -18,7 +19,7 @@ export function RunTranscript({ feed, name, onBrowse }: {
     {data.hasEarlierExecutions ? <p className="agent-chat-note">Newest 20 executions</p> : null}
     {data.executions.map(execution => {
       const history = data.history?.executionId === execution.executionId ? data.history : undefined
-      const items = history?.items ?? data.items.filter(item => item.executionId === execution.executionId)
+      const items = withoutRepeatedResults(history?.items ?? data.items.filter(item => item.executionId === execution.executionId))
       const hasEarlierItems = history?.hasEarlierItems ?? execution.hasEarlierItems
       const historyRead = feed.readState(execution.executionId)
       const label = `${execution.label} · ${states[execution.state] ?? execution.state}`
@@ -47,4 +48,16 @@ export function RunTranscript({ feed, name, onBrowse }: {
       </section>
     })}
   </section>
+}
+
+type Items = NonNullable<ReturnType<typeof useExecutionActivity>['query']['data']>['items']
+/** Claude can send its final result again (e.g. after a format retry); show it once, like the Run chat does. */
+function withoutRepeatedResults(items: Items): Items {
+  let previous: string | undefined
+  return items.filter(item => {
+    if (item.entry.kind !== 'message' || item.entry.message.role !== 'assistant') return true
+    const repeated = previous !== undefined && sameStructuredResult(previous, item.entry.message.content)
+    previous = item.entry.message.content
+    return !repeated
+  })
 }

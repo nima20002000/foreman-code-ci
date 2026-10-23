@@ -231,6 +231,8 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
     const rail = await screen.findByRole('complementary', { name: 'Workflow side panel' })
     expect(await within(rail).findByRole('region', { name: 'Run node inspector: X before rename' })).toBeVisible()
     await within(rail).findByText('No execution recorded for this node yet.')
+    // The rail's own close is the only one; the inspector adds no second close button inside it.
+    expect(within(rail).queryByRole('button', { name: 'Close inspector' })).toBeNull()
     expect(screen.getByRole('region', { name: 'Selected Run board' })).toBeVisible()
     expect(screen.getByRole('group', { name: 'Board controls' })).toBeVisible()
     expect(router.state.location.search).toMatchObject({ runId: 'run-a', workflowVersionId: 'version-a', executionSemanticsVersion: 3,
@@ -255,7 +257,7 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
     expect(screen.getByRole('group', { name: 'Board controls' })).toBeVisible()
     expect(await savedY()).toBeVisible()
     expect(reads).toEqual([])
-    await userEvent.click(within(rail).getByRole('button', { name: 'Close inspector' }))
+    await userEvent.click(within(rail).getByRole('button', { name: 'Back to Board' }))
     await waitFor(() => expect(router.state.location.search.boardPanel).toBeUndefined())
     expect(router.state.location.search.runId).toBe('run-a')
     expect(router.state.location.search).not.toHaveProperty('runNodeId')

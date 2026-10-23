@@ -348,7 +348,7 @@ describe('Run inspection inside the one mounted Board', () => {
     // The unavailable node reads no history, and the link stays on the node the person named.
     expect(requests.some((query) => query.get('workflowNodeId') === fixture.added.id)).toBe(false)
     expect(router.state.location.search).toMatchObject({ boardPanel: 'agent', boardNodeId: fixture.added.id })
-    await userEvent.setup().click(within(rail).getByRole('button', { name: 'Close inspector' }))
+    await userEvent.setup().click(within(rail).getByRole('button', { name: 'Back to Board' }))
     await openDetails()
     await within(inspector()).findByRole('button', { name: new RegExp(fixture.ordinaryExecutions[1]!.detail.execution.executionId) })
     expect(within(inspector()).getByRole('combobox', { name: 'Run node' }).querySelectorAll('option')).toHaveLength(2)

@@ -68,6 +68,8 @@
 .agent-chat-status > .n-tooltip-anchor:first-child > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conversation-viewport { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .agent-conversation > .conversation-viewport { flex: 1 1 0; }
+/* The Run chat's name row sits in the column; only the messages grow. */
+.agent-conversation > .agent-chat-identity { flex: 0 0 auto; }
 .conversation-viewport-scroll {
   flex: 1 1 0;
   min-height: 0;

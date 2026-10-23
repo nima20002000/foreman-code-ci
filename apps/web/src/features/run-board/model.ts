@@ -3,12 +3,13 @@ import type { RunBoardSnapshot, RunBoardNodeSnapshot, RunBoardEdgeSnapshot } fro
 import type { WorkflowDefinitionV3 } from '@foreman-code/contracts/wave25'
 import { roleNodeSize, workflowToGraph } from '../graph/mapper'
 import { layoutHierarchy } from '../graph/hierarchyLayout'
-import { edgeBend, relationshipLines } from '../graph/signalEdge'
+import { agentNodeFacts, edgeBend, relationshipLines } from '../graph/signalEdge'
+import type { IconName } from '../../shared/ui/nocturne'
 import { agentProductRoleLabel, isHierarchyReportingRoute, type ActivitySnapshotV1, type Agent, type CiActivity, type WorkRef,
   type WorkflowHierarchyReadResult } from '@foreman-code/contracts'
 
 export type AvailableRunBoardSnapshot = Extract<RunBoardSnapshot, { kind: 'available' }>
-export type SavedBoardNode = Node<{ snapshot: RunBoardNodeSnapshot; role?: string; reportingParent?: string; ci?: CiActivity; inspect?: () => void }, 'savedBoardNode'>
+export type SavedBoardNode = Node<{ snapshot: RunBoardNodeSnapshot; role?: string; icon?: IconName; reportingParent?: string; ci?: CiActivity; inspect?: () => void }, 'savedBoardNode'>
 /** One line per agent pair, as on the draft Board: an approval beside a handoff rides on the handoff's line. */
 export type SavedBoardEdge = Edge<{ snapshot: RunBoardEdgeSnapshot; members: readonly RunBoardEdgeSnapshot[]; bend: number }, 'savedBoardEdge'>
 
@@ -38,7 +39,8 @@ export function projectRunBoard(snapshot: AvailableRunBoardSnapshot, activity?: 
     id: node.id, type: 'savedBoardNode', position: { ...geometry.get(node.id)!.position }, origin: [0, 0],
     initialWidth: geometry.get(node.id)!.width, initialHeight: geometry.get(node.id)!.height,
     style: { width: geometry.get(node.id)!.width, height: geometry.get(node.id)!.height }, data: { snapshot: node,
-      ...(identities.has(node.id) ? { role: agentProductRoleLabel(identities.get(node.id)!.productRole) } : {}),
+      ...(identities.has(node.id) ? { role: agentProductRoleLabel(identities.get(node.id)!.productRole),
+        icon: agentNodeFacts({}, identities.get(node.id)!.productRole).icon } : {}),
       // The Master reports to no one, so it gets no "Reports to" caption.
       ...(saved?.hierarchy && node.id !== saved.hierarchy.masterNodeId ? { reportingParent:
         names.get(saved.hierarchy.parents.find(member => member.workflowNodeId === node.id)?.parentNodeId ?? '') ?? 'Unavailable' } : {}),

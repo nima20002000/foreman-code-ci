@@ -79,6 +79,53 @@ beforeEach(() => { localStorage.clear(); useConversationDraftStore.getState().cl
 afterEach(() => { cleanup(); clients.splice(0).forEach(client => client.clear()) })
 
 describe('exact Execution chat public surface', () => {
+  it('notices on its own that the Run ended and offers the follow-up instead of a message box', async () => {
+    const state = endpoints()
+    mount(new NativeSource(), { followUp: <p>Agent chat follow-up</p> })
+    expect(await screen.findByRole('textbox', { name: 'Message' })).toBeInTheDocument()
+    await waitFor(() => expect(state.reads).toBe(2))
+    await new Promise(resolve => setTimeout(resolve, 300))
+    // The Run finishes; no new message arrives on the stream.
+    state.value = { ...state.value, state: 'idle', capabilities: { steer: 'unavailable', queue: false, interruptAndSend: false } }
+    expect(await screen.findByText('Agent chat follow-up', undefined, { timeout: 6000 })).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Message' })).not.toBeInTheDocument()
+  }, 15_000)
+
+  it('says the Run ended when a message is refused for that, instead of losing chat access', async () => {
+    const state = endpoints()
+    server.use(http.post(`${root}/send`, () => {
+      state.value = { ...state.value, state: 'idle', capabilities: { steer: 'unavailable', queue: false, interruptAndSend: false } }
+      return HttpResponse.json({ error: { code: 'RUN_AUTHORIZATION_REVOKED',
+        message: 'The authority that accepted this Run is no longer valid.' } }, { status: 403 })
+    }))
+    mount(new NativeSource(), { followUp: <p>Agent chat follow-up</p> })
+    const input = await screen.findByRole('textbox', { name: 'Message' })
+    fireEvent.change(input, { target: { value: 'What was the title?' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(await screen.findByText('Agent chat follow-up')).toBeInTheDocument()
+    expect(screen.getByText('The Run ended before your message was sent. Continue in the Agent chat below.')).toBeInTheDocument()
+    expect(screen.queryByText('Chat access unavailable')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Delivery is not confirmed/)).not.toBeInTheDocument()
+  })
+
+  it('reads a result the Agent wrapped in prose as its summary, once', async () => {
+    const result = { data: { latestDeliverable: 'Google' }, summary: 'The exact page title is Google.', routing: { kind: 'finish' } }
+    const wrapped = { ...initialMessage, id: 'wrapped', nativeMessageId: 'native-wrapped', nativeMessageComplete: true,
+      content: 'Perfect! Here is the result:\n\n```json\n' + JSON.stringify(result, null, 2) + '\n```' }
+    const bare = { ...initialMessage, id: 'bare', nativeMessageId: 'native-bare', sequence: '2', nativeMessageComplete: true,
+      content: JSON.stringify(result) }
+    endpoints({ ...structuredClone(initial), messages: [wrapped, bare] }); mount(new NativeSource())
+    expect(await screen.findByText('The exact page title is Google.')).toBeInTheDocument()
+    expect(screen.getAllByText('The exact page title is Google.')).toHaveLength(1)
+    expect(screen.queryByText(/Perfect! Here is the result/)).not.toBeInTheDocument()
+  })
+
+  it('gives the messages the panel height instead of an empty name band above them', async () => {
+    endpoints(); mount(new NativeSource())
+    expect(await screen.findByText('Selected native answer')).toBeInTheDocument()
+    const name = screen.getByRole('heading', { name: 'Ava' }).closest('header')!
+    expect(getComputedStyle(name).flexGrow).toBe('0')
+  })
   it('does not observe a hidden panel and coalesces qualified native replacements without per-token reads', async () => {
     const state = endpoints(), source = new NativeSource(), view = mount(source, { visible: false })
     expect(state.reads).toBe(0); expect(source.subscriptions).toHaveLength(0)

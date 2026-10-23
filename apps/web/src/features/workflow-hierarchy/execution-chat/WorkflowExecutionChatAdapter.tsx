@@ -70,6 +70,12 @@ export function WorkflowExecutionChatAdapter({selection:raw,views}:{
   useEffect(()=>{
     if(resolved&&!pinned) onSelectTarget(resolved.target,resolved.workflowVersionId)
   },[resolved,pinned,onSelectTarget])
+  // A finished Run's executions all open the same Agent history, so there is nothing to choose: open the first.
+  const settled=first?.kind==='selection_required'&&!query.hasNextPage&&first.items.length>0
+    &&first.items.every(item=>item.state==='idle')?first.items[0]:undefined
+  useEffect(()=>{
+    if(settled) onSelectTarget(settled.target,settled.workflowVersionId)
+  },[settled,onSelectTarget])
   const client=useMemo(()=>resolved?boundClient(cache,resolved):undefined,[cache,resolved])
   // A draft-only Agent (never saved) has no configuration to chat with yet: save only that Agent, never the
   // workflow graph, so chat opens even while an unrelated part of the workflow can't be saved.

@@ -70,7 +70,7 @@ function RunBoardContents({ selection, snapshot, inspection, activitySnapshot }:
   const inspect = visible && !!inspection.nodeId && (!board || panel?.kind === 'agent' && panel.tab === 'details')
   const details = inspect ? <RunNodeInspector key={`inspector:${selection.generation.id}:${inspection.nodeId}`}
     selection={selection} snapshot={snapshot} nodeId={inspection.nodeId!} hierarchy={saved}
-    executionId={inspection.executionId} onInspect={inspection.inspect} /> : null
+    executionId={inspection.executionId} onInspect={inspection.inspect} closable={!board} /> : null
   const settings = panel?.kind === 'agent' && panel.tab === 'settings' && !board?.memoryOpen
     ? <section aria-label="Saved Agent settings"><h3>{snapshot.nodes.find(node => node.id === panel.nodeId)?.name ?? panel.nodeId}</h3>
       <p>This Run keeps its saved Agent configuration. Return to the draft to edit settings for future Runs.</p></section> : null

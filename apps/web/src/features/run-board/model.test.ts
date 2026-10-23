@@ -36,6 +36,16 @@ describe('saved board projection', () => {
     expect(x.style).toEqual({ width: WORKER_NODE_SIZE, height: WORKER_NODE_SIZE })
     expect(x.data.role).toBe('Worker')
   })
+  it('gives a Run node its saved role\'s icon, as the draft board does', () => {
+    const hierarchy = WorkflowHierarchyReadResultSchema.parse({ workspaceId: runA.workspaceId, workflowId: runA.workflowId,
+      workflowVersionId: runA.workflowVersionId, revision: 1, hierarchy: null, run: { runId: runA.runId, state: 'running' },
+      agents: runA.nodes.map((node, index) => ({ workspaceId: runA.workspaceId, workflowId: runA.workflowId, workflowNodeId: node.id,
+        agentId: nativeNode(node).agentId, displayName: node.name, configurationVersionId: nativeNode(node).agentConfigurationVersionId,
+        productRole: index ? 'coder' : 'orchestrator' })) })
+    const [x, y] = projectRunBoard(runA, undefined, hierarchy).nodes
+    expect(x!.data.icon).toBe('workflow')
+    expect(y!.data.icon).toBe('code')
+  })
   it('never installs mutable canvas geometry into the frozen snapshot', () => {
     const before = JSON.stringify(runA)
     const result = projectRunBoard(runA)

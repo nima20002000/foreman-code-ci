@@ -8,7 +8,8 @@ export function sameStructuredResult(left: string, right: string): boolean {
 
 const summaryKeys = ['summary', 'body', 'message', 'reason', 'text'] as const
 export function structuredResult(content: string): { value: unknown; summary: string | undefined } | undefined {
-  const text = content.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/, '$1')
+  // Also a result the Agent ends with in a fenced block after some prose ("Here is the result: ```json …```").
+  const text = content.trim().replace(/^(?:[\s\S]*\n)?```(?:json)?\s*(\{[\s\S]*?\})\s*```$/, '$1')
   if (!text.startsWith('{')) return undefined
   let value: unknown
   try { value = JSON.parse(text) } catch { return undefined } // ignore: plain text that merely starts with a brace

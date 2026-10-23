@@ -11,6 +11,7 @@ export function observationFixture(options: {
   poolSize: number
   beforeRead?: (runId: string) => Promise<void>
   beforeWrite?: () => Promise<void>
+  collection?: Promise<void>
 }) {
   const computers: HostCiComputer[] = Array.from({ length: options.cloud + options.local }, (_, index) => ({
     key: `executor-${index}`, label: `Executor ${index}`, priority: 0,
@@ -49,9 +50,12 @@ export function observationFixture(options: {
     if (request.operation !== 'read') throw new Error('Unexpected executor operation')
     reads.push(request.runId)
     await options.beforeRead?.(request.runId)
+    if (options.collection && !request.observeOnly) await options.collection
     const record = records.find(record => record.id === request.runId)!
-    return { operation: 'read', run: { runId: record.id, state: 'running', step: 'checking',
-      startedAt: record.startedAt!, finishedAt: null, exitCode: null, message: null, logBytes: 0 },
+    return { operation: 'read', run: { runId: record.id, state: options.collection ? 'passed' : 'running', step: 'checking',
+      ...(options.collection ? { collection: request.observeOnly ? 'pending' : 'complete' } : {}),
+      startedAt: record.startedAt!, finishedAt: options.collection ? new Date().toISOString() : null,
+      exitCode: options.collection ? 0 : null, message: null, logBytes: 0 },
     text: '', nextOffset: 0 }
   } }
   const caller: ManagementPrincipal = { id: 'operator', name: 'Operator', audience: 'operator',

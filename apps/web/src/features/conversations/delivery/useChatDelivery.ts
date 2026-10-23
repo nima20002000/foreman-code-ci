@@ -30,7 +30,9 @@ type Attempt = { request: ChatSendRequest; key: string; generation: number; epoc
 
 /** One exact target; callbacks and pending storage stay attached to the submitting selection. */
 export function useChatDelivery(target: DeliveryTarget | undefined, enabled: boolean, lifecycle: string,
-  onAccepted?: Accepted, options: { onDenied?: (error: Error) => void; nativeTurnId?: string } = {}) {
+  onAccepted?: Accepted, options: { onDenied?: (error: Error) => void; nativeTurnId?: string
+    /** Re-read this often while the chat is not idle, so a Run that ends without a new message is noticed. */
+    pollMs?: number } = {}) {
   const targetKey = JSON.stringify(target ?? null), epoch = identityEpoch(), generation = sessionGeneration()
   const cache = useQueryClient()
   const selected = useMemo(() => targetKey === 'null' ? undefined : DeliveryTargetSchema.parse(JSON.parse(targetKey)), [targetKey])
@@ -48,6 +50,8 @@ export function useChatDelivery(target: DeliveryTarget | undefined, enabled: boo
     }
   }
   const query = useQuery({ queryKey, enabled: enabled && !!selected && denial !== key,
+    refetchInterval: ({ state: { data } }) => options.pollMs && data
+      && ('delivery' in data ? data.delivery.state : data.state) !== 'idle' ? options.pollMs : false,
     queryFn: async ({ signal }) => {
       try {
         const result = await chatDeliveryClient.read(selected!, { signal }); signal.throwIfAborted(); assertSession(generation)
@@ -88,11 +92,15 @@ export function useChatDelivery(target: DeliveryTarget | undefined, enabled: boo
     return chatDeliveryClient.send(request)
   }, onSuccess: accept, onError: (error, attempt) => {
     if (attempt.epoch !== identityEpoch() || scope.current !== attempt.key) return
-    if (isApiAccessError(error)) deny(error)
-    const definite = ApiError.is(error) && error.status >= 400 && error.status < 500
+    // The Run's own authority ends with the Run; that refuses this message, it does not take the viewer's access.
+    const ended = ApiError.is(error) && error.code === 'RUN_AUTHORIZATION_REVOKED'
+    if (isApiAccessError(error) && !ended) deny(error)
+    const definite = ended || ApiError.is(error) && error.status >= 400 && error.status < 500
       && !['REQUEST_TIMEOUT', 'INVALID_RESPONSE'].includes(error.code) && !isApiAccessError(error)
     if (definite && readPending(attempt.key)?.commandId === attempt.request.commandId) localStorage.removeItem(attempt.key)
-    setLocal({ key: attempt.key, pending: readPending(attempt.key), feedback: error.message })
+    setLocal({ key: attempt.key, pending: readPending(attempt.key),
+      feedback: ended ? 'The Run ended before your message was sent. Continue in the Agent chat below.' : error.message })
+    if (ended) void refresh()
   } })
   const state = denial === key ? undefined : query.data
   // Frozen engine messages are history, not proof of the currently active native turn.

@@ -30,10 +30,12 @@ function matchesNode(node: RunBoardNodeSnapshot, execution: RunExecutionSummary)
     && node.agentConfigurationVersionId === execution.agentConfigurationVersionId
 }
 
-export function RunNodeInspector({ selection, snapshot, nodeId, executionId, onInspect, hierarchy }: {
+export function RunNodeInspector({ selection, snapshot, nodeId, executionId, onInspect, hierarchy, closable = true }: {
   selection: SelectedRunState; snapshot: AvailableRunBoardSnapshot; nodeId: string;
   executionId?: string; onInspect(nodeId?: string, executionId?: string): void
   hierarchy?: WorkflowHierarchyReadResult
+  /** False inside a panel that has its own close. */
+  closable?: boolean
 }) {
   useHarnessSessionEpoch()
   const client = useQueryClient()
@@ -71,7 +73,7 @@ export function RunNodeInspector({ selection, snapshot, nodeId, executionId, onI
       </p> : <span />}
       {node ? <IconButton size="sm" variant="ghost" label="Refresh node executions" disabled={pages.isFetching && !pages.isRefetching}
         onClick={() => void refreshFirstInspectionPage(client, queryKey)}><Icon name="refresh" size={14} /></IconButton> : null}
-      <IconButton size="sm" variant="ghost" label="Close inspector" onClick={() => onInspect()}><Icon name="close" size={14} /></IconButton>
+      {closable ? <IconButton size="sm" variant="ghost" label="Close inspector" onClick={() => onInspect()}><Icon name="close" size={14} /></IconButton> : null}
     </header>
     {!node ? <p role="status">This node is not in the saved Run.</p> : <>
       {node.kind !== 'job' ? <PinnedProviderAccount binding={snapshot.providerAccountBindings?.[node.id]} label="Saved Run account" /> : null}

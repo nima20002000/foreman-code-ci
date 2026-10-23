@@ -40,6 +40,8 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
     message, setGeometryPending, canvas, presentation, change, geometry, report, inspect, openPanel, prepare } = core
   const { dirty, needsSave, settingsChanged, canUndo, canRedo, startReloadRequired, startDisabled, startReason, saveBusy,
     affectedRuns, affectedWorkflows, stopBlocked, errorText, locationMessage, panelTitle } = controller.status
+  // A Save with no affected Runs passes through "staged" for a moment; that is progress, not a Stop decision.
+  const finishingSave = editIntent.mutation.isPending && !affectedRuns.length
   const repeatOpen = panel === 'repeat', settingsOpen = !!panel && panel !== 'repeat'
   const repeatZ = useFloatingZ('board-repeat', repeatOpen), settingsZ = useFloatingZ('board-settings', settingsOpen)
   return <section className="workflow-graph board-typed-editor" aria-label="Workflow authoring">
@@ -73,7 +75,7 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
             {dirty ? <IconButton label="Discard changes" variant="ghost" disabled={saveBusy || starting} onClick={() => setConfirm('discard')}><Icon name="close" size={22} /></IconButton> : null}
             {needsSave || edit.pending || editIntent.locked ? <>
             {edit.pending ? <Button disabled={saveBusy || starting} onClick={requestSave}>Retry save</Button> : null}
-            {editIntent.locked ? <Button disabled={saveBusy || starting || !!editIntent.storageError || stopBlocked} onClick={requestSave}>
+            {editIntent.locked && !finishingSave ? <Button disabled={saveBusy || starting || !!editIntent.storageError || stopBlocked} onClick={requestSave}>
               {affectedRuns.length ? 'Stop affected Runs and save' : 'Reconcile Save'}</Button>
               : <IconButton label="Save workflow" disabled={saveBusy || starting || !!editIntent.storageError} onClick={requestSave}><Save aria-hidden="true" size={16} /></IconButton>}
             </> : null}
@@ -135,7 +137,7 @@ export function DraftEditorView({ draftKey, edit, updateFailures, controller }: 
         {editIntent.query.error ? <BoardNotice tone="warning" title="Couldn’t check the status of your last save.">Your changes are still here. {editIntent.query.error.message}</BoardNotice> : null}
         {editIntent.mutation.error ? <WorkflowSaveError error={editIntent.mutation.error} pending={editIntent.outboxPending || !!editIntent.intent && !['saved', 'discarded'].includes(editIntent.intent.state)} openField={openSaveField} /> : null}
         {editIntent.locked && !editIntent.sameDisplayedPayload ? <BoardNotice tone="warning" title="You made more edits after saving started.">They stay here and won’t be overwritten.</BoardNotice> : null}
-        {editIntent.query.data?.intent && !['saved', 'discarded'].includes(editIntent.query.data.intent.state) ? <EditIntentStatus data={editIntent.query.data} /> : null}
+        {editIntent.query.data?.intent && !finishingSave && !['saved', 'discarded'].includes(editIntent.query.data.intent.state) ? <EditIntentStatus data={editIntent.query.data} /> : null}
         {errorText ? <BoardNotice noticeKey={errorText} tone="danger" live title={edit.error?.uncertain ? 'We couldn’t confirm whether that worked.' : 'Something went wrong.'}
           action={settingsChanged && !pendingStart ? <Button size="sm" disabled={startDisabled}
             onClick={() => void prepare(() => startMutation.mutateAsync({ saveFirst: true })).catch(report)}>Save and run</Button> : undefined}>

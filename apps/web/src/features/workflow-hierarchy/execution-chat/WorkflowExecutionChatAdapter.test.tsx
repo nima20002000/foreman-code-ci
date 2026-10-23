@@ -118,6 +118,22 @@ it('requires an explicit Run and execution choice and never follows a successor 
   expect(screen.queryByRole('region', { name: 'Execution conversation' })).not.toBeInTheDocument()
 })
 
+it('opens a finished Run Agent chat without asking which of its executions to open', async () => {
+  const choice = selected()
+  if (choice.kind !== 'selected') throw new Error('Expected selected fixture')
+  const candidate = (executionId: string) => ({ target: { ...choice.target, execution: { ...fixture.execution, executionId } },
+    agent: choice.agent, workflowVersionId: choice.workflowVersionId, source: choice.source, state: 'idle' as const })
+  install()
+  const choices: WorkflowExecutionChatResolution = { kind: 'selection_required', items: [candidate('execution'), candidate('check')],
+    revision: 1, nextCursor: null, hasMore: false }
+  server.use(http.get(`${base}/target`, ({ request }) => HttpResponse.json(new URL(request.url).searchParams.get('executionId')
+    ? { ...choice, state: 'idle' } : choices)))
+  mount({ runId: 'run' })
+  expect(await screen.findByText('Working on the task.')).toBeInTheDocument()
+  expect(screen.getByLabelText('Chat selection')).toHaveTextContent('"executionId":"execution"')
+  expect(screen.queryByText('Choose the exact execution to open.')).not.toBeInTheDocument()
+})
+
 it('retains transient status, hides denied history through a failed retry, and resumes only after a successful read', async () => {
   const wire = install()
   const cache = mount({ runId: 'run', workflowVersionId: 'version', executionId: 'execution' })

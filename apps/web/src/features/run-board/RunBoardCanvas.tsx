@@ -41,7 +41,7 @@ const SavedAgent = memo(function SavedAgent({ id, data }: NodeProps<SavedBoardNo
   return <>
     {/* Keep the authoring button inert; inspection has its own accessible action. */}
     <div className="run-board-node-visual" aria-hidden="true" inert>
-      <AgentNodeView className="run-board-agent" name={data.snapshot.name} harnessLabel=""
+      <AgentNodeView className="run-board-agent" name={data.snapshot.name} harnessLabel="" icon={data.icon}
         statusLabel={presentation.label} state={presentation.state} transition={live?.transition} transitionKey={live?.transitionKey} />
     </div>
     {/* The whole node is the Inspect target, so no button covers the node's face. */}

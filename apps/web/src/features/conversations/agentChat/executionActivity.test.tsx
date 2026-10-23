@@ -106,6 +106,19 @@ describe('Board Agent chat live execution activity', () => {
     expect(await screen.findByRole('region', { name: 'Loop 1 · Completed' }, { timeout: 3000 })).toBeVisible()
   })
 
+  it('shows a structured result once when the Agent repeats it after a format retry', async () => {
+    const result = { data: { latestDeliverable: 'Open google.com' }, summary: 'Tasking Worker to open google.com', routing: { kind: 'finish' } }
+    const mounted = mountChat(runState())
+    mounted.mock.setExecutionActivity(runState().context, snapshot('completed', [
+      message('execution-main', 'fenced', '2', '```json\n' + JSON.stringify(result, null, 2) + '\n```'),
+      message('execution-main', 'bare', '3', JSON.stringify(result)),
+    ]))
+    await mounted.ready()
+    const main = await screen.findByRole('region', { name: 'Execution · Completed' })
+    expect(await within(main).findByText('Tasking Worker to open google.com')).toBeVisible()
+    expect(within(main).getAllByText('Tasking Worker to open google.com')).toHaveLength(1)
+  })
+
   it('loads unread history from the contiguous window after a much older entry changes', async () => {
     const state = runState()
     const mounted = mountChat(state)

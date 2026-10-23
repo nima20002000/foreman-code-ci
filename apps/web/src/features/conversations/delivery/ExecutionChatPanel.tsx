@@ -1,3 +1,4 @@
+import '../agentChat/agentChat.css'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { parseSessionCommand, type ChatDeliveryIntent, type ChatDeliveryReceipt, type EngineChatReadback, type SessionMode } from '@foreman-code/contracts'
@@ -59,7 +60,7 @@ function ExecutionChatContent(props: ExecutionChatPanelProps) {
       attempted.current.files?.acknowledge?.()
     }
     void cache.invalidateQueries({ queryKey: ['chat-delivery-inputs', identityEpoch(), serialized] })
-  }, { nativeTurnId: props.nativeTurnId, onDenied: revoke })
+  }, { nativeTurnId: props.nativeTurnId, onDenied: revoke, pollMs: 3000 })
   const stream = useExecutionChatStream(target, props.source, delivery.queryKey, !denied && !delivery.denied, revoke)
   const state = delivery.state && 'messages' in delivery.state ? delivery.state : undefined
   const history = useMutation({ mutationFn: async () => {
@@ -114,7 +115,7 @@ function ExecutionChatContent(props: ExecutionChatPanelProps) {
   if (denied || delivery.denied) return <Alert tone="warning" title="Chat access unavailable"><Button onClick={() => {
     detailAbort.current = new AbortController(); setDenied(false); delivery.refresh()
   }}>Refresh access</Button></Alert>
-  if (closed && !unsettled && props.followUp) return <>{props.followUp}</>
+  if (closed && !unsettled && props.followUp) return <>{delivery.feedback ? <p role="alert">{delivery.feedback}</p> : null}{props.followUp}</>
   return <section className="agent-conversation" aria-label="Selected execution chat">
     {/* The Board's chat tab already names the Run attempt above this panel. */}
     <header className="agent-chat-identity"><h2>{props.name}</h2></header>
