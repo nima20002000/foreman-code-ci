@@ -32,7 +32,7 @@ export interface OperatorServices {
   circleAccounts?: import('../../modules/settings/circleAccounts.js').CircleAccountsManagementService
   bugReports?: import('../../modules/bug-reports/service.js').BugReportService
   providerAccounts?: import('../../modules/provider-accounts/service.js').ProviderAccountsService
-  ci?: import('../../modules/ci-host/service.js').HostCiService
+  ci?: import('../../modules/ci/types.js').HostCiService
   remoteExecution?: import('../../modules/settings/remoteExecution.js').RemoteExecutionSettingsService
   workerExecution?: import('../../modules/settings/workerExecution.js').WorkerExecutionPolicy
   jobs?: import('../../modules/jobs/service.js').JobService

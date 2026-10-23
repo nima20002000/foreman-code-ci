@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { CiRunRecordSchema } from '@foreman-code/contracts'
-import { HostCiService, type CiCommits, type HostCiComputer } from '../src/modules/ci-host/service.js'
+import { HostCiService, type CiCommits, type HostCiComputer } from '@foreman-code/ci/service'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import { RunCiAuthority } from '../src/modules/jobs/ciAuthority.js'
 import { describe, expect, it, vi } from 'vitest'

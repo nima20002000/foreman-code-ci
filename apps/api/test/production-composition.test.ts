@@ -22,7 +22,7 @@ import * as nativeRetention from '../src/modules/harnesses/installedNativeQualif
 import { ProductionDeviceRuntime } from '../src/modules/devices/productionRuntime.js'
 import type { DeviceEndpoint } from '../src/modules/devices/deviceEndpoint.js'
 import { RunWorktrees } from '../src/modules/runs/runWorktrees.js'
-import { HostCiService, type CiCommits, type HostCiEndpoint } from '../src/modules/ci-host/service.js'
+import { HostCiService, type CiCommits, type HostCiEndpoint } from '@foreman-code/ci/service'
 import { CI_GET_ACTIONS } from '../src/modules/jobs/ciAuthority.js'
 import { requireAuthorization } from '../src/modules/access/policy.js'
 

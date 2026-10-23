@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { AgentConfigurationVersion, ExecutionResult, HarnessExecution, NativeHarnessEvent, NativeSessionReference } from '@foreman-code/contracts'
@@ -17,14 +16,15 @@ import { ExecutionScopedNativeSessionManagerResolver } from '../src/modules/inte
 import { createWorkflowNativeCaptureChannel } from '../src/modules/interactions/workflowNativeCapture.js'
 import type { WorkflowClosureStore } from '../src/modules/interactions/workflowClosure.js'
 import type { RepeatNativeObservationStore } from '../src/modules/interactions/repeatObservation.js'
-import type { RunOwnership } from '../src/modules/runs/ownership.js'
+import { persistentFixtureRoot } from './helpers/fixtureStorage.js'
+import { workflowTerminalOwner } from './helpers/workflowTerminalOwner.js'
 import { nativeLanes } from './helpers/nativeLanes.js'
 
 const secret = 'private-pr11-engine-secret'
 const now = '2026-09-17T00:00:00.000Z'
 type Fixture = Awaited<ReturnType<typeof createFixture>>
 async function createFixture(placement?: AcceptedNodePlacement) {
-  const directory = await mkdtemp(join(tmpdir(), 'graphql-native-credential-'))
+  const directory = await mkdtemp(join(persistentFixtureRoot, 'graphql-native-credential-'))
   const configuration: AgentConfigurationVersion = {
     id: 'config-1', workspaceId: 'workspace-1', agentId: 'agent-1', version: 1,
     prompt: { system: 'Test' }, assignedSkills: [],
@@ -86,6 +86,8 @@ async function createFixture(placement?: AcceptedNodePlacement) {
   }
   const negativeSettlements: string[] = [], failures = new Map<string, ExecutionResult>()
   const runs = {
+    // These fixtures have no workflow memory board.
+    kanbanRecordMissing: async () => false,
     getRepeatSnapshot: async () => ({ run, stopRequested: false, cleanupPending }),
     requestCleanup: async () => { cleanupPending = true },
     async *executionPages() { yield [...rows.values()] },
@@ -155,7 +157,7 @@ async function createFixture(placement?: AcceptedNodePlacement) {
     new ExecutionScopedNativeSessionManagerResolver(() => manager), 300_000, credentials,
     async () => { await locations.revalidateRunAuthorization(); await locations.revalidateSnapshot() }, closures, undefined, captures.capture,
     undefined, undefined, undefined, async context => placement ? { ...context, acceptedPlacement: placement } : context)
-  const owner = { runId: run.id, assertOwned: () => undefined, client: {} } as unknown as RunOwnership
+  const { owner, connection } = workflowTerminalOwner(() => rows.get(candidate.id)!, closures.read, () => ['worker-1'])
   return {
     coordinator, credentials, rows, accepted, events, activities, revoked, negativeSettlements, failures,
     setDirectoryChanged: () => { changedDirectory = true }, setAuthorityRevoked: () => { revokedAuthority = true },
@@ -168,7 +170,7 @@ async function createFixture(placement?: AcceptedNodePlacement) {
       workflowId: run.workflowId, graphThreadId: run.id, signal: new AbortController().signal,
       request: { executionId: candidate.id, runId: run.id, workspaceId: run.workspaceId, workflowNodeId: candidate.workflowNodeId,
         workingDirectory: directory, runtimeDirectory: candidate.runtimeDirectory!, configuration, input: {} } }),
-    async close() { cleanupFails = false; cleanupPending = true; await coordinator.cancelRun(run.id); await rm(directory, { recursive: true, force: true }) },
+    async close() { cleanupFails = false; cleanupPending = true; await coordinator.cancelRun(run.id); await connection.close(); await rm(directory, { recursive: true, force: true }) },
   }
 }
 async function withFixture(perform: (fixture: Fixture) => Promise<void>) {

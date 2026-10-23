@@ -15,10 +15,9 @@ import { readLiveManagementPrincipal } from '../access/liveManagementPrincipal.j
 import type { PostgresCommandCoordinator } from '../commands/postgres.js'
 import { buildComputerKey } from '../settings/buildComputers.js'
 import { computerNameKey, readComputerNames, renameComputer } from './names.js'
-import { cloudCiId } from '../ci-host/cloudProviders.js'
+import { cloudCiId } from '../ci/values.js'
 import { logIgnoredError } from '../diagnostics/ignoredError.js'
-import type { CircleCreditsReader } from '../ci-host/circleCredits.js'
-import type { CircleSchedulingReading } from '../ci-host/circleStandby.js'
+import type { CircleCreditsReader, CircleSchedulingReading } from '../ci/types.js'
 
 const jobRow = z.object({ target: DeviceProvisioningTargetSchema, activity: ComputerJobActivitySchema })
 const agentRow = z.object({ target: DeviceProvisioningTargetSchema, activity: ComputerAgentActivitySchema })

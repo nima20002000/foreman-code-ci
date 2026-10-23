@@ -127,12 +127,12 @@ test('coverage cannot narrow shared infrastructure changes or change other suite
 })
 
 test('CI orchestration changes require full scope even when recorded coverage omits CI integration consumers', () => {
-  const service = 'apps/api/src/modules/ci-host/service.ts'
+  const service = 'apps/ci/src/service.ts'
   const helper = 'apps/api/test/admission.ts'
   const queue = 'apps/api/test/host-ci-queue-priority.integration.test.ts'
   const cloud = 'apps/api/test/host-ci-cloud-integration.integration.test.ts'
   const graph = new Map([...sources, [service, 'export class HostCiService {}'],
-    [helper, "import '../src/modules/ci-host/service.js'"],
+    [helper, "import '../../ci/src/service.js'"],
     [queue, "import './admission.js'"], [cloud, "import './admission.js'"]])
   const recorded = { ...coverageMap, testFiles: [first, second, queue, cloud],
     coverage: { ...coverageMap.coverage, [first]: [service], [queue]: [other], [cloud]: [other] } }
@@ -142,7 +142,7 @@ test('CI orchestration changes require full scope even when recorded coverage om
 })
 
 test('CI host unit test edits retain affected integration scope', () => {
-  const unit = 'apps/api/src/modules/ci-host/service.test.ts'
+  const unit = 'apps/api/test/ci-host/service.test.ts'
   const result = select([unit], { sources: new Map([...sources, [unit, 'export {}']]) })
   assert.equal(result.scope, 'affected')
   assert.deepEqual(result.files, [])

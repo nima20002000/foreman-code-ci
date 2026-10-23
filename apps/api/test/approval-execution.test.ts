@@ -203,6 +203,8 @@ function fixture(harness: AgentHarness = 'codex', options: { remote?: boolean; i
     readOneShotFence: async () => { owner.assertOwned(); return { ownerId: 'approval-unit-owner', fence: '1' } },
   } as unknown as RunOwnership
   const runs = {
+    // These fixtures have no workflow memory board.
+    kanbanRecordMissing: async () => false,
     async getRepeatSnapshot() { return { run: { executionState: 'running' }, stopRequested, cleanupPending } },
     async requestCleanup() { cleanupPending = true },
     async *executionPages() { yield [...executions.values()] },

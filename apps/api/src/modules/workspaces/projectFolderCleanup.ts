@@ -1,4 +1,4 @@
-import { errorMessage } from '../../shared/errorMessage.js'
+import { errorMessage } from '@foreman-code/contracts/server-kit'
 import { lstat, realpath, rm } from 'node:fs/promises'
 import { beginTransaction, commitTransaction, rollbackTransaction } from '../../infrastructure/transaction.js'
 import { isAbsolute, relative, sep } from 'node:path'

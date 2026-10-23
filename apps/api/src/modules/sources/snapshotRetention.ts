@@ -1,4 +1,4 @@
-import { RetryBackoff } from '../../infrastructure/retryBackoff.js'
+import { RetryBackoff } from '@foreman-code/contracts/server-kit'
 import type pg from 'pg'
 import { withClientTransaction } from '../../infrastructure/transaction.js'
 import type { GraphSqlClient } from '../run-graph/connection.js'

@@ -6,9 +6,9 @@ import { withTransaction } from '../src/infrastructure/transaction.js'
 import { PostgresFoundationSettingsRepository } from '../src/modules/settings/foundation.js'
 import type { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
 import type { CiAuthority } from '../src/modules/jobs/ciAuthority.js'
-import { HostCiService, type CiCommits } from '../src/modules/ci-host/service.js'
-import { CircleStandby } from '../src/modules/ci-host/circleStandby.js'
-import type { HostCiComputer, HostCiEndpoint } from '../src/modules/ci-host/serviceTypes.js'
+import { HostCiService, type CiCommits } from '@foreman-code/ci/service'
+import { CircleStandby } from '@foreman-code/ci/circleStandby'
+import type { HostCiComputer, HostCiEndpoint } from '@foreman-code/ci/serviceTypes'
 
 it('reserves ordinary cloud capacity on active standby orgs instead of exhausted primaries', async () => {
   const db = await migratedDatabase()
