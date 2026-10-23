@@ -7,7 +7,7 @@ import type { ExecutionRef, WorkflowRunSummary } from '@foreman-code/contracts'
 import type { BoardSidePanel, RepeatGraphScopeV3, WorkspaceBoardInspection } from '@foreman-code/contracts/wave25'
 import { Alert, Button, Icon, IconButton } from '../../shared/ui/nocturne'
 import { WorkspaceExecutionLocationSettings } from '../settings/WorkspaceExecutionLocationSettings'
-import { RunBoardSlot } from '../run-board'
+import { RunBoardSlot, useRunBoardShown } from '../run-board'
 import { useRunSummaries, useSelectedRun, useSelectedRunSnapshot } from '../runs-selector'
 import { isRunAccessError } from '../runs-selector/query'
 import { BoardNavigationControls } from './BoardNavigationControls'
@@ -62,6 +62,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   const [sidePanelHost, setSidePanelHost] = useState<HTMLDivElement | null>(null)
   const [panelHeaderSlot, setPanelHeaderSlot] = useState<HTMLDivElement | null>(null)
   const [panelFooterSlot, setPanelFooterSlot] = useState<HTMLDivElement | null>(null)
+  const [runCaptionHost, setRunCaptionHost] = useState<HTMLDivElement | null>(null)
   const [authoringActions, setAuthoringActions] = useState<WorkflowAuthoringActions>()
   const registerAuthoringActions = useCallback((actions?: WorkflowAuthoringActions) => setAuthoringActions(actions), [])
   const selection = useRef({ location: router.history.location, generation: 0 })
@@ -129,7 +130,9 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   // History is rendered only by RunBoardSlot. Do not feed legacy Run pins to the
   // hidden editor/SelectedRunCanvas, or fabricate missing version/semantics pins.
   const value = useMemo(() => ({ workspaceId, workflowId, selectRun: chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent,
-    sidePanel: side.panel, selectedPanelNodeId: side.agentSelection?.nodeId, selectSidePanel: selectPanel, sidePanelHost, memoryOpen: side.memoryOpen,
+    sidePanel: side.panel, selectedPanelNodeId: side.agentSelection?.nodeId, selectSidePanel: selectPanel, sidePanelHost, runCaptionHost, memoryOpen: side.memoryOpen,
+    // A shown Run moves agents exactly as the draft Board does (owner rule: one Board, the same rules).
+    moveDraftNodes: authoringActions?.moveNodes,
     openMemoryCard: (cardId: string) => setMemoryOpen(true, cardId),
     executionChatMounted: !!collaborationSlots?.executionChat,
     canvasVisible: side.view === 'graph', teamNodeId: side.teamNodeId, selectTeam: side.selectTeam,
@@ -137,7 +140,7 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
     openLocation: () => setLocationOpen(true), openRuns: () => setRunsOpen(true), activeRuns, liveRunId, authoringActive: current, registerAuthoringActions,
     ...(current && authoringActions ? { saveChatAgent: authoringActions.saveChatAgent, draftNodeAgentId: authoringActions.draftNodeAgentId, draftNodeBrowser: authoringActions.draftNodeBrowser } : {}),
     navigationControls: current && side.view === 'graph' ? <BoardNavigationControls workspaceId={workspaceId} workflowId={workflowId} selection={navigationSelection} /> : undefined,
-  }), [workspaceId, workflowId, chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent, activeRuns, liveRunId, setRunsOpen, setLocationOpen, navigationSelection, current, side.view, side.panel, side.agentSelection?.nodeId, selectPanel, sidePanelHost, side.memoryOpen, setMemoryOpen, side.teamNodeId, side.selectTeam, collaborationSlots, registerAuthoringActions, authoringActions])
+  }), [workspaceId, workflowId, chooseRun, getSelectionToken, inspection, selectInspection, selectedAgentId, selectDraftAgent, activeRuns, liveRunId, setRunsOpen, setLocationOpen, navigationSelection, current, side.view, side.panel, side.agentSelection?.nodeId, selectPanel, sidePanelHost, runCaptionHost, side.memoryOpen, setMemoryOpen, side.teamNodeId, side.selectTeam, collaborationSlots, registerAuthoringActions, authoringActions])
   const detailsValue = useMemo(() => detailsScope ? { ...value, run: detailsScope } : value, [value, detailsScope])
   const authoringEvent = (event: SyntheticEvent) => {
     if (event.target instanceof Element && event.target.closest('.workflow-floating-panel')) return
@@ -153,18 +156,12 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
   const direction = useRunDirectionWait(runControlsScope)
   const suppliedOverview = collaborationSlots?.overview
   const overviewContent = side.memoryOpen ? null : suppliedOverview?.()
-  return <WorkflowBoardContext.Provider value={value}><PanelHeaderSlotContext.Provider value={panelHeaderSlot}><PanelFooterSlotContext.Provider value={panelFooterSlot}>
-    <div ref={toolbar} className="unified-workflow-board" data-testid="unified-workflow-board" style={{ flexDirection: 'column' }}>
-      <nav className="workflow-collaboration-toolbar" aria-label="Workflow views">
-        <span>{legacyRun || pickedRunId ? 'Selected Run' : 'Editing draft'}</span>
-        <Button size="sm" variant="ghost" aria-pressed={side.view === 'graph'} onClick={() => side.selectView('graph')}>Graph</Button>
-        <Button size="sm" variant="ghost" aria-pressed={side.view === 'overview'} onClick={() => side.selectView('overview')}>Overview</Button>
-      </nav>
-      {browserRelease.error ? <Alert tone="warning" title="Browser control release is unconfirmed.">
-        {browserRelease.error} Use the retained browser recovery controls to reconcile the original release.</Alert> : null}
-      {collaborationSlots?.browserRecovery?.()}
-      {!current || side.view === 'overview' ? <header className="board-topbar" aria-label="Board toolbar"
-        style={{ position: 'relative', inset: 'auto', zIndex: 10, flex: '0 0 auto', flexWrap: 'wrap', justifyContent: 'flex-end', padding: 'var(--space-2)', boxSizing: 'border-box', minWidth: 0 }}>
+  // Over the Run's canvas it floats like the draft's own toolbar, so the canvas keeps the draft's exact box.
+  const shownBoard = useRunBoardShown(boardSelection)
+  const boardToolbar = shownBoard === 'run' || side.view === 'overview' ? <header className="board-topbar" aria-label="Board toolbar"
+        style={side.view === 'graph' ? { flexWrap: 'wrap', justifyContent: 'flex-end', boxSizing: 'border-box', minWidth: 0 }
+          : { position: 'relative', inset: 'auto', zIndex: 10, flex: '0 0 auto', flexWrap: 'wrap', justifyContent: 'flex-end', padding: 'var(--space-2)', boxSizing: 'border-box', minWidth: 0 }}>
+        {side.view === 'graph' ? <div className="board-run-caption" ref={setRunCaptionHost} /> : null}
         {direction && !side.memoryOpen ? <DirectionWaitNotice direction={direction} onAnswer={() => {
           mentionInGroupChat({ workspaceId, workflowId }, direction)
           side.selectPanel({ kind: 'group_chat' })
@@ -179,11 +176,23 @@ export function WorkflowBoard({ workspaceId, workflowId, run: requestedRun, sele
         {runControlsScope ?
           <SelectedRunControls key={JSON.stringify(boardSelection.identity)} visible={!side.memoryOpen}
             scope={runControlsScope} /> : null}
-      </header> : null}
+      </header> : null
+  return <WorkflowBoardContext.Provider value={value}><PanelHeaderSlotContext.Provider value={panelHeaderSlot}><PanelFooterSlotContext.Provider value={panelFooterSlot}>
+    <div ref={toolbar} className="unified-workflow-board" data-testid="unified-workflow-board" style={{ flexDirection: 'column' }}>
+      <nav className="workflow-collaboration-toolbar" aria-label="Workflow views">
+        <span>{legacyRun || pickedRunId ? 'Selected Run' : 'Editing draft'}</span>
+        <Button size="sm" variant="ghost" aria-pressed={side.view === 'graph'} onClick={() => side.selectView('graph')}>Graph</Button>
+        <Button size="sm" variant="ghost" aria-pressed={side.view === 'overview'} onClick={() => side.selectView('overview')}>Overview</Button>
+      </nav>
+      {browserRelease.error ? <Alert tone="warning" title="Browser control release is unconfirmed.">
+        {browserRelease.error} Use the retained browser recovery controls to reconcile the original release.</Alert> : null}
+      {collaborationSlots?.browserRecovery?.()}
+      {side.view === 'overview' ? boardToolbar : null}
 
       <div className="workflow-collaboration-layout">
       <div className="workflow-collaboration-canvas" hidden={side.view !== 'graph'} inert={side.view !== 'graph'}>
-      <RunBoardSlot selection={boardSelection}>
+      {side.view === 'graph' ? boardToolbar : null}
+      <RunBoardSlot selection={boardSelection} shown={shownBoard}>
         <div className="workflow-board-authoring" onClickCapture={authoringEvent} onKeyDownCapture={authoringEvent} onSubmitCapture={authoringEvent}>
           {children}
           <ActivitiesPopover open={current && runsOpen} onClose={() => setRunsOpen(false)} findAnchor={findActivitiesButton}>
