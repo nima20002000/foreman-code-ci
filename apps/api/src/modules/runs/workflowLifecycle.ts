@@ -450,7 +450,6 @@ export async function settleWorkflowRun(owner: RunOwnership, interrupted = false
     await lifecycleSource(publication, { kind: 'negative_terminal', previous: run, next, stopped: snapshot.stopRequested }, async () => {
       await sql.query('update runs set execution_state=$2,record=$3::jsonb where id=$1', [run.id, next.executionState, canonicalGraphJson(next)])
       await assertWorkflowRunSettlementLocked(sql, next, owner, 'cleanup')
-      await closeRunControlInputsLocked(sql, { runId: run.id, now: next.finishedAt! })
       if (snapshot.version.definition.handoffs) {
         await sql.query(`update run_work_activations set state='completed'
           where run_id=$1 and state<>'completed'`, [run.id])
