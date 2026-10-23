@@ -53,9 +53,8 @@ describe('sidebar classification after confirmed Board publication', () => {
     await user.click(save)
     try {
       await waitFor(() => expect(submitted).toBe(1))
-      const reconcile = board().getByRole('button', { name: 'Reconcile Save' })
-      expect(reconcile).toBeDisabled()
-      await user.click(reconcile)
+      expect(save).toBeDisabled()
+      await user.click(save)
       expect(submitted).toBe(1)
       expect(sidebar().getByRole('button', { name: /^First Board/ })).toHaveTextContent('Draft')
       expect(f.mock.managed(f.workflowId).currentVersionId).toBeNull()

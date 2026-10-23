@@ -54,8 +54,6 @@ function fixture() {
   }
   type CoordinatorArguments = ConstructorParameters<typeof ApprovalExecutionCoordinator>
   const runs = {
-    // These fixtures have no workflow memory board.
-    kanbanRecordMissing: async () => false,
     get: async () => ({ id: execution.runId, workspaceId: configuration.workspaceId }),
     updateExecution: async (next: HarnessExecution, _owner: RunOwnership, evidence: Parameters<typeof captures.verify.read>[0]) => {
       expect(captures.verify.read(evidence).execution.id).toBe(execution.id)
