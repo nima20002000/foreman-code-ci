@@ -58,7 +58,7 @@ async function artifactInputs() {
   ]
   const files = [
     'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml',
-    'apps/api/package.json', 'apps/web/package.json', 'apps/worker/package.json',
+    'apps/api/package.json', 'apps/ci/package.json', 'apps/web/package.json', 'apps/worker/package.json',
     'apps/api/test/helpers/testPool.mjs', 'apps/api/test/fixtures/remote-review-main.mjs',
     'apps/api/test/helpers/installedRestartArtifact.ts', 'apps/api/test/helpers/installedRestartService.ts',
     'node_modules/.modules.yaml',
@@ -75,7 +75,7 @@ async function artifactInputs() {
       else inputs.push(child, await readFile(join(repository, child)))
     }
   }
-  for (const path of ['scripts', 'patches', 'apps/api/src', 'apps/worker/src',
+  for (const path of ['scripts', 'patches', 'apps/api/src', 'apps/ci/src', 'apps/worker/src',
     'apps/worker/artifacts/ci-runtime', 'packages/contracts']) {
     await append(path)
   }
@@ -96,7 +96,7 @@ async function buildArtifact(directory: string) {
   }
   await cp(join(repository, 'patches'), join(deployment, 'patches'), { recursive: true })
   await copyFile(join(repository, 'scripts/require-pnpm.mjs'), join(deployment, 'scripts/require-pnpm.mjs'))
-  for (const name of ['api', 'web', 'worker']) {
+  for (const name of ['api', 'ci', 'web', 'worker']) {
     await mkdir(join(deployment, 'apps', name), { recursive: true })
     await copyFile(join(repository, 'apps', name, 'package.json'), join(deployment, 'apps', name, 'package.json'))
   }
@@ -106,6 +106,16 @@ async function buildArtifact(directory: string) {
   // The installer's shared dependency tree is deployed once per lockfile, not copied again for every fixture.
   // The installed API's own modules are transformed below.
   await mkdir(join(deployment, 'apps/api/dist'), { recursive: true })
+  const ciSource = join(repository, 'apps/ci/src')
+  await compiler.build({
+    entryPoints: await sources(ciSource),
+    outdir: join(deployment, 'apps/ci/dist'),
+    outbase: ciSource,
+    platform: 'node',
+    format: 'esm',
+    target: 'es2022',
+    logLevel: 'silent',
+  })
   const { storeDir } = parse(await readFile(join(repository, 'node_modules/.modules.yaml'), 'utf8')) as {
     storeDir: string
   }

@@ -1,7 +1,7 @@
 import type { ManagementAction } from '@foreman-code/contracts/management'
 import type { OperatorServices } from '../../src/mcp/operator/types.js'
-import type { CiIntegrationInventory } from '../../src/modules/ci-host/integrationParts.js'
-import type { CiUnitInventory } from '../../src/modules/ci-host/parts.js'
+import type { CiIntegrationInventory } from '@foreman-code/ci/integrationParts'
+import type { CiUnitInventory } from '@foreman-code/ci/parts'
 import { randomUUID } from 'node:crypto'
 import type pg from 'pg'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
@@ -13,7 +13,7 @@ import { PostgresCommandCoordinator } from '../../src/modules/commands/postgres.
 import { RunCiAuthority, CI_GET_ACTIONS, CI_RUN_ACTIONS } from '../../src/modules/jobs/ciAuthority.js'
 import {
   HostCiService, type CiCommits, type HostCiComputer, type HostCiEndpoint,
-} from '../../src/modules/ci-host/service.js'
+} from '@foreman-code/ci/service'
 import { workerToolServices } from './workerMcpServices.js'
 import { codexApprovalRuntime } from './codexApprovalRuntime.js'
 import { DomainError } from '../../src/modules/errors.js'
@@ -30,7 +30,7 @@ import { insertRepeatRun } from '../../src/modules/runs/repeatStartAdmission.js'
 import { PostgresAccessService } from '../../src/modules/access/postgres.js'
 import { migratedDatabase } from './migratedDatabase.js'
 import { ciReadWhen } from './ciReadWhen.js'
-import { onlyCiInfrastructure } from '../../src/modules/ci-host/priority.js'
+import { onlyCiInfrastructure } from '@foreman-code/ci/priority'
 
 let database: Awaited<ReturnType<typeof migratedDatabase>>
 beforeAll(async () => { database = await migratedDatabase() }, 60_000)

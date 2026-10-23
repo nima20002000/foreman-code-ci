@@ -22,7 +22,7 @@ import { assertFixtureResourcesSettled } from '../../../../scripts/test-resource
 import { writeNativeAcceptanceEvidence } from './nativeAcceptanceEvidence.js'
 import { recordIntegrationStartup } from '../../../../scripts/integration-startup.mjs'
 
-export const postgresEnabled = Boolean(process.env.TEST_DATABASE_URL)
+export { postgresEnabled } from './eng04CurrentDatabase.js'
 export type Agent3Fixture = ReturnType<typeof makeCurrentWorkflowFixture>
 
 /** Uses real independent PostgreSQL sessions and an isolated random schema.

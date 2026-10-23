@@ -1,0 +1,11 @@
+// Type-only views of CI for the rest of the API. It loads no code, so importing it can never create a cycle.
+import type { cloudCis } from '@foreman-code/ci/cloud'
+
+export type { HostCiService } from '@foreman-code/ci/service'
+export type { CircleAccountRegistry, CircleAccountRegistryChanged, CircleAccountStatusReader } from '@foreman-code/ci/circleAccounts'
+export type { CircleCreditsReader, CircleCreditUsage } from '@foreman-code/ci/circleCredits'
+export type { CircleSchedulingReading, CircleStandby } from '@foreman-code/ci/circleStandby'
+export type { ReadAgentFiles } from '@foreman-code/ci/agentSnapshots'
+export type { CiAuthority } from '@foreman-code/ci/authority'
+/** Main's cloud CI providers, one per CircleCI organization or GitHub Actions mirror. */
+export type CloudCis = ReturnType<typeof cloudCis>

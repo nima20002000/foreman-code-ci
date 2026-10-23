@@ -216,10 +216,11 @@ it.each([
   try {
     const started = CiRunOutputSchema.parse(await f.value(f.agent!, 'ci_run', {
       suite: 'lint', commandId: 'commit-priority', commit: 'b'.repeat(40), scope: 'affected',
-      files: ['apps/api/src/modules/ci-host/service.ts', 'packages/contracts/src/ciHost.ts'],
+      files: ['apps/api/src/modules/ci/mount.ts', 'apps/ci/src/service.ts', 'packages/contracts/src/ciHost.ts'],
     }))
     const read = CiGetOutputSchema.parse(await f.value(f.agent!, 'ci_get', { ticketId: started.ticketId }))
     expect(read.run).toMatchObject({ priority: expected.priority, priorityReason: expected.priorityReason })
+    expect(read.partitions).toHaveLength(2)
     expect(read.partitions?.every(run => run.priority === expected.priority)).toBe(true)
     const stored = (await f.pool.query<{ record: unknown }>('select record from ci_runs where id=$1',
       [started.ticketId])).rows[0]!.record

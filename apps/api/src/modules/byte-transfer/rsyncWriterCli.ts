@@ -1,4 +1,4 @@
-import { errorMessage } from '../../shared/errorMessage.js'
+import { errorMessage } from '@foreman-code/contracts/server-kit'
 import { lstatSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'

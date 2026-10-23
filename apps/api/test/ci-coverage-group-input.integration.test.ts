@@ -4,8 +4,8 @@ import { CiRunOutputSchema, integrationPartition, type CiHostRequest } from '@fo
 import { expandIntegrationCoverage } from '@foreman-code/contracts/ci-coverage'
 import { gunzipSync } from 'node:zlib'
 import { selectAffectedFiles } from '../../../scripts/ci-affected.mjs'
-import { IntegrationCoverageStore } from '../src/modules/ci-host/coverageStore.js'
-import type { CiMirrorInput } from '../src/modules/ci-host/serviceTypes.js'
+import { IntegrationCoverageStore } from '@foreman-code/ci/coverageStore'
+import type { CiMirrorInput } from '@foreman-code/ci/serviceTypes'
 import { fixture } from './helpers/hostCiMcpFixture.js'
 
 afterEach(() => { vi.restoreAllMocks() })

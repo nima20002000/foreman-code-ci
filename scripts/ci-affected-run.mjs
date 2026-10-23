@@ -4,7 +4,7 @@ import { matchesGlob, posix, resolve } from 'node:path'
 import { repositoryFileList, selectByIndexes } from './ci-files.mjs'
 import { writeCiTestResults } from './ci-test-results.mjs'
 
-const projects = ['packages/contracts', 'apps/api', 'apps/web', 'apps/worker']
+const projects = ['packages/contracts', 'apps/ci', 'apps/api', 'apps/web', 'apps/worker']
 const heavyWebFiles = () => JSON.parse(readFileSync(resolve('apps/web/heavy-tests.json'), 'utf8')).files
 
 /** Commands use argument arrays; supplied file names never become shell code. */
@@ -84,8 +84,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     throw new Error(`CI selection must contain existing repository files: ${missingFiles.join(', ')}`)
   }
   const commands = affectedCommands(suite, files)
-  if (commands.length) {
-    const code = await run(['corepack', 'pnpm', '--filter', '@foreman-code/contracts', 'build'])
+  // The CI package compiles against the contracts output, so it builds second.
+  if (commands.length) for (const name of ['contracts', 'ci']) {
+    const code = await run(['corepack', 'pnpm', '--filter', `@foreman-code/${name}`, 'build'])
     if (code) process.exit(code)
   }
   // With TEST_RESULTS_OUTPUT, each Vitest and Node test command also writes a JSON report; together they become the results.

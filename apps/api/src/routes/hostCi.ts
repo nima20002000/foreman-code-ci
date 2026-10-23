@@ -3,7 +3,7 @@ import { CiComputersOutputSchema, CiCancelOutputSchema, CiGetOutputSchema, CiLis
 import { z } from 'zod'
 import type { FastifyInstance } from 'fastify'
 import { requirePrincipal } from '../modules/access/http.js'
-import type { HostCiService } from '../modules/ci-host/service.js'
+import type { HostCiService } from '../modules/ci/types.js'
 import { DomainError } from '../modules/errors.js'
 
 export function registerHostCiRoutes(app: FastifyInstance, services: { ci?: HostCiService }): void {

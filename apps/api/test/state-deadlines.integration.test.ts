@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 import { CiRunRecordSchema } from '@foreman-code/contracts'
-import { expireOverdueCiRuns } from '../src/modules/ci-host/deadlines.js'
+import { expireOverdueCiRuns } from '@foreman-code/ci/deadlines'
 import { withTransaction } from '../src/infrastructure/transaction.js'
 import { sweepStateDeadlines } from '../src/modules/diagnostics/stateDeadlines.js'
 import { RunActivitiesService } from '../src/modules/runs/activities.js'
