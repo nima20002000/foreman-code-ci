@@ -74,13 +74,13 @@ it('keeps the durable prepared body visible after failure and reload, then clear
   fireEvent.change(input, { target: { value: body } })
   await waitFor(() => expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled())
   fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
-  const card = await screen.findByRole('article', { name: 'Retained input' })
+  const card = await screen.findByRole('group', { name: 'Retained input' })
   expect(within(card).getByText(body)).toBeVisible(); expect(within(card).getByText('Failed')).toBeVisible()
   await waitFor(() => expect(input).toHaveValue(body))
   expect(state.messages).toHaveLength(0)
   first.unmount(); first.client.clear()
   mount()
-  const retained = await screen.findByRole('article', { name: 'Retained input' })
+  const retained = await screen.findByRole('group', { name: 'Retained input' })
   expect(retained).toHaveTextContent(body)
   expect(screen.getByRole('textbox', { name: 'Message' })).toHaveValue(body)
   expect(sends).toBe(1)
@@ -88,7 +88,7 @@ it('keeps the durable prepared body visible after failure and reload, then clear
   fireEvent.click(within(retained).getByRole('button', { name: 'Refresh delivery status' }))
   expect(await screen.findByText('Operator access unavailable')).toBeVisible()
   expect(screen.queryByText(body)).not.toBeInTheDocument()
-  expect(screen.queryByRole('article', { name: 'Retained input' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('group', { name: 'Retained input' })).not.toBeInTheDocument()
   await waitFor(() => expect(api.close).toHaveBeenCalled())
 })
 
@@ -98,7 +98,7 @@ it('does not duplicate a retained input already represented by its native user r
   mount(); expect(await screen.findByText(body)).toBeVisible()
   await waitFor(() => expect(inputReads).toBeGreaterThan(0))
   await waitFor(() => expect(screen.queryByText('Loading original inputs…')).not.toBeInTheDocument())
-  expect(screen.queryByRole('article', { name: 'Retained input' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('group', { name: 'Retained input' })).not.toBeInTheDocument()
   expect(screen.getAllByText(body)).toHaveLength(1)
   expect(sends).toBe(0)
 })
@@ -107,7 +107,7 @@ it('refreshes the exact retained receipt even when the parent readback still con
   save({ target, commandId: 'queued-before-adoption', intent: 'next_turn', content: body, attachments: [] })
   receipt = { ...receipt!, state: 'queued', errorCode: undefined }
   mount()
-  const retained = await screen.findByRole('article', { name: 'Retained input' })
+  const retained = await screen.findByRole('group', { name: 'Retained input' })
   expect(within(retained).getByText('Queued')).toBeVisible()
   exactReceipt = { ...receipt, state: 'accepted', updatedAt: '2026-10-01T00:01:00Z' }
   fireEvent.click(within(retained).getByRole('button', { name: 'Refresh delivery status' }))
@@ -121,7 +121,7 @@ it('labels a failed status refresh while retaining the last receipt and retries 
   save({ target, commandId: 'status-retry-command', intent: 'next_turn', content: body, attachments: [] })
   receipt = { ...receipt!, state: 'queued', errorCode: undefined }
   mount()
-  const retained = await screen.findByRole('article', { name: 'Retained input' })
+  const retained = await screen.findByRole('group', { name: 'Retained input' })
   expect(within(retained).getByText('Queued')).toBeVisible()
   receiptOffline = true
   fireEvent.click(within(retained).getByRole('button', { name: 'Refresh delivery status' }))

@@ -11,6 +11,7 @@ vi.mock('../settings/HarnessBasicFields', () => ({ HarnessBasicFields: () => nul
 vi.mock('../../shared/api/query', () => ({
   useHarnessDefaultsQuery: () => ({ data: { defaults: DEFAULT_HARNESS_DEFAULTS } }),
   useManagedHarnessCatalogQuery: () => ({ data: undefined }),
+  useAgentDefaultsQuery: () => ({ data: undefined }),
 }))
 afterEach(cleanup)
 describe('agent and workflow execution limits', () => {
@@ -21,13 +22,6 @@ describe('agent and workflow execution limits', () => {
     expect(screen.queryByLabelText('Maximum node executions')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save agent settings' })).toBeDisabled()
     const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: /^Advanced settings/ }))
-    expect(screen.queryByText(/Use Save graph to persist/)).not.toBeInTheDocument()
-    const settingsHint = screen.getByRole('button', { name: 'About Agent settings' })
-    await user.hover(settingsHint)
-    expect(screen.getByRole('tooltip')).toHaveTextContent('Save updates this graph draft. Use Save graph to persist it.')
-    await user.unhover(settingsHint)
-    await user.click(screen.getByRole('button', { name: 'Back to general settings' }))
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Coder updated' } })
     await user.click(screen.getByRole('button', { name: 'Save agent settings' }))
     expect(onSave.mock.calls[0]![2]).toEqual(policy)

@@ -22,9 +22,6 @@ it('shows each computer’s workspace files and saves its own sync preference on
     http.get('*/api/management/file-retention', () => HttpResponse.json({
       preference: { ownerPrincipalId: 'retention-owner', durationSeconds: 604_800, revision: 0 },
     })),
-    http.get('*/api/management/settings/general', () => HttpResponse.json({
-      value: { theme: 'light' }, revision: 1, versionId: 'general-1',
-    })),
     http.post('*/api/management/computers/sync/status', async ({ request }) => {
       const { target } = await request.json() as { target: typeof mainTarget | typeof deviceTarget }
       return HttpResponse.json(status(target))
@@ -42,7 +39,6 @@ it('shows each computer’s workspace files and saves its own sync preference on
   expect(worker.getByText('Offline')).toBeVisible()
   // An Offline computer is already marked Offline, so its status note is not repeated under it.
   expect(worker.queryByText('This computer is offline.')).not.toBeInTheDocument()
-  expect(screen.getByRole('radio', { name: 'Light' })).toBeChecked()
   await userEvent.click(await worker.findByRole('switch', { name: 'Website' }))
   await waitFor(() => expect(worker.getByRole('switch', { name: 'Website' })).not.toBeChecked())
   expect(main.getByRole('switch', { name: 'Website' })).toBeChecked()

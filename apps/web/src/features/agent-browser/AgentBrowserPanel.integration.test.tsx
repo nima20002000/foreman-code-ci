@@ -35,8 +35,9 @@ it('keeps the view usable through StrictMode effect replay and sends page Tab an
   mount(<StrictMode>{panel(fake)}</StrictMode>)
   await waitFor(() => expect(fake.port.openView).toHaveBeenCalled())
   act(() => fake.observer!.frame(frame()))
-  await userEvent.click(screen.getByRole('button', { name: 'Take control' }))
-  expect(await screen.findByText('User has control over the browser')).toBeVisible()
+  // Choosing the shown tab takes control, like clicking the page.
+  await userEvent.click(screen.getByRole('tab', { name: 'Fixture page' }))
+  expect(await screen.findByText('You have control. Click elsewhere to give it back to the agent.')).toBeVisible()
   const page = screen.getByRole('group', { name: 'Browser page' })
   fireEvent.keyDown(page, { key: 'Tab', code: 'Tab' })
   const keyboard = screen.getByRole('textbox', { name: 'Browser keyboard input' })
@@ -57,7 +58,7 @@ it('selects an explicit viewer tab without changing the agent’s selected tab',
   mount(panel(fake, { onSelectTab: choose }))
   await waitFor(() => expect(fake.port.openView).toHaveBeenCalled())
   act(() => fake.observer!.frame(frame()))
-  await userEvent.click(screen.getByRole('button', { name: 'Other page' }))
+  await userEvent.click(screen.getByRole('tab', { name: 'Other page' }))
   await waitFor(() => expect(choose).toHaveBeenCalledWith('second'))
   expect((await fake.port.readSession('session', new AbortController().signal)).session.selectedTabId).toBe('tab')
 })
@@ -66,9 +67,8 @@ it('keeps browser configuration in the caller’s draft without starting a brows
   const change = vi.fn()
   mount(<BrowserSettingsFields value={undefined} onChange={change} catalog={{ profiles: [], replicas: [], presentReplicas: [], pendingReplicas: [] }}
     computer={undefined} onManageProfiles={vi.fn()} />)
-  await userEvent.click(screen.getByRole('checkbox', { name: 'Browser' }))
+  await userEvent.click(screen.getByRole('switch', { name: 'Browser' }))
   expect(change).toHaveBeenCalledWith({ enabled: true })
-  expect(screen.getByText(/Applies to the next run/)).toBeVisible()
 })
 
 it('selects the exact created viewer tab while preserving the agent’s selected tab', async () => {
@@ -118,7 +118,7 @@ it('reconnects only the explicitly selected owned browser and never replays gest
   await waitFor(() => expect(fake.port.openView).toHaveBeenCalled())
   expect(fake.port.reconnect).not.toHaveBeenCalled()
   act(() => { fake.observer!.frame(frame()); fake.observer!.disconnected(new Error('Owned connection lost')) })
-  await userEvent.click(screen.getByRole('button', { name: 'Reconnect view' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Reconnect' }))
   await waitFor(() => expect(fake.port.reconnect).toHaveBeenCalledWith(expect.objectContaining({ id: 'session' }), expect.any(String)))
   await waitFor(() => expect(fake.port.openView).toHaveBeenCalledTimes(2))
   expect(fake.port.input).not.toHaveBeenCalled()

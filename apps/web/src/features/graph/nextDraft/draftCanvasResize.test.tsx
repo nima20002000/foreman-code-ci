@@ -180,7 +180,8 @@ it('offers a focusable circular control, keyboard sizing and no edit on stationa
   const { container } = mount()
   const ring = await screen.findByRole('slider', { name: 'Resize Node 0' })
   expect(ring).toHaveAttribute('tabindex', '0')
-  expect(container.querySelector('.react-flow__resize-control')).toBeNull()
+  // Agents resize only through the ring; the CI server keeps its own resize line.
+  expect(container.querySelector('.react-flow__resize-control:not(.ci-server-resize-line)')).toBeNull()
   pointer(ring, 'pointerDown', 156, 78)
   pointer(ring, 'pointerUp', 156, 78)
   expect(geometry).not.toHaveBeenCalled()

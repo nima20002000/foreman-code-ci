@@ -33,7 +33,7 @@ describe('PR8 exact native settings in the actual form', () => {
       await userEvent.setup().type(screen.getByLabelText('Type “full access” to confirm'), 'full access')
       await userEvent.setup().click(screen.getByRole('button', { name: 'Use full access' }))
     }
-    fireEvent.click(screen.getByRole('button', { name: /^Advanced settings/ }))
+    fireEvent.click(screen.getByText('More settings'))
     expect(screen.getByText(/Leaving workspace-write removes additional writable directories/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Save agent settings' }))
     const saved = onSave.mock.calls[0]![0] as Agent

@@ -21,13 +21,14 @@ export function AppConnectionBoundary({ children }: { children: ReactNode }) {
   const denied = ApiError.is(access.error) && [401, 403].includes(access.error.status ?? 0)
   const retryableLookup = isTransientReadError(access.error)
   const interrupted = useHeld(reconnecting || retryableLookup)
+  const restarting = useHeld(reconnecting)
   const unavailable = <main className="runtime-screen"><section className="runtime-card" role="alert">
     <h1>{denied ? 'Access unavailable' : 'Cannot reach the server'}</h1>
     <p>{access.error?.message ?? 'Check the local API connection, then try again.'}</p>
     <Button variant="primary" onClick={() => void access.refetch()}>Try again</Button>
   </section></main>
   // Held like the banner: each retry of a read without data clears its error, which must not flash "Connecting…".
-  if (!blocked && interrupted && !access.data) return <main className="runtime-screen">
+  if (!blocked && restarting && !access.data) return <main className="runtime-screen">
     <section className="runtime-card" role="status">
       <p>{reconnectingMessage}</p>
       <Button variant="primary" onClick={() => void retry.refetch()}>Try again</Button>

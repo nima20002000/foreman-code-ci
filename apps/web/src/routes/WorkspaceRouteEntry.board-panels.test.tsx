@@ -393,6 +393,12 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
       if (new URL(request.url).pathname === `/api/workspaces/${scope.workspaceId}`) workspaceReads++
     }
     server.events.on('request:start', recordWorkspaceRead)
+    // The workflow list polls the workspace every 10 s for its live dots; only reads beyond that count here.
+    let elapsed = 0
+    const advance = async () => { elapsed += pollingTime; await act(async () => { await vi.advanceTimersByTimeAsync(pollingTime) }) }
+    const mark = () => ({ reads: workspaceReads, at: elapsed })
+    const expectNoExtraWorkspaceReads = (since: { reads: number; at: number }) =>
+      expect(workspaceReads - since.reads).toBeLessThanOrEqual(Math.floor(elapsed / 10_000) - Math.floor(since.at / 10_000))
     const context = vi.spyOn(nextDraftApi, 'context')
     try {
       const { client } = await mount()
@@ -401,31 +407,31 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
       await within(editor).findByRole('heading', { name: 'Retained local name' })
       const graph = useGraphDraftStore.getState().nextDrafts[key]!.graph
       await waitFor(() => expect(client.isFetching({ queryKey: boardDraftContextKey(scope.workspaceId, scope.workflowId) })).toBe(0))
-      const initialWorkspaceReads = workspaceReads
+      const initialWorkspaceReads = mark()
       const currentReads = context.mock.calls.length
-      await act(async () => { await vi.advanceTimersByTimeAsync(pollingTime) })
+      await advance()
       await waitFor(() => expect(context.mock.calls.length).toBeGreaterThan(currentReads))
-      expect(workspaceReads).toBe(initialWorkspaceReads)
+      expectNoExtraWorkspaceReads(initialWorkspaceReads)
 
       await choose('run-a')
       await savedY()
-      expect(workspaceReads).toBe(initialWorkspaceReads)
+      expectNoExtraWorkspaceReads(initialWorkspaceReads)
       expect(within(editor).getByRole('heading', { name: 'Retained local name', hidden: true })).toBeInTheDocument()
       await waitFor(() => expect(client.isFetching({ queryKey: boardDraftContextKey(scope.workspaceId, scope.workflowId) })).toBe(0))
-      const selectedWorkspaceReads = workspaceReads
+      const selectedWorkspaceReads = mark()
       const historyReads = context.mock.calls.length
       // The hidden editor reads nothing while the saved Run is shown.
-      await act(async () => { await vi.advanceTimersByTimeAsync(pollingTime) })
+      await advance()
       expect(context.mock.calls.length).toBe(historyReads)
-      expect(workspaceReads).toBe(selectedWorkspaceReads)
+      expectNoExtraWorkspaceReads(selectedWorkspaceReads)
       expect(useGraphDraftStore.getState().nextDrafts[key]!.graph).toBe(graph)
 
       await choose(null)
       await waitFor(() => expect(editor).toBeVisible())
       const restoredReads = context.mock.calls.length
-      await act(async () => { await vi.advanceTimersByTimeAsync(pollingTime) })
+      await advance()
       await waitFor(() => expect(context.mock.calls.length).toBeGreaterThan(restoredReads))
-      expect(workspaceReads).toBe(initialWorkspaceReads)
+      expectNoExtraWorkspaceReads(initialWorkspaceReads)
       expect(writes).toEqual([])
       expect(within(editor).getByRole('heading', { name: 'Retained local name' })).toBeVisible()
       expect(useGraphDraftStore.getState().nextDrafts[key]!.graph).toBe(graph)
@@ -435,7 +441,7 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
     }
   }, 15_000)
 
-  it.each(['running', 'queued'] as const)('keeps the draft selected while a %s Run is discovered, and shows the Run only after an explicit choice', async executionState => {
+  it.each(['running', 'queued'] as const)('shows a %s Run when the Board opens, and returns to the draft on request without being pulled back', async executionState => {
     const fixture = getMockFixture(scope.workspaceId)!
     server.use(
       http.get('/api/workspaces/workspace-1', () => HttpResponse.json({
@@ -450,16 +456,15 @@ describe('Workspace Board route, editor and HTTP boundary', { timeout: 20_000 },
     const listed = await runsSelectorApi.list({ ...scope, limit: 20 })
     expect(listed.items.find(run => run.runId === 'run-a')).toMatchObject({ status: executionState })
     const { router } = await mount()
-    const editor = await authoring()
-    expect(router.state.location.search.runId).toBeUndefined()
-    expect(router.state.location.search.selectedRunId).toBeUndefined()
-    expect(screen.queryByRole('region', { name: 'Selected Run board' })).not.toBeInTheDocument()
-    expect(editor).toBeVisible()
-    await choose('run-a')
+    // Opening the Board while a Run is live shows that Run at once.
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ selectedRunId: 'run-a' }))
     expect(await savedY()).toBeVisible()
-    expect(router.state.location.search).toMatchObject({ selectedRunId: 'run-a' })
     await choose(null)
-    await waitFor(() => expect(screen.getByLabelText('Editable workflow graph')).toBeVisible())
+    const editor = await authoring()
+    expect(editor).toBeVisible()
+    expect(router.state.location.search.selectedRunId).toBeUndefined()
+    // Only the first opening follows the live Run; the owner's choice of the draft stays.
+    await new Promise(resolve => setTimeout(resolve, 500))
     expect(router.state.location.search.selectedRunId).toBeUndefined()
     expect(screen.queryByRole('region', { name: 'Selected Run board' })).not.toBeInTheDocument()
     expect(writes).toEqual([])

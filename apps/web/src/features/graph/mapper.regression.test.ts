@@ -11,7 +11,7 @@ describe('current V3 geometry and explicit typed relationships', () => {
     const context = fixture(), graph = context.draft.graph, before = structuredClone(graph)
     const agents = context.agents.map((item, index) => ({ ...item.agent, productRole: index ? 'coder' as const : 'orchestrator' as const }))
     const rendered = workflowToGraph({ workflow: graph, agents })
-    expect(rendered.nodes.map(({ width, height }) => [width, height])).toEqual([[188, 188], [156, 156]])
+    expect(rendered.nodes.map(({ width, height }) => [width, height])).toEqual([[240, 240], [120, 120]])
     const adapter = createGraphGeometryAdapter(rendered.nodes)
     adapter.update(rendered.nodes.map((node) => ({ type: 'dimensions', id: node.id,
       dimensions: { width: node.width!, height: node.height! } })))
@@ -30,7 +30,7 @@ describe('current V3 geometry and explicit typed relationships', () => {
     for (const productRole of ['coder', 'orchestrator'] as const) {
       const agents = context.agents.map((item) => ({ ...item.agent, productRole, name: 'Updated settings' }))
       const node = workflowToGraph({ workflow: structuredClone(resized), agents }).nodes[0]!
-      expect(node).toMatchObject({ width: 360, height: 156, style: { width: 360, height: 156 } })
+      expect(node).toMatchObject({ width: 360, height: first.height, style: { width: 360, height: first.height } })
     }
     expect(nextDraftDirty(editNextDraft(newNextDraft(context, 'resized'), () => resized))).toBe(false)
   })

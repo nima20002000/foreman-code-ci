@@ -524,11 +524,11 @@ describe('workspace section routes', () => {
     expect(name).toHaveValue('Workspace header rename')
   })
 
-  it('keeps the typed name and shows the failure when a rename is not acknowledged, then saves it on the next try', async () => {
-    const writes: Array<{ name: string; expectedRevision: number }> = []
+  it('retries an unacknowledged rename with the same command, keeps the typed name after the last failure, then saves it on the next try', async () => {
+    const writes: Array<{ name: string; expectedRevision: number; commandId: string }> = []
     server.use(http.patch('/api/management/workspaces/workspace-1', async ({ request }) => {
-      writes.push(await request.clone().json() as { name: string; expectedRevision: number })
-      if (writes.length === 1) return HttpResponse.json({ error: { code: 'INTERNAL', message: 'Rename acknowledgement lost.' } }, { status: 503 })
+      writes.push(await request.clone().json() as { name: string; expectedRevision: number; commandId: string })
+      if (writes.length <= 3) return HttpResponse.json({ error: { code: 'INTERNAL', message: 'Rename acknowledgement lost.' } }, { status: 503 })
       return undefined
     }))
     const user = userEvent.setup()
@@ -537,14 +537,17 @@ describe('workspace section routes', () => {
     await user.clear(name)
     await user.paste('Confirmed retry rename')
     await user.keyboard('{Enter}')
-    expect(await screen.findByText('Rename acknowledgement lost.')).toBeVisible()
+    // A transient failure is retried twice with the same command before the error shows.
+    expect(await screen.findByText('Rename acknowledgement lost.', {}, { timeout: 8_000 })).toBeVisible()
+    expect(writes).toHaveLength(3)
+    expect(new Set(writes.map(write => write.commandId)).size).toBe(1)
     expect(name).toHaveValue('Confirmed retry rename')
     await user.click(name)
     await user.keyboard('{Enter}')
     await waitFor(() => expect(screen.getByTestId('workspace-entry-workspace-1')).toHaveTextContent('Confirmed retry rename'))
-    expect(writes).toHaveLength(2)
-    expect(writes[1]).toMatchObject({ name: 'Confirmed retry rename', expectedRevision: 1 })
-  })
+    expect(writes).toHaveLength(4)
+    expect(writes[3]).toMatchObject({ name: 'Confirmed retry rename', expectedRevision: 1 })
+  }, 20_000)
 
   it('removes a renamed workspace at its confirmed revision', async () => {
     const removals: unknown[] = []

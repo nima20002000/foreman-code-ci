@@ -80,7 +80,7 @@ function RetainedInputCard({ input, target, receipt, onDenied, onRecover, onOpen
   const incomplete = pages ? !!body.hasNextPage : input.truncated
   const original = { ...input, content, truncated: incomplete, bodyCursor: pages ? pages.at(-1)?.bodyCursor ?? null : input.bodyCursor }
   // Shown like any message you sent, with its delivery state under it.
-  return <div className="agent-chat-message agent-chat-message--user" aria-label="Retained input"><MessageBubble author="You" role="user">
+  return <div className="agent-chat-message agent-chat-message--user" role="group" aria-label="Retained input"><MessageBubble author="You" role="user">
     <div className="conversation-message-content">{content}</div>
     {input.attachments.length ? <ul aria-label="Original file revisions">{input.attachments.map(file =>
       <li key={`${file.fileId}:${file.revisionId}`}>File {file.fileId} · Revision {file.revisionId}</li>)}</ul> : null}

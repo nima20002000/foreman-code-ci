@@ -196,7 +196,11 @@ it('retains a Move Workers destination across refresh, cancels without changes a
   await userEvent.click(screen.getByRole('button', { name: 'Remove' }))
   const changed = useGraphDraftStore.getState().nextDrafts[draftKey]!
   expect(changed.graph.nodes.some(node => node.id === 'node-1')).toBe(false)
-  expect(changed.graph.nodes.find(node => node.id === 'node-3')).toEqual(original.nodes.find(node => node.id === 'node-3'))
+  // Removing a team pins every remaining node where the Board shows it, so only the position may differ.
+  const { position: moved, ...worker } = changed.graph.nodes.find(node => node.id === 'node-3')!
+  const { position: _before, ...originalWorker } = original.nodes.find(node => node.id === 'node-3')!
+  expect(worker).toEqual(originalWorker)
+  expect(moved).toMatchObject({ manual: true })
   expect(changed.graph.hierarchy?.parents).toContainEqual({ workflowNodeId: 'node-3', parentNodeId: 'node-2' })
   expect(changed.graph.edges).toContainEqual(expect.objectContaining({ source: 'node-2', target: 'node-3', kind: 'execution' }))
   expect(changed.graph.edges.some(edge => edge.source === 'node-1' || edge.target === 'node-1')).toBe(false)

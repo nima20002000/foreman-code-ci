@@ -23,7 +23,12 @@ function EditableHarnessConfigurationFields({ editor, onChange, routedApproval =
 }) {
   const value = editor.configuration
   const [localSection, setLocalSection] = useState<HarnessSettingsSection>(advancedOnly ? 'permissions' : 'model')
-  const section = selectedSection ?? localSection
+  // Advanced only: the Agent form shows the model rows itself, and for Claude also access and account, which
+  // Claude's Access & approvals section would repeat.
+  const sections = harnessSections.filter((entry) => entry.id !== 'plugins' && (!compact || !['connections', 'workspace'].includes(entry.id))
+    && (!advancedOnly || entry.id !== 'model' && (value.harness !== 'claude' || entry.id !== 'permissions')))
+  const requested = selectedSection ?? localSection
+  const section = sections.some((entry) => entry.id === requested) ? requested : sections[0]?.id ?? requested
   const root = useRef<HTMLDivElement>(null)
   const sectionChange = useRef(onSectionChange)
   sectionChange.current = onSectionChange
@@ -45,7 +50,6 @@ function EditableHarnessConfigurationFields({ editor, onChange, routedApproval =
   }, [issuePath])
   const status = check.current && check.result.isFetching ? 'Checking…' : check.current && check.result.isSuccess ? 'Ready' : ''
   if (value.harness === 'opencode') return null
-  const sections = harnessSections.filter((entry) => entry.id !== 'plugins' && (!compact || !['connections', 'workspace'].includes(entry.id)) && (!advancedOnly || entry.id !== 'model'))
   return <div className={`harness-workbench${frameless ? ' harness-workbench--page' : ''}`} ref={root} role="group" aria-label={harnessNames[value.harness]}>
     {!frameless ? <nav className="harness-section-nav" aria-label="Harness sections">{sections.map((item) => <Button key={item.id} size="sm"
       variant={section === item.id ? 'secondary' : 'ghost'} aria-pressed={section === item.id} onClick={() => {
