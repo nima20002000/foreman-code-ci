@@ -71,6 +71,11 @@ it.runIf(postgresEnabled)('pins the coordination protocol through production MCP
     const details = await runtime.runs.getDetails(workspaceId, started.run.id)
     expect(details?.executions[0]?.result).toEqual({ outcome: 'succeeded', output: original! })
     const done = await memoryCall(runtime.client, 'memory_board_get', { boardId, view: 'cards', status: 'done' })
-    expect(done.items).toEqual([expect.objectContaining({ title: 'Produced by the model result', completionKind: 'completed' })])
+    expect(done.items).toHaveLength(2)
+    expect(done.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ title: 'Produced by the model result', completionKind: 'completed' }),
+      expect.objectContaining({ assignee: expect.objectContaining({ workflowNodeId: saved.version.entryNodeId }),
+        status: 'done', completionKind: 'completed' }),
+    ]))
   } finally { await runtime.close() }
 }, 60000)

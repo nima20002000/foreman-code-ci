@@ -619,7 +619,7 @@ function configureDeviceRuntime(composition: ProductionComposition) {
     rsync,
     remoteTelemetry,
   } = composition
-  const deviceRuntime = composition.deviceRuntime = new ProductionDeviceRuntime(database.pool, infrastructure?.deviceListener, {
+  const deviceRuntime: ProductionDeviceRuntime = composition.deviceRuntime = new ProductionDeviceRuntime(database.pool, infrastructure?.deviceListener, {
     workerArtifacts: workerArtifactLocation({ environment: process.env,
       releaseDirectory: fileURLToPath(new URL('../../../', import.meta.url)) }),
     browserMedia: (request, socket, head) => composition.browserRemote.mediaUpgrade(request, socket, head),
@@ -1105,7 +1105,7 @@ function configureHarnessProfiles(composition: ProductionComposition) {
           binding: captured.binding, inventory: result.payload, suiteRevision: selectedSuites.codex.revision })
       },
     }) : undefined)
-  const harnessInstances = composition.harnessInstances = new HostHarnessOverrideService(hostSettings, commands, hostAuthority, async (value, client) => {
+  composition.harnessInstances = new HostHarnessOverrideService(hostSettings, commands, hostAuthority, async (value, client) => {
     await requireClaudeProductionCredentialDelivery(value.configuration, providerAccounts, value.target.hostRef,
           value.target.applicationInstallationId)
     const proof = await harnessRegistry.profileEvidence(value, client, { includeFailed: true })
@@ -2234,11 +2234,13 @@ function configureHttpApplication(composition: ProductionComposition) {
 /** Every route group the production runtime has published so far. */
 function productionRoutes(composition: ProductionComposition): ApiRouteServices {
   const { routes, runtimeServices } = composition
-  return { ...routes, production: { ...routes.production, files: composition.files,
-    workflowArtifacts: composition.workflowArtifacts, trustedConnections: composition.trustedConnections,
-    resourceTelemetry: runtimeServices.resourceTelemetry,
-    jobRuntimeProfiles: runtimeServices.jobRuntimeProfiles
-      ? { profiles: runtimeServices.jobRuntimeProfiles, ciRuntime: runtimeServices.ciRuntime } : undefined } }
+  return { ...routes, production: { ...routes.production,
+    ...(composition.files ? { files: composition.files } : {}),
+    ...(composition.workflowArtifacts ? { workflowArtifacts: composition.workflowArtifacts } : {}),
+    ...(composition.trustedConnections ? { trustedConnections: composition.trustedConnections } : {}),
+    ...(runtimeServices.resourceTelemetry ? { resourceTelemetry: runtimeServices.resourceTelemetry } : {}),
+    ...(runtimeServices.jobRuntimeProfiles ? { jobRuntimeProfiles: { profiles: runtimeServices.jobRuntimeProfiles,
+      ...(runtimeServices.ciRuntime ? { ciRuntime: runtimeServices.ciRuntime } : {}) } } : {}) } }
 }
 
 function configureRuntimeLifecycle(composition: ProductionComposition) {
@@ -2393,9 +2395,7 @@ function configureRuntimeStartup(composition: ProductionComposition) {
     config,
     database,
     checkpoints,
-    infrastructure,
     deviceRuntime,
-    providerAccounts,
     harnessRegistry,
     foundationSettings,
     operators,
@@ -2573,7 +2573,6 @@ async function initializeRuntimeOwner(composition: ProductionComposition) {
     startupDatabase,
     synchronizeOperatorDefaults,
     config,
-    infrastructure,
   } = composition
 
   assertOpen()
@@ -2623,7 +2622,6 @@ async function initializeJobServices(composition: ProductionComposition, machine
     locations,
     approvals,
     runtimeServices,
-    app,
     config,
     database,
     infrastructure,
@@ -2780,7 +2778,6 @@ async function initializeComputerServices(composition: ProductionComposition, ma
     deviceRuntime,
     commands,
     projectRoot,
-    locations,
     maintenancePorts,
     harnessSettings,
     runtimeServices,
@@ -2887,7 +2884,7 @@ async function initializeComputerServices(composition: ProductionComposition, ma
 }
 
 async function initializeCircleCi(composition: ProductionComposition, machine: ProductionMainInstallation) {
-  const { database, foundationSettings, commands, runtimeServices, app } = composition
+  const { database, foundationSettings, commands, runtimeServices } = composition
   const { circleAccounts, ...circleCi } = await createCircleCi({ pool: database.pool, mainId: machine.installationId,
     foundationSettings, commands })
   runtimeServices.circleAccounts = circleAccounts

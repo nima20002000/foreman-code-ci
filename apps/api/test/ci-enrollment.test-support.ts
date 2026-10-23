@@ -134,7 +134,7 @@ async function createFixture(db: Awaited<ReturnType<typeof currentDatabase>>) {
         preparations.set(input.profileId, state)
         return state
       }),
-    } satisfies ConstructorParameters<typeof CiEnrollment>[3]
+    } satisfies ConstructorParameters<typeof CiEnrollment>[4]
     const resources = template.spec.resources
     const inventory: CiEnrollmentInventory = {
       computers: async () => computers,
