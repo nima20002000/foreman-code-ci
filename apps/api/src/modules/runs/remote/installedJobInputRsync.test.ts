@@ -9,7 +9,10 @@ import type { TransferIntent } from '@foreman-code/contracts/byte-transfer'
 import { jobSpecDigests } from '@foreman-code/contracts/jobs-node'
 import { jobExecution } from '../../../../test/helpers/jobFixture.js'
 import { makeManifest, manifestBytes } from '../../files/jobInputs/manifest.js'
-import { transferContextForBinding } from '../../byte-transfer/carrier.js'
+import { createAuthenticatedTransferReceiver, transferContextForBinding } from '../../byte-transfer/carrier.js'
+import { DeviceConnectionError } from '../../devices/deviceWire.js'
+import { jobInputTransferPorts } from '../../files/jobInputs/rsyncProduction.js'
+import { CanonicalJobInputRsyncSource } from '../../files/jobInputs/rsync.js'
 import { ResumableByteTransferService } from '../../byte-transfer/service.js'
 import { identity } from '../../sources/privateFilesystem.js'
 import { bootIdentity } from '../../harnesses/recovery/linuxIdentity.js'
@@ -30,7 +33,7 @@ async function directoryIdentity(path: string) {
   const handle = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
   try { return await identity(handle) } finally { await handle.close() }
 }
-async function fixture() {
+async function fixture(chunked = false) {
   const root = await mkdtemp(join(persistentFixtureRoot, 'hrt-input-runtime-')); roots.push(root)
   const execution = jobExecution(); execution.id = randomUUID(); execution.attemptId = randomUUID(); execution.operationId = randomUUID()
   const parent = join(root, execution.acceptedSpec.source.materializationId), project = join(parent, 'tree')
@@ -50,9 +53,10 @@ async function fixture() {
       attemptId: execution.attemptId, placementHash: execution.acceptedSpec.bindingHash, rootId: randomUUID(), rootBindingRevision: 1, direction: 'to-worker', byteClass: 'artifact',
       sha256: createHash('sha256').update(item.bytes).digest('hex'), byteSize: item.bytes.length, manifestDigest: manifest.manifestSha256, chunkBytes: 8192,
       expiresAt: new Date(Date.now() + 60000).toISOString() } })) })
-  let denied = false, failAck = false, saved: JobInputDeliveryReceipt | undefined
+  let helper: ReturnType<typeof createInstalledJobInputRsync>
+  let denied = false, failAck = false, loseAppendAck = chunked, saved: JobInputDeliveryReceipt | undefined
   const order: string[] = []
-  const receiver = new ResumableByteTransferService(join(root, 'canonical'), { authorize: async () => { if (denied) throw new Error('Original input grant revoked') } }); receivers.push(receiver)
+  const receiver = new ResumableByteTransferService(join(root, 'canonical'), { authorize: async (intent, context, operation) => { if (denied) throw new Error('Original input grant revoked'); if (chunked) await helper.accepted.authorize(intent, context, operation) } }); receivers.push(receiver)
   const journal = await RemoteOperationJournal.open(join(root, 'journal'), { initializeNewInstallation: true }); journals.push(journal)
   const intent = { schemaVersion: 1 as const, protocolVersion: 1 as const, mainId: context.mainId,
     subject: { kind: 'manual-job' as const, workspaceId: execution.workspaceId, jobExecutionId: execution.id, definitionId: execution.acceptedSpec.definitionId }, executionId: execution.id,
@@ -66,7 +70,7 @@ async function fixture() {
     scheduler: { directory: join(parent, 'job-heavy-jobs'), filesystem: await directoryIdentity(join(parent, 'job-heavy-jobs')) }, receiptDigest: digest }
   const source = { privateRepositoryRoot: project, directoryIdentityHash: execution.acceptedSpec.target.destination.directoryIdentityHash, privateGit: true as const, diskQuotaBytes: 1048576, gitMounts: mounts }
   const verifyGit = vi.spyOn(git, 'verifyJobGitMounts').mockResolvedValue(undefined)
-  let helper: ReturnType<typeof createInstalledJobInputRsync>
+  const wireRequests: string[] = []
   const request = vi.fn(async (_namespace: string, raw: unknown) => {
     if (denied) throw new Error('Original input grant revoked')
     const command = raw as { method: string; transferId: string; receipt?: unknown }
@@ -76,6 +80,21 @@ async function fixture() {
     if (!item) throw new Error('Unknown original input transfer')
     if (command.method === 'stage') {
       order.push('stage')
+      if (chunked) {
+        const carrier = createAuthenticatedTransferReceiver({ stagingRoot: join(root, 'canonical'), receiver,
+          current: () => binding, accepted: helper.accepted })
+        const ports = jobInputTransferPorts({ captureRequest: () => ({ binding, request: async (payload, options) => {
+          wireRequests.push((payload as { method: string }).method)
+          const result = await carrier.handle(payload, { binding, signal: options?.signal ?? new AbortController().signal,
+            ...(options?.bytes ? { bytes: options.bytes } : {}) })
+          if ((payload as { method: string }).method === 'append' && loseAppendAck) { loseAppendAck = false; throw new DeviceConnectionError('transport') }
+          return result
+        } }) })
+        return { payload: await ports.stage(item.intent, new CanonicalJobInputRsyncSource({
+          acceptedTransfer: async () => ({ execution, admission, transfer: item }),
+          read: async (_execution, _admission, path, offset, length) => descriptors.find(value => value.relativePath === path)!.bytes.subarray(offset, offset + length),
+        }), new AbortController().signal) }
+      }
       const bytes = descriptors.find(value => value.relativePath === item.relativePath)!.bytes
       const offset = (await receiver.status(item.intent.transferId, context)).durableOffset
       if (offset < bytes.length) await receiver.append(item.intent.transferId, context, { offset, sha256: createHash('sha256').update(bytes.subarray(offset)).digest('hex'), bytes: bytes.subarray(offset) })
@@ -92,7 +111,7 @@ async function fixture() {
   })
   const input = { receiver, journal, channel: { request, currentBinding: () => binding }, receiptRoot: join(root, 'receipts'), admissionRoot: join(root, 'admissions') }
   helper = createInstalledJobInputRsync(input)
-  return { root, execution, source, admission, context, helper, input, request, receiver, order, verifyGit,
+  return { root, execution, source, admission, context, binding, helper, input, request, receiver, order, wireRequests, verifyGit,
     deny: () => { denied = true }, failAck: () => { failAck = true }, allowAck: () => { failAck = false }, replace: (value: typeof helper) => { helper = value } }
 }
 describe('installed selected Job-input factory with real canonical journals and detached files', () => {
@@ -159,4 +178,23 @@ describe('installed selected Job-input factory with real canonical journals and 
     expect(await f.helper.owns(f.admission.transfers[0]!.intent)).toBe(true)
     expect(await f.helper.owns({ ...f.admission.transfers[0]!.intent, transferId: randomUUID() } as TransferIntent)).toBe(false)
   })
+})
+
+
+it('delivers ordinary job inputs over ByteTransferPort, resumes a lost chunk ACK, and reopens the same durable admission', async () => {
+  const f = await fixture(true), signal = new AbortController().signal
+  try {
+    const receipt = await f.helper.prepare(f.execution, f.source, signal)
+    expect(f.wireRequests.filter(method => method === 'append')).toHaveLength(2)
+    expect(f.wireRequests.filter(method => method === 'status').length).toBeGreaterThan(2)
+    expect(f.request.mock.calls.some(([, raw]) => (raw as { method: string }).method === 'range')).toBe(false)
+    const recovered = createInstalledJobInputRsync(f.input); f.replace(recovered)
+    expect(await recovered.verifyPrepared(f.execution, f.source, receipt, signal)).toEqual(receipt)
+    const intent = f.admission.transfers[0]!.intent
+    expect(await recovered.accepted.intent(intent.transferId, f.binding)).toEqual(intent)
+    await expect(recovered.accepted.authorize({ ...intent, attemptId: randomUUID() }, f.context, 'start')).rejects.toThrow('authority changed')
+    await expect(recovered.accepted.intent(intent.transferId, { ...f.binding, connectionEpoch: randomUUID() })).rejects.toThrow('binding changed')
+    f.deny()
+    await expect(recovered.verifyPrepared(f.execution, f.source, receipt, signal)).rejects.toThrow('grant revoked')
+  } finally { await f.helper.close() }
 })

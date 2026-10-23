@@ -3,13 +3,13 @@ import { randomUUID } from 'node:crypto'
 import type { BaseCheckpointSaver } from '../../infrastructure/langgraph.js'
 import type { DurableInteraction } from '@foreman-code/contracts'
 import { WorkflowRunCurrentSchema, RunGraphScopeSchema } from '@foreman-code/contracts/current'
-import { isAtomicApprovalCheckpointSaver } from '../../infrastructure/approvalCheckpointSaver.js'
+import { isAtomicApprovalCheckpointSaver } from './approvalCheckpointSaver.js'
 import { DomainError } from '../errors.js'
 import { openRunGraphPublication } from '../run-graph/publication.js'
 import { beforeGraphCommit, didGraphTransactionCommit } from '../run-graph/connection.js'
 import type { SqlTransaction } from '../../infrastructure/transaction.js'
 import type { PostgresInteractionRepository } from '../interactions/postgres.js'
-import { Wave25InteractionRepository } from '../interactions/current/repository.js'
+import { CurrentInteractionRepository } from '../interactions/current/repository.js'
 import { lockInteraction, readContext } from '../interactions/current/context.js'
 import { consumeApprovalGraphResume, holdResumeClaims } from '../interactions/current/resume.js'
 import type { GraphResumeClaim } from '../interactions/deliveryPostgres.js'
@@ -49,7 +49,7 @@ async function lockResumeAuthority(sql: SqlTransaction, run: WorkflowRunCurrent)
 export async function consumeDeliveredApprovals(owner: RunOwnership, saver: BaseCheckpointSaver,
   repository: PostgresInteractionRepository | undefined, delivered: readonly DurableInteraction[],
   suppliedClaim?: GraphResumeClaim, authorize?: AuthorizeApprovalResume): Promise<WorkflowResumePermit | undefined> {
-  if (!(repository instanceof Wave25InteractionRepository) || !isAtomicApprovalCheckpointSaver(saver)) {
+  if (!(repository instanceof CurrentInteractionRepository) || !isAtomicApprovalCheckpointSaver(saver)) {
     throw new DomainError('GRAPH_RESUME_ATOMIC_CONSUMER_REQUIRED', 'V3 resume requires the real atomic checkpoint saver and approval repository.', 409)
   }
   if (delivered.length > 1000 || new Set(delivered.map((item) => item.id)).size !== delivered.length
