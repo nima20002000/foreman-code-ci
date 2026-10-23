@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import pg from 'pg'
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   AgentConfigurationVersionSchema, CODEX_APPROVAL_OPTIONS_FIXTURE, NativeHarnessEventSchema,
   type AgentConfigurationVersion, type CompactionState, type ExecutionResult, type HarnessExecution, type NativeSessionReference,
@@ -160,7 +160,6 @@ let runExecutions: HarnessExecution[] = []
 let runState = 'completed'
 let runSourceFixture: ReturnType<typeof makeCurrentWorkflowFixture>
 const runReads: string[] = []
-const services: AgentChatService[] = []
 
 function makeService(options: { native?: (harness: 'codex' | 'claude') => FakeNative;
   recoverCompaction?: AgentChatManagerFactory['recoverCompaction'] } = {}) {
@@ -185,7 +184,6 @@ function makeService(options: { native?: (harness: 'codex' | 'claude') => FakeNa
   }
   const service = new AgentChatService(pool, new PostgresAgentChatRepository(pool), new PostgresOperatorConversationRepository(pool),
     new PostgresWorkflowRepository(pool), runs, factory as never, root)
-  services.push(service)
   return { service, managers }
 }
 
@@ -225,12 +223,6 @@ beforeAll(async () => {
 afterAll(async () => {
   await pool?.end()
   if (root) await removeFixtureDirectory(root)
-})
-afterEach(async () => {
-  // Candidate IDs recur after the rows are deleted; no previous owner's repair may reach the next test.
-  const results = await Promise.allSettled(services.splice(0).map(service => service.shutdown()))
-  const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
-  if (errors.length) throw new AggregateError(errors, 'Agent chat test cleanup failed')
 })
 beforeEach(async () => {
   await pool.query(`delete from operator_conversations where kind='agent' and workspace_id=$1`, [fixture.scope.workspaceId])

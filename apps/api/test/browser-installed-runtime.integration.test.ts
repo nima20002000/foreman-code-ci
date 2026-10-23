@@ -227,7 +227,7 @@ describe('installed managed browser against a deterministic local website', () =
     const options = { runtime, actionDirectory: root,
       profileDirectory: async () => ({ directory, generation: 1 }),
       allocateGeneration: async () => ++generations,
-      onOrigin: async () => undefined, onDisconnected: () => undefined, reportFailure: (error: unknown) => { failures.push(error) } }
+      onOrigin: async () => undefined, onDisconnected: () => undefined }
     const driver = new ManagedBrowserNativeDriver(options)
     const reconnected = new ManagedBrowserNativeDriver(options)
     try {
@@ -258,7 +258,7 @@ describe('installed managed browser against a deterministic local website', () =
     process.env.WAYLAND_DISPLAY = 'foreman-unused-wayland'
     const driver = new ManagedBrowserNativeDriver({ runtime, actionDirectory: root,
       profileDirectory: async () => ({ directory, generation: 1 }), allocateGeneration: async () => 1,
-      onOrigin: async () => undefined, onDisconnected: () => undefined, reportFailure: (error: unknown) => { failures.push(error) } })
+      onOrigin: async () => undefined, onDisconnected: () => undefined })
     // The host's own DISPLAY and Wayland session are unusable here, so a started headed browser proves its own display.
     const virtualDisplays = async () => (await Promise.all((await readdir('/proc')).filter(name => /^\d+$/.test(name)).map(async name => {
       const stat = await readFile(`/proc/${name}/stat`, 'utf8').catch(() => '' /* ignore: the process already exited */)
@@ -295,8 +295,7 @@ describe('installed managed browser against a deterministic local website', () =
     await mkdir(actionDirectory, { mode: 0o700 })
     const unexpected = async (): Promise<never> => { throw new Error('Unexpected native profile access') }
     const options = { runtime, actionDirectory, profileDirectory: unexpected, allocateGeneration: unexpected,
-      onOrigin: unexpected, onDisconnected: () => { throw new Error('Unexpected native disconnect') },
-      reportFailure: (error: unknown) => { failures.push(error) } }
+      onOrigin: unexpected, onDisconnected: () => { throw new Error('Unexpected native disconnect') } }
     const driver = new ManagedBrowserNativeDriver(options)
     const calls: Array<{ method: string; params: Record<string, unknown> | undefined }> = []
     const dispatch = async (method: string, params?: Record<string, unknown>) => {

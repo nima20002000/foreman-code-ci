@@ -598,7 +598,6 @@ export class BrowserBroker implements BrowserLifecyclePort {
         if (control.epoch !== transitionEpoch || live.record.closing) return structuredClone(control)
         control.state = live.record.session.subject ? 'agent' : 'paused'; control.controllingViewerId = null
         control.reason = live.record.session.subject ? null : 'Browser ready for you — click to continue.'
-        live.dialogBarrier = false
         live.record.session.state = 'ready'; live.lastInput.clear(); await this.persist(live)
         if (live.record.session.subject) live.gate.open()
       } catch {
