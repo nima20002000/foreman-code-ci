@@ -39,7 +39,7 @@ describe('application MCP composition and HTTP detection', () => {
     assert(runtime.mcpDetection.service instanceof McpDetectionService)
     assert.equal(runtime.mcpDetection.pool, pool)
     assert.equal(runtime.appMcp.access, access)
-    const credential = { principalId: 'worker', environment: { agentId: 'agent', variables: { FOREMAN_CODE_MCP_TOKEN: 'token' } },
+    const credential = { principalId: 'worker', environment: { agentId: 'agent', variables: { GRAPHQL_MCP_TOKEN: 'token' } },
       expiresAt: new Date(Date.now() + 900_000).toISOString() }
     const inspected = {} as Awaited<ReturnType<McpDetectionService['preflight']>>
     const preflight = vi.spyOn(runtime.mcpDetection.service, 'preflight').mockResolvedValue(inspected)

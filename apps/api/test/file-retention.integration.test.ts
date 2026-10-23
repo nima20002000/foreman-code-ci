@@ -22,7 +22,7 @@ import {
 import { fileStorageMigration } from '../src/infrastructure/fileStorageMigration.js'
 import { fileRetentionMigration } from '../src/infrastructure/fileRetentionMigration.js'
 import type { OperatorServices } from '../src/mcp/operator/types.js'
-import { registerGraphqlMcp } from '../src/mcp/unified/transport.js'
+import { registerForemanMcp } from '../src/mcp/unified/transport.js'
 import { registerOperatorHttpSecurity } from '../src/modules/access/http.js'
 import { PostgresAccessService } from '../src/modules/access/postgres.js'
 import { PostgresCommandCoordinator } from '../src/modules/commands/postgres.js'
@@ -90,7 +90,7 @@ describe.skipIf(!postgresEnabled)('FIL-40 retention persistence and transport pa
     registerFileRetentionRoutes(app, retention)
     registerFileRoutes(app, new TemporaryFileService(files, bytes, authorization))
     // Unrelated product services are intentionally absent; the real retention service/auth/MCP transport are not mocked.
-    registerGraphqlMcp(app, { access, operator: { commands, fileRetention: retention } as unknown as OperatorServices })
+    registerForemanMcp(app, { access, operator: { commands, fileRetention: retention } as unknown as OperatorServices })
     address = await app.listen({ host: '127.0.0.1', port: 0 })
   })
   afterAll(async () => {

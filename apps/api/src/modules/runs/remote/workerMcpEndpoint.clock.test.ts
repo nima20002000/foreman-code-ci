@@ -22,7 +22,7 @@ it.each([-120_000, 120_000])('renews automatically in Main time with a %s ms Wor
     const refresh = vi.fn(async () => new Date(clock.now() + lifetimeMs).toISOString())
     const endpoint = await createWorkerMcpEndpoint({ launcher: join(root, 'launcher.mjs'),
       signal: new AbortController().signal, ...{ now: () => clock.now() }, relay: {
-        environment: { agentId: 'agent', variables: { FOREMAN_CODE_MCP_TOKEN: 'clock-renewal-token' } },
+        environment: { agentId: 'agent', variables: { GRAPHQL_MCP_TOKEN: 'clock-renewal-token' } },
         expiresAt: new Date(mainTime + lifetimeMs).toISOString(), refresh,
         request: async () => ({ statusCode: 200, contentType: 'application/json', body: '{}' }),
       } })
@@ -54,7 +54,7 @@ it.each([-120_000, 120_000])('enforces HTTP lease expiry in Main time with a %s 
     const request = vi.fn(async () => ({ statusCode: 200, contentType: 'application/json' as const, body: '{}' }))
     const endpoint = await createWorkerMcpEndpoint({ launcher: join(root, 'launcher.mjs'),
       signal: new AbortController().signal, ...{ now: () => clock.now() }, relay: {
-        environment: { agentId: 'agent', variables: { FOREMAN_CODE_MCP_TOKEN: token } },
+        environment: { agentId: 'agent', variables: { GRAPHQL_MCP_TOKEN: token } },
         expiresAt: new Date(mainTime + 60_000).toISOString(), request,
       } })
     const call = async (bearer = token) => {
