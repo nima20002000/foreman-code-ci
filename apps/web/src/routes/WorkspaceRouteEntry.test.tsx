@@ -91,7 +91,18 @@ describe('WorkspaceRouteEntry integration', () => {
     // JSDOM measurements only: the real mounted Board and React Flow stay intact.
     vi.stubGlobal('ResizeObserver', class {
       constructor(private readonly notify: ResizeObserverCallback) {}
-      observe(target: Element) { queueMicrotask(() => this.notify([{ target, contentRect: target.getBoundingClientRect() } as ResizeObserverEntry], this as unknown as ResizeObserver)) }
+      observe(target: Element) {
+        const seen = ((globalThis as any).__ro ??= { n: 0, by: new Map<string, number>() })
+        seen.n += 1
+        const key = `${target.tagName}.${String(target.className).slice(0, 60)}#${target.id}`
+        seen.by.set(key, (seen.by.get(key) ?? 0) + 1)
+        if (seen.n === 3000) {
+          const top = [...seen.by.entries()].sort((x, y) => y[1] - x[1]).slice(0, 6)
+          console.error('RO TOP', JSON.stringify(top), String(new Error('x').stack).split('\n').filter(l => !l.includes('jsdom')).slice(0, 12).join('\n'))
+          throw new Error('RO LOOP')
+        }
+        queueMicrotask(() => this.notify([{ target, contentRect: target.getBoundingClientRect() } as ResizeObserverEntry], this as unknown as ResizeObserver))
+      }
       unobserve() {} disconnect() {}
     })
     if (!globalThis.DOMMatrixReadOnly) vi.stubGlobal('DOMMatrixReadOnly', class { m11 = 1; m22 = 1; m41 = 0; m42 = 0 })
