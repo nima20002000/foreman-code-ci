@@ -38,7 +38,8 @@ export function AgentDefaultsSettings({ selectedRole, promptOpen = false, onOpen
       const template = role === 'operator' ? value.operator : agentTemplateForRole(value, role)
       const tools = role === 'operator' ? [] : template.graphqlTools ?? newAgentGraphqlTools(role)
       const memory = memoryBoardTools('write').filter(tool => tools.includes(tool))
-      const memoryLabel = memory.length ? 'Write' : 'None'
+      const memoryLabel = !memory.length ? 'None' : memory.length === memoryBoardTools('write').length ? 'Write'
+        : memory.length === memoryBoardTools('read').length && memoryBoardTools('read').every(tool => memory.includes(tool)) ? 'Read' : 'Custom'
       const summary = [...harnessSummary(template.harness),
         { label: 'Tools', value: nativeToolsSummary(template.nativeTools) }, ...(role === 'operator' ? [] : [{ label: 'Memory', value: memoryLabel }]), ...(role === 'master' && !value.master
           ? [{ label: 'Settings', value: 'Same as Orchestrator' }] : []), ...(role === 'operator' ? [

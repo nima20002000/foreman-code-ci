@@ -17,10 +17,6 @@ export function clipUtf8(value: string, budget: number): string {
   }
   return result
 }
-/** Every writable Agent keeps its own card on its workflow's Kanban; the engine asks once if it did not. */
-export const KANBAN_WORK_RECORD = 'Record your work on this workflow\'s Kanban (its workflow memory board): create or update a card '
-  + 'for your task with memory_card_create or memory_card_update, keep it current while you work, and move it to Done '
-  + 'with a one-line result before you finish.'
 export async function readDigest(tx: GraphTransactionSql, authority: MemoryBoardAuthority,
   input: { subject: AgentSubject; work?: LogicalWorkRef }): Promise<BoardDigest> {
   const access = await authority.subject(tx,input.subject)
@@ -55,7 +51,6 @@ export async function readDigest(tx: GraphTransactionSql, authority: MemoryBoard
     noteLines.push(line); noteBytes += Buffer.byteLength(line)+1
   }
   const render = () => ['Memory boards (live tasks; existing titles include Done).',
-    ...(access.tools.includes('memory_card_create') ? [KANBAN_WORK_RECORD] : []),
     ...selected.map(card => `${card.id} r${card.revision} [${card.status}] ${card.title}${card.reason ? ` — ${card.reason}` : ''}`),
     `Other open board cards omitted: ${Math.max(0,total-selected.length)}. Read more with memory_board_get.`,
     ...(noteLines.length ? ['Pinned Notes:',...noteLines] : [])].join('\n')

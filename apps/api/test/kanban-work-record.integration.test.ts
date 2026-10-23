@@ -12,6 +12,10 @@ import { postgresEnabled } from './helpers/wave25Agent3.js'
 it.runIf(postgresEnabled).each(['silent', 'records', 'read-only'] as const)(
   'a new Worker is told to record its work on the workflow Kanban and asked once when it did not (%s)', async mode => {
     const fixture = makeCurrentWorkflowFixture(randomUUID(), 'single')
+    // Native approvals keep the configured sandbox; other fixtures replace it.
+    fixture.version.approval = { handler: 'native' }
+    fixture.version.definition.approval = fixture.version.approval
+    fixture.run.approval = fixture.version.approval
     const configuration = fixture.configurations[0]!
     configuration.graphqlTools = newAgentGraphqlTools('coder')
     configuration.harness = { harness: 'codex', model: 'synthetic-no-native-call', reasoningEffort: 'low',
