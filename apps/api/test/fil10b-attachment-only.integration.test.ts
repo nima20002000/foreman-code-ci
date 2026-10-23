@@ -41,7 +41,7 @@ import { registerOperatorChatRoutes } from '../src/routes/operatorChat.js'
 import { seedWorkflowFixture } from './helpers/workflowDatabase.js'
 import { migratedDatabase } from './helpers/migratedDatabase.js'
 import { postgresEnabled } from './helpers/database.js'
-import { beginTransaction, commitTransaction, rollbackTransaction } from '../src/infrastructure/transaction.js'
+import { withTransaction } from '../src/infrastructure/transaction.js'
 
 /** Native I/O only is synthetic. These tests exercise real file allocations, disk
  * bytes, chat services, PostgreSQL receipts, authenticated HTTP and Operator MCP.
@@ -134,10 +134,10 @@ describe.skipIf(!postgresEnabled)('FIL-10b attachment-only admission and legacy 
     const present = await database.pool.query('select 1 from application_migrations where version=$1', [fileStorageMigration.version])
     if (!present.rowCount) {
       const client = await database.pool.connect()
-      try {
-        await beginTransaction(client); await client.query(fileStorageMigration.sql)
-        await client.query('insert into application_migrations(version) values($1)', [fileStorageMigration.version]); await commitTransaction(client)
-      } catch (error) { await rollbackTransaction(client); throw error } finally { client.release() }
+      try { await withTransaction({ client }, async transaction => {
+        await transaction.query(fileStorageMigration.sql)
+        await transaction.query('insert into application_migrations(version) values($1)', [fileStorageMigration.version])
+      }) } finally { client.release() }
     }
     root = await mkdtemp(join(homedir(), '.fil10b-test-'))
     fixture = await seedWorkflowFixture(database.pool, root, makeCurrentWorkflowFixture(randomUUID().slice(0, 8), 'sequential'), { run: false })

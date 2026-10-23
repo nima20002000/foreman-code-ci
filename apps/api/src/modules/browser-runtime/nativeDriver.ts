@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { ChildProcess } from 'node:child_process'
-import { spawnProcess, hostEnvironment } from '../../shared/process.js'
+import type { HostAdministration } from '../hostAdministration.js'
 import { readFile, rm, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -10,11 +10,11 @@ import { BrowserCdpConnection, type CdpEvent } from './cdp.js'
 import { runBrowserUseAction, type BrowserRuntimeInstallation } from './browserUseAdapter.js'
 import type { BrowserNativeDriver, BrowserNativeDispatch, BrowserPageInput, BrowserHostFrame,
   BrowserPageObservation, NativeBrowserTab, BrowserNativeFacts, BrowserNativeDownload } from './types.js'
-import { browserProcessAlive, browserProcessBirthId, readBrowserProcessIdentity, writeBrowserProcessIdentity, verifyBrowserProcess, type BrowserProcessIdentity } from './processIdentity.js'
+import { browserProcessAlive, readBrowserProcessIdentity, writeBrowserProcessIdentity, verifyBrowserProcess, type BrowserProcessIdentity } from './processIdentity.js'
 import { assertPortableBrowserCookies, type BrowserPortableState } from './snapshotStorage.js'
-import { createBrowserRuntimeDirectory, removeBrowserRuntimeDirectory } from '../../../../worker/src/browserRuntimeInstall.mjs'
-import { BrowserVirtualDisplay } from './virtualDisplay.js'
-import { configuredTemporaryDirectory, hasGraphicalSession } from '../../config.js'
+import { removeBrowserRuntimeDirectory } from '../../../../worker/src/browserRuntimeInstall.mjs'
+import { createBrowserAdministration } from './hostAdministration.js'
+import { hasGraphicalSession } from '../../config.js'
 
 interface AttachedTab {
   id: string; sessionId: string; title: string; url: string
@@ -63,11 +63,11 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
   private readonly downloads = new Map<string, BrowserNativeDownload>()
   private readonly captures = new Map<string, Promise<{ connection: BrowserCdpConnection; listeners: Set<(frame: BrowserHostFrame) => void>; stop: () => Promise<void> }>>()
   private readonly retiringCaptures = new Map<string, Promise<void>>()
-  private readonly virtualDisplay: BrowserVirtualDisplay
-  constructor(readonly options: BrowserNativeDriverOptions) { this.virtualDisplay = new BrowserVirtualDisplay(options.actionDirectory) }
+  private readonly browser: HostAdministration['browser']
+  constructor(readonly options: BrowserNativeDriverOptions) { this.browser = createBrowserAdministration(options.actionDirectory) }
 
   /** Stops the shared virtual display after the host has closed its browsers. */
-  closeVirtualDisplay(): Promise<void> { return this.virtualDisplay.close() }
+  closeVirtualDisplay(): Promise<void> { return this.browser.closeVirtualDisplay() }
 
   ownedProfileIds(): string[] { return [...new Set([...this.profiles.keys(), ...this.opening.keys(), ...this.reconnecting.keys()])] }
 
@@ -160,46 +160,18 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
       } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
     }
     const generation = reuseGeneration ?? await this.options.allocateGeneration(profileId), token = randomUUID()
-    // A new process must not restore the previous process's tabs: nothing owns them, they pile up, and the
-    // restore replaces the startup window that holds the tabs this launch opens for an agent.
-    await rm(join(directory, 'Default', 'Sessions'), { recursive: true, force: true })
     const headless = !headed
-    const display = headless && process.platform === 'linux' ? await this.virtualDisplay.ensure() : undefined
-    const args = [`--user-data-dir=${directory}`, `--foreman-browser-owner=${token}`,
-      '--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1', '--no-first-run', '--no-default-browser-check',
-      // Chromium sets navigator.webdriver for any remote-debugged browser; sites read it as a bot signal.
-      '--disable-blink-features=AutomationControlled', '--disable-background-networking',
-      // Hidden browsers otherwise start at 800x600, which sites treat as a tablet or phone.
-      ...(display ? ['--ozone-platform=x11', '--window-position=0,0', '--window-size=1440,900']
-        : headless ? ['--headless=new', '--window-size=1440,900'] : []), 'about:blank']
-    // Chromium's own profile lock remains authoritative; no lock removal or sandbox bypass.
-    const runtimeDirectory = await createBrowserRuntimeDirectory(this.options.actionDirectory)
-    const env: NodeJS.ProcessEnv = { ...hostEnvironment(), TMPDIR: runtimeDirectory?.temporaryDirectory ?? configuredTemporaryDirectory() }
-    if (display) { env.DISPLAY = display; delete env.WAYLAND_DISPLAY }
-    const processHandle = spawnProcess(this.options.runtime.chromiumExecutable, args, { stdio: ['ignore', 'ignore', 'pipe'], env })
-    // Keep only Chromium's last fatal line, so a launch failure names its own cause.
-    let fatal = ''
-    processHandle.stderr?.setEncoding('utf8').on('data', (chunk: string) => {
-      const line = chunk.split('\n').reverse().find(value => value.includes(':FATAL:'))
-      if (line) fatal = line.replace(/^\[[^\]]*\]\s*/, '').slice(0, 400)
-    })
-    processHandle.once('exit', () => {
-      void removeBrowserRuntimeDirectory(runtimeDirectory).catch(error => console.error('Managed browser runtime directory cleanup failed', error))
-    })
-    let failed: Error | undefined
-    processHandle.once('error', error => { failed = error })
+    const launched = await this.browser.launch({ executable: this.options.runtime.chromiumExecutable, directory, token, headless })
+    const { process: processHandle, runtimeDirectory, birthId } = launched
     let connection: BrowserCdpConnection | undefined
     const identity: BrowserProcessIdentity = { pid: processHandle.pid ?? 0, generation, token,
       executable: this.options.runtime.chromiumExecutable, directory, headless, endpoint: null, runtimeDirectory,
-      birthId: processHandle.pid ? browserProcessBirthId(processHandle.pid) : null }
+      birthId }
     try {
       if (!identity.pid) throw new Error('Browser process did not start')
       await writeBrowserProcessIdentity(identity)
       for (let attempt = 0; attempt < 150; attempt++) {
-        // A crash ends with a signal and leaves exitCode null.
-        if (failed || processHandle.exitCode !== null || processHandle.signalCode !== null) {
-          throw failed ?? new Error(`Browser launch exited${fatal ? `: ${fatal}` : ''}`)
-        }
+        launched.assertRunning()
         try {
           const [port, path] = (await readFile(activePortPath, 'utf8')).trim().split('\n')
           if (port && /^\d+$/.test(port) && path?.startsWith('/devtools/browser/')) {
@@ -219,12 +191,8 @@ export class ManagedBrowserNativeDriver implements BrowserNativeDriver {
       await this.configureProfile(profileId, connection)
       return { generation }
     } catch (error) {
-      connection?.close(); processHandle.kill('SIGTERM')
-      if (!processHandle.pid || !browserProcessAlive(identity.pid, identity.birthId)) await removeBrowserRuntimeDirectory(runtimeDirectory)
-      const exited = processHandle.exitCode !== null || processHandle.signalCode !== null
-      if (exited && fatal) throw new DomainError('BROWSER_LAUNCH_FAILED',
-        `The managed browser exited while starting: ${fatal}`, 409, { retryable: false }, { cause: error })
-      throw new DomainError('BROWSER_RUNTIME_MISSING', 'The managed browser could not start. Check runtime setup and the profile lock.', 503, undefined, { cause: error })
+      connection?.close()
+      return launched.abort(error)
     }
   }
 

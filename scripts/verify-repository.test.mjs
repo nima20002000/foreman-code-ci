@@ -407,7 +407,6 @@ test('integration inventory requires every API integration file and no acceptanc
     assert.deepEqual(inventory, [
       { key: 'root:install', kind: 'bootstrap' },
       { key: 'packages/contracts:build', kind: 'command' },
-      { key: 'packages/contracts-node:build', kind: 'command' },
       { key: 'root:test:integration', kind: 'integration', files: [
         'apps/api/test/one.integration.test.ts', 'apps/api/test/two.integration.test.ts',
       ] },

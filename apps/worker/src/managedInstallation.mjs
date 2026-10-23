@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { ApprovedRootAllowlistSchema } from '../../../packages/contracts/src/workspaceRootPolicies.ts';
 import { WorkerPairingConfigurationSchema } from '../../../packages/contracts/src/deviceIdentity.ts';
 import { InstalledVerificationRuntimeConfigurationSchema, MAX_VERIFICATION_CONFIGURATION_BYTES }
-  from '../../../packages/contracts-node/src/installedRuntimeNode.ts';
+  from '../../../packages/contracts/src/installedRuntimeNode.ts';
 import { fingerprintQualificationPath, readVerificationQuotaPool, readProtectedRuntimeFile } from '@foreman-code/api/worker/jobs';
 import { anchored, identity, openPrivateRoot, openChildDirectory } from '@foreman-code/api/worker/sources';
 import { readPrivateBytes, assertRuntimeQuiescent } from './jobRuntimeCapture.mjs';

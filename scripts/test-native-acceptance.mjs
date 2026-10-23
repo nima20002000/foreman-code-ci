@@ -226,14 +226,12 @@ async function executeNativeAcceptance(files) {
 
 async function main() {
   const files = nativeAcceptanceFiles(process.argv.slice(2))
-  for (const name of ['contracts', 'contracts-node']) {
-    const result = spawnSync('corepack', ['pnpm', '--filter', `@foreman-code/${name}`, 'build'], {
-      cwd: root, stdio: 'inherit',
-    })
-    if (result.status !== 0) {
-      process.exitCode = result.status ?? 1
-      return
-    }
+  const contracts = spawnSync('corepack', ['pnpm', '--filter', '@foreman-code/contracts', 'build'], {
+    cwd: root, stdio: 'inherit',
+  })
+  if (contracts.status !== 0) {
+    process.exitCode = contracts.status ?? 1
+    return
   }
   process.exitCode = await executeNativeAcceptance(files)
 }

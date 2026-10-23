@@ -3,7 +3,7 @@ import type { IncomingHttpHeaders } from 'node:http'
 import { isIP, Socket } from 'node:net'
 
 import { LocalHumanAccessSchema, type ManagementPrincipal } from '@foreman-code/contracts/management'
-import { localHumanClient, LocalClientUnavailableError } from '@foreman-code/contracts-node/local-client-node'
+import { localHumanClient, LocalClientUnavailableError } from '@foreman-code/contracts/local-client-node'
 import { requireAuthorization } from './policy.js'
 import { bearerToken, type PostgresAccessService } from './postgres.js'
 import { DomainError } from '../errors.js'
