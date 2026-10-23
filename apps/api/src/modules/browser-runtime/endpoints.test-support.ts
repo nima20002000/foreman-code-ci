@@ -18,7 +18,7 @@ import { DomainError } from '../errors.js'
 import { BrowserProfileService } from '../browser-profiles/service.js'
 import type { BrowserProfileRepository, BrowserProfileTransaction, BrowserProfileHost, StoredProfile,
   BrowserProfileReplica, BrowserProfileSyncJob, ProfileCommand, ProfileHostIntent,
-  BrowserProfileSnapshotManifest } from '../browser-profiles/types.js'
+  BrowserProfileSnapshotManifest } from '../browser-profiles/index.js'
 import type { BrowserPairingAuthority, BrowserInstallationBinding } from '../browser-profiles/keys.js'
 import { registerBrowserProfileRoutes } from '../../routes/browserProfiles.js'
 import { registerBrowserSessionRoutes } from '../../routes/browserSessions.js'

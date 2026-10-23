@@ -10,7 +10,7 @@ import { validRunChatSkillsTransition } from './workerRunChatBinding.js'
 import { validAgentSessionReplacement, validWorkerConfigurationTransition } from './workerConfigurationTransition.js'
 import { commandInputHash } from '@foreman-code/contracts/command-identity-node'
 import { WorkerClaudeCallbackRecordSchema, workerConversationGeneration } from '@foreman-code/contracts/remote-execution-rpc'
-import type { ClaudeCallbackJournal } from '../harnesses/claudeSdk/callbackJournal.js'
+import type { ClaudeCallbackJournal } from '../harnesses/index.js'
 import { definedProperties } from '../definedProperties.js'
 
 interface ConversationStore {

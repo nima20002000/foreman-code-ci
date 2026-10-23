@@ -16,7 +16,7 @@ import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart, Na
 import type { WorkerConversationJournal } from './workerJournal.js'
 import { DomainError } from '../errors.js'
 import { componentLogger } from '../diagnostics/index.js'
-import type { NativeMcpInspector } from '../harnesses/mcpDetection.js'
+import type { NativeMcpInspector } from '../harnesses/index.js'
 import { compactionBlocksSend, type CompactionState } from '@foreman-code/contracts'
 import { isDefiniteCompactionRejection, NativeDeliveryError } from '../harnesses/errors.js'
 import { recoverPersistedClaudeCompaction } from '../harnesses/claudeSdk/recoverCompaction.js'

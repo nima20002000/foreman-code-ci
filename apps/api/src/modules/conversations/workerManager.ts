@@ -24,7 +24,7 @@ import { readJsonContinuation } from '../runs/remote/jsonContinuation.js'
 import type { NativeHarnessSessionManager, NativeHistory, NativeSessionStart, NativeTurnInput,
   NativeInitialTurnInput, NativeCompactInput, NativeSteerInput, NativeResponseIdentity } from '../harnesses/port.js'
 import { normalizeResponseAvailability, type NativeResponseAvailabilityQuery } from '../harnesses/responseAvailability.js'
-import type { NativeMcpInspector } from '../harnesses/mcpDetection.js'
+import type { NativeMcpInspector } from '../harnesses/index.js'
 import { MainWorkerConversationBridge, type WorkerConversationCallbacks, type WorkerConversationChannel } from './workerBridge.js'
 import { workerExecutionConfiguration } from './workerExecutionConfiguration.js'
 import type { OperatorConfigurationVersion } from '@foreman-code/contracts'

@@ -7,7 +7,7 @@ import { attemptCleanup, cleanupTimeoutMs, withCleanupDeadline } from './cleanup
 import { deviceRequestTimeoutMs } from '../devices/deviceRequestRetry.js'
 import { readExecutionPlacement } from '../placement/persistence.js'
 import { componentLogger } from '../diagnostics/logger.js'
-import type { RunOwnership } from '../runs/ownership.js'
+import type { RunOwnership } from '../runs/index.js'
 import { readRemoteWorkflowContinuation, recoverWorkflowNativeClosure } from './workflowClosure.js'
 import { repeatTickIndex } from '../runs/repeatResolution.js'
 import { reviewPreflightIdentity } from './reviewPolicy.js'

@@ -8,7 +8,7 @@ import { assertDeviceHostInstallation } from '../../devices/hostAuthorization.js
 import { DomainError } from '../../errors.js'
 import { credentialAuthority } from '../../interactions/current/credentialAuthority.js'
 import { authorizeOperatorConfigurationRead } from '../../operators/index.js'
-import type { ProviderAccountsService } from '../../provider-accounts/service.js'
+import type { ProviderAccountsService } from '../../provider-accounts/index.js'
 import { PostgresClaudeInteractionAuthority } from '../claudeSdk/domainAuthority.js'
 import { installedClaudeProfilePin } from '../claudeSdk/installedProfilePin.js'
 import type { ClaudeProfileOwner } from '../claudeSdk/production.js'

@@ -15,7 +15,7 @@ import {
 import type pg from 'pg'
 import type { ChildProcessEnvironment, NativeHarnessSessionManager } from './port.js'
 
-import type { IssuedWorkerCredential, WorkerCredentialService } from '../access/workerCredentials.js'
+import type { IssuedWorkerCredential, WorkerCredentialService } from '../access/index.js'
 import { WORKER_CREDENTIAL_EXPIRY_MARGIN_MS } from '../access/credentialLifetime.js'
 import { DomainError } from '../errors.js'
 import { HarnessExecutionError } from './errors.js'

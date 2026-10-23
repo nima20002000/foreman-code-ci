@@ -1,5 +1,6 @@
 import { parseSessionCommand } from '@foreman-code/contracts'
-import { useConversationDraftStore, useSlashCommandMenu } from '../chat-core'
+import { useConversationDraftStore } from './conversationDraftStore'
+import { useSlashCommandMenu } from './sessionControls/useSlashCommandMenu'
 
 /** Shared draft and slash-menu interactions; each composer retains its submission and presentation rules. */
 export function useComposerDraft(draftKey: string, submit: (content: string) => void, {
