@@ -4,6 +4,7 @@ import type { MaintenancePorts } from './maintenancePorts.js'
 /** Acknowledged tasks remain readable even when the process that ran them stops. */
 export class MaintenanceTaskStore {
   private writes: Promise<void> = Promise.resolve()
+  private latestWrite: Promise<void> = this.writes
   constructor(private readonly path: string,
     private readonly ports: Pick<MaintenancePorts, 'readText' | 'writePrivateText' | 'now'>) {}
 
@@ -25,9 +26,12 @@ export class MaintenanceTaskStore {
 
   save(tasks: readonly MaintenanceTask[]): Promise<void> {
     const text = `${JSON.stringify(tasks)}\n`
-    this.writes = this.writes.then(() => this.ports.writePrivateText(this.path, text))
-    return this.writes
+    const write = this.writes.then(() => this.ports.writePrivateText(this.path, text))
+    this.latestWrite = write
+    // The failure belongs to this caller; the chain stays usable for later writes.
+    this.writes = write.catch(() => { /* ignore: the caller receives the rejection through write; later operations need a usable queue. */ })
+    return write
   }
 
-  flushed(): Promise<void> { return this.writes }
+  flushed(): Promise<void> { return this.latestWrite }
 }

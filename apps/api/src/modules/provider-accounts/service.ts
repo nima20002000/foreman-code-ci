@@ -716,7 +716,7 @@ export class ProviderAccountsService implements ProviderAccountResolver {
         if (active.rowCount) throw new DomainError('PROVIDER_AUTHENTICATION_PENDING', 'Authentication is still pending.', 409)
         backup = await this.credentials.backup(account)
         await this.credentials.saveApiKey(accountId, apiKey)
-        Object.assign(account, { status: 'signed-in', identity: null, revision: snapshot.revision + 1 })
+        Object.assign(account, { status: 'signed-in', identity: null, revision: account.revision + 1 })
       }, { afterRollback: async () => { if (backup) await this.credentials.restore(backup) } })
   }
 

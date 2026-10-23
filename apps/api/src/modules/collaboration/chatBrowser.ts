@@ -5,7 +5,7 @@ import type { ManagementPrincipal } from '@foreman-code/contracts/management'
 import { readConversationCredential } from '../access/conversationCredentials.js'
 import { componentLogger } from '../diagnostics/logger.js'
 import { DomainError } from '../errors.js'
-import type { BrowserAuthority } from './browserAuthority.js'
+import type { BrowserAuthority, BrowserSubjectDetails } from './browserAuthority.js'
 import type { BrowserLifecyclePort } from './ports.js'
 
 export const CHAT_BROWSER_IDLE_MS = 10 * 60_000
@@ -16,7 +16,7 @@ interface ChatSession { sessionId: string; commandId: string; subject: AgentSubj
  * ten idle minutes, when the chat is archived or removed, and as soon as a Run needs the same profile. */
 export class ChatBrowserSessions {
   private readonly chats = new Map<string, ChatSession>()
-  private readonly opening = new Map<string, Promise<string>>()
+  private readonly opening = new Map<string, { details: Promise<BrowserSubjectDetails>; result: Promise<string> }>()
   /** Run and consultation browsers this process prepared, by session ID. */
   private readonly runs = new Map<string, { profileId: string; computerId: string }>()
   private timer: NodeJS.Timeout | undefined
@@ -27,6 +27,8 @@ export class ChatBrowserSessions {
     localSessions(): Promise<readonly BrowserSession[]>
     /** Current control facts of a local session; undefined when this computer does not hold it. */
     localControl?(sessionId: string): { browserGeneration: number; epoch: number } | undefined
+    /** Control facts of a session on any computer, through the session router; used when the local broker does not hold it. */
+    sessionControl?(principal: ManagementPrincipal, sessionId: string): Promise<{ browserGeneration: number; epoch: number } | undefined>
     /** The Agent chat subject of a worker credential; defaults to its stored conversation credential. */
     chatSubject?(principal: ManagementPrincipal): Promise<Extract<AgentSubject, { kind: 'conversation' }> | undefined>
     now?(): number
@@ -51,19 +53,19 @@ export class ChatBrowserSessions {
     if (!subject) return undefined
     const conversationId = subject.conversationId
     const pending = this.opening.get(conversationId)
-    if (pending) return pending
-    const opening = this.open(conversationId, subject).finally(() => this.opening.delete(conversationId))
-    this.opening.set(conversationId, opening)
-    return opening
+    if (pending) return pending.result
+    const details = this.options.authority.details(subject)
+    const result = details.then(value => this.open(conversationId, subject, value)).finally(() => this.opening.delete(conversationId))
+    this.opening.set(conversationId, { details, result })
+    return result
   }
 
-  private async open(conversationId: string, subject: AgentSubject): Promise<string> {
+  private async open(conversationId: string, subject: AgentSubject, details: BrowserSubjectDetails): Promise<string> {
     let current = this.chats.get(conversationId)
     if (current && canonicalJson(current.subject) !== canonicalJson(subject)) {
       await this.close(conversationId)
       current = undefined
     }
-    const details = await this.options.authority.details(subject)
     const profileId = details.browser.enabled ? details.browser.profileId : undefined
     if (!profileId) throw new DomainError('BROWSER_DISABLED', 'The browser is not turned on for this Agent.', 409)
     if (await this.runUses(profileId, details.computerId)) {
@@ -93,13 +95,18 @@ export class ChatBrowserSessions {
   }
 
   /** A chat Agent always acts as the agent on its own browser, so it never has to read and repeat control facts. */
-  agentActor(sessionId: string): { kind: 'agent'; browserGeneration: number; epoch: number } | undefined {
-    const control = this.options.localControl?.(sessionId)
+  async agentActor(principal: ManagementPrincipal, sessionId: string): Promise<{ kind: 'agent'; browserGeneration: number; epoch: number } | undefined> {
+    const control = this.options.localControl?.(sessionId) ?? await this.options.sessionControl?.(principal, sessionId)
     return control ? { kind: 'agent', ...control } : undefined
   }
 
   /** A Run browser is about to open on this profile: close every chat browser on it first. */
   async yieldToRun(profileId: string, computerId: string): Promise<void> {
+    // Let launches on this profile land so they are closed below too; other profiles can open independently.
+    await Promise.allSettled([...this.opening.values()].map(async opening => {
+      const details = await opening.details
+      if (details.browser.profileId === profileId && details.computerId === computerId) await opening.result
+    }))
     await this.adopt()
     for (const [conversationId, chat] of [...this.chats]) {
       if (chat.profileId !== profileId || chat.computerId !== computerId) continue
