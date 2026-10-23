@@ -366,12 +366,16 @@ PRs after #78 are opened without typecheck, lint or tests, by owner decision; th
   and new publications already require 3 through a trigger.
 
 ### PR 8: Execution core (#78 is part 1, draft)
-- [~] #13 `ApprovalExecutionCoordinator`: a typed dependencies object; `RunExecutionCapacity` and
-  `NativeCredentialLedger` extracted. The session lifecycle (`executionSessionLifecycle.ts`), consultations
-  (`executionConsultations.ts`), reviewer sessions (`executionReviewerSessions.ts`) and Stop/restart cancellation
-  (`executionCancellation.ts`) are now collaborators that share the coordinator through `ExecutionSessionHost`; the
-  coordinator keeps one-line delegates for its public methods. Still in the coordinator (about 2.3k lines): workflow
-  observation, attach/restore, run-owner sharing and the workflow-chat owner.
+- [~] #13 `ApprovalExecutionCoordinator`: split reapplied on `fix/re-a13-coord`; verification pending Foreman CI.
+  Session lifecycle and Run ownership, attachment/restoration and credential preparation, workflow
+  observation/settlement, consultations, reviewer sessions and cancellation now live in collaborators.
+  Workflow-chat capture/reconciliation has its own collaborator. An explicit internal `ExecutionSessionHost`
+  replaces the coordinator `Pick`; implementation state and collaborators are private, while the consumed
+  reviewer dispatcher and coordinator API remain public. Native calls and durable-write order are preserved.
+  Added public-API tests for shared Run-owner retention/release and successor ownership during chat transactions.
+  Foreman CI requests returned `INTERNAL_ERROR` before issuing tickets. Base typecheck
+  `7f6f62b6-4769-4f25-8a6e-344b78b6396a` and lint `746e5518-3198-475a-904a-29ade0491871`
+  also failed during dependency setup (`ERR_PNPM_OUTDATED_LOCKFILE`); no local checks were run.
 - [~] #14 "repeat" is the universal run engine despite AGENTS.md. `runs/workflowRunMode.ts` names the three modes
   (`graph`, `handoff`, `hierarchy`; only explicit repeat blocks declare repeat). `executeRepeatRuntime` now takes a
   `WorkflowGraphMode` (`handoffGraphMode` or `workflowGraphMode`) instead of branching on `work`/`repeat`, the native

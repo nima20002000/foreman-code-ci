@@ -13,7 +13,7 @@ import { repeatTickIndex } from '../runs/repeatResolution.js'
 import { reviewPreflightIdentity } from './reviewPolicy.js'
 import { assertSameRepeatExecution } from './repeatObservation.js'
 import { isCredentialAuthorityLost, restorableApproval } from './executionPredicates.js'
-import type { ExecutionSessionHost, OwnedNativeSession } from './execution.js'
+import type { ExecutionSessionHost, OwnedNativeSession } from './executionSessionHost.js'
 
 /** Stop, cold-restart cleanup and engine-restart detachment of native sessions. */
 export class ExecutionCancellation {
