@@ -31,9 +31,9 @@ export function memoryBoardTools(access: MemoryBoardToolAccess): CollaborationAg
       && (access === 'write' || COLLABORATION_AGENT_TOOLS[name].readOnly));
 }
 
-/** Applied only by explicit new-configuration creation, never inferred for saved defaults. */
-export function newAgentMemoryBoardAccess(role: 'master' | 'orchestrator' | 'coder'): MemoryBoardToolAccess {
-  return role === 'coder' ? 'read' : 'write';
+/** Every new Agent can keep its workflow's Kanban; read-only Agents are narrowed to read at run time. */
+export function newAgentMemoryBoardAccess(): MemoryBoardToolAccess {
+  return 'write';
 }
 
 export function isCollaborationAgentTool(name: string): name is CollaborationAgentTool {
