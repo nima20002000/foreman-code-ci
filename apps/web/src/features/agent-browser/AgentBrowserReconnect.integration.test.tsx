@@ -50,9 +50,14 @@ it('settles the original browser command before automatically reconnecting a los
     await waitFor(() => expect(fake.port.createTab).toHaveBeenCalledTimes(1))
     expect(screen.getByRole('button', { name: 'New tab' })).toBeDisabled()
     const original = vi.mocked(fake.port.createTab).mock.calls[0]!
+    console.log('command before loss', { views: vi.mocked(fake.port.openView).mock.calls.map(call => [call[0].id, call[1].tabId, call[2]]),
+      addressDisabled: screen.getByRole('textbox', { name: 'Website address' }).hasAttribute('disabled'), reconnects: vi.mocked(fake.port.reconnect).mock.calls })
     act(() => fake.observer!.disconnected(new Error('Browser view disconnected')))
     await act(async () => { await vi.advanceTimersByTimeAsync(3_050) })
     expect(fake.port.reconnect).not.toHaveBeenCalled()
+    console.log('command after loss', { views: vi.mocked(fake.port.openView).mock.calls.map(call => [call[0].id, call[1].tabId, call[2]]),
+      addressDisabled: screen.getByRole('textbox', { name: 'Website address' }).hasAttribute('disabled'), reconnects: vi.mocked(fake.port.reconnect).mock.calls,
+      createCalls: vi.mocked(fake.port.createTab).mock.calls, releases: vi.mocked(fake.port.release).mock.calls })
     expect(fake.port.openView).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('button', { name: 'Reconnect', exact: true })).toBeDisabled()
     await act(async () => { response.reject(new TypeError('Failed to fetch')) })
