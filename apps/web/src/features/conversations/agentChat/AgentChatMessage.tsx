@@ -75,6 +75,7 @@ function AgentContent({ content }: { content: string }) {
   const result = structuredResult(content)
   if (!result) return <AgentMarkdown content={content} />
   return <>
+    {result.prose ? <AgentMarkdown content={result.prose} /> : null}
     {result.summary ? <AgentMarkdown content={result.summary} /> : <p>Turn finished.</p>}
     <details className="agent-chat-tool"><summary>Result details</summary>
       <CodeBlock code={JSON.stringify(result.value, null, 2)} label="Result details" /></details>

@@ -108,16 +108,18 @@ describe('exact Execution chat public surface', () => {
     expect(screen.queryByText(/Delivery is not confirmed/)).not.toBeInTheDocument()
   })
 
-  it('reads a result the Agent wrapped in prose as its summary, once', async () => {
+  it('keeps the Agent\'s prose around a fenced result, shows its summary once and folds the JSON away', async () => {
     const result = { data: { latestDeliverable: 'Google' }, summary: 'The exact page title is Google.', routing: { kind: 'finish' } }
     const wrapped = { ...initialMessage, id: 'wrapped', nativeMessageId: 'native-wrapped', nativeMessageComplete: true,
-      content: 'Perfect! Here is the result:\n\n```json\n' + JSON.stringify(result, null, 2) + '\n```' }
+      content: 'I will hand this over.\n\n```json\n' + JSON.stringify(result, null, 2) + '\n```\n\nThe Worker should now open it.' }
     const bare = { ...initialMessage, id: 'bare', nativeMessageId: 'native-bare', sequence: '2', nativeMessageComplete: true,
       content: JSON.stringify(result) }
     endpoints({ ...structuredClone(initial), messages: [wrapped, bare] }); mount(new NativeSource())
     expect(await screen.findByText('The exact page title is Google.')).toBeInTheDocument()
     expect(screen.getAllByText('The exact page title is Google.')).toHaveLength(1)
-    expect(screen.queryByText(/Perfect! Here is the result/)).not.toBeInTheDocument()
+    expect(screen.getByText('I will hand this over.')).toBeInTheDocument()
+    expect(screen.getByText('The Worker should now open it.')).toBeInTheDocument()
+    for (const json of screen.getAllByText(/latestDeliverable/)) expect(json.closest('details')).not.toBeNull()
   })
 
   it('gives the messages the panel height instead of an empty name band above them', async () => {

@@ -7,9 +7,20 @@ export function sameStructuredResult(left: string, right: string): boolean {
 }
 
 const summaryKeys = ['summary', 'body', 'message', 'reason', 'text'] as const
-export function structuredResult(content: string): { value: unknown; summary: string | undefined } | undefined {
-  // Also a result the Agent ends with in a fenced block after some prose ("Here is the result: ```json …```").
-  const text = content.trim().replace(/^(?:[\s\S]*\n)?```(?:json)?\s*(\{[\s\S]*?\})\s*```$/, '$1')
+/** The structured turn result in a message: the whole message, or a fenced block among the Agent's prose (kept as `prose`). */
+export function structuredResult(content: string): { value: unknown; summary: string | undefined; prose?: string } | undefined {
+  const whole = parse(content)
+  if (whole) return whole
+  for (const fence of content.matchAll(/```(?:json)?\s*([\s\S]*?)\s*```/g)) {
+    const found = parse(fence[1]!)
+    if (!found) continue
+    const prose = (content.slice(0, fence.index) + content.slice(fence.index + fence[0].length)).trim()
+    return prose ? { ...found, prose } : found
+  }
+  return undefined
+}
+function parse(content: string): { value: unknown; summary: string | undefined } | undefined {
+  const text = content.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/, '$1')
   if (!text.startsWith('{')) return undefined
   let value: unknown
   try { value = JSON.parse(text) } catch { return undefined } // ignore: plain text that merely starts with a brace
